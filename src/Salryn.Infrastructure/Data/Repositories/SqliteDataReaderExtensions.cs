@@ -36,6 +36,24 @@ internal static class SqliteDataReaderExtensions
         return GetInt32Value(reader, columnName) != 0;
     }
 
+    public static DateTimeOffset GetDateTimeOffsetValue(this SqliteDataReader reader, string columnName)
+    {
+        return DateTimeOffset.Parse(GetStringValue(reader, columnName));
+    }
+
+    public static DateTimeOffset? GetNullableDateTimeOffsetValue(this SqliteDataReader reader, string columnName)
+    {
+        string? value = GetNullableString(reader, columnName);
+        return string.IsNullOrWhiteSpace(value) ? null : DateTimeOffset.Parse(value);
+    }
+
+    public static TEnum GetEnumValue<TEnum>(this SqliteDataReader reader, string columnName)
+        where TEnum : struct, Enum
+    {
+        int value = GetInt32Value(reader, columnName);
+        return (TEnum)Enum.ToObject(typeof(TEnum), value);
+    }
+
     public static Money GetMoneyValue(this SqliteDataReader reader, string columnName)
     {
         return Money.FromCents(GetInt64Value(reader, columnName));
