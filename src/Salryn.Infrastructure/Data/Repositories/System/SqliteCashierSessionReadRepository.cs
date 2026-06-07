@@ -26,7 +26,7 @@ public sealed class SqliteCashierSessionReadRepository :
             using var connection = CreateOpenConnection();
             using var command = connection.CreateCommand();
 
-            command.CommandText = CashierSessionSelectSql + """
+            command.CommandText = CashierSessionSelectSql + Environment.NewLine + """
                 WHERE cs.user_id = $userId
                   AND cs.status = $openStatus
                 ORDER BY cs.opened_at DESC
@@ -63,7 +63,7 @@ public sealed class SqliteCashierSessionReadRepository :
             using var connection = CreateOpenConnection();
             using var command = connection.CreateCommand();
 
-            command.CommandText = CashierSessionSelectSql + """
+            command.CommandText = CashierSessionSelectSql + Environment.NewLine + """
                 WHERE cs.id = $sessionId
                 LIMIT 1;
                 """;
@@ -119,3 +119,4 @@ public sealed class SqliteCashierSessionReadRepository :
         INNER JOIN users u ON u.id = cs.user_id
         """;
 }
+

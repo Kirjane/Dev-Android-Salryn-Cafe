@@ -47,7 +47,7 @@ public sealed class SqliteUserReadRepository :
             using var connection = CreateOpenConnection();
             using var command = connection.CreateCommand();
 
-            command.CommandText = UserSelectSql + """
+            command.CommandText = UserSelectSql + Environment.NewLine + """
                 ORDER BY u.display_name;
                 """;
 
@@ -86,7 +86,7 @@ public sealed class SqliteUserReadRepository :
             using var connection = CreateOpenConnection();
             using var command = connection.CreateCommand();
 
-            command.CommandText = UserSelectSql + $"""
+            command.CommandText = UserSelectSql + Environment.NewLine + $"""
                 WHERE {whereClause}
                 LIMIT 1;
                 """;
@@ -130,3 +130,4 @@ public sealed class SqliteUserReadRepository :
         INNER JOIN roles r ON r.id = u.role_id
         """;
 }
+

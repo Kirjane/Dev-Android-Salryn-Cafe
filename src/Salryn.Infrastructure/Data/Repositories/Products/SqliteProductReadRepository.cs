@@ -26,7 +26,7 @@ public sealed class SqliteProductReadRepository :
             using var connection = CreateOpenConnection();
             using var command = connection.CreateCommand();
 
-            command.CommandText = ProductLookupSql + """
+            command.CommandText = ProductLookupSql + Environment.NewLine + """
                 WHERE p.id = $id
                 LIMIT 1;
                 """;
@@ -60,7 +60,7 @@ public sealed class SqliteProductReadRepository :
             using var connection = CreateOpenConnection();
             using var command = connection.CreateCommand();
 
-            command.CommandText = ProductLookupSql + """
+            command.CommandText = ProductLookupSql + Environment.NewLine + """
                 WHERE p.barcode = $barcode AND p.is_active = 1
                 LIMIT 1;
                 """;
@@ -323,3 +323,4 @@ public sealed class SqliteProductReadRepository :
         INNER JOIN units u ON u.id = p.unit_id
         """;
 }
+
