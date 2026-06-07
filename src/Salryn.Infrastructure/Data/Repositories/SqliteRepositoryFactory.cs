@@ -3,6 +3,7 @@ using Salryn.Infrastructure.Data.Repositories.Catalog;
 using Salryn.Infrastructure.Data.Repositories.Inventory;
 using Salryn.Infrastructure.Data.Repositories.Products;
 using Salryn.Infrastructure.Data.Repositories.Sales;
+using Salryn.Infrastructure.Data.Repositories.System;
 
 namespace Salryn.Infrastructure.Data.Repositories;
 
@@ -33,5 +34,30 @@ public sealed class SqliteRepositoryFactory
     public IInventoryReadRepository CreateInventoryReadRepository()
     {
         return new SqliteInventoryReadRepository(_connectionFactory);
+    }
+
+    public IUserReadRepository CreateUserReadRepository()
+    {
+        return new SqliteUserReadRepository(_connectionFactory);
+    }
+
+    public IStoreSettingsReadRepository CreateStoreSettingsReadRepository()
+    {
+        return new SqliteStoreSettingsReadRepository(_connectionFactory);
+    }
+
+    public ICashierSessionReadRepository CreateCashierSessionReadRepository()
+    {
+        return new SqliteCashierSessionReadRepository(_connectionFactory);
+    }
+
+    public IAuditReadRepository CreateAuditReadRepository()
+    {
+        return new SqliteAuditReadRepository(_connectionFactory);
+    }
+
+    public IErrorLogReadRepository CreateErrorLogReadRepository()
+    {
+        return new SqliteErrorLogReadRepository(_connectionFactory);
     }
 }
