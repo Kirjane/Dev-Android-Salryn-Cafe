@@ -1,0 +1,18 @@
+﻿NO CODE YET
+
+Do not create:
+- .sln file
+- .csproj file
+- WinForms project
+- Database schema
+- Migration files
+- App source code
+
+Allowed right now:
+- Feature planning
+- Architecture planning
+- UI sketches
+- Database design notes
+- Algorithm notes
+- Hardware assumptions
+- Testing checklist
