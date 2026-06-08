@@ -33,6 +33,10 @@ try
             RepositorySmokeChecks.Run(projectRoot);
             break;
 
+        case "product-write":
+            ProductWriteSmokeChecks.Run(projectRoot);
+            break;
+
         case "reset":
             Reset(projectRoot);
             break;
@@ -43,13 +47,14 @@ try
             Initialize(projectRoot);
             Inspect(projectRoot);
             RepositorySmokeChecks.Run(projectRoot);
+            ProductWriteSmokeChecks.Run(projectRoot);
             Reset(projectRoot);
             Console.WriteLine("FULL SMOKE TEST PASSED AND CLEANED UP.");
             break;
 
         default:
             Console.WriteLine("Unknown command.");
-            Console.WriteLine("Use: status | init | inspect | reset | repositories | full");
+            Console.WriteLine("Use: status | init | inspect | reset | repositories | product-write | full");
             Environment.ExitCode = 1;
             break;
     }
@@ -342,5 +347,7 @@ static string FindProjectRoot(string startPath)
 
     throw new InvalidOperationException("Could not find Salryn.sln from current directory.");
 }
+
+
 
 
