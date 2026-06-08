@@ -26,6 +26,11 @@ public sealed class SqliteRepositoryFactory
         return new SqliteProductReadRepository(_connectionFactory);
     }
 
+    public IProductWriteRepository CreateProductWriteRepository()
+    {
+        return new SqliteProductWriteRepository(_connectionFactory);
+    }
+
     public ISaleReadRepository CreateSaleReadRepository()
     {
         return new SqliteSaleReadRepository(_connectionFactory);
@@ -61,3 +66,4 @@ public sealed class SqliteRepositoryFactory
         return new SqliteErrorLogReadRepository(_connectionFactory);
     }
 }
+
