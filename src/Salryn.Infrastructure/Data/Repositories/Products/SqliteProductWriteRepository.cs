@@ -54,6 +54,7 @@ public sealed class SqliteProductWriteRepository :
                     track_stock,
                     allow_discount,
                     is_active,
+                    notes,
                     created_at,
                     updated_at
                 )
@@ -75,6 +76,7 @@ public sealed class SqliteProductWriteRepository :
                     $trackStock,
                     $allowDiscount,
                     $isActive,
+                    $notes,
                     $createdAt,
                     $updatedAt
                 );
@@ -92,6 +94,12 @@ public sealed class SqliteProductWriteRepository :
             return Task.FromResult(Result.Fail(Error.Conflict(
                 "Products.DuplicateBarcode",
                 "An active product with the same barcode already exists.")));
+        }
+        catch (SqliteException ex) when (IsForeignKeyConstraintViolation(ex))
+        {
+            return Task.FromResult(Result.Fail(Error.Validation(
+                "Products.InvalidReference",
+                "Product contains an invalid category, brand, unit, or supplier reference.")));
         }
         catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
         {
@@ -138,8 +146,10 @@ public sealed class SqliteProductWriteRepository :
                     track_stock = $trackStock,
                     allow_discount = $allowDiscount,
                     is_active = $isActive,
+                    notes = $notes,
                     updated_at = $updatedAt
-                WHERE id = $id;
+                WHERE id = $id
+                  AND is_active = 1;
                 """;
 
             AddProductParameters(
@@ -155,8 +165,8 @@ public sealed class SqliteProductWriteRepository :
                 transaction.Rollback();
 
                 return Task.FromResult(Result.Fail(Error.NotFound(
-                    "Products.NotFound",
-                    "Product was not found.")));
+                    "Products.NotFoundOrInactive",
+                    "Product was not found or is inactive.")));
             }
 
             transaction.Commit();
@@ -168,6 +178,12 @@ public sealed class SqliteProductWriteRepository :
             return Task.FromResult(Result.Fail(Error.Conflict(
                 "Products.DuplicateBarcode",
                 "An active product with the same barcode already exists.")));
+        }
+        catch (SqliteException ex) when (IsForeignKeyConstraintViolation(ex))
+        {
+            return Task.FromResult(Result.Fail(Error.Validation(
+                "Products.InvalidReference",
+                "Product contains an invalid category, brand, unit, or supplier reference.")));
         }
         catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
         {
@@ -271,6 +287,12 @@ public sealed class SqliteProductWriteRepository :
 
             return Task.FromResult(Result.Success());
         }
+        catch (SqliteException ex) when (IsForeignKeyConstraintViolation(ex))
+        {
+            return Task.FromResult(Result.Fail(Error.Validation(
+                "Products.InvalidUserReference",
+                "Product deactivate contains an invalid user reference.")));
+        }
         catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
         {
             return Task.FromResult(Unexpected("Products.DeactivateFailed", ex));
@@ -300,6 +322,13 @@ public sealed class SqliteProductWriteRepository :
                 "Product unit is required."));
         }
 
+        if (!product.IsActive)
+        {
+            return Result.Fail(Error.Validation(
+                "Products.InactiveWriteNotAllowed",
+                "Product write operations require an active product. Use DeactivateAsync to deactivate products."));
+        }
+
         return Result.Success();
     }
 
@@ -326,6 +355,7 @@ public sealed class SqliteProductWriteRepository :
         command.Parameters.AddWithValue("$trackStock", product.TrackStock ? 1 : 0);
         command.Parameters.AddWithValue("$allowDiscount", product.AllowDiscount ? 1 : 0);
         command.Parameters.AddWithValue("$isActive", product.IsActive ? 1 : 0);
+        command.Parameters.AddWithValue("$notes", DbNullableText(product.Notes));
         command.Parameters.AddWithValue("$createdAt", createdAt.ToString("O"));
         command.Parameters.AddWithValue("$updatedAt", updatedAt?.ToString("O") ?? (object)DBNull.Value);
     }
@@ -360,8 +390,13 @@ public sealed class SqliteProductWriteRepository :
 
     private static bool IsUniqueConstraintViolation(SqliteException exception)
     {
-        return exception.SqliteErrorCode == 19;
+        return exception.SqliteExtendedErrorCode is 1555 or 2067 ||
+            exception.Message.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsForeignKeyConstraintViolation(SqliteException exception)
+    {
+        return exception.SqliteExtendedErrorCode == 787 ||
+            exception.Message.Contains("FOREIGN KEY constraint failed", StringComparison.OrdinalIgnoreCase);
     }
 }
-
-
