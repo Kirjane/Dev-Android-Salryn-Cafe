@@ -62,6 +62,12 @@ public sealed class SqliteInventoryWriteRepository :
 
             return Task.FromResult(Result.Success());
         }
+        catch (SqliteException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            return Task.FromResult(Result.Fail(Error.Conflict(
+                "Inventory.DuplicateMovementId",
+                "Stock movement ID already exists.")));
+        }
         catch (SqliteException ex) when (IsForeignKeyConstraintViolation(ex))
         {
             return Task.FromResult(Result.Fail(Error.Validation(
@@ -345,6 +351,12 @@ public sealed class SqliteInventoryWriteRepository :
         return value is Money money
             ? money.Cents
             : DBNull.Value;
+    }
+
+    private static bool IsUniqueConstraintViolation(SqliteException exception)
+    {
+        return exception.SqliteExtendedErrorCode is 1555 or 2067 ||
+            exception.Message.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsForeignKeyConstraintViolation(SqliteException exception)
