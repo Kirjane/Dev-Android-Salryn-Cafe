@@ -77,6 +77,10 @@ try
             CashierSessionServiceSmokeChecks.Run(projectRoot);
             break;
 
+        case "cashier-session-service-edge":
+            CashierSessionServiceEdgeSmokeChecks.Run(projectRoot);
+            break;
+
         case "reset":
             Reset(projectRoot);
             break;
@@ -98,13 +102,14 @@ try
             CashierSessionWriteEdgeSmokeChecks.Run(projectRoot);
             CashierSessionReadWriteIntegrationSmokeChecks.Run(projectRoot);
             CashierSessionServiceSmokeChecks.Run(projectRoot);
+            CashierSessionServiceEdgeSmokeChecks.Run(projectRoot);
             Reset(projectRoot);
             Console.WriteLine("FULL SMOKE TEST PASSED AND CLEANED UP.");
             break;
 
         default:
             Console.WriteLine("Unknown command.");
-            Console.WriteLine("Use: status | init | inspect | reset | repositories | product-write | product-write-edge | inventory-write | inventory-write-edge | sales-write | sales-write-edge | sales-read-write | cashier-session-write | cashier-session-write-edge | cashier-session-read-write | cashier-session-service | full");
+            Console.WriteLine("Use: status | init | inspect | reset | repositories | product-write | product-write-edge | inventory-write | inventory-write-edge | sales-write | sales-write-edge | sales-read-write | cashier-session-write | cashier-session-write-edge | cashier-session-read-write | cashier-session-service | cashier-session-service-edge | full");
             Environment.ExitCode = 1;
             break;
     }
@@ -397,6 +402,7 @@ static string FindProjectRoot(string startPath)
 
     throw new InvalidOperationException("Could not find Salryn.sln from current directory.");
 }
+
 
 
 
