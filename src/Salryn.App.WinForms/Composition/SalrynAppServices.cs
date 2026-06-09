@@ -14,7 +14,8 @@ public sealed class SalrynAppServices
         DatabaseInitializationOrchestrator databaseInitialization,
         SqliteRepositoryFactory repositories,
         ICashierSessionService cashierSessions,
-        IPosCheckoutService posCheckout)
+        IPosCheckoutService posCheckout,
+        IPosCheckoutApplicationService posCheckoutApplication)
     {
         DbPaths = dbPaths;
         ConnectionFactory = connectionFactory;
@@ -22,6 +23,7 @@ public sealed class SalrynAppServices
         Repositories = repositories;
         CashierSessions = cashierSessions;
         PosCheckout = posCheckout;
+        PosCheckoutApplication = posCheckoutApplication;
     }
 
     public DbPaths DbPaths { get; }
@@ -35,6 +37,8 @@ public sealed class SalrynAppServices
     public ICashierSessionService CashierSessions { get; }
 
     public IPosCheckoutService PosCheckout { get; }
+
+    public IPosCheckoutApplicationService PosCheckoutApplication { get; }
 
     public static SalrynAppServices CreateProduction()
     {
@@ -69,13 +73,19 @@ public sealed class SalrynAppServices
             repositories.CreateSaleWriteRepository(),
             cashierSessions);
 
+        IPosCheckoutApplicationService posCheckoutApplication = new PosCheckoutApplicationService(
+            posCheckout);
+
         return new SalrynAppServices(
             dbPaths,
             connectionFactory,
             databaseInitialization,
             repositories,
             cashierSessions,
-            posCheckout);
+            posCheckout,
+            posCheckoutApplication);
     }
 }
+
+
 
