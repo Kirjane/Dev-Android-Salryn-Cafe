@@ -76,9 +76,7 @@ public sealed class SqliteSaleWriteRepository :
         }
         catch (SqliteException ex) when (IsUniqueConstraintViolation(ex))
         {
-            return Task.FromResult(Result.Fail(Error.Conflict(
-                "Sales.DuplicateSaleOrReceipt",
-                "Sale ID or receipt number already exists.")));
+            return Task.FromResult(ToAddSaleUniqueConflict(ex));
         }
         catch (SqliteException ex) when (IsForeignKeyConstraintViolation(ex))
         {
@@ -533,11 +531,27 @@ public sealed class SqliteSaleWriteRepository :
                 "Cashier user ID is required."));
         }
 
+        if (sale.CashierSessionId.HasValue && sale.CashierSessionId.Value == Guid.Empty)
+        {
+            return Result.Fail(Error.Validation(
+                "Sales.InvalidCashierSessionId",
+                "Cashier session ID cannot be empty."));
+        }
+
         if (sale.Status != SaleStatus.Completed)
         {
             return Result.Fail(Error.Validation(
                 "Sales.CompletedStatusRequired",
                 "AddCompletedSaleAsync only accepts completed sales."));
+        }
+
+        if (sale.VoidedByUserId.HasValue ||
+            !string.IsNullOrWhiteSpace(sale.VoidReason) ||
+            sale.VoidedAt.HasValue)
+        {
+            return Result.Fail(Error.Validation(
+                "Sales.CompletedSaleCannotHaveVoidMetadata",
+                "Completed sale writes cannot already contain void metadata."));
         }
 
         if (items.Count == 0)
@@ -568,6 +582,13 @@ public sealed class SqliteSaleWriteRepository :
 
         long expectedTotal = checked(sale.Subtotal.Cents - sale.Discount.Cents + sale.Tax.Cents);
 
+        if (expectedTotal < 0)
+        {
+            return Result.Fail(Error.Validation(
+                "Sales.InvalidMoneyAmount",
+                "Sale total cannot be negative after discounts and tax."));
+        }
+
         if (sale.Total.Cents != expectedTotal)
         {
             return Result.Fail(Error.Validation(
@@ -589,7 +610,8 @@ public sealed class SqliteSaleWriteRepository :
                 "Sale change must equal amount paid minus total."));
         }
 
-        long paymentTotal = 0;
+        HashSet<Guid> saleItemIds = new();
+        long itemTotal = 0;
 
         foreach (SaleItem item in items)
         {
@@ -599,7 +621,26 @@ public sealed class SqliteSaleWriteRepository :
             {
                 return itemValidation;
             }
+
+            if (!saleItemIds.Add(item.Id))
+            {
+                return Result.Fail(Error.Validation(
+                    "Sales.DuplicateSaleItemId",
+                    "Sale item IDs must be unique within the sale write request."));
+            }
+
+            itemTotal = checked(itemTotal + item.LineTotal.Cents);
         }
+
+        if (itemTotal != sale.Subtotal.Cents)
+        {
+            return Result.Fail(Error.Validation(
+                "Sales.SubtotalMismatch",
+                "Sale subtotal must equal the sum of sale item line totals."));
+        }
+
+        HashSet<Guid> paymentIds = new();
+        long paymentTotal = 0;
 
         foreach (Payment payment in payments)
         {
@@ -608,6 +649,13 @@ public sealed class SqliteSaleWriteRepository :
             if (paymentValidation.IsFailure)
             {
                 return paymentValidation;
+            }
+
+            if (!paymentIds.Add(payment.Id))
+            {
+                return Result.Fail(Error.Validation(
+                    "Sales.DuplicatePaymentId",
+                    "Payment IDs must be unique within the sale write request."));
             }
 
             paymentTotal = checked(paymentTotal + payment.Amount.Cents);
@@ -620,7 +668,13 @@ public sealed class SqliteSaleWriteRepository :
                 "Payment total must equal sale amount paid."));
         }
 
-        return ValidateStockMovements(stockMovements);
+        return ValidateStockMovementsForSale(
+            sale.Id,
+            sale.CashierUserId,
+            stockMovements,
+            StockMovementType.Sale,
+            "Sales.InvalidSaleStockMovementType",
+            "Sales.InvalidSaleStockMovementReference");
     }
 
     private static Result ValidateVoidRequest(
@@ -650,7 +704,13 @@ public sealed class SqliteSaleWriteRepository :
                 "A reason is required when voiding a sale."));
         }
 
-        return ValidateStockMovements(reversalMovements);
+        return ValidateStockMovementsForSale(
+            saleId,
+            voidedByUserId,
+            reversalMovements,
+            StockMovementType.VoidSale,
+            "Sales.InvalidVoidStockMovementType",
+            "Sales.InvalidVoidStockMovementReference");
     }
 
     private static Result ValidateSaleItem(SaleItem item, Guid saleId)
@@ -699,11 +759,32 @@ public sealed class SqliteSaleWriteRepository :
 
         if (item.UnitPrice.Cents < 0 ||
             item.Discount.Cents < 0 ||
-            item.LineTotal.Cents < 0)
+            item.LineTotal.Cents < 0 ||
+            item.CostPrice is Money costPrice && costPrice.Cents < 0)
         {
             return Result.Fail(Error.Validation(
                 "Sales.InvalidSaleItemMoneyAmount",
                 "Sale item money amounts cannot be negative."));
+        }
+
+        long grossLineTotal = CalculateLineGrossCents(
+            item.UnitPrice,
+            item.Quantity);
+
+        if (item.Discount.Cents > grossLineTotal)
+        {
+            return Result.Fail(Error.Validation(
+                "Sales.ItemDiscountExceedsLineGross",
+                "Sale item discount cannot exceed line gross amount."));
+        }
+
+        long expectedLineTotal = checked(grossLineTotal - item.Discount.Cents);
+
+        if (item.LineTotal.Cents != expectedLineTotal)
+        {
+            return Result.Fail(Error.Validation(
+                "Sales.LineTotalMismatch",
+                "Sale item line total must equal unit price times quantity minus item discount."));
         }
 
         return Result.Success();
@@ -742,7 +823,13 @@ public sealed class SqliteSaleWriteRepository :
         return Result.Success();
     }
 
-    private static Result ValidateStockMovements(IReadOnlyList<StockMovement> stockMovements)
+    private static Result ValidateStockMovementsForSale(
+        Guid saleId,
+        Guid expectedUserId,
+        IReadOnlyList<StockMovement> stockMovements,
+        StockMovementType expectedMovementType,
+        string invalidMovementTypeCode,
+        string invalidReferenceCode)
     {
         HashSet<Guid> movementIds = new();
 
@@ -760,6 +847,28 @@ public sealed class SqliteSaleWriteRepository :
                 return Result.Fail(Error.Validation(
                     "Sales.DuplicateStockMovementId",
                     "Stock movement IDs must be unique within the sale write request."));
+            }
+
+            if (movement.MovementType != expectedMovementType)
+            {
+                return Result.Fail(Error.Validation(
+                    invalidMovementTypeCode,
+                    "Stock movement type is not valid for this sale operation."));
+            }
+
+            if (!string.Equals(movement.ReferenceType?.Trim(), "SALE", StringComparison.OrdinalIgnoreCase) ||
+                movement.ReferenceId != saleId)
+            {
+                return Result.Fail(Error.Validation(
+                    invalidReferenceCode,
+                    "Stock movement reference must point to the sale being written."));
+            }
+
+            if (movement.UserId != expectedUserId)
+            {
+                return Result.Fail(Error.Validation(
+                    "Sales.StockMovementUserMismatch",
+                    "Stock movement user must match the sale operation user."));
             }
         }
 
@@ -806,6 +915,18 @@ public sealed class SqliteSaleWriteRepository :
         return Result.Success();
     }
 
+    private static long CalculateLineGrossCents(
+        Money unitPrice,
+        Quantity quantity)
+    {
+        decimal gross = unitPrice.Cents * (quantity.ValueX1000 / 1000m);
+
+        return checked((long)Math.Round(
+            gross,
+            0,
+            MidpointRounding.AwayFromZero));
+    }
+
     private static long GetSignedQuantityChangeX1000(StockMovement movement)
     {
         long quantity = movement.QuantityChange.ValueX1000;
@@ -843,6 +964,36 @@ public sealed class SqliteSaleWriteRepository :
         return value is Money money
             ? money.Cents
             : DBNull.Value;
+    }
+
+    private static Result ToAddSaleUniqueConflict(SqliteException exception)
+    {
+        string message = exception.Message;
+
+        if (message.Contains("stock_movements", StringComparison.OrdinalIgnoreCase))
+        {
+            return Result.Fail(Error.Conflict(
+                "Sales.DuplicateStockMovement",
+                "One or more stock movement IDs already exist."));
+        }
+
+        if (message.Contains("sale_items", StringComparison.OrdinalIgnoreCase))
+        {
+            return Result.Fail(Error.Conflict(
+                "Sales.DuplicateSaleItem",
+                "One or more sale item IDs already exist."));
+        }
+
+        if (message.Contains("payments", StringComparison.OrdinalIgnoreCase))
+        {
+            return Result.Fail(Error.Conflict(
+                "Sales.DuplicatePayment",
+                "One or more payment IDs already exist."));
+        }
+
+        return Result.Fail(Error.Conflict(
+            "Sales.DuplicateSaleOrReceipt",
+            "Sale ID or receipt number already exists."));
     }
 
     private static bool IsUniqueConstraintViolation(SqliteException exception)
