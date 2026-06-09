@@ -1,5 +1,6 @@
 ﻿using Salryn.Core.Common;
 using Salryn.Core.Models;
+using Salryn.Core.ValueObjects;
 
 namespace Salryn.Core.Repositories;
 
@@ -48,6 +49,26 @@ public interface IInventoryWriteRepository
         CancellationToken cancellationToken = default);
 }
 
+public interface ICashierSessionWriteRepository
+{
+    Task<Result> OpenAsync(
+        CashierSession session,
+        CancellationToken cancellationToken = default);
+
+    Task<Result> CloseAsync(
+        Guid sessionId,
+        Guid userId,
+        Money countedCash,
+        string? notes,
+        CancellationToken cancellationToken = default);
+
+    Task<Result> ForceCloseAsync(
+        Guid sessionId,
+        Guid userId,
+        Money? countedCash,
+        string reason,
+        CancellationToken cancellationToken = default);
+}
 public interface IAuditWriteRepository
 {
     Task<Result> AddAsync(
@@ -61,3 +82,4 @@ public interface IErrorLogWriteRepository
         ErrorLog errorLog,
         CancellationToken cancellationToken = default);
 }
+
