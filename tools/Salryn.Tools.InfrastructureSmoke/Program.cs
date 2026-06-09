@@ -57,6 +57,10 @@ try
             SalesWriteEdgeSmokeChecks.Run(projectRoot);
             break;
 
+        case "sales-read-write":
+            SalesReadWriteIntegrationSmokeChecks.Run(projectRoot);
+            break;
+
         case "reset":
             Reset(projectRoot);
             break;
@@ -73,13 +77,14 @@ try
             InventoryWriteEdgeSmokeChecks.Run(projectRoot);
             SalesWriteSmokeChecks.Run(projectRoot);
             SalesWriteEdgeSmokeChecks.Run(projectRoot);
+            SalesReadWriteIntegrationSmokeChecks.Run(projectRoot);
             Reset(projectRoot);
             Console.WriteLine("FULL SMOKE TEST PASSED AND CLEANED UP.");
             break;
 
         default:
             Console.WriteLine("Unknown command.");
-            Console.WriteLine("Use: status | init | inspect | reset | repositories | product-write | product-write-edge | inventory-write | inventory-write-edge | sales-write | sales-write-edge | full");
+            Console.WriteLine("Use: status | init | inspect | reset | repositories | product-write | product-write-edge | inventory-write | inventory-write-edge | sales-write | sales-write-edge | sales-read-write | full");
             Environment.ExitCode = 1;
             break;
     }
@@ -372,6 +377,8 @@ static string FindProjectRoot(string startPath)
 
     throw new InvalidOperationException("Could not find Salryn.sln from current directory.");
 }
+
+
 
 
 
