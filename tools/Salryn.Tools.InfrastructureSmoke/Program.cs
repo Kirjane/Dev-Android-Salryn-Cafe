@@ -93,6 +93,10 @@ try
             PosCheckoutApplicationBoundarySmokeChecks.Run(projectRoot);
             break;
 
+        case "pos-checkout-application-repository":
+            PosCheckoutApplicationRepositorySmokeChecks.Run(projectRoot);
+            break;
+
         case "reset":
             Reset(projectRoot);
             break;
@@ -118,13 +122,14 @@ try
             PosCheckoutSessionEnforcementSmokeChecks.Run(projectRoot);
             PosCheckoutRepositoryIntegrationSmokeChecks.Run(projectRoot);
             PosCheckoutApplicationBoundarySmokeChecks.Run(projectRoot);
+            PosCheckoutApplicationRepositorySmokeChecks.Run(projectRoot);
             Reset(projectRoot);
             Console.WriteLine("FULL SMOKE TEST PASSED AND CLEANED UP.");
             break;
 
         default:
             Console.WriteLine("Unknown command.");
-            Console.WriteLine("Use: status | init | inspect | reset | repositories | product-write | product-write-edge | inventory-write | inventory-write-edge | sales-write | sales-write-edge | sales-read-write | cashier-session-write | cashier-session-write-edge | cashier-session-read-write | cashier-session-service | cashier-session-service-edge | pos-checkout-session-enforcement | pos-checkout-repository-integration | pos-checkout-application-boundary | full");
+            Console.WriteLine("Use: status | init | inspect | reset | repositories | product-write | product-write-edge | inventory-write | inventory-write-edge | sales-write | sales-write-edge | sales-read-write | cashier-session-write | cashier-session-write-edge | cashier-session-read-write | cashier-session-service | cashier-session-service-edge | pos-checkout-session-enforcement | pos-checkout-repository-integration | pos-checkout-application-boundary | pos-checkout-application-repository | full");
             Environment.ExitCode = 1;
             break;
     }
@@ -417,6 +422,7 @@ static string FindProjectRoot(string startPath)
 
     throw new InvalidOperationException("Could not find Salryn.sln from current directory.");
 }
+
 
 
 
