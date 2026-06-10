@@ -1,0 +1,100 @@
+﻿namespace Salryn.App.WinForms.Features.Checkout;
+
+public sealed record CheckoutLineViewModel(
+    Guid LineId,
+    Guid ProductId,
+    string ProductName,
+    string? Barcode,
+    string UnitName,
+    long QuantityX1000,
+    string QuantityText,
+    long UnitPriceCents,
+    string UnitPriceText,
+    long? CostPriceCents,
+    long DiscountCents,
+    string DiscountText,
+    long GrossCents,
+    string GrossText,
+    long LineTotalCents,
+    string LineTotalText,
+    bool TrackStock);
+
+public sealed record CheckoutTotalsViewModel(
+    long SubtotalCents,
+    string SubtotalText,
+    long SaleDiscountCents,
+    string SaleDiscountText,
+    long TaxCents,
+    string TaxText,
+    long TotalCents,
+    string TotalText,
+    long AmountPaidCents,
+    string AmountPaidText,
+    long ChangeCents,
+    string ChangeText,
+    long BalanceDueCents,
+    string BalanceDueText);
+
+public sealed record CheckoutViewModel(
+    Guid? CashierUserId,
+    string ReceiptNumber,
+    string ProductInputText,
+    string ProductResultText,
+    IReadOnlyList<CheckoutLineViewModel> Lines,
+    CheckoutTotalsViewModel Totals,
+    int PaymentCount,
+    string CashAmountText,
+    long CashAmountCents,
+    bool CanAddPreparedLine,
+    bool CanRemoveSelectedLine,
+    bool CanAddCashPayment,
+    bool CanClearPayments,
+    bool CanCompleteSale,
+    string StatusMessage,
+    bool HasError,
+    string? ErrorCode,
+    string? ErrorMessage)
+{
+    public static CheckoutViewModel Empty()
+    {
+        return new CheckoutViewModel(
+            CashierUserId: null,
+            ReceiptNumber: string.Empty,
+            ProductInputText: string.Empty,
+            ProductResultText: "Waiting for product input.",
+            Lines: Array.Empty<CheckoutLineViewModel>(),
+            Totals: new CheckoutTotalsViewModel(
+                SubtotalCents: 0,
+                SubtotalText: "PHP 0.00",
+                SaleDiscountCents: 0,
+                SaleDiscountText: "PHP 0.00",
+                TaxCents: 0,
+                TaxText: "PHP 0.00",
+                TotalCents: 0,
+                TotalText: "PHP 0.00",
+                AmountPaidCents: 0,
+                AmountPaidText: "PHP 0.00",
+                ChangeCents: 0,
+                ChangeText: "PHP 0.00",
+                BalanceDueCents: 0,
+                BalanceDueText: "PHP 0.00"),
+            PaymentCount: 0,
+            CashAmountText: "PHP 0.00",
+            CashAmountCents: 0,
+            CanAddPreparedLine: false,
+            CanRemoveSelectedLine: false,
+            CanAddCashPayment: false,
+            CanClearPayments: false,
+            CanCompleteSale: false,
+            StatusMessage: "Checkout presenter ready.",
+            HasError: false,
+            ErrorCode: null,
+            ErrorMessage: null);
+    }
+}
+
+public sealed record CheckoutPresenterOperationResult(
+    bool IsSuccess,
+    string? ErrorCode,
+    string? ErrorMessage,
+    CheckoutViewModel State);
