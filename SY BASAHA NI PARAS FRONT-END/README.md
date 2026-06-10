@@ -1,78 +1,43 @@
 ﻿# SY BASAHA NI PARAS FRONT-END
 
-Para ni kang Paras / frontend developer.
+Sy, kani ang handoff para sa front-end side sa SALRYN.
 
-This folder is the SALRYN frontend handoff.
+Ang goal ani nga folder simple ra: para dali nimo masabtan asa na ang project, unsay naa na, unsay pwede hilabtan, ug unsay dapat likayan para dili maguba ang backend.
 
-SALRYN is now inside controlled UI territory. Naa nay backend engine, SQLite infrastructure, checkout draft builder, product picker boundary, checkout shell, presenter, and viewmodel.
+SALRYN karon naa na sa UI stage, pero controlled pa. Naa nay backend foundation, checkout draft engine, product picker boundary, checkout shell, presenter, ug viewmodel. Ang front-end work karon is paglimpyo sa screen, pagtarong sa layout, ug pag-andam sa UI para sa next wiring.
 
-Current sealed state:
-
-- Phase 39: POS Checkout UI Shell
-- Phase 40: POS Checkout UI Presenter/ViewModel Boundary
-
-Current architecture:
+Current flow:
 
     CheckoutShellForm
         -> CheckoutPresenter
             -> CheckoutViewModel
                 -> PosCheckoutDraftTransactionBuilder
 
-Main rule:
+Basic rule:
 
-    UI displays state.
-    Presenter controls UI state.
-    Core owns business rules.
-    Infrastructure owns database.
+    Form = display and user input
+    Presenter = UI state and actions
+    ViewModel = data ready ipakita sa screen
+    Core = rules
+    Infrastructure = database
 
-Do not put database logic inside the form.
+Ayaw ibutang ang database logic sa form. Ayaw i-enable ang Complete Sale by force. Dili pa ta ana nga phase.
 
-Forbidden in UI:
-
-    SqliteConnection
-    SqliteCommand
-    AddCompletedSaleAsync
-    StockMovement
-    CreateSaleWriteRepository
-
-Frontend work now means:
-
-- Make the POS UI clean.
-- Improve layout.
-- Improve labels.
-- Improve spacing.
-- Prepare cart grid.
-- Prepare totals panel.
-- Prepare product result section.
-- Prepare payment section.
-- Keep sale completion disabled.
-
-Not allowed yet:
-
-- No sale completion.
-- No stock movement write.
-- No receipt printing.
-- No direct SQLite in UI.
-- No schema migration.
-- No SQL file.
-- No database file.
-
-Read order:
+Basaha in order:
 
 1. 00-BASAHA-FIRST.md
-2. 01-WHAT-SALRYN-IS.md
-3. 02-CURRENT-REPO-STATE.md
-4. 03-FOLDER-STRUCTURE-GUIDE.md
-5. 04-BACKEND-ARCHITECTURE-BISAYA-ENGLISH.md
-6. 05-FRONTEND-ARCHITECTURE.md
-7. 06-CHECKOUT-UI-FILES-EXPLAINED.md
-8. 07-CODE-SYNTAX-EXPLAINED.md
-9. 08-FRONTEND-RULES-NO-SPAGHETTI.md
-10. 09-PHASE-41-README.md
-11. 10-UI-TASKS-FOR-PARAS.md
-12. 11-TERMS-GLOSSARY-BISAYA-ENGLISH.md
-13. 12-DO-NOT-TOUCH-ZONES.md
-14. 13-RUN-AND-VERIFY.md
-15. 14-FRONTEND-HANDOFF-CHECKLIST.md
-16. 15-CURRENT-CODE-MAP.md
-17. 16-PARAS-QUICK-START.md
+2. 01-UNSA-ANG-SALRYN.md
+3. 02-AS-OF-NOW.md
+4. 03-REPO-MAP.md
+5. 04-BACKEND-MAP.md
+6. 05-FRONT-END-MAP.md
+7. 06-CHECKOUT-FILES.md
+8. 07-CODE-PATTERNS.md
+9. 08-RULES-SA-FRONT-END.md
+10. 09-PHASE-41.md
+11. 10-TASKS-SA-FRONT-END.md
+12. 11-GLOSSARY.md
+13. 12-AYAW-HILABTI.md
+14. 13-RUN-CHECKS.md
+15. 14-CHECKLIST.md
+16. INDEX.md

@@ -1,39 +1,37 @@
-﻿# 12 - Do Not Touch Zones
+﻿# 12 - Ayaw Hilabti
 
-Frontend developer must respect these boundaries.
-
-Do not touch database migrations:
+Ayaw hilabti ang database migrations unless instructed:
 
     src/Salryn.Infrastructure/Data/Migrations/
 
-Do not add SQL files:
+Ayaw pag-add og SQL file:
 
     *.sql
 
-Do not add database files:
+Ayaw pag-commit og database file:
 
     *.db
     *.sqlite
 
-Do not directly use SQLite in UI:
+Ayaw gamita sa UI:
 
     SqliteConnection
     SqliteCommand
     SqliteDataReader
 
-Do not call sale write methods from UI:
+Ayaw tawaga sa UI for now:
 
     AddCompletedSaleAsync
     CompleteSaleAsync
     MarkVoidedAsync
 
-Do not create stock movements from UI:
+Ayaw pag-create og stock movement sa UI:
 
     new StockMovement
     StockMovementType.Sale
     StockMovementType.VoidSale
 
-Avoid touching core rules casually:
+Avoid editing these unless assigned:
 
     src/Salryn.Core/Models/
     src/Salryn.Core/ValueObjects/
@@ -41,25 +39,14 @@ Avoid touching core rules casually:
     src/Salryn.Core/Services/PosCheckoutService.cs
     src/Salryn.Core/Services/PosCheckoutApplicationService.cs
 
-Do not bypass presenter.
-
-Bad:
-
-    Form directly computes everything and writes data.
-
-Good:
-
-    CheckoutPresenterOperationResult result = _presenter.SomeMethod();
-    Render(result.State);
-
-Do not enable Complete Sale manually.
+Ayaw i-enable ang Complete Sale manually.
 
 Wrong:
 
     completeSaleButton.Enabled = true;
 
-Correct later:
+Later, kung allowed na:
 
     completeSaleButton.Enabled = state.CanCompleteSale;
 
-But currently CanCompleteSale must stay false.
+Pero karon, CanCompleteSale stays false.

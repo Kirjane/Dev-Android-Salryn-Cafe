@@ -1,6 +1,6 @@
-﻿# 13 - Run And Verify
+﻿# 13 - Run Checks
 
-Set root:
+Set repo root:
 
     $Root = Join-Path ([Environment]::GetFolderPath("Desktop")) "POS\Salryn"
     Set-Location $Root
@@ -13,7 +13,7 @@ Expected:
 
     Build succeeded
 
-Focused frontend smoke:
+Focused UI smoke:
 
     dotnet run --project "tools\Salryn.Tools.InfrastructureSmoke\Salryn.Tools.InfrastructureSmoke.csproj" -- pos-checkout-ui-presenter-viewmodel
 
@@ -29,7 +29,7 @@ Expected:
 
     FULL SMOKE TEST PASSED AND CLEANED UP.
 
-DB / SQL check:
+Check DB or SQL files:
 
     Get-ChildItem -Path $Root -Recurse -File |
       Where-Object {
@@ -39,13 +39,18 @@ DB / SQL check:
 
 Expected:
 
-    No output
+    no output
 
 Git status:
 
     git status --short
 
-Unexpected files:
+Okay files for this handoff:
+
+    SY BASAHA NI PARAS FRONT-END/...
+    00-HANDOFF/...
+
+Not okay unless expected:
 
     *.db
     *.sqlite

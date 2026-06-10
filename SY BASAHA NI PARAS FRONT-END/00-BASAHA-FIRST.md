@@ -1,66 +1,71 @@
-﻿# 00 - BASAHA FIRST
+﻿# 00 - Basaha First
 
-Paras, basaha ni una before touching the frontend.
+Sy, ayaw ni tan-awa nga murag ordinary WinForms app nga pwede ra ibutang tanan logic sa button click.
 
-This is not a random WinForms app. This is a layered POS system.
+Layered ni ang SALRYN.
 
-SALRYN has these layers:
+Main layers:
 
     Salryn.App.WinForms
-        Frontend / UI
+        UI side. Forms, buttons, labels, grids, presenter, viewmodel.
 
     Salryn.Core
-        Business rules, models, value objects, service contracts
+        Business rules, models, value objects, repository contracts, services.
 
     Salryn.Infrastructure
-        SQLite database, repositories, migrations, initialization
+        SQLite, migrations, repository implementations, database setup.
 
     Salryn.Tools.InfrastructureSmoke
-        Smoke checks / safety verification
+        Safety checks. Mao ni gamiton para mahibaw-an kung naa bay naguba.
 
-Current UI files:
+Pinaka-importante nga front-end files karon:
 
     src/Salryn.App.WinForms/Features/Checkout/CheckoutShellForm.cs
     src/Salryn.App.WinForms/Features/Checkout/CheckoutPresenter.cs
     src/Salryn.App.WinForms/Features/Checkout/CheckoutViewModels.cs
 
-Meaning ani:
+Pasabot ana:
 
-- CheckoutShellForm is the screen.
-- CheckoutPresenter is the bridge/controller for UI state.
-- CheckoutViewModel is the data shape nga ipakita sa screen.
+    CheckoutShellForm
+        actual screen
 
-Good direction:
+    CheckoutPresenter
+        tig-handle sa UI actions ug state
+
+    CheckoutViewModel
+        data nga ready ipakita sa screen
+
+Sakto nga flow:
 
     Form -> Presenter -> ViewModel -> Core
 
-Bad direction:
+Sayop nga flow:
 
     Form -> SQLite directly
 
-Ayaw ibutang ang business logic sa button click.
-
-Bad pattern:
+Ayaw ani:
 
     private void completeSaleButton_Click(object sender, EventArgs e)
     {
         using SqliteConnection connection = new(...);
     }
 
-Correct direction:
+Mas tarong ani:
 
-    private void addButton_Click(object sender, EventArgs e)
+    private void clearButton_Click(object sender, EventArgs e)
     {
-        CheckoutPresenterOperationResult result =
-            _presenter.AddPreparedLine(lineInput);
-
+        CheckoutPresenterOperationResult result = _presenter.ClearDraft();
         Render(result.State);
     }
 
-Current frontend mission:
+Front-end work karon:
 
-- Make the interface clean.
-- Prepare the UI for future wiring.
-- Do not force sale completion.
-- Do not force receipt printing.
-- Do not force inventory movement.
+- tarungon ang layout
+- tarungon ang labels
+- limpyo nga grid
+- klaro nga totals panel
+- klaro nga payment area
+- andam nga product search area
+- ayaw pa i-complete ang sale
+- ayaw pa i-print receipt
+- ayaw pa i-write ang stock movement

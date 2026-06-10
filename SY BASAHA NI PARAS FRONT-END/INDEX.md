@@ -1,32 +1,31 @@
-﻿# INDEX
+﻿# Index
 
-This folder is the frontend handoff.
+Start here:
 
-Files:
+    README.md
+    00-BASAHA-FIRST.md
 
-- README.md
-- 00-BASAHA-FIRST.md
-- 01-WHAT-SALRYN-IS.md
-- 02-CURRENT-REPO-STATE.md
-- 03-FOLDER-STRUCTURE-GUIDE.md
-- 04-BACKEND-ARCHITECTURE-BISAYA-ENGLISH.md
-- 05-FRONTEND-ARCHITECTURE.md
-- 06-CHECKOUT-UI-FILES-EXPLAINED.md
-- 07-CODE-SYNTAX-EXPLAINED.md
-- 08-FRONTEND-RULES-NO-SPAGHETTI.md
-- 09-PHASE-41-README.md
-- 10-UI-TASKS-FOR-PARAS.md
-- 11-TERMS-GLOSSARY-BISAYA-ENGLISH.md
-- 12-DO-NOT-TOUCH-ZONES.md
-- 13-RUN-AND-VERIFY.md
-- 14-FRONTEND-HANDOFF-CHECKLIST.md
-- 15-CURRENT-CODE-MAP.md
-- 16-PARAS-QUICK-START.md
+Main guide:
 
-Core message:
+    01-UNSA-ANG-SALRYN.md
+    02-AS-OF-NOW.md
+    03-REPO-MAP.md
+    04-BACKEND-MAP.md
+    05-FRONT-END-MAP.md
+    06-CHECKOUT-FILES.md
+    07-CODE-PATTERNS.md
+    08-RULES-SA-FRONT-END.md
+    09-PHASE-41.md
+    10-TASKS-SA-FRONT-END.md
+    11-GLOSSARY.md
+    12-AYAW-HILABTI.md
+    13-RUN-CHECKS.md
+    14-CHECKLIST.md
+
+Main reminder:
 
     Form -> Presenter -> ViewModel -> Core
 
-Do not use:
+Not this:
 
     Form -> SQLite directly
