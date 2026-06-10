@@ -1,12 +1,16 @@
 ﻿using System.Globalization;
 using Salryn.Core.Common;
 using Salryn.Core.Models;
+using Salryn.Core.ReadModels;
 using Salryn.Core.Services;
 
 namespace Salryn.App.WinForms.Features.Checkout;
 
 public sealed class CheckoutPresenter
 {
+    private readonly ICheckoutProductSearchBoundary? _productSearchBoundary;
+    private readonly PosCheckoutProductPickerBoundary _productPickerBoundary = new();
+
     private PosCheckoutDraftTransactionBuilder _builder = new();
 
     private Guid? _cashierUserId;
@@ -16,9 +20,17 @@ public sealed class CheckoutPresenter
     private string _cashAmountText = "PHP 0.00";
     private long _cashAmountCents;
     private Guid? _selectedLineId;
+    private PosCheckoutDraftLineInput? _preparedProductLineInput;
+    private CheckoutPreparedProductViewModel? _preparedProduct;
 
     public CheckoutPresenter()
+        : this(productSearchBoundary: null)
     {
+    }
+
+    public CheckoutPresenter(ICheckoutProductSearchBoundary? productSearchBoundary)
+    {
+        _productSearchBoundary = productSearchBoundary;
         State = CheckoutViewModel.Empty();
         _ = RefreshState("Checkout presenter ready.");
     }
@@ -35,6 +47,8 @@ public sealed class CheckoutPresenter
         _cashAmountText = "PHP 0.00";
         _cashAmountCents = 0;
         _selectedLineId = null;
+        _preparedProductLineInput = null;
+        _preparedProduct = null;
 
         return RefreshState("Checkout presenter initialized.");
     }
@@ -72,11 +86,117 @@ public sealed class CheckoutPresenter
     public CheckoutPresenterOperationResult SetProductInputText(string? productInputText)
     {
         _productInputText = productInputText?.Trim() ?? string.Empty;
-        _productResultText = string.IsNullOrWhiteSpace(_productInputText)
-            ? "Waiting for product input."
-            : "Product lookup will be wired in a later phase.";
+        _preparedProductLineInput = null;
+        _preparedProduct = null;
+
+        if (string.IsNullOrWhiteSpace(_productInputText))
+        {
+            _productResultText = "Waiting for product input.";
+        }
+        else if (_productSearchBoundary is null)
+        {
+            _productResultText = "Product search boundary is not wired yet.";
+        }
+        else
+        {
+            _productResultText = "Ready to search product.";
+        }
 
         return RefreshState("Product input updated.");
+    }
+
+    public async Task<CheckoutPresenterOperationResult> SearchProductAsync(
+        string? productInputText,
+        CancellationToken cancellationToken = default)
+    {
+        SetProductInputText(productInputText);
+
+        if (string.IsNullOrWhiteSpace(_productInputText))
+        {
+            return Fail(
+                "CheckoutUi.ProductSearchTextRequired",
+                "Enter or scan a product before searching.");
+        }
+
+        if (_productSearchBoundary is null)
+        {
+            return Fail(
+                "CheckoutUi.ProductSearchBoundaryMissing",
+                "Product search is not wired yet.");
+        }
+
+        Result<ProductLookupReadModel?> searchResult =
+            await _productSearchBoundary.FindProductAsync(
+                _productInputText,
+                cancellationToken).ConfigureAwait(false);
+
+        if (searchResult.IsFailure)
+        {
+            return FailFrom(searchResult);
+        }
+
+        ProductLookupReadModel? product = searchResult.Value;
+
+        if (product is null)
+        {
+            _preparedProductLineInput = null;
+            _preparedProduct = null;
+            _productResultText = $"No product found for '{_productInputText}'.";
+
+            return RefreshState("Product not found.");
+        }
+
+        Result<PosCheckoutDraftLineInput> lineInputResult =
+            _productPickerBoundary.CreateLineInput(product);
+
+        if (lineInputResult.IsFailure)
+        {
+            _preparedProductLineInput = null;
+            _preparedProduct = null;
+
+            return FailFrom(lineInputResult);
+        }
+
+        _preparedProductLineInput = lineInputResult.Value;
+        _preparedProduct = MapPreparedProduct(product);
+        _productResultText = $"{product.Name} is ready to add.";
+
+        return RefreshState("Product found and prepared.");
+    }
+
+    public CheckoutPresenterOperationResult ClearProductSearch()
+    {
+        _productInputText = string.Empty;
+        _productResultText = "Waiting for product input.";
+        _preparedProductLineInput = null;
+        _preparedProduct = null;
+
+        return RefreshState("Product search cleared.");
+    }
+
+    public CheckoutPresenterOperationResult AddPreparedProductLine()
+    {
+        if (_preparedProductLineInput is null)
+        {
+            return Fail(
+                "CheckoutUi.PreparedProductRequired",
+                "Search and prepare a product before adding it to the draft.");
+        }
+
+        Result<PosCheckoutDraftLine> result = _builder.AddLine(_preparedProductLineInput);
+
+        if (result.IsFailure)
+        {
+            return FailFrom(result);
+        }
+
+        _selectedLineId = result.Value.Id;
+        _preparedProductLineInput = null;
+        _preparedProduct = null;
+        _productInputText = string.Empty;
+        _productResultText = "Waiting for product input.";
+
+        return RefreshState("Prepared product added to draft.");
     }
 
     public CheckoutPresenterOperationResult AddPreparedLine(PosCheckoutDraftLineInput? lineInput)
@@ -241,18 +361,22 @@ public sealed class CheckoutPresenter
 
         bool hasLines = lines.Count > 0;
         bool hasPayments = transaction.Payments.Count > 0;
+        bool hasProductInput = !string.IsNullOrWhiteSpace(_productInputText);
 
         State = new CheckoutViewModel(
             CashierUserId: _cashierUserId,
             ReceiptNumber: _receiptNumber,
             ProductInputText: _productInputText,
             ProductResultText: _productResultText,
+            PreparedProduct: _preparedProduct,
             Lines: lines,
             Totals: MapTotals(transaction.Totals),
             PaymentCount: transaction.Payments.Count,
             CashAmountText: _cashAmountText,
             CashAmountCents: _cashAmountCents,
-            CanAddPreparedLine: !string.IsNullOrWhiteSpace(_productInputText),
+            CanSearchProduct: _productSearchBoundary is not null && hasProductInput,
+            CanAddPreparedLine: hasProductInput || _preparedProductLineInput is not null,
+            CanAddPreparedProductLine: _preparedProductLineInput is not null,
             CanRemoveSelectedLine: hasLines,
             CanAddCashPayment: hasLines && _cashAmountCents > 0,
             CanClearPayments: hasPayments,
@@ -316,6 +440,26 @@ public sealed class CheckoutPresenter
             LineTotalCents: line.LineTotalCents,
             LineTotalText: FormatMoney(line.LineTotalCents),
             TrackStock: line.TrackStock);
+    }
+
+    private static CheckoutPreparedProductViewModel MapPreparedProduct(ProductLookupReadModel product)
+    {
+        return new CheckoutPreparedProductViewModel(
+            ProductId: product.Id,
+            ProductName: product.Name,
+            Sku: product.Sku,
+            Barcode: product.Barcode,
+            UnitName: product.UnitName,
+            UnitPriceCents: product.SellingPrice.Cents,
+            UnitPriceText: FormatMoney(product.SellingPrice.Cents),
+            CostPriceCents: product.CostPrice?.Cents,
+            CostPriceText: product.CostPrice is null
+                ? "PHP 0.00"
+                : FormatMoney(product.CostPrice.Value.Cents),
+            StockOnHandX1000: product.StockOnHand.ValueX1000,
+            StockOnHandText: FormatQuantity(product.StockOnHand.ValueX1000),
+            TrackStock: product.TrackStock,
+            IsActive: product.IsActive);
     }
 
     private static CheckoutTotalsViewModel MapTotals(PosCheckoutDraftTotals totals)

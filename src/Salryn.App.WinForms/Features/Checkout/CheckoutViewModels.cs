@@ -19,6 +19,21 @@ public sealed record CheckoutLineViewModel(
     string LineTotalText,
     bool TrackStock);
 
+public sealed record CheckoutPreparedProductViewModel(
+    Guid ProductId,
+    string ProductName,
+    string? Sku,
+    string? Barcode,
+    string UnitName,
+    long UnitPriceCents,
+    string UnitPriceText,
+    long? CostPriceCents,
+    string CostPriceText,
+    long StockOnHandX1000,
+    string StockOnHandText,
+    bool TrackStock,
+    bool IsActive);
+
 public sealed record CheckoutTotalsViewModel(
     long SubtotalCents,
     string SubtotalText,
@@ -40,12 +55,15 @@ public sealed record CheckoutViewModel(
     string ReceiptNumber,
     string ProductInputText,
     string ProductResultText,
+    CheckoutPreparedProductViewModel? PreparedProduct,
     IReadOnlyList<CheckoutLineViewModel> Lines,
     CheckoutTotalsViewModel Totals,
     int PaymentCount,
     string CashAmountText,
     long CashAmountCents,
+    bool CanSearchProduct,
     bool CanAddPreparedLine,
+    bool CanAddPreparedProductLine,
     bool CanRemoveSelectedLine,
     bool CanAddCashPayment,
     bool CanClearPayments,
@@ -62,6 +80,7 @@ public sealed record CheckoutViewModel(
             ReceiptNumber: string.Empty,
             ProductInputText: string.Empty,
             ProductResultText: "Waiting for product input.",
+            PreparedProduct: null,
             Lines: Array.Empty<CheckoutLineViewModel>(),
             Totals: new CheckoutTotalsViewModel(
                 SubtotalCents: 0,
@@ -81,7 +100,9 @@ public sealed record CheckoutViewModel(
             PaymentCount: 0,
             CashAmountText: "PHP 0.00",
             CashAmountCents: 0,
+            CanSearchProduct: false,
             CanAddPreparedLine: false,
+            CanAddPreparedProductLine: false,
             CanRemoveSelectedLine: false,
             CanAddCashPayment: false,
             CanClearPayments: false,
