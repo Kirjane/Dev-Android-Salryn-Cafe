@@ -5,11 +5,42 @@ namespace Salryn.App.WinForms.Features.Checkout;
 
 public sealed class CheckoutShellForm : Form
 {
+    private readonly CheckoutPresenter _presenter;
+
+    private readonly Label _subtitleLabel = new();
+    private readonly TextBox _productInputTextBox = new();
+    private readonly Button _searchButton = new();
+    private readonly Button _addItemButton = new();
+    private readonly Label _resultLabel = new();
+    private readonly Label _preparedProductLabel = new();
+    private readonly DataGridView _cartGrid = new();
+
+    private readonly Label _subtotalValueLabel = new();
+    private readonly Label _discountValueLabel = new();
+    private readonly Label _taxValueLabel = new();
+    private readonly Label _totalValueLabel = new();
+    private readonly Label _paidValueLabel = new();
+    private readonly Label _balanceValueLabel = new();
+
+    private readonly TextBox _cashAmountTextBox = new();
+    private readonly Button _payCashButton = new();
+    private readonly Button _removeItemButton = new();
+    private readonly Button _clearCartButton = new();
+    private readonly Button _completeSaleButton = new();
     private readonly Label _statusLabel = new();
 
+    private bool _isRendering;
+
     public CheckoutShellForm()
+        : this(new CheckoutPresenter(new CheckoutDemoProductSearchBoundary()))
     {
-        Text = "SALRYN POS Checkout - UI Shell";
+    }
+
+    public CheckoutShellForm(CheckoutPresenter presenter)
+    {
+        _presenter = presenter ?? throw new ArgumentNullException(nameof(presenter));
+
+        Text = "SALRYN POS Checkout - Front-end Attempt";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(1180, 720);
         Size = new Size(1280, 780);
@@ -17,6 +48,9 @@ public sealed class CheckoutShellForm : Form
         BackColor = Color.FromArgb(245, 247, 250);
 
         BuildShell();
+        WireEvents();
+
+        Render(_presenter.Initialize().State);
     }
 
     private void BuildShell()
@@ -35,7 +69,7 @@ public sealed class CheckoutShellForm : Form
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 26F));
 
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 76F));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 122F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 145F));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58F));
 
@@ -61,6 +95,109 @@ public sealed class CheckoutShellForm : Form
         root.SetColumnSpan(status, 3);
     }
 
+    private void WireEvents()
+    {
+        _productInputTextBox.TextChanged += (_, _) =>
+        {
+            if (_isRendering)
+            {
+                return;
+            }
+
+            Render(_presenter.SetProductInputText(_productInputTextBox.Text).State);
+        };
+
+        _productInputTextBox.KeyDown += async (_, e) =>
+        {
+            if (e.KeyCode != Keys.Enter)
+            {
+                return;
+            }
+
+            e.SuppressKeyPress = true;
+            await SearchCurrentProductAsync();
+        };
+
+        _searchButton.Click += async (_, _) => await SearchCurrentProductAsync();
+
+        _addItemButton.Click += (_, _) =>
+        {
+            Render(_presenter.AddPreparedProductLine().State);
+            _productInputTextBox.Focus();
+        };
+
+        _cartGrid.SelectionChanged += (_, _) =>
+        {
+            if (_isRendering)
+            {
+                return;
+            }
+
+            Guid? lineId = GetSelectedLineId();
+            Render(_presenter.SelectLine(lineId).State);
+        };
+
+        _removeItemButton.Click += (_, _) =>
+        {
+            Guid? lineId = GetSelectedLineId();
+
+            if (lineId.HasValue)
+            {
+                Render(_presenter.RemoveLine(lineId.Value).State);
+            }
+        };
+
+        _clearCartButton.Click += (_, _) =>
+        {
+            Render(_presenter.ClearDraft().State);
+            _productInputTextBox.Focus();
+        };
+
+        _cashAmountTextBox.TextChanged += (_, _) =>
+        {
+            if (_isRendering)
+            {
+                return;
+            }
+
+            CheckoutPresenterOperationResult result =
+                _presenter.SetCashAmountText(_cashAmountTextBox.Text);
+
+            Render(result.State);
+        };
+
+        _payCashButton.Click += (_, _) =>
+        {
+            CheckoutPresenterOperationResult amountResult =
+                _presenter.SetCashAmountText(_cashAmountTextBox.Text);
+
+            if (!amountResult.IsSuccess)
+            {
+                Render(amountResult.State);
+                return;
+            }
+
+            Render(_presenter.AddCashPayment().State);
+        };
+    }
+
+    private async Task SearchCurrentProductAsync()
+    {
+        _searchButton.Enabled = false;
+
+        try
+        {
+            CheckoutPresenterOperationResult result =
+                await _presenter.SearchProductAsync(_productInputTextBox.Text);
+
+            Render(result.State);
+        }
+        finally
+        {
+            _searchButton.Enabled = _presenter.State.CanSearchProduct;
+        }
+    }
+
     private Control CreateHeader()
     {
         Panel panel = new()
@@ -79,30 +216,27 @@ public sealed class CheckoutShellForm : Form
             Location = new Point(18, 10)
         };
 
-        Label subtitle = new()
-        {
-            AutoSize = true,
-            Text = "UI shell only — product search, cart actions, payment, and sale completion are not wired yet.",
-            Font = new Font("Segoe UI", 9.5F, FontStyle.Regular),
-            ForeColor = Color.FromArgb(210, 220, 230),
-            Location = new Point(21, 48)
-        };
+        _subtitleLabel.AutoSize = true;
+        _subtitleLabel.Text = "Front-end attempt — product search and draft cart are bound to presenter state.";
+        _subtitleLabel.Font = new Font("Segoe UI", 9.5F, FontStyle.Regular);
+        _subtitleLabel.ForeColor = Color.FromArgb(210, 220, 230);
+        _subtitleLabel.Location = new Point(21, 48);
 
         panel.Controls.Add(title);
-        panel.Controls.Add(subtitle);
+        panel.Controls.Add(_subtitleLabel);
 
         return panel;
     }
 
     private Control CreateProductInputSection()
     {
-        GroupBox group = CreateGroupBox("Product Scan / Search Placeholder");
+        GroupBox group = CreateGroupBox("Product Scan / Search");
 
         TableLayoutPanel layout = new()
         {
             Dock = DockStyle.Fill,
             ColumnCount = 5,
-            RowCount = 2,
+            RowCount = 3,
             Padding = new Padding(12)
         };
 
@@ -114,34 +248,42 @@ public sealed class CheckoutShellForm : Form
 
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
 
         Label inputLabel = CreateFieldLabel("Barcode / Product:");
-        TextBox input = new()
-        {
-            Dock = DockStyle.Fill,
-            PlaceholderText = "Scan barcode or type product name later...",
-            Enabled = false
-        };
 
-        Button scanButton = CreateDisabledButton("Scan / Search");
-        Button addButton = CreateDisabledButton("Add Item");
+        _productInputTextBox.Dock = DockStyle.Fill;
+        _productInputTextBox.PlaceholderText = "Try 480000000001, COFFEE, SARDINES, or RICE...";
+        _productInputTextBox.Enabled = true;
 
-        Label resultLabel = new()
-        {
-            Dock = DockStyle.Fill,
-            Text = "Product result placeholder: product lookup is not wired in Phase 39.",
-            ForeColor = Color.FromArgb(90, 100, 115),
-            TextAlign = ContentAlignment.MiddleLeft
-        };
+        _searchButton.Dock = DockStyle.Fill;
+        _searchButton.Text = "Scan / Search";
+        _searchButton.UseVisualStyleBackColor = true;
+
+        _addItemButton.Dock = DockStyle.Fill;
+        _addItemButton.Text = "Add Item";
+        _addItemButton.UseVisualStyleBackColor = true;
+
+        _resultLabel.Dock = DockStyle.Fill;
+        _resultLabel.ForeColor = Color.FromArgb(90, 100, 115);
+        _resultLabel.TextAlign = ContentAlignment.MiddleLeft;
+
+        _preparedProductLabel.Dock = DockStyle.Fill;
+        _preparedProductLabel.ForeColor = Color.FromArgb(45, 58, 75);
+        _preparedProductLabel.TextAlign = ContentAlignment.MiddleLeft;
 
         layout.Controls.Add(inputLabel, 0, 0);
-        layout.Controls.Add(input, 1, 0);
-        layout.Controls.Add(scanButton, 2, 0);
-        layout.Controls.Add(addButton, 3, 0);
+        layout.Controls.Add(_productInputTextBox, 1, 0);
+        layout.Controls.Add(_searchButton, 2, 0);
+        layout.Controls.Add(_addItemButton, 3, 0);
 
         layout.Controls.Add(CreateFieldLabel("Result:"), 0, 1);
-        layout.Controls.Add(resultLabel, 1, 1);
-        layout.SetColumnSpan(resultLabel, 4);
+        layout.Controls.Add(_resultLabel, 1, 1);
+        layout.SetColumnSpan(_resultLabel, 4);
+
+        layout.Controls.Add(CreateFieldLabel("Prepared:"), 0, 2);
+        layout.Controls.Add(_preparedProductLabel, 1, 2);
+        layout.SetColumnSpan(_preparedProductLabel, 4);
 
         group.Controls.Add(layout);
 
@@ -150,31 +292,29 @@ public sealed class CheckoutShellForm : Form
 
     private Control CreateCartSection()
     {
-        GroupBox group = CreateGroupBox("Draft Cart Placeholder");
+        GroupBox group = CreateGroupBox("Draft Cart");
 
-        DataGridView grid = new()
-        {
-            Dock = DockStyle.Fill,
-            ReadOnly = true,
-            AllowUserToAddRows = false,
-            AllowUserToDeleteRows = false,
-            AllowUserToResizeRows = false,
-            AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-            BackgroundColor = Color.White,
-            BorderStyle = BorderStyle.None,
-            RowHeadersVisible = false,
-            SelectionMode = DataGridViewSelectionMode.FullRowSelect
-        };
+        _cartGrid.Dock = DockStyle.Fill;
+        _cartGrid.ReadOnly = true;
+        _cartGrid.AllowUserToAddRows = false;
+        _cartGrid.AllowUserToDeleteRows = false;
+        _cartGrid.AllowUserToResizeRows = false;
+        _cartGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+        _cartGrid.BackgroundColor = Color.White;
+        _cartGrid.BorderStyle = BorderStyle.None;
+        _cartGrid.RowHeadersVisible = false;
+        _cartGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+        _cartGrid.MultiSelect = false;
 
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "ProductColumn", HeaderText = "Product" });
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "BarcodeColumn", HeaderText = "Barcode" });
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "QtyColumn", HeaderText = "Qty" });
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "UnitColumn", HeaderText = "Unit" });
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "PriceColumn", HeaderText = "Price" });
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "DiscountColumn", HeaderText = "Discount" });
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "TotalColumn", HeaderText = "Line Total" });
+        _cartGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "ProductColumn", HeaderText = "Product" });
+        _cartGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "BarcodeColumn", HeaderText = "Barcode" });
+        _cartGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "QtyColumn", HeaderText = "Qty" });
+        _cartGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "UnitColumn", HeaderText = "Unit" });
+        _cartGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "PriceColumn", HeaderText = "Price" });
+        _cartGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "DiscountColumn", HeaderText = "Discount" });
+        _cartGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "TotalColumn", HeaderText = "Line Total" });
 
-        group.Controls.Add(grid);
+        group.Controls.Add(_cartGrid);
 
         return group;
     }
@@ -202,7 +342,7 @@ public sealed class CheckoutShellForm : Form
 
     private Control CreateTotalsSection()
     {
-        GroupBox group = CreateGroupBox("Totals Placeholder");
+        GroupBox group = CreateGroupBox("Totals");
 
         TableLayoutPanel totals = new()
         {
@@ -220,12 +360,12 @@ public sealed class CheckoutShellForm : Form
             totals.RowStyles.Add(new RowStyle(SizeType.Percent, 16.66F));
         }
 
-        AddTotalRow(totals, 0, "Subtotal", "PHP 0.00", false);
-        AddTotalRow(totals, 1, "Discount", "PHP 0.00", false);
-        AddTotalRow(totals, 2, "Tax", "PHP 0.00", false);
-        AddTotalRow(totals, 3, "Total", "PHP 0.00", true);
-        AddTotalRow(totals, 4, "Paid", "PHP 0.00", false);
-        AddTotalRow(totals, 5, "Balance", "PHP 0.00", true);
+        AddTotalRow(totals, 0, "Subtotal", _subtotalValueLabel, false);
+        AddTotalRow(totals, 1, "Discount", _discountValueLabel, false);
+        AddTotalRow(totals, 2, "Tax", _taxValueLabel, false);
+        AddTotalRow(totals, 3, "Total", _totalValueLabel, true);
+        AddTotalRow(totals, 4, "Paid", _paidValueLabel, false);
+        AddTotalRow(totals, 5, "Balance", _balanceValueLabel, true);
 
         group.Controls.Add(totals);
 
@@ -234,7 +374,7 @@ public sealed class CheckoutShellForm : Form
 
     private Control CreatePaymentSection()
     {
-        GroupBox group = CreateGroupBox("Payment Placeholder");
+        GroupBox group = CreateGroupBox("Payment");
 
         TableLayoutPanel layout = new()
         {
@@ -261,20 +401,18 @@ public sealed class CheckoutShellForm : Form
         method.Items.Add("Cash");
         method.SelectedIndex = 0;
 
-        TextBox amount = new()
-        {
-            Dock = DockStyle.Fill,
-            Enabled = false,
-            PlaceholderText = "0.00"
-        };
+        _cashAmountTextBox.Dock = DockStyle.Fill;
+        _cashAmountTextBox.PlaceholderText = "0.00";
 
-        Button payCash = CreateDisabledButton("Pay Cash");
+        _payCashButton.Dock = DockStyle.Fill;
+        _payCashButton.Text = "Pay Cash";
+        _payCashButton.UseVisualStyleBackColor = true;
 
         layout.Controls.Add(CreateFieldLabel("Method:"), 0, 0);
         layout.Controls.Add(method, 1, 0);
         layout.Controls.Add(CreateFieldLabel("Amount:"), 0, 1);
-        layout.Controls.Add(amount, 1, 1);
-        layout.Controls.Add(payCash, 1, 2);
+        layout.Controls.Add(_cashAmountTextBox, 1, 1);
+        layout.Controls.Add(_payCashButton, 1, 2);
 
         group.Controls.Add(layout);
 
@@ -283,7 +421,7 @@ public sealed class CheckoutShellForm : Form
 
     private Control CreateActionsSection()
     {
-        GroupBox group = CreateGroupBox("Checkout Actions Placeholder");
+        GroupBox group = CreateGroupBox("Checkout Actions");
 
         FlowLayoutPanel actions = new()
         {
@@ -293,21 +431,39 @@ public sealed class CheckoutShellForm : Form
             Padding = new Padding(12)
         };
 
-        actions.Controls.Add(CreateWideDisabledButton("Remove Item"));
-        actions.Controls.Add(CreateWideDisabledButton("Clear Cart"));
-        actions.Controls.Add(CreateWideDisabledButton("Hold Transaction"));
-        actions.Controls.Add(CreateWideDisabledButton("Complete Sale"));
+        _removeItemButton.Width = 260;
+        _removeItemButton.Height = 38;
+        _removeItemButton.Text = "Remove Item";
+        _removeItemButton.UseVisualStyleBackColor = true;
+        _removeItemButton.Margin = new Padding(0, 0, 0, 8);
+
+        _clearCartButton.Width = 260;
+        _clearCartButton.Height = 38;
+        _clearCartButton.Text = "Clear Cart";
+        _clearCartButton.UseVisualStyleBackColor = true;
+        _clearCartButton.Margin = new Padding(0, 0, 0, 8);
+
+        _completeSaleButton.Width = 260;
+        _completeSaleButton.Height = 38;
+        _completeSaleButton.Text = "Complete Sale";
+        _completeSaleButton.UseVisualStyleBackColor = true;
+        _completeSaleButton.Margin = new Padding(0, 0, 0, 8);
+        _completeSaleButton.Enabled = false;
 
         Label note = new()
         {
             AutoSize = false,
             Width = 260,
-            Height = 70,
-            Text = "Actions are intentionally disabled in Phase 39. Checkout completion remains gated for later phases.",
+            Height = 80,
+            Text = "Complete Sale is still locked. This phase only binds product search, draft cart, totals, and cash draft payment to presenter state.",
             ForeColor = Color.FromArgb(90, 100, 115)
         };
 
+        actions.Controls.Add(_removeItemButton);
+        actions.Controls.Add(_clearCartButton);
+        actions.Controls.Add(_completeSaleButton);
         actions.Controls.Add(note);
+
         group.Controls.Add(actions);
 
         return group;
@@ -323,13 +479,100 @@ public sealed class CheckoutShellForm : Form
         };
 
         _statusLabel.Dock = DockStyle.Fill;
-        _statusLabel.Text = "Engine ready. UI shell only. No product lookup, cart mutation, payment, sale completion, printing, or stock movement is wired yet.";
         _statusLabel.ForeColor = Color.FromArgb(45, 58, 75);
         _statusLabel.TextAlign = ContentAlignment.MiddleLeft;
 
         panel.Controls.Add(_statusLabel);
 
         return panel;
+    }
+
+    private void Render(CheckoutViewModel state)
+    {
+        _isRendering = true;
+
+        try
+        {
+            _productInputTextBox.Text = state.ProductInputText;
+            _resultLabel.Text = state.ProductResultText;
+
+            _preparedProductLabel.Text = state.PreparedProduct is null
+                ? "No prepared product."
+                : $"{state.PreparedProduct.ProductName} | {state.PreparedProduct.Barcode ?? "no barcode"} | {state.PreparedProduct.UnitPriceText} | Stock: {state.PreparedProduct.StockOnHandText} {state.PreparedProduct.UnitName}";
+
+            _subtotalValueLabel.Text = state.Totals.SubtotalText;
+            _discountValueLabel.Text = state.Totals.SaleDiscountText;
+            _taxValueLabel.Text = state.Totals.TaxText;
+            _totalValueLabel.Text = state.Totals.TotalText;
+            _paidValueLabel.Text = state.Totals.AmountPaidText;
+            _balanceValueLabel.Text = state.Totals.BalanceDueText;
+
+            _cashAmountTextBox.Text = state.CashAmountCents == 0
+                ? string.Empty
+                : (state.CashAmountCents / 100m).ToString("0.00");
+
+            _searchButton.Enabled = state.CanSearchProduct;
+            _addItemButton.Enabled = state.CanAddPreparedProductLine;
+            _removeItemButton.Enabled = state.CanRemoveSelectedLine && GetSelectedLineId().HasValue;
+            _clearCartButton.Enabled = state.Lines.Count > 0;
+            _payCashButton.Enabled = state.CanAddCashPayment;
+            _completeSaleButton.Enabled = false;
+
+            _statusLabel.Text = state.HasError
+                ? $"{state.StatusMessage} [{state.ErrorCode}]"
+                : state.StatusMessage;
+
+            RenderCart(state.Lines);
+        }
+        finally
+        {
+            _isRendering = false;
+        }
+    }
+
+    private void RenderCart(IReadOnlyList<CheckoutLineViewModel> lines)
+    {
+        Guid? selectedLineId = GetSelectedLineId();
+
+        _cartGrid.Rows.Clear();
+
+        foreach (CheckoutLineViewModel line in lines)
+        {
+            int rowIndex = _cartGrid.Rows.Add(
+                line.ProductName,
+                line.Barcode ?? string.Empty,
+                line.QuantityText,
+                line.UnitName,
+                line.UnitPriceText,
+                line.DiscountText,
+                line.LineTotalText);
+
+            _cartGrid.Rows[rowIndex].Tag = line.LineId;
+        }
+
+        if (selectedLineId.HasValue)
+        {
+            foreach (DataGridViewRow row in _cartGrid.Rows)
+            {
+                if (row.Tag is Guid id && id == selectedLineId.Value)
+                {
+                    row.Selected = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    private Guid? GetSelectedLineId()
+    {
+        if (_cartGrid.SelectedRows.Count == 0)
+        {
+            return null;
+        }
+
+        return _cartGrid.SelectedRows[0].Tag is Guid lineId
+            ? lineId
+            : null;
     }
 
     private static GroupBox CreateGroupBox(string title)
@@ -354,35 +597,11 @@ public sealed class CheckoutShellForm : Form
         };
     }
 
-    private static Button CreateDisabledButton(string text)
-    {
-        return new Button
-        {
-            Dock = DockStyle.Fill,
-            Text = text,
-            Enabled = false,
-            UseVisualStyleBackColor = true
-        };
-    }
-
-    private static Button CreateWideDisabledButton(string text)
-    {
-        return new Button
-        {
-            Width = 260,
-            Height = 38,
-            Text = text,
-            Enabled = false,
-            UseVisualStyleBackColor = true,
-            Margin = new Padding(0, 0, 0, 8)
-        };
-    }
-
     private static void AddTotalRow(
         TableLayoutPanel table,
         int row,
         string label,
-        string value,
+        Label valueControl,
         bool emphasized)
     {
         Font font = emphasized
@@ -398,19 +617,15 @@ public sealed class CheckoutShellForm : Form
             ForeColor = Color.FromArgb(55, 65, 80)
         };
 
-        Label valueControl = new()
-        {
-            Dock = DockStyle.Fill,
-            Text = value,
-            Font = font,
-            TextAlign = ContentAlignment.MiddleRight,
-            ForeColor = emphasized
-                ? Color.FromArgb(20, 31, 46)
-                : Color.FromArgb(55, 65, 80)
-        };
+        valueControl.Dock = DockStyle.Fill;
+        valueControl.Text = "PHP 0.00";
+        valueControl.Font = font;
+        valueControl.TextAlign = ContentAlignment.MiddleRight;
+        valueControl.ForeColor = emphasized
+            ? Color.FromArgb(20, 31, 46)
+            : Color.FromArgb(55, 65, 80);
 
         table.Controls.Add(labelControl, 0, row);
         table.Controls.Add(valueControl, 1, row);
     }
 }
-
