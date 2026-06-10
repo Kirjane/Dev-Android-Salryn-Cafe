@@ -1,21 +1,32 @@
 ﻿using Salryn.App.WinForms.Composition;
+using Salryn.App.WinForms.Features.Checkout;
 
 namespace Salryn.App.WinForms;
 
 static class Program
 {
-    /// <summary>
-    ///  The main entry point for the application.
-    /// </summary>
     [STAThread]
     static void Main()
     {
-        // To customize application configuration such as set high DPI settings or default font,
-        // see https://aka.ms/applicationconfiguration.
         ApplicationConfiguration.Initialize();
 
         SalrynAppServices services = SalrynAppServices.CreateProduction();
-        Application.Run(new Salryn.App.WinForms.Features.Checkout.CheckoutShellForm());
+
+        var initializationResult = services.DatabaseInitialization.InitializeDatabase();
+
+        if (initializationResult.IsFailure)
+        {
+            MessageBox.Show(
+                initializationResult.Error,
+                "SALRYN Startup Failed",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+
+            return;
+        }
+
+        CheckoutPresenter checkoutPresenter = new(services.CheckoutProductSearch);
+
+        Application.Run(new CheckoutShellForm(checkoutPresenter));
     }
 }
-

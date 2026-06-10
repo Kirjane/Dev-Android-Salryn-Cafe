@@ -31,16 +31,11 @@ public sealed class CheckoutShellForm : Form
 
     private bool _isRendering;
 
-    public CheckoutShellForm()
-        : this(new CheckoutPresenter(new CheckoutDemoProductSearchBoundary()))
-    {
-    }
-
     public CheckoutShellForm(CheckoutPresenter presenter)
     {
         _presenter = presenter ?? throw new ArgumentNullException(nameof(presenter));
 
-        Text = "SALRYN POS Checkout - Front-end Attempt";
+        Text = "SALRYN POS Checkout - Repository Search Attempt";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(1180, 720);
         Size = new Size(1280, 780);
@@ -217,7 +212,7 @@ public sealed class CheckoutShellForm : Form
         };
 
         _subtitleLabel.AutoSize = true;
-        _subtitleLabel.Text = "Front-end attempt — product search and draft cart are bound to presenter state.";
+        _subtitleLabel.Text = "Front-end attempt - product search now uses the real read-only product repository.";
         _subtitleLabel.Font = new Font("Segoe UI", 9.5F, FontStyle.Regular);
         _subtitleLabel.ForeColor = Color.FromArgb(210, 220, 230);
         _subtitleLabel.Location = new Point(21, 48);
@@ -253,7 +248,7 @@ public sealed class CheckoutShellForm : Form
         Label inputLabel = CreateFieldLabel("Barcode / Product:");
 
         _productInputTextBox.Dock = DockStyle.Fill;
-        _productInputTextBox.PlaceholderText = "Try 480000000001, COFFEE, SARDINES, or RICE...";
+        _productInputTextBox.PlaceholderText = "Scan barcode or type an existing product name...";
         _productInputTextBox.Enabled = true;
 
         _searchButton.Dock = DockStyle.Fill;
@@ -629,3 +624,5 @@ public sealed class CheckoutShellForm : Form
         table.Controls.Add(valueControl, 1, row);
     }
 }
+
+

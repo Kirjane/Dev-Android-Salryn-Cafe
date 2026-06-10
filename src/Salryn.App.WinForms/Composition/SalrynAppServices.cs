@@ -1,4 +1,6 @@
-﻿using Salryn.Core.Services;
+﻿using Salryn.App.WinForms.Features.Checkout;
+using Salryn.Core.Repositories;
+using Salryn.Core.Services;
 using Salryn.Infrastructure.Data;
 using Salryn.Infrastructure.Data.Initialization;
 using Salryn.Infrastructure.Data.Repositories;
@@ -13,6 +15,8 @@ public sealed class SalrynAppServices
         SqliteConnectionFactory connectionFactory,
         DatabaseInitializationOrchestrator databaseInitialization,
         SqliteRepositoryFactory repositories,
+        IProductReadRepository productReadRepository,
+        ICheckoutProductSearchBoundary checkoutProductSearch,
         ICashierSessionService cashierSessions,
         IPosCheckoutService posCheckout,
         IPosCheckoutApplicationService posCheckoutApplication)
@@ -21,6 +25,8 @@ public sealed class SalrynAppServices
         ConnectionFactory = connectionFactory;
         DatabaseInitialization = databaseInitialization;
         Repositories = repositories;
+        ProductReadRepository = productReadRepository;
+        CheckoutProductSearch = checkoutProductSearch;
         CashierSessions = cashierSessions;
         PosCheckout = posCheckout;
         PosCheckoutApplication = posCheckoutApplication;
@@ -33,6 +39,10 @@ public sealed class SalrynAppServices
     public DatabaseInitializationOrchestrator DatabaseInitialization { get; }
 
     public SqliteRepositoryFactory Repositories { get; }
+
+    public IProductReadRepository ProductReadRepository { get; }
+
+    public ICheckoutProductSearchBoundary CheckoutProductSearch { get; }
 
     public ICashierSessionService CashierSessions { get; }
 
@@ -60,10 +70,17 @@ public sealed class SalrynAppServices
         ArgumentNullException.ThrowIfNull(dbPaths);
 
         SqliteConnectionFactory connectionFactory = new(dbPaths);
+
         DatabaseInitializationOrchestrator databaseInitialization =
             DefaultDatabaseInitializationFactory.Create(dbPaths);
 
         SqliteRepositoryFactory repositories = new(connectionFactory);
+
+        IProductReadRepository productReadRepository =
+            repositories.CreateProductReadRepository();
+
+        ICheckoutProductSearchBoundary checkoutProductSearch =
+            new CheckoutProductRepositorySearchBoundary(productReadRepository);
 
         ICashierSessionService cashierSessions = new CashierSessionService(
             repositories.CreateCashierSessionWriteRepository(),
@@ -73,19 +90,18 @@ public sealed class SalrynAppServices
             repositories.CreateSaleWriteRepository(),
             cashierSessions);
 
-        IPosCheckoutApplicationService posCheckoutApplication = new PosCheckoutApplicationService(
-            posCheckout);
+        IPosCheckoutApplicationService posCheckoutApplication =
+            new PosCheckoutApplicationService(posCheckout);
 
         return new SalrynAppServices(
             dbPaths,
             connectionFactory,
             databaseInitialization,
             repositories,
+            productReadRepository,
+            checkoutProductSearch,
             cashierSessions,
             posCheckout,
             posCheckoutApplication);
     }
 }
-
-
-
