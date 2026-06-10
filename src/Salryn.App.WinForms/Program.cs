@@ -15,6 +15,7 @@ static class Program
         ApplicationConfiguration.Initialize();
 
         SalrynAppServices services = SalrynAppServices.CreateProduction();
-        Application.Run(new Form1(services));
+        Application.Run(new Salryn.App.WinForms.Features.Checkout.CheckoutShellForm());
     }
 }
+
