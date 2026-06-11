@@ -10,6 +10,24 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
 
         Console.WriteLine("===== POS CHECKOUT UI PRESENTER / VIEWMODEL SMOKE CHECKS =====");
 
+        ICheckoutReceiptNumberBoundary receiptBoundary =
+            new SystemCheckoutReceiptNumberBoundary();
+
+        Result<string> generatedReceiptA =
+            receiptBoundary.CreateReceiptNumber(sessionContext: null);
+
+        Result<string> generatedReceiptB =
+            receiptBoundary.CreateReceiptNumber(sessionContext: null);
+
+        if (generatedReceiptA.IsFailure ||
+            generatedReceiptB.IsFailure ||
+            string.IsNullOrWhiteSpace(generatedReceiptA.Value) ||
+            string.IsNullOrWhiteSpace(generatedReceiptB.Value) ||
+            string.Equals(generatedReceiptA.Value, generatedReceiptB.Value, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("ReceiptBoundary.Generated receipt verification failed.");
+        }
+
         CheckoutPresenter presenter = new();
 
         CheckoutPresenterOperationResult initial = RequireSuccess(
@@ -19,6 +37,7 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
         if (initial.State.Lines.Count != 0 ||
             initial.State.Totals.TotalCents != 0 ||
             initial.State.PaymentCount != 0 ||
+            string.IsNullOrWhiteSpace(initial.State.ReceiptNumber) ||
             initial.State.CanCompleteSale)
         {
             throw new InvalidOperationException("Checkout presenter initial state verification failed.");
@@ -165,7 +184,8 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
             presenter.State.Totals.TotalCents != 0 ||
             presenter.State.PaymentCount != 0 ||
             presenter.State.CashierUserId is not null ||
-            !string.IsNullOrWhiteSpace(presenter.State.ReceiptNumber) ||
+            string.IsNullOrWhiteSpace(presenter.State.ReceiptNumber) ||
+            string.Equals(presenter.State.ReceiptNumber, "P40-UI-0001", StringComparison.Ordinal) ||
             presenter.State.HasError)
         {
             throw new InvalidOperationException("Checkout presenter clear draft reset state failed.");
@@ -222,3 +242,4 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
         return result;
     }
 }
+

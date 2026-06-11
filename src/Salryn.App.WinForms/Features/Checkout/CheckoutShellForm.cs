@@ -8,8 +8,9 @@ public sealed class CheckoutShellForm : Form
     private readonly CheckoutPresenter _presenter;
 
     private readonly Label _modeLabel = new();
-        private readonly Label _shiftContextLabel = new();
-private readonly Label _statusLabel = new();
+    private readonly Label _shiftContextLabel = new();
+    private readonly Label _receiptNumberLabel = new();
+    private readonly Label _statusLabel = new();
 
     private readonly TextBox _productInputTextBox = new();
     private readonly Button _searchButton = new();
@@ -452,12 +453,13 @@ private readonly Label _statusLabel = new();
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 6,
+            RowCount = 7,
             Padding = new Padding(18),
             BackColor = Color.White
         };
 
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32F));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50F));
@@ -466,13 +468,20 @@ private readonly Label _statusLabel = new();
 
         layout.Controls.Add(CreateSectionTitle("Actions"), 0, 0);
 
+        _receiptNumberLabel.Dock = DockStyle.Fill;
+        _receiptNumberLabel.TextAlign = ContentAlignment.MiddleLeft;
+        _receiptNumberLabel.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+        _receiptNumberLabel.ForeColor = UiColors.TextMuted;
+        _receiptNumberLabel.Text = "Receipt: not assigned";
+        layout.Controls.Add(_receiptNumberLabel, 0, 1);
+
         ConfigureSecondaryButton(_removeItemButton, "Remove Selected Item");
         ConfigureSecondaryButton(_clearCartButton, "Clear Draft Cart");
         ConfigureLockedButton(_completeSaleButton, "Complete Sale Locked");
 
-        layout.Controls.Add(_removeItemButton, 0, 1);
-        layout.Controls.Add(_clearCartButton, 0, 2);
-        layout.Controls.Add(_completeSaleButton, 0, 3);
+        layout.Controls.Add(_removeItemButton, 0, 2);
+        layout.Controls.Add(_clearCartButton, 0, 3);
+        layout.Controls.Add(_completeSaleButton, 0, 4);
 
         Label note = new()
         {
@@ -482,7 +491,7 @@ private readonly Label _statusLabel = new();
             ForeColor = UiColors.TextMuted
         };
 
-        layout.Controls.Add(note, 0, 4);
+        layout.Controls.Add(note, 0, 5);
 
         card.Controls.Add(layout);
 
@@ -620,6 +629,9 @@ private readonly Label _statusLabel = new();
 
             _modeLabel.Text = state.CheckoutModeText;
             _shiftContextLabel.Text = state.CashierSessionText;
+            _receiptNumberLabel.Text = string.IsNullOrWhiteSpace(state.ReceiptNumber)
+                ? "Receipt: not assigned"
+                : $"Receipt: {state.ReceiptNumber}";
 
             _productResultLabel.Text = state.ProductResultText;
 
@@ -861,5 +873,6 @@ private readonly Label _statusLabel = new();
         public static readonly Color TextMuted = Color.FromArgb(71, 85, 105);
     }
 }
+
 
 

@@ -10,6 +10,7 @@ public sealed class CheckoutPresenter
 {
     private readonly ICheckoutProductSearchBoundary? _productSearchBoundary;
     private readonly CheckoutSessionContext? _sessionContext;
+    private readonly ICheckoutReceiptNumberBoundary _receiptNumberBoundary;
     private readonly PosCheckoutProductPickerBoundary _productPickerBoundary = new();
 
     private PosCheckoutDraftTransactionBuilder _builder = new();
@@ -25,21 +26,30 @@ public sealed class CheckoutPresenter
     private CheckoutPreparedProductViewModel? _preparedProduct;
 
     public CheckoutPresenter()
-        : this(productSearchBoundary: null, sessionContext: null)
+        : this(productSearchBoundary: null, sessionContext: null, receiptNumberBoundary: null)
     {
     }
 
     public CheckoutPresenter(ICheckoutProductSearchBoundary? productSearchBoundary)
-        : this(productSearchBoundary, sessionContext: null)
+        : this(productSearchBoundary, sessionContext: null, receiptNumberBoundary: null)
     {
     }
 
     public CheckoutPresenter(
         ICheckoutProductSearchBoundary? productSearchBoundary,
         CheckoutSessionContext? sessionContext)
+        : this(productSearchBoundary, sessionContext, receiptNumberBoundary: null)
+    {
+    }
+
+    public CheckoutPresenter(
+        ICheckoutProductSearchBoundary? productSearchBoundary,
+        CheckoutSessionContext? sessionContext,
+        ICheckoutReceiptNumberBoundary? receiptNumberBoundary)
     {
         _productSearchBoundary = productSearchBoundary;
         _sessionContext = sessionContext;
+        _receiptNumberBoundary = receiptNumberBoundary ?? new SystemCheckoutReceiptNumberBoundary();
         State = CheckoutViewModel.Empty();
         _ = RefreshState("Checkout presenter ready.");
     }
@@ -58,6 +68,13 @@ public sealed class CheckoutPresenter
         _selectedLineId = null;
         _preparedProductLineInput = null;
         _preparedProduct = null;
+
+        Result receiptResult = AssignNewReceiptNumber();
+
+        if (receiptResult.IsFailure)
+        {
+            return FailFrom(receiptResult);
+        }
 
         if (_sessionContext is not null)
         {
@@ -98,6 +115,28 @@ public sealed class CheckoutPresenter
         return RefreshState("Cashier placeholder set.");
     }
 
+    private Result AssignNewReceiptNumber()
+    {
+        Result<string> receiptResult =
+            _receiptNumberBoundary.CreateReceiptNumber(_sessionContext);
+
+        if (receiptResult.IsFailure)
+        {
+            return Result.Fail(receiptResult.ErrorDetail);
+        }
+
+        Result builderResult = _builder.SetReceiptNumber(receiptResult.Value);
+
+        if (builderResult.IsFailure)
+        {
+            return builderResult;
+        }
+
+        _receiptNumber = receiptResult.Value;
+
+        return Result.Success();
+    }
+
     public CheckoutPresenterOperationResult SetReceiptNumber(string? receiptNumber)
     {
         string trimmed = receiptNumber?.Trim() ?? string.Empty;
@@ -111,7 +150,7 @@ public sealed class CheckoutPresenter
 
         _receiptNumber = trimmed;
 
-        return RefreshState("Receipt placeholder set.");
+        return RefreshState("Receipt number set.");
     }
 
     public CheckoutPresenterOperationResult SetProductInputText(string? productInputText)
@@ -530,6 +569,7 @@ public sealed class CheckoutPresenter
         return (quantityX1000 / 1000m).ToString("0.###", CultureInfo.InvariantCulture);
     }
 }
+
 
 
 
