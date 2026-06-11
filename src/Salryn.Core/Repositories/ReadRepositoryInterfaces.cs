@@ -1,5 +1,6 @@
 ﻿using Salryn.Core.Common;
 using Salryn.Core.ReadModels;
+using Salryn.Core.Security;
 using Salryn.Core.ValueObjects;
 
 namespace Salryn.Core.Repositories;
@@ -118,3 +119,21 @@ public interface IErrorLogReadRepository
         CancellationToken cancellationToken = default);
 }
 
+
+public interface IAuthenticationRepository
+{
+    // Kirch: Checks whether the database already has at least one active user for login routing.
+    Task<Result<bool>> HasAnyActiveUserAsync(
+        CancellationToken cancellationToken = default);
+
+    // Kirch: Reads a login credential profile by username without exposing SQLite to the app layer.
+    Task<Result<LoginUserCredentialReadModel?>> FindCredentialByUsernameAsync(
+        string username,
+        CancellationToken cancellationToken = default);
+
+    // Kirch: Creates the first active admin user during first-run setup.
+    Task<Result<AuthenticatedUserReadModel>> CreateFirstAdminAsync(
+        FirstRunAdminSetupRequest request,
+        string passwordHash,
+        CancellationToken cancellationToken = default);
+}

@@ -17,6 +17,7 @@ public sealed class SalrynAppServices
         SqliteRepositoryFactory repositories,
         IUserReadRepository userReadRepository,
         IUserPermissionReadRepository userPermissionReadRepository,
+        IAuthenticationService authentication,
         IProductReadRepository productReadRepository,
         ICheckoutProductSearchBoundary checkoutProductSearch,
         ICashierSessionService cashierSessions,
@@ -29,6 +30,7 @@ public sealed class SalrynAppServices
         Repositories = repositories;
         UserReadRepository = userReadRepository;
         UserPermissionReadRepository = userPermissionReadRepository;
+        Authentication = authentication;
         ProductReadRepository = productReadRepository;
         CheckoutProductSearch = checkoutProductSearch;
         CashierSessions = cashierSessions;
@@ -47,6 +49,8 @@ public sealed class SalrynAppServices
     public IUserReadRepository UserReadRepository { get; }
 
     public IUserPermissionReadRepository UserPermissionReadRepository { get; }
+
+    public IAuthenticationService Authentication { get; }
 
     public IProductReadRepository ProductReadRepository { get; }
 
@@ -90,6 +94,10 @@ public sealed class SalrynAppServices
         IUserPermissionReadRepository userPermissionReadRepository =
             repositories.CreateUserPermissionReadRepository();
 
+        IAuthenticationService authentication = new AuthenticationService(
+            repositories.CreateAuthenticationRepository(),
+            userPermissionReadRepository);
+
         IProductReadRepository productReadRepository =
             repositories.CreateProductReadRepository();
 
@@ -114,6 +122,7 @@ public sealed class SalrynAppServices
             repositories,
             userReadRepository,
             userPermissionReadRepository,
+            authentication,
             productReadRepository,
             checkoutProductSearch,
             cashierSessions,

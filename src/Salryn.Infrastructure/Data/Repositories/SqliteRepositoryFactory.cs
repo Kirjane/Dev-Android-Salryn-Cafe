@@ -59,6 +59,10 @@ public sealed class SqliteRepositoryFactory
     {
         return new SqliteUserPermissionReadRepository(_connectionFactory);
     }
+    public IAuthenticationRepository CreateAuthenticationRepository()
+    {
+        return new SqliteAuthenticationRepository(_connectionFactory);
+    }
 
     public IStoreSettingsReadRepository CreateStoreSettingsReadRepository()
     {
@@ -85,6 +89,7 @@ public sealed class SqliteRepositoryFactory
         return new SqliteErrorLogReadRepository(_connectionFactory);
     }
 }
+
 
 
 
