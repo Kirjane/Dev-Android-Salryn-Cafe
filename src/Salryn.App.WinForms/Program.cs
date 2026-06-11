@@ -1,5 +1,6 @@
 ﻿using Salryn.App.WinForms.Composition;
-using Salryn.App.WinForms.Features.Checkout;
+using Salryn.App.WinForms.Features.Shell;
+using Salryn.Core.Common;
 
 namespace Salryn.App.WinForms;
 
@@ -25,8 +26,25 @@ static class Program
             return;
         }
 
-        CheckoutPresenter checkoutPresenter = new(services.CheckoutProductSearch);
+        Result<CurrentAppSession?> sessionResult =
+            AppSessionBootstrapper.LoadFirstActiveUserAsync(
+                services.UserReadRepository,
+                services.UserPermissionReadRepository).GetAwaiter().GetResult();
 
-        Application.Run(new CheckoutShellForm(checkoutPresenter));
+        if (sessionResult.IsFailure)
+        {
+            MessageBox.Show(
+                sessionResult.Error,
+                "SALRYN Session Load Failed",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+
+            return;
+        }
+
+        Application.Run(new SalrynShellForm(
+            services,
+            sessionResult.Value));
     }
 }
+

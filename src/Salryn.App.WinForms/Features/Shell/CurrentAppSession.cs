@@ -1,0 +1,52 @@
+﻿using Salryn.Core.Models;
+
+namespace Salryn.App.WinForms.Features.Shell;
+
+public sealed class CurrentAppSession
+{
+    private readonly HashSet<string> _permissions;
+
+    public CurrentAppSession(
+        Guid userId,
+        string username,
+        string displayName,
+        string roleName,
+        UserStatus status,
+        IReadOnlyList<string> permissions,
+        DateTimeOffset startedAt)
+    {
+        UserId = userId;
+        Username = username;
+        DisplayName = displayName;
+        RoleName = roleName;
+        Status = status;
+        Permissions = permissions;
+        StartedAt = startedAt;
+
+        _permissions = new HashSet<string>(
+            permissions,
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    public Guid UserId { get; }
+
+    public string Username { get; }
+
+    public string DisplayName { get; }
+
+    public string RoleName { get; }
+
+    public UserStatus Status { get; }
+
+    public IReadOnlyList<string> Permissions { get; }
+
+    public DateTimeOffset StartedAt { get; }
+
+    public bool IsActive => Status == UserStatus.Active;
+
+    // Kirch: Checks whether the current app user can access a routed module or workflow.
+    public bool Can(string permission)
+    {
+        return _permissions.Contains(permission);
+    }
+}

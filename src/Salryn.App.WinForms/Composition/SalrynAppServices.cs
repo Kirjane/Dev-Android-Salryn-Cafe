@@ -15,6 +15,8 @@ public sealed class SalrynAppServices
         SqliteConnectionFactory connectionFactory,
         DatabaseInitializationOrchestrator databaseInitialization,
         SqliteRepositoryFactory repositories,
+        IUserReadRepository userReadRepository,
+        IUserPermissionReadRepository userPermissionReadRepository,
         IProductReadRepository productReadRepository,
         ICheckoutProductSearchBoundary checkoutProductSearch,
         ICashierSessionService cashierSessions,
@@ -25,6 +27,8 @@ public sealed class SalrynAppServices
         ConnectionFactory = connectionFactory;
         DatabaseInitialization = databaseInitialization;
         Repositories = repositories;
+        UserReadRepository = userReadRepository;
+        UserPermissionReadRepository = userPermissionReadRepository;
         ProductReadRepository = productReadRepository;
         CheckoutProductSearch = checkoutProductSearch;
         CashierSessions = cashierSessions;
@@ -39,6 +43,10 @@ public sealed class SalrynAppServices
     public DatabaseInitializationOrchestrator DatabaseInitialization { get; }
 
     public SqliteRepositoryFactory Repositories { get; }
+
+    public IUserReadRepository UserReadRepository { get; }
+
+    public IUserPermissionReadRepository UserPermissionReadRepository { get; }
 
     public IProductReadRepository ProductReadRepository { get; }
 
@@ -76,6 +84,12 @@ public sealed class SalrynAppServices
 
         SqliteRepositoryFactory repositories = new(connectionFactory);
 
+        IUserReadRepository userReadRepository =
+            repositories.CreateUserReadRepository();
+
+        IUserPermissionReadRepository userPermissionReadRepository =
+            repositories.CreateUserPermissionReadRepository();
+
         IProductReadRepository productReadRepository =
             repositories.CreateProductReadRepository();
 
@@ -98,6 +112,8 @@ public sealed class SalrynAppServices
             connectionFactory,
             databaseInitialization,
             repositories,
+            userReadRepository,
+            userPermissionReadRepository,
             productReadRepository,
             checkoutProductSearch,
             cashierSessions,

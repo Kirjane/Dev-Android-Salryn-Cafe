@@ -79,6 +79,13 @@ public interface IUserReadRepository
     Task<Result<IReadOnlyList<UserReadModel>>> GetAllAsync(
         CancellationToken cancellationToken = default);
 }
+public interface IUserPermissionReadRepository
+{
+    // Kirch: Reads a user's role permissions without performing authentication or writes.
+    Task<Result<UserPermissionReadModel?>> FindByUserIdAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default);
+}
 
 public interface IStoreSettingsReadRepository
 {
@@ -110,3 +117,4 @@ public interface IErrorLogReadRepository
         PageRequest page,
         CancellationToken cancellationToken = default);
 }
+
