@@ -353,6 +353,13 @@ public sealed class PosCheckoutDraftTransactionBuilder
                 "Checkout draft cashier user ID is required."));
         }
 
+        if (!_cashierSessionId.HasValue || _cashierSessionId.GetValueOrDefault() == Guid.Empty)
+        {
+            return Result<PosCheckoutApplicationRequest>.Fail(Error.Validation(
+                "CheckoutDraft.InvalidCashierSessionId",
+                "Checkout draft cashier session ID is required."));
+        }
+
         if (string.IsNullOrWhiteSpace(_receiptNumber))
         {
             return Result<PosCheckoutApplicationRequest>.Fail(Error.Validation(
@@ -577,5 +584,6 @@ public sealed class PosCheckoutDraftTransactionBuilder
             "Checkout draft amount calculation is too large.");
     }
 }
+
 
 

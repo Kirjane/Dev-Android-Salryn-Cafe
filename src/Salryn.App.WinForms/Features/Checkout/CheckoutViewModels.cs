@@ -50,6 +50,18 @@ public sealed record CheckoutTotalsViewModel(
     long BalanceDueCents,
     string BalanceDueText);
 
+public sealed record CheckoutCompletionReadinessViewModel(
+    bool HasCashierUser,
+    bool HasCashierSession,
+    bool HasReceiptNumber,
+    bool HasLines,
+    bool HasPayments,
+    bool IsPaidInFull,
+    bool CanBuildCompletionRequest,
+    bool CanSubmitSale,
+    string SummaryText,
+    string DetailText);
+
 public sealed record CheckoutViewModel(
     Guid? CashierUserId,
     Guid? CashierSessionId,
@@ -73,6 +85,7 @@ public sealed record CheckoutViewModel(
     bool CanAddCashPayment,
     bool CanClearPayments,
     bool CanCompleteSale,
+    CheckoutCompletionReadinessViewModel CompletionReadiness,
     string StatusMessage,
     bool HasError,
     string? ErrorCode,
@@ -117,6 +130,17 @@ public sealed record CheckoutViewModel(
             CanAddCashPayment: false,
             CanClearPayments: false,
             CanCompleteSale: false,
+            CompletionReadiness: new CheckoutCompletionReadinessViewModel(
+                HasCashierUser: false,
+                HasCashierSession: false,
+                HasReceiptNumber: false,
+                HasLines: false,
+                HasPayments: false,
+                IsPaidInFull: false,
+                CanBuildCompletionRequest: false,
+                CanSubmitSale: false,
+                SummaryText: "Completion not ready",
+                DetailText: "Checkout has not been initialized."),
             StatusMessage: "Checkout presenter ready.",
             HasError: false,
             ErrorCode: null,
@@ -129,3 +153,4 @@ public sealed record CheckoutPresenterOperationResult(
     string? ErrorCode,
     string? ErrorMessage,
     CheckoutViewModel State);
+

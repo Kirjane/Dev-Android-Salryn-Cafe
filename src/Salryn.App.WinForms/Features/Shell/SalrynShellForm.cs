@@ -275,7 +275,9 @@ public sealed class SalrynShellForm : Form
         using CheckoutShellForm checkoutForm =
             new CheckoutShellForm(new CheckoutPresenter(
                 _services.CheckoutProductSearch,
-                checkoutSessionContext));
+                checkoutSessionContext,
+                receiptNumberBoundary: null,
+                completionBoundary: new CheckoutCompletionBoundary(_services.PosCheckoutApplication)));
 
         checkoutForm.StartPosition = FormStartPosition.CenterParent;
         checkoutForm.ShowDialog(this);
@@ -345,6 +347,7 @@ public sealed class SalrynShellForm : Form
         _workspacePanel.Controls.Add(content);
     }
 }
+
 
 
 

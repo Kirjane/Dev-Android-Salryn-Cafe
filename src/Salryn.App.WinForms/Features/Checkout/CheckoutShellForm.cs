@@ -10,6 +10,7 @@ public sealed class CheckoutShellForm : Form
     private readonly Label _modeLabel = new();
     private readonly Label _shiftContextLabel = new();
     private readonly Label _receiptNumberLabel = new();
+    private readonly Label _completionReadinessLabel = new();
     private readonly Label _statusLabel = new();
 
     private readonly TextBox _productInputTextBox = new();
@@ -453,13 +454,14 @@ public sealed class CheckoutShellForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 7,
+            RowCount = 8,
             Padding = new Padding(18),
             BackColor = Color.White
         };
 
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50F));
@@ -475,23 +477,30 @@ public sealed class CheckoutShellForm : Form
         _receiptNumberLabel.Text = "Receipt: not assigned";
         layout.Controls.Add(_receiptNumberLabel, 0, 1);
 
+        _completionReadinessLabel.Dock = DockStyle.Fill;
+        _completionReadinessLabel.TextAlign = ContentAlignment.MiddleLeft;
+        _completionReadinessLabel.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+        _completionReadinessLabel.ForeColor = UiColors.TextMuted;
+        _completionReadinessLabel.Text = "Completion: not ready";
+        layout.Controls.Add(_completionReadinessLabel, 0, 2);
+
         ConfigureSecondaryButton(_removeItemButton, "Remove Selected Item");
         ConfigureSecondaryButton(_clearCartButton, "Clear Draft Cart");
         ConfigureLockedButton(_completeSaleButton, "Complete Sale Locked");
 
-        layout.Controls.Add(_removeItemButton, 0, 2);
-        layout.Controls.Add(_clearCartButton, 0, 3);
-        layout.Controls.Add(_completeSaleButton, 0, 4);
+        layout.Controls.Add(_removeItemButton, 0, 3);
+        layout.Controls.Add(_clearCartButton, 0, 4);
+        layout.Controls.Add(_completeSaleButton, 0, 5);
 
         Label note = new()
         {
             Dock = DockStyle.Fill,
-            Text = "This screen can search products, add draft lines, show totals, and add draft cash payment. Final sale save remains locked.",
+            Text = "This screen can search products, add draft lines, show totals, add draft cash payment, and evaluate completion readiness. Final sale save remains locked.",
             Font = new Font("Segoe UI", 9F, FontStyle.Regular),
             ForeColor = UiColors.TextMuted
         };
 
-        layout.Controls.Add(note, 0, 5);
+        layout.Controls.Add(note, 0, 6);
 
         card.Controls.Add(layout);
 
@@ -632,6 +641,10 @@ public sealed class CheckoutShellForm : Form
             _receiptNumberLabel.Text = string.IsNullOrWhiteSpace(state.ReceiptNumber)
                 ? "Receipt: not assigned"
                 : $"Receipt: {state.ReceiptNumber}";
+            _completionReadinessLabel.Text = $"Completion: {state.CompletionReadiness.SummaryText}";
+            _completionReadinessLabel.ForeColor = state.CompletionReadiness.CanBuildCompletionRequest
+                ? UiColors.Success
+                : UiColors.TextMuted;
 
             _productResultLabel.Text = state.ProductResultText;
 
@@ -873,6 +886,7 @@ public sealed class CheckoutShellForm : Form
         public static readonly Color TextMuted = Color.FromArgb(71, 85, 105);
     }
 }
+
 
 
 

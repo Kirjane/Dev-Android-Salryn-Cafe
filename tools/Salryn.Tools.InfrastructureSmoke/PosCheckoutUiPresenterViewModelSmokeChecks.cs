@@ -38,9 +38,13 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
             initial.State.Totals.TotalCents != 0 ||
             initial.State.PaymentCount != 0 ||
             string.IsNullOrWhiteSpace(initial.State.ReceiptNumber) ||
+            initial.State.CompletionReadiness.HasLines ||
+            !initial.State.CompletionReadiness.HasReceiptNumber ||
+            initial.State.CompletionReadiness.CanBuildCompletionRequest ||
+            initial.State.CompletionReadiness.CanSubmitSale ||
             initial.State.CanCompleteSale)
         {
-            throw new InvalidOperationException("Checkout presenter initial state verification failed.");
+            throw new InvalidOperationException("CompletionReadiness.Initial presenter state verification failed.");
         }
 
         Guid cashierId = Guid.NewGuid();
@@ -121,9 +125,53 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
             presenter.State.Totals.ChangeCents != 2100 ||
             presenter.State.Totals.BalanceDueCents != 0 ||
             !presenter.State.CanClearPayments ||
+            presenter.State.CompletionReadiness.HasCashierSession ||
+            presenter.State.CompletionReadiness.CanBuildCompletionRequest ||
+            presenter.State.CompletionReadiness.CanSubmitSale ||
             presenter.State.CanCompleteSale)
         {
-            throw new InvalidOperationException("Checkout presenter payment/totals state failed.");
+            throw new InvalidOperationException("CompletionReadiness.MissingSession payment/totals state failed.");
+        }
+
+        CheckoutSessionContext sessionContext = new(
+            CashierUserId: cashierId,
+            CashierDisplayName: "Smoke Cashier",
+            CashierRoleName: "Cashier",
+            CashierSessionId: Guid.NewGuid(),
+            ShiftOpenedAt: DateTimeOffset.UtcNow,
+            OpeningCashText: "PHP 0.00");
+
+        CheckoutPresenter sessionPresenter = new(
+            productSearchBoundary: null,
+            sessionContext: sessionContext);
+
+        RequireSuccess(
+            sessionPresenter.Initialize(),
+            "CheckoutUiPresenter.SessionInitialize");
+
+        RequireSuccess(
+            sessionPresenter.AddPreparedLine(lineInput),
+            "CheckoutUiPresenter.SessionAddPreparedLine");
+
+        RequireSuccess(
+            sessionPresenter.SetCashAmountCents(5000),
+            "CheckoutUiPresenter.SessionSetCashAmountCents");
+
+        RequireSuccess(
+            sessionPresenter.AddCashPayment(),
+            "CheckoutUiPresenter.SessionAddCashPayment");
+
+        if (!sessionPresenter.State.CompletionReadiness.HasCashierUser ||
+            !sessionPresenter.State.CompletionReadiness.HasCashierSession ||
+            !sessionPresenter.State.CompletionReadiness.HasReceiptNumber ||
+            !sessionPresenter.State.CompletionReadiness.HasLines ||
+            !sessionPresenter.State.CompletionReadiness.HasPayments ||
+            !sessionPresenter.State.CompletionReadiness.IsPaidInFull ||
+            !sessionPresenter.State.CompletionReadiness.CanBuildCompletionRequest ||
+            sessionPresenter.State.CompletionReadiness.CanSubmitSale ||
+            sessionPresenter.State.CanCompleteSale)
+        {
+            throw new InvalidOperationException("CompletionReadiness.ReadyButLocked state failed.");
         }
 
         RequireSuccess(
@@ -242,4 +290,5 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
         return result;
     }
 }
+
 

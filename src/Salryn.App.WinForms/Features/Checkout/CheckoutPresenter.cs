@@ -11,6 +11,7 @@ public sealed class CheckoutPresenter
     private readonly ICheckoutProductSearchBoundary? _productSearchBoundary;
     private readonly CheckoutSessionContext? _sessionContext;
     private readonly ICheckoutReceiptNumberBoundary _receiptNumberBoundary;
+    private readonly ICheckoutCompletionBoundary _completionBoundary;
     private readonly PosCheckoutProductPickerBoundary _productPickerBoundary = new();
 
     private PosCheckoutDraftTransactionBuilder _builder = new();
@@ -26,19 +27,31 @@ public sealed class CheckoutPresenter
     private CheckoutPreparedProductViewModel? _preparedProduct;
 
     public CheckoutPresenter()
-        : this(productSearchBoundary: null, sessionContext: null, receiptNumberBoundary: null)
+        : this(
+            productSearchBoundary: null,
+            sessionContext: null,
+            receiptNumberBoundary: null,
+            completionBoundary: null)
     {
     }
 
     public CheckoutPresenter(ICheckoutProductSearchBoundary? productSearchBoundary)
-        : this(productSearchBoundary, sessionContext: null, receiptNumberBoundary: null)
+        : this(
+            productSearchBoundary,
+            sessionContext: null,
+            receiptNumberBoundary: null,
+            completionBoundary: null)
     {
     }
 
     public CheckoutPresenter(
         ICheckoutProductSearchBoundary? productSearchBoundary,
         CheckoutSessionContext? sessionContext)
-        : this(productSearchBoundary, sessionContext, receiptNumberBoundary: null)
+        : this(
+            productSearchBoundary,
+            sessionContext,
+            receiptNumberBoundary: null,
+            completionBoundary: null)
     {
     }
 
@@ -46,10 +59,24 @@ public sealed class CheckoutPresenter
         ICheckoutProductSearchBoundary? productSearchBoundary,
         CheckoutSessionContext? sessionContext,
         ICheckoutReceiptNumberBoundary? receiptNumberBoundary)
+        : this(
+            productSearchBoundary,
+            sessionContext,
+            receiptNumberBoundary,
+            completionBoundary: null)
+    {
+    }
+
+    public CheckoutPresenter(
+        ICheckoutProductSearchBoundary? productSearchBoundary,
+        CheckoutSessionContext? sessionContext,
+        ICheckoutReceiptNumberBoundary? receiptNumberBoundary,
+        ICheckoutCompletionBoundary? completionBoundary)
     {
         _productSearchBoundary = productSearchBoundary;
         _sessionContext = sessionContext;
         _receiptNumberBoundary = receiptNumberBoundary ?? new SystemCheckoutReceiptNumberBoundary();
+        _completionBoundary = completionBoundary ?? new CheckoutCompletionBoundary();
         State = CheckoutViewModel.Empty();
         _ = RefreshState("Checkout presenter ready.");
     }
@@ -433,6 +460,16 @@ public sealed class CheckoutPresenter
         bool hasPayments = transaction.Payments.Count > 0;
         bool hasProductInput = !string.IsNullOrWhiteSpace(_productInputText);
 
+        Result<CheckoutCompletionReadiness> completionReadinessResult =
+            _completionBoundary.Evaluate(transaction);
+
+        if (completionReadinessResult.IsFailure)
+        {
+            return FailFrom(completionReadinessResult);
+        }
+
+        CheckoutCompletionReadiness completionReadiness = completionReadinessResult.Value;
+
         State = new CheckoutViewModel(
             CashierUserId: _cashierUserId,
             CashierSessionId: _sessionContext?.CashierSessionId,
@@ -456,6 +493,7 @@ public sealed class CheckoutPresenter
             CanAddCashPayment: hasLines && _cashAmountCents > 0,
             CanClearPayments: hasPayments,
             CanCompleteSale: false,
+            CompletionReadiness: MapCompletionReadiness(completionReadiness),
             StatusMessage: statusMessage,
             HasError: false,
             ErrorCode: null,
@@ -493,6 +531,22 @@ public sealed class CheckoutPresenter
             ErrorCode: code,
             ErrorMessage: message,
             State: State);
+    }
+
+    private static CheckoutCompletionReadinessViewModel MapCompletionReadiness(
+        CheckoutCompletionReadiness readiness)
+    {
+        return new CheckoutCompletionReadinessViewModel(
+            HasCashierUser: readiness.HasCashierUser,
+            HasCashierSession: readiness.HasCashierSession,
+            HasReceiptNumber: readiness.HasReceiptNumber,
+            HasLines: readiness.HasLines,
+            HasPayments: readiness.HasPayments,
+            IsPaidInFull: readiness.IsPaidInFull,
+            CanBuildCompletionRequest: readiness.CanBuildCompletionRequest,
+            CanSubmitSale: readiness.CanSubmitSale,
+            SummaryText: readiness.SummaryText,
+            DetailText: readiness.DetailText);
     }
 
     private static CheckoutLineViewModel MapLine(PosCheckoutDraftLine line)
@@ -569,6 +623,7 @@ public sealed class CheckoutPresenter
         return (quantityX1000 / 1000m).ToString("0.###", CultureInfo.InvariantCulture);
     }
 }
+
 
 
 
