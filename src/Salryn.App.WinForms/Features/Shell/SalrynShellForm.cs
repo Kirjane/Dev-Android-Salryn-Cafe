@@ -1,11 +1,13 @@
 ﻿using Salryn.App.WinForms.Composition;
 using Salryn.App.WinForms.Features.Checkout;
+using Salryn.App.WinForms.Features.Shifts;
 
 namespace Salryn.App.WinForms.Features.Shell;
 
 public sealed class SalrynShellForm : Form
 {
     private readonly SalrynAppServices _services;
+    private readonly CurrentAppSession? _session;
     private readonly ShellPresenter _presenter;
     private readonly ShellViewModel _state;
     private readonly Dictionary<string, Button> _moduleButtons = new(StringComparer.OrdinalIgnoreCase);
@@ -21,6 +23,7 @@ public sealed class SalrynShellForm : Form
         CurrentAppSession? session)
     {
         _services = services ?? throw new ArgumentNullException(nameof(services));
+        _session = session;
         _presenter = new ShellPresenter(session);
         _state = _presenter.Build();
 
@@ -162,7 +165,7 @@ public sealed class SalrynShellForm : Form
         ShowPlaceholder(
             firstEnabledModule.Title,
             firstEnabledModule.Description,
-            "Select a module from the left. POS Checkout can open now; other modules are routed placeholders until their screens are implemented.");
+            "Select a module from the left. POS Checkout now checks for an open cashier shift before opening.");
     }
 
     private Button BuildModuleButton(ShellModule module)
@@ -225,6 +228,35 @@ public sealed class SalrynShellForm : Form
 
     private void OpenCheckout()
     {
+        if (_session is null)
+        {
+            ShowPlaceholder(
+                "POS Checkout",
+                "Checkout requires an authenticated user session.",
+                "Login again before entering the POS checkout workspace.");
+
+            return;
+        }
+
+        using CashierShiftGateForm shiftGateForm = new(
+            new CashierShiftGatePresenter(
+                _session,
+                _services.CashierSessions));
+
+        shiftGateForm.StartPosition = FormStartPosition.CenterParent;
+
+        DialogResult shiftGateResult = shiftGateForm.ShowDialog(this);
+
+        if (shiftGateResult != DialogResult.OK)
+        {
+            ShowPlaceholder(
+                "POS Checkout",
+                "Checkout was not opened.",
+                "A cashier shift must be open before entering the POS checkout workspace.");
+
+            return;
+        }
+
         using CheckoutShellForm checkoutForm =
             new CheckoutShellForm(new CheckoutPresenter(_services.CheckoutProductSearch));
 
@@ -296,3 +328,6 @@ public sealed class SalrynShellForm : Form
         _workspacePanel.Controls.Add(content);
     }
 }
+
+
+
