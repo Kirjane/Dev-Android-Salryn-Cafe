@@ -9,6 +9,7 @@ namespace Salryn.App.WinForms.Features.Checkout;
 public sealed class CheckoutPresenter
 {
     private readonly ICheckoutProductSearchBoundary? _productSearchBoundary;
+    private readonly CheckoutSessionContext? _sessionContext;
     private readonly PosCheckoutProductPickerBoundary _productPickerBoundary = new();
 
     private PosCheckoutDraftTransactionBuilder _builder = new();
@@ -24,13 +25,21 @@ public sealed class CheckoutPresenter
     private CheckoutPreparedProductViewModel? _preparedProduct;
 
     public CheckoutPresenter()
-        : this(productSearchBoundary: null)
+        : this(productSearchBoundary: null, sessionContext: null)
     {
     }
 
     public CheckoutPresenter(ICheckoutProductSearchBoundary? productSearchBoundary)
+        : this(productSearchBoundary, sessionContext: null)
+    {
+    }
+
+    public CheckoutPresenter(
+        ICheckoutProductSearchBoundary? productSearchBoundary,
+        CheckoutSessionContext? sessionContext)
     {
         _productSearchBoundary = productSearchBoundary;
+        _sessionContext = sessionContext;
         State = CheckoutViewModel.Empty();
         _ = RefreshState("Checkout presenter ready.");
     }
@@ -50,7 +59,22 @@ public sealed class CheckoutPresenter
         _preparedProductLineInput = null;
         _preparedProduct = null;
 
-        return RefreshState("Checkout presenter initialized.");
+        if (_sessionContext is not null)
+        {
+            Result cashierResult = _builder.SetCashierUserId(_sessionContext.CashierUserId);
+
+            if (cashierResult.IsFailure)
+            {
+                return FailFrom(cashierResult);
+            }
+
+            _cashierUserId = _sessionContext.CashierUserId;
+
+            return RefreshState(
+                $"Checkout bound to cashier shift {_sessionContext.ShortCashierSessionId}.");
+        }
+
+        return RefreshState("Checkout presenter initialized without cashier shift context.");
     }
 
     public CheckoutPresenterOperationResult SetCashierUserId(Guid cashierUserId)
@@ -365,6 +389,11 @@ public sealed class CheckoutPresenter
 
         State = new CheckoutViewModel(
             CashierUserId: _cashierUserId,
+            CashierSessionId: _sessionContext?.CashierSessionId,
+            CashierDisplayName: _sessionContext?.CashierDisplayName ?? string.Empty,
+            CashierRoleName: _sessionContext?.CashierRoleName ?? string.Empty,
+            CashierSessionText: _sessionContext?.ShiftLine ?? "No cashier shift context bound.",
+            CheckoutModeText: _sessionContext?.ModeLine ?? "Repository-backed product search · Sale completion locked",
             ReceiptNumber: _receiptNumber,
             ProductInputText: _productInputText,
             ProductResultText: _productResultText,
@@ -494,4 +523,5 @@ public sealed class CheckoutPresenter
         return (quantityX1000 / 1000m).ToString("0.###", CultureInfo.InvariantCulture);
     }
 }
+
 

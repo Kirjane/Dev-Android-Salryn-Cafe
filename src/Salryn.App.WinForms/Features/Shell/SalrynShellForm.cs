@@ -257,8 +257,25 @@ public sealed class SalrynShellForm : Form
             return;
         }
 
+        if (shiftGateForm.OpenSession is null)
+        {
+            ShowPlaceholder(
+                "POS Checkout",
+                "Checkout was not opened.",
+                "Cashier shift gate did not return an open shift session.");
+
+            return;
+        }
+
+        CheckoutSessionContext checkoutSessionContext =
+            CheckoutSessionContext.From(
+                _session,
+                shiftGateForm.OpenSession);
+
         using CheckoutShellForm checkoutForm =
-            new CheckoutShellForm(new CheckoutPresenter(_services.CheckoutProductSearch));
+            new CheckoutShellForm(new CheckoutPresenter(
+                _services.CheckoutProductSearch,
+                checkoutSessionContext));
 
         checkoutForm.StartPosition = FormStartPosition.CenterParent;
         checkoutForm.ShowDialog(this);
@@ -328,6 +345,7 @@ public sealed class SalrynShellForm : Form
         _workspacePanel.Controls.Add(content);
     }
 }
+
 
 
 

@@ -52,6 +52,11 @@ public sealed record CheckoutTotalsViewModel(
 
 public sealed record CheckoutViewModel(
     Guid? CashierUserId,
+    Guid? CashierSessionId,
+    string CashierDisplayName,
+    string CashierRoleName,
+    string CashierSessionText,
+    string CheckoutModeText,
     string ReceiptNumber,
     string ProductInputText,
     string ProductResultText,
@@ -77,6 +82,11 @@ public sealed record CheckoutViewModel(
     {
         return new CheckoutViewModel(
             CashierUserId: null,
+            CashierSessionId: null,
+            CashierDisplayName: string.Empty,
+            CashierRoleName: string.Empty,
+            CashierSessionText: "No cashier shift context bound.",
+            CheckoutModeText: "Repository-backed product search · Sale completion locked",
             ReceiptNumber: string.Empty,
             ProductInputText: string.Empty,
             ProductResultText: "Waiting for product input.",

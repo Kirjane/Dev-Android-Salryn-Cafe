@@ -8,7 +8,8 @@ public sealed class CheckoutShellForm : Form
     private readonly CheckoutPresenter _presenter;
 
     private readonly Label _modeLabel = new();
-    private readonly Label _statusLabel = new();
+        private readonly Label _shiftContextLabel = new();
+private readonly Label _statusLabel = new();
 
     private readonly TextBox _productInputTextBox = new();
     private readonly Button _searchButton = new();
@@ -94,19 +95,16 @@ public sealed class CheckoutShellForm : Form
             Location = new Point(20, 10)
         };
 
-        Label subtitle = new()
-        {
-            AutoSize = true,
-            Text = "Checkout workspace",
-            Font = new Font("Segoe UI", 10F, FontStyle.Regular),
-            ForeColor = UiColors.HeaderMuted,
-            Location = new Point(23, 52)
-        };
+        _shiftContextLabel.AutoSize = true;
+        _shiftContextLabel.Text = "Checkout workspace";
+        _shiftContextLabel.Font = new Font("Segoe UI", 10F, FontStyle.Regular);
+        _shiftContextLabel.ForeColor = UiColors.HeaderMuted;
+        _shiftContextLabel.Location = new Point(23, 52);
 
         _modeLabel.AutoSize = false;
         _modeLabel.Width = 370;
         _modeLabel.Height = 34;
-        _modeLabel.Text = "Repository-backed product search • Sale completion locked";
+        _modeLabel.Text = "Repository-backed product search · Sale completion locked";
         _modeLabel.TextAlign = ContentAlignment.MiddleRight;
         _modeLabel.Font = new Font("Segoe UI", 9.5F, FontStyle.Bold);
         _modeLabel.ForeColor = UiColors.HeaderMuted;
@@ -119,7 +117,7 @@ public sealed class CheckoutShellForm : Form
         };
 
         header.Controls.Add(title);
-        header.Controls.Add(subtitle);
+        header.Controls.Add(_shiftContextLabel);
         header.Controls.Add(_modeLabel);
 
         return header;
@@ -620,6 +618,9 @@ public sealed class CheckoutShellForm : Form
                 _productInputTextBox.Text = state.ProductInputText;
             }
 
+            _modeLabel.Text = state.CheckoutModeText;
+            _shiftContextLabel.Text = state.CashierSessionText;
+
             _productResultLabel.Text = state.ProductResultText;
 
             if (state.PreparedProduct is null)
@@ -860,3 +861,5 @@ public sealed class CheckoutShellForm : Form
         public static readonly Color TextMuted = Color.FromArgb(71, 85, 105);
     }
 }
+
+
