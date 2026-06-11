@@ -28,10 +28,15 @@ internal static class PosCheckoutDraftTransactionBuilderSmokeChecks
             "PosCheckoutDraft.EmptyTotals");
 
         Guid cashierId = Guid.NewGuid();
+        Guid cashierSessionId = Guid.NewGuid();
 
         RequireSuccess(
             builder.SetCashierUserId(cashierId),
             "PosCheckoutDraft.SetCashier");
+
+        RequireSuccess(
+            builder.SetCashierSessionId(cashierSessionId),
+            "PosCheckoutDraft.SetCashierSession");
 
         RequireSuccess(
             builder.SetReceiptNumber("DRFT-" + Guid.NewGuid().ToString("N")),
@@ -195,6 +200,7 @@ internal static class PosCheckoutDraftTransactionBuilderSmokeChecks
         VerifyApplicationRequest(
             request,
             cashierId,
+            cashierSessionId,
             trackedProductId);
 
         Console.WriteLine("POS checkout draft transaction builder smoke checks succeeded.");
@@ -204,9 +210,11 @@ internal static class PosCheckoutDraftTransactionBuilderSmokeChecks
     private static void VerifyApplicationRequest(
         PosCheckoutApplicationRequest request,
         Guid expectedCashierId,
+        Guid expectedCashierSessionId,
         Guid expectedProductId)
     {
         if (request.CashierUserId != expectedCashierId ||
+            request.CashierSessionId != expectedCashierSessionId ||
             string.IsNullOrWhiteSpace(request.ReceiptNumber) ||
             request.SaleDiscountCents != 300 ||
             request.TaxCents != 100 ||
@@ -324,3 +332,4 @@ internal static class PosCheckoutDraftTransactionBuilderSmokeChecks
         return result.Value;
     }
 }
+

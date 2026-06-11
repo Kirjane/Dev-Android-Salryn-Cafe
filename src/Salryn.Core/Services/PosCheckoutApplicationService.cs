@@ -21,6 +21,7 @@ public sealed record PosCheckoutPaymentInput(
 
 public sealed record PosCheckoutApplicationRequest(
     Guid CashierUserId,
+    Guid CashierSessionId,
     string ReceiptNumber,
     IReadOnlyList<PosCheckoutLineInput> Lines,
     IReadOnlyList<PosCheckoutPaymentInput> Payments,
@@ -177,7 +178,7 @@ public sealed class PosCheckoutApplicationService : IPosCheckoutApplicationServi
                 ReceiptNumber = request.ReceiptNumber.Trim(),
                 SaleDate = saleDate,
                 CashierUserId = request.CashierUserId,
-                CashierSessionId = null,
+                CashierSessionId = request.CashierSessionId,
                 Subtotal = Money.FromCents(subtotalCents),
                 Discount = Money.FromCents(request.SaleDiscountCents),
                 Tax = Money.FromCents(request.TaxCents),
@@ -224,6 +225,13 @@ public sealed class PosCheckoutApplicationService : IPosCheckoutApplicationServi
             return Result.Fail(Error.Validation(
                 "CheckoutBoundary.InvalidCashierUserId",
                 "Checkout cashier user ID is required."));
+        }
+
+        if (request.CashierSessionId == Guid.Empty)
+        {
+            return Result.Fail(Error.Validation(
+                "CheckoutBoundary.InvalidCashierSessionId",
+                "Checkout cashier session ID is required."));
         }
 
         if (string.IsNullOrWhiteSpace(request.ReceiptNumber))
@@ -357,3 +365,4 @@ public sealed class PosCheckoutApplicationService : IPosCheckoutApplicationServi
             MidpointRounding.AwayFromZero));
     }
 }
+

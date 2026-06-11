@@ -29,6 +29,7 @@ internal static class PosCheckoutApplicationBoundarySmokeChecks
         ExpectFailure(
             service.CompleteSaleAsync(new PosCheckoutApplicationRequest(
                 Guid.NewGuid(),
+                Guid.NewGuid(),
                 "APP-EMPTY-LINES",
                 Array.Empty<PosCheckoutLineInput>(),
                 new[] { new PosCheckoutPaymentInput(PaymentMethod.Cash, 1000) },
@@ -95,6 +96,7 @@ internal static class PosCheckoutApplicationBoundarySmokeChecks
 
         return new PosCheckoutApplicationRequest(
             cashierUserId,
+            Guid.NewGuid(),
             "APP-" + Guid.NewGuid().ToString("N"),
             new[]
             {
@@ -124,7 +126,7 @@ internal static class PosCheckoutApplicationBoundarySmokeChecks
     {
         if (request.Sale.Id == Guid.Empty ||
             request.Sale.CashierUserId == Guid.Empty ||
-            request.Sale.CashierSessionId is not null ||
+            request.Sale.CashierSessionId is null ||
             request.Sale.Status != SaleStatus.Completed ||
             request.Sale.Subtotal.Cents != 2900 ||
             request.Sale.Discount.Cents != 200 ||
@@ -217,3 +219,4 @@ internal static class PosCheckoutApplicationBoundarySmokeChecks
         }
     }
 }
+

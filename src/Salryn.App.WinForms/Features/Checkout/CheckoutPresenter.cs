@@ -68,6 +68,13 @@ public sealed class CheckoutPresenter
                 return FailFrom(cashierResult);
             }
 
+            Result cashierSessionResult = _builder.SetCashierSessionId(_sessionContext.CashierSessionId);
+
+            if (cashierSessionResult.IsFailure)
+            {
+                return FailFrom(cashierSessionResult);
+            }
+
             _cashierUserId = _sessionContext.CashierUserId;
 
             return RefreshState(
@@ -523,5 +530,6 @@ public sealed class CheckoutPresenter
         return (quantityX1000 / 1000m).ToString("0.###", CultureInfo.InvariantCulture);
     }
 }
+
 
 
