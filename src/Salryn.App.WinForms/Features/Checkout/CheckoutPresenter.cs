@@ -25,6 +25,8 @@ public sealed class CheckoutPresenter
     private Guid? _selectedLineId;
     private PosCheckoutDraftLineInput? _preparedProductLineInput;
     private CheckoutPreparedProductViewModel? _preparedProduct;
+    private CheckoutCompletionDryRunViewModel _completionDryRun =
+        CheckoutCompletionDryRunViewModel.NotRun();
 
     public CheckoutPresenter()
         : this(
@@ -95,6 +97,7 @@ public sealed class CheckoutPresenter
         _selectedLineId = null;
         _preparedProductLineInput = null;
         _preparedProduct = null;
+        _completionDryRun = CheckoutCompletionDryRunViewModel.NotRun();
 
         Result receiptResult = AssignNewReceiptNumber();
 
@@ -138,6 +141,7 @@ public sealed class CheckoutPresenter
         }
 
         _cashierUserId = cashierUserId;
+        ResetCompletionDryRun();
 
         return RefreshState("Cashier placeholder set.");
     }
@@ -176,6 +180,7 @@ public sealed class CheckoutPresenter
         }
 
         _receiptNumber = trimmed;
+        ResetCompletionDryRun();
 
         return RefreshState("Receipt number set.");
     }
@@ -292,6 +297,7 @@ public sealed class CheckoutPresenter
         _preparedProduct = null;
         _productInputText = string.Empty;
         _productResultText = "Waiting for product input.";
+        ResetCompletionDryRun();
 
         return RefreshState("Prepared product added to draft.");
     }
@@ -313,6 +319,7 @@ public sealed class CheckoutPresenter
         }
 
         _selectedLineId = result.Value.Id;
+        ResetCompletionDryRun();
 
         return RefreshState("Prepared line added to draft.");
     }
@@ -340,6 +347,8 @@ public sealed class CheckoutPresenter
             _selectedLineId = null;
         }
 
+        ResetCompletionDryRun();
+
         return RefreshState("Draft line removed.");
     }
 
@@ -354,6 +363,7 @@ public sealed class CheckoutPresenter
 
         _cashAmountCents = amountCents;
         _cashAmountText = FormatMoney(amountCents);
+        ResetCompletionDryRun();
 
         return RefreshState("Cash amount updated.");
     }
@@ -416,6 +426,8 @@ public sealed class CheckoutPresenter
             return FailFrom(result);
         }
 
+        ResetCompletionDryRun();
+
         return RefreshState("Cash payment added to draft.");
     }
 
@@ -428,12 +440,76 @@ public sealed class CheckoutPresenter
             return FailFrom(result);
         }
 
+        ResetCompletionDryRun();
+
         return RefreshState("Draft payments cleared.");
     }
 
     public CheckoutPresenterOperationResult ClearDraft()
     {
         return Initialize();
+    }
+
+    public CheckoutPresenterOperationResult DryRunCompletionRequest()
+    {
+        Result<PosCheckoutDraftTransaction> transactionResult = _builder.GetTransaction();
+
+        if (transactionResult.IsFailure)
+        {
+            return FailFrom(transactionResult);
+        }
+
+        Result<PosCheckoutApplicationRequest> requestResult =
+            _builder.BuildApplicationRequest();
+
+        if (requestResult.IsFailure)
+        {
+            _completionDryRun = new CheckoutCompletionDryRunViewModel(
+                HasRun: true,
+                IsSuccess: false,
+                BuiltRequest: false,
+                SummaryText: "failed",
+                DetailText: requestResult.Error,
+                ErrorCode: requestResult.ErrorDetail.Code,
+                ErrorMessage: requestResult.Error);
+
+            CheckoutPresenterOperationResult refreshed =
+                RefreshState("Completion request dry run failed.");
+
+            State = refreshed.State with
+            {
+                HasError = true,
+                ErrorCode = requestResult.ErrorDetail.Code,
+                ErrorMessage = requestResult.Error,
+                StatusMessage = requestResult.Error
+            };
+
+            return new CheckoutPresenterOperationResult(
+                IsSuccess: false,
+                ErrorCode: requestResult.ErrorDetail.Code,
+                ErrorMessage: requestResult.Error,
+                State: State);
+        }
+
+        PosCheckoutApplicationRequest request = requestResult.Value;
+        PosCheckoutDraftTransaction transaction = transactionResult.Value;
+
+        _completionDryRun = new CheckoutCompletionDryRunViewModel(
+            HasRun: true,
+            IsSuccess: true,
+            BuiltRequest: true,
+            SummaryText: "passed · request built · submit locked",
+            DetailText:
+                $"Receipt {request.ReceiptNumber} · Shift {request.CashierSessionId.ToString("N")[..8]} · {request.Lines.Count} item(s) · {request.Payments.Count} payment(s) · total {FormatMoney(transaction.Totals.TotalCents)}.",
+            ErrorCode: null,
+            ErrorMessage: null);
+
+        return RefreshState("Completion request dry run passed. Sale submit remains locked.");
+    }
+
+    private void ResetCompletionDryRun()
+    {
+        _completionDryRun = CheckoutCompletionDryRunViewModel.NotRun();
     }
 
     public CheckoutPresenterOperationResult RefreshState()
@@ -494,6 +570,7 @@ public sealed class CheckoutPresenter
             CanClearPayments: hasPayments,
             CanCompleteSale: false,
             CompletionReadiness: MapCompletionReadiness(completionReadiness),
+            CompletionDryRun: _completionDryRun,
             StatusMessage: statusMessage,
             HasError: false,
             ErrorCode: null,
@@ -623,6 +700,7 @@ public sealed class CheckoutPresenter
         return (quantityX1000 / 1000m).ToString("0.###", CultureInfo.InvariantCulture);
     }
 }
+
 
 
 

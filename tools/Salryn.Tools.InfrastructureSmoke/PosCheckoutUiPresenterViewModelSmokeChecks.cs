@@ -47,6 +47,19 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
             throw new InvalidOperationException("CompletionReadiness.Initial presenter state verification failed.");
         }
 
+        CheckoutPresenterOperationResult initialDryRun =
+            presenter.DryRunCompletionRequest();
+
+        if (initialDryRun.IsSuccess ||
+            !initialDryRun.State.HasError ||
+            !initialDryRun.State.CompletionDryRun.HasRun ||
+            initialDryRun.State.CompletionDryRun.IsSuccess ||
+            initialDryRun.State.CompletionDryRun.BuiltRequest ||
+            !string.Equals(initialDryRun.ErrorCode, "CheckoutDraft.InvalidCashierUserId", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("CompletionDryRun.InitialMissingCashier validation failed.");
+        }
+
         Guid cashierId = Guid.NewGuid();
 
         RequireSuccess(
@@ -128,9 +141,23 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
             presenter.State.CompletionReadiness.HasCashierSession ||
             presenter.State.CompletionReadiness.CanBuildCompletionRequest ||
             presenter.State.CompletionReadiness.CanSubmitSale ||
+            presenter.State.CompletionDryRun.HasRun ||
             presenter.State.CanCompleteSale)
         {
             throw new InvalidOperationException("CompletionReadiness.MissingSession payment/totals state failed.");
+        }
+
+        CheckoutPresenterOperationResult missingSessionDryRun =
+            presenter.DryRunCompletionRequest();
+
+        if (missingSessionDryRun.IsSuccess ||
+            !missingSessionDryRun.State.HasError ||
+            !missingSessionDryRun.State.CompletionDryRun.HasRun ||
+            missingSessionDryRun.State.CompletionDryRun.IsSuccess ||
+            missingSessionDryRun.State.CompletionDryRun.BuiltRequest ||
+            !string.Equals(missingSessionDryRun.ErrorCode, "CheckoutDraft.InvalidCashierSessionId", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("CompletionDryRun.MissingSession validation failed.");
         }
 
         CheckoutSessionContext sessionContext = new(
@@ -169,9 +196,24 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
             !sessionPresenter.State.CompletionReadiness.IsPaidInFull ||
             !sessionPresenter.State.CompletionReadiness.CanBuildCompletionRequest ||
             sessionPresenter.State.CompletionReadiness.CanSubmitSale ||
+            sessionPresenter.State.CompletionDryRun.HasRun ||
             sessionPresenter.State.CanCompleteSale)
         {
             throw new InvalidOperationException("CompletionReadiness.ReadyButLocked state failed.");
+        }
+
+        CheckoutPresenterOperationResult readyDryRun = RequireSuccess(
+            sessionPresenter.DryRunCompletionRequest(),
+            "CheckoutUiPresenter.ReadyDryRun");
+
+        if (!readyDryRun.State.CompletionDryRun.HasRun ||
+            !readyDryRun.State.CompletionDryRun.IsSuccess ||
+            !readyDryRun.State.CompletionDryRun.BuiltRequest ||
+            string.IsNullOrWhiteSpace(readyDryRun.State.CompletionDryRun.DetailText) ||
+            readyDryRun.State.CompletionReadiness.CanSubmitSale ||
+            readyDryRun.State.CanCompleteSale)
+        {
+            throw new InvalidOperationException("CompletionDryRun.ReadyButLocked validation failed.");
         }
 
         RequireSuccess(
@@ -234,6 +276,7 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
             presenter.State.CashierUserId is not null ||
             string.IsNullOrWhiteSpace(presenter.State.ReceiptNumber) ||
             string.Equals(presenter.State.ReceiptNumber, "P40-UI-0001", StringComparison.Ordinal) ||
+            presenter.State.CompletionDryRun.HasRun ||
             presenter.State.HasError)
         {
             throw new InvalidOperationException("Checkout presenter clear draft reset state failed.");
@@ -290,5 +333,6 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
         return result;
     }
 }
+
 
 

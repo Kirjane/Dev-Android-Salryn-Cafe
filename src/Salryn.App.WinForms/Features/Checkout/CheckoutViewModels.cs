@@ -62,6 +62,28 @@ public sealed record CheckoutCompletionReadinessViewModel(
     string SummaryText,
     string DetailText);
 
+public sealed record CheckoutCompletionDryRunViewModel(
+    bool HasRun,
+    bool IsSuccess,
+    bool BuiltRequest,
+    string SummaryText,
+    string DetailText,
+    string? ErrorCode,
+    string? ErrorMessage)
+{
+    public static CheckoutCompletionDryRunViewModel NotRun()
+    {
+        return new CheckoutCompletionDryRunViewModel(
+            HasRun: false,
+            IsSuccess: false,
+            BuiltRequest: false,
+            SummaryText: "not executed",
+            DetailText: "Completion request dry run has not been executed.",
+            ErrorCode: null,
+            ErrorMessage: null);
+    }
+}
+
 public sealed record CheckoutViewModel(
     Guid? CashierUserId,
     Guid? CashierSessionId,
@@ -86,6 +108,7 @@ public sealed record CheckoutViewModel(
     bool CanClearPayments,
     bool CanCompleteSale,
     CheckoutCompletionReadinessViewModel CompletionReadiness,
+    CheckoutCompletionDryRunViewModel CompletionDryRun,
     string StatusMessage,
     bool HasError,
     string? ErrorCode,
@@ -141,6 +164,7 @@ public sealed record CheckoutViewModel(
                 CanSubmitSale: false,
                 SummaryText: "Completion not ready",
                 DetailText: "Checkout has not been initialized."),
+            CompletionDryRun: CheckoutCompletionDryRunViewModel.NotRun(),
             StatusMessage: "Checkout presenter ready.",
             HasError: false,
             ErrorCode: null,
@@ -153,4 +177,5 @@ public sealed record CheckoutPresenterOperationResult(
     string? ErrorCode,
     string? ErrorMessage,
     CheckoutViewModel State);
+
 

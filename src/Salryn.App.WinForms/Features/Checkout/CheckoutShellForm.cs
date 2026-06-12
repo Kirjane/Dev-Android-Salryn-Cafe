@@ -11,6 +11,7 @@ public sealed class CheckoutShellForm : Form
     private readonly Label _shiftContextLabel = new();
     private readonly Label _receiptNumberLabel = new();
     private readonly Label _completionReadinessLabel = new();
+    private readonly Label _completionDryRunLabel = new();
     private readonly Label _statusLabel = new();
 
     private readonly TextBox _productInputTextBox = new();
@@ -34,6 +35,7 @@ public sealed class CheckoutShellForm : Form
     private readonly TextBox _cashAmountTextBox = new();
     private readonly Button _payCashButton = new();
 
+    private readonly Button _dryRunCompletionButton = new();
     private readonly Button _removeItemButton = new();
     private readonly Button _clearCartButton = new();
     private readonly Button _completeSaleButton = new();
@@ -454,13 +456,15 @@ public sealed class CheckoutShellForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 8,
+            RowCount = 10,
             Padding = new Padding(18),
             BackColor = Color.White
         };
 
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
@@ -484,23 +488,32 @@ public sealed class CheckoutShellForm : Form
         _completionReadinessLabel.Text = "Completion: not ready";
         layout.Controls.Add(_completionReadinessLabel, 0, 2);
 
+        _completionDryRunLabel.Dock = DockStyle.Fill;
+        _completionDryRunLabel.TextAlign = ContentAlignment.MiddleLeft;
+        _completionDryRunLabel.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+        _completionDryRunLabel.ForeColor = UiColors.TextMuted;
+        _completionDryRunLabel.Text = "Dry run: not executed";
+        layout.Controls.Add(_completionDryRunLabel, 0, 3);
+
+        ConfigureSecondaryButton(_dryRunCompletionButton, "Validate Completion Dry Run");
         ConfigureSecondaryButton(_removeItemButton, "Remove Selected Item");
         ConfigureSecondaryButton(_clearCartButton, "Clear Draft Cart");
         ConfigureLockedButton(_completeSaleButton, "Complete Sale Locked");
 
-        layout.Controls.Add(_removeItemButton, 0, 3);
-        layout.Controls.Add(_clearCartButton, 0, 4);
-        layout.Controls.Add(_completeSaleButton, 0, 5);
+        layout.Controls.Add(_dryRunCompletionButton, 0, 4);
+        layout.Controls.Add(_removeItemButton, 0, 5);
+        layout.Controls.Add(_clearCartButton, 0, 6);
+        layout.Controls.Add(_completeSaleButton, 0, 7);
 
         Label note = new()
         {
             Dock = DockStyle.Fill,
-            Text = "This screen can search products, add draft lines, show totals, add draft cash payment, and evaluate completion readiness. Final sale save remains locked.",
+            Text = "This screen can search products, add draft lines, show totals, add draft cash payment, evaluate readiness, and dry-run completion validation. Final sale save remains locked.",
             Font = new Font("Segoe UI", 9F, FontStyle.Regular),
             ForeColor = UiColors.TextMuted
         };
 
-        layout.Controls.Add(note, 0, 6);
+        layout.Controls.Add(note, 0, 8);
 
         card.Controls.Add(layout);
 
@@ -606,6 +619,11 @@ public sealed class CheckoutShellForm : Form
 
             Render(_presenter.AddCashPayment().State);
         };
+
+        _dryRunCompletionButton.Click += (_, _) =>
+        {
+            Render(_presenter.DryRunCompletionRequest().State);
+        };
     }
 
     private async Task SearchCurrentProductAsync()
@@ -645,6 +663,12 @@ public sealed class CheckoutShellForm : Form
             _completionReadinessLabel.ForeColor = state.CompletionReadiness.CanBuildCompletionRequest
                 ? UiColors.Success
                 : UiColors.TextMuted;
+            _completionDryRunLabel.Text = $"Dry run: {state.CompletionDryRun.SummaryText}";
+            _completionDryRunLabel.ForeColor = !state.CompletionDryRun.HasRun
+                ? UiColors.TextMuted
+                : state.CompletionDryRun.IsSuccess
+                    ? UiColors.Success
+                    : UiColors.Danger;
 
             _productResultLabel.Text = state.ProductResultText;
 
@@ -683,6 +707,7 @@ public sealed class CheckoutShellForm : Form
             _removeItemButton.Enabled = state.Lines.Count > 0 && GetSelectedLineId().HasValue;
             _clearCartButton.Enabled = state.Lines.Count > 0;
             _payCashButton.Enabled = state.CanAddCashPayment;
+            _dryRunCompletionButton.Enabled = true;
             _completeSaleButton.Enabled = false;
 
             _statusLabel.Text = state.HasError
@@ -886,6 +911,7 @@ public sealed class CheckoutShellForm : Form
         public static readonly Color TextMuted = Color.FromArgb(71, 85, 105);
     }
 }
+
 
 
 
