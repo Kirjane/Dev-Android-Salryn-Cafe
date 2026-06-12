@@ -530,7 +530,7 @@ public sealed class CheckoutShellForm : Form
         Label note = new()
         {
             Dock = DockStyle.Fill,
-            Text = "This screen can search products, add draft lines, show totals, add draft cash payment, dry-run completion validation, prepare a submit guard, and wire guarded sale execution. Final sale save button remains locked.",
+            Text = "This screen can search products, add draft lines, show totals, add draft cash payment, dry-run completion validation, prepare a submit guard, and complete a sale through the guarded execution path.",
             Font = new Font("Segoe UI", 9F, FontStyle.Regular),
             ForeColor = UiColors.TextMuted
         };
@@ -654,6 +654,9 @@ public sealed class CheckoutShellForm : Form
 
         _completeSaleButton.Click += async (_, _) =>
         {
+            _completeSaleButton.Enabled = false;
+            _completeSaleButton.Text = "Completing Sale...";
+
             Render((await _presenter.ExecutePreparedSaleSubmitAsync()).State);
         };
     }
@@ -755,10 +758,16 @@ public sealed class CheckoutShellForm : Form
             _prepareSubmitGuardButton.Enabled =
                 state.CompletionDryRun.IsSuccess &&
                 !state.SaleSubmitGuard.IsInProgress;
-            _completeSaleButton.Text = state.SaleSubmitGuard.CanExecuteSubmit
-                ? "Complete Sale Ready (Locked)"
-                : "Complete Sale Locked";
-            _completeSaleButton.Enabled = false;
+            _completeSaleButton.Text = state.SaleSubmitResult.IsCompleted
+                ? "Sale Completed"
+                : state.SaleSubmitGuard.IsInProgress
+                    ? "Completing Sale..."
+                    : state.CanCompleteSale
+                        ? "Complete Sale"
+                        : state.SaleSubmitGuard.CanExecuteSubmit
+                            ? "Complete Sale Ready"
+                            : "Complete Sale Locked";
+            _completeSaleButton.Enabled = state.CanCompleteSale;
 
             _statusLabel.Text = state.HasError
                 ? $"{state.StatusMessage} [{state.ErrorCode}]"
@@ -961,6 +970,7 @@ public sealed class CheckoutShellForm : Form
         public static readonly Color TextMuted = Color.FromArgb(71, 85, 105);
     }
 }
+
 
 
 

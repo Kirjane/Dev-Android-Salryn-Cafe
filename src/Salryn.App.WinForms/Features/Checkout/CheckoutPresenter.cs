@@ -562,15 +562,15 @@ public sealed class CheckoutPresenter
                 HasAttemptToken: true,
                 AttemptTokenText: attemptToken,
                 CanExecuteSubmit: true,
-                SummaryText: "prepared · execution wired · UI locked",
+                SummaryText: "prepared · ready to complete",
                 DetailText:
-                    $"Attempt {attemptToken} · Receipt {request.ReceiptNumber} · Shift {request.CashierSessionId.ToString("N")[..8]} · submit execution is wired but the UI button remains locked.",
+                    $"Attempt {attemptToken} · Receipt {request.ReceiptNumber} · Shift {request.CashierSessionId.ToString("N")[..8]} · Complete Sale is enabled through the guarded execution path.",
                 ErrorCode: null,
                 ErrorMessage: null);
 
             _isSaleSubmitInProgress = false;
 
-            return RefreshState("Sale submit guard prepared. Execution is wired but UI remains locked.");
+            return RefreshState("Sale submit guard prepared. Complete Sale is ready.");
         }
         finally
         {
@@ -651,9 +651,9 @@ public sealed class CheckoutPresenter
                 HasRun: true,
                 IsSuccess: true,
                 IsCompleted: true,
-                SummaryText: "completed · UI still locked",
+                SummaryText: "completed",
                 DetailText:
-                    $"Receipt {request.ReceiptNumber} completed through guarded execution path. UI button remains locked until explicit unlock phase.",
+                    $"Receipt {request.ReceiptNumber} completed through guarded execution path. Complete Sale is now locked after completion.",
                 ErrorCode: null,
                 ErrorMessage: null);
 
@@ -803,7 +803,7 @@ public sealed class CheckoutPresenter
             CanRemoveSelectedLine: hasLines,
             CanAddCashPayment: hasLines && _cashAmountCents > 0,
             CanClearPayments: hasPayments,
-            CanCompleteSale: false,
+            CanCompleteSale: _saleSubmitGuard.CanExecuteSubmit && !_isSaleSubmitInProgress && !_hasSaleSubmitCompleted,
             CompletionReadiness: MapCompletionReadiness(completionReadiness),
             CompletionDryRun: _completionDryRun,
             SaleSubmitGuard: _isSaleSubmitInProgress
@@ -951,6 +951,7 @@ public sealed class CheckoutPresenter
         return (quantityX1000 / 1000m).ToString("0.###", CultureInfo.InvariantCulture);
     }
 }
+
 
 
 

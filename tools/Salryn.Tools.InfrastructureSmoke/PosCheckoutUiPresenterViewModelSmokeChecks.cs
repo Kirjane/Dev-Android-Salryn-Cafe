@@ -259,9 +259,9 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
             !submitGuard.State.SaleSubmitGuard.CanExecuteSubmit ||
             submitGuard.State.SaleSubmitResult.HasRun ||
             submitGuard.State.CompletionReadiness.CanSubmitSale ||
-            submitGuard.State.CanCompleteSale)
+            !submitGuard.State.CanCompleteSale)
         {
-            throw new InvalidOperationException("SaleSubmitGuard.PreparedButExecutionLocked validation failed.");
+            throw new InvalidOperationException("SaleSubmitGuard.PreparedAndUiUnlocked validation failed.");
         }
 
         CheckoutPresenterOperationResult saleSubmit = RequireSuccess(
@@ -451,6 +451,7 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
         return result;
     }
 }
+
 
 
 
