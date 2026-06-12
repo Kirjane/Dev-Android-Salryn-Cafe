@@ -42,6 +42,8 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
             !initial.State.CompletionReadiness.HasReceiptNumber ||
             initial.State.CompletionReadiness.CanBuildCompletionRequest ||
             initial.State.CompletionReadiness.CanSubmitSale ||
+            initial.State.SaleSubmitGuard.IsPrepared ||
+            initial.State.SaleSubmitGuard.CanExecuteSubmit ||
             initial.State.CanCompleteSale)
         {
             throw new InvalidOperationException("CompletionReadiness.Initial presenter state verification failed.");
@@ -55,7 +57,9 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
             !initialDryRun.State.CompletionDryRun.HasRun ||
             initialDryRun.State.CompletionDryRun.IsSuccess ||
             initialDryRun.State.CompletionDryRun.BuiltRequest ||
-            !string.Equals(initialDryRun.ErrorCode, "CheckoutDraft.InvalidCashierUserId", StringComparison.Ordinal))
+            !string.Equals(initialDryRun.ErrorCode, "CheckoutDraft.InvalidCashierUserId", StringComparison.Ordinal) ||
+            initialDryRun.State.SaleSubmitGuard.IsPrepared ||
+            initialDryRun.State.SaleSubmitGuard.CanExecuteSubmit)
         {
             throw new InvalidOperationException("CompletionDryRun.InitialMissingCashier validation failed.");
         }
@@ -142,6 +146,8 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
             presenter.State.CompletionReadiness.CanBuildCompletionRequest ||
             presenter.State.CompletionReadiness.CanSubmitSale ||
             presenter.State.CompletionDryRun.HasRun ||
+            presenter.State.SaleSubmitGuard.IsPrepared ||
+            presenter.State.SaleSubmitGuard.CanExecuteSubmit ||
             presenter.State.CanCompleteSale)
         {
             throw new InvalidOperationException("CompletionReadiness.MissingSession payment/totals state failed.");
@@ -155,7 +161,9 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
             !missingSessionDryRun.State.CompletionDryRun.HasRun ||
             missingSessionDryRun.State.CompletionDryRun.IsSuccess ||
             missingSessionDryRun.State.CompletionDryRun.BuiltRequest ||
-            !string.Equals(missingSessionDryRun.ErrorCode, "CheckoutDraft.InvalidCashierSessionId", StringComparison.Ordinal))
+            !string.Equals(missingSessionDryRun.ErrorCode, "CheckoutDraft.InvalidCashierSessionId", StringComparison.Ordinal) ||
+            missingSessionDryRun.State.SaleSubmitGuard.IsPrepared ||
+            missingSessionDryRun.State.SaleSubmitGuard.CanExecuteSubmit)
         {
             throw new InvalidOperationException("CompletionDryRun.MissingSession validation failed.");
         }
@@ -202,6 +210,22 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
             throw new InvalidOperationException("CompletionReadiness.ReadyButLocked state failed.");
         }
 
+        CheckoutPresenterOperationResult guardBeforeDryRun =
+            sessionPresenter.PrepareSaleSubmitGuard();
+
+        if (guardBeforeDryRun.IsSuccess ||
+            !guardBeforeDryRun.State.HasError ||
+            !string.Equals(
+                guardBeforeDryRun.State.SaleSubmitGuard.ErrorCode,
+                "CheckoutSubmitGuard.DryRunRequired",
+                StringComparison.Ordinal) ||
+            guardBeforeDryRun.State.SaleSubmitGuard.IsPrepared ||
+            guardBeforeDryRun.State.SaleSubmitGuard.CanExecuteSubmit ||
+            guardBeforeDryRun.State.CanCompleteSale)
+        {
+            throw new InvalidOperationException("SaleSubmitGuard.DryRunRequired validation failed.");
+        }
+
         CheckoutPresenterOperationResult readyDryRun = RequireSuccess(
             sessionPresenter.DryRunCompletionRequest(),
             "CheckoutUiPresenter.ReadyDryRun");
@@ -211,9 +235,39 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
             !readyDryRun.State.CompletionDryRun.BuiltRequest ||
             string.IsNullOrWhiteSpace(readyDryRun.State.CompletionDryRun.DetailText) ||
             readyDryRun.State.CompletionReadiness.CanSubmitSale ||
+            readyDryRun.State.SaleSubmitGuard.IsPrepared ||
+            readyDryRun.State.SaleSubmitGuard.CanExecuteSubmit ||
             readyDryRun.State.CanCompleteSale)
         {
             throw new InvalidOperationException("CompletionDryRun.ReadyButLocked validation failed.");
+        }
+
+        CheckoutPresenterOperationResult submitGuard = RequireSuccess(
+            sessionPresenter.PrepareSaleSubmitGuard(),
+            "CheckoutUiPresenter.PrepareSaleSubmitGuard");
+
+        if (!submitGuard.State.SaleSubmitGuard.IsPrepared ||
+            submitGuard.State.SaleSubmitGuard.IsInProgress ||
+            !submitGuard.State.SaleSubmitGuard.HasAttemptToken ||
+            string.IsNullOrWhiteSpace(submitGuard.State.SaleSubmitGuard.AttemptTokenText) ||
+            submitGuard.State.SaleSubmitGuard.CanExecuteSubmit ||
+            submitGuard.State.CompletionReadiness.CanSubmitSale ||
+            submitGuard.State.CanCompleteSale)
+        {
+            throw new InvalidOperationException("SaleSubmitGuard.PreparedButExecutionLocked validation failed.");
+        }
+
+        RequireSuccess(
+            sessionPresenter.ClearDraft(),
+            "CheckoutUiPresenter.SessionClearDraft");
+
+        if (sessionPresenter.State.SaleSubmitGuard.IsPrepared ||
+            sessionPresenter.State.SaleSubmitGuard.HasAttemptToken ||
+            sessionPresenter.State.SaleSubmitGuard.CanExecuteSubmit ||
+            sessionPresenter.State.CompletionDryRun.HasRun ||
+            sessionPresenter.State.CanCompleteSale)
+        {
+            throw new InvalidOperationException("SaleSubmitGuard.ClearDraftReset validation failed.");
         }
 
         RequireSuccess(
@@ -277,6 +331,8 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
             string.IsNullOrWhiteSpace(presenter.State.ReceiptNumber) ||
             string.Equals(presenter.State.ReceiptNumber, "P40-UI-0001", StringComparison.Ordinal) ||
             presenter.State.CompletionDryRun.HasRun ||
+            presenter.State.SaleSubmitGuard.IsPrepared ||
+            presenter.State.SaleSubmitGuard.CanExecuteSubmit ||
             presenter.State.HasError)
         {
             throw new InvalidOperationException("Checkout presenter clear draft reset state failed.");
@@ -333,6 +389,8 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
         return result;
     }
 }
+
+
 
 
 

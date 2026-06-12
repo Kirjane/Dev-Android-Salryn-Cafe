@@ -27,6 +27,9 @@ public sealed class CheckoutPresenter
     private CheckoutPreparedProductViewModel? _preparedProduct;
     private CheckoutCompletionDryRunViewModel _completionDryRun =
         CheckoutCompletionDryRunViewModel.NotRun();
+    private CheckoutSaleSubmitGuardViewModel _saleSubmitGuard =
+        CheckoutSaleSubmitGuardViewModel.NotPrepared();
+    private bool _isSaleSubmitInProgress;
 
     public CheckoutPresenter()
         : this(
@@ -98,6 +101,8 @@ public sealed class CheckoutPresenter
         _preparedProductLineInput = null;
         _preparedProduct = null;
         _completionDryRun = CheckoutCompletionDryRunViewModel.NotRun();
+        _saleSubmitGuard = CheckoutSaleSubmitGuardViewModel.NotPrepared();
+        _isSaleSubmitInProgress = false;
 
         Result receiptResult = AssignNewReceiptNumber();
 
@@ -452,6 +457,8 @@ public sealed class CheckoutPresenter
 
     public CheckoutPresenterOperationResult DryRunCompletionRequest()
     {
+        ResetSaleSubmitGuard();
+
         Result<PosCheckoutDraftTransaction> transactionResult = _builder.GetTransaction();
 
         if (transactionResult.IsFailure)
@@ -507,9 +514,106 @@ public sealed class CheckoutPresenter
         return RefreshState("Completion request dry run passed. Sale submit remains locked.");
     }
 
+
+    public CheckoutPresenterOperationResult PrepareSaleSubmitGuard()
+    {
+        if (_isSaleSubmitInProgress)
+        {
+            return FailSaleSubmitGuard(
+                "CheckoutSubmitGuard.AlreadyInProgress",
+                "Sale submit guard is already preparing a submit attempt.");
+        }
+
+        if (!_completionDryRun.HasRun ||
+            !_completionDryRun.IsSuccess ||
+            !_completionDryRun.BuiltRequest)
+        {
+            return FailSaleSubmitGuard(
+                "CheckoutSubmitGuard.DryRunRequired",
+                "Run a successful completion dry run before preparing the sale submit guard.");
+        }
+
+        _isSaleSubmitInProgress = true;
+
+        try
+        {
+            Result<PosCheckoutApplicationRequest> requestResult =
+                _builder.BuildApplicationRequest();
+
+            if (requestResult.IsFailure)
+            {
+                return FailSaleSubmitGuard(
+                    requestResult.ErrorDetail.Code,
+                    requestResult.Error);
+            }
+
+            PosCheckoutApplicationRequest request = requestResult.Value;
+            Guid attemptId = Guid.NewGuid();
+            string attemptToken = attemptId.ToString("N")[..8].ToUpperInvariant();
+
+            _saleSubmitGuard = new CheckoutSaleSubmitGuardViewModel(
+                IsPrepared: true,
+                IsInProgress: false,
+                HasAttemptToken: true,
+                AttemptTokenText: attemptToken,
+                CanExecuteSubmit: false,
+                SummaryText: "prepared · execution locked",
+                DetailText:
+                    $"Attempt {attemptToken} · Receipt {request.ReceiptNumber} · Shift {request.CashierSessionId.ToString("N")[..8]} · submit execution remains locked.",
+                ErrorCode: null,
+                ErrorMessage: null);
+
+            _isSaleSubmitInProgress = false;
+
+            return RefreshState("Sale submit guard prepared. Execution remains locked.");
+        }
+        finally
+        {
+            _isSaleSubmitInProgress = false;
+        }
+    }
+
+    private CheckoutPresenterOperationResult FailSaleSubmitGuard(string code, string message)
+    {
+        _saleSubmitGuard = new CheckoutSaleSubmitGuardViewModel(
+            IsPrepared: false,
+            IsInProgress: _isSaleSubmitInProgress,
+            HasAttemptToken: false,
+            AttemptTokenText: string.Empty,
+            CanExecuteSubmit: false,
+            SummaryText: "blocked",
+            DetailText: message,
+            ErrorCode: code,
+            ErrorMessage: message);
+
+        CheckoutPresenterOperationResult refreshed =
+            RefreshState("Sale submit guard preparation blocked.");
+
+        State = refreshed.State with
+        {
+            HasError = true,
+            ErrorCode = code,
+            ErrorMessage = message,
+            StatusMessage = message
+        };
+
+        return new CheckoutPresenterOperationResult(
+            IsSuccess: false,
+            ErrorCode: code,
+            ErrorMessage: message,
+            State: State);
+    }
+
+    private void ResetSaleSubmitGuard()
+    {
+        _saleSubmitGuard = CheckoutSaleSubmitGuardViewModel.NotPrepared();
+        _isSaleSubmitInProgress = false;
+    }
     private void ResetCompletionDryRun()
     {
         _completionDryRun = CheckoutCompletionDryRunViewModel.NotRun();
+        _saleSubmitGuard = CheckoutSaleSubmitGuardViewModel.NotPrepared();
+        _isSaleSubmitInProgress = false;
     }
 
     public CheckoutPresenterOperationResult RefreshState()
@@ -571,6 +675,14 @@ public sealed class CheckoutPresenter
             CanCompleteSale: false,
             CompletionReadiness: MapCompletionReadiness(completionReadiness),
             CompletionDryRun: _completionDryRun,
+            SaleSubmitGuard: _isSaleSubmitInProgress
+                ? _saleSubmitGuard with
+                {
+                    IsInProgress = true,
+                    SummaryText = "preparing",
+                    DetailText = "Sale submit guard is preparing a locked submit attempt."
+                }
+                : _saleSubmitGuard,
             StatusMessage: statusMessage,
             HasError: false,
             ErrorCode: null,
@@ -700,6 +812,9 @@ public sealed class CheckoutPresenter
         return (quantityX1000 / 1000m).ToString("0.###", CultureInfo.InvariantCulture);
     }
 }
+
+
+
 
 
 
