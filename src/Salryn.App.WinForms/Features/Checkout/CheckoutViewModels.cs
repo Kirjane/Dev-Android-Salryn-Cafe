@@ -110,6 +110,28 @@ public sealed record CheckoutSaleSubmitGuardViewModel(
     }
 }
 
+public sealed record CheckoutSaleSubmitResultViewModel(
+    bool HasRun,
+    bool IsSuccess,
+    bool IsCompleted,
+    string SummaryText,
+    string DetailText,
+    string? ErrorCode,
+    string? ErrorMessage)
+{
+    public static CheckoutSaleSubmitResultViewModel NotRun()
+    {
+        return new CheckoutSaleSubmitResultViewModel(
+            HasRun: false,
+            IsSuccess: false,
+            IsCompleted: false,
+            SummaryText: "not executed",
+            DetailText: "Sale submit execution has not been executed.",
+            ErrorCode: null,
+            ErrorMessage: null);
+    }
+}
+
 public sealed record CheckoutViewModel(
     Guid? CashierUserId,
     Guid? CashierSessionId,
@@ -136,6 +158,7 @@ public sealed record CheckoutViewModel(
     CheckoutCompletionReadinessViewModel CompletionReadiness,
     CheckoutCompletionDryRunViewModel CompletionDryRun,
     CheckoutSaleSubmitGuardViewModel SaleSubmitGuard,
+    CheckoutSaleSubmitResultViewModel SaleSubmitResult,
     string StatusMessage,
     bool HasError,
     string? ErrorCode,
@@ -193,6 +216,7 @@ public sealed record CheckoutViewModel(
                 DetailText: "Checkout has not been initialized."),
             CompletionDryRun: CheckoutCompletionDryRunViewModel.NotRun(),
             SaleSubmitGuard: CheckoutSaleSubmitGuardViewModel.NotPrepared(),
+            SaleSubmitResult: CheckoutSaleSubmitResultViewModel.NotRun(),
             StatusMessage: "Checkout presenter ready.",
             HasError: false,
             ErrorCode: null,
@@ -205,6 +229,7 @@ public sealed record CheckoutPresenterOperationResult(
     string? ErrorCode,
     string? ErrorMessage,
     CheckoutViewModel State);
+
 
 
 

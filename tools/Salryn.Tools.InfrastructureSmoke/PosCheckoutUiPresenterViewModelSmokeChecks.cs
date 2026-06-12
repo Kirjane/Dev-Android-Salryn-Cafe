@@ -44,6 +44,8 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
             initial.State.CompletionReadiness.CanSubmitSale ||
             initial.State.SaleSubmitGuard.IsPrepared ||
             initial.State.SaleSubmitGuard.CanExecuteSubmit ||
+            initial.State.SaleSubmitResult.HasRun ||
+            initial.State.SaleSubmitResult.IsCompleted ||
             initial.State.CanCompleteSale)
         {
             throw new InvalidOperationException("CompletionReadiness.Initial presenter state verification failed.");
@@ -176,9 +178,13 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
             ShiftOpenedAt: DateTimeOffset.UtcNow,
             OpeningCashText: "PHP 0.00");
 
+        RecordingCheckoutCompletionBoundary completionBoundary = new();
+
         CheckoutPresenter sessionPresenter = new(
             productSearchBoundary: null,
-            sessionContext: sessionContext);
+            sessionContext: sessionContext,
+            receiptNumberBoundary: null,
+            completionBoundary: completionBoundary);
 
         RequireSuccess(
             sessionPresenter.Initialize(),
@@ -250,11 +256,39 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
             submitGuard.State.SaleSubmitGuard.IsInProgress ||
             !submitGuard.State.SaleSubmitGuard.HasAttemptToken ||
             string.IsNullOrWhiteSpace(submitGuard.State.SaleSubmitGuard.AttemptTokenText) ||
-            submitGuard.State.SaleSubmitGuard.CanExecuteSubmit ||
+            !submitGuard.State.SaleSubmitGuard.CanExecuteSubmit ||
+            submitGuard.State.SaleSubmitResult.HasRun ||
             submitGuard.State.CompletionReadiness.CanSubmitSale ||
             submitGuard.State.CanCompleteSale)
         {
             throw new InvalidOperationException("SaleSubmitGuard.PreparedButExecutionLocked validation failed.");
+        }
+
+        CheckoutPresenterOperationResult saleSubmit = RequireSuccess(
+            sessionPresenter.ExecutePreparedSaleSubmitAsync().GetAwaiter().GetResult(),
+            "CheckoutUiPresenter.ExecutePreparedSaleSubmit");
+
+        if (!saleSubmit.State.SaleSubmitResult.HasRun ||
+            !saleSubmit.State.SaleSubmitResult.IsSuccess ||
+            !saleSubmit.State.SaleSubmitResult.IsCompleted ||
+            !saleSubmit.State.SaleSubmitGuard.IsPrepared ||
+            saleSubmit.State.SaleSubmitGuard.CanExecuteSubmit ||
+            saleSubmit.State.CanCompleteSale ||
+            completionBoundary.CompleteSaleCallCount != 1 ||
+            completionBoundary.LastRequest is null)
+        {
+            throw new InvalidOperationException("SaleSubmitExecution.CompletedButUiLocked validation failed.");
+        }
+
+        CheckoutPresenterOperationResult duplicateSubmit =
+            sessionPresenter.ExecutePreparedSaleSubmitAsync().GetAwaiter().GetResult();
+
+        if (duplicateSubmit.IsSuccess ||
+            !string.Equals(duplicateSubmit.ErrorCode, "CheckoutSubmit.AlreadyCompleted", StringComparison.Ordinal) ||
+            completionBoundary.CompleteSaleCallCount != 1 ||
+            duplicateSubmit.State.CanCompleteSale)
+        {
+            throw new InvalidOperationException("SaleSubmitExecution.DuplicateBlocked validation failed.");
         }
 
         RequireSuccess(
@@ -264,6 +298,8 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
         if (sessionPresenter.State.SaleSubmitGuard.IsPrepared ||
             sessionPresenter.State.SaleSubmitGuard.HasAttemptToken ||
             sessionPresenter.State.SaleSubmitGuard.CanExecuteSubmit ||
+            sessionPresenter.State.SaleSubmitResult.HasRun ||
+            sessionPresenter.State.SaleSubmitResult.IsCompleted ||
             sessionPresenter.State.CompletionDryRun.HasRun ||
             sessionPresenter.State.CanCompleteSale)
         {
@@ -333,6 +369,8 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
             presenter.State.CompletionDryRun.HasRun ||
             presenter.State.SaleSubmitGuard.IsPrepared ||
             presenter.State.SaleSubmitGuard.CanExecuteSubmit ||
+            presenter.State.SaleSubmitResult.HasRun ||
+            presenter.State.SaleSubmitResult.IsCompleted ||
             presenter.State.HasError)
         {
             throw new InvalidOperationException("Checkout presenter clear draft reset state failed.");
@@ -340,6 +378,30 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
 
         Console.WriteLine("POS checkout UI presenter / viewmodel smoke checks succeeded.");
         Console.WriteLine();
+    }
+
+    private sealed class RecordingCheckoutCompletionBoundary : ICheckoutCompletionBoundary
+    {
+        public int CompleteSaleCallCount { get; private set; }
+
+        public PosCheckoutApplicationRequest? LastRequest { get; private set; }
+
+        public Result<CheckoutCompletionReadiness> Evaluate(PosCheckoutDraftTransaction transaction)
+        {
+            return new CheckoutCompletionBoundary().Evaluate(transaction);
+        }
+
+        public Task<Result> CompleteSaleAsync(
+            PosCheckoutApplicationRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            _ = cancellationToken;
+
+            CompleteSaleCallCount++;
+            LastRequest = request;
+
+            return Task.FromResult(Result.Success());
+        }
     }
 
     private static void VerifyLineState(
@@ -389,6 +451,7 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
         return result;
     }
 }
+
 
 
 
