@@ -1,5 +1,6 @@
 ﻿using Salryn.App.WinForms.Composition;
 using Salryn.App.WinForms.Features.Checkout;
+using Salryn.App.WinForms.Features.Products;
 using Salryn.App.WinForms.Features.Shifts;
 
 namespace Salryn.App.WinForms.Features.Shell;
@@ -220,10 +221,36 @@ public sealed class SalrynShellForm : Form
             return;
         }
 
+        if (module.Key == ShellModuleKeys.Products)
+        {
+            OpenProducts();
+            return;
+        }
+
         ShowPlaceholder(
             module.Title,
             module.Description,
             "This module is permission-routed but its full workflow is not implemented in this phase.");
+    }
+
+    private void OpenProducts()
+    {
+        if (_session is null)
+        {
+            ShowPlaceholder(
+                "Products",
+                "Product management requires an authenticated user session.",
+                "Login again before opening the product management workspace.");
+
+            return;
+        }
+
+        using ProductManagementForm productForm =
+            new ProductManagementForm(new ProductManagementPresenter(
+                _services.ProductReadRepository));
+
+        productForm.StartPosition = FormStartPosition.CenterParent;
+        productForm.ShowDialog(this);
     }
 
     private void OpenCheckout()
@@ -347,6 +374,7 @@ public sealed class SalrynShellForm : Form
         _workspacePanel.Controls.Add(content);
     }
 }
+
 
 
 
