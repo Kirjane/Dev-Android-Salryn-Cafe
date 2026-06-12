@@ -11,6 +11,11 @@ public interface IProductReadRepository
         Guid productId,
         CancellationToken cancellationToken = default);
 
+    // Kirch: Reads the complete editable product record for safe edit workflows.
+    Task<Result<ProductDetailReadModel?>> FindDetailByIdAsync(
+        Guid productId,
+        CancellationToken cancellationToken = default);
+
     Task<Result<ProductLookupReadModel?>> FindByBarcodeAsync(
         Barcode barcode,
         CancellationToken cancellationToken = default);
@@ -137,3 +142,4 @@ public interface IAuthenticationRepository
         string passwordHash,
         CancellationToken cancellationToken = default);
 }
+

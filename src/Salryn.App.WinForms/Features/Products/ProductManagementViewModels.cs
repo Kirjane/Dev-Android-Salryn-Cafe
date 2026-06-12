@@ -94,3 +94,59 @@ public sealed record ProductCreateOperationResult(
     string? ErrorCode,
     string? ErrorMessage);
 
+
+// Kirch: The edit form model carries existing product values plus dropdown options for safe updates.
+public sealed record ProductEditFormViewModel(
+    Guid ProductId,
+    string? Sku,
+    string? Barcode,
+    string Name,
+    string? Description,
+    Guid? CategoryId,
+    Guid? BrandId,
+    Guid UnitId,
+    Guid? SupplierId,
+    string? CostPrice,
+    string SellingPrice,
+    string? WholesalePrice,
+    string StockOnHand,
+    string ReorderLevel,
+    bool TrackStock,
+    bool AllowDiscount,
+    bool IsActive,
+    string? Notes,
+    DateTimeOffset CreatedAt,
+    IReadOnlyList<ProductCatalogOptionViewModel> Units,
+    IReadOnlyList<ProductCatalogOptionViewModel> Categories,
+    IReadOnlyList<ProductCatalogOptionViewModel> Brands,
+    IReadOnlyList<ProductCatalogOptionViewModel> Suppliers,
+    string StatusMessage,
+    bool HasError,
+    string? ErrorCode,
+    string? ErrorMessage);
+
+// Kirch: The edit request sends the full edited product state so the repository update stays complete.
+public sealed record ProductEditRequest(
+    Guid ProductId,
+    string? Sku,
+    string? Barcode,
+    string Name,
+    string? Description,
+    Guid? CategoryId,
+    Guid? BrandId,
+    Guid UnitId,
+    Guid? SupplierId,
+    string? CostPrice,
+    string SellingPrice,
+    string? WholesalePrice,
+    string? StockOnHand,
+    string? ReorderLevel,
+    bool TrackStock,
+    bool AllowDiscount,
+    string? Notes,
+    DateTimeOffset CreatedAt);
+
+public sealed record ProductEditOperationResult(
+    bool IsSuccess,
+    string? ErrorCode,
+    string? ErrorMessage);

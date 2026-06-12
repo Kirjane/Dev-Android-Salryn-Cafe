@@ -49,6 +49,40 @@ public sealed class SqliteProductReadRepository :
         }
     }
 
+    // Kirch: Reads a complete product row with catalog names and IDs for safe edit screens.
+    public Task<Result<ProductDetailReadModel?>> FindDetailByIdAsync(
+        Guid productId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        try
+        {
+            using var connection = CreateOpenConnection();
+            using var command = connection.CreateCommand();
+
+            command.CommandText = ProductDetailSql + Environment.NewLine + """
+                WHERE p.id = $id
+                LIMIT 1;
+                """;
+
+            command.Parameters.AddWithValue("$id", productId.ToString("D"));
+
+            using var reader = command.ExecuteReader();
+
+            ProductDetailReadModel? product = reader.Read()
+                ? MapProductDetail(reader)
+                : null;
+
+            return Task.FromResult(Result<ProductDetailReadModel?>.Success(product));
+        }
+        catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
+        {
+            return Task.FromResult(Unexpected<ProductDetailReadModel?>(
+                "Products.FindDetailByIdFailed",
+                ex));
+        }
+    }
     public Task<Result<ProductLookupReadModel?>> FindByBarcodeAsync(
         Barcode barcode,
         CancellationToken cancellationToken = default)
@@ -272,6 +306,45 @@ public sealed class SqliteProductReadRepository :
         command.Parameters.AddWithValue("$searchLike", search is null ? DBNull.Value : $"%{search}%");
     }
 
+    // Kirch: Maps the complete SQL detail row into an edit-safe product detail read model.
+    private static ProductDetailReadModel MapProductDetail(SqliteDataReader reader)
+    {
+        return new ProductDetailReadModel(
+            reader.GetGuidValue("id"),
+            reader.GetNullableString("sku"),
+            reader.GetNullableString("barcode"),
+            reader.GetStringValue("name"),
+            reader.GetNullableString("description"),
+            GetNullableGuid(reader, "category_id"),
+            reader.GetNullableString("category_name"),
+            GetNullableGuid(reader, "brand_id"),
+            reader.GetNullableString("brand_name"),
+            reader.GetGuidValue("unit_id"),
+            reader.GetStringValue("unit_name"),
+            GetNullableGuid(reader, "supplier_id"),
+            reader.GetNullableString("supplier_name"),
+            reader.GetNullableMoneyValue("cost_price_cents"),
+            reader.GetMoneyValue("selling_price_cents"),
+            reader.GetNullableMoneyValue("wholesale_price_cents"),
+            reader.GetQuantityValue("stock_on_hand_x1000"),
+            reader.GetQuantityValue("reorder_level_x1000"),
+            reader.GetBoolValue("track_stock"),
+            reader.GetBoolValue("allow_discount"),
+            reader.GetBoolValue("is_active"),
+            reader.GetNullableString("notes"),
+            reader.GetDateTimeOffsetValue("created_at"),
+            reader.GetNullableDateTimeOffsetValue("updated_at"));
+    }
+
+    // Kirch: SQLite stores nullable foreign keys as text, so this keeps nullable GUID parsing in one place.
+    private static Guid? GetNullableGuid(SqliteDataReader reader, string columnName)
+    {
+        string? value = reader.GetNullableString(columnName);
+
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : Guid.Parse(value);
+    }
     private static ProductLookupReadModel MapProductLookup(SqliteDataReader reader)
     {
         return new ProductLookupReadModel(
@@ -306,6 +379,38 @@ public sealed class SqliteProductReadRepository :
             reader.GetBoolValue("is_active"));
     }
 
+    private const string ProductDetailSql = """
+        SELECT
+            p.id,
+            p.sku,
+            p.barcode,
+            p.name,
+            p.description,
+            p.category_id,
+            c.name AS category_name,
+            p.brand_id,
+            b.name AS brand_name,
+            p.unit_id,
+            u.name AS unit_name,
+            p.supplier_id,
+            s.name AS supplier_name,
+            p.cost_price_cents,
+            p.selling_price_cents,
+            p.wholesale_price_cents,
+            p.stock_on_hand_x1000,
+            p.reorder_level_x1000,
+            p.track_stock,
+            p.allow_discount,
+            p.is_active,
+            p.notes,
+            p.created_at,
+            p.updated_at
+        FROM products p
+        INNER JOIN units u ON u.id = p.unit_id
+        LEFT JOIN categories c ON c.id = p.category_id
+        LEFT JOIN brands b ON b.id = p.brand_id
+        LEFT JOIN suppliers s ON s.id = p.supplier_id
+        """;
     private const string ProductLookupSql = """
         SELECT
             p.id,
@@ -323,4 +428,6 @@ public sealed class SqliteProductReadRepository :
         INNER JOIN units u ON u.id = p.unit_id
         """;
 }
+
+
 

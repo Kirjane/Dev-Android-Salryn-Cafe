@@ -288,6 +288,278 @@ public sealed class ProductManagementPresenter
             ErrorMessage: null);
     }
 
+    // Kirch: This loads the full product detail plus catalog dropdowns before editing.
+    public async Task<ProductEditFormViewModel> LoadEditFormAsync(
+        Guid productId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (productId == Guid.Empty)
+        {
+            return EditFormFailure(
+                "Products.InvalidProductId",
+                "Product ID is required.");
+        }
+
+        if (_catalogs is null)
+        {
+            return EditFormFailure(
+                "Products.CatalogUnavailable",
+                "Catalog services are not available.");
+        }
+
+        var detailResult = await _products.FindDetailByIdAsync(productId, cancellationToken);
+
+        if (detailResult.IsFailure)
+        {
+            return EditFormFailure(
+                detailResult.ErrorDetail.Code,
+                detailResult.ErrorDetail.Message);
+        }
+
+        if (detailResult.Value is null)
+        {
+            return EditFormFailure(
+                "Products.NotFound",
+                "Product was not found.");
+        }
+
+        ProductDetailReadModel detail = detailResult.Value;
+
+        var unitsResult = await _catalogs.GetUnitsAsync(includeInactive: true, cancellationToken: cancellationToken);
+        var categoriesResult = await _catalogs.GetCategoriesAsync(includeInactive: true, cancellationToken: cancellationToken);
+        var brandsResult = await _catalogs.GetBrandsAsync(includeInactive: true, cancellationToken: cancellationToken);
+        var suppliersResult = await _catalogs.GetSuppliersAsync(includeInactive: true, cancellationToken: cancellationToken);
+
+        if (unitsResult.IsFailure)
+        {
+            return EditFormFailure(unitsResult.ErrorDetail.Code, unitsResult.ErrorDetail.Message);
+        }
+
+        if (categoriesResult.IsFailure)
+        {
+            return EditFormFailure(categoriesResult.ErrorDetail.Code, categoriesResult.ErrorDetail.Message);
+        }
+
+        if (brandsResult.IsFailure)
+        {
+            return EditFormFailure(brandsResult.ErrorDetail.Code, brandsResult.ErrorDetail.Message);
+        }
+
+        if (suppliersResult.IsFailure)
+        {
+            return EditFormFailure(suppliersResult.ErrorDetail.Code, suppliersResult.ErrorDetail.Message);
+        }
+
+        return new ProductEditFormViewModel(
+            ProductId: detail.Id,
+            Sku: detail.Sku,
+            Barcode: detail.Barcode,
+            Name: detail.Name,
+            Description: detail.Description,
+            CategoryId: detail.CategoryId,
+            BrandId: detail.BrandId,
+            UnitId: detail.UnitId,
+            SupplierId: detail.SupplierId,
+            CostPrice: FormatMoneyInput(detail.CostPrice),
+            SellingPrice: FormatMoneyInput(detail.SellingPrice) ?? "0.00",
+            WholesalePrice: FormatMoneyInput(detail.WholesalePrice),
+            StockOnHand: FormatQuantityInput(detail.StockOnHand),
+            ReorderLevel: FormatQuantityInput(detail.ReorderLevel),
+            TrackStock: detail.TrackStock,
+            AllowDiscount: detail.AllowDiscount,
+            IsActive: detail.IsActive,
+            Notes: detail.Notes,
+            CreatedAt: detail.CreatedAt,
+            Units: unitsResult.Value.Select(MapUnitOption).ToArray(),
+            Categories: WithNone(categoriesResult.Value.Select(MapCatalogOption).ToArray()),
+            Brands: WithNone(brandsResult.Value.Select(MapCatalogOption).ToArray()),
+            Suppliers: WithNone(suppliersResult.Value.Select(MapSupplierOption).ToArray()),
+            StatusMessage: "Edit product ready.",
+            HasError: false,
+            ErrorCode: null,
+            ErrorMessage: null);
+    }
+
+    // Kirch: This validates edited input and updates the existing product without losing hidden fields.
+    public async Task<ProductEditOperationResult> UpdateProductAsync(
+        ProductEditRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (_productWrites is null)
+        {
+            return EditFailure(
+                "Products.WriteUnavailable",
+                "Product write services are not available.");
+        }
+
+        if (request.ProductId == Guid.Empty)
+        {
+            return EditFailure(
+                "Products.InvalidProductId",
+                "Product ID is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            return EditFailure(
+                "Products.NameRequired",
+                "Product name is required.");
+        }
+
+        if (request.UnitId == Guid.Empty)
+        {
+            return EditFailure(
+                "Products.UnitRequired",
+                "Product unit is required.");
+        }
+
+        Barcode? barcode = null;
+
+        if (!string.IsNullOrWhiteSpace(request.Barcode))
+        {
+            var barcodeResult = Barcode.Create(request.Barcode);
+
+            if (barcodeResult.IsFailure)
+            {
+                return EditFailure(
+                    "Products.InvalidBarcode",
+                    barcodeResult.ErrorDetail.Message);
+            }
+
+            barcode = barcodeResult.Value;
+        }
+
+        if (!TryParseMoney(request.SellingPrice, required: true, out Money? sellingPrice, out string? sellingPriceError))
+        {
+            return EditFailure(
+                "Products.InvalidSellingPrice",
+                sellingPriceError ?? "Selling price is invalid.");
+        }
+
+        if (!TryParseMoney(request.CostPrice, required: false, out Money? costPrice, out string? costPriceError))
+        {
+            return EditFailure(
+                "Products.InvalidCostPrice",
+                costPriceError ?? "Cost price is invalid.");
+        }
+
+        if (!TryParseMoney(request.WholesalePrice, required: false, out Money? wholesalePrice, out string? wholesalePriceError))
+        {
+            return EditFailure(
+                "Products.InvalidWholesalePrice",
+                wholesalePriceError ?? "Wholesale price is invalid.");
+        }
+
+        if (!TryParseQuantity(request.StockOnHand, out Quantity stockOnHand, out string? stockError))
+        {
+            return EditFailure(
+                "Products.InvalidStockOnHand",
+                stockError ?? "Stock on hand is invalid.");
+        }
+
+        if (!TryParseQuantity(request.ReorderLevel, out Quantity reorderLevel, out string? reorderError))
+        {
+            return EditFailure(
+                "Products.InvalidReorderLevel",
+                reorderError ?? "Reorder level is invalid.");
+        }
+
+        Product product = new()
+        {
+            Id = request.ProductId,
+            Sku = NormalizeOptionalText(request.Sku),
+            Barcode = barcode,
+            Name = request.Name.Trim(),
+            Description = NormalizeOptionalText(request.Description),
+            CategoryId = NormalizeOptionalId(request.CategoryId),
+            BrandId = NormalizeOptionalId(request.BrandId),
+            UnitId = request.UnitId,
+            SupplierId = NormalizeOptionalId(request.SupplierId),
+            CostPrice = costPrice,
+            SellingPrice = sellingPrice!.Value,
+            WholesalePrice = wholesalePrice,
+            StockOnHand = stockOnHand,
+            ReorderLevel = reorderLevel,
+            TrackStock = request.TrackStock,
+            AllowDiscount = request.AllowDiscount,
+            IsActive = true,
+            Notes = NormalizeOptionalText(request.Notes),
+            CreatedAt = request.CreatedAt
+        };
+
+        var result = await _productWrites.UpdateAsync(product, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return EditFailure(
+                result.ErrorDetail.Code,
+                result.ErrorDetail.Message);
+        }
+
+        return new ProductEditOperationResult(
+            IsSuccess: true,
+            ErrorCode: null,
+            ErrorMessage: null);
+    }
+
+    // Kirch: This creates a safe empty edit form state when detail loading fails.
+    private static ProductEditFormViewModel EditFormFailure(
+        string errorCode,
+        string errorMessage)
+    {
+        return new ProductEditFormViewModel(
+            ProductId: Guid.Empty,
+            Sku: null,
+            Barcode: null,
+            Name: string.Empty,
+            Description: null,
+            CategoryId: null,
+            BrandId: null,
+            UnitId: Guid.Empty,
+            SupplierId: null,
+            CostPrice: null,
+            SellingPrice: "0.00",
+            WholesalePrice: null,
+            StockOnHand: "0",
+            ReorderLevel: "0",
+            TrackStock: true,
+            AllowDiscount: true,
+            IsActive: false,
+            Notes: null,
+            CreatedAt: DateTimeOffset.UtcNow,
+            Units: Array.Empty<ProductCatalogOptionViewModel>(),
+            Categories: Array.Empty<ProductCatalogOptionViewModel>(),
+            Brands: Array.Empty<ProductCatalogOptionViewModel>(),
+            Suppliers: Array.Empty<ProductCatalogOptionViewModel>(),
+            StatusMessage: "Edit product is not ready.",
+            HasError: true,
+            ErrorCode: errorCode,
+            ErrorMessage: errorMessage);
+    }
+
+    private static ProductEditOperationResult EditFailure(
+        string errorCode,
+        string errorMessage)
+    {
+        return new ProductEditOperationResult(
+            IsSuccess: false,
+            ErrorCode: errorCode,
+            ErrorMessage: errorMessage);
+    }
+
+    private static string? FormatMoneyInput(Money? money)
+    {
+        return money?.ToPesos().ToString("0.00", CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatQuantityInput(Quantity quantity)
+    {
+        return quantity.ToUnits().ToString("0.###", CultureInfo.InvariantCulture);
+    }
     private static ProductManagementRowViewModel MapRow(ProductListItemReadModel product)
     {
         return new ProductManagementRowViewModel(
@@ -505,4 +777,5 @@ public sealed class ProductManagementPresenter
         return $"Showing {shownCount} of {totalCount} products.";
     }
 }
+
 

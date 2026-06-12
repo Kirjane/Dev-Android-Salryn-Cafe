@@ -166,6 +166,13 @@ internal static class PosCheckoutUiProductRepositorySearchBoundarySmokeChecks
             return Task.FromResult(Result<ProductLookupReadModel?>.Success(product));
         }
 
+        // Kirch: Checkout smoke tests do not need edit-detail reads, so this fake returns no detail product.
+        public Task<Result<ProductDetailReadModel?>> FindDetailByIdAsync(
+            Guid productId,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(Result<ProductDetailReadModel?>.Success(null));
+        }
         public Task<Result<ProductLookupReadModel?>> FindByBarcodeAsync(
             Barcode barcode,
             CancellationToken cancellationToken = default)
@@ -240,3 +247,4 @@ internal static class PosCheckoutUiProductRepositorySearchBoundarySmokeChecks
         }
     }
 }
+
