@@ -7,6 +7,7 @@ public sealed class ProductManagementForm : Form
     private TextBox _searchTextBox = null!;
     private Button _searchButton = null!;
     private Button _refreshButton = null!;
+    private Button _addButton = null!;
     private DataGridView _productsGrid = null!;
     private Label _statusLabel = null!;
 
@@ -61,11 +62,12 @@ public sealed class ProductManagementForm : Form
         var searchPanel = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 4,
+            ColumnCount = 5,
             RowCount = 1
         };
 
         searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
         searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
         searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
         searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 12));
@@ -112,9 +114,22 @@ public sealed class ProductManagementForm : Form
 
         _refreshButton.Click += async (_, _) => await LoadProductsAsync();
 
+        _addButton = new Button
+        {
+            Dock = DockStyle.Fill,
+            Text = "Add Product",
+            Font = new Font(Font.FontFamily, 10, FontStyle.Bold),
+            BackColor = Color.FromArgb(22, 101, 52),
+            ForeColor = Color.White,
+            FlatStyle = FlatStyle.Flat
+        };
+
+        _addButton.Click += async (_, _) => await OpenCreateFormAsync();
+
         searchPanel.Controls.Add(_searchTextBox, 0, 0);
         searchPanel.Controls.Add(_searchButton, 1, 0);
         searchPanel.Controls.Add(_refreshButton, 2, 0);
+        searchPanel.Controls.Add(_addButton, 3, 0);
 
         root.Controls.Add(searchPanel, 0, 1);
 
@@ -193,10 +208,29 @@ public sealed class ProductManagementForm : Form
         Render(result.State);
     }
 
+    // Kirch: This opens the create form and refreshes the grid after a product is saved.
+    private async Task OpenCreateFormAsync()
+    {
+        using ProductCreateForm createForm = new(_presenter);
+
+        DialogResult result = createForm.ShowDialog(this);
+
+        if (result != DialogResult.OK)
+        {
+            return;
+        }
+
+        ProductManagementOperationResult refreshResult =
+            await _presenter.SearchAsync(_searchTextBox.Text);
+
+        Render(refreshResult.State);
+    }
+
     private void Render(ProductManagementViewModel state)
     {
         _searchButton.Enabled = state.CanSearch;
         _refreshButton.Enabled = state.CanSearch;
+        _addButton.Enabled = state.CanSearch;
         _searchTextBox.Enabled = state.CanSearch;
 
         _productsGrid.DataSource = null;
@@ -211,3 +245,5 @@ public sealed class ProductManagementForm : Form
             : Color.FromArgb(75, 85, 99);
     }
 }
+
+

@@ -233,6 +233,7 @@ public sealed class SalrynShellForm : Form
             "This module is permission-routed but its full workflow is not implemented in this phase.");
     }
 
+    // Kirch: This opens product management with read/write/catalog services from the composition root.
     private void OpenProducts()
     {
         if (_session is null)
@@ -247,7 +248,9 @@ public sealed class SalrynShellForm : Form
 
         using ProductManagementForm productForm =
             new ProductManagementForm(new ProductManagementPresenter(
-                _services.ProductReadRepository));
+                _services.ProductReadRepository,
+                _services.ProductWriteRepository,
+                _services.CatalogReadRepository));
 
         productForm.StartPosition = FormStartPosition.CenterParent;
         productForm.ShowDialog(this);
@@ -374,6 +377,8 @@ public sealed class SalrynShellForm : Form
         _workspacePanel.Controls.Add(content);
     }
 }
+
+
 
 
 

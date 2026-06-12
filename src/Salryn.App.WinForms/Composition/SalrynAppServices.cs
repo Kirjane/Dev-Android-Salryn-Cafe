@@ -8,8 +8,10 @@ using Salryn.Infrastructure.Paths;
 
 namespace Salryn.App.WinForms.Composition;
 
+// Kirch: This composition root exposes app-level services so WinForms screens do not create infrastructure directly.
 public sealed class SalrynAppServices
 {
+    // Kirch: The private constructor forces the app to build services through the controlled factory methods below.
     private SalrynAppServices(
         DbPaths dbPaths,
         SqliteConnectionFactory connectionFactory,
@@ -19,6 +21,8 @@ public sealed class SalrynAppServices
         IUserPermissionReadRepository userPermissionReadRepository,
         IAuthenticationService authentication,
         IProductReadRepository productReadRepository,
+        IProductWriteRepository productWriteRepository,
+        ICatalogReadRepository catalogReadRepository,
         ICheckoutProductSearchBoundary checkoutProductSearch,
         ICashierSessionService cashierSessions,
         IPosCheckoutService posCheckout,
@@ -32,6 +36,8 @@ public sealed class SalrynAppServices
         UserPermissionReadRepository = userPermissionReadRepository;
         Authentication = authentication;
         ProductReadRepository = productReadRepository;
+        ProductWriteRepository = productWriteRepository;
+        CatalogReadRepository = catalogReadRepository;
         CheckoutProductSearch = checkoutProductSearch;
         CashierSessions = cashierSessions;
         PosCheckout = posCheckout;
@@ -54,6 +60,10 @@ public sealed class SalrynAppServices
 
     public IProductReadRepository ProductReadRepository { get; }
 
+    public IProductWriteRepository ProductWriteRepository { get; }
+
+    public ICatalogReadRepository CatalogReadRepository { get; }
+
     public ICheckoutProductSearchBoundary CheckoutProductSearch { get; }
 
     public ICashierSessionService CashierSessions { get; }
@@ -62,11 +72,13 @@ public sealed class SalrynAppServices
 
     public IPosCheckoutApplicationService PosCheckoutApplication { get; }
 
+    // Kirch: Production mode uses the real local app database paths.
     public static SalrynAppServices CreateProduction()
     {
         return Create(DbPaths.CreateProduction());
     }
 
+    // Kirch: Development mode uses the project-root database paths for safer local testing.
     public static SalrynAppServices CreateDevelopment(string projectRoot)
     {
         if (string.IsNullOrWhiteSpace(projectRoot))
@@ -77,6 +89,7 @@ public sealed class SalrynAppServices
         return Create(DbPaths.CreateDevelopment(projectRoot));
     }
 
+    // Kirch: This method wires repositories and services once, then passes them into the app shell.
     public static SalrynAppServices Create(DbPaths dbPaths)
     {
         ArgumentNullException.ThrowIfNull(dbPaths);
@@ -101,6 +114,12 @@ public sealed class SalrynAppServices
         IProductReadRepository productReadRepository =
             repositories.CreateProductReadRepository();
 
+        IProductWriteRepository productWriteRepository =
+            repositories.CreateProductWriteRepository();
+
+        ICatalogReadRepository catalogReadRepository =
+            repositories.CreateCatalogReadRepository();
+
         ICheckoutProductSearchBoundary checkoutProductSearch =
             new CheckoutProductRepositorySearchBoundary(productReadRepository);
 
@@ -124,6 +143,8 @@ public sealed class SalrynAppServices
             userPermissionReadRepository,
             authentication,
             productReadRepository,
+            productWriteRepository,
+            catalogReadRepository,
             checkoutProductSearch,
             cashierSessions,
             posCheckout,
