@@ -770,6 +770,7 @@ public sealed class CheckoutPresenter
         bool hasLines = lines.Count > 0;
         bool hasPayments = transaction.Payments.Count > 0;
         bool hasProductInput = !string.IsNullOrWhiteSpace(_productInputText);
+        bool saleCompleted = _hasSaleSubmitCompleted || _saleSubmitResult.IsCompleted;
 
         Result<CheckoutCompletionReadiness> completionReadinessResult =
             _completionBoundary.Evaluate(transaction);
@@ -797,13 +798,13 @@ public sealed class CheckoutPresenter
             PaymentCount: transaction.Payments.Count,
             CashAmountText: _cashAmountText,
             CashAmountCents: _cashAmountCents,
-            CanSearchProduct: _productSearchBoundary is not null && hasProductInput,
-            CanAddPreparedLine: hasProductInput || _preparedProductLineInput is not null,
-            CanAddPreparedProductLine: _preparedProductLineInput is not null,
-            CanRemoveSelectedLine: hasLines,
-            CanAddCashPayment: hasLines && _cashAmountCents > 0,
-            CanClearPayments: hasPayments,
-            CanCompleteSale: _saleSubmitGuard.CanExecuteSubmit && !_isSaleSubmitInProgress && !_hasSaleSubmitCompleted,
+            CanSearchProduct: !saleCompleted && _productSearchBoundary is not null && hasProductInput,
+            CanAddPreparedLine: !saleCompleted && (hasProductInput || _preparedProductLineInput is not null),
+            CanAddPreparedProductLine: !saleCompleted && _preparedProductLineInput is not null,
+            CanRemoveSelectedLine: !saleCompleted && hasLines,
+            CanAddCashPayment: !saleCompleted && hasLines && _cashAmountCents > 0,
+            CanClearPayments: !saleCompleted && hasPayments,
+            CanCompleteSale: !saleCompleted && _saleSubmitGuard.CanExecuteSubmit && !_isSaleSubmitInProgress,
             CompletionReadiness: MapCompletionReadiness(completionReadiness),
             CompletionDryRun: _completionDryRun,
             SaleSubmitGuard: _isSaleSubmitInProgress
@@ -951,6 +952,7 @@ public sealed class CheckoutPresenter
         return (quantityX1000 / 1000m).ToString("0.###", CultureInfo.InvariantCulture);
     }
 }
+
 
 
 

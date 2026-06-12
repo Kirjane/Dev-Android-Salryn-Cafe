@@ -274,10 +274,13 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
             !saleSubmit.State.SaleSubmitGuard.IsPrepared ||
             saleSubmit.State.SaleSubmitGuard.CanExecuteSubmit ||
             saleSubmit.State.CanCompleteSale ||
+            saleSubmit.State.CanAddCashPayment ||
+            saleSubmit.State.CanRemoveSelectedLine ||
+            saleSubmit.State.CanClearPayments ||
             completionBoundary.CompleteSaleCallCount != 1 ||
             completionBoundary.LastRequest is null)
         {
-            throw new InvalidOperationException("SaleSubmitExecution.CompletedButUiLocked validation failed.");
+            throw new InvalidOperationException("SaleSubmitExecution.CompletedUiLocked validation failed.");
         }
 
         CheckoutPresenterOperationResult duplicateSubmit =
@@ -451,6 +454,7 @@ internal static class PosCheckoutUiPresenterViewModelSmokeChecks
         return result;
     }
 }
+
 
 
 

@@ -654,10 +654,33 @@ public sealed class CheckoutShellForm : Form
 
         _completeSaleButton.Click += async (_, _) =>
         {
+            CheckoutViewModel beforeSubmit = _presenter.State;
+
+            DialogResult confirmation = MessageBox.Show(
+                BuildCompletionConfirmationMessage(beforeSubmit),
+                "Confirm Complete Sale",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+
+            if (confirmation != DialogResult.Yes)
+            {
+                return;
+            }
+
             _completeSaleButton.Enabled = false;
             _completeSaleButton.Text = "Completing Sale...";
 
-            Render((await _presenter.ExecutePreparedSaleSubmitAsync()).State);
+            CheckoutPresenterOperationResult result =
+                await _presenter.ExecutePreparedSaleSubmitAsync();
+
+            Render(result.State);
+
+            MessageBox.Show(
+                BuildCompletionResultMessage(result.State),
+                result.IsSuccess ? "Sale Completed" : "Sale Not Completed",
+                MessageBoxButtons.OK,
+                result.IsSuccess ? MessageBoxIcon.Information : MessageBoxIcon.Error);
         };
     }
 
@@ -676,6 +699,45 @@ public sealed class CheckoutShellForm : Form
         {
             _searchButton.Enabled = _presenter.State.CanSearchProduct;
         }
+    }
+
+    private static string BuildCompletionConfirmationMessage(CheckoutViewModel state)
+    {
+        return string.Join(
+            Environment.NewLine,
+            "Complete this sale?",
+            string.Empty,
+            $"Receipt: {state.ReceiptNumber}",
+            $"Items: {state.Lines.Count}",
+            $"Total: {state.Totals.TotalText}",
+            $"Paid: {state.Totals.AmountPaidText}",
+            $"Change: {state.Totals.ChangeText}",
+            string.Empty,
+            "This will save the sale and lock this checkout draft.");
+    }
+
+    private static string BuildCompletionResultMessage(CheckoutViewModel state)
+    {
+        if (state.SaleSubmitResult.IsSuccess && state.SaleSubmitResult.IsCompleted)
+        {
+            return string.Join(
+                Environment.NewLine,
+                "Sale completed.",
+                string.Empty,
+                $"Receipt: {state.ReceiptNumber}",
+                $"Items: {state.Lines.Count}",
+                $"Total: {state.Totals.TotalText}",
+                $"Paid: {state.Totals.AmountPaidText}",
+                $"Change: {state.Totals.ChangeText}",
+                string.Empty,
+                "Use Start New Sale to reset the checkout workspace.");
+        }
+
+        return string.Join(
+            Environment.NewLine,
+            "Sale was not completed.",
+            string.Empty,
+            state.SaleSubmitResult.DetailText);
     }
 
     private void Render(CheckoutViewModel state)
@@ -749,13 +811,17 @@ public sealed class CheckoutShellForm : Form
                     : (state.CashAmountCents / 100m).ToString("0.00");
             }
 
-            _searchButton.Enabled = state.CanSearchProduct;
-            _addItemButton.Enabled = state.CanAddPreparedProductLine;
-            _removeItemButton.Enabled = state.Lines.Count > 0 && GetSelectedLineId().HasValue;
-            _clearCartButton.Enabled = state.Lines.Count > 0;
-            _payCashButton.Enabled = state.CanAddCashPayment;
-            _dryRunCompletionButton.Enabled = true;
+            bool saleCompleted = state.SaleSubmitResult.IsCompleted;
+
+            _searchButton.Enabled = !saleCompleted && state.CanSearchProduct;
+            _addItemButton.Enabled = !saleCompleted && state.CanAddPreparedProductLine;
+            _removeItemButton.Enabled = !saleCompleted && state.Lines.Count > 0 && GetSelectedLineId().HasValue;
+            _clearCartButton.Text = saleCompleted ? "Start New Sale" : "Clear Draft Cart";
+            _clearCartButton.Enabled = saleCompleted || state.Lines.Count > 0;
+            _payCashButton.Enabled = !saleCompleted && state.CanAddCashPayment;
+            _dryRunCompletionButton.Enabled = !saleCompleted;
             _prepareSubmitGuardButton.Enabled =
+                !saleCompleted &&
                 state.CompletionDryRun.IsSuccess &&
                 !state.SaleSubmitGuard.IsInProgress;
             _completeSaleButton.Text = state.SaleSubmitResult.IsCompleted
@@ -767,6 +833,12 @@ public sealed class CheckoutShellForm : Form
                         : state.SaleSubmitGuard.CanExecuteSubmit
                             ? "Complete Sale Ready"
                             : "Complete Sale Locked";
+            _completeSaleButton.BackColor = state.CanCompleteSale
+                ? UiColors.Success
+                : UiColors.Locked;
+            _completeSaleButton.ForeColor = state.CanCompleteSale
+                ? Color.White
+                : UiColors.TextMuted;
             _completeSaleButton.Enabled = state.CanCompleteSale;
 
             _statusLabel.Text = state.HasError
@@ -970,6 +1042,7 @@ public sealed class CheckoutShellForm : Form
         public static readonly Color TextMuted = Color.FromArgb(71, 85, 105);
     }
 }
+
 
 
 
