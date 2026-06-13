@@ -1,0 +1,21 @@
+﻿using Salryn.Tests;
+
+namespace Salryn.Tools.CoreSmoke;
+
+// Kirch: Runs compile-check safety methods as executable smoke checks without adding a test framework package.
+public static class Program
+{
+    // Kirch: Executes the Host/client boundary smoke checks that dotnet test only compiles today.
+    public static void Main()
+    {
+        Phase61BStoreDeploymentCompileChecks.Run();
+        Phase61CHostClientContractsCompileChecks.Run();
+        Phase61DBackupMobileReadinessCompileChecks.Run();
+        Phase62AHostBoundaryCompileChecks.Run();
+        Phase62BHostOperationRegistrationCompileChecks.Run();
+        Phase62CDescriptorAwareBoundaryCompileChecks.Run();
+        Phase62EHostBoundaryRuntimeSafetyCompileChecks.Run();
+
+        Console.WriteLine("SALRYN Core smoke checks passed.");
+    }
+}

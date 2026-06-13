@@ -1,4 +1,4 @@
-﻿using Salryn.Core.Contracts;
+using Salryn.Core.Contracts;
 
 namespace Salryn.Core.Hosting;
 
@@ -32,16 +32,19 @@ public sealed class HostOperationCatalog
 {
     private readonly Dictionary<string, HostOperationDescriptor> _descriptors;
 
-    // Kirch: Builds a catalog and rejects duplicate operation names early.
+    // Kirch: Builds a catalog and rejects missing, invalid, or duplicate operation descriptors early.
     public HostOperationCatalog(IEnumerable<HostOperationDescriptor> descriptors)
     {
+        // Kirch: Rejects a missing descriptor collection before catalog composition proceeds.
+        ArgumentNullException.ThrowIfNull(descriptors);
+
         _descriptors = new Dictionary<string, HostOperationDescriptor>(StringComparer.Ordinal);
 
-        foreach (HostOperationDescriptor descriptor in descriptors)
+        foreach (HostOperationDescriptor? descriptor in descriptors)
         {
             if (!HostOperationRegistrationRules.IsDescriptorValid(descriptor))
             {
-                throw new InvalidOperationException($"Invalid Host operation descriptor: {descriptor.OperationName}");
+                throw new InvalidOperationException("Invalid Host operation descriptor.");
             }
 
             if (!_descriptors.TryAdd(descriptor.OperationName, descriptor))
@@ -56,6 +59,12 @@ public sealed class HostOperationCatalog
     // Kirch: Finds a descriptor without throwing so future Host routing can return clean contract errors.
     public HostOperationDescriptor? Find(string operationName)
     {
+        // Kirch: Missing or blank operation names are treated as unknown instead of throwing.
+        if (string.IsNullOrWhiteSpace(operationName))
+        {
+            return null;
+        }
+
         return _descriptors.TryGetValue(operationName, out HostOperationDescriptor? descriptor)
             ? descriptor
             : null;
@@ -64,7 +73,9 @@ public sealed class HostOperationCatalog
     // Kirch: Checks whether an operation is known to the Host boundary catalog.
     public bool Contains(string operationName)
     {
-        return _descriptors.ContainsKey(operationName);
+        // Kirch: Missing or blank operation names are never considered registered.
+        return !string.IsNullOrWhiteSpace(operationName)
+            && _descriptors.ContainsKey(operationName);
     }
 
     // Kirch: Defines the first planned Host operations without implementing handlers or routing.
@@ -151,24 +162,31 @@ public sealed class HostOperationCatalog
 public static class HostOperationRegistrationRules
 {
     // Kirch: A descriptor is valid only when it names an operation and keeps store identity mandatory.
-    public static bool IsDescriptorValid(HostOperationDescriptor descriptor)
+    public static bool IsDescriptorValid(HostOperationDescriptor? descriptor)
     {
-        return !string.IsNullOrWhiteSpace(descriptor.OperationName)
+        return descriptor is not null
+            && !string.IsNullOrWhiteSpace(descriptor.OperationName)
             && descriptor.RequiresStoreIdentity;
     }
 
     // Kirch: Handler registrations must name the operation and provide concrete handler/payload/response types.
-    public static bool IsRegistrationValid(HostOperationHandlerRegistration registration)
+    public static bool IsRegistrationValid(HostOperationHandlerRegistration? registration)
     {
-        return !string.IsNullOrWhiteSpace(registration.OperationName)
+        return registration is not null
+            && !string.IsNullOrWhiteSpace(registration.OperationName)
             && registration.HandlerType != typeof(void)
             && registration.PayloadType != typeof(void)
             && registration.ResponseType != typeof(void);
     }
 
     // Kirch: Checks whether a handler type implements IHostOperationHandler<TPayload, TResponse> for the registered types.
-    public static bool HandlerMatchesRegistration(HostOperationHandlerRegistration registration)
+    public static bool HandlerMatchesRegistration(HostOperationHandlerRegistration? registration)
     {
+        if (registration is null || !IsRegistrationValid(registration))
+        {
+            return false;
+        }
+
         return registration.HandlerType
             .GetInterfaces()
             .Any(candidate =>
@@ -176,5 +194,12 @@ public static class HostOperationRegistrationRules
                 && candidate.GetGenericTypeDefinition() == typeof(IHostOperationHandler<,>)
                 && candidate.GetGenericArguments()[0] == registration.PayloadType
                 && candidate.GetGenericArguments()[1] == registration.ResponseType);
+    }
+
+    // Kirch: Validates the full handler registration contract, not just the shallow field shape.
+    public static bool IsStrictRegistrationValid(HostOperationHandlerRegistration? registration)
+    {
+        return IsRegistrationValid(registration)
+            && HandlerMatchesRegistration(registration);
     }
 }
