@@ -11,7 +11,9 @@ public enum HostBoundaryFailureReason
     MissingStoreIdentity = 3,
     MissingTerminalIdentity = 4,
     MissingAuthenticatedUserIdentity = 5,
-    MissingCashierSessionIdentity = 6
+    MissingCashierSessionIdentity = 6,
+    UnknownOperationName = 7,
+    OperationKindMismatch = 8
 }
 
 // Kirch: Represents a validation issue at the Host boundary without exposing transport or infrastructure details.
@@ -53,13 +55,28 @@ public interface IHostOperationDispatcher
         CancellationToken cancellationToken = default);
 }
 
-// Kirch: Validates request identity rules at the Core boundary before Host execution exists.
+// Kirch: Validates request identity rules against the Host operation catalog before Host execution exists.
 public sealed class HostRequestBoundaryValidator : IHostRequestBoundaryValidator
 {
-    // Kirch: Validates the common Host request envelope requirements.
+    private readonly HostOperationCatalog _operationCatalog;
+
+    // Kirch: Uses the default operation catalog for current SALRYN Host boundary validation.
+    public HostRequestBoundaryValidator()
+        : this(HostOperationCatalog.CreateDefault())
+    {
+    }
+
+    // Kirch: Allows tests and future Host composition to inject a stricter or expanded operation catalog.
+    public HostRequestBoundaryValidator(HostOperationCatalog operationCatalog)
+    {
+        _operationCatalog = operationCatalog ?? throw new ArgumentNullException(nameof(operationCatalog));
+    }
+
+    // Kirch: Validates common envelope rules and descriptor-specific operation requirements.
     public HostBoundaryValidationResult Validate<TPayload>(HostRequestEnvelope<TPayload> request)
     {
         List<HostBoundaryValidationIssue> issues = new();
+        HostOperationDescriptor? descriptor = null;
 
         if (request.RequestId == Guid.Empty)
         {
@@ -78,8 +95,36 @@ public sealed class HostRequestBoundaryValidator : IHostRequestBoundaryValidator
                 "Host request must have an operation name.",
                 ErrorType.Validation));
         }
+        else
+        {
+            descriptor = _operationCatalog.Find(request.OperationName);
 
-        if (!HostClientContractRules.HasStoreIdentity(request.Context))
+            if (descriptor is null)
+            {
+                issues.Add(new HostBoundaryValidationIssue(
+                    HostBoundaryFailureReason.UnknownOperationName,
+                    "HostBoundary.UnknownOperationName",
+                    "Host request operation is not registered in the operation catalog.",
+                    ErrorType.NotFound));
+            }
+            else if (descriptor.OperationKind != request.OperationKind)
+            {
+                issues.Add(new HostBoundaryValidationIssue(
+                    HostBoundaryFailureReason.OperationKindMismatch,
+                    "HostBoundary.OperationKindMismatch",
+                    "Host request operation kind does not match the registered descriptor.",
+                    ErrorType.Validation));
+            }
+        }
+
+        bool requiresStoreIdentity = descriptor?.RequiresStoreIdentity ?? true;
+        bool requiresTerminalIdentity = descriptor?.RequiresTerminalIdentity ?? false;
+        bool requiresAuthenticatedUser = descriptor?.RequiresAuthenticatedUser
+            ?? HostClientContractRules.RequiresAuthenticatedUser(request.OperationKind);
+        bool requiresCashierSession = descriptor?.RequiresCashierSession
+            ?? HostClientContractRules.RequiresCashierSession(request.OperationName);
+
+        if (requiresStoreIdentity && !HostClientContractRules.HasStoreIdentity(request.Context))
         {
             issues.Add(new HostBoundaryValidationIssue(
                 HostBoundaryFailureReason.MissingStoreIdentity,
@@ -88,33 +133,25 @@ public sealed class HostRequestBoundaryValidator : IHostRequestBoundaryValidator
                 ErrorType.Validation));
         }
 
-        bool isLogin = string.Equals(
-            request.OperationName,
-            HostOperationNames.Login,
-            StringComparison.Ordinal);
-
-        if (isLogin && !HostClientContractRules.HasTerminalIdentity(request.Context))
+        if (requiresTerminalIdentity && !HostClientContractRules.HasTerminalIdentity(request.Context))
         {
             issues.Add(new HostBoundaryValidationIssue(
                 HostBoundaryFailureReason.MissingTerminalIdentity,
                 "HostBoundary.MissingTerminalIdentity",
-                "Login request must carry terminal identity.",
+                "Host request must carry terminal identity.",
                 ErrorType.Validation));
         }
 
-        if (!isLogin
-            && HostClientContractRules.RequiresAuthenticatedUser(request.OperationKind)
-            && !HostClientContractRules.HasAuthenticatedCommandIdentity(request.Context))
+        if (requiresAuthenticatedUser && !HostClientContractRules.HasAuthenticatedCommandIdentity(request.Context))
         {
             issues.Add(new HostBoundaryValidationIssue(
                 HostBoundaryFailureReason.MissingAuthenticatedUserIdentity,
                 "HostBoundary.MissingAuthenticatedUserIdentity",
-                "Command request must carry user, role, terminal, and device identity.",
+                "Host request must carry user, role, terminal, and device identity.",
                 ErrorType.Unauthorized));
         }
 
-        if (HostClientContractRules.RequiresCashierSession(request.OperationName)
-            && !request.Context.CashierSessionId.HasValue)
+        if (requiresCashierSession && !request.Context.CashierSessionId.HasValue)
         {
             issues.Add(new HostBoundaryValidationIssue(
                 HostBoundaryFailureReason.MissingCashierSessionIdentity,
