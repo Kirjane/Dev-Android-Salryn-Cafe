@@ -96,9 +96,9 @@ public static class BackupMobileReadinessRules
     // Kirch: Primary database backups must be encrypted before they are safe for maintainer/cloud handling.
     public static bool IsProtectedDatabaseBackup(BackupPackageManifest manifest)
     {
-        return manifest.BackupType is SalrynBackupPackageType.FullDatabase
+        return (manifest.BackupType is SalrynBackupPackageType.FullDatabase
             or SalrynBackupPackageType.ManualFullDatabase
-            or SalrynBackupPackageType.ScheduledFullDatabase
+            or SalrynBackupPackageType.ScheduledFullDatabase)
             && manifest.ProtectionMode == SalrynBackupProtectionMode.Encrypted;
     }
 

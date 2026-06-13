@@ -63,6 +63,16 @@ public static class Phase61DBackupMobileReadinessCompileChecks
             throw new InvalidOperationException("Backup manifest should contain restorable identity.");
         }
 
+        BackupPackageManifest unprotectedManifest = manifest with
+        {
+            ProtectionMode = SalrynBackupProtectionMode.Unprotected
+        };
+
+        if (BackupMobileReadinessRules.IsProtectedDatabaseBackup(unprotectedManifest))
+        {
+            throw new InvalidOperationException("Unprotected database backup should not be treated as protected.");
+        }
+
         if (!BackupMobileReadinessRules.IsProtectedDatabaseBackup(manifest))
         {
             throw new InvalidOperationException("Database backup should be protected.");
