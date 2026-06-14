@@ -96,6 +96,20 @@ public sealed class SalrynAppServices
     {
         ArgumentNullException.ThrowIfNull(profile);
 
+        LocalHostBootstrapCompositionResult result =
+            CreateUncheckedLocalHostProductLookupComposition(profile);
+
+        if (!LocalHostBootstrapCompositionRules.IsCompositionValid(result))
+        {
+            throw new InvalidOperationException("Invalid app Local Host ProductLookup composition.");
+        }
+
+        return result;
+    }
+
+    // Kirch: Keeps raw Host.Local composition isolated so the public app method can guard the result.
+    private LocalHostBootstrapCompositionResult CreateUncheckedLocalHostProductLookupComposition(StoreDeploymentProfile profile)
+    {
         LocalHostBootstrapComposer composer = new();
 
         return composer.ComposeWithProductLookup(

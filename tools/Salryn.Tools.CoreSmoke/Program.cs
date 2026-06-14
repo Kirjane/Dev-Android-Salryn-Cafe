@@ -1,4 +1,4 @@
-﻿using Salryn.Tests;
+using Salryn.Tests;
 
 namespace Salryn.Tools.CoreSmoke;
 
@@ -34,6 +34,8 @@ public static class Program
         Phase65AAppCompositionBoundaryPlanningChecks.Run();
 
         Phase65BAppLocalHostCompositionReferenceSliceChecks.Run();
+
+        Phase65CAppLocalHostCompositionCreationGuardChecks.Run();
 
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
