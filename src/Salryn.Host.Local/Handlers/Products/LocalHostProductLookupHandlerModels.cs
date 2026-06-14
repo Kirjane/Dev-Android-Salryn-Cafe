@@ -28,7 +28,7 @@ public sealed class LocalHostProductLookupHandler : IHostOperationHandler<LocalH
         _products = products ?? throw new ArgumentNullException(nameof(products));
     }
 
-    // Kirch: Resolves ProductLookup by barcode without introducing HTTP, sockets, WinForms, or Infrastructure references.
+    // Kirch: Resolves ProductLookup by barcode through the Core repository contract only.
     public async Task<HostResponseEnvelope<LocalHostProductLookupResponse>> HandleAsync(
         HostRequestEnvelope<LocalHostProductLookupRequest> request,
         CancellationToken cancellationToken = default)
