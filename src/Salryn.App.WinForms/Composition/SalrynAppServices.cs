@@ -1,10 +1,12 @@
-﻿using Salryn.App.WinForms.Features.Checkout;
+using Salryn.App.WinForms.Features.Checkout;
+using Salryn.Core.Deployment;
 using Salryn.Core.Repositories;
 using Salryn.Core.Services;
 using Salryn.Infrastructure.Data;
 using Salryn.Infrastructure.Data.Initialization;
 using Salryn.Infrastructure.Data.Repositories;
 using Salryn.Infrastructure.Paths;
+using Salryn.Host.Local.Composition;
 
 namespace Salryn.App.WinForms.Composition;
 
@@ -89,6 +91,17 @@ public sealed class SalrynAppServices
         return Create(DbPaths.CreateDevelopment(projectRoot));
     }
 
+    // Kirch: Builds a stopped Local Host ProductLookup composition through the app composition root only.
+    public LocalHostBootstrapCompositionResult CreateLocalHostProductLookupComposition(StoreDeploymentProfile profile)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+
+        LocalHostBootstrapComposer composer = new();
+
+        return composer.ComposeWithProductLookup(
+            profile,
+            ProductReadRepository);
+    }
     // Kirch: This method wires repositories and services once, then passes them into the app shell.
     public static SalrynAppServices Create(DbPaths dbPaths)
     {

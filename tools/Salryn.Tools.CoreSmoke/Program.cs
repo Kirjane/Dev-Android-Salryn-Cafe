@@ -33,6 +33,8 @@ public static class Program
 
         Phase65AAppCompositionBoundaryPlanningChecks.Run();
 
+        Phase65BAppLocalHostCompositionReferenceSliceChecks.Run();
+
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
 }

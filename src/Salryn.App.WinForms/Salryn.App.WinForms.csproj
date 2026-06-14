@@ -1,8 +1,9 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\Salryn.Core\Salryn.Core.csproj" />
     <ProjectReference Include="..\Salryn.Infrastructure\Salryn.Infrastructure.csproj" />
+    <ProjectReference Include="..\Salryn.Host.Local\Salryn.Host.Local.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

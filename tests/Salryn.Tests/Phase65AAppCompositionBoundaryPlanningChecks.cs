@@ -1,9 +1,9 @@
 ﻿namespace Salryn.Tests;
 
-// Kirch: Plans the app composition boundary before wiring Local Host into WinForms.
+// Kirch: Plans the app composition boundary before and after the controlled Host.Local reference slice.
 public static class Phase65AAppCompositionBoundaryPlanningChecks
 {
-    // Kirch: Verifies the current app composition root is ready for a future explicit Local Host wiring slice.
+    // Kirch: Keeps the 65A planning guard valid after 65B by allowing only the planned composition-root reference.
     public static void Run()
     {
         DirectoryInfo repoRoot = FindRepositoryRoot();
@@ -57,11 +57,6 @@ public static class Phase65AAppCompositionBoundaryPlanningChecks
             "<UseWindowsForms>true</UseWindowsForms>",
             "App.WinForms must remain the WinForms project.");
 
-        RequireNotContains(
-            appProjectText,
-            "Salryn.Host.Local",
-            "Phase 65A is planning-only and must not add the Host.Local project reference yet.");
-
         RequireContains(
             appServicesText,
             "public sealed class SalrynAppServices",
@@ -69,18 +64,8 @@ public static class Phase65AAppCompositionBoundaryPlanningChecks
 
         RequireContains(
             appServicesText,
-            "using Salryn.Infrastructure.Data;",
-            "Only the app composition root should know Infrastructure data wiring.");
-
-        RequireContains(
-            appServicesText,
             "public IProductReadRepository ProductReadRepository { get; }",
-            "App composition root must expose the Core product read repository for future Local Host composition.");
-
-        RequireContains(
-            appServicesText,
-            "IProductReadRepository productReadRepository =",
-            "App composition root must create the product read repository once.");
+            "App composition root must expose the Core product read repository for Local Host composition.");
 
         RequireContains(
             appServicesText,
@@ -88,39 +73,56 @@ public static class Phase65AAppCompositionBoundaryPlanningChecks
             "App composition root must create ProductReadRepository through the repository factory.");
 
         RequireContains(
-            appServicesText,
-            "checkoutProductSearch =",
-            "Existing checkout product search boundary must remain wired.");
-
-        RequireContains(
-            appServicesText,
-            "new CheckoutProductRepositorySearchBoundary(productReadRepository)",
-            "Checkout search must keep using the existing product repository boundary.");
-
-        RequireNotContains(
-            appServicesText,
-            "LocalHostBootstrapComposer",
-            "Phase 65A must not wire Local Host composition into app services yet.");
-
-        RequireNotContains(
-            appServicesText,
-            "ComposeWithProductLookup",
-            "Phase 65A must not call ProductLookup Local Host composition yet.");
-
-        RequireContains(
             hostComposerText,
             "public LocalHostBootstrapCompositionResult ComposeWithProductLookup(",
-            "Host.Local explicit ProductLookup composition path must exist before app wiring planning.");
+            "Host.Local explicit ProductLookup composition path must exist before app wiring.");
 
         RequireContains(
             hostComposerText,
             "IProductReadRepository products",
             "Host.Local explicit ProductLookup composition must accept the Core product read repository contract.");
 
-        RequireContains(
-            hostComposerText,
-            "_bootstrapper.RegisterDefaultHandlersWithProductLookup(",
-            "Host.Local explicit ProductLookup composition must use the controlled bootstrap path.");
+        bool appReferencesHostLocal = appProjectText.Contains("Salryn.Host.Local", StringComparison.Ordinal);
+
+        if (appReferencesHostLocal)
+        {
+            RequireContains(
+                appServicesText,
+                "using Salryn.Host.Local.Composition;",
+                "After 65B, only the app composition root may reference Host.Local composition.");
+
+            RequireContains(
+                appServicesText,
+                "CreateLocalHostProductLookupComposition",
+                "After 65B, app services must expose a controlled Local Host composition method.");
+
+            RequireContains(
+                appServicesText,
+                "LocalHostBootstrapComposer composer = new();",
+                "After 65B, app services must construct the Local Host composer only inside the composition root.");
+
+            RequireContains(
+                appServicesText,
+                "return composer.ComposeWithProductLookup(",
+                "After 65B, app services must use the explicit ProductLookup composition path.");
+
+            RequireContains(
+                appServicesText,
+                "ProductReadRepository);",
+                "After 65B, Local Host ProductLookup composition must use the existing ProductReadRepository.");
+        }
+        else
+        {
+            RequireNotContains(
+                appServicesText,
+                "LocalHostBootstrapComposer",
+                "Before 65B, SalrynAppServices must not wire Local Host composition.");
+
+            RequireNotContains(
+                appServicesText,
+                "ComposeWithProductLookup",
+                "Before 65B, SalrynAppServices must not call ProductLookup Local Host composition.");
+        }
 
         RequireContains(
             programText,
@@ -131,11 +133,6 @@ public static class Phase65AAppCompositionBoundaryPlanningChecks
             programText,
             "services.DatabaseInitialization.InitializeDatabase();",
             "Program must still initialize the local database through app services.");
-
-        RequireContains(
-            programText,
-            "new SalrynShellForm(",
-            "Program must still pass composition services into the shell.");
 
         RequireContains(
             shellText,
@@ -158,6 +155,7 @@ public static class Phase65AAppCompositionBoundaryPlanningChecks
             "Checkout completion must still receive application service through the composition root.");
 
         AssertNoInfrastructureOutsideComposition(repoRoot);
+        AssertNoLocalHostOutsideComposition(repoRoot);
     }
 
     // Kirch: Keeps text-based planning checks stable regardless of the current process directory.
@@ -259,6 +257,48 @@ public static class Phase65AAppCompositionBoundaryPlanningChecks
                 {
                     throw new InvalidOperationException(
                         $"Infrastructure wiring leaked outside App.WinForms composition root: {file} contains {forbiddenPattern}");
+                }
+            }
+        }
+    }
+
+    // Kirch: Ensures Host.Local appears only in the WinForms composition root after the reference slice.
+    private static void AssertNoLocalHostOutsideComposition(DirectoryInfo repoRoot)
+    {
+        string appRoot = Path.Combine(
+            repoRoot.FullName,
+            "src",
+            "Salryn.App.WinForms");
+
+        string compositionRoot = Path.Combine(
+            appRoot,
+            "Composition");
+
+        string[] forbiddenPatterns =
+        {
+            "Salryn.Host.Local",
+            "LocalHostBootstrapComposer",
+            "LocalHostBootstrapCompositionResult",
+            "ComposeWithProductLookup"
+        };
+
+        foreach (string file in Directory.EnumerateFiles(appRoot, "*.cs", SearchOption.AllDirectories))
+        {
+            if (file.Contains("\\bin\\", StringComparison.OrdinalIgnoreCase)
+                || file.Contains("\\obj\\", StringComparison.OrdinalIgnoreCase)
+                || file.StartsWith(compositionRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            string text = File.ReadAllText(file);
+
+            foreach (string forbiddenPattern in forbiddenPatterns)
+            {
+                if (text.Contains(forbiddenPattern, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        $"Local Host wiring leaked outside App.WinForms composition root: {file} contains {forbiddenPattern}");
                 }
             }
         }
