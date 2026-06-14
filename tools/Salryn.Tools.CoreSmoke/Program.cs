@@ -29,6 +29,8 @@ public static class Program
 
         Phase64CLocalHostProductLookupCompositionChecks.RunAsync().GetAwaiter().GetResult();
 
+        Phase64DLocalHostProductLookupCompositionReadinessSealChecks.RunAsync().GetAwaiter().GetResult();
+
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
 }
