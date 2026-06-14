@@ -125,9 +125,12 @@ public static class LocalHostOperationContractRules
         LocalHostOperationContractDescriptor? contract,
         HostOperationDescriptor? descriptor)
     {
-        return IsContractValid(contract)
-            && descriptor is not null
-            && string.Equals(contract.OperationName, descriptor.OperationName, StringComparison.Ordinal)
+        if (contract is null || descriptor is null || !IsContractValid(contract))
+        {
+            return false;
+        }
+
+        return string.Equals(contract.OperationName, descriptor.OperationName, StringComparison.Ordinal)
             && contract.OperationKind == descriptor.OperationKind;
     }
 
@@ -158,8 +161,12 @@ public static class LocalHostOperationContractRules
     public static bool HandlerMatchesContract<TPayload, TResponse>(
         LocalHostOperationContractDescriptor? contract)
     {
-        return IsContractValid(contract)
-            && contract.PayloadType == typeof(TPayload)
+        if (contract is null || !IsContractValid(contract))
+        {
+            return false;
+        }
+
+        return contract.PayloadType == typeof(TPayload)
             && contract.ResponseType == typeof(TResponse);
     }
 }
