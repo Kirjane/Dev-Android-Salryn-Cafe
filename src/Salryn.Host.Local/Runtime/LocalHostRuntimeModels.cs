@@ -1,6 +1,7 @@
 ﻿using Salryn.Core.Contracts;
 using Salryn.Core.Deployment;
 using Salryn.Core.Hosting;
+using Salryn.Host.Local.Dispatch;
 
 namespace Salryn.Host.Local.Runtime;
 
@@ -32,6 +33,14 @@ public interface ILocalHostRuntime
     void Stop();
 
     HostBoundaryValidationResult Validate<TPayload>(HostRequestEnvelope<TPayload>? request);
+
+    Task<HostResponseEnvelope<TResponse>> DispatchAsync<TPayload, TResponse>(
+        HostRequestEnvelope<TPayload> request,
+        CancellationToken cancellationToken = default);
+
+    Task<HostResponseEnvelope<TResponse>> DispatchAsync<TPayload, TResponse>(
+        HostRequestEnvelope<TPayload> request,
+        CancellationToken cancellationToken = default);
 }
 
 // Kirch: Centralizes Local Host runtime rules before real Host process and transport implementation.
@@ -57,6 +66,10 @@ public sealed class LocalHostRuntime : ILocalHostRuntime
     private readonly StoreDeploymentProfile _profile;
     private readonly HostOperationCatalog _operationCatalog;
     private readonly HostRequestBoundaryValidator _boundaryValidator;
+    private readonly LocalHostHandlerRegistry _handlerRegistry;
+    private readonly LocalHostOperationDispatcher _dispatcher;
+    private readonly LocalHostHandlerRegistry _handlerRegistry;
+    private readonly LocalHostOperationDispatcher _dispatcher;
     private LocalHostRuntimeState _state;
     private DateTimeOffset? _startedAt;
 
@@ -114,3 +127,5 @@ public sealed class LocalHostRuntime : ILocalHostRuntime
         return _boundaryValidator.Validate(request);
     }
 }
+
+
