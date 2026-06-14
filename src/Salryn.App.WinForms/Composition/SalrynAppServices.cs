@@ -107,6 +107,14 @@ public sealed class SalrynAppServices
         return result;
     }
 
+    // Kirch: Creates a holder for guarded Local Host ProductLookup composition without starting runtime behavior.
+    public SalrynLocalHostCompositionHolder CreateLocalHostProductLookupCompositionHolder(StoreDeploymentProfile profile)
+    {
+        LocalHostBootstrapCompositionResult composition =
+            CreateLocalHostProductLookupComposition(profile);
+
+        return new SalrynLocalHostCompositionHolder(composition);
+    }
     // Kirch: Keeps raw Host.Local composition isolated so the public app method can guard the result.
     private LocalHostBootstrapCompositionResult CreateUncheckedLocalHostProductLookupComposition(StoreDeploymentProfile profile)
     {
