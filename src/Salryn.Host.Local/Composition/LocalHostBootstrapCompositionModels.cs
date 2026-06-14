@@ -1,18 +1,19 @@
 ﻿using Salryn.Core.Deployment;
 using Salryn.Core.Hosting;
+using Salryn.Core.Repositories;
 using Salryn.Host.Local.Bootstrap;
 using Salryn.Host.Local.Contracts;
 using Salryn.Host.Local.Runtime;
 
 namespace Salryn.Host.Local.Composition;
 
-// Kirch: Captures a fully composed local in-process Host runtime before transport or real handlers exist.
+// Kirch: Captures a fully composed local in-process Host runtime before client-facing composition exists.
 public sealed record LocalHostBootstrapCompositionResult(
     LocalHostRuntime Runtime,
     LocalHostHandlerBootstrapResult BootstrapResult,
     LocalHostRuntimeSnapshot Snapshot);
 
-// Kirch: Validates Local Host bootstrap composition without touching network, UI, or persistence.
+// Kirch: Validates Local Host bootstrap composition without touching UI or persistence.
 public static class LocalHostBootstrapCompositionRules
 {
     // Kirch: A composed Local Host is valid only when operation, contract, and handler counts line up.
@@ -32,12 +33,12 @@ public static class LocalHostBootstrapCompositionRules
     }
 }
 
-// Kirch: Composes Local Host runtime and placeholder handler bootstrap in one controlled local step.
+// Kirch: Composes Local Host runtime and handler bootstrap in controlled local steps.
 public sealed class LocalHostBootstrapComposer
 {
     private readonly LocalHostHandlerBootstrapper _bootstrapper;
 
-    // Kirch: Creates the composer with the existing placeholder bootstrapper only.
+    // Kirch: Creates the composer with the existing bootstrapper.
     public LocalHostBootstrapComposer(LocalHostHandlerBootstrapper? bootstrapper = null)
     {
         _bootstrapper = bootstrapper ?? new LocalHostHandlerBootstrapper();
@@ -49,12 +50,56 @@ public sealed class LocalHostBootstrapComposer
         HostOperationCatalog? operationCatalog = null,
         LocalHostOperationContractMap? contractMap = null)
     {
-        LocalHostRuntime runtime = new(
+        LocalHostRuntime runtime = CreateRuntime(
             profile,
             operationCatalog,
             contractMap);
 
         LocalHostHandlerBootstrapResult bootstrapResult = _bootstrapper.RegisterDefaultHandlers(runtime);
+
+        return CreateCheckedResult(runtime, bootstrapResult);
+    }
+
+    // Kirch: Builds a stopped Local Host runtime with ProductLookup using the Core product repository contract.
+    public LocalHostBootstrapCompositionResult ComposeWithProductLookup(
+        StoreDeploymentProfile profile,
+        IProductReadRepository products,
+        HostOperationCatalog? operationCatalog = null,
+        LocalHostOperationContractMap? contractMap = null)
+    {
+        ArgumentNullException.ThrowIfNull(products);
+
+        LocalHostRuntime runtime = CreateRuntime(
+            profile,
+            operationCatalog,
+            contractMap);
+
+        LocalHostHandlerBootstrapResult bootstrapResult = _bootstrapper.RegisterDefaultHandlersWithProductLookup(
+            runtime,
+            products);
+
+        return CreateCheckedResult(runtime, bootstrapResult);
+    }
+
+    // Kirch: Creates the runtime while keeping composition construction centralized.
+    private static LocalHostRuntime CreateRuntime(
+        StoreDeploymentProfile profile,
+        HostOperationCatalog? operationCatalog,
+        LocalHostOperationContractMap? contractMap)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+
+        return new LocalHostRuntime(
+            profile,
+            operationCatalog,
+            contractMap);
+    }
+
+    // Kirch: Captures and validates the composed runtime result before returning it.
+    private static LocalHostBootstrapCompositionResult CreateCheckedResult(
+        LocalHostRuntime runtime,
+        LocalHostHandlerBootstrapResult bootstrapResult)
+    {
         LocalHostRuntimeSnapshot snapshot = runtime.GetSnapshot();
 
         LocalHostBootstrapCompositionResult result = new(
