@@ -15,7 +15,9 @@ public static class Program
         Phase62BHostOperationRegistrationCompileChecks.Run();
         Phase62CDescriptorAwareBoundaryCompileChecks.Run();
         Phase62EHostBoundaryRuntimeSafetyCompileChecks.Run();
+        Phase63LocalHostRuntimeCompileChecks.Run();
 
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
 }
+

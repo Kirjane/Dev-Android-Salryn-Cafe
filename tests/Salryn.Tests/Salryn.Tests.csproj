@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Salryn.Core\Salryn.Core.csproj" />
     <ProjectReference Include="..\..\src\Salryn.Infrastructure\Salryn.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Salryn.Host.Local\Salryn.Host.Local.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -12,3 +13,4 @@
   </PropertyGroup>
 
 </Project>
+
