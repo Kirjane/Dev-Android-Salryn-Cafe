@@ -1,7 +1,9 @@
 ﻿using Salryn.Core.Common;
 using Salryn.Core.Contracts;
 using Salryn.Core.Hosting;
+using Salryn.Core.Repositories;
 using Salryn.Host.Local.Contracts;
+using Salryn.Host.Local.Handlers.Products;
 using Salryn.Host.Local.Runtime;
 
 namespace Salryn.Host.Local.Bootstrap;
@@ -12,12 +14,12 @@ public static class LocalHostHandlerBootstrapErrorCodes
     public const string HandlerNotImplemented = "LocalHost.Bootstrap.HandlerNotImplemented";
 }
 
-// Kirch: Reports which placeholder handlers were registered during Local Host bootstrap.
+// Kirch: Reports which handlers were registered during Local Host bootstrap.
 public sealed record LocalHostHandlerBootstrapResult(
     int RegisteredHandlerCount,
     IReadOnlyCollection<string> RegisteredOperationNames);
 
-// Kirch: Registers contract-safe placeholder handlers without adding real POS business logic.
+// Kirch: Registers contract-safe Local Host handlers while preserving the default placeholder path.
 public sealed class LocalHostHandlerBootstrapper
 {
     // Kirch: Registers one placeholder handler for every default Local Host operation contract.
@@ -45,6 +47,49 @@ public sealed class LocalHostHandlerBootstrapper
             HostOperationNames.ProductLookup,
             new LocalHostBootstrapNotImplementedHandler<LocalHostProductLookupRequest, LocalHostProductLookupResponse>());
 
+        RegisterRemainingPlaceholderHandlers(runtime, registeredOperations);
+
+        return CreateResult(registeredOperations);
+    }
+
+    // Kirch: Registers ProductLookup as the first real handler while keeping the rest as placeholders.
+    public LocalHostHandlerBootstrapResult RegisterDefaultHandlersWithProductLookup(
+        ILocalHostRuntime runtime,
+        IProductReadRepository products)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentNullException.ThrowIfNull(products);
+
+        List<string> registeredOperations = new();
+
+        Register(
+            runtime,
+            registeredOperations,
+            HostOperationNames.Login,
+            new LocalHostBootstrapNotImplementedHandler<LocalHostLoginRequest, LocalHostLoginResponse>());
+
+        Register(
+            runtime,
+            registeredOperations,
+            HostOperationNames.ProductSearch,
+            new LocalHostBootstrapNotImplementedHandler<LocalHostProductSearchRequest, LocalHostProductSearchResponse>());
+
+        Register(
+            runtime,
+            registeredOperations,
+            HostOperationNames.ProductLookup,
+            new LocalHostProductLookupHandler(products));
+
+        RegisterRemainingPlaceholderHandlers(runtime, registeredOperations);
+
+        return CreateResult(registeredOperations);
+    }
+
+    // Kirch: Registers the operation placeholders that are not part of the Phase 64B ProductLookup slice.
+    private static void RegisterRemainingPlaceholderHandlers(
+        ILocalHostRuntime runtime,
+        List<string> registeredOperations)
+    {
         Register(
             runtime,
             registeredOperations,
@@ -74,13 +119,9 @@ public sealed class LocalHostHandlerBootstrapper
             registeredOperations,
             HostOperationNames.BackupHealth,
             new LocalHostBootstrapNotImplementedHandler<LocalHostBackupHealthRequest, LocalHostBackupHealthResponse>());
-
-        return new LocalHostHandlerBootstrapResult(
-            RegisteredHandlerCount: registeredOperations.Count,
-            RegisteredOperationNames: registeredOperations.ToArray());
     }
 
-    // Kirch: Registers one typed placeholder handler through the Local Host runtime contract gate.
+    // Kirch: Registers one typed handler through the Local Host runtime contract gate.
     private static void Register<TPayload, TResponse>(
         ILocalHostRuntime runtime,
         List<string> registeredOperations,
@@ -89,6 +130,14 @@ public sealed class LocalHostHandlerBootstrapper
     {
         runtime.RegisterHandler(operationName, handler);
         registeredOperations.Add(operationName);
+    }
+
+    // Kirch: Creates a stable bootstrap result for readiness and smoke checks.
+    private static LocalHostHandlerBootstrapResult CreateResult(List<string> registeredOperations)
+    {
+        return new LocalHostHandlerBootstrapResult(
+            RegisteredHandlerCount: registeredOperations.Count,
+            RegisteredOperationNames: registeredOperations.ToArray());
     }
 }
 

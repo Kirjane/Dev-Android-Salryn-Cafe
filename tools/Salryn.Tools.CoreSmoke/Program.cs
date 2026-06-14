@@ -25,6 +25,8 @@ public static class Program
 
         Phase64ALocalHostProductLookupHandlerCompileChecks.RunAsync().GetAwaiter().GetResult();
 
+        Phase64BLocalHostProductLookupRuntimeRegistrationChecks.RunAsync().GetAwaiter().GetResult();
+
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
 }
