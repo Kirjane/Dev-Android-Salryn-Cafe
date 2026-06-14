@@ -18,6 +18,7 @@ public static class Program
         Phase63LocalHostRuntimeCompileChecks.Run();
         Phase63BLocalHostDispatchCompileChecks.RunAsync().GetAwaiter().GetResult();
         Phase63CLocalHostLifecycleFaultSafetyCompileChecks.RunAsync().GetAwaiter().GetResult();
+        Phase63DLocalHostOperationContractMappingCompileChecks.RunAsync().GetAwaiter().GetResult();
 
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }

@@ -1,6 +1,7 @@
 ﻿using Salryn.Core.Contracts;
 using Salryn.Core.Deployment;
 using Salryn.Core.Hosting;
+using Salryn.Host.Local.Contracts;
 using Salryn.Host.Local.Dispatch;
 using Salryn.Host.Local.Runtime;
 
@@ -21,11 +22,11 @@ public static class Phase63BLocalHostDispatchCompileChecks
 
         runtime.Start(DateTimeOffset.UtcNow);
 
-        HostRequestEnvelope<string> invalidRequest = CreateRequest(
+        HostRequestEnvelope<LocalHostProductLookupRequest> invalidRequest = CreateRequest(
             tenantId: Guid.Empty,
             storeId: Guid.Empty);
 
-        HostResponseEnvelope<string> invalidResponse = await runtime.DispatchAsync<string, string>(invalidRequest);
+        HostResponseEnvelope<LocalHostProductLookupResponse> invalidResponse = await runtime.DispatchAsync<LocalHostProductLookupRequest, LocalHostProductLookupResponse>(invalidRequest);
 
         if (invalidResponse.IsSuccess
             || invalidResponse.Error is null
@@ -37,11 +38,11 @@ public static class Phase63BLocalHostDispatchCompileChecks
         LocalHostRuntime runtimeWithoutHandler = new(profile);
         runtimeWithoutHandler.Start(DateTimeOffset.UtcNow);
 
-        HostRequestEnvelope<string> validRequestWithoutHandler = CreateRequest(
+        HostRequestEnvelope<LocalHostProductLookupRequest> validRequestWithoutHandler = CreateRequest(
             tenantId: profile.Store.TenantId,
             storeId: profile.Store.StoreId);
 
-        HostResponseEnvelope<string> missingHandlerResponse = await runtimeWithoutHandler.DispatchAsync<string, string>(validRequestWithoutHandler);
+        HostResponseEnvelope<LocalHostProductLookupResponse> missingHandlerResponse = await runtimeWithoutHandler.DispatchAsync<LocalHostProductLookupRequest, LocalHostProductLookupResponse>(validRequestWithoutHandler);
 
         if (missingHandlerResponse.IsSuccess
             || missingHandlerResponse.Error is null
@@ -50,9 +51,9 @@ public static class Phase63BLocalHostDispatchCompileChecks
             throw new InvalidOperationException("Local Host dispatch should fail cleanly when no handler is registered.");
         }
 
-        HostResponseEnvelope<string> handledResponse = await runtime.DispatchAsync<string, string>(validRequestWithoutHandler);
+        HostResponseEnvelope<LocalHostProductLookupResponse> handledResponse = await runtime.DispatchAsync<LocalHostProductLookupRequest, LocalHostProductLookupResponse>(validRequestWithoutHandler);
 
-        if (!handledResponse.IsSuccess || handledResponse.Payload != "handled:sample-payload")
+        if (!handledResponse.IsSuccess || handledResponse.Payload?.DisplayName != "handled:sample-payload")
         {
             throw new InvalidOperationException("Local Host dispatch should call a registered in-process handler.");
         }
@@ -75,9 +76,9 @@ public static class Phase63BLocalHostDispatchCompileChecks
     }
 
     // Kirch: Creates a product lookup query request with full authenticated terminal identity.
-    private static HostRequestEnvelope<string> CreateRequest(Guid tenantId, Guid storeId)
+    private static HostRequestEnvelope<LocalHostProductLookupRequest> CreateRequest(Guid tenantId, Guid storeId)
     {
-        return new HostRequestEnvelope<string>(
+        return new HostRequestEnvelope<LocalHostProductLookupRequest>(
             RequestId: Guid.NewGuid(),
             OperationKind: HostOperationKind.Query,
             OperationName: HostOperationNames.ProductLookup,
@@ -90,20 +91,20 @@ public static class Phase63BLocalHostDispatchCompileChecks
                 TerminalId: Guid.NewGuid(),
                 DeviceKey: "field-node-terminal",
                 RequestedAt: DateTimeOffset.UtcNow),
-            Payload: "sample-payload");
+            Payload: new LocalHostProductLookupRequest("sample-payload"));
     }
 
     // Kirch: Sample handler exists only to prove local dispatch wiring; it is not a real POS handler.
-    private sealed class SampleProductLookupHandler : IHostOperationHandler<string, string>
+    private sealed class SampleProductLookupHandler : IHostOperationHandler<LocalHostProductLookupRequest, LocalHostProductLookupResponse>
     {
-        public Task<HostResponseEnvelope<string>> HandleAsync(
-            HostRequestEnvelope<string> request,
+        public Task<HostResponseEnvelope<LocalHostProductLookupResponse>> HandleAsync(
+            HostRequestEnvelope<LocalHostProductLookupRequest> request,
             CancellationToken cancellationToken = default)
         {
-            HostResponseEnvelope<string> response = new(
+            HostResponseEnvelope<LocalHostProductLookupResponse> response = new(
                 RequestId: request.RequestId,
                 IsSuccess: true,
-                Payload: $"handled:{request.Payload}",
+                Payload: new LocalHostProductLookupResponse($"handled:{request.Payload.BarcodeOrSku}"),
                 Error: null);
 
             return Task.FromResult(response);

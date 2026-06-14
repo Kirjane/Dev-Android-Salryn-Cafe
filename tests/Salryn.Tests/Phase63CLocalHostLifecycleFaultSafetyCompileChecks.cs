@@ -1,6 +1,7 @@
 ﻿using Salryn.Core.Contracts;
 using Salryn.Core.Deployment;
 using Salryn.Core.Hosting;
+using Salryn.Host.Local.Contracts;
 using Salryn.Host.Local.Dispatch;
 using Salryn.Host.Local.Runtime;
 
@@ -13,10 +14,10 @@ public static class Phase63CLocalHostLifecycleFaultSafetyCompileChecks
     public static async Task RunAsync()
     {
         StoreDeploymentProfile profile = CreateProfile();
-        HostRequestEnvelope<string> validRequest = CreateRequest(profile.Store.TenantId, profile.Store.StoreId);
+        HostRequestEnvelope<LocalHostProductLookupRequest> validRequest = CreateRequest(profile.Store.TenantId, profile.Store.StoreId);
 
         LocalHostRuntime stoppedRuntime = new(profile);
-        HostResponseEnvelope<string> stoppedResponse = await stoppedRuntime.DispatchAsync<string, string>(validRequest);
+        HostResponseEnvelope<LocalHostProductLookupResponse> stoppedResponse = await stoppedRuntime.DispatchAsync<LocalHostProductLookupRequest, LocalHostProductLookupResponse>(validRequest);
 
         if (stoppedResponse.IsSuccess
             || stoppedResponse.Error is null
@@ -52,7 +53,7 @@ public static class Phase63CLocalHostLifecycleFaultSafetyCompileChecks
             new FaultingProductLookupHandler());
         faultRuntime.Start(DateTimeOffset.UtcNow);
 
-        HostResponseEnvelope<string> faultResponse = await faultRuntime.DispatchAsync<string, string>(validRequest);
+        HostResponseEnvelope<LocalHostProductLookupResponse> faultResponse = await faultRuntime.DispatchAsync<LocalHostProductLookupRequest, LocalHostProductLookupResponse>(validRequest);
 
         if (faultResponse.IsSuccess
             || faultResponse.Error is null
@@ -68,7 +69,7 @@ public static class Phase63CLocalHostLifecycleFaultSafetyCompileChecks
             throw new InvalidOperationException("Local Host runtime should enter faulted state after handler failure.");
         }
 
-        HostResponseEnvelope<string> alreadyFaultedResponse = await faultRuntime.DispatchAsync<string, string>(validRequest);
+        HostResponseEnvelope<LocalHostProductLookupResponse> alreadyFaultedResponse = await faultRuntime.DispatchAsync<LocalHostProductLookupRequest, LocalHostProductLookupResponse>(validRequest);
 
         if (alreadyFaultedResponse.IsSuccess
             || alreadyFaultedResponse.Error is null
@@ -88,7 +89,7 @@ public static class Phase63CLocalHostLifecycleFaultSafetyCompileChecks
             new EmptyIssueBoundaryValidator(),
             new LocalHostHandlerRegistry());
 
-        HostResponseEnvelope<string> emptyIssueResponse = await emptyIssueDispatcher.DispatchAsync<string, string>(validRequest);
+        HostResponseEnvelope<LocalHostProductLookupResponse> emptyIssueResponse = await emptyIssueDispatcher.DispatchAsync<LocalHostProductLookupRequest, LocalHostProductLookupResponse>(validRequest);
 
         if (emptyIssueResponse.IsSuccess
             || emptyIssueResponse.Error is null
@@ -115,9 +116,9 @@ public static class Phase63CLocalHostLifecycleFaultSafetyCompileChecks
     }
 
     // Kirch: Creates a product lookup query request with full authenticated terminal identity.
-    private static HostRequestEnvelope<string> CreateRequest(Guid tenantId, Guid storeId)
+    private static HostRequestEnvelope<LocalHostProductLookupRequest> CreateRequest(Guid tenantId, Guid storeId)
     {
-        return new HostRequestEnvelope<string>(
+        return new HostRequestEnvelope<LocalHostProductLookupRequest>(
             RequestId: Guid.NewGuid(),
             OperationKind: HostOperationKind.Query,
             OperationName: HostOperationNames.ProductLookup,
@@ -130,29 +131,29 @@ public static class Phase63CLocalHostLifecycleFaultSafetyCompileChecks
                 TerminalId: Guid.NewGuid(),
                 DeviceKey: "field-node-terminal",
                 RequestedAt: DateTimeOffset.UtcNow),
-            Payload: "sample-payload");
+            Payload: new LocalHostProductLookupRequest("sample-payload"));
     }
 
     // Kirch: Stable sample handler exists only to prove runtime registration rules.
-    private sealed class StableProductLookupHandler : IHostOperationHandler<string, string>
+    private sealed class StableProductLookupHandler : IHostOperationHandler<LocalHostProductLookupRequest, LocalHostProductLookupResponse>
     {
-        public Task<HostResponseEnvelope<string>> HandleAsync(
-            HostRequestEnvelope<string> request,
+        public Task<HostResponseEnvelope<LocalHostProductLookupResponse>> HandleAsync(
+            HostRequestEnvelope<LocalHostProductLookupRequest> request,
             CancellationToken cancellationToken = default)
         {
-            return Task.FromResult(new HostResponseEnvelope<string>(
+            return Task.FromResult(new HostResponseEnvelope<LocalHostProductLookupResponse>(
                 RequestId: request.RequestId,
                 IsSuccess: true,
-                Payload: request.Payload,
+                Payload: new LocalHostProductLookupResponse(request.Payload.BarcodeOrSku),
                 Error: null));
         }
     }
 
     // Kirch: Faulting sample handler exists only to prove exception wrapping and faulted runtime state.
-    private sealed class FaultingProductLookupHandler : IHostOperationHandler<string, string>
+    private sealed class FaultingProductLookupHandler : IHostOperationHandler<LocalHostProductLookupRequest, LocalHostProductLookupResponse>
     {
-        public Task<HostResponseEnvelope<string>> HandleAsync(
-            HostRequestEnvelope<string> request,
+        public Task<HostResponseEnvelope<LocalHostProductLookupResponse>> HandleAsync(
+            HostRequestEnvelope<LocalHostProductLookupRequest> request,
             CancellationToken cancellationToken = default)
         {
             throw new InvalidOperationException("sample handler failure");

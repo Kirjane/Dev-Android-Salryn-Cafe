@@ -2,6 +2,7 @@
 using Salryn.Core.Contracts;
 using Salryn.Core.Deployment;
 using Salryn.Core.Hosting;
+using Salryn.Host.Local.Contracts;
 using Salryn.Host.Local.Dispatch;
 
 namespace Salryn.Host.Local.Runtime;
@@ -23,7 +24,8 @@ public sealed record LocalHostRuntimeSnapshot(
     LocalHostRuntimeState State,
     DateTimeOffset? StartedAt,
     int RegisteredOperationCount,
-    int RegisteredHandlerCount);
+    int RegisteredHandlerCount,
+    int RegisteredContractCount);
 
 // Kirch: Defines the local Store Host runtime contract before HTTP, sockets, or LAN discovery exist.
 public interface ILocalHostRuntime
@@ -67,6 +69,7 @@ public sealed class LocalHostRuntime : ILocalHostRuntime
 {
     private readonly StoreDeploymentProfile _profile;
     private readonly HostOperationCatalog _operationCatalog;
+    private readonly LocalHostOperationContractMap _contractMap;
     private readonly HostRequestBoundaryValidator _boundaryValidator;
     private readonly LocalHostHandlerRegistry _handlerRegistry;
     private readonly LocalHostOperationDispatcher _dispatcher;
@@ -74,10 +77,11 @@ public sealed class LocalHostRuntime : ILocalHostRuntime
     private LocalHostRuntimeState _state;
     private DateTimeOffset? _startedAt;
 
-    // Kirch: Creates a Local Host runtime from a deployment profile and operation catalog.
+    // Kirch: Creates a Local Host runtime from a deployment profile, operation catalog, and contract map.
     public LocalHostRuntime(
         StoreDeploymentProfile profile,
-        HostOperationCatalog? operationCatalog = null)
+        HostOperationCatalog? operationCatalog = null,
+        LocalHostOperationContractMap? contractMap = null)
     {
         if (!LocalHostRuntimeRules.IsHostProfileValid(profile))
         {
@@ -86,6 +90,13 @@ public sealed class LocalHostRuntime : ILocalHostRuntime
 
         _profile = profile;
         _operationCatalog = operationCatalog ?? HostOperationCatalog.CreateDefault();
+        _contractMap = contractMap ?? LocalHostOperationContractMap.CreateDefault();
+
+        if (!LocalHostOperationContractRules.CoversCatalog(_contractMap, _operationCatalog))
+        {
+            throw new InvalidOperationException("Local Host operation contract map does not cover the Host operation catalog.");
+        }
+
         _boundaryValidator = new HostRequestBoundaryValidator(_operationCatalog);
         _handlerRegistry = new LocalHostHandlerRegistry();
         _dispatcher = new LocalHostOperationDispatcher(_boundaryValidator, _handlerRegistry);
@@ -105,7 +116,8 @@ public sealed class LocalHostRuntime : ILocalHostRuntime
                 State: _state,
                 StartedAt: _startedAt,
                 RegisteredOperationCount: _operationCatalog.Descriptors.Count,
-                RegisteredHandlerCount: _handlerRegistry.RegisteredHandlerCount);
+                RegisteredHandlerCount: _handlerRegistry.RegisteredHandlerCount,
+                RegisteredContractCount: _contractMap.Contracts.Count);
         }
     }
 
@@ -145,7 +157,7 @@ public sealed class LocalHostRuntime : ILocalHostRuntime
         return _boundaryValidator.Validate(request);
     }
 
-    // Kirch: Registers a typed in-process handler only while the Local Host runtime is stopped.
+    // Kirch: Registers a typed in-process handler only when its payload and response match the operation contract.
     public void RegisterHandler<TPayload, TResponse>(
         string operationName,
         IHostOperationHandler<TPayload, TResponse> handler)
@@ -155,6 +167,18 @@ public sealed class LocalHostRuntime : ILocalHostRuntime
             if (_state != LocalHostRuntimeState.Stopped)
             {
                 throw new InvalidOperationException("Local Host handlers can only be registered while runtime is stopped.");
+            }
+
+            LocalHostOperationContractDescriptor? contract = _contractMap.Find(operationName);
+
+            if (contract is null)
+            {
+                throw new InvalidOperationException($"Local Host operation contract is not registered: {operationName}");
+            }
+
+            if (!LocalHostOperationContractRules.HandlerMatchesContract<TPayload, TResponse>(contract))
+            {
+                throw new InvalidOperationException($"Local Host handler contract mismatch: {operationName}");
             }
 
             _handlerRegistry.Register(operationName, handler);
