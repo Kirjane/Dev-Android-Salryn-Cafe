@@ -10,14 +10,47 @@ public static class LocalHostDispatchErrorCodes
     public const string BoundaryValidationFailed = "LocalHost.Dispatch.BoundaryValidationFailed";
     public const string HandlerNotRegistered = "LocalHost.Dispatch.HandlerNotRegistered";
     public const string RequestEnvelopeMissing = "LocalHost.Dispatch.RequestEnvelopeMissing";
+    public const string RuntimeNotRunning = "LocalHost.Runtime.NotRunning";
+    public const string RuntimeAlreadyFaulted = "LocalHost.Runtime.AlreadyFaulted";
+    public const string HandlerFailure = "LocalHost.Dispatch.HandlerFailure";
+}
+
+// Kirch: Creates consistent Local Host failure responses without leaking runtime exceptions.
+public static class LocalHostDispatchResponses
+{
+    public static HostResponseEnvelope<TResponse> Failure<TResponse>(
+        Guid requestId,
+        string code,
+        string message,
+        ErrorType type)
+    {
+        return new HostResponseEnvelope<TResponse>(
+            RequestId: requestId,
+            IsSuccess: false,
+            Payload: default,
+            Error: new HostContractError(
+                Code: code,
+                Message: message,
+                Type: type));
+    }
 }
 
 // Kirch: Stores in-process Local Host handlers without creating HTTP, sockets, or database access.
 public sealed class LocalHostHandlerRegistry
 {
     private readonly Dictionary<string, object> _handlers = new(StringComparer.Ordinal);
+    private readonly object _syncRoot = new();
 
-    public int RegisteredHandlerCount => _handlers.Count;
+    public int RegisteredHandlerCount
+    {
+        get
+        {
+            lock (_syncRoot)
+            {
+                return _handlers.Count;
+            }
+        }
+    }
 
     // Kirch: Registers one typed Host operation handler for in-process dispatch only.
     public void Register<TPayload, TResponse>(
@@ -44,9 +77,12 @@ public sealed class LocalHostHandlerRegistry
 
         string key = CreateKey<TPayload, TResponse>(operationName);
 
-        if (!_handlers.TryAdd(key, handler))
+        lock (_syncRoot)
         {
-            throw new InvalidOperationException($"Local Host handler already registered: {operationName}");
+            if (!_handlers.TryAdd(key, handler))
+            {
+                throw new InvalidOperationException($"Local Host handler already registered: {operationName}");
+            }
         }
     }
 
@@ -60,9 +96,12 @@ public sealed class LocalHostHandlerRegistry
 
         string key = CreateKey<TPayload, TResponse>(operationName);
 
-        return _handlers.TryGetValue(key, out object? handler)
-            ? handler as IHostOperationHandler<TPayload, TResponse>
-            : null;
+        lock (_syncRoot)
+        {
+            return _handlers.TryGetValue(key, out object? handler)
+                ? handler as IHostOperationHandler<TPayload, TResponse>
+                : null;
+        }
     }
 
     // Kirch: Keeps handler lookup scoped by operation name, payload type, and response type.
@@ -94,7 +133,7 @@ public sealed class LocalHostOperationDispatcher : IHostOperationDispatcher
     {
         if (request is null)
         {
-            return CreateFailure<TResponse>(
+            return LocalHostDispatchResponses.Failure<TResponse>(
                 requestId: Guid.Empty,
                 code: LocalHostDispatchErrorCodes.RequestEnvelopeMissing,
                 message: "Local Host request envelope must be provided.",
@@ -105,9 +144,20 @@ public sealed class LocalHostOperationDispatcher : IHostOperationDispatcher
 
         if (!boundaryResult.IsValid)
         {
-            HostBoundaryValidationIssue firstIssue = boundaryResult.Issues.First();
+            HostBoundaryValidationIssue? firstIssue = boundaryResult.Issues.Count > 0
+                ? boundaryResult.Issues[0]
+                : null;
 
-            return CreateFailure<TResponse>(
+            if (firstIssue is null)
+            {
+                return LocalHostDispatchResponses.Failure<TResponse>(
+                    requestId: request.RequestId,
+                    code: LocalHostDispatchErrorCodes.BoundaryValidationFailed,
+                    message: "Local Host boundary validation failed without a specific issue.",
+                    type: ErrorType.Validation);
+            }
+
+            return LocalHostDispatchResponses.Failure<TResponse>(
                 requestId: request.RequestId,
                 code: firstIssue.Code,
                 message: firstIssue.Message,
@@ -118,30 +168,28 @@ public sealed class LocalHostOperationDispatcher : IHostOperationDispatcher
 
         if (handler is null)
         {
-            return CreateFailure<TResponse>(
+            return LocalHostDispatchResponses.Failure<TResponse>(
                 requestId: request.RequestId,
                 code: LocalHostDispatchErrorCodes.HandlerNotRegistered,
                 message: "Local Host operation handler is not registered.",
                 type: ErrorType.NotFound);
         }
 
-        return await handler.HandleAsync(request, cancellationToken);
-    }
-
-    // Kirch: Creates a failed Host response envelope without leaking runtime exceptions.
-    private static HostResponseEnvelope<TResponse> CreateFailure<TResponse>(
-        Guid requestId,
-        string code,
-        string message,
-        ErrorType type)
-    {
-        return new HostResponseEnvelope<TResponse>(
-            RequestId: requestId,
-            IsSuccess: false,
-            Payload: default,
-            Error: new HostContractError(
-                Code: code,
-                Message: message,
-                Type: type));
+        try
+        {
+            return await handler.HandleAsync(request, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            return LocalHostDispatchResponses.Failure<TResponse>(
+                requestId: request.RequestId,
+                code: LocalHostDispatchErrorCodes.HandlerFailure,
+                message: $"Local Host operation handler failed: {exception.Message}",
+                type: ErrorType.Failure);
+        }
     }
 }

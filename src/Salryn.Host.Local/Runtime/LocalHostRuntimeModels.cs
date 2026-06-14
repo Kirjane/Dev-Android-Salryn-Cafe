@@ -1,4 +1,5 @@
-﻿using Salryn.Core.Contracts;
+﻿using Salryn.Core.Common;
+using Salryn.Core.Contracts;
 using Salryn.Core.Deployment;
 using Salryn.Core.Hosting;
 using Salryn.Host.Local.Dispatch;
@@ -21,7 +22,8 @@ public sealed record LocalHostRuntimeSnapshot(
     SalrynDeploymentMode Mode,
     LocalHostRuntimeState State,
     DateTimeOffset? StartedAt,
-    int RegisteredOperationCount);
+    int RegisteredOperationCount,
+    int RegisteredHandlerCount);
 
 // Kirch: Defines the local Store Host runtime contract before HTTP, sockets, or LAN discovery exist.
 public interface ILocalHostRuntime
@@ -33,6 +35,10 @@ public interface ILocalHostRuntime
     void Stop();
 
     HostBoundaryValidationResult Validate<TPayload>(HostRequestEnvelope<TPayload>? request);
+
+    void RegisterHandler<TPayload, TResponse>(
+        string operationName,
+        IHostOperationHandler<TPayload, TResponse> handler);
 
     Task<HostResponseEnvelope<TResponse>> DispatchAsync<TPayload, TResponse>(
         HostRequestEnvelope<TPayload> request,
@@ -64,6 +70,7 @@ public sealed class LocalHostRuntime : ILocalHostRuntime
     private readonly HostRequestBoundaryValidator _boundaryValidator;
     private readonly LocalHostHandlerRegistry _handlerRegistry;
     private readonly LocalHostOperationDispatcher _dispatcher;
+    private readonly object _stateLock = new();
     private LocalHostRuntimeState _state;
     private DateTimeOffset? _startedAt;
 
@@ -88,33 +95,48 @@ public sealed class LocalHostRuntime : ILocalHostRuntime
     // Kirch: Returns the current Local Host runtime state for future admin/status UI surfaces.
     public LocalHostRuntimeSnapshot GetSnapshot()
     {
-        return new LocalHostRuntimeSnapshot(
-            HostId: _profile.Host.HostId,
-            MachineName: _profile.Host.MachineName,
-            Role: _profile.Host.Role,
-            Mode: _profile.Mode,
-            State: _state,
-            StartedAt: _startedAt,
-            RegisteredOperationCount: _operationCatalog.Descriptors.Count);
+        lock (_stateLock)
+        {
+            return new LocalHostRuntimeSnapshot(
+                HostId: _profile.Host.HostId,
+                MachineName: _profile.Host.MachineName,
+                Role: _profile.Host.Role,
+                Mode: _profile.Mode,
+                State: _state,
+                StartedAt: _startedAt,
+                RegisteredOperationCount: _operationCatalog.Descriptors.Count,
+                RegisteredHandlerCount: _handlerRegistry.RegisteredHandlerCount);
+        }
     }
 
     // Kirch: Starts the in-process Local Host runtime without opening sockets or touching LAN state.
     public void Start(DateTimeOffset startedAt)
     {
-        if (_state == LocalHostRuntimeState.Running)
+        lock (_stateLock)
         {
-            return;
-        }
+            if (_state == LocalHostRuntimeState.Running)
+            {
+                return;
+            }
 
-        _state = LocalHostRuntimeState.Running;
-        _startedAt = startedAt;
+            if (_state == LocalHostRuntimeState.Faulted)
+            {
+                throw new InvalidOperationException("Faulted Local Host runtime must be stopped before restart.");
+            }
+
+            _state = LocalHostRuntimeState.Running;
+            _startedAt = startedAt;
+        }
     }
 
     // Kirch: Stops the in-process Local Host runtime and clears transient runtime state.
     public void Stop()
     {
-        _state = LocalHostRuntimeState.Stopped;
-        _startedAt = null;
+        lock (_stateLock)
+        {
+            _state = LocalHostRuntimeState.Stopped;
+            _startedAt = null;
+        }
     }
 
     // Kirch: Validates a future Host request through the Core boundary before any real dispatch exists.
@@ -123,19 +145,64 @@ public sealed class LocalHostRuntime : ILocalHostRuntime
         return _boundaryValidator.Validate(request);
     }
 
-    // Kirch: Registers a typed in-process handler without adding real POS handlers or network transport.
+    // Kirch: Registers a typed in-process handler only while the Local Host runtime is stopped.
     public void RegisterHandler<TPayload, TResponse>(
         string operationName,
         IHostOperationHandler<TPayload, TResponse> handler)
     {
-        _handlerRegistry.Register(operationName, handler);
+        lock (_stateLock)
+        {
+            if (_state != LocalHostRuntimeState.Stopped)
+            {
+                throw new InvalidOperationException("Local Host handlers can only be registered while runtime is stopped.");
+            }
+
+            _handlerRegistry.Register(operationName, handler);
+        }
     }
 
-    // Kirch: Dispatches through the local in-process dispatcher skeleton after boundary validation.
-    public Task<HostResponseEnvelope<TResponse>> DispatchAsync<TPayload, TResponse>(
+    // Kirch: Dispatches through the local in-process dispatcher skeleton only while runtime is running.
+    public async Task<HostResponseEnvelope<TResponse>> DispatchAsync<TPayload, TResponse>(
         HostRequestEnvelope<TPayload> request,
         CancellationToken cancellationToken = default)
     {
-        return _dispatcher.DispatchAsync<TPayload, TResponse>(request, cancellationToken);
+        LocalHostRuntimeState currentState;
+
+        lock (_stateLock)
+        {
+            currentState = _state;
+        }
+
+        if (currentState == LocalHostRuntimeState.Faulted)
+        {
+            return LocalHostDispatchResponses.Failure<TResponse>(
+                requestId: request?.RequestId ?? Guid.Empty,
+                code: LocalHostDispatchErrorCodes.RuntimeAlreadyFaulted,
+                message: "Local Host runtime is faulted and must be stopped before reuse.",
+                type: ErrorType.Failure);
+        }
+
+        if (currentState != LocalHostRuntimeState.Running)
+        {
+            return LocalHostDispatchResponses.Failure<TResponse>(
+                requestId: request?.RequestId ?? Guid.Empty,
+                code: LocalHostDispatchErrorCodes.RuntimeNotRunning,
+                message: "Local Host runtime must be running before dispatch.",
+                type: ErrorType.Validation);
+        }
+
+        HostResponseEnvelope<TResponse> response = await _dispatcher.DispatchAsync<TPayload, TResponse>(
+            request,
+            cancellationToken);
+
+        if (!response.IsSuccess && response.Error?.Code == LocalHostDispatchErrorCodes.HandlerFailure)
+        {
+            lock (_stateLock)
+            {
+                _state = LocalHostRuntimeState.Faulted;
+            }
+        }
+
+        return response;
     }
 }
