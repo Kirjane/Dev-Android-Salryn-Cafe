@@ -37,10 +37,6 @@ public interface ILocalHostRuntime
     Task<HostResponseEnvelope<TResponse>> DispatchAsync<TPayload, TResponse>(
         HostRequestEnvelope<TPayload> request,
         CancellationToken cancellationToken = default);
-
-    Task<HostResponseEnvelope<TResponse>> DispatchAsync<TPayload, TResponse>(
-        HostRequestEnvelope<TPayload> request,
-        CancellationToken cancellationToken = default);
 }
 
 // Kirch: Centralizes Local Host runtime rules before real Host process and transport implementation.
@@ -68,8 +64,6 @@ public sealed class LocalHostRuntime : ILocalHostRuntime
     private readonly HostRequestBoundaryValidator _boundaryValidator;
     private readonly LocalHostHandlerRegistry _handlerRegistry;
     private readonly LocalHostOperationDispatcher _dispatcher;
-    private readonly LocalHostHandlerRegistry _handlerRegistry;
-    private readonly LocalHostOperationDispatcher _dispatcher;
     private LocalHostRuntimeState _state;
     private DateTimeOffset? _startedAt;
 
@@ -86,6 +80,8 @@ public sealed class LocalHostRuntime : ILocalHostRuntime
         _profile = profile;
         _operationCatalog = operationCatalog ?? HostOperationCatalog.CreateDefault();
         _boundaryValidator = new HostRequestBoundaryValidator(_operationCatalog);
+        _handlerRegistry = new LocalHostHandlerRegistry();
+        _dispatcher = new LocalHostOperationDispatcher(_boundaryValidator, _handlerRegistry);
         _state = LocalHostRuntimeState.Stopped;
     }
 
@@ -126,6 +122,20 @@ public sealed class LocalHostRuntime : ILocalHostRuntime
     {
         return _boundaryValidator.Validate(request);
     }
+
+    // Kirch: Registers a typed in-process handler without adding real POS handlers or network transport.
+    public void RegisterHandler<TPayload, TResponse>(
+        string operationName,
+        IHostOperationHandler<TPayload, TResponse> handler)
+    {
+        _handlerRegistry.Register(operationName, handler);
+    }
+
+    // Kirch: Dispatches through the local in-process dispatcher skeleton after boundary validation.
+    public Task<HostResponseEnvelope<TResponse>> DispatchAsync<TPayload, TResponse>(
+        HostRequestEnvelope<TPayload> request,
+        CancellationToken cancellationToken = default)
+    {
+        return _dispatcher.DispatchAsync<TPayload, TResponse>(request, cancellationToken);
+    }
 }
-
-
