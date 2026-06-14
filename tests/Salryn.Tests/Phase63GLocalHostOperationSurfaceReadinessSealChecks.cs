@@ -52,6 +52,22 @@ public static class Phase63GLocalHostOperationSurfaceReadinessSealChecks
             throw new InvalidOperationException("Readiness seal should include important Local Host operation names.");
         }
 
+        composition.Runtime.Start(DateTimeOffset.UtcNow);
+
+        LocalHostOperationSurfaceReadinessReport runningRuntimeReport = inspector.Inspect(
+            composition,
+            operationCatalog,
+            contractMap);
+
+        if (runningRuntimeReport.IsReady
+            || !runningRuntimeReport.Issues.Any(issue =>
+                issue.Reason == LocalHostOperationSurfaceReadinessFailureReason.RuntimeNotStopped))
+        {
+            throw new InvalidOperationException("Readiness seal should reject a started Local Host runtime.");
+        }
+
+        composition.Runtime.Stop();
+
         LocalHostOperationContractMap incompleteContractMap = new(new[]
         {
             new LocalHostOperationContractDescriptor(

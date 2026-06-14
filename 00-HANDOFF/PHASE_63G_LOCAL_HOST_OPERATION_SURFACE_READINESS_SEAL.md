@@ -14,6 +14,7 @@ Implemented:
 - Inspector verifies operation catalog presence
 - Inspector verifies contract map presence
 - Inspector verifies stopped runtime state
+- Inspector uses live LocalHostRuntime snapshot instead of stale composition snapshot
 - Inspector verifies operation, contract, and handler count alignment
 - Inspector verifies every Core Host operation has a matching Local Host contract
 - Inspector verifies every Core Host operation has a bootstrapped placeholder handler
@@ -51,3 +52,4 @@ Local Host operation surface is ready for a future phase that replaces placehold
 
 Next:
 Phase 63H - Local Host Boundary Documentation Seal or Phase 64 - First Real Local Host Handler Slice
+

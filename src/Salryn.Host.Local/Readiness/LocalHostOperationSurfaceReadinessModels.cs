@@ -86,7 +86,7 @@ public sealed class LocalHostOperationSurfaceReadinessInspector
                 issues);
         }
 
-        LocalHostRuntimeSnapshot snapshot = composition.Snapshot;
+        LocalHostRuntimeSnapshot snapshot = composition.Runtime.GetSnapshot();
         int expectedOperationCount = operationCatalog.Descriptors.Count;
 
         if (snapshot.State != LocalHostRuntimeState.Stopped)
@@ -190,3 +190,4 @@ public sealed class LocalHostOperationSurfaceReadinessInspector
             Issues: issues.ToArray());
     }
 }
+
