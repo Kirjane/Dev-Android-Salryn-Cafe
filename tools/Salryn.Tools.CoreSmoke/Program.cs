@@ -59,6 +59,8 @@ public static class Program
 
         Phase65NAppLocalHostProductLookupGatewayAdapterShellBehaviorSealChecks.Run();
 
+        Phase65OAppServicesGatewayRegistrationBoundaryPlanningChecks.Run();
+
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
 }
