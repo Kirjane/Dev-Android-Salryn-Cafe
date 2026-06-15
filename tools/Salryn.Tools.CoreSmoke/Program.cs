@@ -49,6 +49,8 @@ public static class Program
 
         Phase65IAppLocalHostHolderStartupWiringReadinessSealChecks.Run();
 
+        Phase65JAppLocalHostHolderConsumptionBoundaryPlanningChecks.Run();
+
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
 }
