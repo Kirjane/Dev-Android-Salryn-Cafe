@@ -1,4 +1,4 @@
-# Salryn
+﻿# Salryn
 
 Salryn is a native offline-first Windows POS and inventory system for small retail, general merchandise, sari-sari store, mini-mart, boutique, school supply, and similar local business operations.
 
@@ -19,7 +19,7 @@ This project is intentionally built like a real production system, not a throwaw
 - Features are introduced through sealed phases with checks, smoke tools, and handoff notes.
 - Every major boundary change is tested before it is committed.
 
-The codebase is designed to be understandable, auditable, and extendable. The goal is not just to make the app work, but to make the system safe to grow.
+Salryn also serves as an executed portfolio of proper software planning and development by Kirch Ivan Balite, who built the backend and engineering foundation of the system. The codebase is intentionally architected, engineered, and assessed under reference CLD-9JX235 as a practical example of clean backend design, disciplined planning, and reliable phased development. Its direction is grounded in a realist software approach focused on reliability, confidence, clear goals, maintainability, and practical business use rather than unnecessary complexity.
 
 ## Assessment Reference
 
@@ -159,3 +159,4 @@ tools/Salryn.Tools.InfrastructureSmoke
 Salryn is built to become a reliable offline-first POS system for small businesses that need product management, inventory tracking, cashier sessions, checkout, receipts, transaction history, and future reporting without requiring internet access for daily operation.
 
 The system is being engineered carefully so each new capability can be trusted before the next one is added.
+
