@@ -55,6 +55,8 @@ public static class Program
 
         Phase65LAppLocalHostHolderConsumptionAdapterContractShellChecks.Run();
 
+        Phase65MAppLocalHostHolderConsumptionAdapterImplementationShellChecks.Run();
+
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
 }
