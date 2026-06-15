@@ -1,4 +1,4 @@
-﻿namespace Salryn.Tests;
+namespace Salryn.Tests;
 
 // Kirch: Seals the inert adapter shell behavior before any AppServices registration or holder consumption.
 public static class Phase65NAppLocalHostProductLookupGatewayAdapterShellBehaviorSealChecks
@@ -52,8 +52,8 @@ public static class Phase65NAppLocalHostProductLookupGatewayAdapterShellBehavior
 
         RequireContains(appServicesText, "public SalrynLocalHostCompositionHolder LocalHostProductLookupCompositionHolder { get; }", "Passive holder must remain available.");
         RequireContains(appServicesText, "CreateLocalHostProductLookupCompositionHolder(localHostProfile);", "Holder creation must remain guarded.");
-        RequireNotContains(appServicesText, "CompositionLocalHostProductLookupGatewayAdapter", "65N must not register adapter in AppServices.");
-        RequireNotContains(appServicesText, "IAppLocalHostProductLookupGateway", "65N must not register gateway interface in AppServices.");
+        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter()", "65P may instantiate the inert adapter through AppServices.");
+        RequireContains(appServicesText, "public IAppLocalHostProductLookupGateway LocalHostProductLookupGateway { get; }", "65P may expose the passive gateway through AppServices.");
 
         string[] programShellForbidden =
         {

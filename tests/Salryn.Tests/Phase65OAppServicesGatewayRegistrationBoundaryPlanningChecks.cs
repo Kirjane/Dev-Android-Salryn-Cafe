@@ -1,4 +1,4 @@
-﻿namespace Salryn.Tests;
+namespace Salryn.Tests;
 
 // Kirch: Plans the AppServices gateway registration boundary without changing production app source.
 public static class Phase65OAppServicesGatewayRegistrationBoundaryPlanningChecks
@@ -26,8 +26,8 @@ public static class Phase65OAppServicesGatewayRegistrationBoundaryPlanningChecks
 
         RequireContains(appServicesText, "public SalrynLocalHostCompositionHolder LocalHostProductLookupCompositionHolder { get; }", "Passive holder must remain available.");
         RequireContains(appServicesText, "CreateLocalHostProductLookupCompositionHolder(localHostProfile);", "Holder creation must remain guarded.");
-        RequireNotContains(appServicesText, "CompositionLocalHostProductLookupGatewayAdapter", "65O must not register adapter yet.");
-        RequireNotContains(appServicesText, "IAppLocalHostProductLookupGateway", "65O must not expose gateway interface yet.");
+        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter()", "65P may instantiate the inert adapter through AppServices.");
+        RequireContains(appServicesText, "public IAppLocalHostProductLookupGateway LocalHostProductLookupGateway { get; }", "65P may expose the passive gateway through AppServices.");
 
         string[] programShellForbidden =
         {

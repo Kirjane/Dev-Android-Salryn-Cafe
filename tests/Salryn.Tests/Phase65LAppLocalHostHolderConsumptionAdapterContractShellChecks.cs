@@ -1,4 +1,4 @@
-﻿namespace Salryn.Tests;
+namespace Salryn.Tests;
 
 // Kirch: Verifies the production adapter contract shell exists without implementation or behavior wiring.
 public static class Phase65LAppLocalHostHolderConsumptionAdapterContractShellChecks
@@ -46,8 +46,8 @@ public static class Phase65LAppLocalHostHolderConsumptionAdapterContractShellChe
 
         RequireContains(appServicesText, "public SalrynLocalHostCompositionHolder LocalHostProductLookupCompositionHolder { get; }", "Holder property must remain available.");
         RequireContains(appServicesText, "CreateLocalHostProductLookupCompositionHolder(localHostProfile);", "Holder creation must remain guarded.");
-        RequireNotContains(appServicesText, "IAppLocalHostProductLookupGateway", "65L must not register the gateway in AppServices yet.");
-        RequireNotContains(appServicesText, "AppLocalHostProductLookupGateway", "65L must not register an implementation in AppServices.");
+        RequireContains(appServicesText, "public IAppLocalHostProductLookupGateway LocalHostProductLookupGateway { get; }", "65P may expose the passive gateway through AppServices.");
+        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter()", "65P may instantiate the inert adapter through AppServices.");
 
         RequireContains(holderText, "public sealed class SalrynLocalHostCompositionHolder", "Holder must remain sealed.");
         RequireContains(holderText, "public LocalHostBootstrapCompositionResult Composition { get; }", "Holder must remain read-only.");
