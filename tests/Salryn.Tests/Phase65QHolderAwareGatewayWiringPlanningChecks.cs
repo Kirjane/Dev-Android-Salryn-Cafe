@@ -1,4 +1,4 @@
-﻿namespace Salryn.Tests;
+namespace Salryn.Tests;
 
 // Kirch: Planning seal only. This guards the future holder-aware gateway wiring boundary without allowing holder consumption yet.
 public static class Phase65QHolderAwareGatewayWiringPlanningChecks
@@ -25,7 +25,7 @@ public static class Phase65QHolderAwareGatewayWiringPlanningChecks
 
         RequireContains(adapterText, "public sealed class CompositionLocalHostProductLookupGatewayAdapter : IAppLocalHostProductLookupGateway", "Adapter shell must remain.");
         RequireContains(adapterText, "LocalHostUnavailable", "Adapter must remain inert and unavailable.");
-        RequireNotContains(adapterText, "SalrynLocalHostCompositionHolder", "65Q planning must not pass holder into adapter yet.");
+        RequireContains(adapterText, "SalrynLocalHostCompositionHolder localHostCompositionHolder", "65R may add holder-aware constructor boundary shell without dispatch.");
         RequireNotContains(adapterText, "LocalHostBootstrapCompositionResult", "65Q planning must not expose local host internals in adapter yet.");
         RequireNotContains(adapterText, "DispatchAsync", "65Q planning must not dispatch.");
         RequireNotContains(adapterText, ".Start(", "65Q planning must not start runtime.");

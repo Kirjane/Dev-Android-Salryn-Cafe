@@ -23,7 +23,7 @@ public static class Phase65PPassiveAppServicesGatewayExposureChecks
 
         RequireContains(adapterText, "public sealed class CompositionLocalHostProductLookupGatewayAdapter : IAppLocalHostProductLookupGateway", "Inert adapter shell must remain.");
         RequireContains(adapterText, "LocalHostUnavailable", "Adapter must remain unavailable until holder-aware wiring is approved.");
-        RequireNotContains(adapterText, "SalrynLocalHostCompositionHolder", "65P adapter must not consume holder.");
+        RequireContains(adapterText, "SalrynLocalHostCompositionHolder localHostCompositionHolder", "65R may add holder-aware constructor boundary shell without dispatch.");
         RequireNotContains(adapterText, "LocalHostBootstrapCompositionResult", "65P adapter must not expose local host internals.");
         RequireNotContains(adapterText, "DispatchAsync", "65P adapter must not dispatch.");
         RequireNotContains(adapterText, ".Start(", "65P adapter must not start runtime.");

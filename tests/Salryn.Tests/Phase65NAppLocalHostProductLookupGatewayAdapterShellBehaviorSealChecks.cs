@@ -31,7 +31,7 @@ public static class Phase65NAppLocalHostProductLookupGatewayAdapterShellBehavior
         RequireContains(adapterText, "not wired to the passive holder yet", "65N must preserve not-yet-wired behavior message.");
         RequireContains(adapterText, "Task.FromResult", "65N adapter must remain local and inert.");
 
-        RequireNotContains(adapterText, "SalrynLocalHostCompositionHolder", "65N adapter must still not consume holder.");
+        RequireContains(adapterText, "SalrynLocalHostCompositionHolder localHostCompositionHolder", "65R may add holder-aware constructor boundary shell without dispatch.");
         RequireNotContains(adapterText, "LocalHostBootstrapCompositionResult", "65N adapter must still not expose composition internals.");
         RequireNotContains(adapterText, "LocalHostBootstrapComposer", "65N adapter must still not compose local host directly.");
         RequireNotContains(adapterText, "ComposeWithProductLookup", "65N adapter must still not compose ProductLookup directly.");

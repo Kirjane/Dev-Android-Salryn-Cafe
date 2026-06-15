@@ -65,6 +65,8 @@ public static class Program
 
         Phase65QHolderAwareGatewayWiringPlanningChecks.Run();
 
+        Phase65RHolderAwareAdapterConstructorBoundaryShellChecks.Run();
+
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
 }

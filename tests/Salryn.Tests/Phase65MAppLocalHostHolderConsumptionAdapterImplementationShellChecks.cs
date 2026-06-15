@@ -30,7 +30,7 @@ public static class Phase65MAppLocalHostHolderConsumptionAdapterImplementationSh
         RequireContains(adapterText, "LocalHostUnavailable", "65M adapter shell must remain unavailable until wiring is explicit.");
         RequireContains(adapterText, "Task.FromResult", "65M adapter shell must remain inert and local.");
 
-        RequireNotContains(adapterText, "SalrynLocalHostCompositionHolder", "65M must not consume holder yet.");
+        RequireContains(adapterText, "SalrynLocalHostCompositionHolder localHostCompositionHolder", "65R may add holder-aware constructor boundary shell without dispatch.");
         RequireNotContains(adapterText, "LocalHostBootstrapCompositionResult", "65M must not expose holder composition internals.");
         RequireNotContains(adapterText, "LocalHostBootstrapComposer", "65M must not compose local host directly.");
         RequireNotContains(adapterText, "ComposeWithProductLookup", "65M must not compose ProductLookup directly.");
