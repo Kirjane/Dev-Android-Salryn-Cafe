@@ -1,4 +1,4 @@
-﻿namespace Salryn.Tests;
+namespace Salryn.Tests;
 
 // Kirch: Plans the adapter contract boundary without implementing the adapter or consuming the holder.
 public static class Phase65KAppLocalHostHolderConsumptionAdapterContractPlanningChecks
@@ -87,7 +87,7 @@ public static class Phase65KAppLocalHostHolderConsumptionAdapterContractPlanning
             throw new InvalidOperationException("CoreSmoke order is invalid. Phase 65K must run after Phase 65J.");
         }
 
-        AssertNoProductionAdapterContractExists(repoRoot);
+        AssertProductionAdapterImplementationStillAbsent(repoRoot);
         AssertNoAppHostLocalLeakOutsideComposition(repoRoot);
         AssertNoAppInfrastructureLeakOutsideComposition(repoRoot);
     }
@@ -198,16 +198,14 @@ public static class Phase65KAppLocalHostHolderConsumptionAdapterContractPlanning
         }
     }
 
-    private static void AssertNoProductionAdapterContractExists(DirectoryInfo repoRoot)
+    private static void AssertProductionAdapterImplementationStillAbsent(DirectoryInfo repoRoot)
     {
         string srcRoot = Path.Combine(repoRoot.FullName, "src");
 
         string[] forbidden =
         {
-            "interface IAppLocalHostProductLookupGateway",
             "class AppLocalHostProductLookupGateway",
-            "record AppLocalHostProductLookupRequest",
-            "record AppLocalHostProductLookupResult"
+            "sealed class AppLocalHostProductLookupGateway"
         };
 
         foreach (string file in Directory.EnumerateFiles(srcRoot, "*.cs", SearchOption.AllDirectories))
@@ -226,7 +224,7 @@ public static class Phase65KAppLocalHostHolderConsumptionAdapterContractPlanning
             {
                 if (text.Contains(marker, StringComparison.Ordinal))
                 {
-                    throw new InvalidOperationException($"65K is planning only. Production adapter contract marker was found in {file}: {marker}");
+                    throw new InvalidOperationException($"Production adapter implementation marker was found in {file}: {marker}");
                 }
             }
         }
