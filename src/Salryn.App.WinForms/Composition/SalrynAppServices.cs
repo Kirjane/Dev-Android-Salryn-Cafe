@@ -28,7 +28,8 @@ public sealed class SalrynAppServices
         ICheckoutProductSearchBoundary checkoutProductSearch,
         ICashierSessionService cashierSessions,
         IPosCheckoutService posCheckout,
-        IPosCheckoutApplicationService posCheckoutApplication)
+        IPosCheckoutApplicationService posCheckoutApplication,
+        StoreDeploymentProfile localHostProfile)
     {
         DbPaths = dbPaths;
         ConnectionFactory = connectionFactory;
@@ -44,6 +45,8 @@ public sealed class SalrynAppServices
         CashierSessions = cashierSessions;
         PosCheckout = posCheckout;
         PosCheckoutApplication = posCheckoutApplication;
+        LocalHostProductLookupCompositionHolder =
+            CreateLocalHostProductLookupCompositionHolder(localHostProfile);
     }
 
     public DbPaths DbPaths { get; }
@@ -74,6 +77,8 @@ public sealed class SalrynAppServices
 
     public IPosCheckoutApplicationService PosCheckoutApplication { get; }
 
+    public SalrynLocalHostCompositionHolder LocalHostProductLookupCompositionHolder { get; }
+
     // Kirch: Production mode uses the real local app database paths.
     public static SalrynAppServices CreateProduction()
     {
@@ -89,6 +94,22 @@ public sealed class SalrynAppServices
         }
 
         return Create(DbPaths.CreateDevelopment(projectRoot));
+    }
+
+    // Kirch: Creates the local standalone Host profile used only for stopped startup composition wiring.
+    private static StoreDeploymentProfile CreateStandaloneLocalHostProfile()
+    {
+        return new StoreDeploymentProfile(
+            new StoreIdentity(
+                Guid.Parse("11111111-1111-1111-1111-111111111111"),
+                Guid.Parse("22222222-2222-2222-2222-222222222222")),
+            new StoreHostIdentity(
+                Guid.Parse("33333333-3333-3333-3333-333333333333"),
+                Environment.MachineName,
+                SalrynMachineRole.StandaloneHost),
+            SalrynDeploymentMode.Standalone,
+            Endpoint: null,
+            Terminal: null);
     }
 
     // Kirch: Builds a stopped Local Host ProductLookup composition through the app composition root only.
@@ -183,6 +204,7 @@ public sealed class SalrynAppServices
             checkoutProductSearch,
             cashierSessions,
             posCheckout,
-            posCheckoutApplication);
+            posCheckoutApplication,
+            CreateStandaloneLocalHostProfile());
     }
 }
