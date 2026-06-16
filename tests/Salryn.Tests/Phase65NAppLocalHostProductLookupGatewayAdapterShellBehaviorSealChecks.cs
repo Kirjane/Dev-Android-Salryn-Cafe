@@ -35,10 +35,10 @@ public static class Phase65NAppLocalHostProductLookupGatewayAdapterShellBehavior
         RequireNotContains(adapterText, "LocalHostBootstrapCompositionResult", "65N adapter must still not expose composition internals.");
         RequireNotContains(adapterText, "LocalHostBootstrapComposer", "65N adapter must still not compose local host directly.");
         RequireNotContains(adapterText, "ComposeWithProductLookup", "65N adapter must still not compose ProductLookup directly.");
-        RequireNotContains(adapterText, "DispatchAsync", "65N adapter must still not dispatch.");
+        RequireContains(adapterText, "holder.Composition.Runtime.DispatchAsync<LocalHostProductLookupRequest, LocalHostProductLookupResponse>", "65T may dispatch through holder runtime bridge while preserving no runtime start.");
         RequireNotContains(adapterText, ".Start(", "65N adapter must still not start runtime.");
         RequireNotContains(adapterText, "Runtime.Start", "65N adapter must still not start runtime.");
-        RequireNotContains(adapterText, "Salryn.Host.Local", "65N adapter must still not reference Host.Local.");
+        RequireContains(adapterText, "using Salryn.Host.Local.Contracts;", "65T may reference Host.Local contracts for ProductLookup dispatch bridge.");
         RequireNotContains(adapterText, "Salryn.Infrastructure", "65N adapter must still not reference Infrastructure.");
         RequireNotContains(adapterText, "Microsoft.Data.Sqlite", "65N adapter must still not reference SQLite.");
         RequireNotContains(adapterText, "Sqlite", "65N adapter must still not mention SQLite.");
@@ -186,7 +186,8 @@ public static class Phase65NAppLocalHostProductLookupGatewayAdapterShellBehavior
             string normalized = file.Replace('\\', '/');
 
             if (normalized.Contains("/bin/", StringComparison.OrdinalIgnoreCase)
-                || normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase))
+                || normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase)
+                || normalized.EndsWith("/Composition/CompositionLocalHostProductLookupGatewayAdapter.cs", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }

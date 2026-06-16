@@ -27,7 +27,7 @@ public static class Phase65QHolderAwareGatewayWiringPlanningChecks
         RequireContains(adapterText, "LocalHostUnavailable", "Adapter must remain inert and unavailable.");
         RequireContains(adapterText, "SalrynLocalHostCompositionHolder localHostCompositionHolder", "65R may add holder-aware constructor boundary shell without dispatch.");
         RequireNotContains(adapterText, "LocalHostBootstrapCompositionResult", "65Q planning must not expose local host internals in adapter yet.");
-        RequireNotContains(adapterText, "DispatchAsync", "65Q planning must not dispatch.");
+        RequireContains(adapterText, "holder.Composition.Runtime.DispatchAsync<LocalHostProductLookupRequest, LocalHostProductLookupResponse>", "65T may dispatch through holder runtime bridge while preserving no runtime start.");
         RequireNotContains(adapterText, ".Start(", "65Q planning must not start runtime.");
         RequireNotContains(adapterText, "Runtime.Start", "65Q planning must not start runtime.");
         RequireNotContains(adapterText, "TcpClient", "65Q planning must not add transport.");

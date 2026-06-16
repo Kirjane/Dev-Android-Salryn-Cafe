@@ -25,7 +25,7 @@ public static class Phase65PPassiveAppServicesGatewayExposureChecks
         RequireContains(adapterText, "LocalHostUnavailable", "Adapter must remain unavailable until holder-aware wiring is approved.");
         RequireContains(adapterText, "SalrynLocalHostCompositionHolder localHostCompositionHolder", "65R may add holder-aware constructor boundary shell without dispatch.");
         RequireNotContains(adapterText, "LocalHostBootstrapCompositionResult", "65P adapter must not expose local host internals.");
-        RequireNotContains(adapterText, "DispatchAsync", "65P adapter must not dispatch.");
+        RequireContains(adapterText, "holder.Composition.Runtime.DispatchAsync<LocalHostProductLookupRequest, LocalHostProductLookupResponse>", "65T may dispatch through holder runtime bridge while preserving no runtime start.");
         RequireNotContains(adapterText, ".Start(", "65P adapter must not start runtime.");
         RequireNotContains(adapterText, "Runtime.Start", "65P adapter must not start runtime.");
         RequireNotContains(adapterText, "TcpClient", "65P adapter must not add transport.");
@@ -40,7 +40,7 @@ public static class Phase65PPassiveAppServicesGatewayExposureChecks
         RequireContains(appServicesText, "public IAppLocalHostProductLookupGateway LocalHostProductLookupGateway { get; }", "65P must expose passive gateway property.");
         RequireContains(appServicesText, "// Kirch: Creates the passive holder before gateway wiring; this still does not start runtime, dispatch, or add transport.", "65S may create holder before gateway wiring.");
         RequireContains(appServicesText, "CreateLocalHostProductLookupCompositionHolder(localHostProfile);", "Holder creation must remain guarded.");
-        RequireContains(appServicesText, "// Kirch: Wires only the passive holder-aware adapter shell; lookup dispatch remains a later approved phase.", "65S must keep holder-aware adapter wiring comment.");
+        RequireContains(appServicesText, "// Kirch: Wires the holder-aware adapter through AppServices only; runtime start, Program, Shell, UI, and transport remain blocked.", "65S must keep holder-aware adapter wiring comment.");
         RequireContains(appServicesText, "LocalHostProductLookupGateway =", "65P must assign passive gateway property.");
         RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder);", "65S may pass passive holder into adapter shell.");
         RequireNotContains(appServicesText, "IAppLocalHostProductLookupGateway localHostProductLookupGateway", "65S removes gateway parameter boundary in favor of local holder-aware wiring.");
@@ -184,7 +184,8 @@ public static class Phase65PPassiveAppServicesGatewayExposureChecks
             string normalized = file.Replace('\\', '/');
 
             if (normalized.Contains("/bin/", StringComparison.OrdinalIgnoreCase)
-                || normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase))
+                || normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase)
+                || normalized.EndsWith("/Composition/CompositionLocalHostProductLookupGatewayAdapter.cs", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -221,6 +222,7 @@ public static class Phase65PPassiveAppServicesGatewayExposureChecks
 
             if (normalized.Contains("/bin/", StringComparison.OrdinalIgnoreCase)
                 || normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase)
+                || normalized.EndsWith("/Composition/CompositionLocalHostProductLookupGatewayAdapter.cs", StringComparison.OrdinalIgnoreCase)
                 || normalized.Contains("/Composition/", StringComparison.OrdinalIgnoreCase))
             {
                 continue;

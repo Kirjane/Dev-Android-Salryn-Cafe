@@ -69,6 +69,8 @@ public static class Program
 
         Phase65SAppServicesHolderAwareAdapterWiringShellChecks.Run();
 
+        Phase65TAppLocalHostProductLookupDispatchBridgeChecks.Run();
+
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
 }

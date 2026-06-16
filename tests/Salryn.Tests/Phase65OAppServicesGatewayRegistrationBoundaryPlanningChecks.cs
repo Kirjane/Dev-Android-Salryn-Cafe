@@ -161,7 +161,8 @@ public static class Phase65OAppServicesGatewayRegistrationBoundaryPlanningChecks
             string normalized = file.Replace('\\', '/');
 
             if (normalized.Contains("/bin/", StringComparison.OrdinalIgnoreCase)
-                || normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase))
+                || normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase)
+                || normalized.EndsWith("/Composition/CompositionLocalHostProductLookupGatewayAdapter.cs", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }

@@ -36,9 +36,9 @@ public static class Phase65RHolderAwareAdapterConstructorBoundaryShellChecks
         RequireContains(adapterText, "LocalHostUnavailable", "Adapter must remain unavailable until dispatch is approved.");
         RequireContains(adapterText, "not wired to holder dispatch yet", "Adapter message must remain honest about no dispatch.");
 
-        RequireNotContains(adapterText, "localHostCompositionHolder.Composition", "65R must not access holder composition.");
+        RequireContains(adapterText, "holder.Composition.Runtime.DispatchAsync<LocalHostProductLookupRequest, LocalHostProductLookupResponse>", "65T may access holder composition only through runtime dispatch bridge.");
         RequireNotContains(adapterText, ".Composition.DispatchAsync", "65R must not dispatch through holder composition.");
-        RequireNotContains(adapterText, "DispatchAsync", "65R must not dispatch.");
+        RequireContains(adapterText, "holder.Composition.Runtime.DispatchAsync<LocalHostProductLookupRequest, LocalHostProductLookupResponse>", "65T may dispatch through holder runtime bridge while preserving no runtime start.");
         RequireNotContains(adapterText, ".Start(", "65R must not start runtime.");
         RequireNotContains(adapterText, "Runtime.Start", "65R must not start runtime.");
         RequireNotContains(adapterText, "TcpClient", "65R must not add transport.");

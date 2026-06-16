@@ -34,10 +34,10 @@ public static class Phase65MAppLocalHostHolderConsumptionAdapterImplementationSh
         RequireNotContains(adapterText, "LocalHostBootstrapCompositionResult", "65M must not expose holder composition internals.");
         RequireNotContains(adapterText, "LocalHostBootstrapComposer", "65M must not compose local host directly.");
         RequireNotContains(adapterText, "ComposeWithProductLookup", "65M must not compose ProductLookup directly.");
-        RequireNotContains(adapterText, "DispatchAsync", "65M must not dispatch.");
+        RequireContains(adapterText, "holder.Composition.Runtime.DispatchAsync<LocalHostProductLookupRequest, LocalHostProductLookupResponse>", "65T may dispatch through holder runtime bridge while preserving no runtime start.");
         RequireNotContains(adapterText, ".Start(", "65M must not start runtime.");
         RequireNotContains(adapterText, "Runtime.Start", "65M must not start runtime.");
-        RequireNotContains(adapterText, "Salryn.Host.Local", "65M adapter shell must not reference Host.Local directly.");
+        RequireContains(adapterText, "using Salryn.Host.Local.Contracts;", "65T may reference Host.Local contracts for ProductLookup dispatch bridge.");
         RequireNotContains(adapterText, "Salryn.Infrastructure", "65M adapter shell must not reference Infrastructure.");
         RequireNotContains(adapterText, "Microsoft.Data.Sqlite", "65M adapter shell must not reference SQLite.");
         RequireNotContains(adapterText, "Sqlite", "65M adapter shell must not mention SQLite.");

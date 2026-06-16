@@ -48,7 +48,7 @@ public sealed class SalrynAppServices
         // Kirch: Creates the passive holder before gateway wiring; this still does not start runtime, dispatch, or add transport.
         LocalHostProductLookupCompositionHolder =
             CreateLocalHostProductLookupCompositionHolder(localHostProfile);
-        // Kirch: Wires only the passive holder-aware adapter shell; lookup dispatch remains a later approved phase.
+        // Kirch: Wires the holder-aware adapter through AppServices only; runtime start, Program, Shell, UI, and transport remain blocked.
         LocalHostProductLookupGateway =
             new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder);
     }

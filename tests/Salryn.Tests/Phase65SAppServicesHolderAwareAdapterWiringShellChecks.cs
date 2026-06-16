@@ -24,9 +24,9 @@ public static class Phase65SAppServicesHolderAwareAdapterWiringShellChecks
         RequireContains(adapterText, "LocalHostUnavailable", "Adapter must remain unavailable until dispatch is approved.");
         RequireContains(adapterText, "not wired to holder dispatch yet", "Adapter must remain honest about no dispatch.");
 
-        RequireNotContains(adapterText, "localHostCompositionHolder.Composition", "65S adapter must not access holder composition.");
+        RequireContains(adapterText, "holder.Composition.Runtime.DispatchAsync<LocalHostProductLookupRequest, LocalHostProductLookupResponse>", "65T may access holder composition only through runtime dispatch bridge.");
         RequireNotContains(adapterText, ".Composition.DispatchAsync", "65S adapter must not dispatch through holder composition.");
-        RequireNotContains(adapterText, "DispatchAsync", "65S adapter must not dispatch.");
+        RequireContains(adapterText, "holder.Composition.Runtime.DispatchAsync<LocalHostProductLookupRequest, LocalHostProductLookupResponse>", "65T may dispatch through holder runtime bridge while preserving no runtime start.");
         RequireNotContains(adapterText, ".Start(", "65S adapter must not start runtime.");
         RequireNotContains(adapterText, "Runtime.Start", "65S adapter must not start runtime.");
         RequireNotContains(adapterText, "TcpClient", "65S adapter must not add transport.");
@@ -49,7 +49,7 @@ public static class Phase65SAppServicesHolderAwareAdapterWiringShellChecks
         RequireContains(appServicesText, "// Kirch: Creates the passive holder before gateway wiring; this still does not start runtime, dispatch, or add transport.", "65S holder creation comment must remain.");
         RequireContains(appServicesText, "LocalHostProductLookupCompositionHolder =", "65S must assign holder property.");
         RequireContains(appServicesText, "CreateLocalHostProductLookupCompositionHolder(localHostProfile);", "65S must create passive holder through guarded method.");
-        RequireContains(appServicesText, "// Kirch: Wires only the passive holder-aware adapter shell; lookup dispatch remains a later approved phase.", "65S holder-aware gateway wiring comment must remain.");
+        RequireContains(appServicesText, "// Kirch: Wires the holder-aware adapter through AppServices only; runtime start, Program, Shell, UI, and transport remain blocked.", "65S holder-aware gateway wiring comment must remain.");
         RequireContains(appServicesText, "LocalHostProductLookupGateway =", "65S must assign gateway property.");
         RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder);", "65S must wire passive holder into adapter shell.");
 
