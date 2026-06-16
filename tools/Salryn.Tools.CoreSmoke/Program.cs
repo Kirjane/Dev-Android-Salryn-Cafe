@@ -73,6 +73,8 @@ public static class Program
 
         Phase65ULocalHostRuntimeLifecycleAndRequestContextOwnershipPlanningSealChecks.Run();
 
+        Phase65VLocalHostRuntimeLifecycleHolderShellChecks.Run();
+
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
 }
