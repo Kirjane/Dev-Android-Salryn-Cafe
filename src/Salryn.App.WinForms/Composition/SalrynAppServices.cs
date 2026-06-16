@@ -48,6 +48,12 @@ public sealed class SalrynAppServices
         // Kirch: Creates the passive holder before gateway wiring; this still does not start runtime, dispatch, or add transport.
         LocalHostProductLookupCompositionHolder =
             CreateLocalHostProductLookupCompositionHolder(localHostProfile);
+
+        // Kirch: Wires passive Local Host ownership shells only; activation and request consumption remain blocked.
+        LocalHostRuntimeLifecycleHolder =
+            new SalrynLocalHostRuntimeLifecycleHolder(LocalHostProductLookupCompositionHolder);
+        LocalHostRequestContextProvider =
+            new SalrynLocalHostRequestContextProvider(localHostProfile);
         // Kirch: Wires the holder-aware adapter through AppServices only; runtime start, Program, Shell, UI, and transport remain blocked.
         LocalHostProductLookupGateway =
             new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder);
@@ -82,6 +88,11 @@ public sealed class SalrynAppServices
     public IPosCheckoutApplicationService PosCheckoutApplication { get; }
 
     public SalrynLocalHostCompositionHolder LocalHostProductLookupCompositionHolder { get; }
+
+    // Kirch: Passive Local Host ownership shells exposed for future controlled activation/context phases.
+    public SalrynLocalHostRuntimeLifecycleHolder LocalHostRuntimeLifecycleHolder { get; }
+
+    public SalrynLocalHostRequestContextProvider LocalHostRequestContextProvider { get; }
 
     // Kirch: Read-only passive gateway exposure for future ProductLookup wiring; not connected to UI behavior yet.
     public IAppLocalHostProductLookupGateway LocalHostProductLookupGateway { get; }

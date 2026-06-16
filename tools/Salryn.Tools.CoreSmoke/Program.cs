@@ -75,6 +75,8 @@ public static class Program
 
         Phase65VLocalHostRuntimeLifecycleHolderShellChecks.Run();
 
+        Phase65XPassiveLocalHostProvidersAppServicesWiringChecks.Run();
+
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
 }
