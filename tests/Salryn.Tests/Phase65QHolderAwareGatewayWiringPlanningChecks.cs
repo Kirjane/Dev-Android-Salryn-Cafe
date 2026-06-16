@@ -43,11 +43,10 @@ public static class Phase65QHolderAwareGatewayWiringPlanningChecks
 
         RequireContains(appServicesText, "public SalrynLocalHostCompositionHolder LocalHostProductLookupCompositionHolder { get; }", "AppServices must still expose passive holder.");
         RequireContains(appServicesText, "public IAppLocalHostProductLookupGateway LocalHostProductLookupGateway { get; }", "AppServices must still expose passive gateway.");
-        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter()", "AppServices must still create inert adapter without holder.");
         RequireContains(appServicesText, "CreateLocalHostProductLookupCompositionHolder(localHostProfile);", "AppServices must still create passive holder.");
-
-        RequireNotContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder", "65Q planning must not wire holder into adapter.");
-        RequireNotContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(CreateLocalHostProductLookupCompositionHolder", "65Q planning must not wire newly created holder into adapter.");
+        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder);", "65S may wire passive holder into adapter shell.");
+        RequireNotContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter()", "65S AppServices must not use parameterless adapter wiring.");
+        RequireNotContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(CreateLocalHostProductLookupCompositionHolder", "65S must not inline holder creation into adapter wiring.");
         RequireNotContains(appServicesText, "LocalHostProductLookupGateway.TryLookupByBarcodeAsync", "65Q planning must not consume gateway.");
         RequireNotContains(appServicesText, "DispatchAsync", "65Q planning must not dispatch.");
         RequireNotContains(appServicesText, ".Start(", "65Q planning must not start runtime.");

@@ -38,16 +38,14 @@ public static class Phase65PPassiveAppServicesGatewayExposureChecks
         RequireContains(appServicesText, "public SalrynLocalHostCompositionHolder LocalHostProductLookupCompositionHolder { get; }", "Passive holder must remain exposed.");
         RequireContains(appServicesText, "// Kirch: Read-only passive gateway exposure for future ProductLookup wiring; not connected to UI behavior yet.", "65P must keep Kirch passive property comment.");
         RequireContains(appServicesText, "public IAppLocalHostProductLookupGateway LocalHostProductLookupGateway { get; }", "65P must expose passive gateway property.");
-        RequireContains(appServicesText, "// Kirch: Passive ProductLookup gateway boundary; kept separate from holder-aware wiring.", "65P must keep Kirch constructor boundary comment.");
-        RequireContains(appServicesText, "IAppLocalHostProductLookupGateway localHostProductLookupGateway", "65P must inject passive gateway through constructor boundary.");
-        RequireContains(appServicesText, "// Kirch: Stores the inert gateway only; this does not consume the holder, dispatch, start runtime, or add transport.", "65P must keep Kirch assignment comment.");
-        RequireContains(appServicesText, "LocalHostProductLookupGateway = localHostProductLookupGateway;", "65P must assign passive gateway property.");
-        RequireContains(appServicesText, "// Kirch: Creates only the inert adapter shell; holder-aware lookup remains a later approved phase.", "65P must keep Kirch adapter instantiation comment.");
-        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter()", "65P must instantiate inert adapter in AppServices composition.");
+        RequireContains(appServicesText, "// Kirch: Creates the passive holder before gateway wiring; this still does not start runtime, dispatch, or add transport.", "65S may create holder before gateway wiring.");
         RequireContains(appServicesText, "CreateLocalHostProductLookupCompositionHolder(localHostProfile);", "Holder creation must remain guarded.");
-
-        RequireNotContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder", "65P must not pass holder into adapter.");
-        RequireNotContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(CreateLocalHostProductLookupCompositionHolder", "65P must not pass created holder into adapter.");
+        RequireContains(appServicesText, "// Kirch: Wires only the passive holder-aware adapter shell; lookup dispatch remains a later approved phase.", "65S must keep holder-aware adapter wiring comment.");
+        RequireContains(appServicesText, "LocalHostProductLookupGateway =", "65P must assign passive gateway property.");
+        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder);", "65S may pass passive holder into adapter shell.");
+        RequireNotContains(appServicesText, "IAppLocalHostProductLookupGateway localHostProductLookupGateway", "65S removes gateway parameter boundary in favor of local holder-aware wiring.");
+        RequireNotContains(appServicesText, "LocalHostProductLookupGateway = localHostProductLookupGateway;", "65S must not keep inert gateway assignment.");
+        RequireNotContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter()", "65S AppServices must not use parameterless adapter wiring.");
         RequireNotContains(appServicesText, "LocalHostProductLookupGateway.TryLookupByBarcodeAsync", "65P must not consume gateway.");
         RequireNotContains(appServicesText, "DispatchAsync", "65P AppServices must not dispatch.");
         RequireNotContains(appServicesText, ".Start(", "65P AppServices must not start runtime.");

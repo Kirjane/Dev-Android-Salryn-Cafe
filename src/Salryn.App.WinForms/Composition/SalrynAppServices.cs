@@ -29,8 +29,6 @@ public sealed class SalrynAppServices
         ICashierSessionService cashierSessions,
         IPosCheckoutService posCheckout,
         IPosCheckoutApplicationService posCheckoutApplication,
-        // Kirch: Passive ProductLookup gateway boundary; kept separate from holder-aware wiring.
-        IAppLocalHostProductLookupGateway localHostProductLookupGateway,
         StoreDeploymentProfile localHostProfile)
     {
         DbPaths = dbPaths;
@@ -47,10 +45,12 @@ public sealed class SalrynAppServices
         CashierSessions = cashierSessions;
         PosCheckout = posCheckout;
         PosCheckoutApplication = posCheckoutApplication;
-        // Kirch: Stores the inert gateway only; this does not consume the holder, dispatch, start runtime, or add transport.
-        LocalHostProductLookupGateway = localHostProductLookupGateway;
+        // Kirch: Creates the passive holder before gateway wiring; this still does not start runtime, dispatch, or add transport.
         LocalHostProductLookupCompositionHolder =
             CreateLocalHostProductLookupCompositionHolder(localHostProfile);
+        // Kirch: Wires only the passive holder-aware adapter shell; lookup dispatch remains a later approved phase.
+        LocalHostProductLookupGateway =
+            new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder);
     }
 
     public DbPaths DbPaths { get; }
@@ -212,8 +212,6 @@ public sealed class SalrynAppServices
             cashierSessions,
             posCheckout,
             posCheckoutApplication,
-            // Kirch: Creates only the inert adapter shell; holder-aware lookup remains a later approved phase.
-            new CompositionLocalHostProductLookupGatewayAdapter(),
             CreateStandaloneLocalHostProfile());
     }
 }

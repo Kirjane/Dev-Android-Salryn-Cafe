@@ -50,13 +50,13 @@ public static class Phase65RHolderAwareAdapterConstructorBoundaryShellChecks
         RequireNotContains(adapterText, "Microsoft.Data.Sqlite", "65R must not reference SQLite.");
         RequireNotContains(adapterText, "Sqlite", "65R must not mention SQLite.");
 
-        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter()", "AppServices must still use parameterless inert adapter.");
+        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder);", "65S may wire holder into adapter through AppServices boundary without dispatch.");
         RequireContains(appServicesText, "public SalrynLocalHostCompositionHolder LocalHostProductLookupCompositionHolder { get; }", "AppServices must still expose passive holder.");
         RequireContains(appServicesText, "public IAppLocalHostProductLookupGateway LocalHostProductLookupGateway { get; }", "AppServices must still expose passive gateway.");
         RequireContains(appServicesText, "CreateLocalHostProductLookupCompositionHolder(localHostProfile);", "AppServices must still create passive holder.");
 
-        RequireNotContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder", "65R must not wire holder into AppServices adapter yet.");
-        RequireNotContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(CreateLocalHostProductLookupCompositionHolder", "65R must not wire newly created holder into adapter.");
+        RequireNotContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter()", "65S AppServices must not use parameterless adapter wiring.");
+        RequireNotContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(CreateLocalHostProductLookupCompositionHolder", "65S must not wire newly created holder inline into adapter.");
         RequireNotContains(appServicesText, "LocalHostProductLookupGateway.TryLookupByBarcodeAsync", "65R must not consume gateway.");
         RequireNotContains(appServicesText, "DispatchAsync", "65R AppServices must not dispatch.");
         RequireNotContains(appServicesText, ".Start(", "65R AppServices must not start runtime.");
