@@ -77,6 +77,8 @@ public static class Program
 
         Phase65XPassiveLocalHostProvidersAppServicesWiringChecks.Run();
 
+        Phase65ZIdentityBoundaryWiringChecks.Run();
+
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
 }

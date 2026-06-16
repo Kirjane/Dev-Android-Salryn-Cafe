@@ -37,6 +37,7 @@ public sealed class SqliteUserPermissionReadRepository :
             command.CommandText = """
                 SELECT
                     u.id,
+                    u.role_id,
                     u.username,
                     u.display_name,
                     r.name AS role_name,
@@ -54,6 +55,7 @@ public sealed class SqliteUserPermissionReadRepository :
             using SqliteDataReader reader = command.ExecuteReader();
 
             Guid readUserId = Guid.Empty;
+            Guid roleId = Guid.Empty;
             string username = string.Empty;
             string displayName = string.Empty;
             string roleName = string.Empty;
@@ -67,15 +69,16 @@ public sealed class SqliteUserPermissionReadRepository :
                 if (readUserId == Guid.Empty)
                 {
                     readUserId = Guid.Parse(reader.GetString(0));
-                    username = reader.GetString(1);
-                    displayName = reader.GetString(2);
-                    roleName = reader.GetString(3);
-                    status = (UserStatus)reader.GetInt32(4);
+                    roleId = Guid.Parse(reader.GetString(1));
+                    username = reader.GetString(2);
+                    displayName = reader.GetString(3);
+                    roleName = reader.GetString(4);
+                    status = (UserStatus)reader.GetInt32(5);
                 }
 
-                if (!reader.IsDBNull(5))
+                if (!reader.IsDBNull(6))
                 {
-                    string permission = reader.GetString(5).Trim();
+                    string permission = reader.GetString(6).Trim();
 
                     if (!string.IsNullOrWhiteSpace(permission))
                     {
@@ -91,6 +94,7 @@ public sealed class SqliteUserPermissionReadRepository :
 
             UserPermissionReadModel profile = new(
                 readUserId,
+                roleId,
                 username,
                 displayName,
                 roleName,

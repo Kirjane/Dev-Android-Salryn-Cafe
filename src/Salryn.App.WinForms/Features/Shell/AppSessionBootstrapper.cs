@@ -53,6 +53,7 @@ public static class AppSessionBootstrapper
 
         CurrentAppSession session = new(
             profile.UserId,
+            profile.RoleId,
             profile.Username,
             profile.DisplayName,
             profile.RoleName,

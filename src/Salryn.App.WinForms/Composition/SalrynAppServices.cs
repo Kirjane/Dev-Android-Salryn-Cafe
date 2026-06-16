@@ -127,7 +127,11 @@ public sealed class SalrynAppServices
                 SalrynMachineRole.StandaloneHost),
             SalrynDeploymentMode.Standalone,
             Endpoint: null,
-            Terminal: null);
+            Terminal: new TerminalIdentity(
+                Guid.Parse("44444444-4444-4444-4444-444444444444"),
+                "standalone-local-terminal",
+                Environment.MachineName,
+                SalrynMachineRole.StandaloneHost));
     }
 
     // Kirch: Builds a stopped Local Host ProductLookup composition through the app composition root only.

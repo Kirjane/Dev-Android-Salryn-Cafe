@@ -14,8 +14,30 @@ public sealed class CurrentAppSession
         UserStatus status,
         IReadOnlyList<string> permissions,
         DateTimeOffset startedAt)
+        : this(
+            userId,
+            Guid.Empty,
+            username,
+            displayName,
+            roleName,
+            status,
+            permissions,
+            startedAt)
+    {
+    }
+
+    public CurrentAppSession(
+        Guid userId,
+        Guid roleId,
+        string username,
+        string displayName,
+        string roleName,
+        UserStatus status,
+        IReadOnlyList<string> permissions,
+        DateTimeOffset startedAt)
     {
         UserId = userId;
+        RoleId = roleId;
         Username = username;
         DisplayName = displayName;
         RoleName = roleName;
@@ -29,6 +51,8 @@ public sealed class CurrentAppSession
     }
 
     public Guid UserId { get; }
+
+    public Guid RoleId { get; }
 
     public string Username { get; }
 

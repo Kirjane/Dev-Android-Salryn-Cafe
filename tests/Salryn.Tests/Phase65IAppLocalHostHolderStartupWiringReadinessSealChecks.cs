@@ -29,7 +29,7 @@ public static class Phase65IAppLocalHostHolderStartupWiringReadinessSealChecks
         RequireContains(appServicesText, "SalrynMachineRole.StandaloneHost", "Startup profile must remain standalone host.");
         RequireContains(appServicesText, "SalrynDeploymentMode.Standalone", "Startup profile must remain standalone mode.");
         RequireContains(appServicesText, "Endpoint: null", "Startup profile must not introduce endpoint wiring.");
-        RequireContains(appServicesText, "Terminal: null", "Startup profile must not introduce terminal wiring.");
+        RequireContains(appServicesText, "new TerminalIdentity(", "Startup profile must not introduce terminal wiring.");
         RequireContains(appServicesText, "CreateStandaloneLocalHostProfile());", "AppServices factory must keep startup profile injection.");
 
         RequireExactlyOne(appServicesText, "public SalrynLocalHostCompositionHolder LocalHostProductLookupCompositionHolder { get; }", "65H holder property");

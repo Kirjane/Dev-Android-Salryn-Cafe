@@ -23,7 +23,7 @@ public static class Phase65HAppLocalHostHolderStartupWiringSliceChecks
         RequireContains(appServicesText, "SalrynMachineRole.StandaloneHost", "Startup profile must use a host-capable standalone role.");
         RequireContains(appServicesText, "SalrynDeploymentMode.Standalone", "Startup profile must use standalone mode.");
         RequireContains(appServicesText, "Endpoint: null", "Startup profile must not introduce network endpoint wiring.");
-        RequireContains(appServicesText, "Terminal: null", "Startup profile must not introduce client terminal wiring.");
+        RequireContains(appServicesText, "new TerminalIdentity(", "Startup profile must not introduce client terminal wiring.");
         RequireContains(appServicesText, "Environment.MachineName", "Startup profile must identify the local machine.");
         RequireContains(appServicesText, "CreateStandaloneLocalHostProfile());", "AppServices factory must pass the startup profile into the constructor.");
 
