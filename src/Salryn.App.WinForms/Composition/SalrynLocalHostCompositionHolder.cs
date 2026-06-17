@@ -2,6 +2,10 @@
 
 namespace Salryn.App.WinForms.Composition;
 
+// Kirch file guide: holder for Local Host product lookup composition.
+// UI location: invisible infrastructure used by Checkout lookup wiring.
+// Frontend note: no visual styling belongs here.
+
 // Kirch: Holds a validated Local Host composition result without starting or consuming runtime behavior.
 public sealed class SalrynLocalHostCompositionHolder
 {

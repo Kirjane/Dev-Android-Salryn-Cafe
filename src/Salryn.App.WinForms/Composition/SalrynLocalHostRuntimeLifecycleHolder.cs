@@ -1,7 +1,11 @@
-using System;
+﻿using System;
 using Salryn.Host.Local.Runtime;
 
 namespace Salryn.App.WinForms.Composition;
+
+// Kirch file guide: owns Local Host runtime start/stop state for app composition.
+// UI location: invisible runtime state behind product lookup.
+// Frontend note: no LAN or transport UI should be added here.
 
 // Kirch: Captures a controlled lifecycle attempt without letting adapters, providers, Program, or Shell own runtime activation.
 public sealed record SalrynLocalHostRuntimeLifecycleResult(

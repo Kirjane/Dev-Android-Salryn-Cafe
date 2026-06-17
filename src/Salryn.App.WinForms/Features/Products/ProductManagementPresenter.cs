@@ -6,6 +6,10 @@ using Salryn.Core.ValueObjects;
 
 namespace Salryn.App.WinForms.Features.Products;
 
+// Kirch file guide: presenter for product search/create/edit behavior.
+// UI location: backs Products screen and Add Product form.
+// Frontend note: keep parsing, validation, and repository calls here; forms should stay thin.
+
 // Kirch: The presenter owns product screen behavior so WinForms controls stay thin.
 public sealed class ProductManagementPresenter
 {
@@ -777,5 +781,3 @@ public sealed class ProductManagementPresenter
         return $"Showing {shownCount} of {totalCount} products.";
     }
 }
-
-

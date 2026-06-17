@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Salryn.Core.Common;
@@ -6,6 +6,10 @@ using Salryn.Core.Contracts;
 using Salryn.Host.Local.Contracts;
 
 namespace Salryn.App.WinForms.Composition;
+
+// Kirch file guide: adapter that lets the app ask the Local Host runtime for product lookup.
+// UI location: powers barcode/name lookup in Checkout.
+// Frontend note: keep forms consuming presenter/boundary APIs; do not call this directly from controls.
 
 // Kirch: Production adapter-to-holder dispatch bridge; it consumes passive request/session identity providers but still must not start runtime or add transport.
 public sealed class CompositionLocalHostProductLookupGatewayAdapter : IAppLocalHostProductLookupGateway

@@ -3,6 +3,10 @@ using Salryn.Core.ValueObjects;
 
 namespace Salryn.App.WinForms.Features.Checkout;
 
+// Kirch file guide: receipt number generator boundary for checkout.
+// UI location: receipt number shown in Checkout and receipt preview.
+// Frontend note: do not generate receipt numbers in labels or forms.
+
 public interface ICheckoutReceiptNumberBoundary
 {
     Result<string> CreateReceiptNumber(CheckoutSessionContext? sessionContext);

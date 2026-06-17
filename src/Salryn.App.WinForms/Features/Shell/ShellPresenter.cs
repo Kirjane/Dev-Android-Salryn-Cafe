@@ -2,6 +2,10 @@
 
 namespace Salryn.App.WinForms.Features.Shell;
 
+// Kirch file guide: builds the Shell navigation model.
+// UI location: controls which left-nav modules show enabled/locked.
+// Frontend note: module titles/descriptions can be polished here, but permission checks must remain backend-driven.
+
 public static class ShellModuleKeys
 {
     public const string PosCheckout = "POS_CHECKOUT";

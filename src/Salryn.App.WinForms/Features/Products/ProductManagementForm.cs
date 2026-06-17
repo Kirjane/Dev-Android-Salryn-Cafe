@@ -1,5 +1,9 @@
 ﻿namespace Salryn.App.WinForms.Features.Products;
 
+// Kirch file guide: product catalog list screen.
+// UI location: opened from Shell > Products.
+// Frontend note: safe to restyle toolbar/grid/status here; do not construct repositories in the form.
+
 public sealed class ProductManagementForm : Form
 {
     private readonly ProductManagementPresenter _presenter;
@@ -245,5 +249,3 @@ public sealed class ProductManagementForm : Form
             : Color.FromArgb(75, 85, 99);
     }
 }
-
-

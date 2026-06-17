@@ -4,6 +4,10 @@ using Salryn.Core.ReadModels;
 
 namespace Salryn.App.WinForms.Features.Sales;
 
+// Kirch file guide: text receipt preview modal.
+// UI location: opened from Sales History View Receipt.
+// Frontend note: improve preview/print layout here, but do not claim accreditation or bypass sale detail data.
+
 // Kirch: Receipt preview is intentionally text-based for the June 20 MVP.
 // Printing, official accreditation formatting, and device plugins are later compliance phases.
 public sealed class ReceiptPreviewForm : Form

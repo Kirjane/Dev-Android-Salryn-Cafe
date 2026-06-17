@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Salryn.App.WinForms.Composition;
@@ -7,6 +7,10 @@ using Salryn.Core.ReadModels;
 using Salryn.Core.ValueObjects;
 
 namespace Salryn.App.WinForms.Features.Checkout;
+
+// Kirch file guide: checkout product lookup via Local Host-backed gateway.
+// UI location: supports the Checkout search input.
+// Frontend note: scanner/search UI can change, but lookup still flows through this boundary.
 
 // Kirch: Checkout-facing Local Host ProductLookup adapter only; it does not start runtime, dispatch directly, touch transport, or wire UI.
 public sealed class CheckoutLocalHostProductSearchBoundary : ICheckoutProductSearchBoundary

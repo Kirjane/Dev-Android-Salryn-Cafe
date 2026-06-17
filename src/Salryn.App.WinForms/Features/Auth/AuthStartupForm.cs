@@ -5,6 +5,10 @@ using Salryn.Core.Services;
 
 namespace Salryn.App.WinForms.Features.Auth;
 
+// Kirch file guide: startup login / first-run admin form.
+// UI location: first screen when no usable session is loaded.
+// Frontend note: fields here are authentication-facing; keep validation messages clear and do not mix POS screen styling logic here.
+
 public sealed class AuthStartupForm : Form
 {
     private readonly IAuthenticationService _authenticationService;
@@ -269,4 +273,3 @@ public sealed class AuthStartupForm : Form
         _messageLabel.Text = message;
     }
 }
-

@@ -4,6 +4,10 @@ using Salryn.App.WinForms.Features.Shell;
 
 namespace Salryn.App.WinForms;
 
+// Kirch file guide: App entry point.
+// UI location: starts the WinForms process before the user sees any screen.
+// Frontend note: do not put styling here; forms own layout and visual polish.
+
 static class Program
 {
     [STAThread]

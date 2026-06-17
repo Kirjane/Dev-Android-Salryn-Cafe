@@ -6,6 +6,10 @@ using Salryn.Core.Services;
 
 namespace Salryn.App.WinForms.Features.Checkout;
 
+// Kirch file guide: presenter for Checkout search, cart, payment, readiness, and sale submit.
+// UI location: backs the full POS Checkout screen.
+// Frontend note: keep button behavior here; the form should only render state and forward user actions.
+
 public sealed class CheckoutPresenter
 {
     private readonly ICheckoutProductSearchBoundary? _productSearchBoundary;
@@ -952,15 +956,3 @@ public sealed class CheckoutPresenter
         return (quantityX1000 / 1000m).ToString("0.###", CultureInfo.InvariantCulture);
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-

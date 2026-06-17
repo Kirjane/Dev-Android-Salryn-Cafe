@@ -4,6 +4,10 @@ using Salryn.Core.ReadModels;
 
 namespace Salryn.App.WinForms.Features.Dashboard;
 
+// Kirch file guide: dashboard overview screen.
+// UI location: opened from Shell > Dashboard.
+// Frontend note: safe to improve cards and spacing; keep data reads through AppServices.
+
 // Kirch: This is the June 20 MVP dashboard skeleton.
 // Keep it presentable and useful, but do not bypass AppServices or add LAN/transport logic here.
 public sealed class DashboardForm : Form

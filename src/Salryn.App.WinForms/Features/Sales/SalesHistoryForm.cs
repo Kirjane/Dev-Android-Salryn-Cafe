@@ -4,6 +4,10 @@ using Salryn.Core.ReadModels;
 
 namespace Salryn.App.WinForms.Features.Sales;
 
+// Kirch file guide: completed sales and receipt lookup screen.
+// UI location: opened from Shell > Sales History.
+// Frontend note: restyle search/grid/detail buttons here; receipt data must come through SaleReadRepository via AppServices.
+
 // Kirch: Minimal Sales History screen for June 20 MVP.
 // Keep the grid simple; deeper filtering, voiding, and reprint policies belong in later phases.
 public sealed class SalesHistoryForm : Form

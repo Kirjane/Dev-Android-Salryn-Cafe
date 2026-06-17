@@ -1,7 +1,11 @@
-using Salryn.Core.Contracts;
+﻿using Salryn.Core.Contracts;
 using Salryn.Core.Deployment;
 
 namespace Salryn.App.WinForms.Composition;
+
+// Kirch file guide: creates authenticated request context for Local Host calls.
+// UI location: connects current app session to checkout lookup requests.
+// Frontend note: do not fake user identity in UI controls; session identity belongs here.
 
 // Kirch: Passive Host request context provider; it can only build context from real supplied identity and must not invent runtime, terminal, user, or session state.
 public sealed class SalrynLocalHostRequestContextProvider

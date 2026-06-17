@@ -9,6 +9,10 @@ using Salryn.App.WinForms.Features.Shifts;
 
 namespace Salryn.App.WinForms.Features.Shell;
 
+// Kirch file guide: main app shell and module router.
+// UI location: primary window after login, with left navigation and workspace panel.
+// Frontend note: restyle header/nav/workspace here, but keep routing through module keys and AppServices.
+
 public sealed class SalrynShellForm : Form
 {
     private readonly SalrynAppServices _services;
@@ -437,11 +441,3 @@ public sealed class SalrynShellForm : Form
         _workspacePanel.Controls.Add(content);
     }
 }
-
-
-
-
-
-
-
-

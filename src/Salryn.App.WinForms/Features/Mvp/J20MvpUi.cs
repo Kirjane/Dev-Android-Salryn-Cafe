@@ -1,5 +1,9 @@
 ﻿namespace Salryn.App.WinForms.Features.Mvp;
 
+// Kirch file guide: shared minimal UI helper for new MVP skeleton screens.
+// UI location: used by Dashboard, Inventory, Sales History, Receipt Preview, and Settings.
+// Frontend note: centralize temporary shared styling here until a fuller design system replaces it.
+
 // Kirch: Shared minimal WinForms styling for the June 20 MVP skeleton.
 // The frontend engineer may replace visual details later, but should keep forms thin and AppServices-driven.
 public static class J20MvpUi

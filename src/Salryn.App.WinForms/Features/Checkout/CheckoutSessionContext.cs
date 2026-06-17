@@ -3,6 +3,10 @@ using Salryn.Core.ReadModels;
 
 namespace Salryn.App.WinForms.Features.Checkout;
 
+// Kirch file guide: checkout session display/context record.
+// UI location: header lines in Checkout showing cashier, shift, and mode.
+// Frontend note: use these formatted lines for display; do not rebuild session text in forms.
+
 public sealed record CheckoutSessionContext(
     Guid CashierUserId,
     string CashierDisplayName,

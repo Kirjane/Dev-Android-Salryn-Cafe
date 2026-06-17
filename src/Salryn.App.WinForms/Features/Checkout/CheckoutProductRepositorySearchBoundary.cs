@@ -5,6 +5,10 @@ using Salryn.Core.ValueObjects;
 
 namespace Salryn.App.WinForms.Features.Checkout;
 
+// Kirch file guide: direct repository product lookup fallback/boundary.
+// UI location: alternative backend for Checkout product search.
+// Frontend note: do not choose lookup source from UI styling code.
+
 public sealed class CheckoutProductRepositorySearchBoundary : ICheckoutProductSearchBoundary
 {
     private readonly IProductReadRepository _products;

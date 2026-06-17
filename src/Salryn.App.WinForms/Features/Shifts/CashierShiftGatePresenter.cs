@@ -7,6 +7,10 @@ using Salryn.Core.ValueObjects;
 
 namespace Salryn.App.WinForms.Features.Shifts;
 
+// Kirch file guide: presenter for cashier shift gate logic.
+// UI location: runs before POS Checkout opens.
+// Frontend note: visual form can change, but open-shift validation must stay here.
+
 public sealed record CashierShiftGateViewModel(
     string UserLine,
     string StatusLine,

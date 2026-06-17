@@ -4,6 +4,10 @@ using Salryn.Core.ReadModels;
 
 namespace Salryn.App.WinForms.Features.Inventory;
 
+// Kirch file guide: inventory visibility screen.
+// UI location: opened from Shell > Inventory.
+// Frontend note: grids are for low stock and movement history; stock write actions should use AppServices/presenter flow.
+
 // Kirch: Minimal inventory skeleton for June 20 MVP.
 // This screen proves low-stock and movement history visibility before deeper stock workflows are polished.
 public sealed class InventoryForm : Form

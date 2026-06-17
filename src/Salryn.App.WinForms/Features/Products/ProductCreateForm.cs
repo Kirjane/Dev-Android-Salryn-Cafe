@@ -1,5 +1,9 @@
 ﻿namespace Salryn.App.WinForms.Features.Products;
 
+// Kirch file guide: add product modal form.
+// UI location: opened from the Products screen Add Product button.
+// Frontend note: controls map to ProductCreateRequest; preserve required fields and presenter save flow.
+
 // Kirch: This form collects new product input and delegates validation/saving to the presenter.
 public sealed class ProductCreateForm : Form
 {
@@ -334,4 +338,3 @@ public sealed class ProductCreateForm : Form
         _statusLabel.Text = message;
     }
 }
-

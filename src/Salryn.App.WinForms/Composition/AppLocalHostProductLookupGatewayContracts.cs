@@ -3,6 +3,10 @@ using System.Threading.Tasks;
 
 namespace Salryn.App.WinForms.Composition;
 
+// Kirch file guide: app-side contract for checkout product lookup through Local Host.
+// UI location: used behind the Checkout search box; users do not see this directly.
+// Frontend note: do not change payload shape for styling; this is a backend/UI boundary.
+
 // Kirch: Production contract shell only. No implementation, registration, runtime start, dispatch, or transport.
 public interface IAppLocalHostProductLookupGateway
 {

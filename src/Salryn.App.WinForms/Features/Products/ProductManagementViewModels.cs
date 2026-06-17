@@ -3,6 +3,10 @@ using System.Collections.Generic;
 
 namespace Salryn.App.WinForms.Features.Products;
 
+// Kirch file guide: view models for product list, add product, and edit product screens.
+// UI location: ProductManagementForm and ProductCreateForm bind to these records.
+// Frontend note: add display-only fields here when UI needs them, not directly inside repository models.
+
 // Kirch: Product management rows are read-only UI snapshots for the grid.
 public sealed record ProductManagementRowViewModel(
     Guid ProductId,

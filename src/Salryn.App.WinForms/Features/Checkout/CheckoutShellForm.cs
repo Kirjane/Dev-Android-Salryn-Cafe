@@ -3,6 +3,10 @@ using System.Windows.Forms;
 
 namespace Salryn.App.WinForms.Features.Checkout;
 
+// Kirch file guide: main cashier checkout screen.
+// UI location: opened after cashier shift gate passes.
+// Frontend note: restyle cards, grid, buttons, and spacing here; do not bypass CheckoutPresenter.
+
 public sealed class CheckoutShellForm : Form
 {
     private readonly CheckoutPresenter _presenter;
@@ -1042,12 +1046,3 @@ public sealed class CheckoutShellForm : Form
         public static readonly Color TextMuted = Color.FromArgb(71, 85, 105);
     }
 }
-
-
-
-
-
-
-
-
-

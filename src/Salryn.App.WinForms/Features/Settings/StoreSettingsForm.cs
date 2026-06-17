@@ -4,6 +4,10 @@ using Salryn.Core.ReadModels;
 
 namespace Salryn.App.WinForms.Features.Settings;
 
+// Kirch file guide: store profile/settings screen.
+// UI location: opened from Shell > Settings.
+// Frontend note: current fields are read-only; add editing only through a proper settings write service.
+
 // Kirch: Minimal read-only Store Settings skeleton for June 20 MVP.
 // Write/edit settings can be added after the demo path is stable.
 public sealed class StoreSettingsForm : Form

@@ -2,6 +2,10 @@
 
 namespace Salryn.App.WinForms.Features.Shell;
 
+// Kirch file guide: current user/session snapshot used by Shell and Checkout.
+// UI location: drives user line, role line, and permission-based module access.
+// Frontend note: read this for display only; do not mutate permissions from forms.
+
 public sealed class CurrentAppSession
 {
     private readonly HashSet<string> _permissions;

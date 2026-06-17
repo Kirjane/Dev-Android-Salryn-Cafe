@@ -10,6 +10,10 @@ using Salryn.Host.Local.Composition;
 
 namespace Salryn.App.WinForms.Composition;
 
+// Kirch file guide: WinForms composition root.
+// UI location: every real screen receives services from here instead of constructing repositories.
+// Frontend note: safe UI work should consume AppServices through presenters/forms, not bypass it.
+
 // Kirch: This composition root exposes app-level services so WinForms screens do not create infrastructure directly.
 public sealed class SalrynAppServices
 {

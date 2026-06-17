@@ -3,6 +3,10 @@ using Salryn.Core.Services;
 
 namespace Salryn.App.WinForms.Features.Checkout;
 
+// Kirch file guide: boundary for final sale completion readiness and submit.
+// UI location: used by CheckoutPresenter before enabling/performing Complete Sale.
+// Frontend note: do not move sale completion rules into button click handlers.
+
 public sealed record CheckoutCompletionReadiness(
     bool HasCashierUser,
     bool HasCashierSession,

@@ -1,5 +1,9 @@
 ﻿namespace Salryn.App.WinForms.Features.Checkout;
 
+// Kirch file guide: display models for Checkout UI state.
+// UI location: CheckoutShellForm renders these records into labels, grids, and buttons.
+// Frontend note: add UI display fields here instead of reading domain objects directly in the form.
+
 public sealed record CheckoutLineViewModel(
     Guid LineId,
     Guid ProductId,
@@ -229,7 +233,3 @@ public sealed record CheckoutPresenterOperationResult(
     string? ErrorCode,
     string? ErrorMessage,
     CheckoutViewModel State);
-
-
-
-

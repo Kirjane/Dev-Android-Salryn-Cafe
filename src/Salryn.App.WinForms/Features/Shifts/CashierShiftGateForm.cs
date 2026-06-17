@@ -4,6 +4,10 @@ using Salryn.Core.ReadModels;
 
 namespace Salryn.App.WinForms.Features.Shifts;
 
+// Kirch file guide: shift gate form before entering POS Checkout.
+// UI location: modal shown from Shell when cashier opens POS Checkout.
+// Frontend note: fields are opening cash and notes; do not bypass the presenter to enter checkout.
+
 public sealed class CashierShiftGateForm : Form
 {
     private readonly CashierShiftGatePresenter _presenter;

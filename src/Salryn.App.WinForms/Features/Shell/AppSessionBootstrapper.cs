@@ -5,6 +5,10 @@ using Salryn.Core.Repositories;
 
 namespace Salryn.App.WinForms.Features.Shell;
 
+// Kirch file guide: loads the first active user session for app startup.
+// UI location: runs before Shell decides what modules the user can open.
+// Frontend note: this is not a visual component.
+
 public static class AppSessionBootstrapper
 {
     // Kirch: Loads the first active user as a temporary app session until a real login screen is implemented.

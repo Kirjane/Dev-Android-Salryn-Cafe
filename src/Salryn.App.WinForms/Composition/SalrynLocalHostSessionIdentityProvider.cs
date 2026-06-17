@@ -1,6 +1,10 @@
-using Salryn.App.WinForms.Features.Shell;
+﻿using Salryn.App.WinForms.Features.Shell;
 
 namespace Salryn.App.WinForms.Composition;
+
+// Kirch file guide: stores the current authenticated user/role for Local Host requests.
+// UI location: Shell sets this after login/session bootstrap.
+// Frontend note: do not store UI text or styling state here.
 
 // Kirch: Passive app session identity bridge for Local Host requests; it observes the current shell session only and must not start runtime.
 public sealed class SalrynLocalHostSessionIdentityProvider
