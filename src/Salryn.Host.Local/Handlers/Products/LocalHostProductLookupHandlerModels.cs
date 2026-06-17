@@ -81,7 +81,17 @@ public sealed class LocalHostProductLookupHandler : IHostOperationHandler<LocalH
             RequestId: request.RequestId,
             IsSuccess: true,
             Payload: new LocalHostProductLookupResponse(
-                DisplayName: product.Name),
+                ProductId: product.Id,
+                Sku: product.Sku,
+                Barcode: product.Barcode,
+                DisplayName: product.Name,
+                UnitName: product.UnitName,
+                SellingPriceCents: product.SellingPrice.Cents,
+                CostPriceCents: product.CostPrice?.Cents,
+                StockOnHandX1000: product.StockOnHand.ValueX1000,
+                TrackStock: product.TrackStock,
+                AllowDiscount: product.AllowDiscount,
+                IsActive: product.IsActive),
             Error: null);
     }
 }

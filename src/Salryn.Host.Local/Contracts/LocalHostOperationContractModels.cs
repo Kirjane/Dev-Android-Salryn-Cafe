@@ -187,7 +187,18 @@ public sealed record LocalHostProductSearchResponse(int MatchCount);
 public sealed record LocalHostProductLookupRequest(string BarcodeOrSku);
 
 // Kirch: Local Host product lookup response contract placeholder before real product handler implementation.
-public sealed record LocalHostProductLookupResponse(string DisplayName);
+public sealed record LocalHostProductLookupResponse(
+    Guid ProductId,
+    string? Sku,
+    string? Barcode,
+    string DisplayName,
+    string UnitName,
+    long SellingPriceCents,
+    long? CostPriceCents,
+    long StockOnHandX1000,
+    bool TrackStock,
+    bool AllowDiscount,
+    bool IsActive);
 
 // Kirch: Local Host checkout request contract placeholder before real sale handler implementation.
 public sealed record LocalHostCompleteSaleRequest(Guid DraftSaleId);

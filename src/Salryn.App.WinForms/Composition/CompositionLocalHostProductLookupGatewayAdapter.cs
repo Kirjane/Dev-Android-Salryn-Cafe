@@ -148,9 +148,17 @@ public sealed class CompositionLocalHostProductLookupGatewayAdapter : IAppLocalH
         if (response.IsSuccess && response.Payload is not null)
         {
             return AppLocalHostProductLookupResult.FoundProduct(
-                barcode,
-                sku: null,
-                response.Payload.DisplayName);
+                productId: response.Payload.ProductId,
+                sku: response.Payload.Sku,
+                barcode: response.Payload.Barcode,
+                displayName: response.Payload.DisplayName,
+                unitName: response.Payload.UnitName,
+                sellingPriceCents: response.Payload.SellingPriceCents,
+                costPriceCents: response.Payload.CostPriceCents,
+                stockOnHandX1000: response.Payload.StockOnHandX1000,
+                trackStock: response.Payload.TrackStock,
+                allowDiscount: response.Payload.AllowDiscount,
+                isActive: response.Payload.IsActive);
         }
 
         if (response.Error?.Type == ErrorType.NotFound)

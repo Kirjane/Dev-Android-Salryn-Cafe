@@ -14,9 +14,17 @@ public interface IAppLocalHostProductLookupGateway
 public sealed record AppLocalHostProductLookupRequest(string Barcode);
 
 public sealed record AppLocalHostProductLookupProduct(
-    string Barcode,
+    Guid ProductId,
     string? Sku,
-    string DisplayName);
+    string? Barcode,
+    string DisplayName,
+    string UnitName,
+    long SellingPriceCents,
+    long? CostPriceCents,
+    long StockOnHandX1000,
+    bool TrackStock,
+    bool AllowDiscount,
+    bool IsActive);
 
 public sealed record AppLocalHostProductLookupResult(
     bool Succeeded,
@@ -26,14 +34,33 @@ public sealed record AppLocalHostProductLookupResult(
     string? FailureMessage)
 {
     public static AppLocalHostProductLookupResult FoundProduct(
-        string barcode,
+        Guid productId,
         string? sku,
-        string displayName)
+        string? barcode,
+        string displayName,
+        string unitName,
+        long sellingPriceCents,
+        long? costPriceCents,
+        long stockOnHandX1000,
+        bool trackStock,
+        bool allowDiscount,
+        bool isActive)
     {
         return new AppLocalHostProductLookupResult(
             Succeeded: true,
             Found: true,
-            Product: new AppLocalHostProductLookupProduct(barcode, sku, displayName),
+            Product: new AppLocalHostProductLookupProduct(
+                productId,
+                sku,
+                barcode,
+                displayName,
+                unitName,
+                sellingPriceCents,
+                costPriceCents,
+                stockOnHandX1000,
+                trackStock,
+                allowDiscount,
+                isActive),
             FailureCode: null,
             FailureMessage: null);
     }

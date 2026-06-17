@@ -89,6 +89,8 @@ public static class Program
 
         Phase66G2AppServicesLocalHostStartupActivationChecks.Run();
 
+        Phase66G4LocalHostProductLookupCheckoutReadyPayloadChecks.Run();
+
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
 }

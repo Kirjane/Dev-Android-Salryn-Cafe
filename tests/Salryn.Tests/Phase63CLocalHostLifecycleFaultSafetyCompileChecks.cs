@@ -144,7 +144,18 @@ public static class Phase63CLocalHostLifecycleFaultSafetyCompileChecks
             return Task.FromResult(new HostResponseEnvelope<LocalHostProductLookupResponse>(
                 RequestId: request.RequestId,
                 IsSuccess: true,
-                Payload: new LocalHostProductLookupResponse(request.Payload.BarcodeOrSku),
+                Payload: new LocalHostProductLookupResponse(
+                    ProductId: Guid.NewGuid(),
+                    Sku: null,
+                    Barcode: request.Payload.BarcodeOrSku,
+                    DisplayName: request.Payload.BarcodeOrSku,
+                    UnitName: "piece",
+                    SellingPriceCents: 100,
+                    CostPriceCents: null,
+                    StockOnHandX1000: 1000,
+                    TrackStock: true,
+                    AllowDiscount: true,
+                    IsActive: true),
                 Error: null));
         }
     }

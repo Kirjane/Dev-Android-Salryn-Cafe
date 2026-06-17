@@ -104,7 +104,18 @@ public static class Phase63BLocalHostDispatchCompileChecks
             HostResponseEnvelope<LocalHostProductLookupResponse> response = new(
                 RequestId: request.RequestId,
                 IsSuccess: true,
-                Payload: new LocalHostProductLookupResponse($"handled:{request.Payload.BarcodeOrSku}"),
+                Payload: new LocalHostProductLookupResponse(
+                    ProductId: Guid.NewGuid(),
+                    Sku: null,
+                    Barcode: request.Payload.BarcodeOrSku,
+                    DisplayName: $"handled:{request.Payload.BarcodeOrSku}",
+                    UnitName: "piece",
+                    SellingPriceCents: 100,
+                    CostPriceCents: null,
+                    StockOnHandX1000: 1000,
+                    TrackStock: true,
+                    AllowDiscount: true,
+                    IsActive: true),
                 Error: null);
 
             return Task.FromResult(response);
