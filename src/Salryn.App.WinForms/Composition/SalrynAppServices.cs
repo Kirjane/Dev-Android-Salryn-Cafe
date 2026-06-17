@@ -24,9 +24,7 @@ public sealed class SalrynAppServices
         IAuthenticationService authentication,
         IProductReadRepository productReadRepository,
         IProductWriteRepository productWriteRepository,
-        ICatalogReadRepository catalogReadRepository,
-        ICheckoutProductSearchBoundary checkoutProductSearch,
-        ICashierSessionService cashierSessions,
+        ICatalogReadRepository catalogReadRepository,        ICashierSessionService cashierSessions,
         IPosCheckoutService posCheckout,
         IPosCheckoutApplicationService posCheckoutApplication,
         StoreDeploymentProfile localHostProfile)
@@ -40,9 +38,7 @@ public sealed class SalrynAppServices
         Authentication = authentication;
         ProductReadRepository = productReadRepository;
         ProductWriteRepository = productWriteRepository;
-        CatalogReadRepository = catalogReadRepository;
-        CheckoutProductSearch = checkoutProductSearch;
-        CashierSessions = cashierSessions;
+        CatalogReadRepository = catalogReadRepository;        CashierSessions = cashierSessions;
         PosCheckout = posCheckout;
         PosCheckoutApplication = posCheckoutApplication;
         // Kirch: Creates the passive holder before gateway wiring; this still does not start runtime, dispatch, or add transport.
@@ -68,6 +64,10 @@ public sealed class SalrynAppServices
         // Kirch: Wires the holder-aware adapter through AppServices only; runtime start, Program, Shell, UI, and transport remain blocked.
         LocalHostProductLookupGateway =
             new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider, LocalHostSessionIdentityProvider);
+
+        // Kirch: 66G6 routes checkout product search through the Local Host-backed boundary while keeping Shell checkout routing stable.
+        CheckoutProductSearch =
+            new CheckoutLocalHostProductSearchBoundary(LocalHostProductLookupGateway);
     }
 
     public DbPaths DbPaths { get; }
@@ -212,10 +212,6 @@ public sealed class SalrynAppServices
 
         ICatalogReadRepository catalogReadRepository =
             repositories.CreateCatalogReadRepository();
-
-        ICheckoutProductSearchBoundary checkoutProductSearch =
-            new CheckoutProductRepositorySearchBoundary(productReadRepository);
-
         ICashierSessionService cashierSessions = new CashierSessionService(
             repositories.CreateCashierSessionWriteRepository(),
             repositories.CreateCashierSessionReadRepository());
@@ -238,7 +234,6 @@ public sealed class SalrynAppServices
             productReadRepository,
             productWriteRepository,
             catalogReadRepository,
-            checkoutProductSearch,
             cashierSessions,
             posCheckout,
             posCheckoutApplication,

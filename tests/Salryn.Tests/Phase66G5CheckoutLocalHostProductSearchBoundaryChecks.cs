@@ -46,7 +46,7 @@ public static class Phase66G5CheckoutLocalHostProductSearchBoundaryChecks
         RequireNotContains(shellText, "CheckoutLocalHostProductSearchBoundary", "66G5 must not instantiate the new boundary in Shell yet.");
 
         RequireContains(appServicesText, "public IAppLocalHostProductLookupGateway LocalHostProductLookupGateway { get; }", "AppServices must still expose Local Host gateway.");
-        RequireNotContains(appServicesText, "CheckoutLocalHostProductSearchBoundary", "66G5 must not wire the new checkout boundary through AppServices yet.");
+        RequireContains(appServicesText, "new CheckoutLocalHostProductSearchBoundary(LocalHostProductLookupGateway)", "66G6 wires the checkout boundary through AppServices.");
 
         RequireContains(handoffText, "Status: Checkout-facing Local Host product search boundary only.", "66G5 handoff must mark boundary-only scope.");
         RequireContains(handoffText, "No Shell checkout wiring was changed.", "66G5 handoff must block Shell wiring.");
