@@ -18,7 +18,10 @@ public sealed record AuthenticatedUserReadModel(
     string DisplayName,
     string RoleName,
     UserStatus Status,
-    IReadOnlyList<string> Permissions);
+    IReadOnlyList<string> Permissions)
+{
+    public Guid RoleId { get; init; } = Guid.Empty;
+}
 
 public sealed record LoginUserCredentialReadModel(
     Guid UserId,

@@ -190,7 +190,10 @@ public sealed class SqliteAuthenticationRepository :
                 request.DisplayName.Trim(),
                 "Admin",
                 UserStatus.Active,
-                permissions);
+                permissions)
+            {
+                RoleId = Guid.Parse(DefaultSeedData.AdminRoleId)
+            };
 
             return Task.FromResult(Result<AuthenticatedUserReadModel>.Success(admin));
         }

@@ -249,6 +249,7 @@ public sealed class AuthStartupForm : Form
     {
         return new CurrentAppSession(
             user.UserId,
+            user.RoleId,
             user.Username,
             user.DisplayName,
             user.RoleName,

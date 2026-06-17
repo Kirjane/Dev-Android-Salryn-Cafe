@@ -83,6 +83,8 @@ public static class Program
 
         Phase66DSessionIdentityProviderAdapterWiringChecks.Run();
 
+        Phase66G0AuthenticatedRoleIdPropagationChecks.Run();
+
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
 }

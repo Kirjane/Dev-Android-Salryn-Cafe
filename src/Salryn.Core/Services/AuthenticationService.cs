@@ -153,7 +153,10 @@ public sealed class AuthenticationService : IAuthenticationService
             profile.DisplayName,
             profile.RoleName,
             profile.Status,
-            profile.Permissions);
+            profile.Permissions)
+        {
+            RoleId = profile.RoleId
+        };
 
         return Result<AuthenticatedUserReadModel>.Success(authenticated);
     }
