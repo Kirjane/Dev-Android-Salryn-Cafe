@@ -18,9 +18,9 @@ public static class Phase66BAdapterRequestContextProviderConsumptionChecks
         RequireContains(adapterText, "private readonly SalrynLocalHostRequestContextProvider? requestContextProvider;", "Adapter must hold the passive request context provider.");
         RequireContains(adapterText, "SalrynLocalHostRequestContextProvider requestContextProvider", "Adapter must expose provider-aware constructor.");
         RequireContains(adapterText, "this.requestContextProvider = requestContextProvider;", "Adapter must store provider.");
-        RequireContains(adapterText, "provider.TryCreateAuthenticatedContext(", "Adapter must consume provider for context creation.");
-        RequireContains(adapterText, "userId: null", "Adapter must fail closed until a real user identity source is supplied.");
-        RequireContains(adapterText, "roleId: null", "Adapter must fail closed until a real role identity source is supplied.");
+        RequireContains(adapterText, "requestProvider.TryCreateAuthenticatedContext(", "Adapter must consume provider for context creation.");
+        RequireNotContains(adapterText, "userId: null", "Adapter must not use null user identity after 66D.");
+        RequireNotContains(adapterText, "roleId: null", "Adapter must not use null role identity after 66D.");
         RequireContains(adapterText, "cashierSessionId: null", "Adapter must not invent cashier session identity.");
         RequireContains(adapterText, "out HostRequestContext? context", "Adapter must receive provider-created context.");
         RequireContains(adapterText, "Context: context", "Adapter must pass provider-created context into Host envelope.");
@@ -52,7 +52,7 @@ public static class Phase66BAdapterRequestContextProviderConsumptionChecks
         RequireNotContains(providerText, "CurrentAppSession", "Provider must not directly depend on UI session.");
         RequireNotContains(providerText, "CheckoutSessionContext", "Provider must not directly depend on checkout session.");
 
-        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider);", "AppServices must pass holder and provider into adapter.");
+        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider, LocalHostSessionIdentityProvider);", "AppServices must pass holder and provider into adapter.");
         RequireNotContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder);", "AppServices must not use old holder-only adapter constructor.");
         RequireContains(appServicesText, "new SalrynLocalHostRequestContextProvider(localHostProfile);", "AppServices must still own provider creation.");
         RequireContains(appServicesText, "new TerminalIdentity(", "AppServices must still have standalone terminal identity.");

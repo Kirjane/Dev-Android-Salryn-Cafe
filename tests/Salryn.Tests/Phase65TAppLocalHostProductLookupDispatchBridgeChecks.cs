@@ -49,7 +49,7 @@ public static class Phase65TAppLocalHostProductLookupDispatchBridgeChecks
         RequireNotContains(holderText, "DispatchAsync", "Holder must not dispatch.");
         RequireNotContains(holderText, ".Start(", "Holder must not start runtime.");
 
-        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider);", "AppServices must still wire holder-aware adapter.");
+        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider, LocalHostSessionIdentityProvider);", "AppServices must still wire holder-aware adapter.");
         RequireContains(appServicesText, "// Kirch: Wires the holder-aware adapter through AppServices only; runtime start, Program, Shell, UI, and transport remain blocked.", "AppServices must keep 65T boundary comment.");
         RequireNotContains(appServicesText, "DispatchAsync", "AppServices must not dispatch.");
         RequireNotContains(appServicesText, ".Start(", "AppServices must not start runtime.");

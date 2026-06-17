@@ -7,17 +7,18 @@ using Salryn.Host.Local.Contracts;
 
 namespace Salryn.App.WinForms.Composition;
 
-// Kirch: Production adapter-to-holder dispatch bridge; it consumes the passive request context provider but still must not start runtime or add transport.
+// Kirch: Production adapter-to-holder dispatch bridge; it consumes passive request/session identity providers but still must not start runtime or add transport.
 public sealed class CompositionLocalHostProductLookupGatewayAdapter : IAppLocalHostProductLookupGateway
 {
     private readonly SalrynLocalHostCompositionHolder? localHostCompositionHolder;
     private readonly SalrynLocalHostRequestContextProvider? requestContextProvider;
+    private readonly SalrynLocalHostSessionIdentityProvider? sessionIdentityProvider;
 
     public CompositionLocalHostProductLookupGatewayAdapter()
     {
     }
 
-    // Kirch: Holder-aware compatibility constructor; provider consumption remains unavailable unless the provider-aware constructor is used.
+    // Kirch: Holder-aware compatibility constructor; provider consumption remains unavailable unless provider-aware constructors are used.
     public CompositionLocalHostProductLookupGatewayAdapter(
         SalrynLocalHostCompositionHolder localHostCompositionHolder)
     {
@@ -26,7 +27,7 @@ public sealed class CompositionLocalHostProductLookupGatewayAdapter : IAppLocalH
         this.localHostCompositionHolder = localHostCompositionHolder;
     }
 
-    // Kirch: Provider-aware constructor used by AppServices only; it still does not start runtime or touch transport.
+    // Kirch: Request-context-aware compatibility constructor; session identity still fails closed unless the session provider is wired.
     public CompositionLocalHostProductLookupGatewayAdapter(
         SalrynLocalHostCompositionHolder localHostCompositionHolder,
         SalrynLocalHostRequestContextProvider requestContextProvider)
@@ -36,6 +37,21 @@ public sealed class CompositionLocalHostProductLookupGatewayAdapter : IAppLocalH
 
         this.localHostCompositionHolder = localHostCompositionHolder;
         this.requestContextProvider = requestContextProvider;
+    }
+
+    // Kirch: Full passive provider constructor used by AppServices only; it still does not start runtime or touch transport.
+    public CompositionLocalHostProductLookupGatewayAdapter(
+        SalrynLocalHostCompositionHolder localHostCompositionHolder,
+        SalrynLocalHostRequestContextProvider requestContextProvider,
+        SalrynLocalHostSessionIdentityProvider sessionIdentityProvider)
+    {
+        ArgumentNullException.ThrowIfNull(localHostCompositionHolder);
+        ArgumentNullException.ThrowIfNull(requestContextProvider);
+        ArgumentNullException.ThrowIfNull(sessionIdentityProvider);
+
+        this.localHostCompositionHolder = localHostCompositionHolder;
+        this.requestContextProvider = requestContextProvider;
+        this.sessionIdentityProvider = sessionIdentityProvider;
     }
 
     public Task<AppLocalHostProductLookupResult> TryLookupByBarcodeAsync(
@@ -64,31 +80,50 @@ public sealed class CompositionLocalHostProductLookupGatewayAdapter : IAppLocalH
                     "Local Host ProductLookup adapter shell is present but not wired to the passive holder yet; not wired to holder dispatch yet."));
         }
 
-        SalrynLocalHostRequestContextProvider? provider = requestContextProvider;
+        SalrynLocalHostRequestContextProvider? requestProvider = requestContextProvider;
 
-        if (provider is null)
+        if (requestProvider is null)
         {
             return Task.FromResult(
                 AppLocalHostProductLookupResult.LocalHostUnavailable(
                     "Local Host ProductLookup adapter is wired to the holder but not to the passive request context provider yet."));
         }
 
+        SalrynLocalHostSessionIdentityProvider? sessionProvider = sessionIdentityProvider;
+
+        if (sessionProvider is null)
+        {
+            return Task.FromResult(
+                AppLocalHostProductLookupResult.LocalHostUnavailable(
+                    "Local Host ProductLookup adapter is wired to request context but not to the passive app session identity provider yet."));
+        }
+
         return TryDispatchThroughHolderAsync(
             holder,
-            provider,
+            requestProvider,
+            sessionProvider,
             barcode,
             cancellationToken);
     }
 
     private static async Task<AppLocalHostProductLookupResult> TryDispatchThroughHolderAsync(
         SalrynLocalHostCompositionHolder holder,
-        SalrynLocalHostRequestContextProvider provider,
+        SalrynLocalHostRequestContextProvider requestProvider,
+        SalrynLocalHostSessionIdentityProvider sessionProvider,
         string barcode,
         CancellationToken cancellationToken)
     {
-        if (!provider.TryCreateAuthenticatedContext(
-                userId: null,
-                roleId: null,
+        if (!sessionProvider.TryGetAuthenticatedIdentity(
+                out Guid userId,
+                out Guid roleId))
+        {
+            return AppLocalHostProductLookupResult.LocalHostUnavailable(
+                "Local Host ProductLookup authenticated app session identity is not available yet.");
+        }
+
+        if (!requestProvider.TryCreateAuthenticatedContext(
+                userId: userId,
+                roleId: roleId,
                 cashierSessionId: null,
                 requestedAt: DateTimeOffset.UtcNow,
                 out HostRequestContext? context) ||

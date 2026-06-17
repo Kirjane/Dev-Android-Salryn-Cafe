@@ -65,7 +65,7 @@ public static class Phase65XPassiveLocalHostProvidersAppServicesWiringChecks
         RequireContains(appServicesText, "new SalrynLocalHostRuntimeLifecycleHolder(LocalHostProductLookupCompositionHolder);", "Lifecycle holder must be wired from passive holder.");
         RequireContains(appServicesText, "LocalHostRequestContextProvider =", "AppServices must assign request context provider.");
         RequireContains(appServicesText, "new SalrynLocalHostRequestContextProvider(localHostProfile);", "Request context provider must be wired from deployment profile.");
-        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider);", "Adapter wiring must remain holder-based.");
+        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider, LocalHostSessionIdentityProvider);", "Adapter wiring must remain holder-based.");
         RequireNotContains(appServicesText, "new HostRequestContext(", "AppServices must not directly create HostRequestContext.");
         RequireNotContains(appServicesText, ".Start(", "AppServices must not start runtime.");
         RequireNotContains(appServicesText, ".Stop(", "AppServices must not stop runtime.");

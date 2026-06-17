@@ -54,9 +54,11 @@ public sealed class SalrynAppServices
             new SalrynLocalHostRuntimeLifecycleHolder(LocalHostProductLookupCompositionHolder);
         LocalHostRequestContextProvider =
             new SalrynLocalHostRequestContextProvider(localHostProfile);
+        LocalHostSessionIdentityProvider =
+            new SalrynLocalHostSessionIdentityProvider();
         // Kirch: Wires the holder-aware adapter through AppServices only; runtime start, Program, Shell, UI, and transport remain blocked.
         LocalHostProductLookupGateway =
-            new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider);
+            new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider, LocalHostSessionIdentityProvider);
     }
 
     public DbPaths DbPaths { get; }
@@ -93,6 +95,8 @@ public sealed class SalrynAppServices
     public SalrynLocalHostRuntimeLifecycleHolder LocalHostRuntimeLifecycleHolder { get; }
 
     public SalrynLocalHostRequestContextProvider LocalHostRequestContextProvider { get; }
+
+    public SalrynLocalHostSessionIdentityProvider LocalHostSessionIdentityProvider { get; }
 
     // Kirch: Read-only passive gateway exposure for future ProductLookup wiring; not connected to UI behavior yet.
     public IAppLocalHostProductLookupGateway LocalHostProductLookupGateway { get; }

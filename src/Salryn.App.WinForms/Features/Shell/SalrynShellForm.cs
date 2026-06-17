@@ -25,6 +25,7 @@ public sealed class SalrynShellForm : Form
     {
         _services = services ?? throw new ArgumentNullException(nameof(services));
         _session = session;
+        _services.LocalHostSessionIdentityProvider.SetSession(session);
         _presenter = new ShellPresenter(session);
         _state = _presenter.Build();
 

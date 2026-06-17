@@ -43,7 +43,7 @@ public static class Phase65ULocalHostRuntimeLifecycleAndRequestContextOwnershipP
         RequireNotContains(holderText, ".Stop(", "Passive holder must not stop runtime.");
 
         RequireContains(appServicesText, "LocalHostProductLookupCompositionHolder =", "AppServices must still own holder reference.");
-        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider);", "AppServices must still wire holder-aware adapter.");
+        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider, LocalHostSessionIdentityProvider);", "AppServices must still wire holder-aware adapter.");
         RequireNotContains(appServicesText, "new HostRequestContext(", "AppServices must not directly build HostRequestContext.");
         RequireNotContains(appServicesText, "CreateStoppedRuntimeBridgeContext()", "AppServices must not own placeholder request context creation.");
         RequireNotContains(appServicesText, ".Start(", "AppServices must not start runtime.");

@@ -42,7 +42,7 @@ public static class Phase65PPassiveAppServicesGatewayExposureChecks
         RequireContains(appServicesText, "CreateLocalHostProductLookupCompositionHolder(localHostProfile);", "Holder creation must remain guarded.");
         RequireContains(appServicesText, "// Kirch: Wires the holder-aware adapter through AppServices only; runtime start, Program, Shell, UI, and transport remain blocked.", "65S must keep holder-aware adapter wiring comment.");
         RequireContains(appServicesText, "LocalHostProductLookupGateway =", "65P must assign passive gateway property.");
-        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider);", "65S may pass passive holder into adapter shell.");
+        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider, LocalHostSessionIdentityProvider);", "65S may pass passive holder into adapter shell.");
         RequireNotContains(appServicesText, "IAppLocalHostProductLookupGateway localHostProductLookupGateway", "65S removes gateway parameter boundary in favor of local holder-aware wiring.");
         RequireNotContains(appServicesText, "LocalHostProductLookupGateway = localHostProductLookupGateway;", "65S must not keep inert gateway assignment.");
         RequireNotContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter()", "65S AppServices must not use parameterless adapter wiring.");

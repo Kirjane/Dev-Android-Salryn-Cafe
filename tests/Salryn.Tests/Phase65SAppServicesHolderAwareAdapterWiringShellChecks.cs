@@ -51,7 +51,7 @@ public static class Phase65SAppServicesHolderAwareAdapterWiringShellChecks
         RequireContains(appServicesText, "CreateLocalHostProductLookupCompositionHolder(localHostProfile);", "65S must create passive holder through guarded method.");
         RequireContains(appServicesText, "// Kirch: Wires the holder-aware adapter through AppServices only; runtime start, Program, Shell, UI, and transport remain blocked.", "65S holder-aware gateway wiring comment must remain.");
         RequireContains(appServicesText, "LocalHostProductLookupGateway =", "65S must assign gateway property.");
-        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider);", "65S must wire passive holder into adapter shell.");
+        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider, LocalHostSessionIdentityProvider);", "65S must wire passive holder into adapter shell.");
 
         int holderIndex = appServicesText.IndexOf("LocalHostProductLookupCompositionHolder =", StringComparison.Ordinal);
         int gatewayIndex = appServicesText.IndexOf("LocalHostProductLookupGateway =", StringComparison.Ordinal);
