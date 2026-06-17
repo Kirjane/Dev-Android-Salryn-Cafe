@@ -6,6 +6,7 @@ using Salryn.Core.Common;
 using Salryn.Core.Models;
 using Salryn.Core.ReadModels;
 using Salryn.Core.ValueObjects;
+using Salryn.Infrastructure.Data;
 
 string command = args.Length == 0 ? "fake" : args[0].Trim().ToLowerInvariant();
 
@@ -224,10 +225,11 @@ internal static class CheckoutLocalHostDatabaseLookupSmokeChecks
     public static async Task RunAsync()
     {
         string tempRoot = CreateTempRoot();
+        SalrynAppServices? services = null;
 
         try
         {
-            SalrynAppServices services = SalrynAppServices.CreateDevelopment(tempRoot);
+            services = SalrynAppServices.CreateDevelopment(tempRoot);
 
             RequireSuccess(
                 services.DatabaseInitialization.InitializeDatabase(),
@@ -327,6 +329,7 @@ internal static class CheckoutLocalHostDatabaseLookupSmokeChecks
         }
         finally
         {
+            TryReleaseSmokeResources(services);
             TryDeleteTempRoot(tempRoot);
         }
     }
@@ -373,45 +376,91 @@ internal static class CheckoutLocalHostDatabaseLookupSmokeChecks
         return result.Value;
     }
 
+    private static void TryReleaseSmokeResources(SalrynAppServices? services)
+    {
+        Exception? releaseException = null;
+
+        if (services is not null)
+        {
+            try
+            {
+                services.LocalHostSessionIdentityProvider.SetSession(null);
+
+                SalrynLocalHostRuntimeLifecycleResult stopResult =
+                    services.LocalHostRuntimeLifecycleHolder.TryStop();
+
+                if (!stopResult.IsSuccess)
+                {
+                    releaseException = new InvalidOperationException(
+                        $"Local Host runtime did not stop during 66G8 cleanup: {stopResult.Message}");
+                }
+            }
+            catch (Exception ex)
+            {
+                releaseException = ex;
+            }
+        }
+
+        SqliteConnectionFactory.ClearAllPools();
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        if (releaseException is not null)
+        {
+            throw new InvalidOperationException(
+                "66G8 database smoke resource release failed before cleanup.",
+                releaseException);
+        }
+    }
+
     private static void TryDeleteTempRoot(string tempRoot)
+    {
+        DeleteTempRootOrThrow(tempRoot);
+    }
+
+    private static void DeleteTempRootOrThrow(string tempRoot)
     {
         if (string.IsNullOrWhiteSpace(tempRoot) || !Directory.Exists(tempRoot))
         {
             return;
         }
 
-        for (int attempt = 1; attempt <= 5; attempt++)
+        Exception? lastException = null;
+
+        for (int attempt = 1; attempt <= 10; attempt++)
         {
             try
             {
+                SqliteConnectionFactory.ClearAllPools();
                 GC.Collect();
                 GC.WaitForPendingFinalizers();
                 GC.Collect();
 
                 Directory.Delete(tempRoot, recursive: true);
+
+                if (Directory.Exists(tempRoot))
+                {
+                    throw new IOException($"Temporary 66G8 smoke folder still exists after delete attempt: {tempRoot}");
+                }
+
                 return;
-            }
-            catch (IOException) when (attempt < 5)
-            {
-                Thread.Sleep(250);
-            }
-            catch (UnauthorizedAccessException) when (attempt < 5)
-            {
-                Thread.Sleep(250);
             }
             catch (IOException ex)
             {
-                Console.WriteLine($"WARNING: Temporary 66G8 smoke folder was not deleted: {tempRoot}");
-                Console.WriteLine($"Cleanup skipped because Windows still holds the database file: {ex.Message}");
-                return;
+                lastException = ex;
+                Thread.Sleep(250);
             }
             catch (UnauthorizedAccessException ex)
             {
-                Console.WriteLine($"WARNING: Temporary 66G8 smoke folder was not deleted: {tempRoot}");
-                Console.WriteLine($"Cleanup skipped because Windows still holds the database folder: {ex.Message}");
-                return;
+                lastException = ex;
+                Thread.Sleep(250);
             }
         }
+
+        throw new IOException(
+            $"Temporary 66G8 smoke folder was not deleted: {tempRoot}",
+            lastException);
     }
 
     private static void Require(bool condition, string message)

@@ -99,6 +99,8 @@ public static class Program
 
         Phase66G8CheckoutLocalHostDatabaseLookupSmokeVerificationChecks.Run();
 
+        Phase66G8ACheckoutLocalHostDatabaseSmokeCleanupHardeningChecks.Run();
+
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
 }
