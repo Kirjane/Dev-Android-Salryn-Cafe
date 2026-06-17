@@ -1,11 +1,36 @@
+﻿using System.Globalization;
 using Salryn.App.WinForms.Composition;
 using Salryn.App.WinForms.Features.Checkout;
+using Salryn.App.WinForms.Features.Shell;
+using Salryn.Core.Common;
+using Salryn.Core.Models;
+using Salryn.Core.ReadModels;
+using Salryn.Core.ValueObjects;
+
+string command = args.Length == 0 ? "fake" : args[0].Trim().ToLowerInvariant();
 
 Console.WriteLine("===== SALRYN CHECKOUT LOCAL HOST LOOKUP SMOKE =====");
+Console.WriteLine($"Command: {command}");
+Console.WriteLine();
 
-await CheckoutLocalHostLookupSmokeChecks.RunAsync();
+switch (command)
+{
+    case "fake":
+        await CheckoutLocalHostLookupSmokeChecks.RunAsync();
+        Console.WriteLine("SALRYN checkout Local Host lookup smoke passed.");
+        break;
 
-Console.WriteLine("SALRYN checkout Local Host lookup smoke passed.");
+    case "database":
+        await CheckoutLocalHostDatabaseLookupSmokeChecks.RunAsync();
+        Console.WriteLine("SALRYN checkout Local Host database lookup smoke passed.");
+        break;
+
+    default:
+        Console.WriteLine("Unknown command.");
+        Console.WriteLine("Use: fake | database");
+        Environment.ExitCode = 1;
+        return;
+}
 
 internal static class CheckoutLocalHostLookupSmokeChecks
 {
@@ -191,5 +216,227 @@ internal static class CheckoutLocalHostLookupSmokeChecks
 
             return Task.FromResult(_handler(request.Barcode));
         }
+    }
+}
+
+internal static class CheckoutLocalHostDatabaseLookupSmokeChecks
+{
+    public static async Task RunAsync()
+    {
+        string tempRoot = CreateTempRoot();
+
+        try
+        {
+            SalrynAppServices services = SalrynAppServices.CreateDevelopment(tempRoot);
+
+            RequireSuccess(
+                services.DatabaseInitialization.InitializeDatabase(),
+                "Database.InitializeDatabase");
+
+            UnitReadModel unit = RequireSuccess(
+                    await services.CatalogReadRepository.GetUnitsAsync().ConfigureAwait(false),
+                    "Database.GetUnits")
+                .FirstOrDefault(item => string.Equals(item.Abbreviation, "pc", StringComparison.OrdinalIgnoreCase))
+                ?? throw new InvalidOperationException("Default pc unit was not found for database checkout lookup smoke.");
+
+            string suffix = Guid.NewGuid().ToString("N")[..10];
+            string barcode = CreateNumericBarcode();
+            Guid productId = Guid.NewGuid();
+            const long sellingPriceCents = 2199;
+            const long costPriceCents = 1300;
+            const long stockOnHandX1000 = 9000;
+
+            Product product = new()
+            {
+                Id = productId,
+                Sku = "P66G8-DB-" + suffix,
+                Barcode = BarcodeValue(barcode),
+                Name = "Phase66G8 Database Lookup Product " + suffix,
+                Description = "Phase 66G8 checkout Local Host database smoke product.",
+                UnitId = unit.Id,
+                CostPrice = Money.FromCents(costPriceCents),
+                SellingPrice = Money.FromCents(sellingPriceCents),
+                WholesalePrice = null,
+                StockOnHand = QuantityX1000(stockOnHandX1000),
+                ReorderLevel = QuantityX1000(1000),
+                TrackStock = true,
+                AllowDiscount = true,
+                IsActive = true,
+                Notes = "Created inside temporary 66G8 smoke database.",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = null
+            };
+
+            RequireSuccess(
+                await services.ProductWriteRepository.AddAsync(product).ConfigureAwait(false),
+                "Database.AddProduct");
+
+            services.LocalHostSessionIdentityProvider.SetSession(new CurrentAppSession(
+                userId: Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-000000000001"),
+                roleId: Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-000000000002"),
+                username: "phase66g8-smoke",
+                displayName: "Phase 66G8 Smoke",
+                roleName: "SmokeRole",
+                status: UserStatus.Active,
+                permissions: Array.Empty<string>(),
+                startedAt: DateTimeOffset.UtcNow));
+
+            CheckoutPresenter presenter = new CheckoutPresenter(services.CheckoutProductSearch);
+
+            CheckoutPresenterOperationResult searchResult =
+                await presenter.SearchProductAsync($"  {barcode}  ").ConfigureAwait(false);
+
+            Require(searchResult.IsSuccess, "Database-backed Local Host checkout lookup should succeed.");
+            Require(searchResult.State.ProductInputText == barcode, "Database-backed lookup should trim barcode input.");
+            Require(searchResult.State.PreparedProduct is not null, "Database-backed lookup should prepare a product.");
+            Require(searchResult.State.CanAddPreparedProductLine, "Database-backed lookup should allow adding the prepared product.");
+
+            CheckoutPreparedProductViewModel prepared = searchResult.State.PreparedProduct!;
+
+            Require(prepared.ProductId == productId, "Prepared product id must come from the temporary database.");
+            Require(prepared.ProductName == product.Name, "Prepared product name must come from the temporary database.");
+            Require(prepared.Sku == product.Sku, "Prepared product SKU must come from the temporary database.");
+            Require(prepared.Barcode == barcode, "Prepared product barcode must come from the temporary database.");
+            Require(prepared.UnitName == unit.Name, "Prepared product unit name must come from the seeded unit.");
+            Require(prepared.UnitPriceCents == sellingPriceCents, "Prepared product price must come from the temporary database.");
+            Require(prepared.CostPriceCents == costPriceCents, "Prepared product cost must come from the temporary database.");
+            Require(prepared.StockOnHandX1000 == stockOnHandX1000, "Prepared product stock must come from the temporary database.");
+            Require(prepared.TrackStock, "Prepared product track-stock flag must come from the temporary database.");
+            Require(prepared.IsActive, "Prepared product active flag must come from the temporary database.");
+
+            CheckoutPresenterOperationResult addResult = presenter.AddPreparedProductLine();
+
+            Require(addResult.IsSuccess, "Database-backed prepared product should be added to the checkout draft.");
+            Require(addResult.State.Lines.Count == 1, "Database-backed checkout draft must have one line.");
+            Require(addResult.State.Totals.SubtotalCents == sellingPriceCents, "Database-backed checkout subtotal must match product price.");
+            Require(addResult.State.Totals.TotalCents == sellingPriceCents, "Database-backed checkout total must match product price.");
+
+            CheckoutLineViewModel line = addResult.State.Lines[0];
+
+            Require(line.ProductId == productId, "Database-backed checkout line product id must match product.");
+            Require(line.Barcode == barcode, "Database-backed checkout line barcode must match product.");
+            Require(line.QuantityX1000 == 1000, "Database-backed checkout line must default to one unit.");
+            Require(line.UnitPriceCents == sellingPriceCents, "Database-backed checkout line unit price must match product.");
+
+            CheckoutPresenterOperationResult notFoundResult =
+                await presenter.SearchProductAsync("999999999999").ConfigureAwait(false);
+
+            Require(notFoundResult.IsSuccess, "Database-backed not-found lookup should return successful empty search result.");
+            Require(notFoundResult.State.PreparedProduct is null, "Database-backed not-found lookup must not prepare product.");
+            Require(!notFoundResult.State.CanAddPreparedProductLine, "Database-backed not-found lookup must not allow add line.");
+        }
+        finally
+        {
+            TryDeleteTempRoot(tempRoot);
+        }
+    }
+
+    private static string CreateTempRoot()
+    {
+        string tempRoot = Path.Combine(
+            Path.GetTempPath(),
+            "salryn-66g8-checkout-localhost-db-" + Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(tempRoot);
+
+        return tempRoot;
+    }
+
+    private static string CreateNumericBarcode()
+    {
+        string millis = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
+
+        return "66" + millis[^10..];
+    }
+
+    private static Barcode BarcodeValue(string value)
+    {
+        Result<Barcode> result = Barcode.Create(value);
+
+        if (result.IsFailure)
+        {
+            throw new InvalidOperationException($"Barcode helper failed: {result.Error}");
+        }
+
+        return result.Value;
+    }
+
+    private static Quantity QuantityX1000(long valueX1000)
+    {
+        Result<Quantity> result = Quantity.FromX1000(valueX1000);
+
+        if (result.IsFailure)
+        {
+            throw new InvalidOperationException($"Quantity helper failed: {result.Error}");
+        }
+
+        return result.Value;
+    }
+
+    private static void TryDeleteTempRoot(string tempRoot)
+    {
+        if (string.IsNullOrWhiteSpace(tempRoot) || !Directory.Exists(tempRoot))
+        {
+            return;
+        }
+
+        for (int attempt = 1; attempt <= 5; attempt++)
+        {
+            try
+            {
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                GC.Collect();
+
+                Directory.Delete(tempRoot, recursive: true);
+                return;
+            }
+            catch (IOException) when (attempt < 5)
+            {
+                Thread.Sleep(250);
+            }
+            catch (UnauthorizedAccessException) when (attempt < 5)
+            {
+                Thread.Sleep(250);
+            }
+            catch (IOException ex)
+            {
+                Console.WriteLine($"WARNING: Temporary 66G8 smoke folder was not deleted: {tempRoot}");
+                Console.WriteLine($"Cleanup skipped because Windows still holds the database file: {ex.Message}");
+                return;
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Console.WriteLine($"WARNING: Temporary 66G8 smoke folder was not deleted: {tempRoot}");
+                Console.WriteLine($"Cleanup skipped because Windows still holds the database folder: {ex.Message}");
+                return;
+            }
+        }
+    }
+
+    private static void Require(bool condition, string message)
+    {
+        if (!condition)
+        {
+            throw new InvalidOperationException(message);
+        }
+    }
+
+    private static void RequireSuccess(Result result, string area)
+    {
+        if (result.IsFailure)
+        {
+            throw new InvalidOperationException($"{area} failed: {result.Error}");
+        }
+    }
+
+    private static T RequireSuccess<T>(Result<T> result, string area)
+    {
+        if (result.IsFailure)
+        {
+            throw new InvalidOperationException($"{area} failed: {result.Error}");
+        }
+
+        return result.Value;
     }
 }

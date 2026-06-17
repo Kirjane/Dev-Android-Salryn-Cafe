@@ -1,4 +1,4 @@
-using Salryn.Tests;
+﻿using Salryn.Tests;
 
 namespace Salryn.Tools.CoreSmoke;
 
@@ -96,6 +96,8 @@ public static class Program
         Phase66G6CheckoutLocalHostProductSearchWiringChecks.Run();
 
         Phase66G7CheckoutLocalHostLookupSmokeVerificationChecks.Run();
+
+        Phase66G8CheckoutLocalHostDatabaseLookupSmokeVerificationChecks.Run();
 
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
