@@ -216,7 +216,8 @@ public static class Phase65LAppLocalHostHolderConsumptionAdapterContractShellChe
 
             if (normalized.Contains("/bin/", StringComparison.OrdinalIgnoreCase)
                 || normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase)
-                || normalized.Contains("/Composition/", StringComparison.OrdinalIgnoreCase))
+                || normalized.Contains("/Composition/", StringComparison.OrdinalIgnoreCase)
+                || normalized.EndsWith("/Features/Checkout/CheckoutLocalHostProductSearchBoundary.cs", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }

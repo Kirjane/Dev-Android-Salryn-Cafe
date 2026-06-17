@@ -91,6 +91,8 @@ public static class Program
 
         Phase66G4LocalHostProductLookupCheckoutReadyPayloadChecks.Run();
 
+        Phase66G5CheckoutLocalHostProductSearchBoundaryChecks.Run();
+
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
 }

@@ -235,7 +235,8 @@ public static class Phase65PPassiveAppServicesGatewayExposureChecks
             if (normalized.Contains("/bin/", StringComparison.OrdinalIgnoreCase)
                 || normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase)
                 || normalized.EndsWith("/Composition/CompositionLocalHostProductLookupGatewayAdapter.cs", StringComparison.OrdinalIgnoreCase)
-                || normalized.Contains("/Composition/", StringComparison.OrdinalIgnoreCase))
+                || normalized.Contains("/Composition/", StringComparison.OrdinalIgnoreCase)
+                || normalized.EndsWith("/Features/Checkout/CheckoutLocalHostProductSearchBoundary.cs", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
