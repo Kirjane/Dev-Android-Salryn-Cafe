@@ -52,6 +52,15 @@ public sealed class SalrynAppServices
         // Kirch: Wires passive Local Host ownership shells only; activation and request consumption remain blocked.
         LocalHostRuntimeLifecycleHolder =
             new SalrynLocalHostRuntimeLifecycleHolder(LocalHostProductLookupCompositionHolder);
+
+        LocalHostRuntimeStartupResult =
+            LocalHostRuntimeLifecycleHolder.TryStart(DateTimeOffset.UtcNow);
+
+        if (!LocalHostRuntimeStartupResult.IsSuccess)
+        {
+            throw new InvalidOperationException(
+                $"Local Host runtime failed to start during app service composition: {LocalHostRuntimeStartupResult.Message}");
+        }
         LocalHostRequestContextProvider =
             new SalrynLocalHostRequestContextProvider(localHostProfile);
         LocalHostSessionIdentityProvider =
@@ -93,6 +102,8 @@ public sealed class SalrynAppServices
 
     // Kirch: Passive Local Host ownership shells exposed for future controlled activation/context phases.
     public SalrynLocalHostRuntimeLifecycleHolder LocalHostRuntimeLifecycleHolder { get; }
+
+    public SalrynLocalHostRuntimeLifecycleResult LocalHostRuntimeStartupResult { get; }
 
     public SalrynLocalHostRequestContextProvider LocalHostRequestContextProvider { get; }
 
