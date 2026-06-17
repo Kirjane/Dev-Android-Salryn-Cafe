@@ -65,7 +65,7 @@ public static class Phase65XPassiveLocalHostProvidersAppServicesWiringChecks
         RequireContains(appServicesText, "new SalrynLocalHostRuntimeLifecycleHolder(LocalHostProductLookupCompositionHolder);", "Lifecycle holder must be wired from passive holder.");
         RequireContains(appServicesText, "LocalHostRequestContextProvider =", "AppServices must assign request context provider.");
         RequireContains(appServicesText, "new SalrynLocalHostRequestContextProvider(localHostProfile);", "Request context provider must be wired from deployment profile.");
-        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder);", "Adapter wiring must remain holder-based.");
+        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider);", "Adapter wiring must remain holder-based.");
         RequireNotContains(appServicesText, "new HostRequestContext(", "AppServices must not directly create HostRequestContext.");
         RequireNotContains(appServicesText, ".Start(", "AppServices must not start runtime.");
         RequireNotContains(appServicesText, ".Stop(", "AppServices must not stop runtime.");
@@ -86,8 +86,8 @@ public static class Phase65XPassiveLocalHostProvidersAppServicesWiringChecks
             throw new InvalidOperationException("AppServices provider wiring order is invalid.");
         }
 
-        RequireNotContains(adapterText, "SalrynLocalHostRequestContextProvider", "65X must not make adapter consume provider yet.");
-        RequireContains(adapterText, "CreateStoppedRuntimeBridgeContext()", "65X keeps adapter placeholder context isolated until a later consumption phase.");
+        RequireContains(adapterText, "SalrynLocalHostRequestContextProvider", "Adapter must consume request context provider after 66B.");
+        RequireNotContains(adapterText, "CreateStoppedRuntimeBridgeContext()", "Adapter placeholder context must be removed after provider consumption.");
         RequireNotContains(adapterText, ".Start(", "Adapter must not start runtime.");
         RequireNotContains(adapterText, ".Stop(", "Adapter must not stop runtime.");
 

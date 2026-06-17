@@ -43,13 +43,13 @@ public static class Phase65ULocalHostRuntimeLifecycleAndRequestContextOwnershipP
         RequireNotContains(holderText, ".Stop(", "Passive holder must not stop runtime.");
 
         RequireContains(appServicesText, "LocalHostProductLookupCompositionHolder =", "AppServices must still own holder reference.");
-        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder);", "AppServices must still wire holder-aware adapter.");
+        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider);", "AppServices must still wire holder-aware adapter.");
         RequireNotContains(appServicesText, "new HostRequestContext(", "AppServices must not directly build HostRequestContext.");
         RequireNotContains(appServicesText, "CreateStoppedRuntimeBridgeContext()", "AppServices must not own placeholder request context creation.");
         RequireNotContains(appServicesText, ".Start(", "AppServices must not start runtime.");
         RequireNotContains(appServicesText, ".Stop(", "AppServices must not stop runtime.");
 
-        RequireContains(adapterText, "CreateStoppedRuntimeBridgeContext()", "65T placeholder context must remain isolated inside adapter until provider consumption is explicitly approved.");
+        RequireNotContains(adapterText, "CreateStoppedRuntimeBridgeContext()", "Adapter placeholder context must be removed after provider consumption.");
         RequireContains(adapterText, "holder.Composition.Runtime.DispatchAsync<LocalHostProductLookupRequest, LocalHostProductLookupResponse>", "65T dispatch bridge must remain.");
         RequireNotContains(adapterText, ".Start(", "Adapter must not start runtime.");
         RequireNotContains(adapterText, ".Stop(", "Adapter must not stop runtime.");

@@ -28,7 +28,7 @@ public static class Phase65TAppLocalHostProductLookupDispatchBridgeChecks
         RequireContains(adapterText, "HostOperationKind.Query", "65T ProductLookup must remain a query.");
         RequireContains(adapterText, "HostOperationNames.ProductLookup", "65T must dispatch only ProductLookup.");
         RequireContains(adapterText, "new LocalHostProductLookupRequest(barcode)", "65T must pass normalized barcode into Host.Local request.");
-        RequireContains(adapterText, "CreateStoppedRuntimeBridgeContext()", "65T must isolate placeholder context.");
+        RequireNotContains(adapterText, "CreateStoppedRuntimeBridgeContext()", "Adapter placeholder context must be removed after provider consumption.");
         RequireContains(adapterText, "holder.Composition.Runtime.DispatchAsync<LocalHostProductLookupRequest, LocalHostProductLookupResponse>", "65T must dispatch through held in-process runtime.");
         RequireContains(adapterText, "AppLocalHostProductLookupResult.FoundProduct(", "65T must map success.");
         RequireContains(adapterText, "AppLocalHostProductLookupResult.NotFound(barcode)", "65T must map not found.");
@@ -49,7 +49,7 @@ public static class Phase65TAppLocalHostProductLookupDispatchBridgeChecks
         RequireNotContains(holderText, "DispatchAsync", "Holder must not dispatch.");
         RequireNotContains(holderText, ".Start(", "Holder must not start runtime.");
 
-        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder);", "AppServices must still wire holder-aware adapter.");
+        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider);", "AppServices must still wire holder-aware adapter.");
         RequireContains(appServicesText, "// Kirch: Wires the holder-aware adapter through AppServices only; runtime start, Program, Shell, UI, and transport remain blocked.", "AppServices must keep 65T boundary comment.");
         RequireNotContains(appServicesText, "DispatchAsync", "AppServices must not dispatch.");
         RequireNotContains(appServicesText, ".Start(", "AppServices must not start runtime.");

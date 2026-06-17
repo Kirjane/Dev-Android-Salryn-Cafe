@@ -7,22 +7,35 @@ using Salryn.Host.Local.Contracts;
 
 namespace Salryn.App.WinForms.Composition;
 
-// Kirch: Production adapter-to-holder dispatch bridge; it may dispatch through the stopped in-process runtime but must not start runtime or add transport.
+// Kirch: Production adapter-to-holder dispatch bridge; it consumes the passive request context provider but still must not start runtime or add transport.
 public sealed class CompositionLocalHostProductLookupGatewayAdapter : IAppLocalHostProductLookupGateway
 {
     private readonly SalrynLocalHostCompositionHolder? localHostCompositionHolder;
+    private readonly SalrynLocalHostRequestContextProvider? requestContextProvider;
 
     public CompositionLocalHostProductLookupGatewayAdapter()
     {
     }
 
-    // Kirch: Holder-aware constructor boundary shell only; storing the holder is not lookup consumption, dispatch, runtime start, or transport.
+    // Kirch: Holder-aware compatibility constructor; provider consumption remains unavailable unless the provider-aware constructor is used.
     public CompositionLocalHostProductLookupGatewayAdapter(
         SalrynLocalHostCompositionHolder localHostCompositionHolder)
     {
         ArgumentNullException.ThrowIfNull(localHostCompositionHolder);
 
         this.localHostCompositionHolder = localHostCompositionHolder;
+    }
+
+    // Kirch: Provider-aware constructor used by AppServices only; it still does not start runtime or touch transport.
+    public CompositionLocalHostProductLookupGatewayAdapter(
+        SalrynLocalHostCompositionHolder localHostCompositionHolder,
+        SalrynLocalHostRequestContextProvider requestContextProvider)
+    {
+        ArgumentNullException.ThrowIfNull(localHostCompositionHolder);
+        ArgumentNullException.ThrowIfNull(requestContextProvider);
+
+        this.localHostCompositionHolder = localHostCompositionHolder;
+        this.requestContextProvider = requestContextProvider;
     }
 
     public Task<AppLocalHostProductLookupResult> TryLookupByBarcodeAsync(
@@ -51,22 +64,45 @@ public sealed class CompositionLocalHostProductLookupGatewayAdapter : IAppLocalH
                     "Local Host ProductLookup adapter shell is present but not wired to the passive holder yet; not wired to holder dispatch yet."));
         }
 
+        SalrynLocalHostRequestContextProvider? provider = requestContextProvider;
+
+        if (provider is null)
+        {
+            return Task.FromResult(
+                AppLocalHostProductLookupResult.LocalHostUnavailable(
+                    "Local Host ProductLookup adapter is wired to the holder but not to the passive request context provider yet."));
+        }
+
         return TryDispatchThroughHolderAsync(
             holder,
+            provider,
             barcode,
             cancellationToken);
     }
 
     private static async Task<AppLocalHostProductLookupResult> TryDispatchThroughHolderAsync(
         SalrynLocalHostCompositionHolder holder,
+        SalrynLocalHostRequestContextProvider provider,
         string barcode,
         CancellationToken cancellationToken)
     {
+        if (!provider.TryCreateAuthenticatedContext(
+                userId: null,
+                roleId: null,
+                cashierSessionId: null,
+                requestedAt: DateTimeOffset.UtcNow,
+                out HostRequestContext? context) ||
+            context is null)
+        {
+            return AppLocalHostProductLookupResult.LocalHostUnavailable(
+                "Local Host ProductLookup request context is not available from the passive provider yet.");
+        }
+
         HostRequestEnvelope<LocalHostProductLookupRequest> hostRequest = new(
             RequestId: Guid.NewGuid(),
             OperationKind: HostOperationKind.Query,
             OperationName: HostOperationNames.ProductLookup,
-            Context: CreateStoppedRuntimeBridgeContext(),
+            Context: context,
             Payload: new LocalHostProductLookupRequest(barcode));
 
         HostResponseEnvelope<LocalHostProductLookupResponse> response =
@@ -89,19 +125,5 @@ public sealed class CompositionLocalHostProductLookupGatewayAdapter : IAppLocalH
 
         return AppLocalHostProductLookupResult.LocalHostUnavailable(
             response.Error?.Message ?? "Local Host ProductLookup dispatch did not return a product.");
-    }
-
-    private static HostRequestContext CreateStoppedRuntimeBridgeContext()
-    {
-        // Kirch: 65T intentionally carries placeholder identity because runtime remains stopped; a later runtime-start phase must replace this with real terminal/user context.
-        return new HostRequestContext(
-            TenantId: Guid.Empty,
-            StoreId: Guid.Empty,
-            UserId: null,
-            RoleId: null,
-            CashierSessionId: null,
-            TerminalId: null,
-            DeviceKey: null,
-            RequestedAt: DateTimeOffset.UtcNow);
     }
 }

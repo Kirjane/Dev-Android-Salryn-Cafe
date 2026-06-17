@@ -44,7 +44,7 @@ public static class Phase65QHolderAwareGatewayWiringPlanningChecks
         RequireContains(appServicesText, "public SalrynLocalHostCompositionHolder LocalHostProductLookupCompositionHolder { get; }", "AppServices must still expose passive holder.");
         RequireContains(appServicesText, "public IAppLocalHostProductLookupGateway LocalHostProductLookupGateway { get; }", "AppServices must still expose passive gateway.");
         RequireContains(appServicesText, "CreateLocalHostProductLookupCompositionHolder(localHostProfile);", "AppServices must still create passive holder.");
-        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder);", "65S may wire passive holder into adapter shell.");
+        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider);", "65S may wire passive holder into adapter shell.");
         RequireNotContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter()", "65S AppServices must not use parameterless adapter wiring.");
         RequireNotContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(CreateLocalHostProductLookupCompositionHolder", "65S must not inline holder creation into adapter wiring.");
         RequireNotContains(appServicesText, "LocalHostProductLookupGateway.TryLookupByBarcodeAsync", "65Q planning must not consume gateway.");

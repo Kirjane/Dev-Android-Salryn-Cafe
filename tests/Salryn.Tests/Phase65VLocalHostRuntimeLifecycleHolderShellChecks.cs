@@ -35,7 +35,7 @@ public static class Phase65VLocalHostRuntimeLifecycleHolderShellChecks
         RequireNotContains(passiveHolderText, ".Start(", "Passive holder must not activate runtime.");
         RequireNotContains(passiveHolderText, ".Stop(", "Passive holder must not stop runtime.");
 
-        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder);", "Existing adapter wiring must remain.");
+        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider);", "Existing adapter wiring must remain.");
         RequireNotContains(appServicesText, ".Start(", "AppServices must not activate runtime.");
         RequireNotContains(appServicesText, ".Stop(", "AppServices must not stop runtime.");
 

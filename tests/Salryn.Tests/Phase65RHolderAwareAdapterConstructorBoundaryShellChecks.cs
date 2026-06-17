@@ -50,7 +50,7 @@ public static class Phase65RHolderAwareAdapterConstructorBoundaryShellChecks
         RequireNotContains(adapterText, "Microsoft.Data.Sqlite", "65R must not reference SQLite.");
         RequireNotContains(adapterText, "Sqlite", "65R must not mention SQLite.");
 
-        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder);", "65S may wire holder into adapter through AppServices boundary without dispatch.");
+        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider);", "65S may wire holder into adapter through AppServices boundary without dispatch.");
         RequireContains(appServicesText, "public SalrynLocalHostCompositionHolder LocalHostProductLookupCompositionHolder { get; }", "AppServices must still expose passive holder.");
         RequireContains(appServicesText, "public IAppLocalHostProductLookupGateway LocalHostProductLookupGateway { get; }", "AppServices must still expose passive gateway.");
         RequireContains(appServicesText, "CreateLocalHostProductLookupCompositionHolder(localHostProfile);", "AppServices must still create passive holder.");

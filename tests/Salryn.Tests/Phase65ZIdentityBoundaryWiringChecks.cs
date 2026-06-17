@@ -47,8 +47,8 @@ public static class Phase65ZIdentityBoundaryWiringChecks
         RequireNotContains(providerText, "CurrentAppSession", "Provider must not directly depend on UI session boundary.");
         RequireNotContains(providerText, "CheckoutSessionContext", "Provider must not directly depend on checkout boundary.");
 
-        RequireNotContains(adapterText, "SalrynLocalHostRequestContextProvider", "65Z must not make adapter consume provider yet.");
-        RequireContains(adapterText, "CreateStoppedRuntimeBridgeContext()", "Adapter placeholder context must remain isolated until explicit consumption phase.");
+        RequireContains(adapterText, "SalrynLocalHostRequestContextProvider", "Adapter must consume request context provider after 66B.");
+        RequireNotContains(adapterText, "CreateStoppedRuntimeBridgeContext()", "Adapter placeholder context must be removed after provider consumption.");
         RequireNotContains(adapterText, ".Start(", "Adapter must not start runtime.");
         RequireNotContains(adapterText, ".Stop(", "Adapter must not stop runtime.");
 

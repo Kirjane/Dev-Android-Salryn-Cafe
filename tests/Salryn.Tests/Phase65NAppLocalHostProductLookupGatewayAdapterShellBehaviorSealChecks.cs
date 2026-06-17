@@ -52,7 +52,7 @@ public static class Phase65NAppLocalHostProductLookupGatewayAdapterShellBehavior
 
         RequireContains(appServicesText, "public SalrynLocalHostCompositionHolder LocalHostProductLookupCompositionHolder { get; }", "Passive holder must remain available.");
         RequireContains(appServicesText, "CreateLocalHostProductLookupCompositionHolder(localHostProfile);", "Holder creation must remain guarded.");
-        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder);", "65S may wire the passive holder-aware adapter through AppServices without dispatch.");
+        RequireContains(appServicesText, "new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider);", "65S may wire the passive holder-aware adapter through AppServices without dispatch.");
         RequireContains(appServicesText, "public IAppLocalHostProductLookupGateway LocalHostProductLookupGateway { get; }", "65P may expose the passive gateway through AppServices.");
 
         string[] programShellForbidden =

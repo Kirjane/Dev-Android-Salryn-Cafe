@@ -56,7 +56,7 @@ public sealed class SalrynAppServices
             new SalrynLocalHostRequestContextProvider(localHostProfile);
         // Kirch: Wires the holder-aware adapter through AppServices only; runtime start, Program, Shell, UI, and transport remain blocked.
         LocalHostProductLookupGateway =
-            new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder);
+            new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider);
     }
 
     public DbPaths DbPaths { get; }
