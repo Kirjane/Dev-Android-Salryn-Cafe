@@ -101,6 +101,8 @@ public static class Program
 
         Phase66G8ACheckoutLocalHostDatabaseSmokeCleanupHardeningChecks.Run();
 
+        J20MvpAppServicesExposureChecks.Run();
+
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
 }

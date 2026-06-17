@@ -1,4 +1,4 @@
-using Salryn.App.WinForms.Features.Checkout;
+﻿using Salryn.App.WinForms.Features.Checkout;
 using Salryn.Core.Deployment;
 using Salryn.Core.Repositories;
 using Salryn.Core.Services;
@@ -24,7 +24,12 @@ public sealed class SalrynAppServices
         IAuthenticationService authentication,
         IProductReadRepository productReadRepository,
         IProductWriteRepository productWriteRepository,
-        ICatalogReadRepository catalogReadRepository,        ICashierSessionService cashierSessions,
+        ICatalogReadRepository catalogReadRepository,
+        ISaleReadRepository saleReadRepository,
+        IInventoryReadRepository inventoryReadRepository,
+        IInventoryWriteRepository inventoryWriteRepository,
+        IStoreSettingsReadRepository storeSettingsReadRepository,
+        ICashierSessionService cashierSessions,
         IPosCheckoutService posCheckout,
         IPosCheckoutApplicationService posCheckoutApplication,
         StoreDeploymentProfile localHostProfile)
@@ -38,7 +43,13 @@ public sealed class SalrynAppServices
         Authentication = authentication;
         ProductReadRepository = productReadRepository;
         ProductWriteRepository = productWriteRepository;
-        CatalogReadRepository = catalogReadRepository;        CashierSessions = cashierSessions;
+        CatalogReadRepository = catalogReadRepository;
+        // Kirch: June 20 MVP screens use these read/write services through AppServices, not direct repository construction.
+        SaleReadRepository = saleReadRepository;
+        InventoryReadRepository = inventoryReadRepository;
+        InventoryWriteRepository = inventoryWriteRepository;
+        StoreSettingsReadRepository = storeSettingsReadRepository;
+        CashierSessions = cashierSessions;
         PosCheckout = posCheckout;
         PosCheckoutApplication = posCheckoutApplication;
         // Kirch: Creates the passive holder before gateway wiring; this still does not start runtime, dispatch, or add transport.
@@ -89,6 +100,18 @@ public sealed class SalrynAppServices
     public IProductWriteRepository ProductWriteRepository { get; }
 
     public ICatalogReadRepository CatalogReadRepository { get; }
+
+    // Kirch: Sales History and receipt preview MVP screens read completed sales through this repository.
+    public ISaleReadRepository SaleReadRepository { get; }
+
+    // Kirch: Inventory and dashboard MVP screens read low-stock data and stock movement history through this repository.
+    public IInventoryReadRepository InventoryReadRepository { get; }
+
+    // Kirch: Minimal stock-in/adjustment MVP flows write inventory movements through this repository.
+    public IInventoryWriteRepository InventoryWriteRepository { get; }
+
+    // Kirch: Store Settings and receipt header MVP screens read store profile fields through this repository.
+    public IStoreSettingsReadRepository StoreSettingsReadRepository { get; }
 
     public ICheckoutProductSearchBoundary CheckoutProductSearch { get; }
 
@@ -212,6 +235,20 @@ public sealed class SalrynAppServices
 
         ICatalogReadRepository catalogReadRepository =
             repositories.CreateCatalogReadRepository();
+
+        // Kirch: June 20 MVP backend exposure for Sales History, Inventory, Dashboard, and Store Settings screens.
+        ISaleReadRepository saleReadRepository =
+            repositories.CreateSaleReadRepository();
+
+        IInventoryReadRepository inventoryReadRepository =
+            repositories.CreateInventoryReadRepository();
+
+        IInventoryWriteRepository inventoryWriteRepository =
+            repositories.CreateInventoryWriteRepository();
+
+        IStoreSettingsReadRepository storeSettingsReadRepository =
+            repositories.CreateStoreSettingsReadRepository();
+
         ICashierSessionService cashierSessions = new CashierSessionService(
             repositories.CreateCashierSessionWriteRepository(),
             repositories.CreateCashierSessionReadRepository());
@@ -234,6 +271,10 @@ public sealed class SalrynAppServices
             productReadRepository,
             productWriteRepository,
             catalogReadRepository,
+            saleReadRepository,
+            inventoryReadRepository,
+            inventoryWriteRepository,
+            storeSettingsReadRepository,
             cashierSessions,
             posCheckout,
             posCheckoutApplication,
