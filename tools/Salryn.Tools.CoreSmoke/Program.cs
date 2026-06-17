@@ -85,6 +85,8 @@ public static class Program
 
         Phase66G0AuthenticatedRoleIdPropagationChecks.Run();
 
+        Phase66G1LocalHostRuntimeLifecycleActivationChecks.Run();
+
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
 }

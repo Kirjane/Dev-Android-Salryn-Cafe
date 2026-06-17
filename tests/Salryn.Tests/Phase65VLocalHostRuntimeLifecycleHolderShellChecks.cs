@@ -19,15 +19,13 @@ public static class Phase65VLocalHostRuntimeLifecycleHolderShellChecks
         RequireContains(lifecycleHolderText, "public sealed class SalrynLocalHostRuntimeLifecycleHolder", "65V must keep lifecycle holder shell.");
         RequireContains(lifecycleHolderText, "private readonly SalrynLocalHostCompositionHolder localHostCompositionHolder;", "65V holder must depend on passive holder.");
         RequireContains(lifecycleHolderText, "localHostCompositionHolder.Composition.Runtime.GetSnapshot();", "65V holder must observe runtime snapshot only.");
+        RequireContains(lifecycleHolderText, "public SalrynLocalHostRuntimeLifecycleResult TryStart(DateTimeOffset startedAt)", "Lifecycle holder must expose controlled runtime start after 66G1.");
+        RequireContains(lifecycleHolderText, "public SalrynLocalHostRuntimeLifecycleResult TryStop()", "Lifecycle holder must expose controlled runtime stop after 66G1.");
         RequireContains(lifecycleHolderText, "public LocalHostRuntimeState State => Snapshot.State;", "65V holder must expose state.");
         RequireContains(lifecycleHolderText, "public bool IsRunning => State == LocalHostRuntimeState.Running;", "65V holder must expose running status.");
         RequireContains(lifecycleHolderText, "public bool IsStopped => State == LocalHostRuntimeState.Stopped;", "65V holder must expose stopped status.");
         RequireContains(lifecycleHolderText, "public bool IsFaulted => State == LocalHostRuntimeState.Faulted;", "65V holder must expose faulted status.");
 
-        RequireNotContains(lifecycleHolderText, ".Start(", "65V holder shell must not activate runtime.");
-        RequireNotContains(lifecycleHolderText, "Runtime.Start", "65V holder shell must not activate runtime.");
-        RequireNotContains(lifecycleHolderText, ".Stop(", "65V holder shell must not stop runtime.");
-        RequireNotContains(lifecycleHolderText, "Runtime.Stop", "65V holder shell must not stop runtime.");
         RequireNotContains(lifecycleHolderText, "DispatchAsync", "65V holder shell must not dispatch.");
         RequireNotContains(lifecycleHolderText, "HostRequestContext", "65V holder shell must not build request context.");
 

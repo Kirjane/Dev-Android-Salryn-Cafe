@@ -94,8 +94,8 @@ public static class Phase66DSessionIdentityProviderAdapterWiringChecks
         RequireNotContains(providerText, "CurrentAppSession", "Request context provider must not directly depend on shell session.");
 
         RequireContains(lifecycleText, "GetSnapshot()", "Lifecycle holder must remain passive.");
-        RequireNotContains(lifecycleText, ".Start(", "Lifecycle holder must not start runtime.");
-        RequireNotContains(lifecycleText, ".Stop(", "Lifecycle holder must not stop runtime.");
+        RequireContains(lifecycleText, "public SalrynLocalHostRuntimeLifecycleResult TryStart(DateTimeOffset startedAt)", "Lifecycle holder must expose controlled runtime start after 66G1.");
+        RequireContains(lifecycleText, "public SalrynLocalHostRuntimeLifecycleResult TryStop()", "Lifecycle holder must expose controlled runtime stop after 66G1.");
         RequireNotContains(lifecycleText, "DispatchAsync", "Lifecycle holder must not dispatch.");
 
         RequireContains(handoffText, "Status: Session identity provider wiring only.", "66D handoff must mark session identity provider wiring only.");

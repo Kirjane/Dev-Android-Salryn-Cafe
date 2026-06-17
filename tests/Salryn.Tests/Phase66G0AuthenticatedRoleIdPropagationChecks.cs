@@ -14,6 +14,9 @@ public static class Phase66G0AuthenticatedRoleIdPropagationChecks
         string sessionProviderText = ReadRequiredFile(repoRoot, "src", "Salryn.App.WinForms", "Composition", "SalrynLocalHostSessionIdentityProvider.cs");
         string adapterText = ReadRequiredFile(repoRoot, "src", "Salryn.App.WinForms", "Composition", "CompositionLocalHostProductLookupGatewayAdapter.cs");
         string lifecycleText = ReadRequiredFile(repoRoot, "src", "Salryn.App.WinForms", "Composition", "SalrynLocalHostRuntimeLifecycleHolder.cs");
+
+        RequireContains(lifecycleText, "public SalrynLocalHostRuntimeLifecycleResult TryStart(DateTimeOffset startedAt)", "Lifecycle holder must expose controlled runtime start after 66G1.");
+        RequireContains(lifecycleText, "public SalrynLocalHostRuntimeLifecycleResult TryStop()", "Lifecycle holder must expose controlled runtime stop after 66G1.");
         string programText = ReadRequiredFile(repoRoot, "src", "Salryn.App.WinForms", "Program.cs");
         string handoffText = ReadRequiredFile(repoRoot, "00-HANDOFF", "PHASE_66G0_AUTHENTICATED_ROLE_ID_PROPAGATION.md");
         string coreSmokeText = ReadRequiredFile(repoRoot, "tools", "Salryn.Tools.CoreSmoke", "Program.cs");
@@ -41,7 +44,6 @@ public static class Phase66G0AuthenticatedRoleIdPropagationChecks
         RequireNotContains(authServiceText, ".Start(", "Auth service must not start runtime.");
         RequireNotContains(sqliteAuthText, ".Start(", "Sqlite auth repository must not start runtime.");
         RequireNotContains(authStartupText, ".Start(", "Auth startup form must not start runtime.");
-        RequireNotContains(lifecycleText, ".Start(", "Lifecycle holder must remain passive in 66G0.");
         RequireNotContains(programText, "Runtime.Start", "Program must not start runtime in 66G0.");
         RequireNotContains(programText, ".Start(", "Program must not start runtime in 66G0.");
         RequireNotContains(adapterText, ".Start(", "Adapter must not start runtime in 66G0.");

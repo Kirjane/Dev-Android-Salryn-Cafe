@@ -345,6 +345,12 @@ public static class Phase65DAppLocalHostCompositionReadinessSealChecks
 
         foreach (string file in Directory.EnumerateFiles(appRoot, "*.cs", SearchOption.AllDirectories))
         {
+            string normalizedLifecycleScanPath = file.Replace('\\', '/');
+
+            if (normalizedLifecycleScanPath.EndsWith("/Composition/SalrynLocalHostRuntimeLifecycleHolder.cs", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
             if (file.Contains("\\bin\\", StringComparison.OrdinalIgnoreCase)
                 || file.Contains("\\obj\\", StringComparison.OrdinalIgnoreCase)
                 || file.StartsWith(compositionRoot, StringComparison.OrdinalIgnoreCase))
@@ -388,6 +394,12 @@ public static class Phase65DAppLocalHostCompositionReadinessSealChecks
 
         foreach (string file in Directory.EnumerateFiles(appRoot, "*.cs", SearchOption.AllDirectories))
         {
+            string normalizedLifecycleScanPath = file.Replace('\\', '/');
+
+            if (normalizedLifecycleScanPath.EndsWith("/Composition/SalrynLocalHostRuntimeLifecycleHolder.cs", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
             if (file.Contains("\\bin\\", StringComparison.OrdinalIgnoreCase)
                 || file.Contains("\\obj\\", StringComparison.OrdinalIgnoreCase)
                 || file.StartsWith(compositionRoot, StringComparison.OrdinalIgnoreCase))

@@ -62,8 +62,8 @@ public static class Phase66BAdapterRequestContextProviderConsumptionChecks
         RequireNotContains(appServicesText, "DispatchAsync", "AppServices must not dispatch.");
 
         RequireContains(lifecycleText, "GetSnapshot()", "Lifecycle holder must remain passive.");
-        RequireNotContains(lifecycleText, ".Start(", "Lifecycle holder must not start runtime.");
-        RequireNotContains(lifecycleText, ".Stop(", "Lifecycle holder must not stop runtime.");
+        RequireContains(lifecycleText, "public SalrynLocalHostRuntimeLifecycleResult TryStart(DateTimeOffset startedAt)", "Lifecycle holder must expose controlled runtime start after 66G1.");
+        RequireContains(lifecycleText, "public SalrynLocalHostRuntimeLifecycleResult TryStop()", "Lifecycle holder must expose controlled runtime stop after 66G1.");
         RequireNotContains(lifecycleText, "DispatchAsync", "Lifecycle holder must not dispatch.");
 
         foreach (string marker in new[]

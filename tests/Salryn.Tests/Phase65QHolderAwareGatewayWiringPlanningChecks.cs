@@ -174,6 +174,12 @@ public static class Phase65QHolderAwareGatewayWiringPlanningChecks
 
         foreach (string file in Directory.EnumerateFiles(appRoot, "*.cs", SearchOption.AllDirectories))
         {
+            string normalizedLifecycleScanPath = file.Replace('\\', '/');
+
+            if (normalizedLifecycleScanPath.EndsWith("/Composition/SalrynLocalHostRuntimeLifecycleHolder.cs", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
             string normalized = file.Replace('\\', '/');
 
             if (normalized.Contains("/bin/", StringComparison.OrdinalIgnoreCase)

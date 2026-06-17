@@ -55,8 +55,8 @@ public static class Phase65XPassiveLocalHostProvidersAppServicesWiringChecks
         }
 
         RequireContains(lifecycleHolderText, "localHostCompositionHolder.Composition.Runtime.GetSnapshot();", "Lifecycle holder must remain snapshot-only.");
-        RequireNotContains(lifecycleHolderText, ".Start(", "Lifecycle holder must not start runtime.");
-        RequireNotContains(lifecycleHolderText, ".Stop(", "Lifecycle holder must not stop runtime.");
+        RequireContains(lifecycleHolderText, "public SalrynLocalHostRuntimeLifecycleResult TryStart(DateTimeOffset startedAt)", "Lifecycle holder must expose controlled runtime start after 66G1.");
+        RequireContains(lifecycleHolderText, "public SalrynLocalHostRuntimeLifecycleResult TryStop()", "Lifecycle holder must expose controlled runtime stop after 66G1.");
         RequireNotContains(lifecycleHolderText, "DispatchAsync", "Lifecycle holder must not dispatch.");
 
         RequireContains(appServicesText, "public SalrynLocalHostRuntimeLifecycleHolder LocalHostRuntimeLifecycleHolder { get; }", "AppServices must expose passive lifecycle holder.");
