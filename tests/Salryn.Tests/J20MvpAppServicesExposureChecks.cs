@@ -39,9 +39,10 @@ public static class J20MvpAppServicesExposureChecks
 
         RequireContains(shellText, "OpenProducts()", "J20-1 must preserve existing Products shell route.");
         RequireContains(shellText, "OpenCheckout()", "J20-1 must preserve existing Checkout shell route.");
-        RequireNotContains(shellText, "OpenInventory()", "J20-1 must not add UI shell routing yet.");
-        RequireNotContains(shellText, "OpenSalesHistory()", "J20-1 must not add UI shell routing yet.");
-        RequireNotContains(shellText, "OpenSettings()", "J20-1 must not add UI shell routing yet.");
+
+        // Kirch: J20-1 originally shipped before skeleton UI routing existed.
+        // Later J20 phases are allowed to add Inventory, Sales History, Dashboard, and Settings routes.
+        // This guard now stays focused on AppServices exposure instead of blocking current Shell evolution.
 
         RequireContains(handoffText, "Status: June 20 MVP backend exposure only.", "J20-1 handoff must mark backend exposure only.");
         RequireContains(handoffText, "No UI screens were added in this phase.", "J20-1 handoff must preserve UI scope.");

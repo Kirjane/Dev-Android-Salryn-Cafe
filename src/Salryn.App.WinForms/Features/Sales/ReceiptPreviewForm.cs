@@ -1,0 +1,139 @@
+﻿using System.Text;
+using Salryn.App.WinForms.Features.Mvp;
+using Salryn.Core.ReadModels;
+
+namespace Salryn.App.WinForms.Features.Sales;
+
+// Kirch: Receipt preview is intentionally text-based for the June 20 MVP.
+// Printing, official accreditation formatting, and device plugins are later compliance phases.
+public sealed class ReceiptPreviewForm : Form
+{
+    private readonly SaleDetailReadModel _sale;
+    private readonly StoreSettingsReadModel? _storeSettings;
+
+    private readonly TextBox _previewTextBox = new();
+    private readonly Button _closeButton = new();
+    private readonly Button _printPlaceholderButton = new();
+
+    public ReceiptPreviewForm(
+        SaleDetailReadModel sale,
+        StoreSettingsReadModel? storeSettings)
+    {
+        _sale = sale ?? throw new ArgumentNullException(nameof(sale));
+        _storeSettings = storeSettings;
+
+        Text = "Receipt Preview";
+        StartPosition = FormStartPosition.CenterParent;
+        MinimumSize = new Size(560, 680);
+        Size = new Size(640, 760);
+        Font = new Font("Consolas", 9F);
+        BackColor = J20MvpUi.Colors.AppBackground;
+
+        BuildLayout();
+        RenderReceipt();
+    }
+
+    private void BuildLayout()
+    {
+        TableLayoutPanel root = J20MvpUi.RootLayout(rowCount: 3);
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 72F));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 46F));
+
+        Controls.Add(root);
+
+        root.Controls.Add(J20MvpUi.Header(
+            "Receipt Preview",
+            "RMO-aware fields are shown where available. Official accreditation is not claimed."), 0, 0);
+
+        _previewTextBox.Dock = DockStyle.Fill;
+        _previewTextBox.Multiline = true;
+        _previewTextBox.ReadOnly = true;
+        _previewTextBox.ScrollBars = ScrollBars.Vertical;
+        _previewTextBox.Font = new Font("Consolas", 9.5F);
+        _previewTextBox.BackColor = Color.White;
+
+        root.Controls.Add(_previewTextBox, 0, 1);
+
+        FlowLayoutPanel footer = new()
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            BackColor = J20MvpUi.Colors.AppBackground
+        };
+
+        J20MvpUi.ConfigurePrimaryButton(_closeButton, "Close");
+        J20MvpUi.ConfigureSecondaryButton(_printPlaceholderButton, "Print Later");
+
+        _closeButton.Click += (_, _) => Close();
+        _printPlaceholderButton.Enabled = false;
+
+        footer.Controls.Add(_closeButton);
+        footer.Controls.Add(_printPlaceholderButton);
+
+        root.Controls.Add(footer, 0, 2);
+    }
+
+    private void RenderReceipt()
+    {
+        _previewTextBox.Text = string.IsNullOrWhiteSpace(_sale.ReceiptSnapshot)
+            ? BuildFallbackReceiptText()
+            : _sale.ReceiptSnapshot;
+    }
+
+    private string BuildFallbackReceiptText()
+    {
+        StringBuilder text = new();
+
+        text.AppendLine(Center(TextOrDefault(_storeSettings?.StoreName, "SALRYN STORE")));
+        text.AppendLine(Center(TextOrDefault(_storeSettings?.BusinessName, "Local POS MVP")));
+        text.AppendLine(Center(TextOrDefault(_storeSettings?.Address, "Address not configured")));
+        text.AppendLine(Center("TIN: " + TextOrDefault(_storeSettings?.Tin, "Not configured")));
+        text.AppendLine(new string('-', 42));
+        text.AppendLine($"Receipt No : {_sale.ReceiptNo}");
+        text.AppendLine($"Date       : {_sale.SaleDate.ToLocalTime():yyyy-MM-dd HH:mm}");
+        text.AppendLine($"Cashier    : {_sale.CashierDisplayName}");
+        text.AppendLine(new string('-', 42));
+
+        foreach (SaleItemDetailReadModel item in _sale.Items)
+        {
+            text.AppendLine(item.ProductNameSnapshot);
+            text.AppendLine($"  {item.Quantity} {item.UnitNameSnapshot} x {item.UnitPrice} = {item.LineTotal}");
+        }
+
+        text.AppendLine(new string('-', 42));
+        text.AppendLine($"Subtotal   : {_sale.Subtotal}");
+        text.AppendLine($"Discount   : {_sale.Discount}");
+        text.AppendLine($"Tax        : {_sale.Tax}");
+        text.AppendLine($"TOTAL      : {_sale.Total}");
+        text.AppendLine($"Paid       : {_sale.AmountPaid}");
+        text.AppendLine($"Change     : {_sale.Change}");
+        text.AppendLine(new string('-', 42));
+        text.AppendLine("BIR/RMO-aware receipt fields in progress.");
+        text.AppendLine("Official accreditation/compliance phase pending.");
+        text.AppendLine(Center("Thank you."));
+
+        return text.ToString();
+    }
+
+    private static string Center(string value)
+    {
+        const int width = 42;
+
+        if (value.Length >= width)
+        {
+            return value;
+        }
+
+        int left = (width - value.Length) / 2;
+
+        return new string(' ', left) + value;
+    }
+
+    private static string TextOrDefault(string? value, string fallback)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? fallback
+            : value.Trim();
+    }
+}

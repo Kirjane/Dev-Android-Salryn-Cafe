@@ -103,6 +103,8 @@ public static class Program
 
         J20MvpAppServicesExposureChecks.Run();
 
+        J20MvpSkeletonUiChecks.Run();
+
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
 }

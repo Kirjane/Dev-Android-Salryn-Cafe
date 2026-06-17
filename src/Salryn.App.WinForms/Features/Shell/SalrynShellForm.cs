@@ -1,6 +1,10 @@
 ﻿using Salryn.App.WinForms.Composition;
 using Salryn.App.WinForms.Features.Checkout;
+using Salryn.App.WinForms.Features.Dashboard;
+using Salryn.App.WinForms.Features.Inventory;
 using Salryn.App.WinForms.Features.Products;
+using Salryn.App.WinForms.Features.Sales;
+using Salryn.App.WinForms.Features.Settings;
 using Salryn.App.WinForms.Features.Shifts;
 
 namespace Salryn.App.WinForms.Features.Shell;
@@ -228,12 +232,67 @@ public sealed class SalrynShellForm : Form
             return;
         }
 
+        if (module.Key == ShellModuleKeys.Inventory)
+        {
+            OpenInventory();
+            return;
+        }
+
+        if (module.Key == ShellModuleKeys.SalesHistory)
+        {
+            OpenSalesHistory();
+            return;
+        }
+
+        if (module.Key == ShellModuleKeys.Reports)
+        {
+            OpenDashboard();
+            return;
+        }
+
+        if (module.Key == ShellModuleKeys.Settings)
+        {
+            OpenSettings();
+            return;
+        }
+
         ShowPlaceholder(
             module.Title,
             module.Description,
             "This module is permission-routed but its full workflow is not implemented in this phase.");
     }
 
+    // Kirch: Opens the June 20 MVP dashboard skeleton through AppServices.
+    private void OpenDashboard()
+    {
+        using DashboardForm dashboardForm = new DashboardForm(_services);
+        dashboardForm.StartPosition = FormStartPosition.CenterParent;
+        dashboardForm.ShowDialog(this);
+    }
+
+    // Kirch: Opens the June 20 MVP inventory skeleton through AppServices.
+    private void OpenInventory()
+    {
+        using InventoryForm inventoryForm = new InventoryForm(_services);
+        inventoryForm.StartPosition = FormStartPosition.CenterParent;
+        inventoryForm.ShowDialog(this);
+    }
+
+    // Kirch: Opens the June 20 MVP sales history skeleton through AppServices.
+    private void OpenSalesHistory()
+    {
+        using SalesHistoryForm salesHistoryForm = new SalesHistoryForm(_services);
+        salesHistoryForm.StartPosition = FormStartPosition.CenterParent;
+        salesHistoryForm.ShowDialog(this);
+    }
+
+    // Kirch: Opens the June 20 MVP store settings skeleton through AppServices.
+    private void OpenSettings()
+    {
+        using StoreSettingsForm settingsForm = new StoreSettingsForm(_services);
+        settingsForm.StartPosition = FormStartPosition.CenterParent;
+        settingsForm.ShowDialog(this);
+    }
     // Kirch: This opens product management with read/write/catalog services from the composition root.
     private void OpenProducts()
     {
@@ -365,7 +424,7 @@ public sealed class SalrynShellForm : Form
         var footerLabel = new Label
         {
             Dock = DockStyle.Fill,
-            Text = "Phase 45: App shell and permission-based mode routing. Backend sale completion, inventory writes, and admin workflows remain untouched.",
+            Text = "J20-2: Minimal MVP skeleton UI is routed. Product and checkout flows remain the primary demo path.",
             ForeColor = Color.FromArgb(107, 114, 128),
             TextAlign = ContentAlignment.BottomLeft
         };

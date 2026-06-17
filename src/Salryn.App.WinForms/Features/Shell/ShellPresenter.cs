@@ -108,8 +108,8 @@ public sealed class ShellPresenter
 
             Module(
                 ShellModuleKeys.Reports,
-                "Reports",
-                "Sales, inventory, low-stock, and business summary reports.",
+                "Dashboard",
+                "June 20 MVP cards for sales, transactions, products, and low stock.",
                 Can(SalrynPermissions.ReportsView),
                 "Requires Reports.View permission."),
 

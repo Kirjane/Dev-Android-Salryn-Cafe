@@ -1,0 +1,120 @@
+﻿namespace Salryn.Tests;
+
+public static class J20MvpSkeletonUiChecks
+{
+    public static void Run()
+    {
+        DirectoryInfo repoRoot = FindRepositoryRoot();
+
+        string shellText = ReadRequiredFile(repoRoot, "src", "Salryn.App.WinForms", "Features", "Shell", "SalrynShellForm.cs");
+        string shellPresenterText = ReadRequiredFile(repoRoot, "src", "Salryn.App.WinForms", "Features", "Shell", "ShellPresenter.cs");
+        string dashboardText = ReadRequiredFile(repoRoot, "src", "Salryn.App.WinForms", "Features", "Dashboard", "DashboardForm.cs");
+        string inventoryText = ReadRequiredFile(repoRoot, "src", "Salryn.App.WinForms", "Features", "Inventory", "InventoryForm.cs");
+        string salesHistoryText = ReadRequiredFile(repoRoot, "src", "Salryn.App.WinForms", "Features", "Sales", "SalesHistoryForm.cs");
+        string receiptText = ReadRequiredFile(repoRoot, "src", "Salryn.App.WinForms", "Features", "Sales", "ReceiptPreviewForm.cs");
+        string settingsText = ReadRequiredFile(repoRoot, "src", "Salryn.App.WinForms", "Features", "Settings", "StoreSettingsForm.cs");
+        string uiKitText = ReadRequiredFile(repoRoot, "src", "Salryn.App.WinForms", "Features", "Mvp", "J20MvpUi.cs");
+        string handoffText = ReadRequiredFile(repoRoot, "00-HANDOFF", "J20_2_MVP_SKELETON_UI.md");
+        string coreSmokeText = ReadRequiredFile(repoRoot, "tools", "Salryn.Tools.CoreSmoke", "Program.cs");
+
+        RequireContains(shellText, "OpenDashboard()", "Shell must route the Dashboard MVP screen.");
+        RequireContains(shellText, "OpenInventory()", "Shell must route the Inventory MVP screen.");
+        RequireContains(shellText, "OpenSalesHistory()", "Shell must route the Sales History MVP screen.");
+        RequireContains(shellText, "OpenSettings()", "Shell must route the Store Settings MVP screen.");
+        RequireContains(shellText, "new DashboardForm(_services)", "Dashboard must receive AppServices.");
+        RequireContains(shellText, "new InventoryForm(_services)", "Inventory must receive AppServices.");
+        RequireContains(shellText, "new SalesHistoryForm(_services)", "Sales History must receive AppServices.");
+        RequireContains(shellText, "new StoreSettingsForm(_services)", "Settings must receive AppServices.");
+
+        RequireContains(shellPresenterText, "\"Dashboard\"", "Reports module should be presented as Dashboard for June 20 MVP.");
+
+        foreach (string text in new[] { dashboardText, inventoryText, salesHistoryText, receiptText, settingsText, uiKitText })
+        {
+            RequireContains(text, "Kirch:", "Every MVP skeleton UI file must carry Kirch guide comments.");
+            RequireNotContains(text, "Microsoft.Data.Sqlite", "MVP UI must not reference SQLite directly.");
+            RequireNotContains(text, "SqliteConnection", "MVP UI must not create SQLite connections.");
+        }
+
+        RequireContains(dashboardText, "SaleReadRepository.SearchSalesAsync", "Dashboard must read sales through AppServices.");
+        RequireContains(dashboardText, "ProductReadRepository.SearchAsync", "Dashboard must read product count through AppServices.");
+        RequireContains(dashboardText, "InventoryReadRepository.GetLowStockProductsAsync", "Dashboard must read low stock through AppServices.");
+
+        RequireContains(inventoryText, "InventoryReadRepository.GetLowStockProductsAsync", "Inventory must read low stock through AppServices.");
+        RequireContains(inventoryText, "InventoryReadRepository.SearchStockMovementsAsync", "Inventory must read stock movements through AppServices.");
+
+        RequireContains(salesHistoryText, "SaleReadRepository.SearchSalesAsync", "Sales History must search sales through AppServices.");
+        RequireContains(salesHistoryText, "SaleReadRepository.FindSaleByIdAsync", "Sales History must load sale details through AppServices.");
+        RequireContains(salesHistoryText, "StoreSettingsReadRepository.GetCurrentAsync", "Receipt preview flow must load store settings through AppServices.");
+
+        RequireContains(receiptText, "BIR/RMO-aware receipt fields in progress.", "Receipt preview must avoid official compliance claims.");
+        RequireContains(settingsText, "StoreSettingsReadRepository.GetCurrentAsync", "Settings must read store settings through AppServices.");
+
+        RequireContains(handoffText, "Status: Minimal presentable MVP skeleton UI.", "J20-2 handoff must mark minimal skeleton UI scope.");
+        RequireContains(handoffText, "No LAN behavior was added.", "J20-2 handoff must preserve LAN boundary.");
+        RequireContains(handoffText, "No official BIR accreditation claim was added.", "J20-2 handoff must preserve compliance boundary.");
+
+        RequireContains(coreSmokeText, "J20MvpSkeletonUiChecks.Run();", "CoreSmoke must run J20-2 skeleton UI checks.");
+    }
+
+    private static DirectoryInfo FindRepositoryRoot()
+    {
+        DirectoryInfo? current = new(AppContext.BaseDirectory);
+
+        while (current is not null)
+        {
+            if (File.Exists(Path.Combine(current.FullName, "Salryn.sln")))
+            {
+                return current;
+            }
+
+            current = current.Parent;
+        }
+
+        current = new DirectoryInfo(Directory.GetCurrentDirectory());
+
+        while (current is not null)
+        {
+            if (File.Exists(Path.Combine(current.FullName, "Salryn.sln")))
+            {
+                return current;
+            }
+
+            current = current.Parent;
+        }
+
+        throw new InvalidOperationException("Could not locate Salryn repository root.");
+    }
+
+    private static string ReadRequiredFile(DirectoryInfo repoRoot, params string[] pathParts)
+    {
+        string path = repoRoot.FullName;
+
+        foreach (string pathPart in pathParts)
+        {
+            path = Path.Combine(path, pathPart);
+        }
+
+        if (!File.Exists(path))
+        {
+            throw new InvalidOperationException($"Required file was not found: {path}");
+        }
+
+        return File.ReadAllText(path);
+    }
+
+    private static void RequireContains(string text, string value, string message)
+    {
+        if (!text.Contains(value, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(message);
+        }
+    }
+
+    private static void RequireNotContains(string text, string value, string message)
+    {
+        if (text.Contains(value, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(message);
+        }
+    }
+}
