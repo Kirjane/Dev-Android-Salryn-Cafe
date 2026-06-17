@@ -424,7 +424,7 @@ public sealed class SalrynShellForm : Form
         var footerLabel = new Label
         {
             Dock = DockStyle.Fill,
-            Text = "J20-2: Minimal MVP skeleton UI is routed. Product and checkout flows remain the primary demo path.",
+            Text = "SALRYN local POS workspace is ready.",
             ForeColor = Color.FromArgb(107, 114, 128),
             TextAlign = ContentAlignment.BottomLeft
         };

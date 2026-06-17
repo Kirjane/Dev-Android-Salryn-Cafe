@@ -48,7 +48,7 @@ public sealed class InventoryForm : Form
 
         root.Controls.Add(J20MvpUi.Header(
             "Inventory",
-            "Low stock and stock movement visibility for the June 20 local MVP."), 0, 0);
+            "Monitor low-stock products and inventory movement history."), 0, 0);
 
         root.Controls.Add(BuildGridCard("Low Stock", _lowStockGrid), 0, 1);
         root.Controls.Add(BuildGridCard("Stock Movements", _movementGrid), 0, 2);
@@ -153,7 +153,7 @@ public sealed class InventoryForm : Form
             return;
         }
 
-        _statusLabel.Text = "Inventory ready. Stock adjustment UI is the next MVP polish pass.";
+        _statusLabel.Text = "Inventory ready.";
         _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
     }
 

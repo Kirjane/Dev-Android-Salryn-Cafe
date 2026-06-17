@@ -49,7 +49,7 @@ public sealed class SalesHistoryForm : Form
 
         root.Controls.Add(J20MvpUi.Header(
             "Sales History",
-            "Receipt lookup and completed sale review for the June 20 local MVP."), 0, 0);
+            "Search receipts and review completed sales."), 0, 0);
 
         TableLayoutPanel toolbar = new()
         {

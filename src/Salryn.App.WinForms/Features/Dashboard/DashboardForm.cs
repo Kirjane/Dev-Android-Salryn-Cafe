@@ -50,7 +50,7 @@ public sealed class DashboardForm : Form
 
         root.Controls.Add(J20MvpUi.Header(
             "Dashboard",
-            "June 20 local MVP overview. Frontend polish may refine this layout without changing service boundaries."), 0, 0);
+            "Sales, product, and inventory overview."), 0, 0);
 
         TableLayoutPanel cards = new()
         {
@@ -74,9 +74,9 @@ public sealed class DashboardForm : Form
 
         Panel noteCard = J20MvpUi.Card();
         Label note = J20MvpUi.BodyText(
-            "Kirch guide: this dashboard reads existing repositories only. " +
-            "Add charts later after the MVP screens are stable. " +
-            "For now, keep the screen fast, readable, and demo-safe.");
+            "Track daily sales, transaction count, product records, and low-stock alerts from one screen." +
+            "" +
+            "");
         note.Dock = DockStyle.Fill;
         noteCard.Controls.Add(note);
 
@@ -176,6 +176,6 @@ public sealed class DashboardForm : Form
 
     private static string MoneyText(long cents)
     {
-        return "â‚±" + (cents / 100m).ToString("N2");
+        return "PHP " + (cents / 100m).ToString("N2");
     }
 }

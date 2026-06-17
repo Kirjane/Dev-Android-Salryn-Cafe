@@ -47,7 +47,7 @@ public sealed class StoreSettingsForm : Form
 
         root.Controls.Add(J20MvpUi.Header(
             "Store Settings",
-            "Receipt header and RMO-aware store profile fields for the local MVP."), 0, 0);
+            "Store profile and receipt header settings."), 0, 0);
 
         Panel card = J20MvpUi.Card();
         TableLayoutPanel form = new()
@@ -84,8 +84,8 @@ public sealed class StoreSettingsForm : Form
         root.Controls.Add(card, 0, 1);
 
         Label note = J20MvpUi.BodyText(
-            "Kirch guide: keep this screen read-only for the June 20 demo unless settings write support is explicitly added. " +
-            "Do not claim BIR accreditation here; show RMO-aware placeholders only.");
+            "Review the store profile used for receipt headers and local system display." +
+            "");
         note.Dock = DockStyle.Fill;
         root.Controls.Add(note, 0, 2);
 
