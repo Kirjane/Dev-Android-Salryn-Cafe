@@ -392,6 +392,27 @@ J21-3A is still schema foundation only:
 
 Future J21-3B must add the allocation service that advances current_number transactionally and gates official allocation through an active machine profile.
 
+## J21-3B Official Receipt/Invoice Sequence Allocation Service
+
+J21-3B adds the OfficialDocumentSequenceAllocationService for RMO-24-2023-C02.
+
+This service advances current_number transactionally and returns deterministic padded sequence values.
+
+Allocation is gated by an active bir_machine_profiles row with compliance_mode ACCREDITED and official_output_enabled true.
+
+J21-3B is still allocation service only:
+
+- no checkout flow wiring
+- no receipt snapshot generation
+- no receipt printing
+- no official receipt/invoice rendering
+- no electronic journal
+- no X-reading/Z-reading
+- no accreditation readiness claim
+- no multi-tenant work
+
+Future J21-3C or J21-4 must decide how allocated sequence values are consumed by receipt snapshots without bypassing machine/profile and journal controls.
+
 ## First-Try Best-Practice Guardrails
 
 1. Do not call any output "Official Receipt" or "Official Invoice" until C01-C05 are implemented and tested.
