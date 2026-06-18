@@ -54,6 +54,12 @@ public static class J21Rmo242023MachineProfileSchemaChecks
         RequireContains(migrationText, "This is the main safety switch.", "BIR machine profile migration comments must explain official output gating.");
         RequireContains(factoryText, "Migration order is compliance-sensitive.", "Database initialization must explain compliance-sensitive migration order.");
 
+        RequireContains(migrationText, "// Kirch strict dev guide:", "BIR machine profile migration must include strict development guide comments.");
+        RequireContains(migrationText, "J21-2 owns the machine/POS registration schema only.", "BIR machine profile migration comments must explain J21-2 ownership.");
+        RequireContains(migrationText, "Do not add receipt numbering, printing, UI, tenant routing, or hardware adapters here.", "BIR machine profile migration comments must block scope creep.");
+        RequireContains(migrationText, "This is the main safety switch.", "BIR machine profile migration comments must explain official output gating.");
+        RequireContains(factoryText, "Migration order is compliance-sensitive.", "Database initialization must explain compliance-sensitive migration order.");
+
         RequireContains(migrationText, "public int Version => 2;", "BIR machine profile migration must be version 2.");
         RequireContains(migrationText, "CREATE TABLE bir_machine_profiles", "BIR machine profile migration must create bir_machine_profiles.");
         RequireContains(migrationText, "registered_taxpayer_name TEXT NOT NULL", "Machine profile must store registered taxpayer name.");
