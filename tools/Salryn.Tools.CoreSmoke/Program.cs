@@ -109,6 +109,8 @@ public static class Program
 
         J20UiWorkflowReadinessChecks.Run();
 
+        J21Rmo242023ComplianceMatrixGuardChecks.Run();
+
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
 }
