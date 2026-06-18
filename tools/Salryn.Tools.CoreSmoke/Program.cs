@@ -107,6 +107,8 @@ public static class Program
 
         J20DevelopmentLaunchModeChecks.Run();
 
+        J20UiWorkflowReadinessChecks.Run();
+
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
 }
