@@ -121,6 +121,7 @@ public static class Program
         J21Rmo242023ElectronicJournalPlanningChecks.Run();
         J21Rmo242023ElectronicJournalSchemaPlanningChecks.Run();
         J21Rmo242023ElectronicJournalSchemaFoundationChecks.Run();
+        J21Rmo242023ElectronicJournalDatabaseRiskAuditChecks.Run();
 
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }

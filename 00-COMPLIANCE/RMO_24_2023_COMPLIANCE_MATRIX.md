@@ -745,6 +745,69 @@ J21-5C is still schema foundation only:
 
 J21-5D must be explicitly confirmed before any journal append service, checkout integration, renderer integration, print integration, snapshot persistence, export, X/Z, UI, or official output work.
 
+## J21-5D Electronic Journal Database Risk Audit
+
+J21-5D audits the J21-5C electronic journal schema foundation before any version 5 hardening migration or journal behavior exists.
+
+This phase is documentation plus source/guard checks only.
+
+C08 risk audit coverage:
+
+- append-only enforcement risk
+- snapshot payload/hash requirement risk
+- boundary protection for sales.receipt_snapshot, audit_logs, and print_jobs
+
+C07 risk audit coverage:
+
+- reversal reason requirement risk
+- linked event integrity risk
+- future UPDATE/DELETE blocking trigger decision
+
+C12 risk audit coverage:
+
+- preservation batch requirement risk
+- export/preservation/backup recovery evidence link risk
+- future preservation metadata enforcement decision
+
+Senior-developer decision:
+
+- do not rewrite the committed J21-5C version 4 migration
+- use a new forward migration for any future schema hardening
+- do not add triggers yet
+- do not add version 5 yet
+- do not add append service yet
+
+Future J21-5E candidate, if approved later:
+
+- new version 5 forward migration only
+- append-only UPDATE/DELETE blocking triggers
+- reason requirement trigger for VOID/REFUND/CANCEL
+- preservation_batch_id requirement trigger for EXPORT/PRESERVATION/BACKUP_RECOVERY
+- no checkout wiring
+- no append service
+- no renderer
+- no printer
+- no official output
+
+J21-5D is audit only:
+
+- no schema changes
+- no DB migration
+- no trigger creation
+- no append service
+- no checkout wiring
+- no receipt_snapshot writes
+- no official document persistence
+- no renderer
+- no printer
+- no sequence changes
+- no tax engine
+- no X/Z reading
+- no UI
+- no official output claim
+
+J21-5E must be explicitly confirmed before any version 5 migration, trigger, append service, checkout integration, renderer integration, print integration, snapshot persistence, export, X/Z, UI, or official output work.
+
 ## First-Try Best-Practice Guardrails
 
 1. Do not call any output "Official Receipt" or "Official Invoice" until C01-C05 are implemented and tested.
