@@ -82,17 +82,17 @@ J21-5A does not upgrade audit_logs into an RMO electronic journal.
 
 J21-5A must not add:
 
-- DB/schema migration
-- new journal tables
-- checkout wiring
-- receipt_snapshot writes
-- official document persistence
-- renderer
-- printer
-- sequence allocation changes
-- tax calculator engine
-- X/Z reading
-- official receipt/invoice output claim
+- No DB/schema migration
+- No new journal tables
+- No checkout wiring
+- No receipt_snapshot writes
+- No official document persistence
+- No renderer
+- No printer
+- No sequence allocation changes
+- No tax calculator engine
+- No X/Z reading
+- No official receipt/invoice output claim
 
 ## Future Boundary Rules
 
