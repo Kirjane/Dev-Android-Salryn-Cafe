@@ -8,6 +8,10 @@
 // The frontend engineer may replace visual details later, but should keep forms thin and AppServices-driven.
 public static class J20MvpUi
 {
+    // Kirch design map: shared visual tokens for skeleton screens.
+    // UI side: new Dashboard/Inventory/Sales/Settings screens reuse these colors and helper factories.
+    // Frontend safe zone: replace these values or migrate to a fuller design system later.
+    // Do not change: this helper should stay UI-only and must not pull services or data.
     public static class Colors
     {
         public static readonly Color AppBackground = Color.FromArgb(246, 247, 249);

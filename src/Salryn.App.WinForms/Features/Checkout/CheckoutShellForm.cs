@@ -11,6 +11,10 @@ public sealed class CheckoutShellForm : Form
 {
     private readonly CheckoutPresenter _presenter;
 
+    // Kirch UI map: checkout header/status labels.
+    // UI side: top cashier/shift/receipt/readiness context and bottom operation status.
+    // Frontend safe zone: typography, grouping, status badge styling, and spacing.
+    // Do not change: labels render CheckoutPresenter state only.
     private readonly Label _modeLabel = new();
     private readonly Label _shiftContextLabel = new();
     private readonly Label _receiptNumberLabel = new();
@@ -20,6 +24,10 @@ public sealed class CheckoutShellForm : Form
     private readonly Label _saleSubmitResultLabel = new();
     private readonly Label _statusLabel = new();
 
+    // Kirch UI map: product search and prepared item controls.
+    // UI side: left-side search card where barcode/name input becomes a prepared cart line.
+    // Frontend safe zone: scanner-friendly input sizing, result card layout, and add button styling.
+    // Do not change: Search and Add Item must continue through CheckoutPresenter.
     private readonly TextBox _productInputTextBox = new();
     private readonly Button _searchButton = new();
     private readonly Button _addItemButton = new();
@@ -27,6 +35,10 @@ public sealed class CheckoutShellForm : Form
     private readonly Label _preparedNameLabel = new();
     private readonly Label _preparedMetaLabel = new();
 
+    // Kirch UI map: cart and totals controls.
+    // UI side: cart grid shows selected sale lines; totals labels summarize subtotal, discounts, tax, paid, change, and balance.
+    // Frontend safe zone: grid column width, row height, totals alignment, and visual hierarchy.
+    // Do not change: selected line id and totals come from CheckoutViewModel.
     private readonly DataGridView _cartGrid = new();
 
     private readonly Label _itemCountLabel = new();
@@ -38,6 +50,10 @@ public sealed class CheckoutShellForm : Form
     private readonly Label _changeValueLabel = new();
     private readonly Label _balanceValueLabel = new();
 
+    // Kirch UI map: payment and completion action controls.
+    // UI side: right-side payment card and action buttons for dry-run, submit guard, remove, clear, and complete sale.
+    // Frontend safe zone: button color, grouping, disabled states, and cashier-friendly spacing.
+    // Do not change: payment and complete-sale actions must continue through CheckoutPresenter.
     private readonly TextBox _cashAmountTextBox = new();
     private readonly Button _payCashButton = new();
 
@@ -196,6 +212,9 @@ public sealed class CheckoutShellForm : Form
         return right;
     }
 
+    // Kirch layout section: product search card.
+    // UI side: cashier scans/types barcode or product text here, then prepares one item before adding to cart.
+    // Frontend note: this is the first workflow area to polish for fast checkout speed.
     private Control CreateProductSearchCard()
     {
         Panel card = CreateCard();
@@ -744,6 +763,9 @@ public sealed class CheckoutShellForm : Form
             state.SaleSubmitResult.DetailText);
     }
 
+    // Kirch render boundary: this method paints presenter state into controls.
+    // UI side: all checkout labels/buttons/grids refresh from one CheckoutViewModel snapshot.
+    // Do not put business rules here; change the presenter/view model instead.
     private void Render(CheckoutViewModel state)
     {
         _isRendering = true;

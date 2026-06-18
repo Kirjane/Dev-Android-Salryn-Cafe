@@ -12,6 +12,10 @@ public sealed class CashierShiftGateForm : Form
 {
     private readonly CashierShiftGatePresenter _presenter;
 
+    // Kirch UI map: cashier shift gate controls.
+    // UI side: modal before Checkout with user details, opening cash, notes, and enter-checkout actions.
+    // Frontend safe zone: form layout, helper text, and button emphasis.
+    // Do not change: entering checkout still requires presenter-approved open shift state.
     private Label _titleLabel = null!;
     private Label _userLabel = null!;
     private Label _statusLabel = null!;
@@ -254,6 +258,9 @@ public sealed class CashierShiftGateForm : Form
         SetBusy(false, string.Empty);
     }
 
+    // Kirch workflow: open cashier shift.
+    // UI side: Open Shift button sends opening cash and notes to the presenter.
+    // Frontend note: validation display can improve, but shift creation must stay service-backed.
     private async Task OpenShiftAsync()
     {
         if (!decimal.TryParse(

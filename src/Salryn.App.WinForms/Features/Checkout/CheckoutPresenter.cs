@@ -18,6 +18,9 @@ public sealed class CheckoutPresenter
     private readonly ICheckoutCompletionBoundary _completionBoundary;
     private readonly PosCheckoutProductPickerBoundary _productPickerBoundary = new();
 
+    // Kirch state map: draft sale state controlled by the presenter.
+    // UI side: cart rows, totals, selected line, prepared product, payments, and submit status all come from these fields.
+    // Frontend note: forms should not mutate these directly; add presenter methods when UI needs a new action.
     private PosCheckoutDraftTransactionBuilder _builder = new();
 
     private Guid? _cashierUserId;
@@ -221,6 +224,9 @@ public sealed class CheckoutPresenter
         return RefreshState("Product input updated.");
     }
 
+    // Kirch workflow: product search step.
+    // UI side: called by the Checkout search button or scanner-enter flow.
+    // Do not change: lookup must stay behind ICheckoutProductSearchBoundary.
     public async Task<CheckoutPresenterOperationResult> SearchProductAsync(
         string? productInputText,
         CancellationToken cancellationToken = default)
@@ -290,6 +296,9 @@ public sealed class CheckoutPresenter
         return RefreshState("Product search cleared.");
     }
 
+    // Kirch workflow: prepared product to cart line.
+    // UI side: Add Item button consumes the last successful product search result.
+    // Frontend note: disable/enable polish belongs in the view model state, not manual form flags.
     public CheckoutPresenterOperationResult AddPreparedProductLine()
     {
         if (_preparedProductLineInput is null)
@@ -583,6 +592,9 @@ public sealed class CheckoutPresenter
     }
 
 
+    // Kirch workflow: final sale submit.
+    // UI side: Complete Sale button reaches here only after readiness and submit guard pass.
+    // Do not change: completion must remain guarded and application-service backed.
     public async Task<CheckoutPresenterOperationResult> ExecutePreparedSaleSubmitAsync(
         CancellationToken cancellationToken = default)
     {

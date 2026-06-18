@@ -15,6 +15,10 @@ public sealed class ReceiptPreviewForm : Form
     private readonly SaleDetailReadModel _sale;
     private readonly StoreSettingsReadModel? _storeSettings;
 
+    // Kirch UI map: receipt preview controls.
+    // UI side: previewTextBox shows the receipt body; print button is intentionally disabled until print workflow exists.
+    // Frontend safe zone: typography, spacing, print preview layout, and future printer action placement.
+    // Do not change: receipt data must come from SaleDetailReadModel and store settings.
     private readonly TextBox _previewTextBox = new();
     private readonly Button _closeButton = new();
     private readonly Button _printPlaceholderButton = new();

@@ -13,6 +13,9 @@ namespace Salryn.App.WinForms.Features.Products;
 // Kirch: The presenter owns product screen behavior so WinForms controls stay thin.
 public sealed class ProductManagementPresenter
 {
+    // Kirch presenter map: Products screen behavior owner.
+    // UI side: ProductManagementForm and ProductCreateForm call this for search, catalog loading, create, and edit flows.
+    // Frontend note: add UI-friendly state here instead of teaching forms domain/repository details.
     private const int DefaultPageSize = 50;
 
     private readonly IProductReadRepository _products;
@@ -177,6 +180,9 @@ public sealed class ProductManagementPresenter
     }
 
     // Kirch: This validates raw UI input, builds the Product model, then saves through the write repository.
+    // Kirch workflow: create product from raw UI input.
+    // UI side: receives Add Product form fields, validates them, then writes a Product through the repository.
+    // Do not change: money/quantity parsing and required-field validation must stay centralized here.
     public async Task<ProductCreateOperationResult> CreateProductAsync(
         ProductCreateRequest request,
         CancellationToken cancellationToken = default)

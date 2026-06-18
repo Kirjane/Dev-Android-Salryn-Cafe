@@ -21,6 +21,10 @@ public sealed class SalrynShellForm : Form
     private readonly ShellViewModel _state;
     private readonly Dictionary<string, Button> _moduleButtons = new(StringComparer.OrdinalIgnoreCase);
 
+    // Kirch UI map: these fields are the main Shell regions.
+    // UI side: title/user/status are header/footer text; navigationPanel is the left module menu; workspacePanel is the main content area.
+    // Frontend safe zone: spacing, colors, fonts, button sizing, and panel layout.
+    // Do not change: module key routing, permission checks, or AppServices ownership.
     private Label _titleLabel = null!;
     private Label _userLabel = null!;
     private Label _statusLabel = null!;
@@ -202,6 +206,9 @@ public sealed class SalrynShellForm : Form
         return button;
     }
 
+    // Kirch workflow: all left-nav clicks enter here before opening a module.
+    // UI side: this controls whether the workspace opens a real screen or a locked/placeholder state.
+    // Do not bypass: ShellPresenter remains the source of module permission/access decisions.
     private void ActivateModule(string moduleKey)
     {
         if (!_presenter.TryGetModule(moduleKey, out ShellModule module))
@@ -267,6 +274,9 @@ public sealed class SalrynShellForm : Form
     }
 
     // Kirch: Opens the June 20 MVP dashboard skeleton through AppServices.
+    // Kirch routing group: real MVP module routes.
+    // UI side: these methods open modal feature screens from the Shell navigation.
+    // Frontend note: screens may be restyled, but construction must keep flowing through AppServices/presenters.
     private void OpenDashboard()
     {
         using DashboardForm dashboardForm = new DashboardForm(_services);

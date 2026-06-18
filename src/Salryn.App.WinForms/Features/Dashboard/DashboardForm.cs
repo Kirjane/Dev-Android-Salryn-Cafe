@@ -14,6 +14,10 @@ public sealed class DashboardForm : Form
 {
     private readonly SalrynAppServices _services;
 
+    // Kirch UI map: dashboard metric controls.
+    // UI side: four card values show daily sales, transaction count, product count, and low-stock count.
+    // Frontend safe zone: card design, spacing, icons, and future chart placement.
+    // Do not change: data reads continue through AppServices repositories.
     private readonly Label _statusLabel = new();
     private readonly Label _todaySalesValueLabel = new();
     private readonly Label _transactionsValueLabel = new();
@@ -108,6 +112,9 @@ public sealed class DashboardForm : Form
         _refreshButton.Click += async (_, _) => await LoadAsync().ConfigureAwait(true);
     }
 
+    // Kirch workflow: dashboard refresh.
+    // UI side: Refresh button and initial load both call this to update card values.
+    // Frontend note: loading animation can be added here without changing repository contracts.
     private async Task LoadAsync()
     {
         SetBusy("Loading dashboard...");

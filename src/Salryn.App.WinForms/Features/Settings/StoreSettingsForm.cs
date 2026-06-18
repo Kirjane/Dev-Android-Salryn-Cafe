@@ -16,6 +16,10 @@ public sealed class StoreSettingsForm : Form
 
     private readonly Label _statusLabel = new();
     private readonly Button _refreshButton = new();
+    // Kirch UI map: store settings field registry.
+    // UI side: each text box displays one store/receipt header field in read-only mode.
+    // Frontend safe zone: grouping, labels, helper text, and future edit affordances.
+    // Do not change: editing needs a proper settings write service before enabling inputs.
     private readonly Dictionary<string, TextBox> _fields = new(StringComparer.OrdinalIgnoreCase);
 
     public StoreSettingsForm(SalrynAppServices services)

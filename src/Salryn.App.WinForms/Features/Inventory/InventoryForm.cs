@@ -14,6 +14,10 @@ public sealed class InventoryForm : Form
 {
     private readonly SalrynAppServices _services;
 
+    // Kirch UI map: inventory grids.
+    // UI side: lowStockGrid is the attention list; movementGrid is the audit/history list.
+    // Frontend safe zone: columns, row height, empty states, and split layout.
+    // Do not change: reads must stay through InventoryReadRepository via AppServices.
     private readonly DataGridView _lowStockGrid = J20MvpUi.Grid();
     private readonly DataGridView _movementGrid = J20MvpUi.Grid();
     private readonly Label _statusLabel = new();

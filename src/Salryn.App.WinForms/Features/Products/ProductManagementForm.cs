@@ -8,6 +8,10 @@ public sealed class ProductManagementForm : Form
 {
     private readonly ProductManagementPresenter _presenter;
 
+    // Kirch UI map: Products toolbar and grid controls.
+    // UI side: search box/buttons live above the product catalog grid; status label reports load/search results.
+    // Frontend safe zone: toolbar layout, grid styling, status placement, and add button prominence.
+    // Do not change: search/load/create actions must stay presenter-backed.
     private TextBox _searchTextBox = null!;
     private Button _searchButton = null!;
     private Button _refreshButton = null!;
@@ -194,6 +198,9 @@ public sealed class ProductManagementForm : Form
         });
     }
 
+    // Kirch workflow: initial and refresh product list load.
+    // UI side: fills the grid with ProductManagementRowViewModel rows.
+    // Frontend note: loading indicators can be improved here without changing presenter behavior.
     private async Task LoadProductsAsync()
     {
         _searchTextBox.Text = string.Empty;

@@ -9,6 +9,10 @@ public sealed class ProductCreateForm : Form
 {
     private readonly ProductManagementPresenter _presenter;
 
+    // Kirch control group: Add Product form fields.
+    // UI side: these controls map directly to ProductCreateRequest fields.
+    // Frontend safe zone: grouping, labels, helper text, tab order, spacing, and validation display.
+    // Do not change: required field meaning, catalog dropdown binding, or presenter save flow.
     private TextBox _skuTextBox = null!;
     private TextBox _barcodeTextBox = null!;
     private TextBox _nameTextBox = null!;
@@ -226,6 +230,9 @@ public sealed class ProductCreateForm : Form
     }
 
     // Kirch: This packages form values into a request and closes only after a successful save.
+    // Kirch workflow: Add Product save action.
+    // UI side: Save button gathers raw field text and delegates validation/create to ProductManagementPresenter.
+    // Frontend note: keep this thin; do not move parsing or repository calls into the form.
     private async Task SaveAsync()
     {
         ProductCreateRequest request = new(

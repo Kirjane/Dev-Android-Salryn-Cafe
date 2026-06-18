@@ -14,6 +14,10 @@ public sealed class SalesHistoryForm : Form
 {
     private readonly SalrynAppServices _services;
 
+    // Kirch UI map: sales history controls.
+    // UI side: receipt search input filters the grid; View Receipt opens the receipt preview modal.
+    // Frontend safe zone: search placement, grid polish, empty/loading states, and action button styling.
+    // Do not change: sale detail lookup must stay through SaleReadRepository via AppServices.
     private readonly TextBox _receiptSearchTextBox = new();
     private readonly Button _refreshButton = new();
     private readonly Button _viewReceiptButton = new();
