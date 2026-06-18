@@ -26,10 +26,12 @@ public static class DefaultDatabaseInitializationFactory
         // Migration order is compliance-sensitive.
         // Version 1 creates the POS foundation.
         // Version 2 adds the RMO machine/POS registration profile used by future official receipt layers.
+        // Version 3 adds the RMO official receipt/invoice sequence ownership schema without issuing official output.
         IDatabaseMigration[] migrations =
         {
             new InitialSchemaMigration(),
-            new BirMachineProfileSchemaMigration()
+            new BirMachineProfileSchemaMigration(),
+            new BirOfficialDocumentSequenceSchemaMigration()
         };
 
         MigrationRunner migrationRunner = new(connectionFactory, migrations);

@@ -375,6 +375,23 @@ Receipt printer and barcode scanner support remain hardware-boundaries, not comp
 
 J21-2 still does not make Salryn accreditation-ready.
 
+## J21-3A Official Receipt/Invoice Sequence Schema Foundation
+
+J21-3A adds the bir_official_document_sequences table for RMO-24-2023-C02.
+
+This table is the future source for official receipt/invoice sequence ownership, range control, active-scope guarding, and minimum six-digit padding.
+
+J21-3A is still schema foundation only:
+
+- no official receipt/invoice number allocation yet
+- no checkout flow wiring
+- no receipt snapshot generation
+- no receipt printing
+- no accreditation readiness claim
+- no multi-tenant work
+
+Future J21-3B must add the allocation service that advances current_number transactionally and gates official allocation through an active machine profile.
+
 ## First-Try Best-Practice Guardrails
 
 1. Do not call any output "Official Receipt" or "Official Invoice" until C01-C05 are implemented and tested.
