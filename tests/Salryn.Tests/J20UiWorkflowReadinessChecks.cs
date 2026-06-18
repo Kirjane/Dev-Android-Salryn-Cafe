@@ -38,9 +38,17 @@ public static class J20UiWorkflowReadinessChecks
         RequireContains(checkoutFormText, "_presenter.AddCashPayment()", "Checkout Pay Cash button must add payment through presenter.");
         RequireContains(checkoutFormText, "_presenter.DryRunCompletionRequest()", "Checkout dry-run button must call presenter dry-run.");
         RequireContains(checkoutFormText, "_presenter.PrepareSaleSubmitGuard()", "Checkout submit guard button must call presenter guard.");
-        RequireContains(checkoutFormText, "BuildCompletionConfirmationMessage(beforeSubmit)", "Complete Sale must show confirmation before submit.");
+        RequireContains(checkoutFormText, "private DialogResult ShowCheckoutMessageDialog(", "Checkout completion dialogs must use a proper modal window.");
+        RequireContains(checkoutFormText, "Size = new Size(560, 380),", "Checkout completion dialogs must be large enough to read.");
+
+        RequireContains(checkoutFormText, "ShowCompletionConfirmationDialog(beforeSubmit)", "Complete Sale must show confirmation before submit.");
         RequireContains(checkoutFormText, "_presenter.ExecutePreparedSaleSubmitAsync()", "Complete Sale button must execute presenter sale submit.");
-        RequireContains(checkoutFormText, "BuildCompletionResultMessage(result.State)", "Complete Sale must report submit result.");
+        RequireContains(checkoutFormText, "ShowCompletionResultDialog(result.State, result.IsSuccess)", "Complete Sale must report submit result.");
+        RequireContains(checkoutFormText, "MinimumSize = new Size(1120, 680);", "Checkout window must fit short 768p work areas.");
+        RequireContains(checkoutFormText, "AutoScroll = true,", "Checkout right action column must remain scrollable on short displays.");
+        RequireContains(checkoutFormText, "right.RowStyles.Add(new RowStyle(SizeType.Absolute, 230F));", "Checkout totals card must be compact enough for action visibility.");
+        RequireContains(checkoutFormText, "right.RowStyles.Add(new RowStyle(SizeType.Absolute, 164F));", "Checkout payment card must be tall enough to show Add Cash Payment.");
+        RequireContains(checkoutFormText, "layout.Controls.Add(_completeSaleButton, 0, 4);", "Complete Sale button must stay near the top of the action panel.");
         RequireContains(checkoutFormText, "_completeSaleButton.Enabled = state.CanCompleteSale;", "Complete Sale button must be enabled only from view-model readiness.");
         RequireContains(checkoutFormText, "_clearCartButton.Text = saleCompleted ? \"Start New Sale\" : \"Clear Draft Cart\";", "Checkout must expose Start New Sale after completion.");
         RequireContains(checkoutFormText, "_cartGrid.Rows[rowIndex].Tag = line.LineId;", "Checkout cart rows must keep selected line IDs for remove flow.");

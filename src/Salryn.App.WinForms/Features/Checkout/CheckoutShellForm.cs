@@ -71,8 +71,8 @@ public sealed class CheckoutShellForm : Form
 
         Text = "SALRYN POS Checkout";
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(1220, 760);
-        Size = new Size(1360, 820);
+        MinimumSize = new Size(1120, 680);
+        Size = new Size(1280, 720);
         Font = new Font("Segoe UI", 9F);
         BackColor = UiColors.AppBackground;
 
@@ -93,9 +93,9 @@ public sealed class CheckoutShellForm : Form
             BackColor = UiColors.AppBackground
         };
 
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 86F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 80F));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 50F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
 
         Controls.Add(root);
 
@@ -157,7 +157,7 @@ public sealed class CheckoutShellForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 2,
             RowCount = 1,
-            Padding = new Padding(0, 14, 0, 14),
+            Padding = new Padding(0, 10, 0, 10),
             BackColor = UiColors.AppBackground
         };
 
@@ -192,24 +192,35 @@ public sealed class CheckoutShellForm : Form
 
     private Control CreateRightWorkspace()
     {
-        TableLayoutPanel right = new()
+        Panel viewport = new()
         {
             Dock = DockStyle.Fill,
+            AutoScroll = true,
+            BackColor = UiColors.AppBackground
+        };
+
+        TableLayoutPanel right = new()
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             ColumnCount = 1,
             RowCount = 3,
             Padding = new Padding(0),
             BackColor = UiColors.AppBackground
         };
 
-        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 292F));
-        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 174F));
-        right.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 230F));
+        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 164F));
+        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 420F));
 
         right.Controls.Add(CreateTotalsCard(), 0, 0);
         right.Controls.Add(CreatePaymentCard(), 0, 1);
         right.Controls.Add(CreateActionsCard(), 0, 2);
 
-        return right;
+        viewport.Controls.Add(right);
+
+        return viewport;
     }
 
     // Kirch layout section: product search card.
@@ -224,7 +235,7 @@ public sealed class CheckoutShellForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 4,
             RowCount = 4,
-            Padding = new Padding(18),
+            Padding = new Padding(14),
             BackColor = Color.White
         };
 
@@ -301,7 +312,7 @@ public sealed class CheckoutShellForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 2,
-            Padding = new Padding(18),
+            Padding = new Padding(14),
             BackColor = Color.White
         };
 
@@ -380,7 +391,7 @@ public sealed class CheckoutShellForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 2,
-            Padding = new Padding(18),
+            Padding = new Padding(14),
             BackColor = Color.White
         };
 
@@ -429,17 +440,17 @@ public sealed class CheckoutShellForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 2,
             RowCount = 4,
-            Padding = new Padding(18),
+            Padding = new Padding(14),
             BackColor = Color.White
         };
 
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 92F));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
 
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
 
         Label title = CreateSectionTitle("Payment");
         layout.Controls.Add(title, 0, 0);
@@ -483,22 +494,22 @@ public sealed class CheckoutShellForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 13,
-            Padding = new Padding(18),
+            Padding = new Padding(14),
             BackColor = Color.White
         };
 
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50F));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 74F));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
         layout.Controls.Add(CreateSectionTitle("Actions"), 0, 0);
@@ -510,51 +521,52 @@ public sealed class CheckoutShellForm : Form
         _receiptNumberLabel.Text = "Receipt: not assigned";
         layout.Controls.Add(_receiptNumberLabel, 0, 1);
 
+        ConfigureSecondaryButton(_dryRunCompletionButton, "Validate Completion Dry Run");
+        ConfigureSecondaryButton(_prepareSubmitGuardButton, "Prepare Submit Guard");
+        ConfigureLockedButton(_completeSaleButton, "Complete Sale Locked");
+        ConfigureSecondaryButton(_removeItemButton, "Remove Selected Item");
+        ConfigureSecondaryButton(_clearCartButton, "Clear Draft Cart");
+
+        layout.Controls.Add(_dryRunCompletionButton, 0, 2);
+        layout.Controls.Add(_prepareSubmitGuardButton, 0, 3);
+        layout.Controls.Add(_completeSaleButton, 0, 4);
+
         _completionReadinessLabel.Dock = DockStyle.Fill;
         _completionReadinessLabel.TextAlign = ContentAlignment.MiddleLeft;
         _completionReadinessLabel.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
         _completionReadinessLabel.ForeColor = UiColors.TextMuted;
         _completionReadinessLabel.Text = "Completion: not ready";
-        layout.Controls.Add(_completionReadinessLabel, 0, 2);
+        layout.Controls.Add(_completionReadinessLabel, 0, 5);
 
         _completionDryRunLabel.Dock = DockStyle.Fill;
         _completionDryRunLabel.TextAlign = ContentAlignment.MiddleLeft;
         _completionDryRunLabel.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
         _completionDryRunLabel.ForeColor = UiColors.TextMuted;
         _completionDryRunLabel.Text = "Dry run: not executed";
-        layout.Controls.Add(_completionDryRunLabel, 0, 3);
+        layout.Controls.Add(_completionDryRunLabel, 0, 6);
 
         _saleSubmitGuardLabel.Dock = DockStyle.Fill;
         _saleSubmitGuardLabel.TextAlign = ContentAlignment.MiddleLeft;
         _saleSubmitGuardLabel.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
         _saleSubmitGuardLabel.ForeColor = UiColors.TextMuted;
         _saleSubmitGuardLabel.Text = "Submit guard: not prepared";
-        layout.Controls.Add(_saleSubmitGuardLabel, 0, 4);
+        layout.Controls.Add(_saleSubmitGuardLabel, 0, 7);
 
         _saleSubmitResultLabel.Dock = DockStyle.Fill;
         _saleSubmitResultLabel.TextAlign = ContentAlignment.MiddleLeft;
         _saleSubmitResultLabel.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
         _saleSubmitResultLabel.ForeColor = UiColors.TextMuted;
         _saleSubmitResultLabel.Text = "Submit result: not executed";
-        layout.Controls.Add(_saleSubmitResultLabel, 0, 5);
+        layout.Controls.Add(_saleSubmitResultLabel, 0, 8);
 
-        ConfigureSecondaryButton(_dryRunCompletionButton, "Validate Completion Dry Run");
-        ConfigureSecondaryButton(_prepareSubmitGuardButton, "Prepare Submit Guard");
-        ConfigureSecondaryButton(_removeItemButton, "Remove Selected Item");
-        ConfigureSecondaryButton(_clearCartButton, "Clear Draft Cart");
-        ConfigureLockedButton(_completeSaleButton, "Complete Sale Locked");
-
-        layout.Controls.Add(_dryRunCompletionButton, 0, 6);
-        layout.Controls.Add(_prepareSubmitGuardButton, 0, 7);
-        layout.Controls.Add(_removeItemButton, 0, 8);
-        layout.Controls.Add(_clearCartButton, 0, 9);
-        layout.Controls.Add(_completeSaleButton, 0, 10);
+        layout.Controls.Add(_removeItemButton, 0, 9);
+        layout.Controls.Add(_clearCartButton, 0, 10);
 
         Label note = new()
         {
             Dock = DockStyle.Fill,
-            Text = "This screen can search products, add draft lines, show totals, add draft cash payment, dry-run completion validation, prepare a submit guard, and complete a sale through the guarded execution path.",
-            Font = new Font("Segoe UI", 9F, FontStyle.Regular),
+            Text = "Complete Sale stays guarded by dry run and submit guard. Scroll this side panel if using a short display.",
+            Font = new Font("Segoe UI", 8.5F, FontStyle.Regular),
             ForeColor = UiColors.TextMuted
         };
 
@@ -679,12 +691,7 @@ public sealed class CheckoutShellForm : Form
         {
             CheckoutViewModel beforeSubmit = _presenter.State;
 
-            DialogResult confirmation = MessageBox.Show(
-                BuildCompletionConfirmationMessage(beforeSubmit),
-                "Confirm Complete Sale",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Warning,
-                MessageBoxDefaultButton.Button2);
+            DialogResult confirmation = ShowCompletionConfirmationDialog(beforeSubmit);
 
             if (confirmation != DialogResult.Yes)
             {
@@ -699,11 +706,7 @@ public sealed class CheckoutShellForm : Form
 
             Render(result.State);
 
-            MessageBox.Show(
-                BuildCompletionResultMessage(result.State),
-                result.IsSuccess ? "Sale Completed" : "Sale Not Completed",
-                MessageBoxButtons.OK,
-                result.IsSuccess ? MessageBoxIcon.Information : MessageBoxIcon.Error);
+            ShowCompletionResultDialog(result.State, result.IsSuccess);
         };
     }
 
@@ -722,6 +725,126 @@ public sealed class CheckoutShellForm : Form
         {
             _searchButton.Enabled = _presenter.State.CanSearchProduct;
         }
+    }
+
+    private DialogResult ShowCompletionConfirmationDialog(CheckoutViewModel state)
+    {
+        return ShowCheckoutMessageDialog(
+            "Confirm Complete Sale",
+            BuildCompletionConfirmationMessage(state),
+            "Yes, Complete Sale",
+            "No");
+    }
+
+    private void ShowCompletionResultDialog(CheckoutViewModel state, bool isSuccess)
+    {
+        ShowCheckoutMessageDialog(
+            isSuccess ? "Sale Completed" : "Sale Not Completed",
+            BuildCompletionResultMessage(state),
+            "OK",
+            secondaryButtonText: null);
+    }
+
+    private DialogResult ShowCheckoutMessageDialog(
+        string title,
+        string message,
+        string primaryButtonText,
+        string? secondaryButtonText)
+    {
+        using Form dialog = new()
+        {
+            Text = title,
+            StartPosition = FormStartPosition.CenterParent,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MinimizeBox = false,
+            MaximizeBox = false,
+            ShowInTaskbar = false,
+            Size = new Size(560, 380),
+            MinimumSize = new Size(560, 380),
+            Font = new Font("Segoe UI", 9F),
+            BackColor = UiColors.AppBackground
+        };
+
+        TableLayoutPanel root = new()
+        {
+            Dock = DockStyle.Fill,
+            RowCount = 3,
+            ColumnCount = 1,
+            Padding = new Padding(18),
+            BackColor = UiColors.AppBackground
+        };
+
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 52F));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 56F));
+
+        Label titleLabel = new()
+        {
+            Dock = DockStyle.Fill,
+            Text = title,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Font = new Font("Segoe UI", 14F, FontStyle.Bold),
+            ForeColor = UiColors.TextStrong
+        };
+
+        TextBox messageBox = new()
+        {
+            Dock = DockStyle.Fill,
+            Multiline = true,
+            ReadOnly = true,
+            ScrollBars = ScrollBars.Vertical,
+            BorderStyle = BorderStyle.FixedSingle,
+            BackColor = Color.White,
+            ForeColor = UiColors.TextStrong,
+            Text = message,
+            Font = new Font("Segoe UI", 10F, FontStyle.Regular)
+        };
+
+        FlowLayoutPanel buttons = new()
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            Padding = new Padding(0, 10, 0, 0),
+            BackColor = UiColors.AppBackground
+        };
+
+        Button primaryButton = new()
+        {
+            Text = primaryButtonText,
+            Width = secondaryButtonText is null ? 130 : 150,
+            Height = 34,
+            DialogResult = secondaryButtonText is null ? DialogResult.OK : DialogResult.Yes
+        };
+
+        buttons.Controls.Add(primaryButton);
+
+        if (secondaryButtonText is not null)
+        {
+            Button secondaryButton = new()
+            {
+                Text = secondaryButtonText,
+                Width = 110,
+                Height = 34,
+                DialogResult = DialogResult.No
+            };
+
+            buttons.Controls.Add(secondaryButton);
+            dialog.CancelButton = secondaryButton;
+        }
+        else
+        {
+            dialog.CancelButton = primaryButton;
+        }
+
+        dialog.AcceptButton = primaryButton;
+
+        root.Controls.Add(titleLabel, 0, 0);
+        root.Controls.Add(messageBox, 0, 1);
+        root.Controls.Add(buttons, 0, 2);
+
+        dialog.Controls.Add(root);
+
+        return dialog.ShowDialog(this);
     }
 
     private static string BuildCompletionConfirmationMessage(CheckoutViewModel state)
