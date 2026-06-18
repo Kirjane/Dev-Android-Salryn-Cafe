@@ -462,6 +462,44 @@ J21-4A is still contracts only:
 
 Future J21-4B may add a builder that maps existing sale and machine-profile data into the draft without rendering official output.
 
+## J21-4B Official Document Snapshot Draft Builder
+
+J21-4B adds an in-memory OfficialDocumentSnapshotDraftBuilder for RMO-24-2023-C03 and C04 mapping.
+
+The builder maps already-provided machine profile, sale, item, payment, and optional allocated document number data into OfficialDocumentSnapshotDraft.
+
+J21-4B does not read from the database, allocate sequence numbers, render output, print output, wire checkout, write saved sale snapshots, create journals, or claim official output readiness.
+
+C03 partial coverage:
+
+- maps taxpayer/header identity from explicit machine profile input
+- maps transaction date/time from sale input
+- maps optional document number input without allocation
+- maps cashier and terminal identifiers from explicit input
+
+C04 partial coverage:
+
+- maps sale item description, barcode, unit, quantity, unit price, discount, and line total
+- maps subtotal, discount, tax, total, amount paid, and change
+- maps payment method, amount, and paid timestamp
+
+C05 remains deferred. The builder sets VatBucketEngineDeferred to true and carries tax-mode notes only.
+
+J21-4B is still builder only:
+
+- no renderer
+- no printer
+- no checkout wiring
+- no saved sale receipt_snapshot writes
+- no database migration
+- no sequence allocation
+- no electronic journal
+- no X/Z reading
+- no VAT bucket engine
+- no official receipt/invoice output claim
+
+Future J21-4C must decide whether to add a preview-safe non-official inspector or continue into VAT bucket modeling before any output work.
+
 ## First-Try Best-Practice Guardrails
 
 1. Do not call any output "Official Receipt" or "Official Invoice" until C01-C05 are implemented and tested.
