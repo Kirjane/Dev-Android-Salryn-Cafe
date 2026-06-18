@@ -361,6 +361,20 @@ Implementation target:
 
 after J21-2 through J21-7.
 
+## J21-2 Schema Foundation
+
+J21-2 adds the bir_machine_profiles table for RMO-24-2023-C01, partial C03, and partial C12.
+
+This table is the future source for taxpayer identity, branch identity, machine identity, serial/MIN fields, accreditation/PTU fields, software identity, and official-output gating.
+
+Receipt printer and barcode scanner support remain hardware-boundaries, not compliance blockers:
+
+- receipt printer output must later consume compliant receipt snapshots through print_jobs/printer adapter
+- barcode scanner input should continue as text/barcode input through checkout product lookup
+- phone-camera barcode scanning can later submit decoded barcode text to the same lookup boundary
+
+J21-2 still does not make Salryn accreditation-ready.
+
 ## First-Try Best-Practice Guardrails
 
 1. Do not call any output "Official Receipt" or "Official Invoice" until C01-C05 are implemented and tested.

@@ -22,9 +22,14 @@ public static class DefaultDatabaseInitializationFactory
     {
         SqliteConnectionFactory connectionFactory = new(dbPaths);
 
+        // Kirch strict dev guide:
+        // Migration order is compliance-sensitive.
+        // Version 1 creates the POS foundation.
+        // Version 2 adds the RMO machine/POS registration profile used by future official receipt layers.
         IDatabaseMigration[] migrations =
         {
-            new InitialSchemaMigration()
+            new InitialSchemaMigration(),
+            new BirMachineProfileSchemaMigration()
         };
 
         MigrationRunner migrationRunner = new(connectionFactory, migrations);
