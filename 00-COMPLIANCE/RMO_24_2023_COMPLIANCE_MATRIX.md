@@ -500,6 +500,40 @@ J21-4B is still builder only:
 
 Future J21-4C must decide whether to add a preview-safe non-official inspector or continue into VAT bucket modeling before any output work.
 
+## J21-4C C05 Tax Bucket Draft Contracts
+
+J21-4C adds neutral OfficialDocumentTaxBucketDraft contracts for RMO-24-2023-C05 shape planning.
+
+These contracts describe VAT/non-VAT/exempt/zero-rated bucket shape only.
+
+J21-4C does not calculate tax buckets, render output, print output, wire checkout, write saved sale snapshots, create database schema, allocate sequence numbers, create journals, or claim official output readiness.
+
+C05 partial coverage:
+
+- VAT-registered taxpayer mode shape
+- non-VAT taxpayer mode shape
+- VATable sales bucket shape
+- VAT amount bucket shape
+- VAT-exempt sales bucket shape
+- zero-rated sales bucket shape
+- non-VAT sales bucket shape
+- non-VAT statement placeholder shape
+
+J21-4C is still contracts only:
+
+- no calculator engine
+- no renderer
+- no printer
+- no checkout wiring
+- no saved sale receipt_snapshot writes
+- no database migration
+- no sequence allocation
+- no electronic journal
+- no X/Z reading
+- no official receipt/invoice output claim
+
+Future J21-4D or later phase must decide whether to build a tax bucket calculator engine or keep strengthening validation before any output work.
+
 ## First-Try Best-Practice Guardrails
 
 1. Do not call any output "Official Receipt" or "Official Invoice" until C01-C05 are implemented and tested.

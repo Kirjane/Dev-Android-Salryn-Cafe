@@ -116,6 +116,7 @@ public static class Program
         J21Rmo242023OfficialDocumentSequenceAllocationChecks.Run();
         J21Rmo242023OfficialDocumentSnapshotDraftChecks.Run();
         J21Rmo242023OfficialDocumentSnapshotDraftBuilderChecks.Run();
+        J21Rmo242023OfficialDocumentTaxBucketDraftChecks.Run();
 
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
