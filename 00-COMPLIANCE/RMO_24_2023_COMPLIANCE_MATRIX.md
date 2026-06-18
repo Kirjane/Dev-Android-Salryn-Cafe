@@ -690,6 +690,61 @@ J21-5B is still planning only:
 
 J21-5C must be explicitly confirmed before any schema migration, journal table, append model, checkout integration, renderer integration, print integration, snapshot persistence, export, X/Z, or official output work.
 
+## J21-5C Electronic Journal Schema Foundation
+
+J21-5C adds schema foundation only for future electronic journal storage.
+
+Schema is allowed. Behavior is not allowed yet.
+
+C08 partial schema coverage:
+
+- bir_electronic_journal_entries table
+- bir_electronic_journal_entry_events table
+- bir_electronic_journal_preservation_batches table
+- machine profile ownership
+- sale reference ownership
+- official document sequence reference ownership
+- official document number and document kind fields
+- transaction timestamp, cashier/user id, and terminal id fields
+- nullable future snapshot payload/hash fields
+
+C07 partial schema coverage:
+
+- linked journal event table
+- original/reprint/void/refund/cancel markers
+- event type guardrails
+- duplicate document identity guardrail
+
+C12 partial schema coverage:
+
+- preservation/export batch metadata table
+- storage reference and file hash placeholders
+- created_by_user_id and created_at ownership
+
+Relationship boundaries remain:
+
+- sales.receipt_snapshot remains current MVP placeholder, not RMO journal
+- audit_logs remains generic audit trail, not RMO electronic journal
+- print_jobs remains printer queue boundary, not journal evidence
+- official document draft/builder remains in-memory until future approved persistence phase
+- sequence allocation remains separate from journal append until a later atomic design is confirmed
+
+J21-5C is still schema foundation only:
+
+- no checkout wiring
+- no receipt_snapshot writes
+- no official document persistence from checkout
+- no renderer
+- no printer
+- no sequence allocation changes
+- no tax calculator engine
+- no X/Z reading
+- no actual journal append service
+- no UI
+- no official receipt/invoice output claim
+
+J21-5D must be explicitly confirmed before any journal append service, checkout integration, renderer integration, print integration, snapshot persistence, export, X/Z, UI, or official output work.
+
 ## First-Try Best-Practice Guardrails
 
 1. Do not call any output "Official Receipt" or "Official Invoice" until C01-C05 are implemented and tested.
