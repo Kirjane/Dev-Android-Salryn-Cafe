@@ -534,6 +534,39 @@ J21-4C is still contracts only:
 
 Future J21-4D or later phase must decide whether to build a tax bucket calculator engine or keep strengthening validation before any output work.
 
+## J21-4D C05 Tax Bucket Draft Validation
+
+J21-4D adds structural validation for OfficialDocumentTaxBucketDraft.
+
+This phase validates C05 draft shape only. It does not add tax calculator logic, VAT computation rules, product tax inference, legal tax treatment decisions, rendering, printing, checkout wiring, persistence, journals, X/Z readings, or official output claims.
+
+C05 partial validation coverage:
+
+- taxpayer mode must be known
+- bucket list must be present
+- bucket kinds must be valid
+- bucket amounts must be non-negative
+- duplicate bucket kinds are rejected
+- deferred notes must preserve no-engine and no-output boundaries
+- non-VAT drafts must carry a non-VAT statement placeholder
+- VAT drafts must not carry a non-VAT statement placeholder
+
+J21-4D is still validation only:
+
+- no tax calculator engine
+- no VAT computation rules
+- no renderer
+- no printer
+- no checkout wiring
+- no saved sale receipt_snapshot writes
+- no database migration
+- no sequence allocation
+- no electronic journal
+- no X/Z reading
+- no official receipt/invoice output claim
+
+Future phase must be confirmed before any calculator engine, output renderer, checkout integration, persistence, journal, or reporting work.
+
 ## First-Try Best-Practice Guardrails
 
 1. Do not call any output "Official Receipt" or "Official Invoice" until C01-C05 are implemented and tested.
