@@ -11,11 +11,11 @@ namespace Salryn.App.WinForms;
 static class Program
 {
     [STAThread]
-    static void Main()
+    static void Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
 
-        SalrynAppServices services = SalrynAppServices.CreateProduction();
+        SalrynAppServices services = SalrynAppLaunchModeResolver.CreateServices(args);
 
         var initializationResult = services.DatabaseInitialization.InitializeDatabase();
 

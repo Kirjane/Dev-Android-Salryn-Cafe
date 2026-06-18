@@ -126,8 +126,8 @@ public static class Phase65AAppCompositionBoundaryPlanningChecks
 
         RequireContains(
             programText,
-            "SalrynAppServices services = SalrynAppServices.CreateProduction();",
-            "Program must still create app services through the composition root.");
+            "SalrynAppLaunchModeResolver.CreateServices(args)",
+            "Program must still create app services through the app launch resolver and composition root.");
 
         RequireContains(
             programText,

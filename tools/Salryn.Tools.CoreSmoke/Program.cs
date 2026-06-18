@@ -105,6 +105,8 @@ public static class Program
 
         J20MvpSkeletonUiChecks.Run();
 
+        J20DevelopmentLaunchModeChecks.Run();
+
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
 }
