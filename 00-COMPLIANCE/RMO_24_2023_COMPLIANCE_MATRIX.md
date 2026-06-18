@@ -623,6 +623,73 @@ J21-5A is still planning only:
 
 J21-5B must be explicitly confirmed before any schema, append model, checkout integration, renderer integration, print integration, snapshot persistence, export, X/Z, or official output work.
 
+## J21-5B Electronic Journal Schema Planning
+
+J21-5B plans future electronic journal and audit journal schema shape.
+
+This phase is documentation plus source/guard checks only. It does not add a DB/schema migration, journal tables, checkout wiring, receipt_snapshot writes, official document persistence, renderer, printer, sequence allocation changes, tax calculator engine, X/Z reading, or official receipt/invoice output claim.
+
+C08 planning coverage:
+
+- future electronic_journal_entries table candidate only
+- future electronic_journal_entry_events table candidate only
+- future electronic_journal_exports or preservation batches candidate only
+- future field ownership planning
+- future relationship boundary planning
+
+C07 partial planning coverage:
+
+- append-only event integrity planning
+- original/reprint/void/refund/cancel marker planning
+- linked event correction planning
+
+C12 partial planning coverage:
+
+- retention and preservation batch planning
+- export/preservation metadata planning
+- backup/recovery evidence relationship planning
+
+Future field ownership planned:
+
+- journal entry id
+- machine profile id
+- sale id
+- official document sequence id
+- official document number
+- document kind
+- transaction timestamp
+- cashier/user id
+- terminal id
+- snapshot payload/hash
+- event type
+- original/reprint/void/refund/cancel markers
+- created_at
+- preserved/exported metadata
+
+Relationship boundaries:
+
+- sales.receipt_snapshot remains current MVP placeholder, not RMO journal
+- audit_logs remains generic audit trail, not RMO electronic journal
+- print_jobs remains printer queue boundary, not journal evidence
+- official document draft/builder remains in-memory until future approved persistence phase
+- sequence allocation must stay separate from journal append until a later atomic design is confirmed
+
+J21-5B is still planning only:
+
+- no DB/schema migration
+- no journal tables
+- no checkout wiring
+- no receipt_snapshot writes
+- no official document persistence
+- no renderer
+- no printer
+- no sequence allocation changes
+- no tax calculator engine
+- no X/Z reading
+- no official receipt/invoice output claim
+
+J21-5C must be explicitly confirmed before any schema migration, journal table, append model, checkout integration, renderer integration, print integration, snapshot persistence, export, X/Z, or official output work.
+
 ## First-Try Best-Practice Guardrails
 
 1. Do not call any output "Official Receipt" or "Official Invoice" until C01-C05 are implemented and tested.
