@@ -808,6 +808,59 @@ J21-5D is audit only:
 
 J21-5E must be explicitly confirmed before any version 5 migration, trigger, append service, checkout integration, renderer integration, print integration, snapshot persistence, export, X/Z, UI, or official output work.
 
+## J21-5E Electronic Journal Schema Hardening Foundation
+
+J21-5E adds a new forward-only version 5 migration for electronic journal DB hardening.
+
+This phase is DB-level hardening only. Behavior is not added.
+
+C08 partial hardening coverage:
+
+- append-only UPDATE blocking trigger for bir_electronic_journal_entries
+- append-only DELETE blocking trigger for bir_electronic_journal_entries
+- one ORIGINAL event per journal entry partial unique index
+- no snapshot hash NOT NULL hardening yet
+
+C07 partial hardening coverage:
+
+- append-only UPDATE blocking trigger for bir_electronic_journal_entry_events
+- append-only DELETE blocking trigger for bir_electronic_journal_entry_events
+- reason required for VOID events
+- reason required for REFUND events
+- reason required for CANCEL events
+
+C12 partial hardening coverage:
+
+- append-only UPDATE blocking trigger for bir_electronic_journal_preservation_batches
+- append-only DELETE blocking trigger for bir_electronic_journal_preservation_batches
+- preservation_batch_id required for EXPORT events
+- preservation_batch_id required for PRESERVATION events
+- preservation_batch_id required for BACKUP_RECOVERY events
+
+Senior-developer decision preserved:
+
+- do not rewrite the committed J21-5C version 4 migration
+- use a new forward migration for hardening
+- snapshot payload/hash remains nullable until renderer/snapshot persistence design exists
+
+J21-5E is DB hardening only:
+
+- no append service
+- no checkout wiring
+- no journal repository/service behavior
+- no receipt_snapshot writes
+- no official document persistence from checkout
+- no renderer
+- no printer
+- no sequence allocation changes
+- no tax calculator engine
+- no X/Z reading
+- no UI
+- no official receipt/invoice output claim
+- no snapshot hash NOT NULL constraint
+
+J21-5F must be explicitly confirmed before any append service, checkout integration, renderer integration, print integration, snapshot persistence, export behavior, X/Z, UI, or official output work.
+
 ## First-Try Best-Practice Guardrails
 
 1. Do not call any output "Official Receipt" or "Official Invoice" until C01-C05 are implemented and tested.

@@ -28,12 +28,14 @@ public static class DefaultDatabaseInitializationFactory
         // Version 2 adds the RMO machine/POS registration profile used by future official receipt layers.
         // Version 3 adds the RMO official receipt/invoice sequence ownership schema without issuing official output.
         // Version 4 adds the RMO electronic journal schema foundation without checkout writes or official output.
+        // Version 5 adds electronic journal DB hardening triggers without app behavior.
         IDatabaseMigration[] migrations =
         {
             new InitialSchemaMigration(),
             new BirMachineProfileSchemaMigration(),
             new BirOfficialDocumentSequenceSchemaMigration(),
-            new BirElectronicJournalSchemaMigration()
+            new BirElectronicJournalSchemaMigration(),
+            new BirElectronicJournalSchemaHardeningMigration()
         };
 
         MigrationRunner migrationRunner = new(connectionFactory, migrations);
