@@ -35,6 +35,7 @@ This phase rejects structurally unsafe C05 draft shapes without adding a tax cal
 - No tax calculator engine.
 - No VAT computation rules.
 - No checkout wiring.
+- No renderer.
 - No receipt renderer.
 - No printer.
 - No saved sale receipt_snapshot writes.
