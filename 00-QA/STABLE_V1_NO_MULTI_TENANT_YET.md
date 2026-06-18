@@ -10,10 +10,6 @@ Tag:
 
 stable-v1-no-multi-tenant-yet
 
-Base commit:
-
-8c2f0ec Repair checkout 768p action visibility
-
 ## Scope
 
 This QA build is the local/offline Windows desktop POS MVP.
@@ -23,6 +19,7 @@ Included:
 - first-run manual admin setup
 - login
 - store settings created during first-run admin setup
+- QA product seed after manual admin setup
 - product management
 - seeded catalog foundation through database initialization
 - cashier shift gate
@@ -48,20 +45,27 @@ Not included yet:
 - role/user management UI polish
 - production receipt compliance final pass
 
-## QA Rule: Empty Login Setup
+## QA Rule: Manual Admin, Seeded Products
 
-Do not use seeded login credentials for QA.
+Do not use shared login credentials for QA.
 
-The QA tester should create the first admin manually.
+The QA tester should create the first admin manually, then run the product-only QA seed.
 
-Before QA launch, reset the local development database:
+The product-only QA seed does not create users, passwords, or admin accounts.
+
+## Clean QA Setup
 
 PowerShell:
 
 cd "C:\Users\<YOUR_USER>\Salryn"
+git checkout stable/v1-no-multi-tenant-yet
 Remove-Item ".\.salryn-dev" -Recurse -Force -ErrorAction SilentlyContinue
 
-Then launch the app in development mode:
+Build:
+
+dotnet build ".\Salryn.sln" /warnaserror:CS8602
+
+Launch first-run setup:
 
 dotnet run --project ".\src\Salryn.App.WinForms\Salryn.App.WinForms.csproj" -- --dev
 
@@ -69,7 +73,25 @@ Expected first screen:
 
 first-run admin setup
 
-The tester should create their own admin username/password.
+Create your own admin username/password.
+
+Close the app after first-run setup/login succeeds.
+
+Then seed QA products only:
+
+dotnet run --project ".\tools\Salryn.Tools.InfrastructureSmoke\Salryn.Tools.InfrastructureSmoke.csproj" --no-build qa-products-seed
+
+Launch again:
+
+dotnet run --project ".\src\Salryn.App.WinForms\Salryn.App.WinForms.csproj" -- --dev
+
+Login with your own admin credentials.
+
+## QA Product Barcodes
+
+- 941000000001 | QA Coffee Sachet | PHP 15.00
+- 941000000002 | QA Bottled Water 500ml | PHP 20.00
+- 941000000003 | QA Rice 1kg | PHP 58.00
 
 ## QA Build/Smoke Commands
 
@@ -81,33 +103,37 @@ dotnet run --project ".\tools\Salryn.Tools.CoreSmoke\Salryn.Tools.CoreSmoke.cspr
 dotnet run --project ".\tools\Salryn.Tools.InfrastructureSmoke\Salryn.Tools.InfrastructureSmoke.csproj" --no-build auth-first-run
 dotnet run --project ".\tools\Salryn.Tools.InfrastructureSmoke\Salryn.Tools.InfrastructureSmoke.csproj" --no-build mvp-business-flow
 
-Optional local dev seed command exists for developer convenience only:
+Developer-only full dev seed exists:
 
 dotnet run --project ".\tools\Salryn.Tools.InfrastructureSmoke\Salryn.Tools.InfrastructureSmoke.csproj" --no-build dev-prelaunch-seed
 
-Do not use the dev seed command for manual QA first-run testing.
+Do not use dev-prelaunch-seed for manual QA first-run testing because it creates a shared admin.
+
+Use qa-products-seed after manual admin setup.
 
 ## Manual QA Flow
 
 1. Reset `.salryn-dev`.
 2. Launch app with `--dev`.
 3. Create first admin manually.
-4. Login.
-5. Open Products.
-6. Add or verify products.
-7. Open POS Checkout.
-8. Open cashier shift.
-9. Search product by barcode/name.
-10. Add product to draft cart.
-11. Enter cash amount.
-12. Click Add Cash Payment.
-13. Click Validate Completion Dry Run.
-14. Click Prepare Submit Guard.
-15. Click Complete Sale.
-16. Confirm completion modal.
-17. Verify sale completed modal.
-18. Click Start New Sale.
-19. Open Products and verify stock reduction.
+4. Close app.
+5. Run `qa-products-seed`.
+6. Launch app with `--dev` again.
+7. Login with your own admin.
+8. Open Products and verify QA products.
+9. Open POS Checkout.
+10. Open cashier shift.
+11. Search product by barcode/name.
+12. Add product to draft cart.
+13. Enter cash amount.
+14. Click Add Cash Payment.
+15. Click Validate Completion Dry Run.
+16. Click Prepare Submit Guard.
+17. Click Complete Sale.
+18. Confirm completion modal.
+19. Verify sale completed modal.
+20. Click Start New Sale.
+21. Open Products and verify stock reduction.
 
 ## Known QA Notes
 
