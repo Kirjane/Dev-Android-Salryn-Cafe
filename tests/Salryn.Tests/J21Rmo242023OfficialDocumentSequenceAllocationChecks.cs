@@ -93,7 +93,7 @@ public static class J21Rmo242023OfficialDocumentSequenceAllocationChecks
             InsertMachineProfile(
                 connection,
                 notReadyProfileId,
-                isActive: 1,
+                isActive: 0,
                 complianceMode: "NOT_ACCREDITED",
                 officialOutputEnabled: 0);
 
