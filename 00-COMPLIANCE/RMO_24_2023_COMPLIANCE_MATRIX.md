@@ -413,6 +413,55 @@ J21-3B is still allocation service only:
 
 Future J21-3C or J21-4 must decide how allocated sequence values are consumed by receipt snapshots without bypassing machine/profile and journal controls.
 
+## J21-4A Official Document Snapshot Draft Contracts
+
+J21-4A adds neutral OfficialDocumentSnapshotDraft contracts for RMO-24-2023-C03 and C04 shape planning.
+
+OfficialDocumentSnapshotDraft is a data shape only. It does not render, persist, print, allocate sequence numbers, wire checkout, or claim official output readiness.
+
+C03 partial coverage:
+
+- registered taxpayer name
+- business name or style
+- TIN and branch code
+- registered business address
+- transaction date/time shape
+- future document number shape
+- machine serial/MIN shape
+- accreditation/PTU shape
+- cashier and terminal identifier shape
+
+C04 partial coverage:
+
+- item description
+- quantity
+- unit price
+- discount
+- line total
+- subtotal
+- tax
+- total
+- amount paid
+- change
+- payment method
+
+C05 remains deferred. J21-4A only carries a tax-mode placeholder and explicit VAT bucket deferral flag.
+
+J21-4A is still contracts only:
+
+- no renderer
+- no printer
+- no checkout wiring
+- no saved sale receipt_snapshot writes
+- no database migration
+- no sequence allocation
+- no electronic journal
+- no X/Z reading
+- no VAT bucket engine
+- no official receipt/invoice output claim
+
+Future J21-4B may add a builder that maps existing sale and machine-profile data into the draft without rendering official output.
+
 ## First-Try Best-Practice Guardrails
 
 1. Do not call any output "Official Receipt" or "Official Invoice" until C01-C05 are implemented and tested.
