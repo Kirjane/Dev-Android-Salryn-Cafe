@@ -567,6 +567,62 @@ J21-4D is still validation only:
 
 Future phase must be confirmed before any calculator engine, output renderer, checkout integration, persistence, journal, or reporting work.
 
+## J21-5A Electronic Journal / Audit Journal Planning Guardrails
+
+J21-5A adds planning and guardrails for the future electronic journal and audit journal boundary.
+
+This phase is documentation plus source/guard checks only. It does not add a DB/schema migration, new journal tables, checkout wiring, receipt_snapshot writes, official document persistence, renderer, printer, sequence allocation changes, tax calculator engine, X/Z reading, or official receipt/invoice output claim.
+
+C08 planning coverage:
+
+- defines future electronic journal evidence boundary
+- defines future audit journal evidence boundary
+- identifies existing sales.receipt_snapshot, print_jobs, and audit_logs boundaries
+- blocks using print_jobs as an electronic journal
+- blocks upgrading audit_logs into an RMO electronic journal in this phase
+
+C07 partial planning coverage:
+
+- future reprint marker guardrail
+- future void/cancel/refund event guardrail
+- future transaction integrity guardrail
+- demo/training output separation guardrail
+
+C12 partial planning coverage:
+
+- future export/preservation metadata guardrail
+- future backup/recovery preservation guardrail
+- future production reset separation guardrail
+
+Future required capture fields planned:
+
+- official document number
+- document kind
+- machine profile id
+- sale id
+- cashier/user id
+- transaction timestamp
+- rendered snapshot hash later
+- reprint marker later
+- void/cancel/refund event later
+- export/preservation metadata later
+
+J21-5A is still planning only:
+
+- no DB/schema migration
+- no new journal tables
+- no checkout wiring
+- no receipt_snapshot writes
+- no official document persistence
+- no renderer
+- no printer
+- no sequence allocation changes
+- no tax calculator engine
+- no X/Z reading
+- no official receipt/invoice output claim
+
+J21-5B must be explicitly confirmed before any schema, append model, checkout integration, renderer integration, print integration, snapshot persistence, export, X/Z, or official output work.
+
 ## First-Try Best-Practice Guardrails
 
 1. Do not call any output "Official Receipt" or "Official Invoice" until C01-C05 are implemented and tested.
