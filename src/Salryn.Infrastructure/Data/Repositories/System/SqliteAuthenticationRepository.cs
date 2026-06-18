@@ -140,6 +140,7 @@ public sealed class SqliteAuthenticationRepository :
 
             Guid userId = Guid.NewGuid();
             string now = DateTimeOffset.UtcNow.ToString("O");
+            Guid storeSettingsId = EnsureDefaultStoreSettings(connection, transaction, now);
 
             using (var insertUser = connection.CreateCommand())
             {
@@ -177,6 +178,13 @@ public sealed class SqliteAuthenticationRepository :
                 updateMetadata.ExecuteNonQuery();
             }
 
+            InsertFirstRunAuditLog(
+                connection,
+                transaction,
+                userId,
+                storeSettingsId,
+                now);
+
             IReadOnlyList<string> permissions = ReadRolePermissions(
                 connection,
                 transaction,
@@ -205,6 +213,102 @@ public sealed class SqliteAuthenticationRepository :
         }
     }
 
+    private static Guid EnsureDefaultStoreSettings(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string now)
+    {
+        Guid? existingStoreSettingsId = TryReadFirstStoreSettingsId(connection, transaction);
+
+        if (existingStoreSettingsId.HasValue)
+        {
+            return existingStoreSettingsId.Value;
+        }
+
+        Guid storeSettingsId = Guid.NewGuid();
+
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO store_settings
+                (id, store_name, business_name, address, contact_number, tin, currency_label,
+                 receipt_width_mm, receipt_header, receipt_footer, tax_mode_enabled,
+                 shift_mode_enabled, allow_negative_stock, created_at, updated_at)
+            VALUES
+                ($id, $storeName, $businessName, NULL, NULL, NULL, $currencyLabel,
+                 $receiptWidthMm, NULL, NULL, $taxModeEnabled,
+                 $shiftModeEnabled, $allowNegativeStock, $createdAt, NULL);
+            """;
+
+        command.Parameters.AddWithValue("$id", storeSettingsId.ToString("D"));
+        command.Parameters.AddWithValue("$storeName", "SALRYN STORE");
+        command.Parameters.AddWithValue("$businessName", "Local POS");
+        command.Parameters.AddWithValue("$currencyLabel", DefaultSeedData.StoreDefaults.CurrencyLabel);
+        command.Parameters.AddWithValue("$receiptWidthMm", DefaultSeedData.StoreDefaults.ReceiptWidthMm);
+        command.Parameters.AddWithValue("$taxModeEnabled", DefaultSeedData.StoreDefaults.TaxModeEnabled ? 1 : 0);
+        command.Parameters.AddWithValue("$shiftModeEnabled", DefaultSeedData.StoreDefaults.ShiftModeEnabled ? 1 : 0);
+        command.Parameters.AddWithValue("$allowNegativeStock", DefaultSeedData.StoreDefaults.AllowNegativeStock ? 1 : 0);
+        command.Parameters.AddWithValue("$createdAt", now);
+
+        command.ExecuteNonQuery();
+
+        return storeSettingsId;
+    }
+
+    private static Guid? TryReadFirstStoreSettingsId(
+        SqliteConnection connection,
+        SqliteTransaction transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT id
+            FROM store_settings
+            ORDER BY created_at
+            LIMIT 1;
+            """;
+
+        object? value = command.ExecuteScalar();
+
+        if (value is null || value == DBNull.Value)
+        {
+            return null;
+        }
+
+        string? rawValue = value.ToString();
+
+        if (Guid.TryParse(rawValue, out Guid parsed))
+        {
+            return parsed;
+        }
+
+        throw new FormatException("Existing store_settings id is not a valid GUID.");
+    }
+
+    private static void InsertFirstRunAuditLog(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        Guid adminUserId,
+        Guid storeSettingsId,
+        string now)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO audit_logs
+                (id, user_id, action, entity_type, entity_id, old_value_json, new_value_json, reason, created_at)
+            VALUES
+                ($id, $userId, 'FIRST_RUN_ADMIN_CREATED', 'store_settings', $entityId, NULL, NULL,
+                 'Initial first-run authentication setup completed.', $createdAt);
+            """;
+
+        command.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("D"));
+        command.Parameters.AddWithValue("$userId", adminUserId.ToString("D"));
+        command.Parameters.AddWithValue("$entityId", storeSettingsId.ToString("D"));
+        command.Parameters.AddWithValue("$createdAt", now);
+
+        command.ExecuteNonQuery();
+    }
     private static bool HasAnyActiveUser(
         SqliteConnection connection,
         SqliteTransaction transaction)
