@@ -1,4 +1,4 @@
-﻿using Salryn.Tests;
+using Salryn.Tests;
 
 namespace Salryn.Tools.CoreSmoke;
 
@@ -123,6 +123,7 @@ public static class Program
         J21Rmo242023ElectronicJournalSchemaFoundationChecks.Run();
         J21Rmo242023ElectronicJournalDatabaseRiskAuditChecks.Run();
         J21Rmo242023ElectronicJournalSchemaHardeningChecks.Run();
+        J21Rmo242023ElectronicJournalAppendContractPlanningChecks.Run();
 
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }

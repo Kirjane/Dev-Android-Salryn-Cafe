@@ -1,4 +1,4 @@
-﻿# RMO 24-2023 Compliance Matrix - Salryn
+# RMO 24-2023 Compliance Matrix - Salryn
 
 J21-1 status: guardrail only.
 
@@ -861,6 +861,41 @@ J21-5E is DB hardening only:
 
 J21-5F must be explicitly confirmed before any append service, checkout integration, renderer integration, print integration, snapshot persistence, export behavior, X/Z, UI, or official output work.
 
+## J21-5F Electronic Journal Append Contract Planning
+
+J21-5F adds neutral Core contracts and planning docs for the future electronic journal append boundary.
+
+This phase is contract planning only. Behavior is not added.
+
+C08 partial planning coverage:
+
+- append contract shape for future electronic journal anchor creation
+- machine profile, sale, official sequence, document number, and cashier identity ownership
+- optional snapshot evidence shape while renderer and snapshot persistence remain deferred
+
+C07 partial planning coverage:
+
+- single-transaction boundary planning for official sequence allocation, snapshot persistence, journal anchor insert, and ORIGINAL event insert
+- ORIGINAL event identity shape
+- no reversal behavior yet
+
+C12 partial planning coverage:
+
+- preservation of future journal evidence boundary
+- deferred export/preservation behavior
+
+J21-5F is contract planning only:
+
+- no append service
+- no checkout wiring
+- no database migration
+- no repository
+- no receipt_snapshot writes
+- no renderer
+- no printer
+- no official receipt/invoice output claim
+
+J21-5G must be explicitly confirmed before append service, checkout integration, renderer integration, print integration, export behavior, X/Z, UI, or official output work.
 ## First-Try Best-Practice Guardrails
 
 1. Do not call any output "Official Receipt" or "Official Invoice" until C01-C05 are implemented and tested.
