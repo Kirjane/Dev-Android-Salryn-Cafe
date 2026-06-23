@@ -1,4 +1,4 @@
-﻿﻿using Salryn.Core.Common;
+using Salryn.Core.Common;
 using Salryn.Core.Models;
 
 namespace Salryn.Core.Services;
@@ -92,42 +92,21 @@ public sealed class ElectronicJournalAppendContractValidator
                 "Atomic append boundary steps are required."));
         }
 
-        Result boundaryValidation = ValidateAtomicBoundary(contract.AtomicBoundarySteps);
+        if (contract.SnapshotEvidence is not null)
+        {
+            Result snapshotValidation = ValidateSnapshotEvidence(contract.SnapshotEvidence);
+
+            if (snapshotValidation.IsFailure)
+            {
+                return snapshotValidation;
+            }
+        }
+
+        Result boundaryValidation = ElectronicJournalAppendAtomicBoundaryRules.Validate(contract);
 
         if (boundaryValidation.IsFailure)
         {
             return boundaryValidation;
-        }
-
-        if (contract.SnapshotEvidence is not null)
-        {
-            return ValidateSnapshotEvidence(contract.SnapshotEvidence);
-        }
-
-        return Result.Success();
-    }
-
-    private static Result ValidateAtomicBoundary(IReadOnlyList<ElectronicJournalAtomicBoundaryStep> steps)
-    {
-        if (!steps.Contains(ElectronicJournalAtomicBoundaryStep.OfficialSequenceAllocation))
-        {
-            return Result.Fail(Error.Validation(
-                "ElectronicJournalAppend.SequenceBoundaryRequired",
-                "Official sequence allocation boundary is required."));
-        }
-
-        if (!steps.Contains(ElectronicJournalAtomicBoundaryStep.JournalAnchorInsert))
-        {
-            return Result.Fail(Error.Validation(
-                "ElectronicJournalAppend.AnchorBoundaryRequired",
-                "Journal anchor insert boundary is required."));
-        }
-
-        if (!steps.Contains(ElectronicJournalAtomicBoundaryStep.OriginalEventInsert))
-        {
-            return Result.Fail(Error.Validation(
-                "ElectronicJournalAppend.OriginalEventBoundaryRequired",
-                "ORIGINAL event insert boundary is required."));
         }
 
         return Result.Success();
