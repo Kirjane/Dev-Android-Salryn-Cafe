@@ -131,6 +131,7 @@ public static class Program
         J21Rmo242023ElectronicJournalAppendRegistrationBoundaryChecks.RunAsync().GetAwaiter().GetResult();
         J21Rmo242023ElectronicJournalAppendBoundaryDocumentationSealChecks.Run();
         J21Rmo242023SharedSqliteTransactionBoundaryContractChecks.Run();
+        J21Rmo242023SharedSqliteTransactionBoundaryImplementationChecks.Run();
 
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }

@@ -1068,6 +1068,39 @@ Not added:
 - no official output claim
 
 Future implementation must keep official sequence allocation, optional snapshot persistence, journal anchor insert, and ORIGINAL event insert inside one explicit transaction.
+## J21-5O Shared SQLite Transaction Boundary Implementation
+
+J21-5O implements the shared SQLite transaction boundary introduced in J21-5N.
+
+This phase owns transaction execution only.
+
+Coverage:
+
+- C08 partial: future electronic journal append work can share one SQLite transaction
+- C07 partial: future official sequence allocation and journal evidence can be committed as one unit
+- C12 partial: preservation handoff can remain inside explicit transaction ownership
+
+Proven:
+
+- successful delegated work commits
+- failed Result delegated work rolls back
+- thrown delegated work rolls back
+- missing delegated work fails validation
+
+Not added:
+
+- no sequence allocation participant
+- no sequence service rewrite
+- no SQLite journal adapter implementation
+- no append persistence implementation
+- no database migration
+- no checkout wiring
+- no renderer
+- no printer
+- no Crystal Reports wiring
+- no official output claim
+
+Future implementation must add shared-transaction participants before the electronic journal SQLite append adapter is built.
 ## First-Try Best-Practice Guardrails
 
 1. Do not call any output "Official Receipt" or "Official Invoice" until C01-C05 are implemented and tested.
