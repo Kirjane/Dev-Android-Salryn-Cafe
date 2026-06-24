@@ -136,6 +136,7 @@ public static class Program
         J21Rmo242023OfficialSequenceAllocationServiceSharedBoundaryReuseChecks.Run();
         J21Rmo242023SqliteElectronicJournalAppendParticipantSkeletonChecks.Run();
         J21Rmo242023SqliteElectronicJournalAppendParticipantInsertChecks.Run();
+        J21Rmo242023SqliteElectronicJournalAppendAtomicPersistenceAdapterChecks.RunAsync().GetAwaiter().GetResult();
 
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
