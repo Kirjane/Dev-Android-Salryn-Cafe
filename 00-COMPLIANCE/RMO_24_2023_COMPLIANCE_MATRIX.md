@@ -1036,6 +1036,38 @@ Not added:
 - no official output claim
 
 Future Infrastructure persistence, checkout integration, renderer integration, Crystal Reports wiring, X/Z reading, UI, and official output must be separately confirmed.
+## J21-5N Shared SQLite Transaction Boundary Contract
+
+J21-5N adds Infrastructure contracts for sharing one SQLite connection and active transaction across future compliance-sensitive persistence participants.
+
+This phase is contract-only.
+
+Coverage:
+
+- C08 partial: electronic journal append persistence transaction boundary
+- C07 partial: official sequence allocation and journal evidence atomicity boundary
+- C12 partial: preservation handoff remains inside explicit transaction ownership
+
+Risk addressed:
+
+- the existing OfficialDocumentSequenceAllocationService currently opens and commits its own transaction
+- a future electronic journal append adapter must not consume an official number in one transaction and append journal evidence in another transaction
+- shared transaction participants are required before a safe adapter implementation
+
+Not added:
+
+- no shared transaction implementation
+- no sequence service rewrite
+- no SQLite adapter implementation
+- no append persistence implementation
+- no database migration
+- no checkout wiring
+- no renderer
+- no printer
+- no Crystal Reports wiring
+- no official output claim
+
+Future implementation must keep official sequence allocation, optional snapshot persistence, journal anchor insert, and ORIGINAL event insert inside one explicit transaction.
 ## First-Try Best-Practice Guardrails
 
 1. Do not call any output "Official Receipt" or "Official Invoice" until C01-C05 are implemented and tested.
