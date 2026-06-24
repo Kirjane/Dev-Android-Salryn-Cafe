@@ -117,6 +117,7 @@ public static class Program
         J21Rmo242023OfficialDocumentSnapshotDraftChecks.Run();
         J21Rmo242023OfficialDocumentSnapshotDraftBuilderChecks.Run();
         J21Rmo242023OfficialDocumentSnapshotEvidenceBuilderChecks.Run();
+        J21Rmo242023OfficialDocumentJournalAppendContractBuilderChecks.Run();
         J21Rmo242023OfficialDocumentTaxBucketDraftChecks.Run();
         J21Rmo242023OfficialDocumentTaxBucketDraftValidationChecks.Run();
         J21Rmo242023ElectronicJournalPlanningChecks.Run();
