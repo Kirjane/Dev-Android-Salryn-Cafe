@@ -139,6 +139,7 @@ public static class Program
         J21Rmo242023SqliteElectronicJournalAppendAtomicPersistenceAdapterChecks.RunAsync().GetAwaiter().GetResult();
         J21Rmo242023SqliteElectronicJournalAppendServiceCompositionChecks.Run();
         J21Rmo242023SqliteElectronicJournalAppendRuntimeSmokeChecks.RunAsync().GetAwaiter().GetResult();
+        J21Rmo242023SharedTransactionSequenceAndJournalAppendRuntimeSmokeChecks.RunAsync().GetAwaiter().GetResult();
 
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
