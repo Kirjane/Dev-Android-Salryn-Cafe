@@ -1101,6 +1101,186 @@ Not added:
 - no official output claim
 
 Future implementation must add shared-transaction participants before the electronic journal SQLite append adapter is built.
+## J21-5P Shared-Transaction Official Sequence Allocation Participant
+
+J21-5P adds a shared-transaction participant for official sequence allocation.
+
+Coverage:
+
+- C02 partial: official sequence allocation can run inside caller-owned SQLite transaction
+- C07 partial: official number allocation can be grouped with journal evidence writes
+- C08 partial: future electronic journal append can consume allocated official document identity without separate transaction drift
+
+Not added:
+
+- no checkout wiring
+- no renderer
+- no printer
+- no Crystal Reports wiring
+- no official output claim
+
+## J21-5Q Official Sequence Allocation Service Shared Boundary Reuse
+
+J21-5Q updates the existing official sequence allocation service to reuse the shared participant while keeping its own public standalone transaction boundary.
+
+Coverage:
+
+- C02 partial: existing allocation behavior remains available
+- C07 partial: shared participant becomes the single allocation logic path
+- C08 partial: future journal append can reuse the same allocation logic inside a larger transaction
+
+Not added:
+
+- no checkout wiring
+- no journal append from checkout
+- no renderer
+- no printer
+- no official output claim
+
+## J21-5R SQLite Electronic Journal Append Participant Skeleton
+
+J21-5R adds the SQLite append participant boundary for future journal persistence.
+
+Coverage:
+
+- C08 partial: Infrastructure participant shape for electronic journal append
+- C07 partial: participant is designed for caller-owned shared transactions
+- C12 partial: preservation evidence remains behind explicit request data
+
+Not added:
+
+- no completed append behavior claim
+- no checkout wiring
+- no renderer
+- no printer
+- no official output claim
+
+## J21-5S SQLite Electronic Journal Append Inserts
+
+J21-5S adds SQLite insert behavior for journal anchor and ORIGINAL event persistence.
+
+Coverage:
+
+- C08 partial: electronic journal entry insert and ORIGINAL event insert
+- C07 partial: append-only hardening remains enforced by prior schema hardening
+- C12 partial: optional snapshot evidence can be carried without forcing renderer work
+
+Not added:
+
+- no checkout wiring
+- no renderer
+- no printer
+- no Crystal Reports wiring
+- no official output claim
+
+## J21-5T SQLite Electronic Journal Atomic Persistence Adapter
+
+J21-5T adds the atomic persistence adapter behind the Core append persistence port.
+
+Coverage:
+
+- C08 partial: Core append orchestration can reach SQLite persistence through a port
+- C07 partial: adapter owns the SQLite transaction boundary for append persistence
+- C12 partial: snapshot and preservation evidence remain explicit inputs
+
+Not added:
+
+- no checkout wiring
+- no renderer
+- no printer
+- no Crystal Reports wiring
+- no official output claim
+
+## J21-5U SQLite Electronic Journal Append Service Composition
+
+J21-5U adds Infrastructure composition for the electronic journal append service with the SQLite atomic adapter.
+
+Coverage:
+
+- C08 partial: append service can be composed with SQLite persistence
+- C07 partial: validation, orchestration, and persistence boundaries are wired behind interfaces
+- C12 partial: preservation boundary remains explicit and deferred where behavior is not implemented
+
+Not added:
+
+- no checkout wiring
+- no renderer
+- no printer
+- no Crystal Reports wiring
+- no official output claim
+
+## J21-5V SQLite Electronic Journal Append Runtime Smoke
+
+J21-5V proves the composed SQLite append service can persist an ORIGINAL electronic journal entry in a migrated smoke database.
+
+Coverage:
+
+- C08 partial: runtime append persistence smoke
+- C07 partial: validation and atomic persistence path execute together
+- C12 partial: snapshot evidence boundary remains optional until approved renderer/snapshot persistence work
+
+Not added:
+
+- no checkout wiring
+- no receipt_snapshot writes
+- no renderer
+- no printer
+- no official output claim
+
+## J21-5W Shared Transaction Sequence And Journal Append Runtime Smoke
+
+J21-5W proves official sequence allocation and electronic journal append can execute inside the same shared SQLite transaction.
+
+Coverage:
+
+- C02 partial: official sequence allocation participates in a shared transaction
+- C07 partial: sequence allocation and journal append can commit or roll back together
+- C08 partial: allocated official document number is persisted into the electronic journal entry
+- C12 partial: rollback prevents journal evidence drift
+
+Not added:
+
+- no checkout wiring
+- no sale completion integration
+- no receipt_snapshot writes
+- no renderer
+- no printer
+- no Crystal Reports wiring
+- no official output claim
+
+## J21-5X Electronic Journal Persistence Runtime Documentation Seal
+
+J21-5X documents and seals J21-5P through J21-5W.
+
+This phase is documentation seal and smoke guard only.
+
+Current standing:
+
+- C08 partial runtime coverage: electronic journal ORIGINAL append persistence path exists and is smoke-tested
+- C07 partial runtime coverage: official number allocation and journal evidence can share one transaction and roll back together
+- C12 partial runtime coverage: preservation and snapshot evidence boundaries remain explicit, with export and retention workflows deferred
+
+Risk reduced:
+
+- sequence allocation and journal append can commit or roll back together
+- official number drift is materially mitigated before checkout integration
+
+Still not added:
+
+- No checkout wiring.
+- No sale completion integration.
+- No receipt_snapshot writes.
+- No renderer.
+- No printer.
+- No Crystal Reports wiring.
+- No official output claim.
+- No X-reading.
+- No Z-reading.
+- No reprint, void, refund, or cancel append path.
+- No export or preservation workflow.
+- No accreditation-ready claim.
+
+The next implementation phase must be explicitly confirmed before checkout, renderer, printer, Crystal Reports, X/Z, export, UI, or official output work.
 ## First-Try Best-Practice Guardrails
 
 1. Do not call any output "Official Receipt" or "Official Invoice" until C01-C05 are implemented and tested.
