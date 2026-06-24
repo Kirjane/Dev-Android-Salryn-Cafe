@@ -896,6 +896,146 @@ J21-5F is contract planning only:
 - no official receipt/invoice output claim
 
 J21-5G must be explicitly confirmed before append service, checkout integration, renderer integration, print integration, export behavior, X/Z, UI, or official output work.
+## J21-5G Electronic Journal Append Service Boundary
+
+J21-5G adds the Core append service boundary and contract validator for future electronic journal ORIGINAL append behavior.
+
+This phase is boundary and validation only.
+
+Coverage:
+
+- C08 partial: append service contract shape
+- C07 partial: append contract validation before transaction implementation
+- C12 partial: snapshot evidence validation boundary when evidence is supplied
+
+Not added:
+
+- no append persistence
+- no SQLite access
+- no database migration
+- no checkout wiring
+- no renderer
+- no printer
+- no Crystal Reports wiring
+- no official output claim
+
+## J21-5H Electronic Journal Append Atomic Boundary Rules
+
+J21-5H adds Core atomic boundary validation rules for the future electronic journal append flow.
+
+This phase is validation rules only.
+
+Coverage:
+
+- C08 partial: append boundary integrity
+- C07 partial: official sequence, snapshot evidence, journal anchor, and ORIGINAL event ordering
+- C12 partial: snapshot preservation boundary when evidence is supplied
+
+Not added:
+
+- no append persistence
+- no SQLite access
+- no database migration
+- no checkout wiring
+- no renderer
+- no printer
+- no Crystal Reports wiring
+- no official output claim
+
+## J21-5I Electronic Journal Append Persistence Ports
+
+J21-5I adds Core repository and atomic persistence port contracts for the future Infrastructure append implementation.
+
+This phase is port contracts only.
+
+Coverage:
+
+- C08 partial: journal append persistence contract shape
+- C07 partial: atomic persistence boundary shape
+- C12 partial: preservation handoff shape
+
+Not added:
+
+- no append persistence implementation
+- no SQLite access
+- no database migration
+- no checkout wiring
+- no renderer
+- no printer
+- no Crystal Reports wiring
+- no official output claim
+
+## J21-5J Electronic Journal Append Orchestration Shell
+
+J21-5J adds the Core orchestration shell behind IElectronicJournalAppendService.
+
+This phase coordinates validation, journal entry id creation, append timestamp creation, and atomic persistence port handoff only.
+
+Coverage:
+
+- C08 partial: ORIGINAL append orchestration shape
+- C07 partial: validation before persistence handoff
+- C12 partial: evidence preservation request handoff
+
+Not added:
+
+- no append persistence implementation
+- no SQLite access
+- no database migration
+- no checkout wiring
+- no renderer
+- no printer
+- no Crystal Reports wiring
+- no official output claim
+
+## J21-5K Electronic Journal Append Registration Boundary
+
+J21-5K adds a Core-safe registration boundary that creates the append service behind interfaces.
+
+This phase proves app composition can construct the service without Infrastructure wiring.
+
+Coverage:
+
+- C08 partial: append service registration boundary
+- C07 partial: explicit atomic persistence port requirement
+- C12 partial: preservation handoff remains behind a Core port
+
+Not added:
+
+- no append persistence implementation
+- no SQLite access
+- no database migration
+- no checkout wiring
+- no renderer
+- no printer
+- no Crystal Reports wiring
+- no official output claim
+
+## J21-5L Electronic Journal Append Boundary Documentation Seal
+
+J21-5L documents and seals J21-5G through J21-5K.
+
+This phase is documentation seal and smoke guard only.
+
+Coverage:
+
+- C08 partial: append boundary documentation
+- C07 partial: transaction integrity boundary documentation
+- C12 partial: preservation handoff documentation
+
+Not added:
+
+- no new append behavior
+- no append persistence implementation
+- no SQLite access
+- no database migration
+- no checkout wiring
+- no renderer
+- no printer
+- no Crystal Reports wiring
+- no official output claim
+
+Future Infrastructure persistence, checkout integration, renderer integration, Crystal Reports wiring, X/Z reading, UI, and official output must be separately confirmed.
 ## First-Try Best-Practice Guardrails
 
 1. Do not call any output "Official Receipt" or "Official Invoice" until C01-C05 are implemented and tested.

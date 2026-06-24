@@ -129,6 +129,7 @@ public static class Program
         J21Rmo242023ElectronicJournalAppendPersistencePortChecks.RunAsync().GetAwaiter().GetResult();
         J21Rmo242023ElectronicJournalAppendOrchestrationShellChecks.RunAsync().GetAwaiter().GetResult();
         J21Rmo242023ElectronicJournalAppendRegistrationBoundaryChecks.RunAsync().GetAwaiter().GetResult();
+        J21Rmo242023ElectronicJournalAppendBoundaryDocumentationSealChecks.Run();
 
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
