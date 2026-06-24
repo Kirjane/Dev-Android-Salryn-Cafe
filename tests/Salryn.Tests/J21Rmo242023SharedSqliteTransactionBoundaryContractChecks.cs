@@ -65,8 +65,11 @@ public static class J21Rmo242023SharedSqliteTransactionBoundaryContractChecks
         RequireDoesNotContain(contractText, "Crystal", "J21-5N must not wire Crystal Reports.");
         RequireDoesNotContain(contractText, "PrintDocument", "J21-5N must not wire printing.");
 
-        RequireContains(sequenceServiceText, "using SqliteTransaction transaction = connection.BeginTransaction();", "Audit must prove current sequence service still owns its own transaction.");
-        RequireContains(sequenceServiceText, "transaction.Commit();", "Audit must prove current sequence service still commits independently.");
+        RequireContains(sequenceServiceText, "SqliteSharedTransactionBoundary", "Audit must prove sequence service now uses the shared transaction boundary.");
+        RequireContains(sequenceServiceText, "SharedSqliteOfficialDocumentSequenceAllocationParticipant", "Audit must prove sequence service now delegates allocation behavior to the shared participant.");
+        RequireDoesNotContain(sequenceServiceText, "BeginTransaction", "Audit must prove sequence service no longer owns its own transaction.");
+        RequireDoesNotContain(sequenceServiceText, ".Commit(", "Audit must prove sequence service no longer commits independently.");
+        RequireDoesNotContain(sequenceServiceText, ".Rollback(", "Audit must prove sequence service no longer rolls back independently.");
         RequireContains(appendSealText, "Infrastructure persistence must be a separate phase.", "J21-5N must remain grounded in sealed append boundary.");
         RequireContains(matrixText, "## J21-5N Shared SQLite Transaction Boundary Contract", "Compliance matrix must include J21-5N.");
         RequireContains(handoffText, "Status: shared transaction contract only.", "J21-5N handoff must be contract-only.");

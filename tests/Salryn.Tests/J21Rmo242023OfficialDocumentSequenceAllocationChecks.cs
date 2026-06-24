@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Salryn.Core.Common;
 using Salryn.Infrastructure.Data;
 using Salryn.Infrastructure.Data.Migrations;
@@ -21,6 +21,14 @@ public static class J21Rmo242023OfficialDocumentSequenceAllocationChecks
             "Services",
             "OfficialDocumentSequenceAllocationService.cs");
 
+        string participantText = ReadRequiredFile(
+            repoRoot,
+            "src",
+            "Salryn.Infrastructure",
+            "Data",
+            "Services",
+            "SharedSqliteOfficialDocumentSequenceAllocationParticipant.cs");
+
         string matrixText = ReadRequiredFile(
             repoRoot,
             "00-COMPLIANCE",
@@ -40,12 +48,15 @@ public static class J21Rmo242023OfficialDocumentSequenceAllocationChecks
         RequireContains(serviceText, "// Kirch strict dev guide:", "Official allocation service must include strict development guide comments.");
         RequireContains(serviceText, "J21-3B owns official sequence allocation only.", "Official allocation service must explain J21-3B ownership.");
         RequireContains(serviceText, "It does not create sales, print receipts, render receipt/invoice text, write snapshots", "Official allocation service must block output and checkout scope creep.");
-        RequireContains(serviceText, "HasAccreditedActiveMachineProfile", "Official allocation service must gate through machine profile readiness.");
-        RequireContains(serviceText, "official_output_enabled = 1", "Official allocation service must require official output gate.");
-        RequireContains(serviceText, "compliance_mode = 'ACCREDITED'", "Official allocation service must require accredited compliance mode.");
-        RequireContains(serviceText, "current_number = $nextNumber", "Official allocation service must advance current_number.");
-        RequireContains(serviceText, "current_number = $currentNumber", "Official allocation service must guard against concurrent sequence movement.");
-        RequireContains(serviceText, "ReceiptNumber.Create", "Official allocation service must use deterministic padded receipt number formatting.");
+        RequireContains(serviceText, "SqliteSharedTransactionBoundary", "Official allocation service must reuse shared SQLite transaction boundary.");
+        RequireContains(serviceText, "SharedSqliteOfficialDocumentSequenceAllocationParticipant", "Official allocation service must delegate to the shared transaction participant.");
+        RequireContains(serviceText, "_transactionBoundary.ExecuteAsync<OfficialDocumentSequenceAllocation>", "Official allocation service must execute through the shared boundary.");
+        RequireContains(participantText, "HasAccreditedActiveMachineProfile", "Official allocation service must gate through machine profile readiness.");
+        RequireContains(participantText, "official_output_enabled = 1", "Official allocation service must require official output gate.");
+        RequireContains(participantText, "compliance_mode = 'ACCREDITED'", "Official allocation service must require accredited compliance mode.");
+        RequireContains(participantText, "current_number = $nextNumber", "Official allocation service must advance current_number.");
+        RequireContains(participantText, "current_number = $currentNumber", "Official allocation service must guard against concurrent sequence movement.");
+        RequireContains(participantText, "ReceiptNumber.Create", "Official allocation service must use deterministic padded receipt number formatting.");
         RequireContains(matrixText, "## J21-3B Official Receipt/Invoice Sequence Allocation Service", "Compliance matrix must include J21-3B allocation service section.");
         RequireContains(handoffText, "Status: allocation service only.", "J21-3B handoff must preserve allocation-only scope.");
         RequireContains(handoffText, "No checkout flow wiring.", "J21-3B handoff must block checkout wiring.");

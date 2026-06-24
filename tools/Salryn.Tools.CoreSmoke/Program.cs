@@ -133,6 +133,7 @@ public static class Program
         J21Rmo242023SharedSqliteTransactionBoundaryContractChecks.Run();
         J21Rmo242023SharedSqliteTransactionBoundaryImplementationChecks.Run();
         J21Rmo242023SharedTransactionOfficialSequenceAllocationParticipantChecks.Run();
+        J21Rmo242023OfficialSequenceAllocationServiceSharedBoundaryReuseChecks.Run();
 
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
