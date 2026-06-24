@@ -26,8 +26,9 @@ public sealed class SqliteProductReadRepository :
             using var connection = CreateOpenConnection();
             using var command = connection.CreateCommand();
 
+            // Kirch: Lookup feeds checkout selection, so inactive products stay unavailable by ID and barcode.
             command.CommandText = ProductLookupSql + Environment.NewLine + """
-                WHERE p.id = $id
+                WHERE p.id = $id AND p.is_active = 1
                 LIMIT 1;
                 """;
 

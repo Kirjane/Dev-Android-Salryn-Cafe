@@ -261,8 +261,9 @@ public sealed class SalrynAppServices
             repositories.CreateSaleWriteRepository(),
             cashierSessions);
 
+        // Kirch: Checkout completion must re-read product facts before committing a sale.
         IPosCheckoutApplicationService posCheckoutApplication =
-            new PosCheckoutApplicationService(posCheckout);
+            new PosCheckoutApplicationService(posCheckout, productReadRepository);
 
         return new SalrynAppServices(
             dbPaths,

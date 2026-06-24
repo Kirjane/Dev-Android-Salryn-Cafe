@@ -57,7 +57,7 @@ internal static class PosCheckoutApplicationRepositorySmokeChecks
             saleWriteRepository,
             cashierSessions);
 
-        PosCheckoutApplicationService checkoutApplication = new(checkoutCore);
+        PosCheckoutApplicationService checkoutApplication = new(checkoutCore, productReadRepository);
 
         ForceCloseExistingOpenSession(
             cashierSessions,

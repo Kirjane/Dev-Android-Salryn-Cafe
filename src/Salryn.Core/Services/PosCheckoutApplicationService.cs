@@ -1,5 +1,7 @@
 ﻿using Salryn.Core.Common;
 using Salryn.Core.Models;
+using Salryn.Core.ReadModels;
+using Salryn.Core.Repositories;
 using Salryn.Core.ValueObjects;
 
 namespace Salryn.Core.Services;
@@ -40,10 +42,19 @@ public interface IPosCheckoutApplicationService
 public sealed class PosCheckoutApplicationService : IPosCheckoutApplicationService
 {
     private readonly IPosCheckoutService _checkoutService;
+    private readonly IProductReadRepository? _productReadRepository;
 
     public PosCheckoutApplicationService(IPosCheckoutService checkoutService)
     {
         _checkoutService = checkoutService ?? throw new ArgumentNullException(nameof(checkoutService));
+    }
+
+    public PosCheckoutApplicationService(
+        IPosCheckoutService checkoutService,
+        IProductReadRepository productReadRepository)
+        : this(checkoutService)
+    {
+        _productReadRepository = productReadRepository ?? throw new ArgumentNullException(nameof(productReadRepository));
     }
 
     public async Task<Result> CompleteSaleAsync(
@@ -72,6 +83,15 @@ public sealed class PosCheckoutApplicationService : IPosCheckoutApplicationServi
 
             foreach (PosCheckoutLineInput line in request.Lines)
             {
+                Result<ResolvedCheckoutLineSnapshot> snapshotResult =
+                    await ResolveLineSnapshotAsync(line, cancellationToken);
+
+                if (snapshotResult.IsFailure)
+                {
+                    return Result.Fail(snapshotResult.ErrorDetail);
+                }
+
+                ResolvedCheckoutLineSnapshot snapshot = snapshotResult.Value;
                 Result<Quantity> quantityResult = Quantity.FromX1000(line.QuantityX1000);
 
                 if (quantityResult.IsFailure)
@@ -82,10 +102,10 @@ public sealed class PosCheckoutApplicationService : IPosCheckoutApplicationServi
                 }
 
                 Quantity quantity = quantityResult.Value;
-                Money unitPrice = Money.FromCents(line.UnitPriceCents);
+                Money unitPrice = Money.FromCents(snapshot.UnitPriceCents);
                 Money discount = Money.FromCents(line.DiscountCents);
-                Money? costPrice = line.CostPriceCents.HasValue
-                    ? Money.FromCents(line.CostPriceCents.Value)
+                Money? costPrice = snapshot.CostPriceCents.HasValue
+                    ? Money.FromCents(snapshot.CostPriceCents.Value)
                     : null;
 
                 long grossLineTotalCents = CalculateLineGrossCents(unitPrice, quantity);
@@ -104,12 +124,12 @@ public sealed class PosCheckoutApplicationService : IPosCheckoutApplicationServi
                 {
                     Id = Guid.NewGuid(),
                     SaleId = saleId,
-                    ProductId = line.ProductId,
-                    ProductNameSnapshot = line.ProductNameSnapshot.Trim(),
-                    BarcodeSnapshot = string.IsNullOrWhiteSpace(line.BarcodeSnapshot)
+                    ProductId = snapshot.ProductId,
+                    ProductNameSnapshot = snapshot.ProductNameSnapshot.Trim(),
+                    BarcodeSnapshot = string.IsNullOrWhiteSpace(snapshot.BarcodeSnapshot)
                         ? null
-                        : line.BarcodeSnapshot.Trim(),
-                    UnitNameSnapshot = line.UnitNameSnapshot.Trim(),
+                        : snapshot.BarcodeSnapshot.Trim(),
+                    UnitNameSnapshot = snapshot.UnitNameSnapshot.Trim(),
                     Quantity = quantity,
                     UnitPrice = unitPrice,
                     CostPrice = costPrice,
@@ -119,12 +139,12 @@ public sealed class PosCheckoutApplicationService : IPosCheckoutApplicationServi
 
                 items.Add(item);
 
-                if (line.TrackStock)
+                if (snapshot.TrackStock)
                 {
                     stockMovements.Add(new StockMovement
                     {
                         Id = Guid.NewGuid(),
-                        ProductId = line.ProductId,
+                        ProductId = snapshot.ProductId,
                         MovementType = StockMovementType.Sale,
                         QuantityChange = quantity,
                         CostPrice = costPrice,
@@ -285,6 +305,52 @@ public sealed class PosCheckoutApplicationService : IPosCheckoutApplicationServi
         return Result.Success();
     }
 
+    private async Task<Result<ResolvedCheckoutLineSnapshot>> ResolveLineSnapshotAsync(
+        PosCheckoutLineInput line,
+        CancellationToken cancellationToken)
+    {
+        if (_productReadRepository is null)
+        {
+            return Result<ResolvedCheckoutLineSnapshot>.Success(
+                ResolvedCheckoutLineSnapshot.FromInput(line));
+        }
+
+        Result<ProductLookupReadModel?> productResult =
+            await _productReadRepository.FindByIdAsync(line.ProductId, cancellationToken);
+
+        if (productResult.IsFailure)
+        {
+            return Result<ResolvedCheckoutLineSnapshot>.Fail(productResult.ErrorDetail);
+        }
+
+        ProductLookupReadModel? product = productResult.Value;
+
+        if (product is null || !product.IsActive)
+        {
+            return Result<ResolvedCheckoutLineSnapshot>.Fail(Error.NotFound(
+                "CheckoutBoundary.ProductNotFoundOrInactive",
+                "Checkout product was not found or is inactive."));
+        }
+
+        if (line.DiscountCents > 0 && !product.AllowDiscount)
+        {
+            return Result<ResolvedCheckoutLineSnapshot>.Fail(Error.Validation(
+                "CheckoutBoundary.ProductDiscountNotAllowed",
+                "Checkout product does not allow line discounts."));
+        }
+
+        // Kirch: Completion re-reads product facts so a POS terminal cannot persist tampered price or stock flags.
+        return Result<ResolvedCheckoutLineSnapshot>.Success(
+            new ResolvedCheckoutLineSnapshot(
+                product.Id,
+                product.Name,
+                product.Barcode,
+                product.UnitName,
+                product.SellingPrice.Cents,
+                product.CostPrice?.Cents,
+                product.TrackStock));
+    }
+
     private static Result ValidateLine(PosCheckoutLineInput line)
     {
         if (line is null)
@@ -336,6 +402,13 @@ public sealed class PosCheckoutApplicationService : IPosCheckoutApplicationServi
 
     private static Result ValidatePayment(PosCheckoutPaymentInput payment)
     {
+        if (payment is null)
+        {
+            return Result.Fail(Error.Validation(
+                "CheckoutBoundary.PaymentRequired",
+                "Checkout payment is required."));
+        }
+
         if (!Enum.IsDefined(typeof(PaymentMethod), payment.Method))
         {
             return Result.Fail(Error.Validation(
@@ -363,6 +436,28 @@ public sealed class PosCheckoutApplicationService : IPosCheckoutApplicationServi
             gross,
             0,
             MidpointRounding.AwayFromZero));
+    }
+
+    private sealed record ResolvedCheckoutLineSnapshot(
+        Guid ProductId,
+        string ProductNameSnapshot,
+        string? BarcodeSnapshot,
+        string UnitNameSnapshot,
+        long UnitPriceCents,
+        long? CostPriceCents,
+        bool TrackStock)
+    {
+        public static ResolvedCheckoutLineSnapshot FromInput(PosCheckoutLineInput line)
+        {
+            return new ResolvedCheckoutLineSnapshot(
+                line.ProductId,
+                line.ProductNameSnapshot,
+                line.BarcodeSnapshot,
+                line.UnitNameSnapshot,
+                line.UnitPriceCents,
+                line.CostPriceCents,
+                line.TrackStock);
+        }
     }
 }
 
