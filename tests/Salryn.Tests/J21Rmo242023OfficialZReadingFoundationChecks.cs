@@ -38,6 +38,8 @@ public static class J21Rmo242023OfficialZReadingFoundationChecks
 
         RequireContains(sqliteText, "OfficialZReading.DuplicateRange", "SQLite Z-reading persistence must reject duplicate exact ranges.");
         RequireContains(sqliteText, "OfficialZReading.OverlappingRange", "SQLite Z-reading persistence must reject overlapping finalized ranges.");
+        RequireContains(sqliteText, "RangesOverlapHalfOpen", "SQLite Z-reading persistence must use half-open overlap semantics.");
+        RequireContains(sqliteText, "existingStart.UtcDateTime < newEnd.UtcDateTime", "Half-open overlap must allow adjacent range boundaries.");
         RequireContains(sqliteText, "InsertZReading", "SQLite Z-reading persistence must insert only the final Z-reading proof.");
         RequireContains(sqliteText, "original journal evidence remains append-only", "SQLite Z-reading persistence must document append-only source evidence.");
         RequireNotContains(sqliteText, "receipt_snapshot", "SQLite Z-reading persistence must not read sales.receipt_snapshot.");
@@ -56,6 +58,8 @@ public static class J21Rmo242023OfficialZReadingFoundationChecks
         RequireContains(infrastructureSmokeProgramText, "OfficialZReadingSmokeChecks.Run(projectRoot);", "Infrastructure smoke command must run Z-reading proof checks.");
         RequireContains(infrastructureSmokeText, "OfficialZReading.DuplicateRange", "Infrastructure smoke must prove duplicate rejection.");
         RequireContains(infrastructureSmokeText, "OfficialZReading.OverlappingRange", "Infrastructure smoke must prove overlap rejection.");
+        RequireContains(infrastructureSmokeText, "OfficialZReading.AdjacentSecondDay", "Infrastructure smoke must prove adjacent daily Z-readings are allowed.");
+        RequireContains(infrastructureSmokeText, "Boundary timestamp evidence must belong to the second half-open range", "Infrastructure smoke must prove boundary evidence belongs to the second range.");
         RequireContains(infrastructureSmokeText, "OfficialZReading.EvidenceHashMismatch", "Infrastructure smoke must prove hash mismatch blocks finalization.");
         RequireContains(infrastructureSmokeText, "Empty Z-reading", "Infrastructure smoke must document empty range behavior.");
 
@@ -141,6 +145,13 @@ public static class J21Rmo242023OfficialZReadingFoundationChecks
             service.FinalizeAsync(CreateRequest() with
             {
                 RangeStartedAt = RangeEndedAt,
+                RangeEndedAt = RangeStartedAt
+            }).GetAwaiter().GetResult(),
+            "OfficialZReading.InvalidDateRange");
+
+        ExpectFailure(
+            service.FinalizeAsync(CreateRequest() with
+            {
                 RangeEndedAt = RangeStartedAt
             }).GetAwaiter().GetResult(),
             "OfficialZReading.InvalidDateRange");

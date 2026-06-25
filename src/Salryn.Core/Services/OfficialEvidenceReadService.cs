@@ -113,7 +113,7 @@ public sealed class OfficialEvidenceExportBuilder
 
         if (request.RangeStartedAt == default ||
             request.RangeEndedAt == default ||
-            request.RangeEndedAt < request.RangeStartedAt)
+            request.RangeEndedAt <= request.RangeStartedAt)
         {
             return Result.Fail(Error.Validation(
                 "OfficialEvidence.InvalidDateRange",

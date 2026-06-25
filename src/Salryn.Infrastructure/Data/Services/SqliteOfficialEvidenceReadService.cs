@@ -61,7 +61,7 @@ public sealed class SqliteOfficialEvidenceReadService : IOfficialEvidenceReadSer
         connection.Open();
 
         using SqliteCommand command = connection.CreateCommand();
-        // Kirch: why - official evidence export reads journal snapshot evidence only, not checkout preview text.
+        // Kirch: why - official evidence export uses half-open ranges so adjacent daily readings do not double-count boundary evidence.
         command.CommandText = """
             SELECT
                 e.id,
@@ -85,7 +85,7 @@ public sealed class SqliteOfficialEvidenceReadService : IOfficialEvidenceReadSer
             INNER JOIN bir_machine_profiles m
                 ON m.id = e.bir_machine_profile_id
             WHERE e.created_at >= $rangeStartedAt
-              AND e.created_at <= $rangeEndedAt
+              AND e.created_at < $rangeEndedAt
               AND e.document_kind = $documentKind
               AND ($machineProfileId IS NULL OR e.bir_machine_profile_id = $machineProfileId)
               AND ($scopeCode IS NULL OR m.registration_scope_code = $scopeCode)

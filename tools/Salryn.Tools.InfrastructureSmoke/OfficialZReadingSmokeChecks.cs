@@ -74,6 +74,19 @@ internal static class OfficialZReadingSmokeChecks
             taxCents: 0,
             totalCents: 999999,
             corruptHash: false);
+        InsertOfficialSaleAndEvidence(
+            database.Factory,
+            saleId: Guid.Parse("23000000-0000-0000-0000-000000000104"),
+            journalEntryId: Guid.Parse("23000000-0000-0000-0000-000000000204"),
+            eventId: Guid.Parse("23000000-0000-0000-0000-000000000304"),
+            documentNumber: "OR-2026-000004",
+            transactionTimestamp: new DateTimeOffset(2026, 6, 26, 0, 0, 0, TimeSpan.Zero),
+            subtotalCents: 500,
+            lineDiscountCents: 0,
+            saleDiscountCents: 0,
+            taxCents: 0,
+            totalCents: 500,
+            corruptHash: false);
 
         DatabaseMutationSnapshot before = CaptureMutationSnapshot(database.Factory);
         OfficialZReadingRequest request = CreateRequest(
@@ -109,10 +122,30 @@ internal static class OfficialZReadingSmokeChecks
             CaptureMutationSnapshot(database.Factory),
             "OfficialZReading.OverlappingRange");
 
+        Result<OfficialZReadingResult> adjacentSecondDay =
+            database.Services.OfficialZReading.FinalizeAsync(CreateRequest(
+                new DateTimeOffset(2026, 6, 26, 0, 0, 0, TimeSpan.Zero),
+                new DateTimeOffset(2026, 6, 27, 0, 0, 0, TimeSpan.Zero))).GetAwaiter().GetResult();
+
+        RequireSuccess(adjacentSecondDay, "OfficialZReading.AdjacentSecondDay");
+        VerifyBoundarySecondDayZReading(adjacentSecondDay.Value);
+        VerifyPersistedZReading(database.Factory, adjacentSecondDay.Value);
+
+        DatabaseMutationSnapshot afterAdjacent = CaptureMutationSnapshot(database.Factory);
+        AssertSourceMutationSnapshot(afterSuccess, afterAdjacent, "OfficialZReading.AdjacentSecondDay");
+        RequireEqual(afterSuccess.ZReadings + 1, afterAdjacent.ZReadings, "Adjacent daily Z-reading must insert one additional Z-reading record.");
+
         ExpectZReadingFailure(
             database.Services.OfficialZReading.FinalizeAsync(request with
             {
                 RangeStartedAt = request.RangeEndedAt,
+                RangeEndedAt = request.RangeStartedAt
+            }).GetAwaiter().GetResult(),
+            "OfficialZReading.InvalidDateRange");
+
+        ExpectZReadingFailure(
+            database.Services.OfficialZReading.FinalizeAsync(request with
+            {
                 RangeEndedAt = request.RangeStartedAt
             }).GetAwaiter().GetResult(),
             "OfficialZReading.InvalidDateRange");
@@ -133,7 +166,7 @@ internal static class OfficialZReadingSmokeChecks
             "OfficialZReading.UnsupportedDocumentKind");
 
         AssertMutationSnapshot(
-            afterSuccess,
+            afterAdjacent,
             CaptureMutationSnapshot(database.Factory),
             "OfficialZReading.ValidationFailures");
     }
@@ -230,6 +263,16 @@ internal static class OfficialZReadingSmokeChecks
         RequireEqual(1, reading.TaxModes.Count, "Z-reading must persist tax mode summaries.");
         RequireEqual("VAT_DEFERRED", reading.TaxModes[0].TaxModeCode, "Z-reading must surface snapshot tax mode code.");
         RequireTrue(reading.TaxModes[0].VatBucketEngineDeferred, "Z-reading must preserve deferred VAT-bucket state.");
+    }
+
+    private static void VerifyBoundarySecondDayZReading(OfficialZReadingResult reading)
+    {
+        RequireEqual(1, reading.Summary.EntryCount, "Adjacent daily Z-reading must include only the boundary evidence.");
+        RequireEqual(500L, reading.Summary.TotalSalesCents, "Boundary timestamp evidence must belong to the second half-open range.");
+        RequireEqual("OR-2026-000004", reading.Summary.FirstOfficialDocumentNumber, "Second-day Z-reading first document must be the midnight evidence.");
+        RequireEqual("OR-2026-000004", reading.Summary.LastOfficialDocumentNumber, "Second-day Z-reading last document must be the midnight evidence.");
+        RequireEqual(1, reading.Payments.Count, "Second-day Z-reading must preserve boundary payment summary.");
+        RequireEqual(500L, reading.Payments[0].AmountCents, "Second-day Z-reading payment total must match boundary evidence.");
     }
 
     private static void VerifyPersistedZReading(

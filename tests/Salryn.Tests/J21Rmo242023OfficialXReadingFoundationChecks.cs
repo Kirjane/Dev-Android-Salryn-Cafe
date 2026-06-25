@@ -95,6 +95,13 @@ public static class J21Rmo242023OfficialXReadingFoundationChecks
         ExpectFailure(
             service.ReadAsync(CreateRequest() with
             {
+                RangeEndedAt = CreateRequest().RangeStartedAt
+            }).GetAwaiter().GetResult(),
+            "OfficialXReading.InvalidDateRange");
+
+        ExpectFailure(
+            service.ReadAsync(CreateRequest() with
+            {
                 BirMachineProfileId = null,
                 RegistrationScopeCode = null
             }).GetAwaiter().GetResult(),

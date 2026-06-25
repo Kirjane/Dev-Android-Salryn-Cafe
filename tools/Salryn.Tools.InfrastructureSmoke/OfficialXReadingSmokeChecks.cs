@@ -73,6 +73,19 @@ internal static class OfficialXReadingSmokeChecks
             taxCents: 0,
             totalCents: 999999,
             corruptHash: false);
+        InsertOfficialSaleAndEvidence(
+            database.Factory,
+            saleId: Guid.Parse("22000000-0000-0000-0000-000000000104"),
+            journalEntryId: Guid.Parse("22000000-0000-0000-0000-000000000204"),
+            eventId: Guid.Parse("22000000-0000-0000-0000-000000000304"),
+            documentNumber: "OR-2026-000004",
+            transactionTimestamp: new DateTimeOffset(2026, 6, 26, 0, 0, 0, TimeSpan.Zero),
+            subtotalCents: 500,
+            lineDiscountCents: 0,
+            saleDiscountCents: 0,
+            taxCents: 0,
+            totalCents: 500,
+            corruptHash: false);
 
         DatabaseMutationSnapshot before = CaptureMutationSnapshot(database.Factory);
         OfficialXReadingRequest request = CreateRequest(
@@ -108,18 +121,36 @@ internal static class OfficialXReadingSmokeChecks
 
         Result<OfficialXReadingResult> empty =
             database.Services.OfficialXReading.ReadAsync(CreateRequest(
-                new DateTimeOffset(2026, 6, 26, 0, 0, 0, TimeSpan.Zero),
-                new DateTimeOffset(2026, 6, 27, 0, 0, 0, TimeSpan.Zero))).GetAwaiter().GetResult();
+                new DateTimeOffset(2026, 6, 27, 0, 0, 0, TimeSpan.Zero),
+                new DateTimeOffset(2026, 6, 28, 0, 0, 0, TimeSpan.Zero))).GetAwaiter().GetResult();
 
         RequireSuccess(empty, "OfficialXReading.Range.Empty");
         RequireEqual(0, empty.Value.Summary.EntryCount, "Empty date range must return a successful empty X-reading.");
         RequireEqual(null, empty.Value.DocumentRange, "Empty X-reading must not invent document range.");
         RequireEqual(0L, empty.Value.Summary.TotalSalesCents, "Empty X-reading must not invent totals.");
 
+        Result<OfficialXReadingResult> boundarySecondDay =
+            database.Services.OfficialXReading.ReadAsync(CreateRequest(
+                new DateTimeOffset(2026, 6, 26, 0, 0, 0, TimeSpan.Zero),
+                new DateTimeOffset(2026, 6, 27, 0, 0, 0, TimeSpan.Zero))).GetAwaiter().GetResult();
+
+        RequireSuccess(boundarySecondDay, "OfficialXReading.Range.BoundarySecondDay");
+        RequireEqual(1, boundarySecondDay.Value.Summary.EntryCount, "Boundary timestamp evidence must belong to the second half-open range.");
+        RequireEqual(500L, boundarySecondDay.Value.Summary.TotalSalesCents, "Second-day boundary range must include the midnight evidence.");
+        RequireEqual("OR-2026-000004", boundarySecondDay.Value.DocumentRange?.FirstOfficialDocumentNumber, "Boundary evidence document must be the second-day first document.");
+        RequireEqual("OR-2026-000004", boundarySecondDay.Value.DocumentRange?.LastOfficialDocumentNumber, "Boundary evidence document must be the second-day last document.");
+
         ExpectXReadingFailure(
             database.Services.OfficialXReading.ReadAsync(request with
             {
                 RangeStartedAt = request.RangeEndedAt,
+                RangeEndedAt = request.RangeStartedAt
+            }).GetAwaiter().GetResult(),
+            "OfficialXReading.InvalidDateRange");
+
+        ExpectXReadingFailure(
+            database.Services.OfficialXReading.ReadAsync(request with
+            {
                 RangeEndedAt = request.RangeStartedAt
             }).GetAwaiter().GetResult(),
             "OfficialXReading.InvalidDateRange");

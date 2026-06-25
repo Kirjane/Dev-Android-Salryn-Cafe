@@ -24,6 +24,8 @@ public static class J21Rmo242023OfficialEvidenceExportFoundationChecks
         RequireContains(sqliteText, "e.created_at ASC", "SQLite official evidence reader must order by appended timestamp.");
         RequireContains(sqliteText, "e.official_document_number ASC", "SQLite official evidence reader must order by official document number.");
         RequireContains(sqliteText, "e.id ASC", "SQLite official evidence reader must order by journal entry id.");
+        RequireContains(sqliteText, "e.created_at < $rangeEndedAt", "SQLite official evidence reader must use a half-open end boundary.");
+        RequireNotContains(sqliteText, "e.created_at <= $rangeEndedAt", "SQLite official evidence reader must not use an inclusive end boundary.");
         RequireNotContains(sqliteText, "receipt_snapshot", "SQLite official evidence reader must not read sales.receipt_snapshot.");
         RequireContains(appServicesText, "public IOfficialEvidenceReadService OfficialEvidenceRead { get; }", "AppServices must expose official evidence read through the Core contract.");
         RequireContains(appServicesText, "new SqliteOfficialEvidenceReadService", "AppServices must compose the SQLite official evidence reader.");
@@ -49,6 +51,13 @@ public static class J21Rmo242023OfficialEvidenceExportFoundationChecks
             builder.Build(validRequest with
             {
                 RangeStartedAt = validRequest.RangeEndedAt,
+                RangeEndedAt = validRequest.RangeStartedAt
+            }, Array.Empty<OfficialEvidenceEntryReadModel>(), DateTimeOffset.UtcNow),
+            "OfficialEvidence.InvalidDateRange");
+
+        ExpectFailure(
+            builder.Build(validRequest with
+            {
                 RangeEndedAt = validRequest.RangeStartedAt
             }, Array.Empty<OfficialEvidenceEntryReadModel>(), DateTimeOffset.UtcNow),
             "OfficialEvidence.InvalidDateRange");

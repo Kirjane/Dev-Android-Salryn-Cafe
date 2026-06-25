@@ -84,7 +84,7 @@ public sealed class SqliteOfficialZReadingService : IOfficialZReadingPersistence
         if (summary.ZReadingId == Guid.Empty ||
             summary.RangeStartedAt == default ||
             summary.RangeEndedAt == default ||
-            summary.RangeEndedAt < summary.RangeStartedAt ||
+            summary.RangeEndedAt <= summary.RangeStartedAt ||
             summary.FinalizedAt == default)
         {
             return Result.Fail(Error.Validation(
@@ -166,7 +166,7 @@ public sealed class SqliteOfficialZReadingService : IOfficialZReadingPersistence
                     "An official Z-reading already exists for the same machine/profile, document kind, and exact range."));
             }
 
-            if (RangesOverlapInclusive(
+            if (RangesOverlapHalfOpen(
                 existing.RangeStartedAt,
                 existing.RangeEndedAt,
                 summary.RangeStartedAt,
@@ -314,14 +314,14 @@ public sealed class SqliteOfficialZReadingService : IOfficialZReadingPersistence
         return left.UtcDateTime == right.UtcDateTime;
     }
 
-    private static bool RangesOverlapInclusive(
+    private static bool RangesOverlapHalfOpen(
         DateTimeOffset existingStart,
         DateTimeOffset existingEnd,
         DateTimeOffset newStart,
         DateTimeOffset newEnd)
     {
-        return existingStart.UtcDateTime <= newEnd.UtcDateTime &&
-               existingEnd.UtcDateTime >= newStart.UtcDateTime;
+        return existingStart.UtcDateTime < newEnd.UtcDateTime &&
+               existingEnd.UtcDateTime > newStart.UtcDateTime;
     }
 
     private static string ToDatabaseDocumentKind(ElectronicJournalDocumentKind documentKind)
