@@ -30,6 +30,7 @@ public sealed class SqliteOfficialCheckoutPersistenceService
     private readonly SharedSqliteOfficialDocumentSequenceAllocationParticipant _sequenceParticipant;
     private readonly SharedSqliteCompletedSaleWriteParticipant _saleParticipant;
     private readonly SqliteElectronicJournalAppendParticipant _journalParticipant;
+    private readonly IOfficialCheckoutReadinessService _readinessService;
     private readonly OfficialDocumentSnapshotDraftBuilder _snapshotDraftBuilder;
     private readonly OfficialDocumentJournalAppendContractBuilder _journalContractBuilder;
     private readonly Func<Guid> _journalEntryIdFactory;
@@ -43,6 +44,7 @@ public sealed class SqliteOfficialCheckoutPersistenceService
             new SharedSqliteOfficialDocumentSequenceAllocationParticipant(),
             new SharedSqliteCompletedSaleWriteParticipant(),
             new SqliteElectronicJournalAppendParticipant(),
+            new SqliteOfficialCheckoutReadinessService(connectionFactory),
             new OfficialDocumentSnapshotDraftBuilder(),
             new OfficialDocumentJournalAppendContractBuilder(),
             Guid.NewGuid,
@@ -56,6 +58,7 @@ public sealed class SqliteOfficialCheckoutPersistenceService
         SharedSqliteOfficialDocumentSequenceAllocationParticipant sequenceParticipant,
         SharedSqliteCompletedSaleWriteParticipant saleParticipant,
         SqliteElectronicJournalAppendParticipant journalParticipant,
+        IOfficialCheckoutReadinessService readinessService,
         OfficialDocumentSnapshotDraftBuilder snapshotDraftBuilder,
         OfficialDocumentJournalAppendContractBuilder journalContractBuilder,
         Func<Guid> journalEntryIdFactory,
@@ -66,6 +69,7 @@ public sealed class SqliteOfficialCheckoutPersistenceService
         _sequenceParticipant = sequenceParticipant ?? throw new ArgumentNullException(nameof(sequenceParticipant));
         _saleParticipant = saleParticipant ?? throw new ArgumentNullException(nameof(saleParticipant));
         _journalParticipant = journalParticipant ?? throw new ArgumentNullException(nameof(journalParticipant));
+        _readinessService = readinessService ?? throw new ArgumentNullException(nameof(readinessService));
         _snapshotDraftBuilder = snapshotDraftBuilder ?? throw new ArgumentNullException(nameof(snapshotDraftBuilder));
         _journalContractBuilder = journalContractBuilder ?? throw new ArgumentNullException(nameof(journalContractBuilder));
         _journalEntryIdFactory = journalEntryIdFactory ?? throw new ArgumentNullException(nameof(journalEntryIdFactory));
@@ -73,7 +77,7 @@ public sealed class SqliteOfficialCheckoutPersistenceService
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
     }
 
-    public Task<Result<SqliteOfficialCheckoutPersistenceResult>> CompleteOfficialSaleAsync(
+    public async Task<Result<SqliteOfficialCheckoutPersistenceResult>> CompleteOfficialSaleAsync(
         SqliteOfficialCheckoutPersistenceRequest request,
         CancellationToken cancellationToken = default)
     {
@@ -81,17 +85,41 @@ public sealed class SqliteOfficialCheckoutPersistenceService
 
         if (validation.IsFailure)
         {
-            return Task.FromResult(Result<SqliteOfficialCheckoutPersistenceResult>.Fail(validation.ErrorDetail));
+            return Result<SqliteOfficialCheckoutPersistenceResult>.Fail(validation.ErrorDetail);
         }
 
-        return _transactionBoundary.ExecuteAsync<SqliteOfficialCheckoutPersistenceResult>(
-            (context, token) => CompleteOfficialSaleInTransactionAsync(context, request, token),
+        Result<OfficialCheckoutReadinessResult> readinessResult =
+            await _readinessService.CheckAsync(
+                new OfficialCheckoutReadinessRequest(
+                    request.SequenceRequest.BirMachineProfileId,
+                    request.SequenceRequest.DocumentKind,
+                    request.SequenceRequest.SequenceScopeCode,
+                    request.SequenceRequest.Year),
+                cancellationToken);
+
+        if (readinessResult.IsFailure)
+        {
+            return Result<SqliteOfficialCheckoutPersistenceResult>.Fail(readinessResult.ErrorDetail);
+        }
+
+        OfficialCheckoutReadinessResult readiness = readinessResult.Value;
+
+        if (!readiness.IsReady || readiness.MachineProfile is null)
+        {
+            return Result<SqliteOfficialCheckoutPersistenceResult>.Fail(Error.Forbidden(
+                "OfficialCheckout.ReadinessBlocked",
+                BuildReadinessBlockedMessage(readiness)));
+        }
+
+        return await _transactionBoundary.ExecuteAsync<SqliteOfficialCheckoutPersistenceResult>(
+            (context, token) => CompleteOfficialSaleInTransactionAsync(context, request, readiness.MachineProfile, token),
             cancellationToken);
     }
 
     private async Task<Result<SqliteOfficialCheckoutPersistenceResult>> CompleteOfficialSaleInTransactionAsync(
         SqliteSharedTransactionContext context,
         SqliteOfficialCheckoutPersistenceRequest request,
+        OfficialDocumentSnapshotDraftMachineProfileInput trustedMachineProfile,
         CancellationToken cancellationToken)
     {
         Result<OfficialDocumentSequenceAllocation> allocationResult =
@@ -113,7 +141,8 @@ public sealed class SqliteOfficialCheckoutPersistenceService
         Result<OfficialDocumentSnapshotDraft> snapshotResult =
             _snapshotDraftBuilder.Build(new OfficialDocumentSnapshotDraftBuildRequest(
                 request.DocumentKind,
-                request.MachineProfile,
+                // Kirch: why - official taxpayer and machine evidence must come from persisted readiness, not UI/client input.
+                trustedMachineProfile,
                 officialSale,
                 request.CheckoutSale.Items,
                 request.CheckoutSale.Payments,
@@ -265,6 +294,17 @@ public sealed class SqliteOfficialCheckoutPersistenceService
             Payments = sale.Payments,
             CreatedAt = sale.CreatedAt
         };
+    }
+
+    private static string BuildReadinessBlockedMessage(OfficialCheckoutReadinessResult readiness)
+    {
+        if (readiness.Blocks.Count == 0)
+        {
+            return "Official checkout is not ready because trusted persisted machine profile evidence is unavailable.";
+        }
+
+        return "Official checkout is not ready for official output: "
+            + string.Join(" ", readiness.Blocks.Select(block => $"{block.Code}: {block.Message}"));
     }
 
     private static string NormalizeDocumentKind(string? documentKind)
