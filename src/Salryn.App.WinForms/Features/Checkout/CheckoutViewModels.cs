@@ -66,6 +66,30 @@ public sealed record CheckoutCompletionReadinessViewModel(
     string SummaryText,
     string DetailText);
 
+public sealed record CheckoutOfficialModeViewModel(
+    bool HasCheckedReadiness,
+    bool IsReady,
+    bool CanSelectOfficialMode,
+    bool IsOfficialModeSelected,
+    string SummaryText,
+    string DetailText,
+    string? ErrorCode,
+    string? ErrorMessage)
+{
+    public static CheckoutOfficialModeViewModel NotChecked()
+    {
+        return new CheckoutOfficialModeViewModel(
+            HasCheckedReadiness: false,
+            IsReady: false,
+            CanSelectOfficialMode: false,
+            IsOfficialModeSelected: false,
+            SummaryText: "Official output not checked",
+            DetailText: "Official output readiness has not been checked.",
+            ErrorCode: null,
+            ErrorMessage: null);
+    }
+}
+
 public sealed record CheckoutCompletionDryRunViewModel(
     bool HasRun,
     bool IsSuccess,
@@ -143,6 +167,7 @@ public sealed record CheckoutViewModel(
     string CashierRoleName,
     string CashierSessionText,
     string CheckoutModeText,
+    CheckoutOfficialModeViewModel OfficialMode,
     string ReceiptNumber,
     string ProductInputText,
     string ProductResultText,
@@ -177,6 +202,7 @@ public sealed record CheckoutViewModel(
             CashierRoleName: string.Empty,
             CashierSessionText: "No cashier shift context bound.",
             CheckoutModeText: "Repository-backed product search · Sale completion locked",
+            OfficialMode: CheckoutOfficialModeViewModel.NotChecked(),
             ReceiptNumber: string.Empty,
             ProductInputText: string.Empty,
             ProductResultText: "Waiting for product input.",

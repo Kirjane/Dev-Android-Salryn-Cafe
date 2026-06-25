@@ -8,6 +8,12 @@ public sealed record OfficialCheckoutReadinessRequest(
     string SequenceScopeCode,
     int Year);
 
+public sealed record OfficialCheckoutActiveScopeReadinessRequest(
+    string RegistrationScopeCode,
+    string DocumentKind,
+    string SequenceScopeCode,
+    int Year);
+
 public sealed record OfficialCheckoutReadinessBlock(
     string Code,
     string Message);
@@ -28,5 +34,9 @@ public interface IOfficialCheckoutReadinessService
 {
     Task<Result<OfficialCheckoutReadinessResult>> CheckAsync(
         OfficialCheckoutReadinessRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<Result<OfficialCheckoutReadinessResult>> CheckActiveScopeAsync(
+        OfficialCheckoutActiveScopeReadinessRequest request,
         CancellationToken cancellationToken = default);
 }

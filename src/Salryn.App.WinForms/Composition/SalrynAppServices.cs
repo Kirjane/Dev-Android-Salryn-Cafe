@@ -5,6 +5,7 @@ using Salryn.Core.Services;
 using Salryn.Infrastructure.Data;
 using Salryn.Infrastructure.Data.Initialization;
 using Salryn.Infrastructure.Data.Repositories;
+using Salryn.Infrastructure.Data.Services;
 using Salryn.Infrastructure.Paths;
 using Salryn.Host.Local.Composition;
 
@@ -83,6 +84,11 @@ public sealed class SalrynAppServices
         // Kirch: 66G6 routes checkout product search through the Local Host-backed boundary while keeping Shell checkout routing stable.
         CheckoutProductSearch =
             new CheckoutLocalHostProductSearchBoundary(LocalHostProductLookupGateway);
+
+        // Kirch: why - official mode UI must read the same backend readiness gate that protects official persistence.
+        CheckoutOfficialModeReadiness =
+            new CheckoutOfficialModeReadinessBoundary(
+                new SqliteOfficialCheckoutReadinessService(connectionFactory));
     }
 
     public DbPaths DbPaths { get; }
@@ -118,6 +124,8 @@ public sealed class SalrynAppServices
     public IStoreSettingsReadRepository StoreSettingsReadRepository { get; }
 
     public ICheckoutProductSearchBoundary CheckoutProductSearch { get; }
+
+    public ICheckoutOfficialModeReadinessBoundary CheckoutOfficialModeReadiness { get; }
 
     public ICashierSessionService CashierSessions { get; }
 

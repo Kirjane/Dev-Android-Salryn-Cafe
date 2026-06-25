@@ -18,6 +18,7 @@ switch (command)
 {
     case "fake":
         await CheckoutLocalHostLookupSmokeChecks.RunAsync();
+        await CheckoutOfficialModePresenterSmokeChecks.RunAsync();
         Console.WriteLine("SALRYN checkout Local Host lookup smoke passed.");
         break;
 
@@ -216,6 +217,133 @@ internal static class CheckoutLocalHostLookupSmokeChecks
             LastBarcode = request.Barcode;
 
             return Task.FromResult(_handler(request.Barcode));
+        }
+    }
+}
+
+internal static class CheckoutOfficialModePresenterSmokeChecks
+{
+    public static async Task RunAsync()
+    {
+        CheckoutPresenter lockedPresenter = new(
+            productSearchBoundary: null,
+            sessionContext: null,
+            receiptNumberBoundary: null,
+            completionBoundary: null,
+            officialModeReadinessBoundary: new FakeOfficialModeReadinessBoundary(
+                new CheckoutOfficialModeReadiness(
+                    HasCheckedReadiness: true,
+                    IsReady: false,
+                    CanSelectOfficialMode: false,
+                    SummaryText: "Official output locked",
+                    DetailText: "No active BIR machine profile was found.",
+                    ErrorCode: "OfficialCheckoutReadiness.ActiveMachineProfileMissing",
+                    ErrorMessage: "No active BIR machine profile was found.")));
+
+        RequireSuccess(lockedPresenter.Initialize(), "OfficialMode.Locked.Initialize");
+
+        CheckoutPresenterOperationResult lockedRefresh =
+            await lockedPresenter.RefreshOfficialModeReadinessAsync().ConfigureAwait(false);
+
+        RequireSuccess(lockedRefresh, "OfficialMode.Locked.Refresh");
+        Require(!lockedRefresh.State.OfficialMode.CanSelectOfficialMode, "Locked official mode must not be selectable.");
+        Require(!lockedRefresh.State.OfficialMode.IsOfficialModeSelected, "Locked official mode must remain unselected.");
+
+        CheckoutPresenterOperationResult lockedSelect = lockedPresenter.SelectOfficialMode();
+
+        RequireFailureCode(
+            lockedSelect,
+            "OfficialCheckoutReadiness.ActiveMachineProfileMissing",
+            "Locked official selection must fail with backend readiness code.");
+
+        CheckoutPresenter readyPresenter = new(
+            productSearchBoundary: null,
+            sessionContext: null,
+            receiptNumberBoundary: null,
+            completionBoundary: null,
+            officialModeReadinessBoundary: new FakeOfficialModeReadinessBoundary(
+                new CheckoutOfficialModeReadiness(
+                    HasCheckedReadiness: true,
+                    IsReady: true,
+                    CanSelectOfficialMode: true,
+                    SummaryText: "Official output ready",
+                    DetailText: "Active accredited BIR machine profile and official receipt sequence are ready.",
+                    ErrorCode: null,
+                    ErrorMessage: null)));
+
+        RequireSuccess(readyPresenter.Initialize(), "OfficialMode.Ready.Initialize");
+
+        CheckoutPresenterOperationResult readyRefresh =
+            await readyPresenter.RefreshOfficialModeReadinessAsync().ConfigureAwait(false);
+
+        RequireSuccess(readyRefresh, "OfficialMode.Ready.Refresh");
+        Require(readyRefresh.State.OfficialMode.CanSelectOfficialMode, "Ready official mode must be selectable.");
+
+        CheckoutPresenterOperationResult readySelect = readyPresenter.SelectOfficialMode();
+
+        RequireSuccess(readySelect, "OfficialMode.Ready.SelectOfficial");
+        Require(readySelect.State.OfficialMode.IsOfficialModeSelected, "Ready official mode must become selected.");
+
+        CheckoutPresenterOperationResult officialDryRun = readyPresenter.DryRunCompletionRequest();
+
+        RequireFailureCode(
+            officialDryRun,
+            "CheckoutOfficialMode.CompletionNotWired",
+            "Official mode must block dry-run until official persistence is wired to UI completion.");
+
+        CheckoutPresenterOperationResult standardSelect = readyPresenter.SelectStandardMode();
+
+        RequireSuccess(standardSelect, "OfficialMode.Ready.SelectStandard");
+        Require(!standardSelect.State.OfficialMode.IsOfficialModeSelected, "Standard mode must clear official selection.");
+    }
+
+    private sealed class FakeOfficialModeReadinessBoundary : ICheckoutOfficialModeReadinessBoundary
+    {
+        private readonly CheckoutOfficialModeReadiness _readiness;
+
+        public FakeOfficialModeReadinessBoundary(CheckoutOfficialModeReadiness readiness)
+        {
+            _readiness = readiness;
+        }
+
+        public Task<Result<CheckoutOfficialModeReadiness>> CheckAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult(Result<CheckoutOfficialModeReadiness>.Success(_readiness));
+        }
+    }
+
+    private static void RequireSuccess(CheckoutPresenterOperationResult result, string area)
+    {
+        if (!result.IsSuccess)
+        {
+            throw new InvalidOperationException($"{area} failed: {result.ErrorCode} {result.ErrorMessage}");
+        }
+    }
+
+    private static void RequireFailureCode(
+        CheckoutPresenterOperationResult result,
+        string expectedCode,
+        string message)
+    {
+        if (result.IsSuccess)
+        {
+            throw new InvalidOperationException(message);
+        }
+
+        if (!string.Equals(result.ErrorCode, expectedCode, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Expected {expectedCode}, found {result.ErrorCode}.");
+        }
+    }
+
+    private static void Require(bool condition, string message)
+    {
+        if (!condition)
+        {
+            throw new InvalidOperationException(message);
         }
     }
 }

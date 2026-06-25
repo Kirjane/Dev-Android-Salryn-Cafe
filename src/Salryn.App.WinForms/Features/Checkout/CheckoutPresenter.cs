@@ -16,6 +16,7 @@ public sealed class CheckoutPresenter
     private readonly CheckoutSessionContext? _sessionContext;
     private readonly ICheckoutReceiptNumberBoundary _receiptNumberBoundary;
     private readonly ICheckoutCompletionBoundary _completionBoundary;
+    private readonly ICheckoutOfficialModeReadinessBoundary? _officialModeReadinessBoundary;
     private readonly PosCheckoutProductPickerBoundary _productPickerBoundary = new();
 
     // Kirch state map: draft sale state controlled by the presenter.
@@ -38,6 +39,9 @@ public sealed class CheckoutPresenter
         CheckoutSaleSubmitGuardViewModel.NotPrepared();
     private CheckoutSaleSubmitResultViewModel _saleSubmitResult =
         CheckoutSaleSubmitResultViewModel.NotRun();
+    private CheckoutOfficialModeViewModel _officialMode =
+        CheckoutOfficialModeViewModel.NotChecked();
+    private bool _isOfficialModeSelected;
     private bool _isSaleSubmitInProgress;
     private bool _hasSaleSubmitCompleted;
 
@@ -86,12 +90,14 @@ public sealed class CheckoutPresenter
         ICheckoutProductSearchBoundary? productSearchBoundary,
         CheckoutSessionContext? sessionContext,
         ICheckoutReceiptNumberBoundary? receiptNumberBoundary,
-        ICheckoutCompletionBoundary? completionBoundary)
+        ICheckoutCompletionBoundary? completionBoundary,
+        ICheckoutOfficialModeReadinessBoundary? officialModeReadinessBoundary = null)
     {
         _productSearchBoundary = productSearchBoundary;
         _sessionContext = sessionContext;
         _receiptNumberBoundary = receiptNumberBoundary ?? new SystemCheckoutReceiptNumberBoundary();
         _completionBoundary = completionBoundary ?? new CheckoutCompletionBoundary();
+        _officialModeReadinessBoundary = officialModeReadinessBoundary;
         State = CheckoutViewModel.Empty();
         _ = RefreshState("Checkout presenter ready.");
     }
@@ -113,6 +119,8 @@ public sealed class CheckoutPresenter
         _completionDryRun = CheckoutCompletionDryRunViewModel.NotRun();
         _saleSubmitGuard = CheckoutSaleSubmitGuardViewModel.NotPrepared();
         _saleSubmitResult = CheckoutSaleSubmitResultViewModel.NotRun();
+        _officialMode = CheckoutOfficialModeViewModel.NotChecked();
+        _isOfficialModeSelected = false;
         _isSaleSubmitInProgress = false;
         _hasSaleSubmitCompleted = false;
 
@@ -146,6 +154,109 @@ public sealed class CheckoutPresenter
         }
 
         return RefreshState("Checkout presenter initialized without cashier shift context.");
+    }
+
+    public async Task<CheckoutPresenterOperationResult> RefreshOfficialModeReadinessAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (_officialModeReadinessBoundary is null)
+        {
+            _isOfficialModeSelected = false;
+            _officialMode = new CheckoutOfficialModeViewModel(
+                HasCheckedReadiness: true,
+                IsReady: false,
+                CanSelectOfficialMode: false,
+                IsOfficialModeSelected: false,
+                SummaryText: "Official output boundary missing",
+                DetailText: "Official mode readiness is not wired in this checkout surface.",
+                ErrorCode: "CheckoutOfficialMode.BoundaryMissing",
+                ErrorMessage: "Official mode readiness is not wired in this checkout surface.");
+
+            return RefreshState("Official output readiness boundary is not wired.");
+        }
+
+        Result<CheckoutOfficialModeReadiness> readinessResult =
+            await _officialModeReadinessBoundary.CheckAsync(cancellationToken).ConfigureAwait(false);
+
+        if (readinessResult.IsFailure)
+        {
+            _isOfficialModeSelected = false;
+            _officialMode = new CheckoutOfficialModeViewModel(
+                HasCheckedReadiness: true,
+                IsReady: false,
+                CanSelectOfficialMode: false,
+                IsOfficialModeSelected: false,
+                SummaryText: "Official output check failed",
+                DetailText: readinessResult.Error,
+                ErrorCode: readinessResult.ErrorDetail.Code,
+                ErrorMessage: readinessResult.Error);
+
+            CheckoutPresenterOperationResult refreshed =
+                RefreshState("Official output readiness check failed.");
+
+            State = refreshed.State with
+            {
+                HasError = true,
+                ErrorCode = readinessResult.ErrorDetail.Code,
+                ErrorMessage = readinessResult.Error,
+                StatusMessage = readinessResult.Error
+            };
+
+            return new CheckoutPresenterOperationResult(
+                IsSuccess: false,
+                ErrorCode: readinessResult.ErrorDetail.Code,
+                ErrorMessage: readinessResult.Error,
+                State: State);
+        }
+
+        CheckoutOfficialModeReadiness readiness = readinessResult.Value;
+
+        if (!readiness.CanSelectOfficialMode)
+        {
+            _isOfficialModeSelected = false;
+        }
+
+        _officialMode = MapOfficialMode(readiness, _isOfficialModeSelected);
+
+        return RefreshState(readiness.SummaryText);
+    }
+
+    public CheckoutPresenterOperationResult SelectStandardMode()
+    {
+        if (!_isOfficialModeSelected)
+        {
+            return RefreshState("Standard POS sale mode selected.");
+        }
+
+        _isOfficialModeSelected = false;
+        _officialMode = _officialMode with { IsOfficialModeSelected = false };
+        ResetCompletionDryRun();
+
+        return RefreshState("Standard POS sale mode selected.");
+    }
+
+    public CheckoutPresenterOperationResult SelectOfficialMode()
+    {
+        if (!_officialMode.HasCheckedReadiness)
+        {
+            return Fail(
+                "CheckoutOfficialMode.ReadinessCheckRequired",
+                "Refresh official output readiness before selecting official mode.");
+        }
+
+        if (!_officialMode.CanSelectOfficialMode)
+        {
+            return Fail(
+                _officialMode.ErrorCode ?? "CheckoutOfficialMode.NotReady",
+                _officialMode.DetailText);
+        }
+
+        // Kirch: why - selecting official mode is visible now, but sale submit stays locked until official persistence is wired.
+        _isOfficialModeSelected = true;
+        _officialMode = _officialMode with { IsOfficialModeSelected = true };
+        ResetCompletionDryRun();
+
+        return RefreshState("Official output selected. Completion is locked until official submit wiring is enabled.");
     }
 
     public CheckoutPresenterOperationResult SetCashierUserId(Guid cashierUserId)
@@ -475,6 +586,13 @@ public sealed class CheckoutPresenter
 
     public CheckoutPresenterOperationResult DryRunCompletionRequest()
     {
+        if (_isOfficialModeSelected)
+        {
+            return Fail(
+                "CheckoutOfficialMode.CompletionNotWired",
+                "Official output mode is selected, but official checkout completion is not wired to the UI yet.");
+        }
+
         ResetSaleSubmitGuard();
 
         Result<PosCheckoutDraftTransaction> transactionResult = _builder.GetTransaction();
@@ -804,7 +922,8 @@ public sealed class CheckoutPresenter
             CashierDisplayName: _sessionContext?.CashierDisplayName ?? string.Empty,
             CashierRoleName: _sessionContext?.CashierRoleName ?? string.Empty,
             CashierSessionText: _sessionContext?.ShiftLine ?? "No cashier shift context bound.",
-            CheckoutModeText: _sessionContext?.ModeLine ?? "Repository-backed product search · Sale completion locked",
+            CheckoutModeText: BuildCheckoutModeText(),
+            OfficialMode: _officialMode with { IsOfficialModeSelected = _isOfficialModeSelected },
             ReceiptNumber: _receiptNumber,
             ProductInputText: _productInputText,
             ProductResultText: _productResultText,
@@ -820,7 +939,7 @@ public sealed class CheckoutPresenter
             CanRemoveSelectedLine: !saleCompleted && hasLines,
             CanAddCashPayment: !saleCompleted && hasLines && _cashAmountCents > 0,
             CanClearPayments: !saleCompleted && hasPayments,
-            CanCompleteSale: !saleCompleted && _saleSubmitGuard.CanExecuteSubmit && !_isSaleSubmitInProgress,
+            CanCompleteSale: !saleCompleted && !_isOfficialModeSelected && _saleSubmitGuard.CanExecuteSubmit && !_isSaleSubmitInProgress,
             CompletionReadiness: MapCompletionReadiness(completionReadiness),
             CompletionDryRun: _completionDryRun,
             SaleSubmitGuard: _isSaleSubmitInProgress
@@ -892,6 +1011,31 @@ public sealed class CheckoutPresenter
             CanSubmitSale: readiness.CanSubmitSale,
             SummaryText: readiness.SummaryText,
             DetailText: readiness.DetailText);
+    }
+
+    private CheckoutOfficialModeViewModel MapOfficialMode(
+        CheckoutOfficialModeReadiness readiness,
+        bool isOfficialModeSelected)
+    {
+        return new CheckoutOfficialModeViewModel(
+            HasCheckedReadiness: readiness.HasCheckedReadiness,
+            IsReady: readiness.IsReady,
+            CanSelectOfficialMode: readiness.CanSelectOfficialMode,
+            IsOfficialModeSelected: readiness.CanSelectOfficialMode && isOfficialModeSelected,
+            SummaryText: readiness.SummaryText,
+            DetailText: readiness.DetailText,
+            ErrorCode: readiness.ErrorCode,
+            ErrorMessage: readiness.ErrorMessage);
+    }
+
+    private string BuildCheckoutModeText()
+    {
+        string baseText = _sessionContext?.ModeLine ?? "Repository-backed product search · Sale completion locked";
+        string selectedMode = _isOfficialModeSelected
+            ? "Official output selected · submit wiring pending"
+            : "Standard POS sale selected";
+
+        return $"{baseText} · {selectedMode} · {_officialMode.SummaryText}";
     }
 
     private static CheckoutLineViewModel MapLine(PosCheckoutDraftLine line)

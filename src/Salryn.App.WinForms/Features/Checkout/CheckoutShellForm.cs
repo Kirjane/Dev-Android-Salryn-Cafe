@@ -16,6 +16,7 @@ public sealed class CheckoutShellForm : Form
     // Frontend safe zone: typography, grouping, status badge styling, and spacing.
     // Do not change: labels render CheckoutPresenter state only.
     private readonly Label _modeLabel = new();
+    private readonly ComboBox _checkoutModeComboBox = new();
     private readonly Label _shiftContextLabel = new();
     private readonly Label _receiptNumberLabel = new();
     private readonly Label _completionReadinessLabel = new();
@@ -80,6 +81,14 @@ public sealed class CheckoutShellForm : Form
         WireEvents();
 
         Render(_presenter.Initialize().State);
+
+        Shown += async (_, _) =>
+        {
+            CheckoutPresenterOperationResult readinessResult =
+                await _presenter.RefreshOfficialModeReadinessAsync();
+
+            Render(readinessResult.State);
+        };
     }
 
     private void BuildShell()
@@ -128,23 +137,32 @@ public sealed class CheckoutShellForm : Form
         _shiftContextLabel.ForeColor = UiColors.HeaderMuted;
         _shiftContextLabel.Location = new Point(23, 52);
 
+        _checkoutModeComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        _checkoutModeComboBox.Width = 250;
+        _checkoutModeComboBox.Height = 28;
+        _checkoutModeComboBox.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+        _checkoutModeComboBox.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        _checkoutModeComboBox.Location = new Point(header.Width - _checkoutModeComboBox.Width - 20, 12);
+
         _modeLabel.AutoSize = false;
-        _modeLabel.Width = 370;
-        _modeLabel.Height = 34;
+        _modeLabel.Width = 620;
+        _modeLabel.Height = 26;
         _modeLabel.Text = "Repository-backed product search · Sale completion locked";
         _modeLabel.TextAlign = ContentAlignment.MiddleRight;
-        _modeLabel.Font = new Font("Segoe UI", 9.5F, FontStyle.Bold);
+        _modeLabel.Font = new Font("Segoe UI", 8.8F, FontStyle.Bold);
         _modeLabel.ForeColor = UiColors.HeaderMuted;
         _modeLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        _modeLabel.Location = new Point(header.Width - _modeLabel.Width - 20, 26);
+        _modeLabel.Location = new Point(header.Width - _modeLabel.Width - 20, 44);
 
         header.Resize += (_, _) =>
         {
-            _modeLabel.Location = new Point(header.Width - _modeLabel.Width - 20, 26);
+            _checkoutModeComboBox.Location = new Point(header.Width - _checkoutModeComboBox.Width - 20, 12);
+            _modeLabel.Location = new Point(header.Width - _modeLabel.Width - 20, 44);
         };
 
         header.Controls.Add(title);
         header.Controls.Add(_shiftContextLabel);
+        header.Controls.Add(_checkoutModeComboBox);
         header.Controls.Add(_modeLabel);
 
         return header;
@@ -677,6 +695,20 @@ public sealed class CheckoutShellForm : Form
             Render(_presenter.AddCashPayment().State);
         };
 
+        _checkoutModeComboBox.SelectedIndexChanged += (_, _) =>
+        {
+            if (_isRendering)
+            {
+                return;
+            }
+
+            CheckoutPresenterOperationResult result = _checkoutModeComboBox.SelectedIndex == 1
+                ? _presenter.SelectOfficialMode()
+                : _presenter.SelectStandardMode();
+
+            Render(result.State);
+        };
+
         _dryRunCompletionButton.Click += (_, _) =>
         {
             Render(_presenter.DryRunCompletionRequest().State);
@@ -900,7 +932,13 @@ public sealed class CheckoutShellForm : Form
                 _productInputTextBox.Text = state.ProductInputText;
             }
 
+            RenderCheckoutModeSelector(state);
             _modeLabel.Text = state.CheckoutModeText;
+            _modeLabel.ForeColor = state.OfficialMode.IsReady
+                ? UiColors.HeaderSuccess
+                : state.OfficialMode.HasCheckedReadiness
+                    ? UiColors.HeaderWarning
+                    : UiColors.HeaderMuted;
             _shiftContextLabel.Text = state.CashierSessionText;
             _receiptNumberLabel.Text = string.IsNullOrWhiteSpace(state.ReceiptNumber)
                 ? "Receipt: not assigned"
@@ -1034,6 +1072,29 @@ public sealed class CheckoutShellForm : Form
                     break;
                 }
             }
+        }
+    }
+
+    private void RenderCheckoutModeSelector(CheckoutViewModel state)
+    {
+        string officialModeText = state.OfficialMode.CanSelectOfficialMode
+            ? "Official output (ready)"
+            : "Official output (locked)";
+
+        if (_checkoutModeComboBox.Items.Count != 2 ||
+            !string.Equals(Convert.ToString(_checkoutModeComboBox.Items[0]), "Standard POS sale", StringComparison.Ordinal) ||
+            !string.Equals(Convert.ToString(_checkoutModeComboBox.Items[1]), officialModeText, StringComparison.Ordinal))
+        {
+            _checkoutModeComboBox.Items.Clear();
+            _checkoutModeComboBox.Items.Add("Standard POS sale");
+            _checkoutModeComboBox.Items.Add(officialModeText);
+        }
+
+        int selectedIndex = state.OfficialMode.IsOfficialModeSelected ? 1 : 0;
+
+        if (_checkoutModeComboBox.SelectedIndex != selectedIndex)
+        {
+            _checkoutModeComboBox.SelectedIndex = selectedIndex;
         }
     }
 
@@ -1178,6 +1239,8 @@ public sealed class CheckoutShellForm : Form
         public static readonly Color AppBackground = Color.FromArgb(244, 247, 251);
         public static readonly Color Header = Color.FromArgb(15, 23, 42);
         public static readonly Color HeaderMuted = Color.FromArgb(203, 213, 225);
+        public static readonly Color HeaderSuccess = Color.FromArgb(187, 247, 208);
+        public static readonly Color HeaderWarning = Color.FromArgb(254, 240, 138);
         public static readonly Color Border = Color.FromArgb(220, 227, 235);
         public static readonly Color GridHeader = Color.FromArgb(241, 245, 249);
         public static readonly Color PreparedBackground = Color.FromArgb(248, 250, 252);

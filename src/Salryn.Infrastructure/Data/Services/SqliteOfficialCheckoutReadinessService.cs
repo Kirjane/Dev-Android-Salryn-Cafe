@@ -79,6 +79,64 @@ public sealed class SqliteOfficialCheckoutReadinessService : IOfficialCheckoutRe
         }
     }
 
+    public Task<Result<OfficialCheckoutReadinessResult>> CheckActiveScopeAsync(
+        OfficialCheckoutActiveScopeReadinessRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        Result validation = ValidateActiveScopeRequest(request);
+
+        if (validation.IsFailure)
+        {
+            return Task.FromResult(Result<OfficialCheckoutReadinessResult>.Fail(validation.ErrorDetail));
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        try
+        {
+            using SqliteConnection connection = _connectionFactory.CreateConnection();
+            connection.Open();
+
+            string documentKind = NormalizeDocumentKind(request.DocumentKind);
+            string sequenceScopeCode = NormalizeScope(request.SequenceScopeCode);
+            Guid? activeProfileId = ReadActiveMachineProfileId(connection, request.RegistrationScopeCode);
+
+            if (!activeProfileId.HasValue)
+            {
+                // Kirch: why - UI mode checks must not invent a profile when official identity is not configured.
+                OfficialCheckoutReadinessResult blocked = new(
+                    Guid.Empty,
+                    documentKind,
+                    sequenceScopeCode,
+                    request.Year,
+                    ActiveSequenceId: null,
+                    MachineProfile: null,
+                    Blocks: new[]
+                    {
+                        new OfficialCheckoutReadinessBlock(
+                            "OfficialCheckoutReadiness.ActiveMachineProfileMissing",
+                            "No active BIR machine profile was found for the requested registration scope.")
+                    });
+
+                return Task.FromResult(Result<OfficialCheckoutReadinessResult>.Success(blocked));
+            }
+
+            return CheckAsync(
+                new OfficialCheckoutReadinessRequest(
+                    activeProfileId.Value,
+                    documentKind,
+                    sequenceScopeCode,
+                    request.Year),
+                cancellationToken);
+        }
+        catch (Exception ex) when (ex is SqliteException or InvalidOperationException or FormatException)
+        {
+            return Task.FromResult(Result<OfficialCheckoutReadinessResult>.Fail(Error.Unexpected(
+                "OfficialCheckoutReadiness.ActiveScopeCheckFailed",
+                ex.Message)));
+        }
+    }
+
     private static Result ValidateRequest(OfficialCheckoutReadinessRequest? request)
     {
         if (request is null)
@@ -119,6 +177,68 @@ public sealed class SqliteOfficialCheckoutReadinessService : IOfficialCheckoutRe
         }
 
         return Result.Success();
+    }
+
+    private static Result ValidateActiveScopeRequest(OfficialCheckoutActiveScopeReadinessRequest? request)
+    {
+        if (request is null)
+        {
+            return Result.Fail(Error.Validation(
+                "OfficialCheckoutReadiness.ActiveScopeRequestRequired",
+                "Official checkout active-scope readiness request is required."));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.RegistrationScopeCode))
+        {
+            return Result.Fail(Error.Validation(
+                "OfficialCheckoutReadiness.RegistrationScopeRequired",
+                "Official checkout readiness requires a registration scope code."));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.SequenceScopeCode))
+        {
+            return Result.Fail(Error.Validation(
+                "OfficialCheckoutReadiness.ScopeRequired",
+                "Official checkout readiness requires a sequence scope code."));
+        }
+
+        string documentKind = NormalizeDocumentKind(request.DocumentKind);
+
+        if (documentKind is not "OFFICIAL_RECEIPT" and not "OFFICIAL_INVOICE")
+        {
+            return Result.Fail(Error.Validation(
+                "OfficialCheckoutReadiness.InvalidDocumentKind",
+                "Official checkout readiness requires OFFICIAL_RECEIPT or OFFICIAL_INVOICE."));
+        }
+
+        if (request.Year < 2000 || request.Year > 9999)
+        {
+            return Result.Fail(Error.Validation(
+                "OfficialCheckoutReadiness.InvalidYear",
+                "Official checkout readiness year is invalid."));
+        }
+
+        return Result.Success();
+    }
+
+    private static Guid? ReadActiveMachineProfileId(SqliteConnection connection, string registrationScopeCode)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT id
+            FROM bir_machine_profiles
+            WHERE registration_scope_code = $registrationScopeCode
+              AND is_active = 1
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$registrationScopeCode", NormalizeScope(registrationScopeCode));
+
+        object? scalar = command.ExecuteScalar();
+        string? value = Convert.ToString(scalar);
+
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : Guid.Parse(value);
     }
 
     private static ActiveMachineProfile? ReadMachineProfile(SqliteConnection connection, Guid profileId)
