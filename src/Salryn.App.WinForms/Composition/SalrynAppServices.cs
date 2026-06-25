@@ -108,6 +108,12 @@ public sealed class SalrynAppServices
         // Kirch: why - X-reading stays read-only by consuming official evidence export instead of writing reports or counters.
         OfficialXReading =
             new OfficialXReadingService(OfficialEvidenceRead);
+
+        // Kirch: why - Z-reading finalizes X-reading totals without touching original sales, sequence, stock, or journal evidence.
+        OfficialZReading =
+            new OfficialZReadingService(
+                OfficialXReading,
+                new SqliteOfficialZReadingService(connectionFactory));
     }
 
     public DbPaths DbPaths { get; }
@@ -151,6 +157,8 @@ public sealed class SalrynAppServices
     public IOfficialEvidenceReadService OfficialEvidenceRead { get; }
 
     public IOfficialXReadingService OfficialXReading { get; }
+
+    public IOfficialZReadingService OfficialZReading { get; }
 
     public ICashierSessionService CashierSessions { get; }
 

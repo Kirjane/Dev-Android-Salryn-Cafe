@@ -113,6 +113,7 @@ try
             PosCheckoutApplicationRepositorySmokeChecks.Run(projectRoot);
             OfficialCheckoutCompletionTrustSmokeChecks.Run(projectRoot);
             OfficialXReadingSmokeChecks.Run(projectRoot);
+            OfficialZReadingSmokeChecks.Run(projectRoot);
             break;
 
         case "pos-checkout-draft-transaction-builder":
@@ -169,6 +170,7 @@ try
             PosCheckoutApplicationRepositorySmokeChecks.Run(projectRoot);
             OfficialCheckoutCompletionTrustSmokeChecks.Run(projectRoot);
             OfficialXReadingSmokeChecks.Run(projectRoot);
+            OfficialZReadingSmokeChecks.Run(projectRoot);
             PosCheckoutDraftTransactionBuilderSmokeChecks.Run(projectRoot);
             PosCheckoutProductPickerBoundarySmokeChecks.Run(projectRoot);
             PosCheckoutProductPickerRepositoryIntegrationSmokeChecks.Run(projectRoot);
