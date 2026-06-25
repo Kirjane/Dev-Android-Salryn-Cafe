@@ -76,6 +76,57 @@ internal static class OfficialCheckoutCompletionTrustSmokeChecks
         RequireEqual("OR-2026-000001", ReadJournalDocumentNumber(database.Factory), "Journal document number must match allocated official number.");
         RequireEqual("OR-2026-000001", ReadSnapshotDocumentNumber(database.Factory), "Snapshot document number must match allocated official number.");
         RequireEqual(TrustedProductName, ReadSnapshotFirstLineDescription(database.Factory), "Snapshot line must use trusted persisted sale item facts.");
+
+        DatabaseMutationSnapshot beforeExport = CaptureMutationSnapshot(database.Factory);
+        OfficialEvidenceReadRequest exportRequest = CreateEvidenceReadRequest();
+
+        Result<OfficialEvidenceExportResult> firstExport =
+            database.Services.OfficialEvidenceRead.ExportAsync(exportRequest).GetAwaiter().GetResult();
+
+        RequireSuccess(firstExport, "OfficialCompletionTrust.EvidenceExport.First");
+        VerifyEvidenceExport(firstExport.Value, saleId, "OR-2026-000001");
+
+        Result<OfficialEvidenceExportResult> secondExport =
+            database.Services.OfficialEvidenceRead.ExportAsync(exportRequest).GetAwaiter().GetResult();
+
+        RequireSuccess(secondExport, "OfficialCompletionTrust.EvidenceExport.Second");
+        VerifyDeterministicEvidenceExport(firstExport.Value, secondExport.Value);
+
+        AssertMutationSnapshot(
+            beforeExport,
+            CaptureMutationSnapshot(database.Factory),
+            "OfficialCompletionTrust.EvidenceExport");
+
+        ExpectEvidenceExportFailure(
+            database.Services.OfficialEvidenceRead.ExportAsync(exportRequest with
+            {
+                RangeStartedAt = exportRequest.RangeEndedAt,
+                RangeEndedAt = exportRequest.RangeStartedAt
+            }).GetAwaiter().GetResult(),
+            "OfficialCompletionTrust.EvidenceExport.InvalidRange",
+            "OfficialEvidence.InvalidDateRange");
+
+        ExpectEvidenceExportFailure(
+            database.Services.OfficialEvidenceRead.ExportAsync(exportRequest with
+            {
+                BirMachineProfileId = null,
+                RegistrationScopeCode = null
+            }).GetAwaiter().GetResult(),
+            "OfficialCompletionTrust.EvidenceExport.MissingProfileOrScope",
+            "OfficialEvidence.MachineProfileOrScopeRequired");
+
+        ExpectEvidenceExportFailure(
+            database.Services.OfficialEvidenceRead.ExportAsync(exportRequest with
+            {
+                DocumentKind = (ElectronicJournalDocumentKind)999
+            }).GetAwaiter().GetResult(),
+            "OfficialCompletionTrust.EvidenceExport.UnsupportedDocumentKind",
+            "OfficialEvidence.UnsupportedDocumentKind");
+
+        AssertMutationSnapshot(
+            beforeExport,
+            CaptureMutationSnapshot(database.Factory),
+            "OfficialCompletionTrust.EvidenceExport.InvalidRequests");
     }
 
     private static void RunReadinessBlockedNoSideEffectsPath()
@@ -144,6 +195,63 @@ internal static class OfficialCheckoutCompletionTrustSmokeChecks
             TaxCents: 0,
             ReceiptSnapshot: "Spoofed UI receipt snapshot.",
             SaleDate: new DateTimeOffset(2026, 6, 25, 9, 0, 0, TimeSpan.Zero));
+    }
+
+    private static OfficialEvidenceReadRequest CreateEvidenceReadRequest()
+    {
+        return new OfficialEvidenceReadRequest(
+            RangeStartedAt: new DateTimeOffset(2026, 6, 25, 0, 0, 0, TimeSpan.Zero),
+            RangeEndedAt: new DateTimeOffset(2026, 6, 26, 0, 0, 0, TimeSpan.Zero),
+            BirMachineProfileId: ReadyMachineProfileId,
+            RegistrationScopeCode: null,
+            DocumentKind: ElectronicJournalDocumentKind.OfficialReceipt);
+    }
+
+    private static void VerifyEvidenceExport(
+        OfficialEvidenceExportResult export,
+        string saleId,
+        string expectedDocumentNumber)
+    {
+        RequireEqual(1, export.Manifest.EntryCount, "Evidence export manifest must report one entry.");
+        RequireEqual(ReadyMachineProfileId, export.Manifest.BirMachineProfileId, "Evidence export manifest must identify machine profile.");
+        RequireEqual(ElectronicJournalDocumentKind.OfficialReceipt, export.Manifest.DocumentKind, "Evidence export manifest must identify document kind.");
+        RequireEqual("SHA-256", export.Manifest.HashAlgorithm, "Evidence export manifest must identify hash algorithm.");
+        RequireTrue(export.Manifest.AllSnapshotHashesMatch, "Evidence export manifest must report matching snapshot hashes.");
+        RequireTrue(!string.IsNullOrWhiteSpace(export.Manifest.ManifestHash), "Evidence export manifest hash is required.");
+        RequireEqual(1, export.Entries.Count, "Evidence export must return one journal entry.");
+
+        OfficialEvidenceEntryReadModel entry = export.Entries[0];
+
+        RequireEqual(Guid.Parse(saleId), entry.SaleId, "Evidence entry sale id must match the official sale.");
+        RequireEqual(ReadyMachineProfileId, entry.BirMachineProfileId, "Evidence entry must carry machine profile id.");
+        RequireEqual(SequenceId, entry.OfficialDocumentSequenceId, "Evidence entry must carry sequence id.");
+        RequireEqual(ElectronicJournalDocumentKind.OfficialReceipt, entry.DocumentKind, "Evidence entry must carry official receipt kind.");
+        RequireEqual(expectedDocumentNumber, entry.OfficialDocumentNumber, "Evidence entry document number must match official number.");
+        RequireEqual(expectedDocumentNumber, ReadSnapshotDocumentNumber(entry.SnapshotPayloadJson), "Evidence entry snapshot document number must match official number.");
+        RequireEqual(TrustedProductName, ReadSnapshotFirstLineDescription(entry.SnapshotPayloadJson), "Evidence entry must read official snapshot payload, not sales receipt preview text.");
+        RequireTrue(!entry.SnapshotPayloadJson.Contains("Spoofed UI receipt snapshot.", StringComparison.Ordinal), "Evidence entry must not use sales.receipt_snapshot or UI preview text.");
+        RequireEqual("SHA-256", entry.SnapshotHashAlgorithm, "Evidence entry must carry snapshot hash algorithm.");
+        RequireTrue(entry.SnapshotHashMatches, "Evidence entry snapshot hash must verify.");
+        RequireEqual(entry.SnapshotPayloadHash, entry.RecomputedSnapshotPayloadHash, "Recomputed snapshot hash must match stored hash.");
+        RequireTrue(entry.OriginalEventId != Guid.Empty, "Evidence entry must include ORIGINAL event id.");
+        RequireEqual(CashierUserId, entry.CashierUserId, "Evidence entry must include cashier id.");
+        RequireTrue(!string.IsNullOrWhiteSpace(entry.TerminalId), "Evidence entry must include terminal id when persisted.");
+    }
+
+    private static void VerifyDeterministicEvidenceExport(
+        OfficialEvidenceExportResult first,
+        OfficialEvidenceExportResult second)
+    {
+        RequireEqual(first.Manifest.ManifestHash, second.Manifest.ManifestHash, "Evidence export manifest hash must be deterministic.");
+        RequireEqual(first.Manifest.EntryCount, second.Manifest.EntryCount, "Evidence export entry count must be deterministic.");
+        RequireEqual(first.Entries.Count, second.Entries.Count, "Evidence export entries must be deterministic.");
+
+        for (int index = 0; index < first.Entries.Count; index++)
+        {
+            RequireEqual(first.Entries[index].JournalEntryId, second.Entries[index].JournalEntryId, "Evidence export order must be deterministic.");
+            RequireEqual(first.Entries[index].OfficialDocumentNumber, second.Entries[index].OfficialDocumentNumber, "Evidence export document order must be deterministic.");
+            RequireEqual(first.Entries[index].SnapshotPayloadHash, second.Entries[index].SnapshotPayloadHash, "Evidence export hashes must be deterministic.");
+        }
     }
 
     private static void SeedOfficialCompletionDependencies(
@@ -414,7 +522,12 @@ internal static class OfficialCheckoutCompletionTrustSmokeChecks
 
     private static string ReadSnapshotDocumentNumber(SqliteConnectionFactory factory)
     {
-        using JsonDocument document = JsonDocument.Parse(ReadSnapshotPayloadJson(factory));
+        return ReadSnapshotDocumentNumber(ReadSnapshotPayloadJson(factory));
+    }
+
+    private static string ReadSnapshotDocumentNumber(string snapshotPayloadJson)
+    {
+        using JsonDocument document = JsonDocument.Parse(snapshotPayloadJson);
 
         return document.RootElement
             .GetProperty("header")
@@ -424,7 +537,12 @@ internal static class OfficialCheckoutCompletionTrustSmokeChecks
 
     private static string ReadSnapshotFirstLineDescription(SqliteConnectionFactory factory)
     {
-        using JsonDocument document = JsonDocument.Parse(ReadSnapshotPayloadJson(factory));
+        return ReadSnapshotFirstLineDescription(ReadSnapshotPayloadJson(factory));
+    }
+
+    private static string ReadSnapshotFirstLineDescription(string snapshotPayloadJson)
+    {
+        using JsonDocument document = JsonDocument.Parse(snapshotPayloadJson);
 
         return document.RootElement
             .GetProperty("lines")[0]
@@ -438,6 +556,27 @@ internal static class OfficialCheckoutCompletionTrustSmokeChecks
             factory,
             "SELECT snapshot_payload_json FROM bir_electronic_journal_entries LIMIT 1;",
             "OfficialCompletionTrust.SnapshotPayload");
+    }
+
+    private static DatabaseMutationSnapshot CaptureMutationSnapshot(SqliteConnectionFactory factory)
+    {
+        return new DatabaseMutationSnapshot(
+            Sales: CountRows(factory, "sales"),
+            SaleItems: CountRows(factory, "sale_items"),
+            Payments: CountRows(factory, "payments"),
+            StockMovements: CountRows(factory, "stock_movements"),
+            JournalEntries: CountRows(factory, "bir_electronic_journal_entries"),
+            JournalEvents: CountRows(factory, "bir_electronic_journal_entry_events"),
+            CurrentSequenceNumber: ReadCurrentSequenceNumber(factory),
+            ProductStockX1000: ReadProductStock(factory));
+    }
+
+    private static void AssertMutationSnapshot(
+        DatabaseMutationSnapshot expected,
+        DatabaseMutationSnapshot actual,
+        string area)
+    {
+        RequireEqual(expected, actual, area + " must not mutate persisted business or journal state.");
     }
 
     private static string ReadSaleItemText(SqliteConnectionFactory factory, string columnName)
@@ -525,6 +664,38 @@ internal static class OfficialCheckoutCompletionTrustSmokeChecks
         }
     }
 
+    private static void ExpectEvidenceExportFailure(
+        Result<OfficialEvidenceExportResult> result,
+        string area,
+        string expectedCode)
+    {
+        if (result.IsSuccess)
+        {
+            throw new InvalidOperationException(area + " was expected to fail.");
+        }
+
+        if (!string.Equals(result.ErrorDetail.Code, expectedCode, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"{area} expected {expectedCode}, found {result.ErrorDetail.Code}: {result.Error}");
+        }
+    }
+
+    private static void RequireSuccess<T>(Result<T> result, string area)
+    {
+        if (result.IsFailure)
+        {
+            throw new InvalidOperationException($"{area} failed: {result.ErrorDetail.Code} {result.Error}");
+        }
+    }
+
+    private static void RequireTrue(bool condition, string message)
+    {
+        if (!condition)
+        {
+            throw new InvalidOperationException(message);
+        }
+    }
+
     private static void RequireEqual<T>(T expected, T actual, string message)
     {
         if (!EqualityComparer<T>.Default.Equals(expected, actual))
@@ -532,6 +703,16 @@ internal static class OfficialCheckoutCompletionTrustSmokeChecks
             throw new InvalidOperationException($"{message} Expected: {expected}. Actual: {actual}.");
         }
     }
+
+    private sealed record DatabaseMutationSnapshot(
+        long Sales,
+        long SaleItems,
+        long Payments,
+        long StockMovements,
+        long JournalEntries,
+        long JournalEvents,
+        long CurrentSequenceNumber,
+        long ProductStockX1000);
 
     private sealed class SmokeDatabase : IDisposable
     {

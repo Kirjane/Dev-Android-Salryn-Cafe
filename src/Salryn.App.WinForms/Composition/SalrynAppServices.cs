@@ -100,6 +100,10 @@ public sealed class SalrynAppServices
                 officialReadinessService,
                 new SqliteOfficialCheckoutPersistenceBoundary(
                     new SqliteOfficialCheckoutPersistenceService(connectionFactory)));
+
+        // Kirch: why - official evidence reads must come from journal snapshot evidence, not checkout UI receipt text.
+        OfficialEvidenceRead =
+            new SqliteOfficialEvidenceReadService(connectionFactory);
     }
 
     public DbPaths DbPaths { get; }
@@ -139,6 +143,8 @@ public sealed class SalrynAppServices
     public ICheckoutOfficialModeReadinessBoundary CheckoutOfficialModeReadiness { get; }
 
     public IOfficialCheckoutCompletionBoundary OfficialCheckoutCompletion { get; }
+
+    public IOfficialEvidenceReadService OfficialEvidenceRead { get; }
 
     public ICashierSessionService CashierSessions { get; }
 
