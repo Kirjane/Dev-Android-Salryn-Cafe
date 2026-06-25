@@ -146,6 +146,7 @@ public static class Program
         J21Rmo242023OfficialCheckoutReadinessGateChecks.RunAsync().GetAwaiter().GetResult();
         J21Rmo242023CheckoutOfficialModeUiReadinessChecks.RunAsync().GetAwaiter().GetResult();
         J21Rmo242023OfficialEvidenceExportFoundationChecks.Run();
+        J21Rmo242023OfficialXReadingFoundationChecks.Run();
         J21Rmo242023ElectronicJournalPersistenceRuntimeDocumentationSealChecks.Run();
 
         Console.WriteLine("SALRYN Core smoke checks passed.");

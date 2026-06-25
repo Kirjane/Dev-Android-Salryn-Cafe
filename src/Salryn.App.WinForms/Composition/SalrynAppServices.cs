@@ -104,6 +104,10 @@ public sealed class SalrynAppServices
         // Kirch: why - official evidence reads must come from journal snapshot evidence, not checkout UI receipt text.
         OfficialEvidenceRead =
             new SqliteOfficialEvidenceReadService(connectionFactory);
+
+        // Kirch: why - X-reading stays read-only by consuming official evidence export instead of writing reports or counters.
+        OfficialXReading =
+            new OfficialXReadingService(OfficialEvidenceRead);
     }
 
     public DbPaths DbPaths { get; }
@@ -145,6 +149,8 @@ public sealed class SalrynAppServices
     public IOfficialCheckoutCompletionBoundary OfficialCheckoutCompletion { get; }
 
     public IOfficialEvidenceReadService OfficialEvidenceRead { get; }
+
+    public IOfficialXReadingService OfficialXReading { get; }
 
     public ICashierSessionService CashierSessions { get; }
 
