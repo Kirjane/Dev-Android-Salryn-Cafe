@@ -148,6 +148,7 @@ public static class Program
         J21Rmo242023OfficialEvidenceExportFoundationChecks.Run();
         J21Rmo242023OfficialXReadingFoundationChecks.Run();
         J21Rmo242023OfficialZReadingFoundationChecks.Run();
+        J21Rmo242023OfficialDocumentAuditEventFoundationChecks.Run();
         J21Rmo242023ElectronicJournalPersistenceRuntimeDocumentationSealChecks.Run();
 
         Console.WriteLine("SALRYN Core smoke checks passed.");

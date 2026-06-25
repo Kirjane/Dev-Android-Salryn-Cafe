@@ -114,6 +114,11 @@ public sealed class SalrynAppServices
             new OfficialZReadingService(
                 OfficialXReading,
                 new SqliteOfficialZReadingService(connectionFactory));
+
+        // Kirch: why - official void/cancel/correction remains a backend-only append event boundary, not a source-row rewrite.
+        OfficialDocumentAuditEvents =
+            new OfficialDocumentAuditEventService(
+                new SqliteOfficialDocumentAuditEventService(connectionFactory));
     }
 
     public DbPaths DbPaths { get; }
@@ -159,6 +164,8 @@ public sealed class SalrynAppServices
     public IOfficialXReadingService OfficialXReading { get; }
 
     public IOfficialZReadingService OfficialZReading { get; }
+
+    public IOfficialDocumentAuditEventService OfficialDocumentAuditEvents { get; }
 
     public ICashierSessionService CashierSessions { get; }
 

@@ -30,6 +30,7 @@ public static class DefaultDatabaseInitializationFactory
         // Version 4 adds the RMO electronic journal schema foundation without checkout writes or official output.
         // Version 5 adds electronic journal DB hardening triggers without app behavior.
         // Version 6 adds Z-reading finalization records without rendering, printing, or mutating source evidence.
+        // Version 7 lets CORRECTION remain an append-only journal event instead of a source-row rewrite.
         IDatabaseMigration[] migrations =
         {
             new InitialSchemaMigration(),
@@ -37,7 +38,8 @@ public static class DefaultDatabaseInitializationFactory
             new BirOfficialDocumentSequenceSchemaMigration(),
             new BirElectronicJournalSchemaMigration(),
             new BirElectronicJournalSchemaHardeningMigration(),
-            new BirZReadingSchemaMigration()
+            new BirZReadingSchemaMigration(),
+            new BirElectronicJournalCorrectionEventSchemaMigration()
         };
 
         MigrationRunner migrationRunner = new(connectionFactory, migrations);

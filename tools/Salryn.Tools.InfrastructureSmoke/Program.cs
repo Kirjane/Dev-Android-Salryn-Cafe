@@ -114,6 +114,7 @@ try
             OfficialCheckoutCompletionTrustSmokeChecks.Run(projectRoot);
             OfficialXReadingSmokeChecks.Run(projectRoot);
             OfficialZReadingSmokeChecks.Run(projectRoot);
+            OfficialDocumentAuditEventSmokeChecks.Run(projectRoot);
             break;
 
         case "pos-checkout-draft-transaction-builder":
@@ -171,6 +172,7 @@ try
             OfficialCheckoutCompletionTrustSmokeChecks.Run(projectRoot);
             OfficialXReadingSmokeChecks.Run(projectRoot);
             OfficialZReadingSmokeChecks.Run(projectRoot);
+            OfficialDocumentAuditEventSmokeChecks.Run(projectRoot);
             PosCheckoutDraftTransactionBuilderSmokeChecks.Run(projectRoot);
             PosCheckoutProductPickerBoundarySmokeChecks.Run(projectRoot);
             PosCheckoutProductPickerRepositoryIntegrationSmokeChecks.Run(projectRoot);
@@ -476,7 +478,6 @@ static string FindProjectRoot(string startPath)
 
     throw new InvalidOperationException("Could not find Salryn.sln from current directory.");
 }
-
 
 
 
