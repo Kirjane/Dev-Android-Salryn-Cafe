@@ -5,6 +5,7 @@ using Salryn.App.WinForms.Features.Shell;
 using Salryn.Core.Common;
 using Salryn.Core.Models;
 using Salryn.Core.ReadModels;
+using Salryn.Core.Services;
 using Salryn.Core.ValueObjects;
 using Salryn.Infrastructure.Data;
 
@@ -256,11 +257,14 @@ internal static class CheckoutOfficialModePresenterSmokeChecks
             "OfficialCheckoutReadiness.ActiveMachineProfileMissing",
             "Locked official selection must fail with backend readiness code.");
 
+        RecordingCheckoutCompletionBoundary readyStandardBoundary = new();
+        RecordingOfficialCheckoutCompletionBoundary readyOfficialBoundary = new();
+
         CheckoutPresenter readyPresenter = new(
             productSearchBoundary: null,
-            sessionContext: null,
+            sessionContext: CreateSessionContext(),
             receiptNumberBoundary: null,
-            completionBoundary: null,
+            completionBoundary: readyStandardBoundary,
             officialModeReadinessBoundary: new FakeOfficialModeReadinessBoundary(
                 new CheckoutOfficialModeReadiness(
                     HasCheckedReadiness: true,
@@ -269,7 +273,8 @@ internal static class CheckoutOfficialModePresenterSmokeChecks
                     SummaryText: "Official output ready",
                     DetailText: "Active accredited BIR machine profile and official receipt sequence are ready.",
                     ErrorCode: null,
-                    ErrorMessage: null)));
+                    ErrorMessage: null)),
+            officialCompletionBoundary: readyOfficialBoundary);
 
         RequireSuccess(readyPresenter.Initialize(), "OfficialMode.Ready.Initialize");
 
@@ -284,17 +289,91 @@ internal static class CheckoutOfficialModePresenterSmokeChecks
         RequireSuccess(readySelect, "OfficialMode.Ready.SelectOfficial");
         Require(readySelect.State.OfficialMode.IsOfficialModeSelected, "Ready official mode must become selected.");
 
+        PreparePaidDraft(readyPresenter, "OfficialMode.Ready");
+
         CheckoutPresenterOperationResult officialDryRun = readyPresenter.DryRunCompletionRequest();
 
-        RequireFailureCode(
-            officialDryRun,
-            "CheckoutOfficialMode.CompletionNotWired",
-            "Official mode must block dry-run until official persistence is wired to UI completion.");
+        RequireSuccess(officialDryRun, "OfficialMode.Ready.DryRun");
+        Require(officialDryRun.State.CompletionDryRun.BuiltRequest, "Official dry run must build the completion request.");
 
-        CheckoutPresenterOperationResult standardSelect = readyPresenter.SelectStandardMode();
+        CheckoutPresenterOperationResult officialGuard = readyPresenter.PrepareSaleSubmitGuard();
 
-        RequireSuccess(standardSelect, "OfficialMode.Ready.SelectStandard");
-        Require(!standardSelect.State.OfficialMode.IsOfficialModeSelected, "Standard mode must clear official selection.");
+        RequireSuccess(officialGuard, "OfficialMode.Ready.Guard");
+        Require(officialGuard.State.CanCompleteSale, "Official mode must enable Complete Sale after a guarded dry run.");
+
+        CheckoutPresenterOperationResult officialSubmit =
+            await readyPresenter.ExecutePreparedSaleSubmitAsync().ConfigureAwait(false);
+
+        RequireSuccess(officialSubmit, "OfficialMode.Ready.Submit");
+        Require(readyOfficialBoundary.CompleteCallCount == 1, "Official mode must call official completion exactly once.");
+        Require(readyStandardBoundary.CompleteCallCount == 0, "Official mode must not call standard completion.");
+
+        RecordingCheckoutCompletionBoundary standardBoundary = new();
+        RecordingOfficialCheckoutCompletionBoundary unusedOfficialBoundary = new();
+
+        CheckoutPresenter standardPresenter = new(
+            productSearchBoundary: null,
+            sessionContext: CreateSessionContext(),
+            receiptNumberBoundary: null,
+            completionBoundary: standardBoundary,
+            officialModeReadinessBoundary: new FakeOfficialModeReadinessBoundary(
+                new CheckoutOfficialModeReadiness(
+                    HasCheckedReadiness: true,
+                    IsReady: true,
+                    CanSelectOfficialMode: true,
+                    SummaryText: "Official output ready",
+                    DetailText: "Active accredited BIR machine profile and official receipt sequence are ready.",
+                    ErrorCode: null,
+                    ErrorMessage: null)),
+            officialCompletionBoundary: unusedOfficialBoundary);
+
+        RequireSuccess(standardPresenter.Initialize(), "OfficialMode.Standard.Initialize");
+
+        CheckoutPresenterOperationResult standardSelect = standardPresenter.SelectStandardMode();
+
+        RequireSuccess(standardSelect, "OfficialMode.Standard.SelectStandard");
+        Require(!standardSelect.State.OfficialMode.IsOfficialModeSelected, "Standard mode must remain unselected for official output.");
+
+        PreparePaidDraft(standardPresenter, "OfficialMode.Standard");
+
+        RequireSuccess(standardPresenter.DryRunCompletionRequest(), "OfficialMode.Standard.DryRun");
+        RequireSuccess(standardPresenter.PrepareSaleSubmitGuard(), "OfficialMode.Standard.Guard");
+
+        CheckoutPresenterOperationResult standardSubmit =
+            await standardPresenter.ExecutePreparedSaleSubmitAsync().ConfigureAwait(false);
+
+        RequireSuccess(standardSubmit, "OfficialMode.Standard.Submit");
+        Require(standardBoundary.CompleteCallCount == 1, "Standard mode must call standard completion exactly once.");
+        Require(unusedOfficialBoundary.CompleteCallCount == 0, "Standard mode must not call official completion.");
+    }
+
+    private static CheckoutSessionContext CreateSessionContext()
+    {
+        return new CheckoutSessionContext(
+            CashierUserId: Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-000000000001"),
+            CashierDisplayName: "Smoke Cashier",
+            CashierRoleName: "Cashier",
+            CashierSessionId: Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-000000000002"),
+            ShiftOpenedAt: DateTimeOffset.Parse("2026-06-25T08:00:00Z", CultureInfo.InvariantCulture),
+            OpeningCashText: "PHP 1,000.00");
+    }
+
+    private static void PreparePaidDraft(CheckoutPresenter presenter, string area)
+    {
+        CheckoutPresenterOperationResult addLine = presenter.AddPreparedLine(new PosCheckoutDraftLineInput(
+            ProductId: Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-000000000101"),
+            ProductNameSnapshot: area + " Product",
+            BarcodeSnapshot: "480000000101",
+            UnitNameSnapshot: "pc",
+            QuantityX1000: 1000,
+            UnitPriceCents: 1250,
+            CostPriceCents: 700,
+            TrackStock: true));
+
+        RequireSuccess(addLine, area + ".AddLine");
+
+        RequireSuccess(presenter.SetCashAmountCents(1250), area + ".SetCash");
+        RequireSuccess(presenter.AddCashPayment(), area + ".AddCashPayment");
     }
 
     private sealed class FakeOfficialModeReadinessBoundary : ICheckoutOfficialModeReadinessBoundary
@@ -312,6 +391,58 @@ internal static class CheckoutOfficialModePresenterSmokeChecks
             cancellationToken.ThrowIfCancellationRequested();
 
             return Task.FromResult(Result<CheckoutOfficialModeReadiness>.Success(_readiness));
+        }
+    }
+
+    private sealed class RecordingCheckoutCompletionBoundary : ICheckoutCompletionBoundary
+    {
+        private readonly CheckoutCompletionBoundary _readiness = new();
+
+        public int CompleteCallCount { get; private set; }
+
+        public PosCheckoutApplicationRequest? LastRequest { get; private set; }
+
+        public Result<CheckoutCompletionReadiness> Evaluate(PosCheckoutDraftTransaction transaction)
+        {
+            return _readiness.Evaluate(transaction);
+        }
+
+        public Task<Result> CompleteSaleAsync(
+            PosCheckoutApplicationRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            CompleteCallCount++;
+            LastRequest = request;
+
+            return Task.FromResult(Result.Success());
+        }
+    }
+
+    private sealed class RecordingOfficialCheckoutCompletionBoundary : IOfficialCheckoutCompletionBoundary
+    {
+        private readonly CheckoutCompletionBoundary _readiness = new();
+
+        public int CompleteCallCount { get; private set; }
+
+        public PosCheckoutApplicationRequest? LastRequest { get; private set; }
+
+        public Result<CheckoutCompletionReadiness> Evaluate(PosCheckoutDraftTransaction transaction)
+        {
+            return _readiness.Evaluate(transaction);
+        }
+
+        public Task<Result> CompleteSaleAsync(
+            PosCheckoutApplicationRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            CompleteCallCount++;
+            LastRequest = request;
+
+            return Task.FromResult(Result.Success());
         }
     }
 

@@ -86,9 +86,20 @@ public sealed class SalrynAppServices
             new CheckoutLocalHostProductSearchBoundary(LocalHostProductLookupGateway);
 
         // Kirch: why - official mode UI must read the same backend readiness gate that protects official persistence.
+        SqliteOfficialCheckoutReadinessService officialReadinessService =
+            new(connectionFactory);
+
         CheckoutOfficialModeReadiness =
-            new CheckoutOfficialModeReadinessBoundary(
-                new SqliteOfficialCheckoutReadinessService(connectionFactory));
+            new CheckoutOfficialModeReadinessBoundary(officialReadinessService);
+
+        // Kirch: why - official completion uses trusted sale building, readiness, sequence, sale, and journal persistence as one app-owned boundary.
+        OfficialCheckoutCompletion =
+            new OfficialCheckoutCompletionBoundary(
+                new TrustedPosCheckoutSaleBuilder(productReadRepository),
+                cashierSessions,
+                officialReadinessService,
+                new SqliteOfficialCheckoutPersistenceBoundary(
+                    new SqliteOfficialCheckoutPersistenceService(connectionFactory)));
     }
 
     public DbPaths DbPaths { get; }
@@ -126,6 +137,8 @@ public sealed class SalrynAppServices
     public ICheckoutProductSearchBoundary CheckoutProductSearch { get; }
 
     public ICheckoutOfficialModeReadinessBoundary CheckoutOfficialModeReadiness { get; }
+
+    public IOfficialCheckoutCompletionBoundary OfficialCheckoutCompletion { get; }
 
     public ICashierSessionService CashierSessions { get; }
 

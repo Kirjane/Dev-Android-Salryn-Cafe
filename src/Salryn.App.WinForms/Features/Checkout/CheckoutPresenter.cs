@@ -17,6 +17,7 @@ public sealed class CheckoutPresenter
     private readonly ICheckoutReceiptNumberBoundary _receiptNumberBoundary;
     private readonly ICheckoutCompletionBoundary _completionBoundary;
     private readonly ICheckoutOfficialModeReadinessBoundary? _officialModeReadinessBoundary;
+    private readonly IOfficialCheckoutCompletionBoundary? _officialCompletionBoundary;
     private readonly PosCheckoutProductPickerBoundary _productPickerBoundary = new();
 
     // Kirch state map: draft sale state controlled by the presenter.
@@ -91,13 +92,15 @@ public sealed class CheckoutPresenter
         CheckoutSessionContext? sessionContext,
         ICheckoutReceiptNumberBoundary? receiptNumberBoundary,
         ICheckoutCompletionBoundary? completionBoundary,
-        ICheckoutOfficialModeReadinessBoundary? officialModeReadinessBoundary = null)
+        ICheckoutOfficialModeReadinessBoundary? officialModeReadinessBoundary = null,
+        IOfficialCheckoutCompletionBoundary? officialCompletionBoundary = null)
     {
         _productSearchBoundary = productSearchBoundary;
         _sessionContext = sessionContext;
         _receiptNumberBoundary = receiptNumberBoundary ?? new SystemCheckoutReceiptNumberBoundary();
         _completionBoundary = completionBoundary ?? new CheckoutCompletionBoundary();
         _officialModeReadinessBoundary = officialModeReadinessBoundary;
+        _officialCompletionBoundary = officialCompletionBoundary;
         State = CheckoutViewModel.Empty();
         _ = RefreshState("Checkout presenter ready.");
     }
@@ -211,6 +214,22 @@ public sealed class CheckoutPresenter
 
         CheckoutOfficialModeReadiness readiness = readinessResult.Value;
 
+        if (readiness.CanSelectOfficialMode && _officialCompletionBoundary is null)
+        {
+            _isOfficialModeSelected = false;
+            _officialMode = new CheckoutOfficialModeViewModel(
+                HasCheckedReadiness: true,
+                IsReady: false,
+                CanSelectOfficialMode: false,
+                IsOfficialModeSelected: false,
+                SummaryText: "Official completion boundary missing",
+                DetailText: "Official output readiness passed, but official completion is not wired in this checkout surface.",
+                ErrorCode: "CheckoutOfficialMode.CompletionBoundaryMissing",
+                ErrorMessage: "Official output readiness passed, but official completion is not wired in this checkout surface.");
+
+            return RefreshState(_officialMode.SummaryText);
+        }
+
         if (!readiness.CanSelectOfficialMode)
         {
             _isOfficialModeSelected = false;
@@ -251,12 +270,19 @@ public sealed class CheckoutPresenter
                 _officialMode.DetailText);
         }
 
-        // Kirch: why - selecting official mode is visible now, but sale submit stays locked until official persistence is wired.
+        if (_officialCompletionBoundary is null)
+        {
+            return Fail(
+                "CheckoutOfficialMode.CompletionBoundaryMissing",
+                "Official checkout completion is not wired in this checkout surface.");
+        }
+
+        // Kirch: why - official selection is allowed only when readiness and the official completion boundary are both wired.
         _isOfficialModeSelected = true;
         _officialMode = _officialMode with { IsOfficialModeSelected = true };
         ResetCompletionDryRun();
 
-        return RefreshState("Official output selected. Completion is locked until official submit wiring is enabled.");
+        return RefreshState("Official output selected. Completion will use the official guarded path.");
     }
 
     public CheckoutPresenterOperationResult SetCashierUserId(Guid cashierUserId)
@@ -586,11 +612,11 @@ public sealed class CheckoutPresenter
 
     public CheckoutPresenterOperationResult DryRunCompletionRequest()
     {
-        if (_isOfficialModeSelected)
+        if (_isOfficialModeSelected && _officialCompletionBoundary is null)
         {
             return Fail(
-                "CheckoutOfficialMode.CompletionNotWired",
-                "Official output mode is selected, but official checkout completion is not wired to the UI yet.");
+                "CheckoutOfficialMode.CompletionBoundaryMissing",
+                "Official checkout completion is not wired in this checkout surface.");
         }
 
         ResetSaleSubmitGuard();
@@ -636,18 +662,21 @@ public sealed class CheckoutPresenter
 
         PosCheckoutApplicationRequest request = requestResult.Value;
         PosCheckoutDraftTransaction transaction = transactionResult.Value;
+        string selectedModeText = _isOfficialModeSelected
+            ? "official"
+            : "standard";
 
         _completionDryRun = new CheckoutCompletionDryRunViewModel(
             HasRun: true,
             IsSuccess: true,
             BuiltRequest: true,
-            SummaryText: "passed · request built · submit locked",
+            SummaryText: $"passed · {selectedModeText} request built · submit locked",
             DetailText:
                 $"Receipt {request.ReceiptNumber} · Shift {request.CashierSessionId.ToString("N")[..8]} · {request.Lines.Count} item(s) · {request.Payments.Count} payment(s) · total {FormatMoney(transaction.Totals.TotalCents)}.",
             ErrorCode: null,
             ErrorMessage: null);
 
-        return RefreshState("Completion request dry run passed. Sale submit remains locked.");
+        return RefreshState($"Completion request dry run passed for {selectedModeText} mode. Sale submit remains locked.");
     }
 
 
@@ -667,6 +696,13 @@ public sealed class CheckoutPresenter
             return FailSaleSubmitGuard(
                 "CheckoutSubmitGuard.DryRunRequired",
                 "Run a successful completion dry run before preparing the sale submit guard.");
+        }
+
+        if (_isOfficialModeSelected && _officialCompletionBoundary is null)
+        {
+            return FailSaleSubmitGuard(
+                "CheckoutOfficialMode.CompletionBoundaryMissing",
+                "Official checkout completion is not wired in this checkout surface.");
         }
 
         _isSaleSubmitInProgress = true;
@@ -695,7 +731,7 @@ public sealed class CheckoutPresenter
                 CanExecuteSubmit: true,
                 SummaryText: "prepared · ready to complete",
                 DetailText:
-                    $"Attempt {attemptToken} · Receipt {request.ReceiptNumber} · Shift {request.CashierSessionId.ToString("N")[..8]} · Complete Sale is enabled through the guarded execution path.",
+                    $"Attempt {attemptToken} · Receipt {request.ReceiptNumber} · Shift {request.CashierSessionId.ToString("N")[..8]} · Complete Sale is enabled through the {BuildSelectedCompletionPathText()} guarded path.",
                 ErrorCode: null,
                 ErrorMessage: null);
 
@@ -760,12 +796,22 @@ public sealed class CheckoutPresenter
 
         PosCheckoutApplicationRequest request = requestResult.Value;
 
+        if (_isOfficialModeSelected && _officialCompletionBoundary is null)
+        {
+            return FailSaleSubmitExecution(
+                "CheckoutOfficialMode.CompletionBoundaryMissing",
+                "Official checkout completion is not wired in this checkout surface.");
+        }
+
         _isSaleSubmitInProgress = true;
 
         try
         {
-            Result completionResult =
-                await _completionBoundary.CompleteSaleAsync(
+            Result completionResult = _isOfficialModeSelected
+                ? await _officialCompletionBoundary!.CompleteSaleAsync(
+                    request,
+                    cancellationToken).ConfigureAwait(false)
+                : await _completionBoundary.CompleteSaleAsync(
                     request,
                     cancellationToken).ConfigureAwait(false);
 
@@ -787,7 +833,7 @@ public sealed class CheckoutPresenter
                 IsCompleted: true,
                 SummaryText: "completed",
                 DetailText:
-                    $"Receipt {request.ReceiptNumber} completed through guarded execution path. Complete Sale is now locked after completion.",
+                    $"Receipt {request.ReceiptNumber} completed through the {BuildSelectedCompletionPathText()} guarded path. Complete Sale is now locked after completion.",
                 ErrorCode: null,
                 ErrorMessage: null);
 
@@ -798,7 +844,7 @@ public sealed class CheckoutPresenter
                 DetailText = "Sale submit execution completed. Submit guard is now locked."
             };
 
-            return RefreshState("Sale submit execution completed through guarded path.");
+            return RefreshState($"Sale submit execution completed through the {BuildSelectedCompletionPathText()} guarded path.");
         }
         finally
         {
@@ -905,9 +951,14 @@ public sealed class CheckoutPresenter
         bool hasPayments = transaction.Payments.Count > 0;
         bool hasProductInput = !string.IsNullOrWhiteSpace(_productInputText);
         bool saleCompleted = _hasSaleSubmitCompleted || _saleSubmitResult.IsCompleted;
+        bool canExecuteSelectedMode =
+            !_isOfficialModeSelected ||
+            (_officialMode.CanSelectOfficialMode && _officialCompletionBoundary is not null);
 
         Result<CheckoutCompletionReadiness> completionReadinessResult =
-            _completionBoundary.Evaluate(transaction);
+            _isOfficialModeSelected && _officialCompletionBoundary is not null
+                ? _officialCompletionBoundary.Evaluate(transaction)
+                : _completionBoundary.Evaluate(transaction);
 
         if (completionReadinessResult.IsFailure)
         {
@@ -939,7 +990,7 @@ public sealed class CheckoutPresenter
             CanRemoveSelectedLine: !saleCompleted && hasLines,
             CanAddCashPayment: !saleCompleted && hasLines && _cashAmountCents > 0,
             CanClearPayments: !saleCompleted && hasPayments,
-            CanCompleteSale: !saleCompleted && !_isOfficialModeSelected && _saleSubmitGuard.CanExecuteSubmit && !_isSaleSubmitInProgress,
+            CanCompleteSale: !saleCompleted && canExecuteSelectedMode && _saleSubmitGuard.CanExecuteSubmit && !_isSaleSubmitInProgress,
             CompletionReadiness: MapCompletionReadiness(completionReadiness),
             CompletionDryRun: _completionDryRun,
             SaleSubmitGuard: _isSaleSubmitInProgress
@@ -1032,10 +1083,17 @@ public sealed class CheckoutPresenter
     {
         string baseText = _sessionContext?.ModeLine ?? "Repository-backed product search · Sale completion locked";
         string selectedMode = _isOfficialModeSelected
-            ? "Official output selected · submit wiring pending"
+            ? "Official output selected · official submit boundary ready"
             : "Standard POS sale selected";
 
         return $"{baseText} · {selectedMode} · {_officialMode.SummaryText}";
+    }
+
+    private string BuildSelectedCompletionPathText()
+    {
+        return _isOfficialModeSelected
+            ? "official"
+            : "standard";
     }
 
     private static CheckoutLineViewModel MapLine(PosCheckoutDraftLine line)

@@ -7,6 +7,7 @@ public static class J21Rmo242023CheckoutOfficialModeUiReadinessChecks
         DirectoryInfo repoRoot = FindRepositoryRoot();
 
         string boundaryText = ReadRequiredFile(repoRoot, "src", "Salryn.App.WinForms", "Features", "Checkout", "CheckoutOfficialModeReadinessBoundary.cs");
+        string officialCompletionText = ReadRequiredFile(repoRoot, "src", "Salryn.App.WinForms", "Features", "Checkout", "OfficialCheckoutCompletionBoundary.cs");
         string presenterText = ReadRequiredFile(repoRoot, "src", "Salryn.App.WinForms", "Features", "Checkout", "CheckoutPresenter.cs");
         string formText = ReadRequiredFile(repoRoot, "src", "Salryn.App.WinForms", "Features", "Checkout", "CheckoutShellForm.cs");
         string appServicesText = ReadRequiredFile(repoRoot, "src", "Salryn.App.WinForms", "Composition", "SalrynAppServices.cs");
@@ -15,14 +16,24 @@ public static class J21Rmo242023CheckoutOfficialModeUiReadinessChecks
 
         RequireContains(boundaryText, "CheckActiveScopeAsync", "Checkout official mode readiness boundary must use backend active-scope readiness.");
         RequireContains(boundaryText, "Official output locked", "Checkout official mode boundary must expose a locked display state.");
+        RequireContains(officialCompletionText, "public interface IOfficialCheckoutCompletionBoundary", "Checkout must expose a dedicated official completion boundary contract.");
+        RequireContains(officialCompletionText, "ITrustedPosCheckoutSaleBuilder", "Official completion boundary must use trusted sale building before official persistence.");
+        RequireContains(officialCompletionText, "ICashierSessionService", "Official completion boundary must enforce the standard open cashier shift gate before official persistence.");
+        RequireContains(officialCompletionText, "IOfficialCheckoutPersistenceBoundary", "Official completion boundary must persist through an app-level official persistence gateway.");
         RequireContains(presenterText, "RefreshOfficialModeReadinessAsync", "Checkout presenter must expose official readiness refresh.");
-        RequireContains(presenterText, "CheckoutOfficialMode.CompletionNotWired", "Official UI mode must block completion until official submit wiring exists.");
-        RequireContains(presenterText, "CanCompleteSale: !saleCompleted && !_isOfficialModeSelected", "Standard submit must be disabled while official mode is selected.");
+        RequireContains(presenterText, "IOfficialCheckoutCompletionBoundary? officialCompletionBoundary", "Checkout presenter must accept dedicated official completion wiring.");
+        RequireContains(presenterText, "_officialCompletionBoundary!.CompleteSaleAsync", "Checkout presenter must route official submit through official completion boundary.");
+        RequireContains(presenterText, "CanCompleteSale: !saleCompleted && canExecuteSelectedMode", "Checkout presenter must enable completion only for the selected wired mode.");
+        RequireNotContains(presenterText, "CheckoutOfficialMode.CompletionNotWired", "Official UI mode must no longer rely on the old not-wired completion lock.");
         RequireContains(formText, "_checkoutModeComboBox", "Checkout form must render an official/standard mode selector.");
         RequireContains(formText, "_presenter.RefreshOfficialModeReadinessAsync()", "Checkout form must refresh official readiness from the presenter.");
         RequireContains(appServicesText, "public ICheckoutOfficialModeReadinessBoundary CheckoutOfficialModeReadiness { get; }", "AppServices must expose checkout official readiness.");
+        RequireContains(appServicesText, "public IOfficialCheckoutCompletionBoundary OfficialCheckoutCompletion { get; }", "AppServices must expose checkout official completion.");
         RequireContains(appServicesText, "new CheckoutOfficialModeReadinessBoundary", "AppServices must compose the checkout official readiness boundary.");
+        RequireContains(appServicesText, "new OfficialCheckoutCompletionBoundary", "AppServices must compose the checkout official completion boundary.");
+        RequireContains(appServicesText, "new SqliteOfficialCheckoutPersistenceBoundary", "AppServices must adapt official completion to SQLite official persistence inside composition.");
         RequireContains(shellText, "officialModeReadinessBoundary: _services.CheckoutOfficialModeReadiness", "Shell checkout route must pass official readiness to the presenter.");
+        RequireContains(shellText, "officialCompletionBoundary: _services.OfficialCheckoutCompletion", "Shell checkout route must pass official completion to the presenter.");
         RequireContains(coreSmokeText, "J21Rmo242023CheckoutOfficialModeUiReadinessChecks.RunAsync().GetAwaiter().GetResult();", "CoreSmoke must run official mode UI readiness checks.");
 
         await Task.CompletedTask;
@@ -77,6 +88,14 @@ public static class J21Rmo242023CheckoutOfficialModeUiReadinessChecks
     private static void RequireContains(string text, string value, string message)
     {
         if (!text.Contains(value, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(message);
+        }
+    }
+
+    private static void RequireNotContains(string text, string value, string message)
+    {
+        if (text.Contains(value, StringComparison.Ordinal))
         {
             throw new InvalidOperationException(message);
         }

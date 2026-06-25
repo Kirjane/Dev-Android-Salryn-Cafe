@@ -34,6 +34,7 @@ public static class J21Rmo242023OfficialCheckoutReadinessGateChecks
         RequireContains(persistenceText, "OfficialCheckout.ReadinessBlocked", "Official persistence must fail closed when readiness blocks official output.");
         RequireContains(persistenceText, "trustedMachineProfile", "Official persistence must use trusted persisted machine profile evidence.");
         RequireContains(persistenceText, "not UI/client input", "Official persistence must explain the caller-input spoofing boundary.");
+        RequireNotContains(persistenceText, "OfficialDocumentSnapshotDraftMachineProfileInput MachineProfile", "Official persistence request must not accept caller-supplied machine profile evidence.");
         RequireContains(coreSmokeText, "J21Rmo242023OfficialCheckoutReadinessGateChecks.RunAsync().GetAwaiter().GetResult();", "CoreSmoke must run the official checkout readiness gate smoke.");
 
         await RunRuntimeSmoke();
@@ -211,16 +212,6 @@ public static class J21Rmo242023OfficialCheckoutReadinessGateChecks
                 "OFFICIAL_RECEIPT",
                 "LOCAL_SINGLE_STORE",
                 2026),
-            new OfficialDocumentSnapshotDraftMachineProfileInput(
-                RegisteredTaxpayerName: "Spoofed Caller Taxpayer",
-                BusinessName: "Spoofed Caller Store",
-                TaxpayerIdentificationNumber: "999-999-999-999",
-                BranchCode: "99999",
-                RegisteredBusinessAddress: "Spoofed Address",
-                MachineSerialNumber: "SPOOFED-SERIAL",
-                MachineIdentificationNumber: "SPOOFED-MIN",
-                AccreditationNumber: "SPOOFED-ACC",
-                PermitToUseNumber: "SPOOFED-PTU"),
             OfficialDocumentSnapshotDraftKind.OfficialReceipt,
             CashierIdentifier: "cashier@test",
             TerminalIdentifier: "POS-1",

@@ -382,7 +382,8 @@ public sealed class SalrynShellForm : Form
                 checkoutSessionContext,
                 receiptNumberBoundary: null,
                 completionBoundary: new CheckoutCompletionBoundary(_services.PosCheckoutApplication),
-                officialModeReadinessBoundary: _services.CheckoutOfficialModeReadiness));
+                officialModeReadinessBoundary: _services.CheckoutOfficialModeReadiness,
+                officialCompletionBoundary: _services.OfficialCheckoutCompletion));
 
         checkoutForm.StartPosition = FormStartPosition.CenterParent;
         checkoutForm.ShowDialog(this);

@@ -9,7 +9,6 @@ namespace Salryn.Infrastructure.Data.Services;
 public sealed record SqliteOfficialCheckoutPersistenceRequest(
     CompleteCheckoutSaleRequest CheckoutSale,
     OfficialDocumentSequenceAllocationRequest SequenceRequest,
-    OfficialDocumentSnapshotDraftMachineProfileInput MachineProfile,
     OfficialDocumentSnapshotDraftKind DocumentKind,
     string CashierIdentifier,
     string? TerminalIdentifier,
