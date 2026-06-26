@@ -162,6 +162,7 @@ public static class Program
         J21Rmo242023OfficialAuditEvidenceReportLayoutProofChecks.Run();
         J21Rmo242023OfficialOutputArtifactManifestChecks.Run();
         J21Rmo242023OfficialOutputExportPackageChecks.Run();
+        J21Rmo242023OfficialInMemoryOutputDeliveryAdapterChecks.Run();
         J21Rmo242023ElectronicJournalPersistenceRuntimeDocumentationSealChecks.Run();
 
         Console.WriteLine("SALRYN Core smoke checks passed.");
