@@ -28,6 +28,13 @@ public static class J21Rmo242023OfficialRendererAdapterContractProofChecks
         RequireContains(contractText, "IOfficialReportRenderer", "Renderer adapter proof must expose renderer interface.");
         RequireContains(contractText, "OfficialReportRendererContractValidator", "Renderer adapter proof must expose validator.");
         RequireContains(contractText, "OfficialReportBindingDocument", "Renderer adapter must consume report binding DTOs.");
+        RequireContains(contractText, "RequiredTableColumns", "Renderer adapter validator must define required table schemas.");
+        RequireContains(contractText, "BindingTableSchemaMismatch", "Renderer adapter validator must reject schema mismatches.");
+        RequireContains(contractText, "DuplicateBindingColumn", "Renderer adapter validator must reject duplicate columns.");
+        RequireContains(contractText, "InvalidBindingRow", "Renderer adapter validator must reject malformed rows.");
+        RequireContains(contractText, "InvalidBindingCell", "Renderer adapter validator must reject malformed cells.");
+        RequireContains(contractText, "DuplicateMetadataKey", "Renderer adapter validator must reject duplicate trimmed metadata keys.");
+        RequireContains(contractText, "DuplicateCapability", "Renderer adapter validator must reject duplicate renderer capability formats.");
         RequireNotContains(contractText, "OfficialPrintableDocument", "Renderer adapter must not consume printable documents directly.");
         RequireNotContains(contractText, "CrystalDecisions", "Renderer adapter proof must not reference Crystal Reports packages.");
         RequireNotContains(contractText, ".rpt", "Renderer adapter proof must not mention report templates.");
@@ -124,6 +131,86 @@ public static class J21Rmo242023OfficialRendererAdapterContractProofChecks
             }),
             "OfficialReportRenderer.RequiredBindingTableMissing");
 
+        ExpectFailure(
+            OfficialReportRendererContractValidator.ValidateRequest(CreateValidRequest(OfficialReportRenderFormat.Export) with
+            {
+                SourceDocument = ReplaceTable("Header", CreateHeaderTableWithColumns(
+                    OfficialReportRendererContractValidator.RequiredTableColumns["Header"].Reverse().ToArray()))
+            }),
+            "OfficialReportRenderer.BindingTableSchemaMismatch");
+
+        ExpectFailure(
+            OfficialReportRendererContractValidator.ValidateRequest(CreateValidRequest(OfficialReportRenderFormat.Export) with
+            {
+                SourceDocument = ReplaceTable("Header", CreateHeaderTableWithColumns(
+                    OfficialReportRendererContractValidator.RequiredTableColumns["Header"].SkipLast(1).ToArray()))
+            }),
+            "OfficialReportRenderer.BindingTableSchemaMismatch");
+
+        ExpectFailure(
+            OfficialReportRendererContractValidator.ValidateRequest(CreateValidRequest(OfficialReportRenderFormat.Export) with
+            {
+                SourceDocument = ReplaceTable("Header", CreateHeaderTableWithColumns(new[]
+                {
+                    "DocumentKind",
+                    "DocumentKind",
+                    "TransactionTimestamp",
+                    "JournalEntryId",
+                    "SaleId",
+                    "CashierUserId",
+                    "CashierIdentifier",
+                    "TerminalId"
+                }))
+            }),
+            "OfficialReportRenderer.DuplicateBindingColumn");
+
+        ExpectFailure(
+            OfficialReportRendererContractValidator.ValidateRequest(CreateValidRequest(OfficialReportRenderFormat.Export) with
+            {
+                SourceDocument = ReplaceTable("Header", new OfficialReportBindingTable(
+                    "Header",
+                    OfficialReportRendererContractValidator.RequiredTableColumns["Header"],
+                    new[]
+                    {
+                        new OfficialReportBindingRow(new[]
+                        {
+                            new OfficialReportBindingCell("DocumentKind", "OfficialReceipt")
+                        })
+                    }))
+            }),
+            "OfficialReportRenderer.InvalidBindingRow");
+
+        ExpectFailure(
+            OfficialReportRendererContractValidator.ValidateRequest(CreateValidRequest(OfficialReportRenderFormat.Export) with
+            {
+                SourceDocument = ReplaceTable("Header", CreateHeaderTableWithMismatchedCell())
+            }),
+            "OfficialReportRenderer.InvalidBindingCell");
+
+        ExpectFailure(
+            OfficialReportRendererContractValidator.ValidateRequest(CreateValidRequest(OfficialReportRenderFormat.Export) with
+            {
+                SourceDocument = ReplaceTable("Header", CreateHeaderTableWithNullCellValue())
+            }),
+            "OfficialReportRenderer.InvalidBindingCell");
+
+        OfficialReportRenderRequest duplicateMetadataRequest = CreateValidRequest(OfficialReportRenderFormat.Preview) with
+        {
+            Metadata = new Dictionary<string, string>
+            {
+                [" a"] = "first",
+                ["a "] = "second"
+            }
+        };
+
+        ExpectFailure(
+            OfficialReportRendererContractValidator.ValidateRequest(duplicateMetadataRequest),
+            "OfficialReportRenderer.DuplicateMetadataKey");
+
+        OfficialReportRenderRequest normalizedDuplicateMetadata =
+            OfficialReportRendererContractValidator.NormalizeRequest(duplicateMetadataRequest);
+        RequireEqual("a", string.Join("|", normalizedDuplicateMetadata.Metadata!.Keys), "Duplicate metadata normalization must not throw.");
+
         RequireSuccess(
             OfficialReportRendererContractValidator.ValidateContract(new OfficialReportRendererContract(
                 "In-memory renderer contract proof",
@@ -135,6 +222,16 @@ public static class J21Rmo242023OfficialRendererAdapterContractProofChecks
                     new OfficialReportRendererCapability(OfficialReportRenderFormat.Export, "Export intent.")
                 })),
             "Renderer contract capability declaration should validate.");
+
+        ExpectFailure(
+            OfficialReportRendererContractValidator.ValidateContract(new OfficialReportRendererContract(
+                "Duplicate renderer capability proof",
+                new[]
+                {
+                    new OfficialReportRendererCapability(OfficialReportRenderFormat.Preview, "Preview one."),
+                    new OfficialReportRendererCapability(OfficialReportRenderFormat.Preview, "Preview two.")
+                })),
+            "OfficialReportRenderer.DuplicateCapability");
 
         InMemoryRenderer renderer = new();
         Result<OfficialReportRenderResult> renderResult =
@@ -161,19 +258,10 @@ public static class J21Rmo242023OfficialRendererAdapterContractProofChecks
 
     private static OfficialReportBindingDocument CreateBindingDocument()
     {
-        return new OfficialReportBindingDocument(new[]
-        {
-            Table("Header", "OfficialDocumentNumber", "OR-2026-RENDER-001"),
-            Table("MachineProfile", "RegisteredTaxpayerName", "Renderer Taxpayer"),
-            Table("LineItems", "Description", "Renderer Item"),
-            Table("Payments", "Method", "Cash"),
-            Table("Totals", "TotalCents", "1000"),
-            Table("Evidence", "SnapshotPayloadHash", "renderer-hash"),
-            Table("Lifecycle", "State", "Active"),
-            Table("Corrections", "CorrectionNote", "Renderer correction."),
-            Table("LifecycleIssues", "Code", string.Empty),
-            Table("CopyAudit", "OutputMarker", "ORIGINAL")
-        });
+        return new OfficialReportBindingDocument(
+            OfficialReportRendererContractValidator.RequiredTableNames
+                .Select(CreateRequiredTable)
+                .ToArray());
     }
 
     private static OfficialReportBindingDocument CreateBindingDocumentWithout(string tableName)
@@ -184,20 +272,75 @@ public static class J21Rmo242023OfficialRendererAdapterContractProofChecks
                 .ToArray());
     }
 
-    private static OfficialReportBindingTable Table(
-        string name,
-        string columnName,
-        string value)
+    private static OfficialReportBindingDocument ReplaceTable(
+        string tableName,
+        OfficialReportBindingTable replacement)
     {
+        return new OfficialReportBindingDocument(
+            CreateBindingDocument().Tables
+                .Select(table => string.Equals(table.Name, tableName, StringComparison.Ordinal) ? replacement : table)
+                .ToArray());
+    }
+
+    private static OfficialReportBindingTable CreateRequiredTable(string tableName)
+    {
+        IReadOnlyList<string> columns = OfficialReportRendererContractValidator.RequiredTableColumns[tableName];
+
         return new OfficialReportBindingTable(
-            name,
-            new[] { columnName },
+            tableName,
+            columns,
             new[]
             {
-                new OfficialReportBindingRow(new[]
-                {
-                    new OfficialReportBindingCell(columnName, value)
-                })
+                new OfficialReportBindingRow(columns
+                    .Select(column => new OfficialReportBindingCell(column, tableName + "." + column))
+                    .ToArray())
+            });
+    }
+
+    private static OfficialReportBindingTable CreateHeaderTableWithColumns(IReadOnlyList<string> columns)
+    {
+        return new OfficialReportBindingTable(
+            "Header",
+            columns,
+            new[]
+            {
+                new OfficialReportBindingRow(columns
+                    .Select(column => new OfficialReportBindingCell(column, "Header." + column))
+                    .ToArray())
+            });
+    }
+
+    private static OfficialReportBindingTable CreateHeaderTableWithMismatchedCell()
+    {
+        IReadOnlyList<string> columns = OfficialReportRendererContractValidator.RequiredTableColumns["Header"];
+
+        return new OfficialReportBindingTable(
+            "Header",
+            columns,
+            new[]
+            {
+                new OfficialReportBindingRow(columns
+                    .Select((column, index) => new OfficialReportBindingCell(
+                        index == 0 ? "WrongColumn" : column,
+                        "Header." + column))
+                    .ToArray())
+            });
+    }
+
+    private static OfficialReportBindingTable CreateHeaderTableWithNullCellValue()
+    {
+        IReadOnlyList<string> columns = OfficialReportRendererContractValidator.RequiredTableColumns["Header"];
+
+        return new OfficialReportBindingTable(
+            "Header",
+            columns,
+            new[]
+            {
+                new OfficialReportBindingRow(columns
+                    .Select((column, index) => new OfficialReportBindingCell(
+                        column,
+                        index == 0 ? null! : "Header." + column))
+                    .ToArray())
             });
     }
 

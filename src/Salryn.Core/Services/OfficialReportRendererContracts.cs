@@ -62,6 +62,107 @@ public static class OfficialReportRendererContractValidator
         "CopyAudit"
     };
 
+    public static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> RequiredTableColumns =
+        new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+        {
+            ["Header"] = new[]
+            {
+                "DocumentKind",
+                "OfficialDocumentNumber",
+                "TransactionTimestamp",
+                "JournalEntryId",
+                "SaleId",
+                "CashierUserId",
+                "CashierIdentifier",
+                "TerminalId"
+            },
+            ["MachineProfile"] = new[]
+            {
+                "BirMachineProfileId",
+                "RegistrationScopeCode",
+                "RegisteredTaxpayerName",
+                "BusinessName",
+                "RegisteredAddress",
+                "BranchAddress",
+                "TaxpayerIdentificationNumber",
+                "BranchCode",
+                "MachineIdentificationNumber",
+                "MachineSerialNumber",
+                "PosTerminalNumber",
+                "AccreditationNumber",
+                "PermitToUseNumber",
+                "SoftwareName",
+                "SoftwareVersion",
+                "SoftwareBuild",
+                "ComplianceMode"
+            },
+            ["LineItems"] = new[]
+            {
+                "LineNumber",
+                "Description",
+                "Barcode",
+                "UnitName",
+                "QuantityX1000",
+                "UnitPriceCents",
+                "DiscountCents",
+                "LineTotalCents"
+            },
+            ["Payments"] = new[]
+            {
+                "PaymentNumber",
+                "Method",
+                "AmountCents",
+                "PaidAt"
+            },
+            ["Totals"] = new[]
+            {
+                "SubtotalCents",
+                "DiscountCents",
+                "TaxCents",
+                "TotalCents",
+                "AmountPaidCents",
+                "ChangeCents",
+                "TaxModeCode",
+                "VatBucketEngineDeferred",
+                "TaxModeNotes",
+                "DeferredComplianceNotes"
+            },
+            ["Evidence"] = new[]
+            {
+                "OriginalEventId",
+                "SnapshotPayloadHash",
+                "SnapshotHashAlgorithm",
+                "SnapshotHashMatches"
+            },
+            ["Lifecycle"] = new[]
+            {
+                "State",
+                "NoticeCode",
+                "NoticeText",
+                "CorrectionCount",
+                "IsCoveredByFinalizedZReading",
+                "CoveringZReadingId"
+            },
+            ["Corrections"] = new[]
+            {
+                "CorrectionNumber",
+                "CorrectionNote"
+            },
+            ["LifecycleIssues"] = new[]
+            {
+                "IssueNumber",
+                "Code",
+                "Message"
+            },
+            ["CopyAudit"] = new[]
+            {
+                "CopyMode",
+                "OutputMarker",
+                "IsCopyOrReprint",
+                "PriorReprintEventCount"
+            }
+        };
+
     public static Result ValidateRequest(OfficialReportRenderRequest? request)
     {
         if (request is null)
@@ -108,7 +209,7 @@ public static class OfficialReportRendererContractValidator
                 "Official report render requester user id is invalid."));
         }
 
-        return Result.Success();
+        return ValidateMetadata(request.Metadata);
     }
 
     public static OfficialReportRenderRequest NormalizeRequest(
@@ -146,14 +247,24 @@ public static class OfficialReportRendererContractValidator
                 "Official report renderer must declare capabilities."));
         }
 
+        HashSet<OfficialReportRenderFormat> formats = new();
+
         foreach (OfficialReportRendererCapability capability in contract.Capabilities)
         {
-            if (!Enum.IsDefined(typeof(OfficialReportRenderFormat), capability.Format) ||
+            if (capability is null ||
+                !Enum.IsDefined(typeof(OfficialReportRenderFormat), capability.Format) ||
                 string.IsNullOrWhiteSpace(capability.Description))
             {
                 return Result.Fail(Error.Validation(
                     "OfficialReportRenderer.InvalidCapability",
                     "Official report renderer capability is invalid."));
+            }
+
+            if (!formats.Add(capability.Format))
+            {
+                return Result.Fail(Error.Validation(
+                    "OfficialReportRenderer.DuplicateCapability",
+                    "Official report renderer contract contains duplicate capability formats."));
             }
         }
 
@@ -180,14 +291,11 @@ public static class OfficialReportRendererContractValidator
 
         foreach (OfficialReportBindingTable table in document.Tables)
         {
-            if (table is null ||
-                string.IsNullOrWhiteSpace(table.Name) ||
-                table.Columns is null ||
-                table.Rows is null)
+            Result tableValidation = ValidateTableShape(table);
+
+            if (tableValidation.IsFailure)
             {
-                return Result.Fail(Error.Validation(
-                    "OfficialReportRenderer.InvalidBindingTable",
-                    "Official report binding table is invalid."));
+                return tableValidation;
             }
 
             if (!tableNames.Add(table.Name))
@@ -211,6 +319,140 @@ public static class OfficialReportRendererContractValidator
         return Result.Success();
     }
 
+    private static Result ValidateTableShape(OfficialReportBindingTable? table)
+    {
+        if (table is null ||
+            string.IsNullOrWhiteSpace(table.Name) ||
+            table.Columns is null ||
+            table.Rows is null)
+        {
+            return Result.Fail(Error.Validation(
+                "OfficialReportRenderer.InvalidBindingTable",
+                "Official report binding table is invalid."));
+        }
+
+        Result columnValidation = ValidateColumns(table);
+
+        if (columnValidation.IsFailure)
+        {
+            return columnValidation;
+        }
+
+        Result rowValidation = ValidateRows(table);
+
+        if (rowValidation.IsFailure)
+        {
+            return rowValidation;
+        }
+
+        return Result.Success();
+    }
+
+    private static Result ValidateColumns(OfficialReportBindingTable table)
+    {
+        HashSet<string> columnNames = new(StringComparer.Ordinal);
+
+        foreach (string columnName in table.Columns)
+        {
+            if (string.IsNullOrWhiteSpace(columnName))
+            {
+                return Result.Fail(Error.Validation(
+                    "OfficialReportRenderer.BindingTableSchemaMismatch",
+                    "Official report binding table has an empty column name."));
+            }
+
+            if (!columnNames.Add(columnName))
+            {
+                return Result.Fail(Error.Validation(
+                    "OfficialReportRenderer.DuplicateBindingColumn",
+                    "Official report binding table contains duplicate columns."));
+            }
+        }
+
+        if (!RequiredTableColumns.TryGetValue(table.Name, out IReadOnlyList<string>? expectedColumns))
+        {
+            return Result.Success();
+        }
+
+        if (table.Columns.Count != expectedColumns.Count)
+        {
+            return Result.Fail(Error.Validation(
+                "OfficialReportRenderer.BindingTableSchemaMismatch",
+                "Official report binding table columns do not match the required schema."));
+        }
+
+        for (int index = 0; index < expectedColumns.Count; index++)
+        {
+            if (!string.Equals(table.Columns[index], expectedColumns[index], StringComparison.Ordinal))
+            {
+                return Result.Fail(Error.Validation(
+                    "OfficialReportRenderer.BindingTableSchemaMismatch",
+                    "Official report binding table columns do not match the required schema."));
+            }
+        }
+
+        return Result.Success();
+    }
+
+    private static Result ValidateRows(OfficialReportBindingTable table)
+    {
+        foreach (OfficialReportBindingRow row in table.Rows)
+        {
+            if (row is null ||
+                row.Cells is null ||
+                row.Cells.Count != table.Columns.Count)
+            {
+                return Result.Fail(Error.Validation(
+                    "OfficialReportRenderer.InvalidBindingRow",
+                    "Official report binding row does not match table columns."));
+            }
+
+            for (int index = 0; index < row.Cells.Count; index++)
+            {
+                OfficialReportBindingCell cell = row.Cells[index];
+
+                if (cell is null ||
+                    string.IsNullOrWhiteSpace(cell.ColumnName) ||
+                    cell.Value is null ||
+                    !string.Equals(cell.ColumnName, table.Columns[index], StringComparison.Ordinal))
+                {
+                    return Result.Fail(Error.Validation(
+                        "OfficialReportRenderer.InvalidBindingCell",
+                        "Official report binding cell does not match table columns."));
+                }
+            }
+        }
+
+        return Result.Success();
+    }
+
+    private static Result ValidateMetadata(IReadOnlyDictionary<string, string>? metadata)
+    {
+        if (metadata is null || metadata.Count == 0)
+        {
+            return Result.Success();
+        }
+
+        HashSet<string> keys = new(StringComparer.Ordinal);
+
+        foreach (KeyValuePair<string, string> pair in metadata)
+        {
+            if (string.IsNullOrWhiteSpace(pair.Key))
+            {
+                continue;
+            }
+
+            if (!keys.Add(pair.Key.Trim()))
+            {
+                return Result.Fail(Error.Validation(
+                    "OfficialReportRenderer.DuplicateMetadataKey",
+                    "Official report render metadata contains duplicate keys after trimming."));
+            }
+        }
+
+        return Result.Success();
+    }
+
     private static bool RequiresArtifactLabel(OfficialReportRenderFormat format)
     {
         return format is OfficialReportRenderFormat.Pdf or
@@ -226,12 +468,25 @@ public static class OfficialReportRendererContractValidator
             return null;
         }
 
-        return metadata
-            .Where(static pair => !string.IsNullOrWhiteSpace(pair.Key))
+        Dictionary<string, string> normalized = new(StringComparer.Ordinal);
+
+        foreach (KeyValuePair<string, string> pair in metadata)
+        {
+            string? key = NormalizeOptional(pair.Key);
+
+            if (key is null || normalized.ContainsKey(key))
+            {
+                continue;
+            }
+
+            normalized.Add(key, pair.Value?.Trim() ?? string.Empty);
+        }
+
+        return normalized
             .OrderBy(static pair => pair.Key, StringComparer.Ordinal)
             .ToDictionary(
-                static pair => pair.Key.Trim(),
-                static pair => pair.Value?.Trim() ?? string.Empty,
+                static pair => pair.Key,
+                static pair => pair.Value,
                 StringComparer.Ordinal);
     }
 
