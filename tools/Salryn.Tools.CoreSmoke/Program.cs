@@ -154,6 +154,7 @@ public static class Program
         J21Rmo242023OfficialDocumentReprintAuditRulesChecks.Run();
         J21Rmo242023OfficialPrintableDocumentDtoFoundationChecks.Run();
         J21Rmo242023OfficialReportBindingProofChecks.Run();
+        J21Rmo242023OfficialRendererAdapterContractProofChecks.Run();
         J21Rmo242023ElectronicJournalPersistenceRuntimeDocumentationSealChecks.Run();
 
         Console.WriteLine("SALRYN Core smoke checks passed.");
