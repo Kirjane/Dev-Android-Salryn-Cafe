@@ -119,6 +119,10 @@ public sealed class SalrynAppServices
         OfficialDocumentAuditEvents =
             new OfficialDocumentAuditEventService(
                 new SqliteOfficialDocumentAuditEventService(connectionFactory));
+
+        // Kirch: why - lifecycle state must be read from official journal evidence and events before UI or reports consume it.
+        OfficialDocumentLifecycleRead =
+            new SqliteOfficialDocumentLifecycleReadService(connectionFactory);
     }
 
     public DbPaths DbPaths { get; }
@@ -166,6 +170,8 @@ public sealed class SalrynAppServices
     public IOfficialZReadingService OfficialZReading { get; }
 
     public IOfficialDocumentAuditEventService OfficialDocumentAuditEvents { get; }
+
+    public IOfficialDocumentLifecycleReadService OfficialDocumentLifecycleRead { get; }
 
     public ICashierSessionService CashierSessions { get; }
 

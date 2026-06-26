@@ -199,9 +199,11 @@ internal static class OfficialCheckoutCompletionTrustSmokeChecks
 
     private static OfficialEvidenceReadRequest CreateEvidenceReadRequest()
     {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+
         return new OfficialEvidenceReadRequest(
-            RangeStartedAt: new DateTimeOffset(2026, 6, 25, 0, 0, 0, TimeSpan.Zero),
-            RangeEndedAt: new DateTimeOffset(2026, 6, 26, 0, 0, 0, TimeSpan.Zero),
+            RangeStartedAt: now.AddDays(-1),
+            RangeEndedAt: now.AddDays(1),
             BirMachineProfileId: ReadyMachineProfileId,
             RegistrationScopeCode: null,
             DocumentKind: ElectronicJournalDocumentKind.OfficialReceipt);
