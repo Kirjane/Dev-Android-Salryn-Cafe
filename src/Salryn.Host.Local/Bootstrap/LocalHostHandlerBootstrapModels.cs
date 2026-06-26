@@ -119,6 +119,12 @@ public sealed class LocalHostHandlerBootstrapper
             registeredOperations,
             HostOperationNames.BackupHealth,
             new LocalHostBootstrapNotImplementedHandler<LocalHostBackupHealthRequest, LocalHostBackupHealthResponse>());
+
+        Register(
+            runtime,
+            registeredOperations,
+            HostOperationNames.OfficialOutputTextFileWorkflow,
+            new LocalHostBootstrapNotImplementedHandler<LocalHostOfficialOutputTextFileWorkflowRequest, LocalHostOfficialOutputTextFileWorkflowResponse>());
     }
 
     // Kirch: Registers one typed handler through the Local Host runtime contract gate.

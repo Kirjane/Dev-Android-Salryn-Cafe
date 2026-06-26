@@ -89,4 +89,5 @@ public static class HostOperationNames
     public const string CloseCashierSession = "cashierSession.close";
     public const string DailySalesSummary = "reports.dailySalesSummary";
     public const string BackupHealth = "backup.health";
+    public const string OfficialOutputTextFileWorkflow = "officialOutput.textFileWorkflow";
 }

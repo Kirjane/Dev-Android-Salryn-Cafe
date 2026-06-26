@@ -102,7 +102,13 @@ public sealed class LocalHostOperationContractMap
                 OperationName: HostOperationNames.BackupHealth,
                 OperationKind: HostOperationKind.Query,
                 PayloadType: typeof(LocalHostBackupHealthRequest),
-                ResponseType: typeof(LocalHostBackupHealthResponse))
+                ResponseType: typeof(LocalHostBackupHealthResponse)),
+
+            new LocalHostOperationContractDescriptor(
+                OperationName: HostOperationNames.OfficialOutputTextFileWorkflow,
+                OperationKind: HostOperationKind.Command,
+                PayloadType: typeof(LocalHostOfficialOutputTextFileWorkflowRequest),
+                ResponseType: typeof(LocalHostOfficialOutputTextFileWorkflowResponse))
         });
     }
 }

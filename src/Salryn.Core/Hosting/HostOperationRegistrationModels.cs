@@ -153,7 +153,16 @@ public sealed class HostOperationCatalog
                 RequiresTerminalIdentity: true,
                 RequiresAuthenticatedUser: true,
                 RequiresCashierSession: false,
-                AllowsReadOnlyMobileSnapshotAccess: true)
+                AllowsReadOnlyMobileSnapshotAccess: true),
+
+            new HostOperationDescriptor(
+                OperationName: HostOperationNames.OfficialOutputTextFileWorkflow,
+                OperationKind: HostOperationKind.Command,
+                RequiresStoreIdentity: true,
+                RequiresTerminalIdentity: true,
+                RequiresAuthenticatedUser: true,
+                RequiresCashierSession: false,
+                AllowsReadOnlyMobileSnapshotAccess: false)
         });
     }
 }

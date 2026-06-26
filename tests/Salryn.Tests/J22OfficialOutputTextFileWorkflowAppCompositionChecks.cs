@@ -26,7 +26,8 @@ public static class J22OfficialOutputTextFileWorkflowAppCompositionChecks
 
         RequireDoesNotContain(checkoutPresenter, "OfficialOutputTextFileWorkflow", "10A must not wire controlled output workflow into checkout presenter or UI behavior.");
         RequireDoesNotContain(checkoutBoundary, "OfficialOutputTextFileWorkflow", "10A must not wire controlled output workflow into checkout product search behavior.");
-        RequireDoesNotContain(localHostContracts, "OfficialOutputTextFileWorkflow", "10A must not add Host.Local operation contracts before 10B handler safety is designed.");
+        RequireContains(localHostContracts, "HostOperationNames.OfficialOutputTextFileWorkflow", "10B must add the Host.Local official output text-file workflow operation contract.");
+        RequireContains(localHostContracts, "LocalHostOfficialOutputTextFileWorkflowRequest", "10B must add the Host.Local official output text-file workflow request contract.");
         RequireDoesNotContain(localHostContracts, "OfficialOutputWorkflow", "10A must not add generic Host.Local workflow naming.");
 
         foreach (string text in new[] { contracts, adapter })
