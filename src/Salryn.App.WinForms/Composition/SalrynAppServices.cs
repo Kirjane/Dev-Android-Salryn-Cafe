@@ -1,4 +1,4 @@
-﻿using Salryn.App.WinForms.Features.Checkout;
+using Salryn.App.WinForms.Features.Checkout;
 using Salryn.Core.Deployment;
 using Salryn.Core.Repositories;
 using Salryn.Core.Services;
@@ -6,6 +6,7 @@ using Salryn.Infrastructure.Data;
 using Salryn.Infrastructure.Data.Initialization;
 using Salryn.Infrastructure.Data.Repositories;
 using Salryn.Infrastructure.Data.Services;
+using Salryn.Infrastructure.OfficialOutput;
 using Salryn.Infrastructure.Paths;
 using Salryn.Host.Local.Composition;
 
@@ -135,6 +136,11 @@ public sealed class SalrynAppServices
             new SqliteOfficialOutputSourceReadService(
                 connectionFactory,
                 OfficialDocumentLifecycleRead);
+
+        // Kirch: exposes only the controlled text-file workflow boundary; UI triggering stays outside this phase.
+        OfficialOutputTextFileWorkflow =
+            new CompositionOfficialOutputTextFileWorkflowGatewayAdapter(
+                new OfficialExternalOutputTextFileWorkflowRunner());
     }
 
     public DbPaths DbPaths { get; }
@@ -188,6 +194,8 @@ public sealed class SalrynAppServices
     public IOfficialDocumentReprintService OfficialDocumentReprints { get; }
 
     public IOfficialOutputSourceReadService OfficialOutputSourceRead { get; }
+
+    public IAppOfficialOutputTextFileWorkflowGateway OfficialOutputTextFileWorkflow { get; }
 
     public ICashierSessionService CashierSessions { get; }
 

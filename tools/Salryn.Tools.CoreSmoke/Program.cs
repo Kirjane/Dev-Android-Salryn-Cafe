@@ -121,6 +121,8 @@ public static class Program
         J21Rmo242023OfficialOutputDeliveryReceiptLedgerChecks.Run();
         J21Rmo242023OfficialExternalOutputAdapterContractChecks.Run();
         J21Rmo242023OfficialOutputPipelineCompletionSealChecks.Run();
+        J22OfficialOutputTextFileWorkflowExposureContractChecks.Run();
+        J22OfficialOutputTextFileWorkflowAppCompositionChecks.Run();
         J21Rmo242023ElectronicJournalPersistenceRuntimeDocumentationSealChecks.Run();
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
