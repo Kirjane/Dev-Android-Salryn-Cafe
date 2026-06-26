@@ -124,6 +124,12 @@ public sealed class SalrynAppServices
         OfficialDocumentLifecycleRead =
             new SqliteOfficialDocumentLifecycleReadService(connectionFactory);
 
+        // Kirch: why - reprints are copy audit events over lifecycle-checked official evidence, not new official documents.
+        OfficialDocumentReprints =
+            new OfficialDocumentReprintService(
+                OfficialDocumentLifecycleRead,
+                new SqliteOfficialDocumentReprintService(connectionFactory));
+
         // Kirch: why - future official output must be fed by verified journal snapshot evidence plus lifecycle state.
         OfficialOutputSourceRead =
             new SqliteOfficialOutputSourceReadService(
@@ -178,6 +184,8 @@ public sealed class SalrynAppServices
     public IOfficialDocumentAuditEventService OfficialDocumentAuditEvents { get; }
 
     public IOfficialDocumentLifecycleReadService OfficialDocumentLifecycleRead { get; }
+
+    public IOfficialDocumentReprintService OfficialDocumentReprints { get; }
 
     public IOfficialOutputSourceReadService OfficialOutputSourceRead { get; }
 
