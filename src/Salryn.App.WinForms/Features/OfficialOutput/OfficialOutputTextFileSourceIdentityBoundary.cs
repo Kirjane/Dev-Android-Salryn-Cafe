@@ -315,6 +315,27 @@ public static class OfficialOutputTextFileSourceIdentityRules
                 "Official output text-file source identity candidate official document number is required."));
         }
 
+        if (!candidate.SnapshotHashMatches)
+        {
+            return Result.Fail(Error.Validation(
+                "OfficialOutputTextFileSourceIdentity.SnapshotHashMismatch",
+                "Official output text-file source identity candidate snapshot hash must match official evidence."));
+        }
+
+        if (string.IsNullOrWhiteSpace(candidate.SnapshotPayloadHash))
+        {
+            return Result.Fail(Error.Validation(
+                "OfficialOutputTextFileSourceIdentity.SnapshotPayloadHashRequired",
+                "Official output text-file source identity candidate snapshot payload hash is required."));
+        }
+
+        if (string.IsNullOrWhiteSpace(candidate.SnapshotHashAlgorithm))
+        {
+            return Result.Fail(Error.Validation(
+                "OfficialOutputTextFileSourceIdentity.SnapshotHashAlgorithmRequired",
+                "Official output text-file source identity candidate snapshot hash algorithm is required."));
+        }
+
         return Result.Success();
     }
 
