@@ -40,6 +40,17 @@ public static class J22OfficialOutputTextFileVisibleSelectionSurfaceChecks
         RequireContains(form, "An active app user session is required before running.", "M1-E1 form must require an active app user session.");
         RequireContains(form, "Terminal id is required from official evidence or Local Host context before running.", "M1-E1 form must require a terminal id.");
 
+        RequireContains(form, "catch (Exception ex)", "M1-E2 form must convert unexpected UI event exceptions into visible status errors.");
+        RequireContains(form, "Unexpected error while loading official evidence-backed candidates", "M1-E2 form must show unexpected load failures in the status label.");
+        RequireContains(form, "Unexpected error while running official output text-file workflow", "M1-E2 form must show unexpected run failures in the status label.");
+        RequireContains(form, "SetLoadingState(true)", "M1-E2 form must enter a loading busy state.");
+        RequireContains(form, "SetLoadingState(false)", "M1-E2 form must restore controls after loading.");
+        RequireContains(form, "SetRunningState(true)", "M1-E2 form must enter a running busy state.");
+        RequireContains(form, "SetRunningState(false)", "M1-E2 form must restore controls after running.");
+        RequireContains(form, "_loadCandidatesButton.Enabled = !isRunning && !_isLoading", "M1-E2 run busy state must disable candidate loading.");
+        RequireContains(form, "_loadCandidatesButton.Enabled = !isLoading && !_isRunning", "M1-E2 load busy state must disable candidate loading.");
+        RequireContains(form, "if (_isLoading || _isRunning)", "M1-E2 run button state must respect form busy state.");
+
         RequireContains(form, "JournalEntryId", "M1-D1 form must display trusted journal entry identity.");
         RequireContains(form, "OfficialDocumentNumber", "M1-D1 form must display official document number.");
         RequireContains(form, "DocumentKind", "M1-D1 form must display document kind.");
@@ -47,6 +58,10 @@ public static class J22OfficialOutputTextFileVisibleSelectionSurfaceChecks
         RequireContains(form, "RegistrationScopeCode", "M1-D1 form must display registration scope when available.");
         RequireContains(form, "TransactionTimestamp", "M1-D1 form must display transaction timestamp when available.");
         RequireContains(form, "TerminalId", "M1-D1 form must display terminal id when available.");
+        RequireContains(form, "SnapshotHashMatches", "M1-E2 form must display the snapshot hash match trust fact.");
+        RequireContains(form, "SnapshotHashAlgorithm", "M1-E2 form must display the snapshot hash algorithm trust fact.");
+        RequireContains(form, "SourceReference", "M1-E2 form must display the official source reference trust fact.");
+        RequireDoesNotContain(form, "SnapshotPayloadJson", "M1-E2 form must not display raw snapshot payload data.");
 
         RequireContains(shellPresenter, "OfficialOutputTextFile", "M1-D1 shell must expose an explicit official output text-file module key.");
         RequireContains(shellPresenter, "OFFICIAL_OUTPUT_TEXT_FILE", "M1-D1 shell module key must be explicit.");
