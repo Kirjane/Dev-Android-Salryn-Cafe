@@ -2,6 +2,7 @@
 using Salryn.App.WinForms.Features.Checkout;
 using Salryn.App.WinForms.Features.Dashboard;
 using Salryn.App.WinForms.Features.Inventory;
+using Salryn.App.WinForms.Features.OfficialOutput;
 using Salryn.App.WinForms.Features.Products;
 using Salryn.App.WinForms.Features.Sales;
 using Salryn.App.WinForms.Features.Settings;
@@ -261,6 +262,12 @@ public sealed class SalrynShellForm : Form
             return;
         }
 
+        if (module.Key == ShellModuleKeys.OfficialOutputTextFile)
+        {
+            OpenOfficialOutputTextFile();
+            return;
+        }
+
         if (module.Key == ShellModuleKeys.Settings)
         {
             OpenSettings();
@@ -282,6 +289,13 @@ public sealed class SalrynShellForm : Form
         using DashboardForm dashboardForm = new DashboardForm(_services);
         dashboardForm.StartPosition = FormStartPosition.CenterParent;
         dashboardForm.ShowDialog(this);
+    }
+
+    private void OpenOfficialOutputTextFile()
+    {
+        using OfficialOutputTextFileWorkflowForm officialOutputForm = new(_services, _session);
+        officialOutputForm.StartPosition = FormStartPosition.CenterParent;
+        officialOutputForm.ShowDialog(this);
     }
 
     // Kirch: Opens the June 20 MVP inventory skeleton through AppServices.

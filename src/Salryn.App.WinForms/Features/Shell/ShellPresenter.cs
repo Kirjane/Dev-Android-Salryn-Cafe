@@ -13,6 +13,7 @@ public static class ShellModuleKeys
     public const string Inventory = "INVENTORY";
     public const string SalesHistory = "SALES_HISTORY";
     public const string Reports = "REPORTS";
+    public const string OfficialOutputTextFile = "OFFICIAL_OUTPUT_TEXT_FILE";
     public const string Settings = "SETTINGS";
     public const string Users = "USERS";
     public const string Backup = "BACKUP";
@@ -118,6 +119,13 @@ public sealed class ShellPresenter
                 "Requires Reports.View permission."),
 
             Module(
+                ShellModuleKeys.OfficialOutputTextFile,
+                "Official Output Text File",
+                "Evidence-backed official output text-file selection and guarded workflow run.",
+                Can(SalrynPermissions.ReportsView),
+                "Requires Reports.View permission."),
+
+            Module(
                 ShellModuleKeys.Settings,
                 "Settings",
                 "Store settings, receipt settings, and system configuration.",
@@ -156,6 +164,7 @@ public sealed class ShellPresenter
             Module(ShellModuleKeys.Inventory, "Inventory", "Stock-in, adjustments, damaged or expired stock, and movement history.", false, reason),
             Module(ShellModuleKeys.SalesHistory, "Sales History", "Receipt lookup, transaction history, and sale review.", false, reason),
             Module(ShellModuleKeys.Reports, "Reports", "Sales, inventory, low-stock, and business summary reports.", false, reason),
+            Module(ShellModuleKeys.OfficialOutputTextFile, "Official Output Text File", "Evidence-backed official output text-file selection and guarded workflow run.", false, reason),
             Module(ShellModuleKeys.Settings, "Settings", "Store settings, receipt settings, and system configuration.", false, reason),
             Module(ShellModuleKeys.Users, "Users", "User and role administration.", false, reason),
             Module(ShellModuleKeys.Backup, "Backup", "Local database backup and restore workflow.", false, reason),
