@@ -65,6 +65,20 @@ public static class J22OfficialOutputTextFileSourceIdentityBoundaryChecks
         RequireContains(sourceIdentity, "DateTimeOffset? TransactionTimestamp", "RMO-M1-C1 candidate must expose transaction timestamp when available.");
         RequireContains(sourceIdentity, "string? TerminalId", "RMO-M1-C1 candidate must expose terminal id when available.");
         RequireContains(sourceIdentity, "string? RegistrationScopeCode", "RMO-M1-C1 candidate must expose registration scope when available.");
+        RequireContains(sourceIdentity, "string SourceReference", "M1-E2 candidate must expose official source reference.");
+        RequireContains(sourceIdentity, "string SnapshotPayloadHash", "M1-E2 candidate must expose snapshot payload hash trust fact.");
+        RequireContains(sourceIdentity, "string SnapshotHashAlgorithm", "M1-E2 candidate must expose snapshot hash algorithm trust fact.");
+        RequireContains(sourceIdentity, "bool SnapshotHashMatches", "M1-E2 candidate must expose snapshot hash match trust fact.");
+        RequireContains(sourceIdentity, "SnapshotPayloadHash: NormalizeRequired(entry.SnapshotPayloadHash)", "M1-E2 candidate must carry normalized official evidence snapshot payload hash.");
+        RequireContains(sourceIdentity, "SnapshotHashAlgorithm: NormalizeRequired(entry.SnapshotHashAlgorithm)", "M1-E2 candidate must carry normalized official evidence snapshot hash algorithm.");
+        RequireContains(sourceIdentity, "SnapshotHashMatches: entry.SnapshotHashMatches", "M1-E2 candidate must carry official evidence snapshot hash match state.");
+
+        RequireContains(sourceIdentity, "if (!candidate.SnapshotHashMatches)", "M1-E2 source identity must reject candidates whose snapshot hash does not match.");
+        RequireContains(sourceIdentity, "OfficialOutputTextFileSourceIdentity.SnapshotHashMismatch", "M1-E2 source identity must expose a stable snapshot hash mismatch validation code.");
+        RequireContains(sourceIdentity, "if (string.IsNullOrWhiteSpace(candidate.SnapshotPayloadHash))", "M1-E2 source identity must reject candidates missing snapshot payload hash.");
+        RequireContains(sourceIdentity, "OfficialOutputTextFileSourceIdentity.SnapshotPayloadHashRequired", "M1-E2 source identity must expose a stable missing payload hash validation code.");
+        RequireContains(sourceIdentity, "if (string.IsNullOrWhiteSpace(candidate.SnapshotHashAlgorithm))", "M1-E2 source identity must reject candidates missing snapshot hash algorithm.");
+        RequireContains(sourceIdentity, "OfficialOutputTextFileSourceIdentity.SnapshotHashAlgorithmRequired", "M1-E2 source identity must expose a stable missing hash algorithm validation code.");
 
         RequireContains(sourceIdentity, "new OfficialOutputSourceReadRequest", "RMO-M1-C1 must convert selected candidate to output source read request.");
         RequireContains(sourceIdentity, "JournalEntryId: candidate.JournalEntryId", "RMO-M1-C1 source selection must use journal entry id as primary trusted identity.");
@@ -121,6 +135,9 @@ public static class J22OfficialOutputTextFileSourceIdentityBoundaryChecks
         RequireEqual(MachineProfileId, entry.BirMachineProfileId, "RMO-M1-C1 official evidence must carry machine profile id.");
         RequireEqual(ElectronicJournalDocumentKind.OfficialReceipt, entry.DocumentKind, "RMO-M1-C1 official evidence must carry document kind.");
         RequireEqual("OR-2026-IDENTITY-001", entry.OfficialDocumentNumber, "RMO-M1-C1 official evidence must carry official document number.");
+        RequireEqual("snapshot-hash", entry.SnapshotPayloadHash, "M1-E2 official evidence must carry snapshot payload hash.");
+        RequireEqual("SHA-256", entry.SnapshotHashAlgorithm, "M1-E2 official evidence must carry snapshot hash algorithm.");
+        RequireEqual(true, entry.SnapshotHashMatches, "M1-E2 official evidence must carry snapshot hash match state.");
         RequireEqual("LOCAL_SINGLE_STORE", export.Manifest.RegistrationScopeCode, "RMO-M1-C1 official evidence manifest must carry registration scope when available.");
     }
 
