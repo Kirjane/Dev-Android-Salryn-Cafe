@@ -130,6 +130,7 @@ public static class Program
         J22OfficialOutputTextFileWorkflowLocalHostSealChecks.Run();
         J22OfficialOutputTextFileWorkflowReadinessChecks.Run();
         J22OfficialOutputTextFileWorkflowUiTriggerShellChecks.Run();
+        J22OfficialOutputTextFileSourceIdentityBoundaryChecks.RunAsync().GetAwaiter().GetResult();
         J22OfficialOutputTextFileSourceSelectionBoundaryChecks.Run();
         J22OfficialOutputTextFileSourceSelectionPackageSupplyBridgeChecks.Run();
         J22OfficialOutputTextFilePackageSupplyBoundaryChecks.Run();
