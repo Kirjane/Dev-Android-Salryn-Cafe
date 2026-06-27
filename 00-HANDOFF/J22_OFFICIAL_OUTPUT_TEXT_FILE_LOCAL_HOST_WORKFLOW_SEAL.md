@@ -22,12 +22,21 @@ No behavior is added in this phase.
 
 ## Current Architecture
 
+The direct 10A gateway and the Local Host 10D gateway are parallel app-facing paths.
+
+Direct 10A path:
+
 OfficialOutputExportPackage
 -> app-facing direct 10A official output text-file workflow gateway
--> Local Host official output text-file workflow contract
 -> Core official output text-file workflow execution port
--> Host.Local official output text-file workflow handler
+-> App.WinForms composition supplies the Infrastructure runner through the Core port
+
+Local Host 10D path:
+
+OfficialOutputExportPackage
 -> App.WinForms Local Host official output text-file workflow bridge
+-> Local Host official output text-file workflow contract
+-> Host.Local official output text-file workflow handler
 -> App.WinForms composition supplies the Infrastructure runner through the Core port
 
 ## Boundary

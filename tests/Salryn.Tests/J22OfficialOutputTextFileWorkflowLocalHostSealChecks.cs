@@ -30,6 +30,9 @@ public static class J22OfficialOutputTextFileWorkflowLocalHostSealChecks
         RequireContains(handoffText, "The direct 10A official output text-file workflow gateway remains intact.", "10E handoff must preserve direct 10A gateway.");
         RequireContains(handoffText, "Host.Local remains Core-only.", "10E handoff must document Host.Local dependency boundary.");
         RequireContains(handoffText, "The App.WinForms Local Host bridge exposes references, hashes, status, and verification fields only.", "10E handoff must document safe response shape.");
+        RequireContains(handoffText, "parallel app-facing paths", "10F wording correction must clarify direct and Local Host gateways are parallel paths.");
+        RequireContains(handoffText, "Direct 10A path:", "10F wording correction must keep direct path separate.");
+        RequireContains(handoffText, "Local Host 10D path:", "10F wording correction must keep Local Host path separate.");
 
         RequireContains(matrixText, "## J22-10E Official Output Text-File Local Host Workflow Documentation Seal", "10E matrix section must exist.");
         RequireContains(matrixSealSection, "10A app-facing official output text-file workflow exposure exists.", "Matrix must mention 10A app exposure.");

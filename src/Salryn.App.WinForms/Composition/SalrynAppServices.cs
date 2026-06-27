@@ -144,6 +144,16 @@ public sealed class SalrynAppServices
         OfficialOutputTextFileWorkflow =
             new CompositionOfficialOutputTextFileWorkflowGatewayAdapter(
                 new OfficialExternalOutputTextFileWorkflowRunner());
+
+        OfficialOutputTextFileWorkflowReadiness =
+            new CompositionOfficialOutputTextFileWorkflowReadinessGateway(
+                OfficialOutputTextFileWorkflow,
+                LocalHostOfficialOutputTextFileWorkflow,
+                LocalHostProductLookupCompositionHolder,
+                LocalHostRuntimeLifecycleHolder,
+                LocalHostRuntimeStartupResult,
+                LocalHostRequestContextProvider,
+                LocalHostSessionIdentityProvider);
     }
 
     public DbPaths DbPaths { get; }
@@ -201,6 +211,8 @@ public sealed class SalrynAppServices
     public IAppOfficialOutputTextFileWorkflowGateway OfficialOutputTextFileWorkflow { get; }
 
     public IAppOfficialOutputTextFileWorkflowGateway LocalHostOfficialOutputTextFileWorkflow { get; }
+
+    public IAppOfficialOutputTextFileWorkflowReadinessGateway OfficialOutputTextFileWorkflowReadiness { get; }
 
     public ICashierSessionService CashierSessions { get; }
 
