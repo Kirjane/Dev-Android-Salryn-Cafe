@@ -66,8 +66,9 @@ public static class J22OfficialOutputTextFileWorkflowUiTriggerShellChecks
         RequireContains(appServices, "public IAppOfficialOutputTextFileWorkflowGateway OfficialOutputTextFileWorkflow { get; }", "10G must keep the direct 10A app gateway intact.");
         RequireContains(appServices, "public IAppOfficialOutputTextFileWorkflowGateway LocalHostOfficialOutputTextFileWorkflow { get; }", "10G must keep the Local Host 10D app gateway intact.");
         RequireContains(supplyBoundary, "public interface IOfficialOutputTextFilePackageSupplyBoundary", "10H package supply boundary must exist.");
-        RequireContains(supplyBoundary, "TryGetPackage(OfficialOutputTextFileSourceSelectionRequest? selectedSourceRequest)", "RMO-M1-B3 supply boundary must expose selected-source sync status path.");
-        RequireContains(supplyBoundary, "TryGetPackageAsync(OfficialOutputTextFileSourceSelectionRequest? selectedSourceRequest", "RMO-M1-B3 supply boundary must expose selected-source async package path.");
+        RequireContains(supplyBoundary, "Result<OfficialOutputExportPackage> TryGetPackage(", "RMO-M1-B3 supply boundary must expose selected-source sync status path.");
+        RequireContains(supplyBoundary, "OfficialOutputTextFileSourceSelectionRequest? selectedSourceRequest", "RMO-M1-B3 supply boundary must accept selected source requests.");
+        RequireContains(supplyBoundary, "Task<Result<OfficialOutputExportPackage>> TryGetPackageAsync(", "RMO-M1-B3 supply boundary must expose selected-source async package path.");
 
         RequireContains(appContracts, "IAppOfficialOutputTextFileWorkflowGateway", "10G must keep the app workflow gateway contract.");
         RequireContains(readinessContracts, "IAppOfficialOutputTextFileWorkflowReadinessGateway", "10G must keep the readiness gateway contract.");
