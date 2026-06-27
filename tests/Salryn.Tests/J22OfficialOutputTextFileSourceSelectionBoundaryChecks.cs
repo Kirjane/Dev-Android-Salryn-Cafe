@@ -52,9 +52,9 @@ public static class J22OfficialOutputTextFileSourceSelectionBoundaryChecks
         RequireContains(sourceSelection, "normalizedRequest.SourceReadRequest", "RMO-M1-B1 must pass the normalized source identity to the producer request.");
         RequireContains(sourceSelection, "normalizedRequest.CopyMode", "RMO-M1-B1 must pass copy mode to the producer request.");
 
-        RequireDoesNotContain(supplyBoundary, "OfficialOutputTextFileSourceSelection", "RMO-M1-B1 must not wire package supply to source selection yet.");
-        RequireDoesNotContain(uiBoundary, "OfficialOutputTextFileSourceSelection", "RMO-M1-B1 must not wire UI boundary to source selection yet.");
-        RequireDoesNotContain(appServices, "OfficialOutputTextFileSourceSelection", "RMO-M1-B1 must not wire AppServices to source selection yet.");
+        RequireDoesNotContain(sourceSelection, "IOfficialOutputTextFilePackageSupplyBoundary", "RMO-M1-B1 source-selection boundary must remain neutral and not depend on package supply.");
+        RequireDoesNotContain(sourceSelection, "IOfficialOutputTextFileWorkflowUiBoundary", "RMO-M1-B1 source-selection boundary must remain neutral and not depend on UI boundary.");
+        RequireDoesNotContain(sourceSelection, "SalrynAppServices", "RMO-M1-B1 source-selection boundary must remain neutral and not depend on AppServices.");
         RequireDoesNotContain(checkoutPresenter, "OfficialOutputTextFileSourceSelection", "RMO-M1-B1 must not wire checkout presenter to source selection.");
         RequireDoesNotContain(checkoutBoundary, "OfficialOutputTextFileSourceSelection", "RMO-M1-B1 must not wire checkout product search to source selection.");
 
