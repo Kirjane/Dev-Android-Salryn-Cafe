@@ -49,7 +49,7 @@ public sealed class OfficialOutputTextFileWorkflowForm : Form
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 72F));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 134F));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 66F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 96F));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
         Controls.Add(root);
 
