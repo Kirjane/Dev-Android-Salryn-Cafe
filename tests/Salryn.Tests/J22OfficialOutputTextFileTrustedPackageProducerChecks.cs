@@ -72,11 +72,13 @@ public static class J22OfficialOutputTextFileTrustedPackageProducerChecks
         RequireContains(supplyBoundary, "FromTrustedPackageProducer", "RMO-M1-A supply boundary must expose producer-backed supply creation.");
         RequireContains(supplyBoundary, "GetAvailablePackageSummaryAsync", "RMO-M1-A supply boundary must expose async summary behavior.");
         RequireContains(supplyBoundary, "TryGetPackageAsync", "RMO-M1-A supply boundary must expose async package supply.");
-        RequireContains(supplyBoundary, "producer.ProduceAsync(producerRequest, cancellationToken)", "RMO-M1-A supply boundary must use the producer.");
+        RequireContains(supplyBoundary, "TryBuildProducerRequest(selectedSourceRequest)", "RMO-M1-B3 supply boundary must resolve the producer request before production.");
+        RequireContains(supplyBoundary, "producer.ProduceAsync(producerRequest.Value, cancellationToken)", "RMO-M1-A/B3 supply boundary must use the producer with the resolved producer request.");
+        RequireContains(supplyBoundary, "sourceSelectionBoundary.SelectSource(selectedSourceRequest)", "RMO-M1-B3 supply boundary must convert selected source requests through the source selection boundary.");
         RequireContains(supplyBoundary, "OfficialOutputTextFilePackageSupply.ProducerRequestRequired", "RMO-M1-A supply boundary must stay unavailable when no source request exists.");
 
         RequireContains(uiBoundary, "TryGetSuppliedPackageAsync", "RMO-M1-A UI shell must use async package supply before execution.");
-        RequireContains(uiBoundary, "packageSupplyBoundary.TryGetPackageAsync(cancellationToken)", "RMO-M1-A UI shell must obtain produced packages through supply boundary.");
+        RequireContains(uiBoundary, "packageSupplyBoundary.TryGetPackageAsync(selectedSourceRequest, cancellationToken)", "RMO-M1-A/B3 UI shell must obtain produced packages through supply boundary with the selected source request.");
         RequireDoesNotContain(uiBoundary, "request?.ExportPackage", "RMO-M1-A UI shell must not accept package data from UI state.");
 
         RequireContains(appServices, "public IOfficialOutputTextFileTrustedPackageProducer OfficialOutputTextFileTrustedPackageProducer { get; }", "RMO-M1-A AppServices must expose the trusted package producer.");
