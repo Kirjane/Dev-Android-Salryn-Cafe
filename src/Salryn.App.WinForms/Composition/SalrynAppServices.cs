@@ -1,4 +1,5 @@
 using Salryn.App.WinForms.Features.Checkout;
+using Salryn.App.WinForms.Features.OfficialOutput;
 using Salryn.Core.Deployment;
 using Salryn.Core.Repositories;
 using Salryn.Core.Services;
@@ -154,6 +155,11 @@ public sealed class SalrynAppServices
                 LocalHostRuntimeStartupResult,
                 LocalHostRequestContextProvider,
                 LocalHostSessionIdentityProvider);
+
+        OfficialOutputTextFileWorkflowUi =
+            new OfficialOutputTextFileWorkflowUiBoundary(
+                OfficialOutputTextFileWorkflowReadiness,
+                LocalHostOfficialOutputTextFileWorkflow);
     }
 
     public DbPaths DbPaths { get; }
@@ -213,6 +219,8 @@ public sealed class SalrynAppServices
     public IAppOfficialOutputTextFileWorkflowGateway LocalHostOfficialOutputTextFileWorkflow { get; }
 
     public IAppOfficialOutputTextFileWorkflowReadinessGateway OfficialOutputTextFileWorkflowReadiness { get; }
+
+    public IOfficialOutputTextFileWorkflowUiBoundary OfficialOutputTextFileWorkflowUi { get; }
 
     public ICashierSessionService CashierSessions { get; }
 
