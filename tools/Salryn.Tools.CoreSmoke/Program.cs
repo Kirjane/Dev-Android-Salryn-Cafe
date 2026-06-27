@@ -127,6 +127,7 @@ public static class Program
         J22OfficialOutputTextFileWorkflowExecutionPortChecks.Run();
         J22OfficialOutputTextFileWorkflowLocalHostHandlerChecks.RunAsync().GetAwaiter().GetResult();
         J22OfficialOutputTextFileWorkflowLocalHostGatewayChecks.RunAsync().GetAwaiter().GetResult();
+        J22OfficialOutputTextFileWorkflowLocalHostSealChecks.Run();
         J21Rmo242023ElectronicJournalPersistenceRuntimeDocumentationSealChecks.Run();
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
