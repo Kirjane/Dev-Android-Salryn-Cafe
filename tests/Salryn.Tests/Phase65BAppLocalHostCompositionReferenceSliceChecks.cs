@@ -95,8 +95,13 @@ public static class Phase65BAppLocalHostCompositionReferenceSliceChecks
 
         RequireContains(
             appServicesText,
-            "ProductReadRepository);",
+            "ProductReadRepository,",
             "App services must pass the existing Core product repository contract.");
+
+        RequireContains(
+            appServicesText,
+            "new OfficialExternalOutputTextFileWorkflowRunner()",
+            "10D App services may pass the app-owned official output text-file workflow runner into Host.Local through the Core port.");
 
         RequireContains(
             hostComposerText,

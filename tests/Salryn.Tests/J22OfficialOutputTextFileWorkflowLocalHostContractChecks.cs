@@ -243,7 +243,7 @@ public static class J22OfficialOutputTextFileWorkflowLocalHostContractChecks
         RequireDoesNotContain(bootstrap, "OfficialTextFileExternalOutputAdapter", "Host.Local bootstrap must not call the text-file adapter.");
 
         RequireContains(appServices, "CompositionOfficialOutputTextFileWorkflowGatewayAdapter", "10A app workflow gateway must remain the app-owned execution surface.");
-        RequireDoesNotContain(appServices, "CompositionLocalHostOfficialOutputTextFileWorkflowGatewayAdapter", "10D bridge must remain deferred when 10C execution is not dependency-safe.");
+        RequireContains(appServices, "CompositionLocalHostOfficialOutputTextFileWorkflowGatewayAdapter", "10D app Local Host official output text-file workflow bridge must be wired after the Core port and handler exist.");
 
         string handlerPath = Path.Combine(
             root.FullName,
@@ -267,9 +267,9 @@ public static class J22OfficialOutputTextFileWorkflowLocalHostContractChecks
             "Composition",
             "CompositionLocalHostOfficialOutputTextFileWorkflowGatewayAdapter.cs");
 
-        if (File.Exists(appBridge))
+        if (!File.Exists(appBridge))
         {
-            throw new InvalidOperationException("10D app Local Host official output text-file workflow bridge must remain deferred.");
+            throw new InvalidOperationException("10D app Local Host official output text-file workflow bridge must exist after dependency-safe handler wiring.");
         }
 
         foreach (string forbidden in ForbiddenMarkers())

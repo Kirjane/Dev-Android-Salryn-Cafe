@@ -108,8 +108,13 @@ public static class Phase65AAppCompositionBoundaryPlanningChecks
 
             RequireContains(
                 appServicesText,
-                "ProductReadRepository);",
+                "ProductReadRepository,",
                 "After 65B, Local Host ProductLookup composition must use the existing ProductReadRepository.");
+
+            RequireContains(
+                appServicesText,
+                "new OfficialExternalOutputTextFileWorkflowRunner()",
+                "10D Local Host composition must receive the app-owned official output text-file workflow runner through the Core port.");
         }
         else
         {

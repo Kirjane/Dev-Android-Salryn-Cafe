@@ -1,6 +1,7 @@
 ﻿using Salryn.Core.Deployment;
 using Salryn.Core.Hosting;
 using Salryn.Core.Repositories;
+using Salryn.Core.Services;
 using Salryn.Host.Local.Bootstrap;
 using Salryn.Host.Local.Contracts;
 using Salryn.Host.Local.Runtime;
@@ -77,6 +78,30 @@ public sealed class LocalHostBootstrapComposer
         LocalHostHandlerBootstrapResult bootstrapResult = _bootstrapper.RegisterDefaultHandlersWithProductLookup(
             runtime,
             products);
+
+        return CreateCheckedResult(runtime, bootstrapResult);
+    }
+
+    public LocalHostBootstrapCompositionResult ComposeWithProductLookup(
+        StoreDeploymentProfile profile,
+        IProductReadRepository products,
+        IOfficialOutputTextFileWorkflowExecutionPort officialOutputTextFileWorkflow,
+        HostOperationCatalog? operationCatalog = null,
+        LocalHostOperationContractMap? contractMap = null)
+    {
+        ArgumentNullException.ThrowIfNull(products);
+        ArgumentNullException.ThrowIfNull(officialOutputTextFileWorkflow);
+
+        LocalHostRuntime runtime = CreateRuntime(
+            profile,
+            operationCatalog,
+            contractMap);
+
+        LocalHostHandlerBootstrapResult bootstrapResult =
+            _bootstrapper.RegisterDefaultHandlersWithProductLookupAndOfficialOutputTextFileWorkflow(
+                runtime,
+                products,
+                officialOutputTextFileWorkflow);
 
         return CreateCheckedResult(runtime, bootstrapResult);
     }

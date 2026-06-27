@@ -82,6 +82,9 @@ public sealed class SalrynAppServices
         LocalHostProductLookupGateway =
             new CompositionLocalHostProductLookupGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider, LocalHostSessionIdentityProvider);
 
+        LocalHostOfficialOutputTextFileWorkflow =
+            new CompositionLocalHostOfficialOutputTextFileWorkflowGatewayAdapter(LocalHostProductLookupCompositionHolder, LocalHostRequestContextProvider, LocalHostSessionIdentityProvider);
+
         // Kirch: 66G6 routes checkout product search through the Local Host-backed boundary while keeping Shell checkout routing stable.
         CheckoutProductSearch =
             new CheckoutLocalHostProductSearchBoundary(LocalHostProductLookupGateway);
@@ -197,6 +200,8 @@ public sealed class SalrynAppServices
 
     public IAppOfficialOutputTextFileWorkflowGateway OfficialOutputTextFileWorkflow { get; }
 
+    public IAppOfficialOutputTextFileWorkflowGateway LocalHostOfficialOutputTextFileWorkflow { get; }
+
     public ICashierSessionService CashierSessions { get; }
 
     public IPosCheckoutService PosCheckout { get; }
@@ -285,7 +290,8 @@ public sealed class SalrynAppServices
 
         return composer.ComposeWithProductLookup(
             profile,
-            ProductReadRepository);
+            ProductReadRepository,
+            new OfficialExternalOutputTextFileWorkflowRunner());
     }
     // Kirch: This method wires repositories and services once, then passes them into the app shell.
     public static SalrynAppServices Create(DbPaths dbPaths)

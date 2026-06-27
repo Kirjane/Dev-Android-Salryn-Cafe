@@ -99,8 +99,13 @@ public static class Phase65CAppLocalHostCompositionCreationGuardChecks
 
         RequireContains(
             appServicesText,
-            "ProductReadRepository);",
+            "ProductReadRepository,",
             "Raw Local Host composition must still use the existing product repository contract.");
+
+        RequireContains(
+            appServicesText,
+            "new OfficialExternalOutputTextFileWorkflowRunner()",
+            "10D raw Local Host composition may include the app-owned official output text-file workflow runner through the Core port.");
 
         RequireContains(
             hostComposerText,

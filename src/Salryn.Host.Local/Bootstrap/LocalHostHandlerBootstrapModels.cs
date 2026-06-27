@@ -128,6 +128,43 @@ public sealed class LocalHostHandlerBootstrapper
         return CreateResult(registeredOperations);
     }
 
+    public LocalHostHandlerBootstrapResult RegisterDefaultHandlersWithProductLookupAndOfficialOutputTextFileWorkflow(
+        ILocalHostRuntime runtime,
+        IProductReadRepository products,
+        IOfficialOutputTextFileWorkflowExecutionPort officialOutputTextFileWorkflow)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentNullException.ThrowIfNull(products);
+        ArgumentNullException.ThrowIfNull(officialOutputTextFileWorkflow);
+
+        List<string> registeredOperations = new();
+
+        Register(
+            runtime,
+            registeredOperations,
+            HostOperationNames.Login,
+            new LocalHostBootstrapNotImplementedHandler<LocalHostLoginRequest, LocalHostLoginResponse>());
+
+        Register(
+            runtime,
+            registeredOperations,
+            HostOperationNames.ProductSearch,
+            new LocalHostBootstrapNotImplementedHandler<LocalHostProductSearchRequest, LocalHostProductSearchResponse>());
+
+        Register(
+            runtime,
+            registeredOperations,
+            HostOperationNames.ProductLookup,
+            new LocalHostProductLookupHandler(products));
+
+        RegisterRemainingPlaceholderHandlers(
+            runtime,
+            registeredOperations,
+            officialOutputTextFileWorkflow);
+
+        return CreateResult(registeredOperations);
+    }
+
     // Kirch: Registers the operation placeholders that are not part of the Phase 64B ProductLookup slice.
     private static void RegisterRemainingPlaceholderHandlers(
         ILocalHostRuntime runtime,

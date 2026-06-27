@@ -149,8 +149,13 @@ public static class Phase65DAppLocalHostCompositionReadinessSealChecks
 
         RequireContains(
             appServicesText,
-            "ProductReadRepository);",
+            "ProductReadRepository,",
             "App composition must pass the existing Core product repository contract.");
+
+        RequireContains(
+            appServicesText,
+            "new OfficialExternalOutputTextFileWorkflowRunner()",
+            "10D app composition may include the app-owned official output text-file workflow runner through the Core port.");
 
         RequireContains(
             hostComposerText,
