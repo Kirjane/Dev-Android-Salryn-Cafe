@@ -159,9 +159,13 @@ public sealed class SalrynAppServices
         OfficialOutputTextFileTrustedPackageProducer =
             new OfficialOutputTextFileTrustedPackageProducer(OfficialOutputSourceRead);
 
+        OfficialOutputTextFileSourceSelection =
+            new OfficialOutputTextFileSourceSelectionBoundary();
+
         OfficialOutputTextFilePackageSupply =
             new OfficialOutputTextFilePackageSupplyBoundary(
-                trustedPackageProducer: OfficialOutputTextFileTrustedPackageProducer);
+                trustedPackageProducer: OfficialOutputTextFileTrustedPackageProducer,
+                sourceSelectionBoundary: OfficialOutputTextFileSourceSelection);
 
         OfficialOutputTextFileWorkflowUi =
             new OfficialOutputTextFileWorkflowUiBoundary(
@@ -229,6 +233,8 @@ public sealed class SalrynAppServices
     public IAppOfficialOutputTextFileWorkflowReadinessGateway OfficialOutputTextFileWorkflowReadiness { get; }
 
     public IOfficialOutputTextFileTrustedPackageProducer OfficialOutputTextFileTrustedPackageProducer { get; }
+
+    public IOfficialOutputTextFileSourceSelectionBoundary OfficialOutputTextFileSourceSelection { get; }
 
     public IOfficialOutputTextFilePackageSupplyBoundary OfficialOutputTextFilePackageSupply { get; }
 

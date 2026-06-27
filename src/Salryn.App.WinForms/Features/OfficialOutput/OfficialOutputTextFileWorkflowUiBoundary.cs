@@ -9,7 +9,8 @@ public sealed record OfficialOutputTextFileWorkflowUiTriggerRequest(
     DateTimeOffset? RequestedAt,
     Guid? RequestedByUserId,
     string? TerminalId,
-    IReadOnlyDictionary<string, string>? Metadata);
+    IReadOnlyDictionary<string, string>? Metadata,
+    OfficialOutputTextFileSourceSelectionRequest? SourceSelectionRequest = null);
 
 public sealed record OfficialOutputTextFileWorkflowUiStatus(
     bool IsAvailable,
@@ -142,7 +143,8 @@ public sealed class OfficialOutputTextFileWorkflowUiBoundary : IOfficialOutputTe
     public OfficialOutputTextFileWorkflowUiStatus GetStatus(
         OfficialOutputTextFileWorkflowUiTriggerRequest? request)
     {
-        Result<OfficialOutputExportPackage> packageResult = TryGetSuppliedPackage();
+        Result<OfficialOutputExportPackage> packageResult =
+            TryGetSuppliedPackage(request?.SourceSelectionRequest);
 
         return GetStatus(request, packageResult);
     }
@@ -179,7 +181,7 @@ public sealed class OfficialOutputTextFileWorkflowUiBoundary : IOfficialOutputTe
         }
 
         Result<OfficialOutputExportPackage> packageResult =
-            await TryGetSuppliedPackageAsync(cancellationToken).ConfigureAwait(false);
+            await TryGetSuppliedPackageAsync(request?.SourceSelectionRequest, cancellationToken).ConfigureAwait(false);
         OfficialOutputTextFileWorkflowUiStatus status = GetStatus(request, packageResult);
 
         if (!status.IsAvailable)
@@ -229,7 +231,8 @@ public sealed class OfficialOutputTextFileWorkflowUiBoundary : IOfficialOutputTe
         return OfficialOutputTextFileWorkflowUiCommandResult.FromWorkflowResult(status, result);
     }
 
-    private Result<OfficialOutputExportPackage> TryGetSuppliedPackage()
+    private Result<OfficialOutputExportPackage> TryGetSuppliedPackage(
+        OfficialOutputTextFileSourceSelectionRequest? selectedSourceRequest)
     {
         IOfficialOutputTextFilePackageSupplyBoundary? packageSupplyBoundary = _packageSupplyBoundary;
 
@@ -240,10 +243,11 @@ public sealed class OfficialOutputTextFileWorkflowUiBoundary : IOfficialOutputTe
                 "Official output text-file package supply boundary is not available."));
         }
 
-        return packageSupplyBoundary.TryGetPackage();
+        return packageSupplyBoundary.TryGetPackage(selectedSourceRequest);
     }
 
     private async Task<Result<OfficialOutputExportPackage>> TryGetSuppliedPackageAsync(
+        OfficialOutputTextFileSourceSelectionRequest? selectedSourceRequest,
         CancellationToken cancellationToken)
     {
         IOfficialOutputTextFilePackageSupplyBoundary? packageSupplyBoundary = _packageSupplyBoundary;
@@ -255,6 +259,6 @@ public sealed class OfficialOutputTextFileWorkflowUiBoundary : IOfficialOutputTe
                 "Official output text-file package supply boundary is not available."));
         }
 
-        return await packageSupplyBoundary.TryGetPackageAsync(cancellationToken).ConfigureAwait(false);
+        return await packageSupplyBoundary.TryGetPackageAsync(selectedSourceRequest, cancellationToken).ConfigureAwait(false);
     }
 }

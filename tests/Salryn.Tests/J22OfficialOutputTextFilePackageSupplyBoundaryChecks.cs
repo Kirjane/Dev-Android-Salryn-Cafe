@@ -23,6 +23,8 @@ public static class J22OfficialOutputTextFilePackageSupplyBoundaryChecks
         RequireContains(supplyBoundary, "OfficialOutputExportPackage? trustedPackage = null", "10H package supply must allow no currently supplied package.");
         RequireContains(supplyBoundary, "IOfficialOutputTextFileTrustedPackageProducer? trustedPackageProducer = null", "RMO-M1-A package supply must accept a trusted package producer.");
         RequireContains(supplyBoundary, "OfficialOutputTextFileTrustedPackageProducerRequest? producerRequest = null", "RMO-M1-A package supply must accept a producer source request.");
+        RequireContains(supplyBoundary, "IOfficialOutputTextFileSourceSelectionBoundary? sourceSelectionBoundary = null", "RMO-M1-B2 package supply must accept a source-selection boundary.");
+        RequireContains(supplyBoundary, "OfficialOutputTextFileSourceSelectionRequest? selectedSourceRequest", "RMO-M1-B2 package supply must accept selected source requests.");
         RequireContains(supplyBoundary, "FromTrustedPackage", "10H package supply must allow a trusted package to be supplied explicitly.");
         RequireContains(supplyBoundary, "FromTrustedPackageProducer", "RMO-M1-A package supply must allow producer-backed package supply.");
         RequireContains(supplyBoundary, "OfficialOutputTextFilePackageSupply.NoTrustedPackage", "10H package supply must fail safely when no package exists.");
@@ -30,7 +32,9 @@ public static class J22OfficialOutputTextFilePackageSupplyBoundaryChecks
         RequireContains(supplyBoundary, "Result<OfficialOutputExportPackage>.Fail", "10H package supply must return a safe failure.");
         RequireContains(supplyBoundary, "OfficialOutputTextFilePackageSupply.PackageNotTrusted", "10H package supply must reject untrusted package identity.");
         RequireContains(supplyBoundary, "AppOfficialOutputTextFileWorkflowReadinessRules.IsTrustedExportPackage(package)", "10H package supply must reuse the app trust rule.");
-        RequireContains(supplyBoundary, "producer.ProduceAsync(producerRequest, cancellationToken)", "RMO-M1-A package supply must call the trusted package producer.");
+        RequireContains(supplyBoundary, "producer.ProduceAsync(producerRequest.Value, cancellationToken)", "RMO-M1-B2 package supply must call the trusted package producer with a selected or stored producer request.");
+        RequireContains(supplyBoundary, "sourceSelectionBoundary.SelectSource(selectedSourceRequest)", "RMO-M1-B2 package supply must convert selected source requests through source-selection boundary.");
+        RequireContains(supplyBoundary, "OfficialOutputTextFilePackageSupply.AsyncProductionRequired", "RMO-M1-B2 sync selected-source package retrieval must fail cleanly when async production is required.");
         RequireContains(supplyBoundary, "PackageReference", "10H summary must expose package reference.");
         RequireContains(supplyBoundary, "PackageHash", "10H summary must expose package hash.");
         RequireContains(supplyBoundary, "PackageKind", "10H summary must expose package kind.");
@@ -48,13 +52,13 @@ public static class J22OfficialOutputTextFilePackageSupplyBoundaryChecks
 
         RequireContains(uiBoundary, "IOfficialOutputTextFilePackageSupplyBoundary? _packageSupplyBoundary", "10H UI shell must depend on the package supply boundary.");
         RequireContains(uiBoundary, "TryGetSuppliedPackage", "10H UI shell must check package supply.");
-        RequireContains(uiBoundary, "packageSupplyBoundary.TryGetPackage()", "10H UI shell must retrieve the trusted package through the supply boundary.");
-        RequireContains(uiBoundary, "packageSupplyBoundary.TryGetPackageAsync(cancellationToken)", "RMO-M1-A UI shell must retrieve produced packages through the async supply boundary.");
+        RequireContains(uiBoundary, "packageSupplyBoundary.TryGetPackage(selectedSourceRequest)", "RMO-M1-B3 UI shell must retrieve package status through selected source request when present.");
+        RequireContains(uiBoundary, "packageSupplyBoundary.TryGetPackageAsync(selectedSourceRequest, cancellationToken)", "RMO-M1-B3 UI shell must retrieve produced packages through selected source request when present.");
         RequireContains(uiBoundary, "OfficialOutputTextFilePackageSupply.BoundaryUnavailable", "10H UI shell must fail safely when supply boundary is unavailable.");
         RequireContains(uiBoundary, "packageResult.IsSuccess ? packageResult.Value : null", "10H UI readiness must use supplied package only when trusted.");
         RequireContains(uiBoundary, "packageResult.Value", "10H UI execution request must pass the supplied trusted package.");
 
-        int packageSupplyIndex = uiBoundary.IndexOf("Result<OfficialOutputExportPackage> packageResult = TryGetSuppliedPackage();", StringComparison.Ordinal);
+        int packageSupplyIndex = uiBoundary.IndexOf("Result<OfficialOutputExportPackage> packageResult =", StringComparison.Ordinal);
         int statusIndex = uiBoundary.IndexOf("OfficialOutputTextFileWorkflowUiStatus status = GetStatus(request, packageResult);", StringComparison.Ordinal);
         int runIndex = uiBoundary.IndexOf("workflowGateway.RunAsync(appRequest, cancellationToken)", StringComparison.Ordinal);
 

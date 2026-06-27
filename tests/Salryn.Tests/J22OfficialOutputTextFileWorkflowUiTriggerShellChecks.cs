@@ -21,6 +21,7 @@ public static class J22OfficialOutputTextFileWorkflowUiTriggerShellChecks
 
         RequireContains(boundary, "namespace Salryn.App.WinForms.Features.OfficialOutput", "10G UI trigger shell must live in the OfficialOutput feature namespace.");
         RequireContains(boundary, "OfficialOutputTextFileWorkflowUiTriggerRequest", "10G UI trigger request must exist.");
+        RequireContains(boundary, "OfficialOutputTextFileSourceSelectionRequest? SourceSelectionRequest = null", "RMO-M1-B3 UI trigger request must carry optional selected official output source request.");
         RequireContains(boundary, "OfficialOutputTextFileWorkflowUiStatus", "10G UI status contract must exist.");
         RequireContains(boundary, "OfficialOutputTextFileWorkflowUiCommandResult", "10G UI command result must exist.");
         RequireContains(boundary, "IOfficialOutputTextFileWorkflowUiBoundary", "10G UI boundary interface must exist.");
@@ -32,6 +33,7 @@ public static class J22OfficialOutputTextFileWorkflowUiTriggerShellChecks
         RequireContains(boundary, "IOfficialOutputTextFilePackageSupplyBoundary", "10G/10H UI boundary must depend on the package supply boundary.");
         RequireContains(boundary, "new AppOfficialOutputTextFileWorkflowReadinessRequest", "10G UI boundary must map to the readiness request.");
         RequireContains(boundary, "TryGetSuppliedPackage", "10G/10H UI boundary must obtain a trusted package from the supply boundary.");
+        RequireContains(boundary, "request?.SourceSelectionRequest", "RMO-M1-B3 UI boundary must pass selected source request from trigger request.");
         RequireContains(boundary, "packageResult.IsSuccess ? packageResult.Value : null", "10G/10H readiness must use the supplied trusted package when available.");
         RequireContains(boundary, "request?.OutputRootPath", "10G UI boundary must require an explicit output root.");
         RequireContains(boundary, "AppOfficialOutputTextFileWorkflowRules.ValidateRequest", "10G UI command must validate before execution.");
@@ -40,7 +42,7 @@ public static class J22OfficialOutputTextFileWorkflowUiTriggerShellChecks
         RequireContains(boundary, "workflowGateway.RunAsync(appRequest, cancellationToken)", "10G UI command may call the workflow only after readiness and request validation.");
         RequireContains(boundary, "OfficialOutputTextFileWorkflowUi.ReadinessUnavailable", "10G UI blocked status must be explicit.");
 
-        int packageSupplyIndex = boundary.IndexOf("Result<OfficialOutputExportPackage> packageResult = TryGetSuppliedPackage();", StringComparison.Ordinal);
+        int packageSupplyIndex = boundary.IndexOf("Result<OfficialOutputExportPackage> packageResult =", StringComparison.Ordinal);
         int statusCheckIndex = boundary.IndexOf("OfficialOutputTextFileWorkflowUiStatus status = GetStatus(request, packageResult);", StringComparison.Ordinal);
         int blockedIndex = boundary.IndexOf("if (!status.IsAvailable)", StringComparison.Ordinal);
         int validationIndex = boundary.IndexOf("AppOfficialOutputTextFileWorkflowRules.ValidateRequest(appRequest)", StringComparison.Ordinal);
@@ -64,6 +66,8 @@ public static class J22OfficialOutputTextFileWorkflowUiTriggerShellChecks
         RequireContains(appServices, "public IAppOfficialOutputTextFileWorkflowGateway OfficialOutputTextFileWorkflow { get; }", "10G must keep the direct 10A app gateway intact.");
         RequireContains(appServices, "public IAppOfficialOutputTextFileWorkflowGateway LocalHostOfficialOutputTextFileWorkflow { get; }", "10G must keep the Local Host 10D app gateway intact.");
         RequireContains(supplyBoundary, "public interface IOfficialOutputTextFilePackageSupplyBoundary", "10H package supply boundary must exist.");
+        RequireContains(supplyBoundary, "TryGetPackage(OfficialOutputTextFileSourceSelectionRequest? selectedSourceRequest)", "RMO-M1-B3 supply boundary must expose selected-source sync status path.");
+        RequireContains(supplyBoundary, "TryGetPackageAsync(OfficialOutputTextFileSourceSelectionRequest? selectedSourceRequest", "RMO-M1-B3 supply boundary must expose selected-source async package path.");
 
         RequireContains(appContracts, "IAppOfficialOutputTextFileWorkflowGateway", "10G must keep the app workflow gateway contract.");
         RequireContains(readinessContracts, "IAppOfficialOutputTextFileWorkflowReadinessGateway", "10G must keep the readiness gateway contract.");
