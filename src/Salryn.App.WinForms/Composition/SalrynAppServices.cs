@@ -156,10 +156,14 @@ public sealed class SalrynAppServices
                 LocalHostRequestContextProvider,
                 LocalHostSessionIdentityProvider);
 
+        OfficialOutputTextFilePackageSupply =
+            new OfficialOutputTextFilePackageSupplyBoundary();
+
         OfficialOutputTextFileWorkflowUi =
             new OfficialOutputTextFileWorkflowUiBoundary(
                 OfficialOutputTextFileWorkflowReadiness,
-                LocalHostOfficialOutputTextFileWorkflow);
+                LocalHostOfficialOutputTextFileWorkflow,
+                OfficialOutputTextFilePackageSupply);
     }
 
     public DbPaths DbPaths { get; }
@@ -219,6 +223,8 @@ public sealed class SalrynAppServices
     public IAppOfficialOutputTextFileWorkflowGateway LocalHostOfficialOutputTextFileWorkflow { get; }
 
     public IAppOfficialOutputTextFileWorkflowReadinessGateway OfficialOutputTextFileWorkflowReadiness { get; }
+
+    public IOfficialOutputTextFilePackageSupplyBoundary OfficialOutputTextFilePackageSupply { get; }
 
     public IOfficialOutputTextFileWorkflowUiBoundary OfficialOutputTextFileWorkflowUi { get; }
 

@@ -5,7 +5,6 @@ using Salryn.Core.Services;
 namespace Salryn.App.WinForms.Features.OfficialOutput;
 
 public sealed record OfficialOutputTextFileWorkflowUiTriggerRequest(
-    OfficialOutputExportPackage? ExportPackage,
     string? OutputRootPath,
     DateTimeOffset? RequestedAt,
     Guid? RequestedByUserId,
@@ -128,17 +127,29 @@ public sealed class OfficialOutputTextFileWorkflowUiBoundary : IOfficialOutputTe
 {
     private readonly IAppOfficialOutputTextFileWorkflowReadinessGateway? _readinessGateway;
     private readonly IAppOfficialOutputTextFileWorkflowGateway? _workflowGateway;
+    private readonly IOfficialOutputTextFilePackageSupplyBoundary? _packageSupplyBoundary;
 
     public OfficialOutputTextFileWorkflowUiBoundary(
         IAppOfficialOutputTextFileWorkflowReadinessGateway? readinessGateway,
-        IAppOfficialOutputTextFileWorkflowGateway? workflowGateway)
+        IAppOfficialOutputTextFileWorkflowGateway? workflowGateway,
+        IOfficialOutputTextFilePackageSupplyBoundary? packageSupplyBoundary)
     {
         _readinessGateway = readinessGateway;
         _workflowGateway = workflowGateway;
+        _packageSupplyBoundary = packageSupplyBoundary;
     }
 
     public OfficialOutputTextFileWorkflowUiStatus GetStatus(
         OfficialOutputTextFileWorkflowUiTriggerRequest? request)
+    {
+        Result<OfficialOutputExportPackage> packageResult = TryGetSuppliedPackage();
+
+        return GetStatus(request, packageResult);
+    }
+
+    private OfficialOutputTextFileWorkflowUiStatus GetStatus(
+        OfficialOutputTextFileWorkflowUiTriggerRequest? request,
+        Result<OfficialOutputExportPackage> packageResult)
     {
         IAppOfficialOutputTextFileWorkflowReadinessGateway? readinessGateway = _readinessGateway;
 
@@ -151,7 +162,7 @@ public sealed class OfficialOutputTextFileWorkflowUiBoundary : IOfficialOutputTe
 
         AppOfficialOutputTextFileWorkflowReadinessResult readiness =
             readinessGateway.CheckReadiness(new AppOfficialOutputTextFileWorkflowReadinessRequest(
-                request?.ExportPackage,
+                packageResult.IsSuccess ? packageResult.Value : null,
                 request?.OutputRootPath));
 
         return OfficialOutputTextFileWorkflowUiStatus.FromReadiness(readiness);
@@ -167,11 +178,19 @@ public sealed class OfficialOutputTextFileWorkflowUiBoundary : IOfficialOutputTe
                 .ConfigureAwait(false);
         }
 
-        OfficialOutputTextFileWorkflowUiStatus status = GetStatus(request);
+        Result<OfficialOutputExportPackage> packageResult = TryGetSuppliedPackage();
+        OfficialOutputTextFileWorkflowUiStatus status = GetStatus(request, packageResult);
 
         if (!status.IsAvailable)
         {
             return OfficialOutputTextFileWorkflowUiCommandResult.Blocked(status);
+        }
+
+        if (packageResult.IsFailure)
+        {
+            return OfficialOutputTextFileWorkflowUiCommandResult.ValidationBlocked(
+                status,
+                packageResult.ErrorDetail);
         }
 
         IAppOfficialOutputTextFileWorkflowGateway? workflowGateway = _workflowGateway;
@@ -187,7 +206,7 @@ public sealed class OfficialOutputTextFileWorkflowUiBoundary : IOfficialOutputTe
         }
 
         AppOfficialOutputTextFileWorkflowRequest appRequest = new(
-            request?.ExportPackage,
+            packageResult.Value,
             request?.OutputRootPath,
             request?.RequestedAt,
             request?.RequestedByUserId,
@@ -207,5 +226,19 @@ public sealed class OfficialOutputTextFileWorkflowUiBoundary : IOfficialOutputTe
             await workflowGateway.RunAsync(appRequest, cancellationToken).ConfigureAwait(false);
 
         return OfficialOutputTextFileWorkflowUiCommandResult.FromWorkflowResult(status, result);
+    }
+
+    private Result<OfficialOutputExportPackage> TryGetSuppliedPackage()
+    {
+        IOfficialOutputTextFilePackageSupplyBoundary? packageSupplyBoundary = _packageSupplyBoundary;
+
+        if (packageSupplyBoundary is null)
+        {
+            return Result<OfficialOutputExportPackage>.Fail(Error.Validation(
+                "OfficialOutputTextFilePackageSupply.BoundaryUnavailable",
+                "Official output text-file package supply boundary is not available."));
+        }
+
+        return packageSupplyBoundary.TryGetPackage();
     }
 }

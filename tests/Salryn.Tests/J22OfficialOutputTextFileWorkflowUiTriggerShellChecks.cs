@@ -7,6 +7,7 @@ public static class J22OfficialOutputTextFileWorkflowUiTriggerShellChecks
         DirectoryInfo root = FindRepositoryRoot();
 
         string boundary = Read(root, "src", "Salryn.App.WinForms", "Features", "OfficialOutput", "OfficialOutputTextFileWorkflowUiBoundary.cs");
+        string supplyBoundary = Read(root, "src", "Salryn.App.WinForms", "Features", "OfficialOutput", "OfficialOutputTextFilePackageSupplyBoundary.cs");
         string appServices = Read(root, "src", "Salryn.App.WinForms", "Composition", "SalrynAppServices.cs");
         string appContracts = Read(root, "src", "Salryn.App.WinForms", "Composition", "AppOfficialOutputTextFileWorkflowContracts.cs");
         string readinessContracts = Read(root, "src", "Salryn.App.WinForms", "Composition", "AppOfficialOutputTextFileWorkflowReadinessContracts.cs");
@@ -28,8 +29,10 @@ public static class J22OfficialOutputTextFileWorkflowUiTriggerShellChecks
         RequireContains(boundary, "TryRunAsync", "10G UI boundary must expose a guarded command method.");
         RequireContains(boundary, "IAppOfficialOutputTextFileWorkflowReadinessGateway", "10G UI boundary must depend on the 10F readiness gateway.");
         RequireContains(boundary, "IAppOfficialOutputTextFileWorkflowGateway", "10G UI boundary must depend on the app workflow gateway contract.");
+        RequireContains(boundary, "IOfficialOutputTextFilePackageSupplyBoundary", "10G/10H UI boundary must depend on the package supply boundary.");
         RequireContains(boundary, "new AppOfficialOutputTextFileWorkflowReadinessRequest", "10G UI boundary must map to the readiness request.");
-        RequireContains(boundary, "request?.ExportPackage", "10G UI boundary must require a supplied trusted package instead of creating one.");
+        RequireContains(boundary, "TryGetSuppliedPackage", "10G/10H UI boundary must obtain a trusted package from the supply boundary.");
+        RequireContains(boundary, "packageResult.IsSuccess ? packageResult.Value : null", "10G/10H readiness must use the supplied trusted package when available.");
         RequireContains(boundary, "request?.OutputRootPath", "10G UI boundary must require an explicit output root.");
         RequireContains(boundary, "AppOfficialOutputTextFileWorkflowRules.ValidateRequest", "10G UI command must validate before execution.");
         RequireContains(boundary, "if (!status.IsAvailable)", "10G UI command must block execution when readiness is unavailable.");
@@ -37,26 +40,30 @@ public static class J22OfficialOutputTextFileWorkflowUiTriggerShellChecks
         RequireContains(boundary, "workflowGateway.RunAsync(appRequest, cancellationToken)", "10G UI command may call the workflow only after readiness and request validation.");
         RequireContains(boundary, "OfficialOutputTextFileWorkflowUi.ReadinessUnavailable", "10G UI blocked status must be explicit.");
 
-        int statusCheckIndex = boundary.IndexOf("OfficialOutputTextFileWorkflowUiStatus status = GetStatus(request);", StringComparison.Ordinal);
+        int packageSupplyIndex = boundary.IndexOf("Result<OfficialOutputExportPackage> packageResult = TryGetSuppliedPackage();", StringComparison.Ordinal);
+        int statusCheckIndex = boundary.IndexOf("OfficialOutputTextFileWorkflowUiStatus status = GetStatus(request, packageResult);", StringComparison.Ordinal);
         int blockedIndex = boundary.IndexOf("if (!status.IsAvailable)", StringComparison.Ordinal);
         int validationIndex = boundary.IndexOf("AppOfficialOutputTextFileWorkflowRules.ValidateRequest(appRequest)", StringComparison.Ordinal);
         int runIndex = boundary.IndexOf("workflowGateway.RunAsync(appRequest, cancellationToken)", StringComparison.Ordinal);
 
-        if (statusCheckIndex < 0 ||
+        if (packageSupplyIndex < 0 ||
+            statusCheckIndex < 0 ||
             blockedIndex < 0 ||
             validationIndex < 0 ||
             runIndex < 0 ||
-            !(statusCheckIndex < blockedIndex && blockedIndex < validationIndex && validationIndex < runIndex))
+            !(packageSupplyIndex < statusCheckIndex && statusCheckIndex < blockedIndex && blockedIndex < validationIndex && validationIndex < runIndex))
         {
-            throw new InvalidOperationException("10G UI command must check readiness, block unavailable state, validate, then call the workflow gateway.");
+            throw new InvalidOperationException("10G UI command must check package supply and readiness, block unavailable state, validate, then call the workflow gateway.");
         }
 
         RequireContains(appServices, "public IOfficialOutputTextFileWorkflowUiBoundary OfficialOutputTextFileWorkflowUi { get; }", "10G AppServices must expose the guarded UI trigger boundary.");
         RequireContains(appServices, "new OfficialOutputTextFileWorkflowUiBoundary(", "10G AppServices must construct the guarded UI trigger boundary.");
         RequireContains(appServices, "OfficialOutputTextFileWorkflowReadiness,", "10G UI trigger must use the readiness surface.");
-        RequireContains(appServices, "LocalHostOfficialOutputTextFileWorkflow);", "10G UI trigger must use the Local Host app gateway for guarded command execution.");
+        RequireContains(appServices, "LocalHostOfficialOutputTextFileWorkflow,", "10G UI trigger must use the Local Host app gateway for guarded command execution.");
+        RequireContains(appServices, "OfficialOutputTextFilePackageSupply);", "10G/10H UI trigger must use the package supply boundary.");
         RequireContains(appServices, "public IAppOfficialOutputTextFileWorkflowGateway OfficialOutputTextFileWorkflow { get; }", "10G must keep the direct 10A app gateway intact.");
         RequireContains(appServices, "public IAppOfficialOutputTextFileWorkflowGateway LocalHostOfficialOutputTextFileWorkflow { get; }", "10G must keep the Local Host 10D app gateway intact.");
+        RequireContains(supplyBoundary, "public interface IOfficialOutputTextFilePackageSupplyBoundary", "10H package supply boundary must exist.");
 
         RequireContains(appContracts, "IAppOfficialOutputTextFileWorkflowGateway", "10G must keep the app workflow gateway contract.");
         RequireContains(readinessContracts, "IAppOfficialOutputTextFileWorkflowReadinessGateway", "10G must keep the readiness gateway contract.");

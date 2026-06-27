@@ -130,6 +130,7 @@ public static class Program
         J22OfficialOutputTextFileWorkflowLocalHostSealChecks.Run();
         J22OfficialOutputTextFileWorkflowReadinessChecks.Run();
         J22OfficialOutputTextFileWorkflowUiTriggerShellChecks.Run();
+        J22OfficialOutputTextFilePackageSupplyBoundaryChecks.Run();
         J21Rmo242023ElectronicJournalPersistenceRuntimeDocumentationSealChecks.Run();
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
