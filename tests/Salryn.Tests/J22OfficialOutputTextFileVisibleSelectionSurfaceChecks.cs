@@ -23,9 +23,12 @@ public static class J22OfficialOutputTextFileVisibleSelectionSurfaceChecks
         RequireContains(form, "OfficialEvidenceReadRequest", "M1-D1 form must require official evidence filters before listing.");
         RequireContains(form, "BuildSourceSelectionRequest", "M1-D1 form must convert a selected official evidence candidate into source selection.");
         RequireContains(form, "_services.OfficialOutputTextFileWorkflowUi", "M1-D1 form must run through the guarded workflow UI boundary.");
+        RequireContains(form, "TryBuildTriggerRequest(out OfficialOutputTextFileWorkflowUiTriggerRequest? triggerRequest)", "M1-E1 form must build only the UI trigger request before running.");
         RequireContains(form, "TryRunAsync(triggerRequest)", "M1-D1 form must call the guarded workflow UI boundary.");
-        RequireContains(form, "TryGetPackageAsync(selectedSourceRequest", "M1-D1 form must verify trusted package supply before readiness.");
-        RequireContains(form, "CheckReadiness", "M1-D1 form must check readiness before running.");
+        RequireDoesNotContain(form, "TryGetPackageAsync(selectedSourceRequest", "M1-E1 form must not acquire package before delegating to workflow UI boundary.");
+        RequireDoesNotContain(form, "_services.OfficialOutputTextFilePackageSupply", "M1-E1 form must not call package supply directly.");
+        RequireDoesNotContain(form, "_services.OfficialOutputTextFileWorkflowReadiness", "M1-E1 form must not call readiness directly.");
+        RequireDoesNotContain(form, "CheckReadiness", "M1-E1 form must leave readiness checks to workflow UI boundary.");
 
         RequireContains(form, "TryBuildEvidenceRequest", "M1-D1 form must have a source filter validation path.");
         RequireContains(form, "Machine profile id or registration scope is required", "M1-D1 form must require machine profile id or registration scope.");
@@ -34,6 +37,8 @@ public static class J22OfficialOutputTextFileVisibleSelectionSurfaceChecks
         RequireContains(form, "GetSelectedCandidate()", "M1-D1 form must require selected candidate before running.");
         RequireContains(form, "Select an official evidence-backed candidate before running.", "M1-D1 form must block run without a selected official evidence candidate.");
         RequireContains(form, "Explicit output root path is required before running.", "M1-D1 form must require explicit output root path.");
+        RequireContains(form, "An active app user session is required before running.", "M1-E1 form must require an active app user session.");
+        RequireContains(form, "Terminal id is required from official evidence or Local Host context before running.", "M1-E1 form must require a terminal id.");
 
         RequireContains(form, "JournalEntryId", "M1-D1 form must display trusted journal entry identity.");
         RequireContains(form, "OfficialDocumentNumber", "M1-D1 form must display official document number.");
