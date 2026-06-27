@@ -245,10 +245,19 @@ public static class J22OfficialOutputTextFileWorkflowLocalHostContractChecks
         RequireContains(appServices, "CompositionOfficialOutputTextFileWorkflowGatewayAdapter", "10A app workflow gateway must remain the app-owned execution surface.");
         RequireDoesNotContain(appServices, "CompositionLocalHostOfficialOutputTextFileWorkflowGatewayAdapter", "10D bridge must remain deferred when 10C execution is not dependency-safe.");
 
-        if (Directory.EnumerateFiles(Path.Combine(root.FullName, "src", "Salryn.Host.Local", "Handlers"), "*.cs", SearchOption.AllDirectories)
-            .Any(static file => Path.GetFileName(file).Contains("LocalHostOfficialOutputTextFileWorkflowHandler", StringComparison.Ordinal)))
+        string handlerPath = Path.Combine(
+            root.FullName,
+            "src",
+            "Salryn.Host.Local",
+            "Handlers",
+            "LocalHostOfficialOutputTextFileWorkflowHandler.cs");
+
+        if (File.Exists(handlerPath))
         {
-            throw new InvalidOperationException("10C real Local Host official output text-file workflow handler must remain deferred.");
+            string handlerText = File.ReadAllText(handlerPath);
+            RequireDoesNotContain(handlerText, "OfficialExternalOutputTextFileWorkflowRunner", "Host.Local official output text-file workflow handler must not call the Infrastructure runner.");
+            RequireDoesNotContain(handlerText, "SalrynAppServices", "Host.Local official output text-file workflow handler must not call App.WinForms services.");
+            RequireDoesNotContain(handlerText, "CompositionOfficialOutputTextFileWorkflowGatewayAdapter", "Host.Local official output text-file workflow handler must not call App.WinForms composition.");
         }
 
         string appBridge = Path.Combine(

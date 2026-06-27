@@ -13,7 +13,7 @@ public static class J22OfficialOutputTextFileWorkflowExecutionPortChecks
         AssertInfrastructureRunnerImplementsPort();
         AssertAppGatewayDependsOnPort();
         AssertHostLocalDependencyDirection();
-        AssertNoLocalHostExecutionHandler();
+        AssertLocalHostHandlerUsesPortOnly();
         AssertSourceGuards();
     }
 
@@ -99,22 +99,29 @@ public static class J22OfficialOutputTextFileWorkflowExecutionPortChecks
             "10C-A must not add a Host.Local reference to App.WinForms.");
     }
 
-    private static void AssertNoLocalHostExecutionHandler()
+    private static void AssertLocalHostHandlerUsesPortOnly()
     {
         DirectoryInfo root = FindRepositoryRoot();
         string hostRoot = Path.Combine(root.FullName, "src", "Salryn.Host.Local");
         string bootstrap = Read(root, "src", "Salryn.Host.Local", "Bootstrap", "LocalHostHandlerBootstrapModels.cs");
+        string handler = Read(root, "src", "Salryn.Host.Local", "Handlers", "LocalHostOfficialOutputTextFileWorkflowHandler.cs");
 
         RequireContains(
             bootstrap,
             "LocalHostBootstrapNotImplementedHandler<LocalHostOfficialOutputTextFileWorkflowRequest, LocalHostOfficialOutputTextFileWorkflowResponse>",
-            "10C-A must leave Local Host official output text-file workflow execution fail-closed through the placeholder.");
-
-        if (Directory.EnumerateFiles(hostRoot, "*.cs", SearchOption.AllDirectories)
-            .Any(static file => Path.GetFileName(file).Contains("LocalHostOfficialOutputTextFileWorkflowHandler", StringComparison.Ordinal)))
-        {
-            throw new InvalidOperationException("10C-A must not add the real Local Host official output text-file workflow handler yet.");
-        }
+            "Default bootstrap must leave Local Host official output text-file workflow execution fail-closed through the placeholder.");
+        RequireContains(
+            bootstrap,
+            "RegisterDefaultHandlersWithOfficialOutputTextFileWorkflow",
+            "10C-B must add an explicit opt-in bootstrap path for the real official output text-file workflow handler.");
+        RequireContains(
+            handler,
+            "IOfficialOutputTextFileWorkflowExecutionPort",
+            "Local Host official output text-file workflow handler must depend on the Core execution port.");
+        RequireContains(
+            handler,
+            "OfficialExternalOutputWorkflowRequest",
+            "Local Host official output text-file workflow handler must map to the Core workflow request.");
 
         foreach (string file in Directory.EnumerateFiles(hostRoot, "*.cs", SearchOption.AllDirectories))
         {

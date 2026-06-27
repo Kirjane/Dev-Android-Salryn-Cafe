@@ -2,7 +2,9 @@
 using Salryn.Core.Contracts;
 using Salryn.Core.Hosting;
 using Salryn.Core.Repositories;
+using Salryn.Core.Services;
 using Salryn.Host.Local.Contracts;
+using Salryn.Host.Local.Handlers;
 using Salryn.Host.Local.Handlers.Products;
 using Salryn.Host.Local.Runtime;
 
@@ -47,7 +49,10 @@ public sealed class LocalHostHandlerBootstrapper
             HostOperationNames.ProductLookup,
             new LocalHostBootstrapNotImplementedHandler<LocalHostProductLookupRequest, LocalHostProductLookupResponse>());
 
-        RegisterRemainingPlaceholderHandlers(runtime, registeredOperations);
+        RegisterRemainingPlaceholderHandlers(
+            runtime,
+            registeredOperations,
+            officialOutputTextFileWorkflow: null);
 
         return CreateResult(registeredOperations);
     }
@@ -80,7 +85,45 @@ public sealed class LocalHostHandlerBootstrapper
             HostOperationNames.ProductLookup,
             new LocalHostProductLookupHandler(products));
 
-        RegisterRemainingPlaceholderHandlers(runtime, registeredOperations);
+        RegisterRemainingPlaceholderHandlers(
+            runtime,
+            registeredOperations,
+            officialOutputTextFileWorkflow: null);
+
+        return CreateResult(registeredOperations);
+    }
+
+    public LocalHostHandlerBootstrapResult RegisterDefaultHandlersWithOfficialOutputTextFileWorkflow(
+        ILocalHostRuntime runtime,
+        IOfficialOutputTextFileWorkflowExecutionPort officialOutputTextFileWorkflow)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentNullException.ThrowIfNull(officialOutputTextFileWorkflow);
+
+        List<string> registeredOperations = new();
+
+        Register(
+            runtime,
+            registeredOperations,
+            HostOperationNames.Login,
+            new LocalHostBootstrapNotImplementedHandler<LocalHostLoginRequest, LocalHostLoginResponse>());
+
+        Register(
+            runtime,
+            registeredOperations,
+            HostOperationNames.ProductSearch,
+            new LocalHostBootstrapNotImplementedHandler<LocalHostProductSearchRequest, LocalHostProductSearchResponse>());
+
+        Register(
+            runtime,
+            registeredOperations,
+            HostOperationNames.ProductLookup,
+            new LocalHostBootstrapNotImplementedHandler<LocalHostProductLookupRequest, LocalHostProductLookupResponse>());
+
+        RegisterRemainingPlaceholderHandlers(
+            runtime,
+            registeredOperations,
+            officialOutputTextFileWorkflow);
 
         return CreateResult(registeredOperations);
     }
@@ -88,7 +131,8 @@ public sealed class LocalHostHandlerBootstrapper
     // Kirch: Registers the operation placeholders that are not part of the Phase 64B ProductLookup slice.
     private static void RegisterRemainingPlaceholderHandlers(
         ILocalHostRuntime runtime,
-        List<string> registeredOperations)
+        List<string> registeredOperations,
+        IOfficialOutputTextFileWorkflowExecutionPort? officialOutputTextFileWorkflow)
     {
         Register(
             runtime,
@@ -120,11 +164,22 @@ public sealed class LocalHostHandlerBootstrapper
             HostOperationNames.BackupHealth,
             new LocalHostBootstrapNotImplementedHandler<LocalHostBackupHealthRequest, LocalHostBackupHealthResponse>());
 
+        if (officialOutputTextFileWorkflow is null)
+        {
+            Register(
+                runtime,
+                registeredOperations,
+                HostOperationNames.OfficialOutputTextFileWorkflow,
+                new LocalHostBootstrapNotImplementedHandler<LocalHostOfficialOutputTextFileWorkflowRequest, LocalHostOfficialOutputTextFileWorkflowResponse>());
+
+            return;
+        }
+
         Register(
             runtime,
             registeredOperations,
             HostOperationNames.OfficialOutputTextFileWorkflow,
-            new LocalHostBootstrapNotImplementedHandler<LocalHostOfficialOutputTextFileWorkflowRequest, LocalHostOfficialOutputTextFileWorkflowResponse>());
+            new LocalHostOfficialOutputTextFileWorkflowHandler(officialOutputTextFileWorkflow));
     }
 
     // Kirch: Registers one typed handler through the Local Host runtime contract gate.
