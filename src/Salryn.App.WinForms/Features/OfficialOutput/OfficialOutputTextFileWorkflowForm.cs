@@ -211,43 +211,16 @@ public sealed class OfficialOutputTextFileWorkflowForm : Form
 
     private async Task RunSelectedAsync()
     {
-        if (!TryBuildTriggerRequest(
-                out OfficialOutputTextFileWorkflowUiTriggerRequest? triggerRequest,
-                out OfficialOutputTextFileSourceSelectionRequest? selectedSourceRequest))
+        if (!TryBuildTriggerRequest(out OfficialOutputTextFileWorkflowUiTriggerRequest? triggerRequest))
         {
             return;
         }
 
-        SetStatus("Checking official output text-file readiness...", J20MvpUi.Colors.TextMuted);
+        SetStatus("Running official output text-file workflow...", J20MvpUi.Colors.TextMuted);
         _runButton.Enabled = false;
 
         try
         {
-            Result<OfficialOutputExportPackage> packageResult =
-                await _services.OfficialOutputTextFilePackageSupply
-                    .TryGetPackageAsync(selectedSourceRequest, CancellationToken.None)
-                    .ConfigureAwait(true);
-
-            if (packageResult.IsFailure)
-            {
-                SetStatus($"{packageResult.ErrorDetail.Code}: {packageResult.ErrorDetail.Message}", J20MvpUi.Colors.Danger);
-                return;
-            }
-
-            AppOfficialOutputTextFileWorkflowReadinessResult readiness =
-                _services.OfficialOutputTextFileWorkflowReadiness.CheckReadiness(
-                    new AppOfficialOutputTextFileWorkflowReadinessRequest(
-                        packageResult.Value,
-                        triggerRequest!.OutputRootPath));
-
-            if (!readiness.IsAvailable)
-            {
-                string issues = string.Join(", ", readiness.Issues.Select(issue => issue.Code));
-                SetStatus($"{readiness.StatusCode}: {issues}", J20MvpUi.Colors.Warning);
-                return;
-            }
-
-            SetStatus("Running official output text-file workflow...", J20MvpUi.Colors.TextMuted);
             OfficialOutputTextFileWorkflowUiCommandResult result =
                 await _services.OfficialOutputTextFileWorkflowUi
                     .TryRunAsync(triggerRequest)
@@ -324,11 +297,9 @@ public sealed class OfficialOutputTextFileWorkflowForm : Form
     }
 
     private bool TryBuildTriggerRequest(
-        out OfficialOutputTextFileWorkflowUiTriggerRequest? triggerRequest,
-        out OfficialOutputTextFileSourceSelectionRequest? selectedSourceRequest)
+        out OfficialOutputTextFileWorkflowUiTriggerRequest? triggerRequest)
     {
         triggerRequest = null;
-        selectedSourceRequest = null;
 
         OfficialOutputTextFileSourceIdentityCandidate? candidate = GetSelectedCandidate();
 
@@ -380,14 +351,13 @@ public sealed class OfficialOutputTextFileWorkflowForm : Form
             return false;
         }
 
-        selectedSourceRequest = sourceSelection.Value;
         triggerRequest = new OfficialOutputTextFileWorkflowUiTriggerRequest(
             OutputRootPath: outputRootPath,
             RequestedAt: requestedAt,
             RequestedByUserId: _session.UserId,
             TerminalId: terminalId,
             Metadata: metadata,
-            SourceSelectionRequest: selectedSourceRequest);
+            SourceSelectionRequest: sourceSelection.Value);
 
         return true;
     }
