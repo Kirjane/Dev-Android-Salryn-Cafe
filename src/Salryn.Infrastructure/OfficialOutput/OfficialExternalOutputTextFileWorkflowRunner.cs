@@ -3,7 +3,7 @@ using Salryn.Core.Services;
 
 namespace Salryn.Infrastructure.OfficialOutput;
 
-public sealed class OfficialExternalOutputTextFileWorkflowRunner
+public sealed class OfficialExternalOutputTextFileWorkflowRunner : IOfficialOutputTextFileWorkflowExecutionPort
 {
     private readonly OfficialInMemoryOutputDeliveryAdapter _deliveryAdapter;
     private readonly OfficialOutputDeliveryReceiptLedgerBuilder _deliveryLedgerBuilder;

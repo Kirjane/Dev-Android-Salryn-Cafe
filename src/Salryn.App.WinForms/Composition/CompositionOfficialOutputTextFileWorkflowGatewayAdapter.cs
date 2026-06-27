@@ -6,10 +6,10 @@ namespace Salryn.App.WinForms.Composition;
 
 public sealed class CompositionOfficialOutputTextFileWorkflowGatewayAdapter : IAppOfficialOutputTextFileWorkflowGateway
 {
-    private readonly OfficialExternalOutputTextFileWorkflowRunner _workflowRunner;
+    private readonly IOfficialOutputTextFileWorkflowExecutionPort _workflowRunner;
 
     public CompositionOfficialOutputTextFileWorkflowGatewayAdapter(
-        OfficialExternalOutputTextFileWorkflowRunner? workflowRunner = null)
+        IOfficialOutputTextFileWorkflowExecutionPort? workflowRunner = null)
     {
         _workflowRunner = workflowRunner ?? new OfficialExternalOutputTextFileWorkflowRunner();
     }
