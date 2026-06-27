@@ -21,11 +21,16 @@ public static class J22OfficialOutputTextFilePackageSupplyBoundaryChecks
         RequireContains(supplyBoundary, "GetAvailablePackageSummary", "10H package supply must expose summary behavior.");
         RequireContains(supplyBoundary, "Result<OfficialOutputExportPackage> TryGetPackage", "10H package supply must expose trusted package retrieval.");
         RequireContains(supplyBoundary, "OfficialOutputExportPackage? trustedPackage = null", "10H package supply must allow no currently supplied package.");
+        RequireContains(supplyBoundary, "IOfficialOutputTextFileTrustedPackageProducer? trustedPackageProducer = null", "RMO-M1-A package supply must accept a trusted package producer.");
+        RequireContains(supplyBoundary, "OfficialOutputTextFileTrustedPackageProducerRequest? producerRequest = null", "RMO-M1-A package supply must accept a producer source request.");
         RequireContains(supplyBoundary, "FromTrustedPackage", "10H package supply must allow a trusted package to be supplied explicitly.");
+        RequireContains(supplyBoundary, "FromTrustedPackageProducer", "RMO-M1-A package supply must allow producer-backed package supply.");
         RequireContains(supplyBoundary, "OfficialOutputTextFilePackageSupply.NoTrustedPackage", "10H package supply must fail safely when no package exists.");
+        RequireContains(supplyBoundary, "OfficialOutputTextFilePackageSupply.ProducerRequestRequired", "RMO-M1-A package supply must stay unavailable until an official source request is provided.");
         RequireContains(supplyBoundary, "Result<OfficialOutputExportPackage>.Fail", "10H package supply must return a safe failure.");
         RequireContains(supplyBoundary, "OfficialOutputTextFilePackageSupply.PackageNotTrusted", "10H package supply must reject untrusted package identity.");
         RequireContains(supplyBoundary, "AppOfficialOutputTextFileWorkflowReadinessRules.IsTrustedExportPackage(package)", "10H package supply must reuse the app trust rule.");
+        RequireContains(supplyBoundary, "producer.ProduceAsync(producerRequest, cancellationToken)", "RMO-M1-A package supply must call the trusted package producer.");
         RequireContains(supplyBoundary, "PackageReference", "10H summary must expose package reference.");
         RequireContains(supplyBoundary, "PackageHash", "10H summary must expose package hash.");
         RequireContains(supplyBoundary, "PackageKind", "10H summary must expose package kind.");
@@ -44,6 +49,7 @@ public static class J22OfficialOutputTextFilePackageSupplyBoundaryChecks
         RequireContains(uiBoundary, "IOfficialOutputTextFilePackageSupplyBoundary? _packageSupplyBoundary", "10H UI shell must depend on the package supply boundary.");
         RequireContains(uiBoundary, "TryGetSuppliedPackage", "10H UI shell must check package supply.");
         RequireContains(uiBoundary, "packageSupplyBoundary.TryGetPackage()", "10H UI shell must retrieve the trusted package through the supply boundary.");
+        RequireContains(uiBoundary, "packageSupplyBoundary.TryGetPackageAsync(cancellationToken)", "RMO-M1-A UI shell must retrieve produced packages through the async supply boundary.");
         RequireContains(uiBoundary, "OfficialOutputTextFilePackageSupply.BoundaryUnavailable", "10H UI shell must fail safely when supply boundary is unavailable.");
         RequireContains(uiBoundary, "packageResult.IsSuccess ? packageResult.Value : null", "10H UI readiness must use supplied package only when trusted.");
         RequireContains(uiBoundary, "packageResult.Value", "10H UI execution request must pass the supplied trusted package.");
@@ -62,7 +68,9 @@ public static class J22OfficialOutputTextFilePackageSupplyBoundaryChecks
 
         RequireDoesNotContain(uiBoundary, "request?.ExportPackage", "10H UI trigger request must not take package data directly from UI state.");
         RequireContains(appServices, "public IOfficialOutputTextFilePackageSupplyBoundary OfficialOutputTextFilePackageSupply { get; }", "10H AppServices must expose the package supply boundary.");
-        RequireContains(appServices, "new OfficialOutputTextFilePackageSupplyBoundary()", "10H AppServices default package supply must be empty and safe.");
+        RequireContains(appServices, "public IOfficialOutputTextFileTrustedPackageProducer OfficialOutputTextFileTrustedPackageProducer { get; }", "RMO-M1-A AppServices must expose the trusted package producer.");
+        RequireContains(appServices, "new OfficialOutputTextFileTrustedPackageProducer(OfficialOutputSourceRead)", "RMO-M1-A AppServices must wire producer to official output source.");
+        RequireContains(appServices, "trustedPackageProducer: OfficialOutputTextFileTrustedPackageProducer", "RMO-M1-A AppServices package supply must be producer-connected.");
         RequireContains(appServices, "OfficialOutputTextFilePackageSupply);", "10H AppServices must wire package supply into the UI shell.");
 
         RequireContains(appContracts, "IAppOfficialOutputTextFileWorkflowGateway", "10H must keep the app workflow gateway contract.");

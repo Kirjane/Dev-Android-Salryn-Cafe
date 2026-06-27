@@ -54,16 +54,28 @@ public interface IOfficialOutputTextFilePackageSupplyBoundary
     OfficialOutputTextFilePackageSupplySummary GetAvailablePackageSummary();
 
     Result<OfficialOutputExportPackage> TryGetPackage();
+
+    Task<OfficialOutputTextFilePackageSupplySummary> GetAvailablePackageSummaryAsync(
+        CancellationToken cancellationToken = default);
+
+    Task<Result<OfficialOutputExportPackage>> TryGetPackageAsync(
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class OfficialOutputTextFilePackageSupplyBoundary : IOfficialOutputTextFilePackageSupplyBoundary
 {
     private readonly OfficialOutputExportPackage? _trustedPackage;
+    private readonly IOfficialOutputTextFileTrustedPackageProducer? _trustedPackageProducer;
+    private readonly OfficialOutputTextFileTrustedPackageProducerRequest? _producerRequest;
 
     public OfficialOutputTextFilePackageSupplyBoundary(
-        OfficialOutputExportPackage? trustedPackage = null)
+        OfficialOutputExportPackage? trustedPackage = null,
+        IOfficialOutputTextFileTrustedPackageProducer? trustedPackageProducer = null,
+        OfficialOutputTextFileTrustedPackageProducerRequest? producerRequest = null)
     {
         _trustedPackage = trustedPackage;
+        _trustedPackageProducer = trustedPackageProducer;
+        _producerRequest = producerRequest;
     }
 
     public static OfficialOutputTextFilePackageSupplyBoundary FromTrustedPackage(
@@ -72,6 +84,19 @@ public sealed class OfficialOutputTextFilePackageSupplyBoundary : IOfficialOutpu
         ArgumentNullException.ThrowIfNull(trustedPackage);
 
         return new OfficialOutputTextFilePackageSupplyBoundary(trustedPackage);
+    }
+
+    public static OfficialOutputTextFilePackageSupplyBoundary FromTrustedPackageProducer(
+        IOfficialOutputTextFileTrustedPackageProducer trustedPackageProducer,
+        OfficialOutputTextFileTrustedPackageProducerRequest producerRequest)
+    {
+        ArgumentNullException.ThrowIfNull(trustedPackageProducer);
+        ArgumentNullException.ThrowIfNull(producerRequest);
+
+        return new OfficialOutputTextFilePackageSupplyBoundary(
+            trustedPackage: null,
+            trustedPackageProducer,
+            producerRequest);
     }
 
     public OfficialOutputTextFilePackageSupplySummary GetAvailablePackageSummary()
@@ -104,5 +129,64 @@ public sealed class OfficialOutputTextFilePackageSupplyBoundary : IOfficialOutpu
         }
 
         return Result<OfficialOutputExportPackage>.Success(package);
+    }
+
+    public async Task<OfficialOutputTextFilePackageSupplySummary> GetAvailablePackageSummaryAsync(
+        CancellationToken cancellationToken = default)
+    {
+        Result<OfficialOutputExportPackage> result =
+            await TryGetPackageAsync(cancellationToken).ConfigureAwait(false);
+
+        return result.IsSuccess
+            ? OfficialOutputTextFilePackageSupplySummary.Available(result.Value)
+            : OfficialOutputTextFilePackageSupplySummary.Unavailable(
+                result.ErrorDetail.Code,
+                result.ErrorDetail.Message);
+    }
+
+    public async Task<Result<OfficialOutputExportPackage>> TryGetPackageAsync(
+        CancellationToken cancellationToken = default)
+    {
+        OfficialOutputExportPackage? package = _trustedPackage;
+
+        if (package is not null)
+        {
+            return TryGetPackage();
+        }
+
+        IOfficialOutputTextFileTrustedPackageProducer? producer = _trustedPackageProducer;
+
+        if (producer is null)
+        {
+            return Result<OfficialOutputExportPackage>.Fail(Error.Validation(
+                "OfficialOutputTextFilePackageSupply.NoTrustedPackage",
+                "No trusted official output text-file export package is currently supplied."));
+        }
+
+        OfficialOutputTextFileTrustedPackageProducerRequest? producerRequest = _producerRequest;
+
+        if (producerRequest is null)
+        {
+            return Result<OfficialOutputExportPackage>.Fail(Error.Validation(
+                "OfficialOutputTextFilePackageSupply.ProducerRequestRequired",
+                "Official output text-file package supply requires an official output source request before producing a package."));
+        }
+
+        Result<OfficialOutputExportPackage> producedPackage =
+            await producer.ProduceAsync(producerRequest, cancellationToken).ConfigureAwait(false);
+
+        if (producedPackage.IsFailure)
+        {
+            return producedPackage;
+        }
+
+        if (!AppOfficialOutputTextFileWorkflowReadinessRules.IsTrustedExportPackage(producedPackage.Value))
+        {
+            return Result<OfficialOutputExportPackage>.Fail(Error.Validation(
+                "OfficialOutputTextFilePackageSupply.PackageNotTrusted",
+                "Produced official output text-file export package identity is not trusted."));
+        }
+
+        return producedPackage;
     }
 }
