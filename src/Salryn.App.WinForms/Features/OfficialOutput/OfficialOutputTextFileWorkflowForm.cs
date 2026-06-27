@@ -21,6 +21,8 @@ public sealed class OfficialOutputTextFileWorkflowForm : Form
     private readonly TextBox _outputRootPathTextBox = new();
     private readonly Button _runButton = new();
     private readonly Label _statusLabel = new();
+    private bool _isLoading;
+    private bool _isRunning;
     private IReadOnlyList<OfficialOutputTextFileSourceIdentityCandidate> _candidates =
         Array.Empty<OfficialOutputTextFileSourceIdentityCandidate>();
 
@@ -181,7 +183,7 @@ public sealed class OfficialOutputTextFileWorkflowForm : Form
         }
 
         SetStatus("Loading official evidence-backed candidates...", J20MvpUi.Colors.TextMuted);
-        _loadCandidatesButton.Enabled = false;
+        SetLoadingState(true);
 
         try
         {
@@ -202,10 +204,17 @@ public sealed class OfficialOutputTextFileWorkflowForm : Form
             BindCandidateRows();
             SetStatus($"Loaded {_candidates.Count} official evidence-backed candidates.", J20MvpUi.Colors.TextMuted);
         }
+        catch (Exception ex)
+        {
+            _candidates = Array.Empty<OfficialOutputTextFileSourceIdentityCandidate>();
+            BindCandidateRows();
+            SetStatus(
+                "Unexpected error while loading official evidence-backed candidates: " + ex.Message,
+                J20MvpUi.Colors.Danger);
+        }
         finally
         {
-            _loadCandidatesButton.Enabled = true;
-            UpdateRunButtonState();
+            SetLoadingState(false);
         }
     }
 
@@ -217,7 +226,7 @@ public sealed class OfficialOutputTextFileWorkflowForm : Form
         }
 
         SetStatus("Running official output text-file workflow...", J20MvpUi.Colors.TextMuted);
-        _runButton.Enabled = false;
+        SetRunningState(true);
 
         try
         {
@@ -238,9 +247,15 @@ public sealed class OfficialOutputTextFileWorkflowForm : Form
                 $"Official output text-file workflow completed. Workflow reference: {result.References?.WorkflowReference ?? "(none)"}.",
                 J20MvpUi.Colors.Success);
         }
+        catch (Exception ex)
+        {
+            SetStatus(
+                "Unexpected error while running official output text-file workflow: " + ex.Message,
+                J20MvpUi.Colors.Danger);
+        }
         finally
         {
-            UpdateRunButtonState();
+            SetRunningState(false);
         }
     }
 
@@ -373,7 +388,10 @@ public sealed class OfficialOutputTextFileWorkflowForm : Form
                 BirMachineProfileId: candidate.BirMachineProfileId.ToString("D"),
                 RegistrationScopeCode: candidate.RegistrationScopeCode ?? string.Empty,
                 TransactionTimestamp: candidate.TransactionTimestamp?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? string.Empty,
-                TerminalId: candidate.TerminalId ?? string.Empty))
+                TerminalId: candidate.TerminalId ?? string.Empty,
+                SnapshotHashMatches: candidate.SnapshotHashMatches ? "True" : "False",
+                SnapshotHashAlgorithm: candidate.SnapshotHashAlgorithm,
+                SourceReference: candidate.SourceReference))
             .ToList();
 
         if (_candidatesGrid.Columns["CandidateIndex"] is not null)
@@ -431,8 +449,28 @@ public sealed class OfficialOutputTextFileWorkflowForm : Form
         return metadata;
     }
 
+    private void SetLoadingState(bool isLoading)
+    {
+        _isLoading = isLoading;
+        _loadCandidatesButton.Enabled = !isLoading && !_isRunning;
+        UpdateRunButtonState();
+    }
+
+    private void SetRunningState(bool isRunning)
+    {
+        _isRunning = isRunning;
+        _loadCandidatesButton.Enabled = !isRunning && !_isLoading;
+        UpdateRunButtonState();
+    }
+
     private void UpdateRunButtonState()
     {
+        if (_isLoading || _isRunning)
+        {
+            _runButton.Enabled = false;
+            return;
+        }
+
         _runButton.Enabled =
             GetSelectedCandidate() is not null &&
             !string.IsNullOrWhiteSpace(_outputRootPathTextBox.Text);
@@ -489,5 +527,8 @@ public sealed class OfficialOutputTextFileWorkflowForm : Form
         string BirMachineProfileId,
         string RegistrationScopeCode,
         string TransactionTimestamp,
-        string TerminalId);
+        string TerminalId,
+        string SnapshotHashMatches,
+        string SnapshotHashAlgorithm,
+        string SourceReference);
 }
