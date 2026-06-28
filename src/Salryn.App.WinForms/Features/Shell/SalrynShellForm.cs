@@ -301,7 +301,9 @@ public sealed class SalrynShellForm : Form
     // Kirch: Opens the June 20 MVP inventory skeleton through AppServices.
     private void OpenInventory()
     {
-        using InventoryForm inventoryForm = new InventoryForm(_services);
+        using InventoryForm inventoryForm = _session is null
+            ? new InventoryForm(_services)
+            : new InventoryForm(_services, _session);
         inventoryForm.StartPosition = FormStartPosition.CenterParent;
         inventoryForm.ShowDialog(this);
     }

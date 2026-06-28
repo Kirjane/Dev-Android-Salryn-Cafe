@@ -1,6 +1,8 @@
-﻿using Salryn.App.WinForms.Composition;
+using Salryn.App.WinForms.Composition;
 using Salryn.App.WinForms.Features.Mvp;
+using Salryn.App.WinForms.Features.Shell;
 using Salryn.Core.ReadModels;
+using Salryn.Core.Security;
 
 namespace Salryn.App.WinForms.Features.Inventory;
 
@@ -13,6 +15,7 @@ namespace Salryn.App.WinForms.Features.Inventory;
 public sealed class InventoryForm : Form
 {
     private readonly SalrynAppServices _services;
+    private readonly CurrentAppSession? _session;
 
     // Kirch UI map: inventory grids.
     // UI side: lowStockGrid is the attention list; movementGrid is the audit/history list.
@@ -22,10 +25,19 @@ public sealed class InventoryForm : Form
     private readonly DataGridView _movementGrid = J20MvpUi.Grid();
     private readonly Label _statusLabel = new();
     private readonly Button _refreshButton = new();
+    private readonly Button _adjustStockButton = new();
 
     public InventoryForm(SalrynAppServices services)
+        : this(services, session: null)
+    {
+    }
+
+    public InventoryForm(
+        SalrynAppServices services,
+        CurrentAppSession? session)
     {
         _services = services ?? throw new ArgumentNullException(nameof(services));
+        _session = session;
 
         Text = "SALRYN Inventory";
         StartPosition = FormStartPosition.CenterParent;
@@ -36,6 +48,7 @@ public sealed class InventoryForm : Form
 
         BuildLayout();
         WireEvents();
+        UpdateActionButtons();
     }
 
     protected override async void OnShown(EventArgs e)
@@ -56,7 +69,7 @@ public sealed class InventoryForm : Form
 
         root.Controls.Add(J20MvpUi.Header(
             "Inventory",
-            "Monitor low-stock products and inventory movement history."), 0, 0);
+            "Monitor low-stock products, movement history, and controlled stock adjustments."), 0, 0);
 
         root.Controls.Add(BuildGridCard("Low Stock", _lowStockGrid), 0, 1);
         root.Controls.Add(BuildGridCard("Stock Movements", _movementGrid), 0, 2);
@@ -69,7 +82,9 @@ public sealed class InventoryForm : Form
         };
 
         J20MvpUi.ConfigurePrimaryButton(_refreshButton, "Refresh");
+        J20MvpUi.ConfigureSecondaryButton(_adjustStockButton, "Adjust Stock");
         footer.Controls.Add(_refreshButton);
+        footer.Controls.Add(_adjustStockButton);
 
         _statusLabel.Dock = DockStyle.Fill;
         _statusLabel.TextAlign = ContentAlignment.MiddleLeft;
@@ -113,6 +128,37 @@ public sealed class InventoryForm : Form
     private void WireEvents()
     {
         _refreshButton.Click += async (_, _) => await LoadAsync().ConfigureAwait(true);
+
+        _adjustStockButton.Click += async (_, _) =>
+        {
+            if (_session is null || !_session.IsActive)
+            {
+                SetError("Inventory adjustment requires an active user session.");
+                return;
+            }
+
+            if (!_session.Can(SalrynPermissions.InventoryAdjust))
+            {
+                SetError("Current user does not have permission to adjust inventory.");
+                return;
+            }
+
+            using InventoryAdjustmentForm adjustmentForm = new(
+                _services.ProductReadRepository,
+                _services.InventoryWriteRepository,
+                _session.UserId);
+
+            DialogResult result = adjustmentForm.ShowDialog(this);
+
+            if (result != DialogResult.OK)
+            {
+                return;
+            }
+
+            await LoadAsync().ConfigureAwait(true);
+            _statusLabel.Text = "Inventory adjustment saved.";
+            _statusLabel.ForeColor = J20MvpUi.Colors.Success;
+        };
     }
 
     private async Task LoadAsync()
@@ -163,6 +209,20 @@ public sealed class InventoryForm : Form
 
         _statusLabel.Text = "Inventory ready.";
         _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
+        UpdateActionButtons();
+    }
+
+    private void UpdateActionButtons()
+    {
+        _adjustStockButton.Enabled = _session is not null &&
+            _session.IsActive &&
+            _session.Can(SalrynPermissions.InventoryAdjust);
+    }
+
+    private void SetError(string message)
+    {
+        _statusLabel.Text = message;
+        _statusLabel.ForeColor = J20MvpUi.Colors.Danger;
     }
 
     private sealed record LowStockRow(
