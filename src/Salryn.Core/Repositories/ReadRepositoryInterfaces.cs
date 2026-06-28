@@ -116,14 +116,14 @@ public interface ICashierSessionReadRepository
 public interface IAuditReadRepository
 {
     Task<Result<PagedResult<AuditLogReadModel>>> SearchAuditLogsAsync(
-        PageRequest page,
+        AuditLogSearchFilter filter,
         CancellationToken cancellationToken = default);
 }
 
 public interface IErrorLogReadRepository
 {
     Task<Result<PagedResult<ErrorLogReadModel>>> SearchErrorLogsAsync(
-        PageRequest page,
+        ErrorLogSearchFilter filter,
         CancellationToken cancellationToken = default);
 }
 

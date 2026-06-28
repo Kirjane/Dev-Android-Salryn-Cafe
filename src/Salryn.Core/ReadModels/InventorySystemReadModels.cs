@@ -86,3 +86,15 @@ public sealed record ErrorLogReadModel(
     string Message,
     string? TechnicalDetail,
     DateTimeOffset CreatedAt);
+
+public sealed record AuditLogSearchFilter(
+    PageRequest Page,
+    DateTimeOffset? From,
+    DateTimeOffset? To,
+    SearchText Search);
+
+public sealed record ErrorLogSearchFilter(
+    PageRequest Page,
+    DateTimeOffset? From,
+    DateTimeOffset? To,
+    SearchText Search);

@@ -46,20 +46,28 @@ public static class PosStabB2AuditViewerChecks
             "B2-B Audit viewer must read error rows through AppServices.");
         RequireContains(
             auditFormText,
-            "SearchAuditLogsAsync(PageRequest.FirstPage(100))",
+            "SearchAuditLogsAsync(",
             "B2-B Audit viewer must use the audit read repository search method.");
         RequireContains(
             auditFormText,
-            "SearchErrorLogsAsync(PageRequest.FirstPage(100))",
+            "AuditLogSearchFilter",
+            "B6 audit viewer must route audit search through filter contracts.");
+        RequireContains(
+            auditFormText,
+            "SearchErrorLogsAsync(",
             "B2-B Audit viewer must use the error log read repository search method.");
+        RequireContains(
+            auditFormText,
+            "ErrorLogSearchFilter",
+            "B6 audit viewer must route error search through filter contracts.");
         RequireContains(
             auditFormText,
             "J20MvpUi.Grid()",
             "B2-B Audit viewer must use read-only MVP grids.");
         RequireContains(
             auditFormText,
-            "Refresh",
-            "B2-B Audit viewer must expose a refresh action.");
+            "Apply",
+            "B6 audit viewer must expose an apply filter action.");
         RequireDoesNotContain(
             auditFormText,
             "Microsoft.Data.Sqlite",

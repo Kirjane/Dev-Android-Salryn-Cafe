@@ -15,7 +15,7 @@ public sealed class SqliteAuditReadRepository :
     }
 
     public Task<Result<PagedResult<AuditLogReadModel>>> SearchAuditLogsAsync(
-        PageRequest page,
+        AuditLogSearchFilter filter,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -24,17 +24,17 @@ public sealed class SqliteAuditReadRepository :
         {
             using var connection = CreateOpenConnection();
 
-            int totalCount = CountRows(connection, "audit_logs");
+            int totalCount = CountAuditLogs(connection, filter);
             IReadOnlyList<AuditLogReadModel> items = ReadAuditLogs(
                 connection,
-                page,
+                filter,
                 cancellationToken);
 
             PagedResult<AuditLogReadModel> result = new(
                 items,
                 totalCount,
-                page.PageNumber,
-                page.PageSize);
+                filter.Page.PageNumber,
+                filter.Page.PageSize);
 
             return Task.FromResult(Result<PagedResult<AuditLogReadModel>>.Success(result));
         }
@@ -46,9 +46,36 @@ public sealed class SqliteAuditReadRepository :
         }
     }
 
+    private static int CountAuditLogs(
+        SqliteConnection connection,
+        AuditLogSearchFilter filter)
+    {
+        using var command = connection.CreateCommand();
+
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM audit_logs a
+            LEFT JOIN users u ON u.id = a.user_id
+            WHERE ($from IS NULL OR a.created_at >= $from)
+              AND ($to IS NULL OR a.created_at <= $to)
+              AND ($search IS NULL OR (
+                    a.action LIKE $searchLike
+                    OR a.entity_type LIKE $searchLike
+                    OR IFNULL(a.entity_id, '') LIKE $searchLike
+                    OR IFNULL(u.display_name, '') LIKE $searchLike
+                    OR IFNULL(a.reason, '') LIKE $searchLike));
+            """;
+
+        AddAuditFilterParameters(command, filter);
+
+        object? value = command.ExecuteScalar();
+
+        return Convert.ToInt32(value ?? 0);
+    }
+
     private static IReadOnlyList<AuditLogReadModel> ReadAuditLogs(
         SqliteConnection connection,
-        PageRequest page,
+        AuditLogSearchFilter filter,
         CancellationToken cancellationToken)
     {
         using var command = connection.CreateCommand();
@@ -65,12 +92,21 @@ public sealed class SqliteAuditReadRepository :
                 a.created_at
             FROM audit_logs a
             LEFT JOIN users u ON u.id = a.user_id
+            WHERE ($from IS NULL OR a.created_at >= $from)
+              AND ($to IS NULL OR a.created_at <= $to)
+              AND ($search IS NULL OR (
+                    a.action LIKE $searchLike
+                    OR a.entity_type LIKE $searchLike
+                    OR IFNULL(a.entity_id, '') LIKE $searchLike
+                    OR IFNULL(u.display_name, '') LIKE $searchLike
+                    OR IFNULL(a.reason, '') LIKE $searchLike))
             ORDER BY a.created_at DESC
             LIMIT $limit OFFSET $offset;
             """;
 
-        command.Parameters.AddWithValue("$limit", Math.Max(1, page.PageSize));
-        command.Parameters.AddWithValue("$offset", Math.Max(0, page.Offset));
+        AddAuditFilterParameters(command, filter);
+        command.Parameters.AddWithValue("$limit", Math.Max(1, filter.Page.PageSize));
+        command.Parameters.AddWithValue("$offset", Math.Max(0, filter.Page.Offset));
 
         using var reader = command.ExecuteReader();
 
@@ -96,14 +132,21 @@ public sealed class SqliteAuditReadRepository :
         return items;
     }
 
-    private static int CountRows(SqliteConnection connection, string tableName)
+    private static void AddAuditFilterParameters(
+        SqliteCommand command,
+        AuditLogSearchFilter filter)
     {
-        using var command = connection.CreateCommand();
-        command.CommandText = $"SELECT COUNT(*) FROM {tableName};";
+        string? search = filter.Search.Normalized;
 
-        object? value = command.ExecuteScalar();
+        if (string.IsNullOrWhiteSpace(search))
+        {
+            search = null;
+        }
 
-        return Convert.ToInt32(value ?? 0);
+        command.Parameters.AddWithValue("$from", filter.From?.ToUniversalTime().ToString("O") ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$to", filter.To?.ToUniversalTime().ToString("O") ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$search", search ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$searchLike", search is null ? DBNull.Value : $"%{search}%");
     }
 }
 
@@ -117,7 +160,7 @@ public sealed class SqliteErrorLogReadRepository :
     }
 
     public Task<Result<PagedResult<ErrorLogReadModel>>> SearchErrorLogsAsync(
-        PageRequest page,
+        ErrorLogSearchFilter filter,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -126,17 +169,17 @@ public sealed class SqliteErrorLogReadRepository :
         {
             using var connection = CreateOpenConnection();
 
-            int totalCount = CountRows(connection, "error_logs");
+            int totalCount = CountErrorLogs(connection, filter);
             IReadOnlyList<ErrorLogReadModel> items = ReadErrorLogs(
                 connection,
-                page,
+                filter,
                 cancellationToken);
 
             PagedResult<ErrorLogReadModel> result = new(
                 items,
                 totalCount,
-                page.PageNumber,
-                page.PageSize);
+                filter.Page.PageNumber,
+                filter.Page.PageSize);
 
             return Task.FromResult(Result<PagedResult<ErrorLogReadModel>>.Success(result));
         }
@@ -148,9 +191,35 @@ public sealed class SqliteErrorLogReadRepository :
         }
     }
 
+    private static int CountErrorLogs(
+        SqliteConnection connection,
+        ErrorLogSearchFilter filter)
+    {
+        using var command = connection.CreateCommand();
+
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM error_logs e
+            LEFT JOIN users u ON u.id = e.user_id
+            WHERE ($from IS NULL OR e.created_at >= $from)
+              AND ($to IS NULL OR e.created_at <= $to)
+              AND ($search IS NULL OR (
+                    e.area LIKE $searchLike
+                    OR e.message LIKE $searchLike
+                    OR IFNULL(e.technical_detail, '') LIKE $searchLike
+                    OR IFNULL(u.display_name, '') LIKE $searchLike));
+            """;
+
+        AddErrorFilterParameters(command, filter);
+
+        object? value = command.ExecuteScalar();
+
+        return Convert.ToInt32(value ?? 0);
+    }
+
     private static IReadOnlyList<ErrorLogReadModel> ReadErrorLogs(
         SqliteConnection connection,
-        PageRequest page,
+        ErrorLogSearchFilter filter,
         CancellationToken cancellationToken)
     {
         using var command = connection.CreateCommand();
@@ -166,12 +235,20 @@ public sealed class SqliteErrorLogReadRepository :
                 e.created_at
             FROM error_logs e
             LEFT JOIN users u ON u.id = e.user_id
+            WHERE ($from IS NULL OR e.created_at >= $from)
+              AND ($to IS NULL OR e.created_at <= $to)
+              AND ($search IS NULL OR (
+                    e.area LIKE $searchLike
+                    OR e.message LIKE $searchLike
+                    OR IFNULL(e.technical_detail, '') LIKE $searchLike
+                    OR IFNULL(u.display_name, '') LIKE $searchLike))
             ORDER BY e.created_at DESC
             LIMIT $limit OFFSET $offset;
             """;
 
-        command.Parameters.AddWithValue("$limit", Math.Max(1, page.PageSize));
-        command.Parameters.AddWithValue("$offset", Math.Max(0, page.Offset));
+        AddErrorFilterParameters(command, filter);
+        command.Parameters.AddWithValue("$limit", Math.Max(1, filter.Page.PageSize));
+        command.Parameters.AddWithValue("$offset", Math.Max(0, filter.Page.Offset));
 
         using var reader = command.ExecuteReader();
 
@@ -196,13 +273,20 @@ public sealed class SqliteErrorLogReadRepository :
         return items;
     }
 
-    private static int CountRows(SqliteConnection connection, string tableName)
+    private static void AddErrorFilterParameters(
+        SqliteCommand command,
+        ErrorLogSearchFilter filter)
     {
-        using var command = connection.CreateCommand();
-        command.CommandText = $"SELECT COUNT(*) FROM {tableName};";
+        string? search = filter.Search.Normalized;
 
-        object? value = command.ExecuteScalar();
+        if (string.IsNullOrWhiteSpace(search))
+        {
+            search = null;
+        }
 
-        return Convert.ToInt32(value ?? 0);
+        command.Parameters.AddWithValue("$from", filter.From?.ToUniversalTime().ToString("O") ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$to", filter.To?.ToUniversalTime().ToString("O") ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$search", search ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$searchLike", search is null ? DBNull.Value : $"%{search}%");
     }
 }

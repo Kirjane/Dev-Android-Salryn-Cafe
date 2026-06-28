@@ -285,11 +285,21 @@ internal static class RepositorySmokeChecks
             "RepositorySmoke.CashierSessionFindOpen");
 
         PagedResult<AuditLogReadModel> auditLogs = RequireSuccess(
-            auditRepository.SearchAuditLogsAsync(PageRequest.FirstPage(20)).GetAwaiter().GetResult(),
+            auditRepository.SearchAuditLogsAsync(
+                new AuditLogSearchFilter(
+                    PageRequest.FirstPage(20),
+                    From: null,
+                    To: null,
+                    Search: new SearchText(null))).GetAwaiter().GetResult(),
             "RepositorySmoke.AuditSearch");
 
         PagedResult<ErrorLogReadModel> errorLogs = RequireSuccess(
-            errorLogRepository.SearchErrorLogsAsync(PageRequest.FirstPage(20)).GetAwaiter().GetResult(),
+            errorLogRepository.SearchErrorLogsAsync(
+                new ErrorLogSearchFilter(
+                    PageRequest.FirstPage(20),
+                    From: null,
+                    To: null,
+                    Search: new SearchText(null))).GetAwaiter().GetResult(),
             "RepositorySmoke.ErrorSearch");
 
         if (adminById is null)
