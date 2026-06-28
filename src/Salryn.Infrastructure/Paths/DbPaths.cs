@@ -56,13 +56,22 @@ public sealed class DbPaths
             File.WriteAllText(probePath, DateTimeOffset.UtcNow.ToString("O"));
             File.Delete(probePath);
 
+            if (File.Exists(DatabasePath))
+            {
+                using FileStream databaseProbe = File.Open(
+                    DatabasePath,
+                    FileMode.Open,
+                    FileAccess.ReadWrite,
+                    FileShare.Read);
+            }
+
             return Result.Success();
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
         {
             return Result.Fail(Error.Failure(
                 "DatabasePath.ProductionNotWritable",
-                "SALRYN production database folder is not writable. " +
+                "SALRYN production database folder or database file is not writable. " +
                 "Database path: " + DatabasePath + ". " +
                 "Run SALRYN with permissions to write to ProgramData\\Salryn, fix the folder permissions, " +
                 "or use --dev only for development."));

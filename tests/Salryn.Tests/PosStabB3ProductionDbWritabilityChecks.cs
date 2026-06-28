@@ -32,9 +32,13 @@ public static class PosStabB3ProductionDbWritabilityChecks
         RequireContains(dbPathsText, "EnsureDirectories();", "B3 production writability validation must check the target directories before SQLite opens.");
         RequireContains(dbPathsText, "File.WriteAllText(", "B3 production writability validation must perform a filesystem write probe.");
         RequireContains(dbPathsText, "File.Delete(", "B3 production writability validation must clean up the write probe.");
+        RequireContains(dbPathsText, "File.Exists(DatabasePath)", "B3 production writability validation must detect an existing database file.");
+        RequireContains(dbPathsText, "File.Open(", "B3 production writability validation must probe existing database file write access.");
+        RequireContains(dbPathsText, "FileAccess.ReadWrite", "B3 production writability validation must require read/write access to the existing database file.");
         RequireContains(dbPathsText, "UnauthorizedAccessException", "B3 production writability validation must catch access failures explicitly.");
         RequireContains(dbPathsText, "IOException", "B3 production writability validation must catch IO failures explicitly.");
         RequireContains(dbPathsText, "DatabasePath.ProductionNotWritable", "B3 production writability validation must return a stable error code.");
+        RequireContains(dbPathsText, "database folder or database file is not writable", "B3 production writability validation must explain both folder and existing database file failures.");
         RequireContains(dbPathsText, "Database path: ", "B3 production writability validation must include the target database path.");
         RequireContains(dbPathsText, "ProgramData\\\\Salryn", "B3 production writability validation must guide operators to fix production folder permissions.");
         RequireContains(dbPathsText, "--dev only for development", "B3 production writability validation must not suggest silent fallback paths.");
