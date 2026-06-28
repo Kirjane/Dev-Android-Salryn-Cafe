@@ -71,6 +71,7 @@ public static class Program
         PosStabA4InventoryAdjustmentChecks.Run();
         PosStabA5ReceiptPrintingChecks.Run();
         PosStabB2BackupUiChecks.Run();
+        PosStabB2AuditViewerChecks.Run();
         J21Rmo242023ComplianceMatrixGuardChecks.Run();
         J21Rmo242023MachineProfileSchemaChecks.Run();
         J21Rmo242023OfficialDocumentSequenceSchemaChecks.Run();

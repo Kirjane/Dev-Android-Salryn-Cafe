@@ -39,6 +39,8 @@ public sealed class SalrynAppServices
         IInventoryReadRepository inventoryReadRepository,
         IInventoryWriteRepository inventoryWriteRepository,
         IStoreSettingsReadRepository storeSettingsReadRepository,
+        IAuditReadRepository auditReadRepository,
+        IErrorLogReadRepository errorLogReadRepository,
         ICashierSessionService cashierSessions,
         IPosCheckoutService posCheckout,
         IPosCheckoutApplicationService posCheckoutApplication,
@@ -60,6 +62,8 @@ public sealed class SalrynAppServices
         InventoryReadRepository = inventoryReadRepository;
         InventoryWriteRepository = inventoryWriteRepository;
         StoreSettingsReadRepository = storeSettingsReadRepository;
+        AuditReadRepository = auditReadRepository;
+        ErrorLogReadRepository = errorLogReadRepository;
         CashierSessions = cashierSessions;
         PosCheckout = posCheckout;
         PosCheckoutApplication = posCheckoutApplication;
@@ -215,6 +219,10 @@ public sealed class SalrynAppServices
 
     // Kirch: Store Settings and receipt header MVP screens read store profile fields through this repository.
     public IStoreSettingsReadRepository StoreSettingsReadRepository { get; }
+
+    public IAuditReadRepository AuditReadRepository { get; }
+
+    public IErrorLogReadRepository ErrorLogReadRepository { get; }
 
     public ICheckoutProductSearchBoundary CheckoutProductSearch { get; }
 
@@ -438,6 +446,12 @@ public sealed class SalrynAppServices
         IStoreSettingsReadRepository storeSettingsReadRepository =
             repositories.CreateStoreSettingsReadRepository();
 
+        IAuditReadRepository auditReadRepository =
+            repositories.CreateAuditReadRepository();
+
+        IErrorLogReadRepository errorLogReadRepository =
+            repositories.CreateErrorLogReadRepository();
+
         ICashierSessionService cashierSessions = new CashierSessionService(
             repositories.CreateCashierSessionWriteRepository(),
             repositories.CreateCashierSessionReadRepository());
@@ -466,6 +480,8 @@ public sealed class SalrynAppServices
             inventoryReadRepository,
             inventoryWriteRepository,
             storeSettingsReadRepository,
+            auditReadRepository,
+            errorLogReadRepository,
             cashierSessions,
             posCheckout,
             posCheckoutApplication,
