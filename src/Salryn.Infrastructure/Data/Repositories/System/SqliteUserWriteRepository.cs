@@ -37,7 +37,7 @@ public sealed class SqliteUserWriteRepository :
                 transaction.Rollback();
                 return Task.FromResult(Result.Fail(Error.Validation(
                     "Users.RoleRequired",
-                    "A valid active role is required.")));
+                    "A valid role is required.")));
             }
 
             if (UsernameExists(connection, transaction, request.Username.Trim(), exceptUserId: null))
@@ -113,7 +113,7 @@ public sealed class SqliteUserWriteRepository :
                 transaction.Rollback();
                 return Task.FromResult(Result.Fail(Error.Validation(
                     "Users.RoleRequired",
-                    "A valid active role is required.")));
+                    "A valid role is required.")));
             }
 
             if (UsernameExists(connection, transaction, request.Username.Trim(), request.UserId))
@@ -409,8 +409,7 @@ public sealed class SqliteUserWriteRepository :
         command.CommandText = """
             SELECT COUNT(1)
             FROM roles
-            WHERE id = $roleId
-              AND is_active = 1;
+            WHERE id = $roleId;
             """;
 
         command.Parameters.AddWithValue("$roleId", roleId.ToString("D"));
