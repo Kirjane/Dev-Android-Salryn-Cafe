@@ -69,6 +69,11 @@ public sealed class SqliteRepositoryFactory
         return new SqliteStoreSettingsReadRepository(_connectionFactory);
     }
 
+    public IStoreSettingsWriteRepository CreateStoreSettingsWriteRepository()
+    {
+        return new SqliteStoreSettingsWriteRepository(_connectionFactory);
+    }
+
     public ICashierSessionReadRepository CreateCashierSessionReadRepository()
     {
         return new SqliteCashierSessionReadRepository(_connectionFactory);
@@ -89,7 +94,6 @@ public sealed class SqliteRepositoryFactory
         return new SqliteErrorLogReadRepository(_connectionFactory);
     }
 }
-
 
 
 
