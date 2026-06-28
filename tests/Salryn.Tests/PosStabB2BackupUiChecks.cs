@@ -40,14 +40,10 @@ public static class PosStabB2BackupUiChecks
             backupFormText,
             "_services.CreateLocalDatabaseBackup()",
             "B2-A backup UI must delegate backup creation to AppServices.");
-        RequireDoesNotContain(
+        RequireContains(
             backupFormText,
-            "Restore",
-            "B2-A must remain backup-only and not add restore behavior.");
-        RequireDoesNotContain(
-            backupFormText,
-            "Salryn.Infrastructure",
-            "B2-A backup UI must not reference Infrastructure directly.");
+            "Verify Backup",
+            "B2/B5 backup UI must keep backup verification visible before recovery actions.");
         RequireDoesNotContain(
             backupFormText,
             "new SqliteConnection",

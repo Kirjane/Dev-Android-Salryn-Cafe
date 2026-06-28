@@ -76,6 +76,7 @@ public static class Program
         PosStabB3ProductMaintenanceChecks.Run();
         PosStabB3StoreSettingsEditChecks.Run();
         PosStabB4UsersAdminChecks.Run();
+        PosStabB5BackupRecoveryChecks.Run();
         J21Rmo242023ComplianceMatrixGuardChecks.Run();
         J21Rmo242023MachineProfileSchemaChecks.Run();
         J21Rmo242023OfficialDocumentSequenceSchemaChecks.Run();
