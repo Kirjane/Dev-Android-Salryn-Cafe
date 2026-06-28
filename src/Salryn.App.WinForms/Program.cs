@@ -2,7 +2,6 @@
 using Salryn.App.WinForms.Features.Auth;
 using Salryn.App.WinForms.Features.Shell;
 using Salryn.Core.Common;
-using Salryn.Infrastructure.Paths;
 
 namespace Salryn.App.WinForms;
 
@@ -21,22 +20,7 @@ static class Program
 
         try
         {
-            SalrynAppLaunchPlan launchPlan = SalrynAppLaunchModeResolver.Resolve(args);
-
-            if (launchPlan.Mode == SalrynAppLaunchMode.Production)
-            {
-                Result writabilityResult = DbPaths.CreateProduction().ValidateProductionWritability();
-
-                if (writabilityResult.IsFailure)
-                {
-                    ShowStartupFailure(BuildStartupFailureMessage(writabilityResult.ErrorDetail));
-                    return;
-                }
-            }
-
-            services = launchPlan.Mode == SalrynAppLaunchMode.Development
-                ? SalrynAppServices.CreateDevelopment(launchPlan.ProjectRoot!)
-                : SalrynAppServices.CreateProduction();
+            services = SalrynAppLaunchModeResolver.CreateServices(args);
         }
         catch (Exception ex)
         {
