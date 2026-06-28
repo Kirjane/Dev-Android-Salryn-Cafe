@@ -23,6 +23,9 @@ public sealed class BackupForm : Form
     private readonly Label _verificationLabel = new();
     private readonly Label _statusLabel = new();
 
+    // Kirch B7: hover guidance for the backup/restore actions.
+    private readonly ToolTip _toolTip = J20MvpUi.CreateToolTip();
+
     private BackupVerificationSummary? _verifiedBackup;
 
     public BackupForm(SalrynAppServices services)
@@ -84,20 +87,35 @@ public sealed class BackupForm : Form
         };
 
         J20MvpUi.ConfigurePrimaryButton(_createBackupButton, "Create Backup");
+        _toolTip.SetToolTip(_createBackupButton, "Save a fresh copy of the live database into the backup folder.");
         _createBackupButton.Click += (_, _) => CreateBackup();
         actions.Controls.Add(_createBackupButton);
 
         J20MvpUi.ConfigureSecondaryButton(_refreshBackupsButton, "Refresh List");
+        _toolTip.SetToolTip(_refreshBackupsButton, "Re-read the backup folder and list available backup files.");
         _refreshBackupsButton.Click += (_, _) => RefreshBackups();
         actions.Controls.Add(_refreshBackupsButton);
 
         J20MvpUi.ConfigureSecondaryButton(_verifyBackupButton, "Verify Backup");
+        _toolTip.SetToolTip(_verifyBackupButton, "Check the selected backup's shape before it can be restored.");
         _verifyBackupButton.Click += (_, _) => VerifySelectedBackup();
         actions.Controls.Add(_verifyBackupButton);
 
         J20MvpUi.ConfigureSecondaryButton(_restoreBackupButton, "Restore Backup");
+        _toolTip.SetToolTip(_restoreBackupButton, "Replace the live database with the verified backup (a safety backup is made first).");
         _restoreBackupButton.Click += (_, _) => RestoreVerifiedBackup();
         actions.Controls.Add(_restoreBackupButton);
+
+        actions.Controls.Add(J20MvpUi.InfoButton(
+            "About Backup & Restore",
+            "Create Backup copies the live database into the backup folder shown above." + Environment.NewLine +
+            Environment.NewLine +
+            "Restore is guarded in three ways:" + Environment.NewLine +
+            "1. The backup must pass Verify Backup." + Environment.NewLine +
+            "2. You must type the exact confirmation phrase." + Environment.NewLine +
+            "3. A safety backup of the current database is taken before restoring." + Environment.NewLine +
+            Environment.NewLine +
+            "Restoring replaces all current data with the backup's data."));
 
         return actions;
     }
@@ -296,6 +314,20 @@ public sealed class BackupForm : Form
             return;
         }
 
+        // Kirch B7: explicit confirmation popup before this irreversible, data-replacing action.
+        if (!J20MvpUi.ConfirmDestructiveAction(
+                this,
+                "Confirm Database Restore",
+                "Restore will replace ALL current data with the verified backup:" + Environment.NewLine +
+                Environment.NewLine +
+                _verifiedBackup.FilePath + Environment.NewLine +
+                Environment.NewLine +
+                "A safety backup of the current database is taken first. Continue?"))
+        {
+            SetStatusMessage("Restore cancelled by operator.");
+            return;
+        }
+
         var result = _backupRecovery.RestoreVerifiedBackup(
             _verifiedBackup,
             _restoreConfirmationTextBox.Text);
@@ -370,6 +402,13 @@ public sealed class BackupForm : Form
     {
         _statusLabel.Text = message;
         _statusLabel.ForeColor = J20MvpUi.Colors.Success;
+    }
+
+    private void SetStatusMessage(string message)
+    {
+        _statusLabel.Text = message;
+        _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
+        SetReady();
     }
 
     private void SetError(string message)

@@ -20,6 +20,9 @@ public sealed class StoreSettingsForm : Form
     private readonly Button _editButton = new();
     private readonly Button _saveButton = new();
     private readonly Button _cancelButton = new();
+
+    // Kirch B7: hover guidance for the settings actions.
+    private readonly ToolTip _toolTip = J20MvpUi.CreateToolTip();
     // Kirch UI map: store settings field registry.
     // UI side: each text box displays one store/receipt header field and enters edit mode only through this form.
     // Frontend safe zone: grouping, labels, helper text, and future widget polish.
@@ -118,10 +121,22 @@ public sealed class StoreSettingsForm : Form
         J20MvpUi.ConfigureSecondaryButton(_cancelButton, "Cancel");
         J20MvpUi.ConfigureSecondaryButton(_editButton, "Edit");
         J20MvpUi.ConfigureSecondaryButton(_refreshButton, "Refresh");
+        _toolTip.SetToolTip(_saveButton, "Save your changes to store settings.");
+        _toolTip.SetToolTip(_cancelButton, "Discard changes and leave edit mode.");
+        _toolTip.SetToolTip(_editButton, "Unlock the fields to edit store settings.");
+        _toolTip.SetToolTip(_refreshButton, "Reload store settings from the database.");
         footer.Controls.Add(_saveButton);
         footer.Controls.Add(_cancelButton);
         footer.Controls.Add(_editButton);
         footer.Controls.Add(_refreshButton);
+        footer.Controls.Add(J20MvpUi.InfoButton(
+            "About Store Settings",
+            "These fields appear on receipt headers and local system displays." + Environment.NewLine +
+            Environment.NewLine +
+            "• Receipt Width must be 58 or 80 millimeters." + Environment.NewLine +
+            "• Tax Mode and Shift Mode accept Enabled or Disabled." + Environment.NewLine +
+            Environment.NewLine +
+            "Click Edit to unlock the fields, then Save to apply your changes."));
 
         _statusLabel.Dock = DockStyle.Fill;
         _statusLabel.TextAlign = ContentAlignment.MiddleLeft;

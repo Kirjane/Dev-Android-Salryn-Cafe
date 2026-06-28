@@ -185,4 +185,100 @@ public static class J20MvpUi
         button.FlatAppearance.BorderColor = Colors.Border;
         button.Margin = new Padding(8, 0, 0, 0);
     }
+
+    // Kirch B7 (Presentation & Operator UX): shared operator-facing copy so empty/loading/error
+    // states read the same way on every screen instead of each form inventing its own wording.
+    public static class StateText
+    {
+        public const string Loading = "Loading...";
+        public const string NothingToShow = "Nothing to show yet.";
+        public const string LoadFailedRetry =
+            "Could not load this data. Please retry, then contact support if it keeps failing.";
+    }
+
+    // Kirch B7: one hover-guidance tooltip provider per form. Forms keep a single instance and
+    // attach short hints to buttons/inputs so operators understand controls without a manual.
+    public static ToolTip CreateToolTip()
+    {
+        return new ToolTip
+        {
+            AutoPopDelay = 12000,
+            InitialDelay = 400,
+            ReshowDelay = 120,
+            ShowAlways = true
+        };
+    }
+
+    // Kirch B7: small round "?" info button that opens a plain help popup with static guidance text,
+    // replacing screens that previously relied only on inline explanatory labels.
+    public static Button InfoButton(string helpTitle, string helpBody)
+    {
+        Button button = new()
+        {
+            Width = 30,
+            Height = 30,
+            Text = "?",
+            Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.White,
+            ForeColor = Colors.Primary,
+            Margin = new Padding(8, 0, 0, 0),
+            TabStop = false
+        };
+
+        button.FlatAppearance.BorderColor = Colors.Border;
+        button.Click += (_, _) => MessageBox.Show(
+            button.FindForm(),
+            helpBody,
+            helpTitle,
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
+
+        return button;
+    }
+
+    // Kirch B7: standardized confirmation popup for risky or irreversible operator actions.
+    // Defaults to the safe "No" button so an accidental Enter does not trigger the action.
+    public static bool ConfirmDestructiveAction(
+        IWin32Window owner,
+        string title,
+        string message)
+    {
+        return MessageBox.Show(
+            owner,
+            message,
+            title,
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2) == DialogResult.Yes;
+    }
+
+    // Kirch B7: standardized blocked-action popup so operator-facing failures (e.g. missing
+    // permission or no selection) are clear and consistent rather than only a small status label.
+    public static void ShowBlockedAction(
+        IWin32Window owner,
+        string title,
+        string message)
+    {
+        MessageBox.Show(
+            owner,
+            message,
+            title,
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
+    }
+
+    // Kirch B7: consistent centered placeholder so screens never present an ugly blank panel.
+    public static Label EmptyStateLabel(string message)
+    {
+        return new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = message,
+            Font = new Font("Segoe UI", 10.5F, FontStyle.Regular),
+            ForeColor = Colors.TextMuted,
+            TextAlign = ContentAlignment.MiddleCenter,
+            BackColor = Colors.CardBackground
+        };
+    }
 }

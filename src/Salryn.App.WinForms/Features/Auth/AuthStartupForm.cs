@@ -1,4 +1,5 @@
-﻿using Salryn.App.WinForms.Features.Shell;
+﻿using Salryn.App.WinForms.Features.Mvp;
+using Salryn.App.WinForms.Features.Shell;
 using Salryn.Core.Common;
 using Salryn.Core.Security;
 using Salryn.Core.Services;
@@ -24,6 +25,9 @@ public sealed class AuthStartupForm : Form
     private TextBox _confirmPasswordTextBox = null!;
     private Button _submitButton = null!;
     private Button _cancelButton = null!;
+
+    // Kirch B7: hover guidance for the login / first-run setup actions.
+    private readonly ToolTip _toolTip = J20MvpUi.CreateToolTip();
 
     public AuthStartupForm(IAuthenticationService authenticationService)
     {
@@ -139,6 +143,9 @@ public sealed class AuthStartupForm : Form
             DialogResult = DialogResult.Cancel;
             Close();
         };
+
+        _toolTip.SetToolTip(_submitButton, "Sign in, or create the first Admin account on first run.");
+        _toolTip.SetToolTip(_cancelButton, "Close SALRYN without signing in.");
 
         actions.Controls.Add(_submitButton);
         actions.Controls.Add(_cancelButton);

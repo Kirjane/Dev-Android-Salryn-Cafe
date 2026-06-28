@@ -4,6 +4,7 @@ using Salryn.App.WinForms.Features.Backup;
 using Salryn.App.WinForms.Features.Checkout;
 using Salryn.App.WinForms.Features.Dashboard;
 using Salryn.App.WinForms.Features.Inventory;
+using Salryn.App.WinForms.Features.Mvp;
 using Salryn.App.WinForms.Features.OfficialOutput;
 using Salryn.App.WinForms.Features.Products;
 using Salryn.App.WinForms.Features.Sales;
@@ -24,6 +25,9 @@ public sealed class SalrynShellForm : Form
     private readonly ShellPresenter _presenter;
     private readonly ShellViewModel _state;
     private readonly Dictionary<string, Button> _moduleButtons = new(StringComparer.OrdinalIgnoreCase);
+
+    // Kirch B7: shared tooltip provider so locked modules explain why they are unavailable on hover.
+    private readonly ToolTip _toolTip = J20MvpUi.CreateToolTip();
 
     // Kirch UI map: these fields are the main Shell regions.
     // UI side: title/user/status are header/footer text; navigationPanel is the left module menu; workspacePanel is the main content area.
@@ -180,10 +184,13 @@ public sealed class SalrynShellForm : Form
             return;
         }
 
+        int enabledModuleCount = _state.Modules.Count(module => module.IsEnabled);
+
         ShowPlaceholder(
-            firstEnabledModule.Title,
-            firstEnabledModule.Description,
-            "Select a module from the left. POS Checkout now checks for an open cashier shift before opening.");
+            "Welcome to SALRYN",
+            $"You have access to {enabledModuleCount} module(s). Choose one from the left to begin.",
+            "Tip: hover any left-menu item for a short description. Locked items show why they are unavailable. " +
+            "POS Checkout checks for an open cashier shift before opening.");
     }
 
     private Button BuildModuleButton(ShellModule module)
@@ -206,6 +213,15 @@ public sealed class SalrynShellForm : Form
 
         button.FlatAppearance.BorderColor = Color.FromArgb(209, 213, 219);
         button.Click += (_, _) => ActivateModule(module.Key);
+
+        // Kirch B7: hover guidance — enabled modules describe themselves; locked modules state the reason.
+        _toolTip.SetToolTip(
+            button,
+            module.IsEnabled
+                ? module.Description
+                : string.IsNullOrWhiteSpace(module.DisabledReason)
+                    ? module.Title + " is currently locked."
+                    : module.DisabledReason);
 
         return button;
     }

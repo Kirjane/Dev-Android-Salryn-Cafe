@@ -26,6 +26,9 @@ public sealed class AuditLogViewerForm : Form
     private readonly DataGridView _errorGrid = J20MvpUi.Grid();
     private readonly Label _statusLabel = new();
 
+    // Kirch B7: hover guidance for the read-only filter and paging controls.
+    private readonly ToolTip _toolTip = J20MvpUi.CreateToolTip();
+
     private int _auditPageNumber = 1;
     private int _errorPageNumber = 1;
     private PagedResult<AuditLogReadModel>? _auditPage;
@@ -118,6 +121,12 @@ public sealed class AuditLogViewerForm : Form
 
         J20MvpUi.ConfigurePrimaryButton(_applyButton, "Apply");
 
+        _toolTip.SetToolTip(_fromDatePicker, "Optional start date. Tick the box to enable this filter.");
+        _toolTip.SetToolTip(_toDatePicker, "Optional end date. Tick the box to enable this filter.");
+        _toolTip.SetToolTip(_searchTextBox, "Type text to filter records, then click Apply.");
+        _toolTip.SetToolTip(_pageSizeComboBox, "How many rows to show per page.");
+        _toolTip.SetToolTip(_applyButton, "Apply the current filters and reload from the first page.");
+
         panel.Controls.Add(CreateFieldLabel("From"), 0, 0);
         panel.Controls.Add(_fromDatePicker, 1, 0);
         panel.Controls.Add(CreateFieldLabel("To"), 2, 0);
@@ -142,6 +151,10 @@ public sealed class AuditLogViewerForm : Form
         J20MvpUi.ConfigureSecondaryButton(_nextPageButton, "Next Page");
         J20MvpUi.ConfigureSecondaryButton(_previousPageButton, "Previous Page");
         J20MvpUi.ConfigureSecondaryButton(_refreshButton, "Refresh");
+
+        _toolTip.SetToolTip(_nextPageButton, "Go to the next page of records.");
+        _toolTip.SetToolTip(_previousPageButton, "Go to the previous page of records.");
+        _toolTip.SetToolTip(_refreshButton, "Reload the current page.");
 
         panel.Controls.Add(_nextPageButton);
         panel.Controls.Add(_previousPageButton);
@@ -354,18 +367,20 @@ public sealed class AuditLogViewerForm : Form
     {
         if (IsAuditTabActive && _auditPage is not null)
         {
-            _statusLabel.Text =
-                $"Audit page {_auditPage.PageNumber} of {Math.Max(1, _auditPage.TotalPages)}; " +
-                $"loaded {_auditPage.Items.Count} of {_auditPage.TotalCount} row(s).";
+            _statusLabel.Text = _auditPage.TotalCount == 0
+                ? J20MvpUi.StateText.NothingToShow + " No audit records match these filters."
+                : $"Audit page {_auditPage.PageNumber} of {Math.Max(1, _auditPage.TotalPages)}; " +
+                  $"loaded {_auditPage.Items.Count} of {_auditPage.TotalCount} row(s).";
             _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
             return;
         }
 
         if (!IsAuditTabActive && _errorPage is not null)
         {
-            _statusLabel.Text =
-                $"Error page {_errorPage.PageNumber} of {Math.Max(1, _errorPage.TotalPages)}; " +
-                $"loaded {_errorPage.Items.Count} of {_errorPage.TotalCount} row(s).";
+            _statusLabel.Text = _errorPage.TotalCount == 0
+                ? J20MvpUi.StateText.NothingToShow + " No error records match these filters."
+                : $"Error page {_errorPage.PageNumber} of {Math.Max(1, _errorPage.TotalPages)}; " +
+                  $"loaded {_errorPage.Items.Count} of {_errorPage.TotalCount} row(s).";
             _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
         }
     }

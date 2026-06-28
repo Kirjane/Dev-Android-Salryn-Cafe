@@ -27,6 +27,9 @@ public sealed class InventoryForm : Form
     private readonly Button _refreshButton = new();
     private readonly Button _adjustStockButton = new();
 
+    // Kirch B7: hover guidance for the inventory actions.
+    private readonly ToolTip _toolTip = J20MvpUi.CreateToolTip();
+
     public InventoryForm(SalrynAppServices services)
         : this(services, session: null)
     {
@@ -83,6 +86,8 @@ public sealed class InventoryForm : Form
 
         J20MvpUi.ConfigurePrimaryButton(_refreshButton, "Refresh");
         J20MvpUi.ConfigureSecondaryButton(_adjustStockButton, "Adjust Stock");
+        _toolTip.SetToolTip(_refreshButton, "Reload low-stock alerts and recent stock movements.");
+        _toolTip.SetToolTip(_adjustStockButton, "Record a controlled stock adjustment (requires permission).");
         footer.Controls.Add(_refreshButton);
         footer.Controls.Add(_adjustStockButton);
 
@@ -133,13 +138,19 @@ public sealed class InventoryForm : Form
         {
             if (_session is null || !_session.IsActive)
             {
-                SetError("Inventory adjustment requires an active user session.");
+                J20MvpUi.ShowBlockedAction(
+                    this,
+                    "Adjustment Unavailable",
+                    "Inventory adjustment requires an active user session. Please sign in again.");
                 return;
             }
 
             if (!_session.Can(SalrynPermissions.InventoryAdjust))
             {
-                SetError("Current user does not have permission to adjust inventory.");
+                J20MvpUi.ShowBlockedAction(
+                    this,
+                    "Permission Required",
+                    "Your account does not have permission to adjust inventory. Ask an administrator for access.");
                 return;
             }
 
@@ -207,7 +218,14 @@ public sealed class InventoryForm : Form
             return;
         }
 
-        _statusLabel.Text = "Inventory ready.";
+        bool lowStockEmpty = lowStockResult.Value.Count == 0;
+        bool movementsEmpty = movementResult.Value.Items.Count == 0;
+
+        _statusLabel.Text = lowStockEmpty && movementsEmpty
+            ? J20MvpUi.StateText.NothingToShow + " No low-stock alerts and no recent stock movements."
+            : lowStockEmpty
+                ? "Inventory ready. No products are currently low on stock."
+                : "Inventory ready.";
         _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
         UpdateActionButtons();
     }

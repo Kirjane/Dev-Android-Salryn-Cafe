@@ -1,4 +1,5 @@
-﻿using Salryn.Core.Models;
+﻿using Salryn.App.WinForms.Features.Mvp;
+using Salryn.Core.Models;
 
 namespace Salryn.App.WinForms.Features.Users;
 
@@ -23,6 +24,9 @@ public sealed class UsersAdminForm : Form
     private Button _reactivateButton = null!;
     private Button _refreshButton = null!;
     private Label _statusLabel = null!;
+
+    // Kirch B7: hover guidance for the user admin actions.
+    private readonly ToolTip _toolTip = J20MvpUi.CreateToolTip();
 
     public UsersAdminForm(UsersAdminPresenter presenter)
     {
@@ -200,6 +204,13 @@ public sealed class UsersAdminForm : Form
         _reactivateButton = BuildActionButton("Reactivate", Color.FromArgb(21, 128, 61), Color.White);
         _reactivateButton.Click += async (_, _) => await ReactivateUserAsync();
 
+        _toolTip.SetToolTip(_createButton, "Create a new user from the fields above.");
+        _toolTip.SetToolTip(_saveButton, "Save username, display name, and role changes for the selected user.");
+        _toolTip.SetToolTip(_resetPasswordButton, "Set a new password for the selected user.");
+        _toolTip.SetToolTip(_deactivateButton, "Disable sign-in for the selected user (a reason is required).");
+        _toolTip.SetToolTip(_reactivateButton, "Re-enable sign-in for the selected user.");
+        _toolTip.SetToolTip(_refreshButton, "Reload the user list from the database.");
+
         panel.Controls.Add(BuildLabel("Actions"), 0, 2);
         panel.SetColumnSpan(panel.GetControlFromPosition(0, 2)!, 6);
 
@@ -312,6 +323,23 @@ public sealed class UsersAdminForm : Form
     private async Task DeactivateUserAsync()
     {
         UsersAdminRowViewModel? selected = GetSelectedUser();
+
+        if (selected is null)
+        {
+            J20MvpUi.ShowBlockedAction(this, "No User Selected", "Select a user in the list before deactivating.");
+            return;
+        }
+
+        // Kirch B7: confirm this account-disabling action before asking for the required reason.
+        if (!J20MvpUi.ConfirmDestructiveAction(
+                this,
+                "Confirm Deactivate User",
+                "Deactivate \"" + selected.DisplayName + "\"? They will no longer be able to sign in until reactivated."))
+        {
+            _statusLabel.Text = "Deactivate cancelled.";
+            return;
+        }
+
         string? reason = PromptDeactivateReason();
 
         if (string.IsNullOrWhiteSpace(reason))

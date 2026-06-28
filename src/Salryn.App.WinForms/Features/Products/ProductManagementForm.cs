@@ -1,4 +1,5 @@
-﻿using Salryn.App.WinForms.Features.Shell;
+﻿using Salryn.App.WinForms.Features.Mvp;
+using Salryn.App.WinForms.Features.Shell;
 
 namespace Salryn.App.WinForms.Features.Products;
 
@@ -23,6 +24,9 @@ public sealed class ProductManagementForm : Form
     private Button _deactivateButton = null!;
     private DataGridView _productsGrid = null!;
     private Label _statusLabel = null!;
+
+    // Kirch B7: hover guidance for the product catalog toolbar actions.
+    private readonly ToolTip _toolTip = J20MvpUi.CreateToolTip();
 
     public ProductManagementForm(ProductManagementPresenter presenter)
         : this(presenter, session: null)
@@ -172,6 +176,13 @@ public sealed class ProductManagementForm : Form
         };
 
         _deactivateButton.Click += async (_, _) => await DeactivateSelectedProductAsync();
+
+        _toolTip.SetToolTip(_searchTextBox, "Type a product name, barcode, or SKU, then press Enter or Search.");
+        _toolTip.SetToolTip(_searchButton, "Find products matching the search text.");
+        _toolTip.SetToolTip(_refreshButton, "Clear the search and reload the full catalog.");
+        _toolTip.SetToolTip(_addButton, "Create a new product.");
+        _toolTip.SetToolTip(_editButton, "Edit the selected product.");
+        _toolTip.SetToolTip(_deactivateButton, "Deactivate the selected active product (a reason is required).");
 
         searchPanel.Controls.Add(_searchTextBox, 0, 0);
         searchPanel.Controls.Add(_searchButton, 1, 0);
@@ -329,6 +340,17 @@ public sealed class ProductManagementForm : Form
             return;
         }
 
+        // Kirch B7: confirm before removing the product from active catalog use.
+        if (!J20MvpUi.ConfirmDestructiveAction(
+                this,
+                "Confirm Deactivate Product",
+                "Deactivate \"" + selected.ProductName + "\"? It will no longer be available for checkout until reactivated."))
+        {
+            _statusLabel.Text = "Deactivate cancelled.";
+            _statusLabel.ForeColor = Color.FromArgb(75, 85, 99);
+            return;
+        }
+
         string? reason = PromptDeactivateReason(selected.ProductName);
 
         if (reason is null)
@@ -478,7 +500,9 @@ public sealed class ProductManagementForm : Form
 
         _statusLabel.Text = state.HasError
             ? $"{state.StatusMessage} {state.ErrorCode}: {state.ErrorMessage}"
-            : state.StatusMessage;
+            : state.Products.Count == 0
+                ? J20MvpUi.StateText.NothingToShow + " Adjust your search or add a product."
+                : state.StatusMessage;
 
         _statusLabel.ForeColor = state.HasError
             ? Color.FromArgb(185, 28, 28)

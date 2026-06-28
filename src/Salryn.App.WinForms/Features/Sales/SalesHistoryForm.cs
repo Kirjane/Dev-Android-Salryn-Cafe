@@ -31,6 +31,9 @@ public sealed class SalesHistoryForm : Form
     private readonly DataGridView _salesGrid = J20MvpUi.Grid();
     private readonly Label _statusLabel = new();
 
+    // Kirch B7: hover guidance for the sales history actions.
+    private readonly ToolTip _toolTip = J20MvpUi.CreateToolTip();
+
     public SalesHistoryForm(SalrynAppServices services)
         : this(services, session: null)
     {
@@ -95,6 +98,11 @@ public sealed class SalesHistoryForm : Form
         J20MvpUi.ConfigurePrimaryButton(_refreshButton, "Search");
         J20MvpUi.ConfigureSecondaryButton(_viewReceiptButton, "View Receipt");
         J20MvpUi.ConfigureSecondaryButton(_voidSaleButton, "Void Sale");
+
+        _toolTip.SetToolTip(_receiptSearchTextBox, "Type a receipt number, then press Enter or Search. Leave blank to list recent sales.");
+        _toolTip.SetToolTip(_refreshButton, "Search receipts (or list recent sales when the box is empty).");
+        _toolTip.SetToolTip(_viewReceiptButton, "Open the selected sale's receipt preview.");
+        _toolTip.SetToolTip(_voidSaleButton, "Void the selected completed sale (requires permission and a reason).");
 
         toolbar.Controls.Add(_receiptSearchTextBox, 0, 0);
         toolbar.Controls.Add(_refreshButton, 1, 0);
@@ -180,7 +188,9 @@ public sealed class SalesHistoryForm : Form
         }
 
         UpdateActionButtons();
-        _statusLabel.Text = $"Loaded {result.Value.Items.Count} sale rows. Total matches: {result.Value.TotalCount}.";
+        _statusLabel.Text = result.Value.Items.Count == 0
+            ? J20MvpUi.StateText.NothingToShow + " No sales match your search."
+            : $"Loaded {result.Value.Items.Count} sale rows. Total matches: {result.Value.TotalCount}.";
         _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
     }
 
@@ -220,13 +230,19 @@ public sealed class SalesHistoryForm : Form
     {
         if (_session is null || !_session.IsActive)
         {
-            SetError("Voiding a sale requires an active user session.");
+            J20MvpUi.ShowBlockedAction(
+                this,
+                "Void Unavailable",
+                "Voiding a sale requires an active user session. Please sign in again.");
             return;
         }
 
         if (!_session.Can(SalrynPermissions.SalesVoid))
         {
-            SetError("Current user does not have permission to void sales.");
+            J20MvpUi.ShowBlockedAction(
+                this,
+                "Permission Required",
+                "Your account does not have permission to void sales. Ask an administrator for access.");
             return;
         }
 
@@ -234,7 +250,7 @@ public sealed class SalesHistoryForm : Form
 
         if (selectedSale is null)
         {
-            SetError("Select a completed sale before voiding.");
+            J20MvpUi.ShowBlockedAction(this, "No Sale Selected", "Select a completed sale in the list before voiding.");
             return;
         }
 

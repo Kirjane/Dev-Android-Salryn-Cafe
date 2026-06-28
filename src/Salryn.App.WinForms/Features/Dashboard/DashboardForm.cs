@@ -25,6 +25,9 @@ public sealed class DashboardForm : Form
     private readonly Label _lowStockValueLabel = new();
     private readonly Button _refreshButton = new();
 
+    // Kirch B7: hover guidance + a help popup so operators understand what the home metrics mean.
+    private readonly ToolTip _toolTip = J20MvpUi.CreateToolTip();
+
     public DashboardForm(SalrynAppServices services)
     {
         _services = services ?? throw new ArgumentNullException(nameof(services));
@@ -98,7 +101,20 @@ public sealed class DashboardForm : Form
         };
 
         J20MvpUi.ConfigurePrimaryButton(_refreshButton, "Refresh");
+        _toolTip.SetToolTip(_refreshButton, "Reload today's totals from the local database.");
         footer.Controls.Add(_refreshButton);
+
+        footer.Controls.Add(J20MvpUi.InfoButton(
+            "About the Dashboard",
+            "These cards show live counts from your local SALRYN database:" + Environment.NewLine +
+            Environment.NewLine +
+            "• Today Sales – total value of completed sales dated today." + Environment.NewLine +
+            "• Transactions – number of completed sales today." + Environment.NewLine +
+            "• Products – records in your catalog." + Environment.NewLine +
+            "• Low Stock – products at or below their reorder level." + Environment.NewLine +
+            Environment.NewLine +
+            "Use Refresh after making changes elsewhere. A value of 0 simply means there is nothing to show yet."));
+
         root.Controls.Add(footer, 0, 3);
 
         _statusLabel.Dock = DockStyle.Bottom;
