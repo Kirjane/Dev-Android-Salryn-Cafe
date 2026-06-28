@@ -386,13 +386,13 @@ public sealed class ProductManagementPresenter
             Categories: WithNone(categoriesResult.Value.Select(MapCatalogOption).ToArray()),
             Brands: WithNone(brandsResult.Value.Select(MapCatalogOption).ToArray()),
             Suppliers: WithNone(suppliersResult.Value.Select(MapSupplierOption).ToArray()),
-            StatusMessage: "Edit product ready.",
+            StatusMessage: "Edit product ready. Stock on hand is read-only; use Inventory Adjustment for stock changes.",
             HasError: false,
             ErrorCode: null,
             ErrorMessage: null);
     }
 
-    // Kirch: This validates edited input and updates the existing product without losing hidden fields.
+    // Kirch: This validates edited input and preserves stock quantity from existing product detail.
     public async Task<ProductEditOperationResult> UpdateProductAsync(
         ProductEditRequest request,
         CancellationToken cancellationToken = default)
@@ -412,6 +412,24 @@ public sealed class ProductManagementPresenter
                 "Products.InvalidProductId",
                 "Product ID is required.");
         }
+
+        var detailResult = await _products.FindDetailByIdAsync(request.ProductId, cancellationToken);
+
+        if (detailResult.IsFailure)
+        {
+            return EditFailure(
+                detailResult.ErrorDetail.Code,
+                detailResult.ErrorDetail.Message);
+        }
+
+        if (detailResult.Value is null)
+        {
+            return EditFailure(
+                "Products.NotFound",
+                "Product was not found.");
+        }
+
+        ProductDetailReadModel existingDetail = detailResult.Value;
 
         if (string.IsNullOrWhiteSpace(request.Name))
         {
@@ -464,13 +482,6 @@ public sealed class ProductManagementPresenter
                 wholesalePriceError ?? "Wholesale price is invalid.");
         }
 
-        if (!TryParseQuantity(request.StockOnHand, out Quantity stockOnHand, out string? stockError))
-        {
-            return EditFailure(
-                "Products.InvalidStockOnHand",
-                stockError ?? "Stock on hand is invalid.");
-        }
-
         if (!TryParseQuantity(request.ReorderLevel, out Quantity reorderLevel, out string? reorderError))
         {
             return EditFailure(
@@ -492,16 +503,71 @@ public sealed class ProductManagementPresenter
             CostPrice = costPrice,
             SellingPrice = sellingPrice!.Value,
             WholesalePrice = wholesalePrice,
-            StockOnHand = stockOnHand,
+            StockOnHand = existingDetail.StockOnHand,
             ReorderLevel = reorderLevel,
             TrackStock = request.TrackStock,
             AllowDiscount = request.AllowDiscount,
-            IsActive = true,
+            IsActive = existingDetail.IsActive,
             Notes = NormalizeOptionalText(request.Notes),
-            CreatedAt = request.CreatedAt
+            CreatedAt = existingDetail.CreatedAt
         };
 
         var result = await _productWrites.UpdateAsync(product, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return EditFailure(
+                result.ErrorDetail.Code,
+                result.ErrorDetail.Message);
+        }
+
+        return new ProductEditOperationResult(
+            IsSuccess: true,
+            ErrorCode: null,
+            ErrorMessage: null);
+    }
+
+    public async Task<ProductEditOperationResult> DeactivateProductAsync(
+        Guid productId,
+        string? reason,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (_productWrites is null)
+        {
+            return EditFailure(
+                "Products.WriteUnavailable",
+                "Product write services are not available.");
+        }
+
+        if (productId == Guid.Empty)
+        {
+            return EditFailure(
+                "Products.InvalidProductId",
+                "Product ID is required.");
+        }
+
+        if (userId == Guid.Empty)
+        {
+            return EditFailure(
+                "Products.InvalidUserId",
+                "A current user is required before deactivating a product.");
+        }
+
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            return EditFailure(
+                "Products.DeactivateReasonRequired",
+                "A reason is required when deactivating a product.");
+        }
+
+        var result = await _productWrites.DeactivateAsync(
+            productId,
+            reason.Trim(),
+            userId,
+            cancellationToken);
 
         if (result.IsFailure)
         {
