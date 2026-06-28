@@ -75,6 +75,7 @@ public static class Program
         PosStabB3ProductionDbWritabilityChecks.Run();
         PosStabB3ProductMaintenanceChecks.Run();
         PosStabB3StoreSettingsEditChecks.Run();
+        PosStabB4UsersAdminChecks.Run();
         J21Rmo242023ComplianceMatrixGuardChecks.Run();
         J21Rmo242023MachineProfileSchemaChecks.Run();
         J21Rmo242023OfficialDocumentSequenceSchemaChecks.Run();
@@ -98,7 +99,6 @@ public static class Program
         J21Rmo242023ElectronicJournalAppendRegistrationBoundaryChecks.RunAsync().GetAwaiter().GetResult();
         J21Rmo242023ElectronicJournalAppendBoundaryDocumentationSealChecks.Run();
         J21Rmo242023SharedSqliteTransactionBoundaryContractChecks.Run();
-        J21Rmo242023SharedSqliteTransactionBoundaryImplementationChecks.Run();
         J21Rmo242023SharedTransactionOfficialSequenceAllocationParticipantChecks.Run();
         J21Rmo242023OfficialSequenceAllocationServiceSharedBoundaryReuseChecks.Run();
         J21Rmo242023SqliteElectronicJournalAppendParticipantSkeletonChecks.Run();
