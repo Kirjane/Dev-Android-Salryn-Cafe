@@ -49,6 +49,50 @@ public interface IInventoryWriteRepository
         CancellationToken cancellationToken = default);
 }
 
+public sealed record UserAdminCreateRequest(
+    string Username,
+    string DisplayName,
+    Guid RoleId,
+    string PasswordHash,
+    Guid CreatedByUserId);
+
+public sealed record UserAdminUpdateRequest(
+    Guid UserId,
+    string Username,
+    string DisplayName,
+    Guid RoleId,
+    Guid UpdatedByUserId);
+
+public sealed record UserAdminPasswordResetRequest(
+    Guid UserId,
+    string PasswordHash,
+    Guid ResetByUserId);
+
+public sealed record UserAdminStatusChangeRequest(
+    Guid UserId,
+    UserStatus Status,
+    string? Reason,
+    Guid ChangedByUserId);
+
+public interface IUserWriteRepository
+{
+    Task<Result> CreateAsync(
+        UserAdminCreateRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<Result> UpdateAsync(
+        UserAdminUpdateRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<Result> ResetPasswordAsync(
+        UserAdminPasswordResetRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<Result> SetStatusAsync(
+        UserAdminStatusChangeRequest request,
+        CancellationToken cancellationToken = default);
+}
+
 public sealed record StoreSettingsUpdateRequest(
     Guid StoreSettingsId,
     string StoreName,
