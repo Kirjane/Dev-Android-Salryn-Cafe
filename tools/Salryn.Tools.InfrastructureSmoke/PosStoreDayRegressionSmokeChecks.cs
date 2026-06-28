@@ -15,6 +15,7 @@ internal static class PosStoreDayRegressionSmokeChecks
     {
         Console.WriteLine("===== POS STORE-DAY REGRESSION SMOKE CHECKS =====");
 
+        RunSourceGuard(projectRoot);
         EnsureDatabaseReady(projectRoot);
 
         DbPaths paths = DbPaths.CreateDevelopment(projectRoot);
@@ -212,6 +213,51 @@ internal static class PosStoreDayRegressionSmokeChecks
 
         Console.WriteLine("POS store-day regression smoke checks succeeded.");
         Console.WriteLine();
+    }
+
+    private static void RunSourceGuard(string projectRoot)
+    {
+        string smokePath = Path.Combine(
+            projectRoot,
+            "tools",
+            "Salryn.Tools.InfrastructureSmoke",
+            "PosStoreDayRegressionSmokeChecks.cs");
+
+        string smokeText = File.ReadAllText(smokePath);
+
+        RequireDoesNotContain(smokeText, "Application" + ".Run", "POS store-day command must not launch a WinForms application.");
+        RequireDoesNotContain(smokeText, "Main" + "Form", "POS store-day command must not reference the WinForms startup form.");
+        RequireDoesNotContain(smokeText, "Checkout" + "Presenter", "POS store-day command must not use checkout presenter state.");
+
+        string uiRoot = Path.Combine(projectRoot, "src", "Salryn.App.WinForms");
+
+        if (!Directory.Exists(uiRoot))
+        {
+            throw new InvalidOperationException("WinForms source root was not found for POS store-day source guard.");
+        }
+
+        foreach (string path in Directory.EnumerateFiles(uiRoot, "*.cs", SearchOption.AllDirectories))
+        {
+            if (IsBuildOutputPath(path))
+            {
+                continue;
+            }
+
+            string text = File.ReadAllText(path);
+            string relativePath = Path.GetRelativePath(projectRoot, path);
+
+            RequireDoesNotContain(text, "Microsoft.Data.Sqlite", $"WinForms UI source must not reference SQLite directly: {relativePath}");
+            RequireDoesNotContain(text, "SqliteConnection", $"WinForms UI source must not open SQLite connections directly: {relativePath}");
+            RequireDoesNotContain(text, "SqliteCommand", $"WinForms UI source must not create SQLite commands directly: {relativePath}");
+        }
+    }
+
+    private static bool IsBuildOutputPath(string path)
+    {
+        string normalized = path.Replace(Path.DirectorySeparatorChar, '/');
+
+        return normalized.Contains("/bin/", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void EnsureDatabaseReady(string projectRoot)
@@ -646,6 +692,17 @@ internal static class PosStoreDayRegressionSmokeChecks
         if (result.IsFailure)
         {
             throw new InvalidOperationException($"{area} failed: {result.Error}");
+        }
+    }
+
+    private static void RequireDoesNotContain(
+        string text,
+        string value,
+        string message)
+    {
+        if (text.Contains(value, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(message);
         }
     }
 
