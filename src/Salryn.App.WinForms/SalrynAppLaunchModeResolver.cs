@@ -1,7 +1,4 @@
 ﻿using Salryn.App.WinForms.Composition;
-using Salryn.Core.Common;
-using Salryn.Infrastructure.Paths;
-
 namespace Salryn.App.WinForms;
 
 // Kirch file guide: app launch mode resolver.
@@ -27,17 +24,6 @@ internal static class SalrynAppLaunchModeResolver
     public static SalrynAppServices CreateServices(IReadOnlyList<string>? args)
     {
         SalrynAppLaunchPlan plan = Resolve(args);
-
-        if (plan.Mode == SalrynAppLaunchMode.Production)
-        {
-            Result writabilityResult = DbPaths.CreateProduction().ValidateProductionWritability();
-
-            if (writabilityResult.IsFailure)
-            {
-                throw new InvalidOperationException(
-                    writabilityResult.ErrorDetail.Code + ": " + writabilityResult.ErrorDetail.Message);
-            }
-        }
 
         return plan.Mode == SalrynAppLaunchMode.Development
             ? SalrynAppServices.CreateDevelopment(plan.ProjectRoot!)

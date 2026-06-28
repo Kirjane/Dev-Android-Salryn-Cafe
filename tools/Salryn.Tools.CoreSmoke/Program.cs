@@ -129,7 +129,7 @@ public static class Program
         J21Rmo242023OfficialOutputExportPackageChecks.Run();
         J21Rmo242023OfficialInMemoryOutputDeliveryAdapterChecks.Run();
         J21Rmo242023OfficialOutputDeliveryReceiptLedgerChecks.Run();
-        J21Rmo242023OfficialExternalOutputAdapterChecks.Run();
+        J21Rmo242023OfficialExternalOutputAdapterContractChecks.Run();
         J21Rmo242023OfficialOutputPipelineCompletionSealChecks.Run();
         J22OfficialOutputTextFileWorkflowExposureContractChecks.Run();
         J22OfficialOutputTextFileWorkflowAppCompositionChecks.Run();

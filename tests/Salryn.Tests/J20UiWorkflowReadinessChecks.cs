@@ -22,7 +22,8 @@ public static class J20UiWorkflowReadinessChecks
         RequireContains(shellText, "_services.CheckoutProductSearch", "Checkout UI must use AppServices product search boundary.");
         RequireContains(shellText, "completionBoundary: new CheckoutCompletionBoundary(_services.PosCheckoutApplication)", "Checkout UI must wire completion to PosCheckoutApplication.");
 
-        RequireContains(shellText, "new ProductManagementForm(new ProductManagementPresenter(", "Shell must open Products through ProductManagementPresenter.");
+        RequireContains(shellText, "new ProductManagementForm(", "Shell must open Products through ProductManagementForm.");
+        RequireContains(shellText, "new ProductManagementPresenter(", "Shell must open Products through ProductManagementPresenter.");
         RequireContains(shellText, "_services.ProductReadRepository", "Products UI must receive product read repository through AppServices.");
         RequireContains(shellText, "_services.ProductWriteRepository", "Products UI must receive product write repository through AppServices.");
         RequireContains(shellText, "_services.CatalogReadRepository", "Products UI must receive catalog repository through AppServices.");

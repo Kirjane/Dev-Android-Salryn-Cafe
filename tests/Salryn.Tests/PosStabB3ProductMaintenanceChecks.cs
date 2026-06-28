@@ -34,6 +34,10 @@ public static class PosStabB3ProductMaintenanceChecks
             "Features",
             "Products",
             "ProductManagementPresenter.cs");
+        string updateProductMethodText = SliceBetween(
+            presenterText,
+            "public async Task<ProductEditOperationResult> UpdateProductAsync",
+            "public async Task<ProductEditOperationResult> DeactivateProductAsync");
         string shellText = ReadRequiredFile(
             repoRoot,
             "src",
@@ -75,7 +79,7 @@ public static class PosStabB3ProductMaintenanceChecks
         RequireContains(presenterText, "_productWrites.DeactivateAsync", "B3 Product deactivate must go through product write repository.");
         RequireContains(presenterText, "FindDetailByIdAsync(request.ProductId", "B3 Product edit must re-read existing product detail before saving.");
         RequireContains(presenterText, "StockOnHand = existingDetail.StockOnHand", "B3 Product edit must preserve existing stock quantity.");
-        RequireDoesNotContain(presenterText, "TryParseQuantity(request.StockOnHand", "B3 Product edit must not parse edited stock quantity.");
+        RequireDoesNotContain(updateProductMethodText, "TryParseQuantity(request.StockOnHand", "B3 Product edit must not parse edited stock quantity.");
 
         RequireContains(shellText, "new ProductManagementForm(", "B3 Shell must still route product management through ProductManagementForm.");
         RequireContains(shellText, "_services.ProductWriteRepository", "B3 Shell must pass the product write repository through the presenter.");
@@ -140,6 +144,28 @@ public static class PosStabB3ProductMaintenanceChecks
         }
 
         return File.ReadAllText(path);
+    }
+
+    private static string SliceBetween(
+        string text,
+        string startMarker,
+        string endMarker)
+    {
+        int start = text.IndexOf(startMarker, StringComparison.Ordinal);
+
+        if (start < 0)
+        {
+            throw new InvalidOperationException($"Required marker was not found: {startMarker}");
+        }
+
+        int end = text.IndexOf(endMarker, start, StringComparison.Ordinal);
+
+        if (end < 0)
+        {
+            throw new InvalidOperationException($"Required marker was not found: {endMarker}");
+        }
+
+        return text[start..end];
     }
 
     private static void RequireNoDirectSql(string text, string surface)

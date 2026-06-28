@@ -336,7 +336,16 @@ public sealed class SalrynAppServices
     // Kirch: Production mode uses the real local app database paths.
     public static SalrynAppServices CreateProduction()
     {
-        return Create(DbPaths.CreateProduction());
+        DbPaths productionPaths = DbPaths.CreateProduction();
+        Result writabilityResult = productionPaths.ValidateProductionWritability();
+
+        if (writabilityResult.IsFailure)
+        {
+            throw new InvalidOperationException(
+                writabilityResult.ErrorDetail.Code + ": " + writabilityResult.ErrorDetail.Message);
+        }
+
+        return Create(productionPaths);
     }
 
     // Kirch: Development mode uses the project-root database paths for safer local testing.
