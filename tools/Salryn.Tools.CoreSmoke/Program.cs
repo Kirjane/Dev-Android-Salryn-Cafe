@@ -35,7 +35,7 @@ public static class Program
         Phase65GAppLocalHostHolderConsumptionPlanningChecks.Run();
         Phase65HAppLocalHostHolderStartupWiringSliceChecks.Run();
         Phase65IAppLocalHostHolderStartupWiringReadinessSealChecks.Run();
-        Phase65JAppLocalHostHolderConsumptionPlanningChecks.Run();
+        Phase65JAppLocalHostHolderConsumptionBoundaryPlanningChecks.Run();
         Phase65KAppLocalHostHolderConsumptionAdapterContractPlanningChecks.Run();
         Phase65LAppLocalHostHolderConsumptionAdapterContractShellChecks.Run();
         Phase65MAppLocalHostHolderConsumptionAdapterImplementationShellChecks.Run();
@@ -129,7 +129,7 @@ public static class Program
         J21Rmo242023OfficialOutputExportPackageChecks.Run();
         J21Rmo242023OfficialInMemoryOutputDeliveryAdapterChecks.Run();
         J21Rmo242023OfficialOutputDeliveryReceiptLedgerChecks.Run();
-        J21Rmo242023OfficialExternalOutputAdapterContractChecks.Run();
+        J21R242023OfficialExternalOutputAdapterChecks.Run();
         J21Rmo242023OfficialOutputPipelineCompletionSealChecks.Run();
         J22OfficialOutputTextFileWorkflowExposureContractChecks.Run();
         J22OfficialOutputTextFileWorkflowAppCompositionChecks.Run();
