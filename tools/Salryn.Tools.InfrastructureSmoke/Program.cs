@@ -494,28 +494,3 @@ static string FindProjectRoot(string startPath)
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

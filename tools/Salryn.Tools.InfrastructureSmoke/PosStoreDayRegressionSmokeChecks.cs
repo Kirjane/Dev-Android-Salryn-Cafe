@@ -229,7 +229,7 @@ internal static class PosStoreDayRegressionSmokeChecks
         RequireDoesNotContain(smokeText, "Main" + "Form", "POS store-day command must not reference the WinForms startup form.");
         RequireDoesNotContain(smokeText, "Checkout" + "Presenter", "POS store-day command must not use checkout presenter state.");
 
-        string uiRoot = Path.Combine(projectRoot, "src", "Salryn.App.WinForms");
+        string uiRoot = Path.Combine(projectRoot, "src", "Salryn.App.WinForms", "Features");
 
         if (!Directory.Exists(uiRoot))
         {
@@ -246,9 +246,9 @@ internal static class PosStoreDayRegressionSmokeChecks
             string text = File.ReadAllText(path);
             string relativePath = Path.GetRelativePath(projectRoot, path);
 
-            RequireDoesNotContain(text, "Microsoft.Data.Sqlite", $"WinForms UI source must not reference SQLite directly: {relativePath}");
-            RequireDoesNotContain(text, "SqliteConnection", $"WinForms UI source must not open SQLite connections directly: {relativePath}");
-            RequireDoesNotContain(text, "SqliteCommand", $"WinForms UI source must not create SQLite commands directly: {relativePath}");
+            RequireDoesNotContain(text, "Microsoft.Data.Sqlite", $"WinForms feature source must not reference SQLite directly: {relativePath}");
+            RequireDoesNotContain(text, "SqliteConnection", $"WinForms feature source must not open SQLite connections directly: {relativePath}");
+            RequireDoesNotContain(text, "SqliteCommand", $"WinForms feature source must not create SQLite commands directly: {relativePath}");
         }
     }
 
