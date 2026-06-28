@@ -35,7 +35,7 @@ public static class Program
         Phase65GAppLocalHostHolderConsumptionPlanningChecks.Run();
         Phase65HAppLocalHostHolderStartupWiringSliceChecks.Run();
         Phase65IAppLocalHostHolderStartupWiringReadinessSealChecks.Run();
-        Phase65JAppLocalHostHolderConsumptionBoundaryPlanningChecks.Run();
+        Phase65JAppLocalHostHolderConsumptionPlanningChecks.Run();
         Phase65KAppLocalHostHolderConsumptionAdapterContractPlanningChecks.Run();
         Phase65LAppLocalHostHolderConsumptionAdapterContractShellChecks.Run();
         Phase65MAppLocalHostHolderConsumptionAdapterImplementationShellChecks.Run();
@@ -72,6 +72,9 @@ public static class Program
         PosStabA5ReceiptPrintingChecks.Run();
         PosStabB2BackupUiChecks.Run();
         PosStabB2AuditViewerChecks.Run();
+        PosStabB3ProductionDbWritabilityChecks.Run();
+        PosStabB3ProductMaintenanceChecks.Run();
+        PosStabB3StoreSettingsEditChecks.Run();
         J21Rmo242023ComplianceMatrixGuardChecks.Run();
         J21Rmo242023MachineProfileSchemaChecks.Run();
         J21Rmo242023OfficialDocumentSequenceSchemaChecks.Run();
