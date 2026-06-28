@@ -1,26 +1,34 @@
 ﻿using Salryn.App.WinForms.Composition;
 using Salryn.App.WinForms.Features.Mvp;
+using Salryn.Core.Common;
 using Salryn.Core.ReadModels;
+using Salryn.Core.Repositories;
 
 namespace Salryn.App.WinForms.Features.Settings;
 
 // Kirch file guide: store profile/settings screen.
 // UI location: opened from Shell > Settings.
-// Frontend note: current fields are read-only; add editing only through a proper settings write service.
+// Frontend note: edits must stay behind AppServices and the settings write repository.
 
-// Kirch: Minimal read-only Store Settings skeleton for June 20 MVP.
-// Write/edit settings can be added after the demo path is stable.
+// Kirch: Store Settings supports a controlled edit/save flow for existing settings rows.
 public sealed class StoreSettingsForm : Form
 {
     private readonly SalrynAppServices _services;
 
     private readonly Label _statusLabel = new();
     private readonly Button _refreshButton = new();
+    private readonly Button _editButton = new();
+    private readonly Button _saveButton = new();
+    private readonly Button _cancelButton = new();
     // Kirch UI map: store settings field registry.
-    // UI side: each text box displays one store/receipt header field in read-only mode.
-    // Frontend safe zone: grouping, labels, helper text, and future edit affordances.
-    // Do not change: editing needs a proper settings write service before enabling inputs.
+    // UI side: each text box displays one store/receipt header field and enters edit mode only through this form.
+    // Frontend safe zone: grouping, labels, helper text, and future widget polish.
+    // Do not change: saves must stay through StoreSettingsWriteRepository via AppServices.
     private readonly Dictionary<string, TextBox> _fields = new(StringComparer.OrdinalIgnoreCase);
+
+    private StoreSettingsReadModel? _currentSettings;
+    private bool _isEditing;
+    private bool _isBusy;
 
     public StoreSettingsForm(SalrynAppServices services)
     {
@@ -35,6 +43,8 @@ public sealed class StoreSettingsForm : Form
 
         BuildLayout();
         WireEvents();
+        SetEditMode(false);
+        UpdateButtons();
     }
 
     protected override async void OnShown(EventArgs e)
@@ -92,8 +102,8 @@ public sealed class StoreSettingsForm : Form
         root.Controls.Add(card, 0, 1);
 
         Label note = J20MvpUi.BodyText(
-            "Review the store profile used for receipt headers and local system display." +
-            "");
+            "Edit store profile fields used for receipt headers and local system display. " +
+            "Receipt width must be 58 or 80 millimeters; Tax Mode and Shift Mode accept Enabled/Disabled.");
         note.Dock = DockStyle.Fill;
         root.Controls.Add(note, 0, 2);
 
@@ -104,7 +114,13 @@ public sealed class StoreSettingsForm : Form
             BackColor = J20MvpUi.Colors.AppBackground
         };
 
-        J20MvpUi.ConfigurePrimaryButton(_refreshButton, "Refresh");
+        J20MvpUi.ConfigurePrimaryButton(_saveButton, "Save");
+        J20MvpUi.ConfigureSecondaryButton(_cancelButton, "Cancel");
+        J20MvpUi.ConfigureSecondaryButton(_editButton, "Edit");
+        J20MvpUi.ConfigureSecondaryButton(_refreshButton, "Refresh");
+        footer.Controls.Add(_saveButton);
+        footer.Controls.Add(_cancelButton);
+        footer.Controls.Add(_editButton);
         footer.Controls.Add(_refreshButton);
 
         _statusLabel.Dock = DockStyle.Fill;
@@ -143,45 +159,167 @@ public sealed class StoreSettingsForm : Form
     private void WireEvents()
     {
         _refreshButton.Click += async (_, _) => await LoadAsync().ConfigureAwait(true);
+        _editButton.Click += (_, _) =>
+        {
+            if (_currentSettings is null)
+            {
+                SetWarning("Store settings must be loaded before editing.");
+                return;
+            }
+
+            SetEditMode(true);
+            SetStatus("Editing store settings.");
+        };
+        _cancelButton.Click += (_, _) =>
+        {
+            if (_currentSettings is not null)
+            {
+                PopulateFields(_currentSettings);
+            }
+
+            SetEditMode(false);
+            SetStatus("Store settings edit canceled.");
+        };
+        _saveButton.Click += async (_, _) => await SaveAsync().ConfigureAwait(true);
     }
 
     private async Task LoadAsync()
     {
-        _statusLabel.Text = "Loading store settings...";
-        _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
+        SetBusy(true);
+        SetStatus("Loading store settings...");
 
-        var result = await _services.StoreSettingsReadRepository.GetCurrentAsync().ConfigureAwait(true);
-
-        if (result.IsFailure)
+        try
         {
-            ClearFields("Unavailable");
-            _statusLabel.Text = $"{result.ErrorDetail.Code}: {result.ErrorDetail.Message}";
-            _statusLabel.ForeColor = J20MvpUi.Colors.Danger;
+            var result = await _services.StoreSettingsReadRepository.GetCurrentAsync().ConfigureAwait(true);
+
+            if (result.IsFailure)
+            {
+                _currentSettings = null;
+                ClearFields("Unavailable");
+                SetError(result.ErrorDetail.Code + ": " + result.ErrorDetail.Message);
+                SetEditMode(false);
+                return;
+            }
+
+            if (result.Value is null)
+            {
+                _currentSettings = null;
+                ClearFields("Not configured");
+                SetWarning("Store settings are not configured yet. First-run setup is required.");
+                SetEditMode(false);
+                return;
+            }
+
+            _currentSettings = result.Value;
+            PopulateFields(_currentSettings);
+            SetEditMode(false);
+            SetStatus("Store settings loaded.");
+        }
+        finally
+        {
+            SetBusy(false);
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (!TryBuildUpdateRequest(out StoreSettingsUpdateRequest? request))
+        {
             return;
         }
 
-        if (result.Value is null)
+        SetBusy(true);
+        SetStatus("Saving store settings...");
+
+        try
         {
-            ClearFields("Not configured");
-            _statusLabel.Text = "Store settings are not configured yet. First-run setup is required.";
-            _statusLabel.ForeColor = J20MvpUi.Colors.Warning;
-            return;
+            Result result = await _services.StoreSettingsWriteRepository.UpdateAsync(request!).ConfigureAwait(true);
+
+            if (result.IsFailure)
+            {
+                SetError(result.ErrorDetail.Code + ": " + result.ErrorDetail.Message);
+                return;
+            }
+
+            SetEditMode(false);
+            await LoadAsync().ConfigureAwait(true);
+            SetSuccess("Store settings saved.");
+        }
+        finally
+        {
+            SetBusy(false);
+        }
+    }
+
+    private bool TryBuildUpdateRequest(out StoreSettingsUpdateRequest? request)
+    {
+        request = null;
+
+        if (_currentSettings is null)
+        {
+            SetWarning("Store settings must be loaded before saving.");
+            return false;
         }
 
-        StoreSettingsReadModel settings = result.Value;
+        string storeName = Field("Store Name");
+        string currency = Field("Currency");
 
+        if (string.IsNullOrWhiteSpace(storeName))
+        {
+            SetWarning("Store name is required.");
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(currency))
+        {
+            SetWarning("Currency is required.");
+            return false;
+        }
+
+        if (!TryParseReceiptWidth(Field("Receipt Width"), out int receiptWidthMm))
+        {
+            SetWarning("Receipt width must be 58 or 80 millimeters.");
+            return false;
+        }
+
+        if (!TryParseMode(Field("Tax Mode"), out bool taxModeEnabled))
+        {
+            SetWarning("Tax Mode must be Enabled or Disabled.");
+            return false;
+        }
+
+        if (!TryParseMode(Field("Shift Mode"), out bool shiftModeEnabled))
+        {
+            SetWarning("Shift Mode must be Enabled or Disabled.");
+            return false;
+        }
+
+        request = new StoreSettingsUpdateRequest(
+            _currentSettings.Id,
+            storeName,
+            NullableField("Business Name"),
+            NullableField("Address"),
+            NullableField("Contact Number"),
+            NullableField("TIN"),
+            currency,
+            receiptWidthMm,
+            taxModeEnabled,
+            shiftModeEnabled);
+
+        return true;
+    }
+
+    private void PopulateFields(StoreSettingsReadModel settings)
+    {
         Set("Store Name", settings.StoreName);
         Set("Business Name", settings.BusinessName);
         Set("Address", settings.Address);
         Set("Contact Number", settings.ContactNumber);
         Set("TIN", settings.Tin);
         Set("Currency", settings.CurrencyLabel);
-        Set("Receipt Width", settings.ReceiptWidthMm + " mm");
+        Set("Receipt Width", settings.ReceiptWidthMm.ToString(System.Globalization.CultureInfo.InvariantCulture));
         Set("Tax Mode", settings.TaxModeEnabled ? "Enabled" : "Disabled");
         Set("Shift Mode", settings.ShiftModeEnabled ? "Enabled" : "Disabled");
-
-        _statusLabel.Text = "Store settings loaded.";
-        _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
     }
 
     private void ClearFields(string value)
@@ -197,8 +335,112 @@ public sealed class StoreSettingsForm : Form
         if (_fields.TryGetValue(key, out TextBox? textBox))
         {
             textBox.Text = string.IsNullOrWhiteSpace(value)
-                ? "--"
+                ? string.Empty
                 : value.Trim();
         }
+    }
+
+    private string Field(string key)
+    {
+        return _fields.TryGetValue(key, out TextBox? textBox)
+            ? textBox.Text.Trim()
+            : string.Empty;
+    }
+
+    private string? NullableField(string key)
+    {
+        string value = Field(key);
+
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : value;
+    }
+
+    private void SetEditMode(bool isEditing)
+    {
+        _isEditing = isEditing;
+
+        foreach (TextBox textBox in _fields.Values)
+        {
+            textBox.ReadOnly = !isEditing;
+            textBox.BackColor = isEditing ? Color.White : Color.FromArgb(249, 250, 251);
+        }
+
+        UpdateButtons();
+    }
+
+    private void SetBusy(bool isBusy)
+    {
+        _isBusy = isBusy;
+        UpdateButtons();
+    }
+
+    private void UpdateButtons()
+    {
+        _refreshButton.Enabled = !_isBusy && !_isEditing;
+        _editButton.Enabled = !_isBusy && !_isEditing && _currentSettings is not null;
+        _saveButton.Enabled = !_isBusy && _isEditing;
+        _cancelButton.Enabled = !_isBusy && _isEditing;
+    }
+
+    private void SetStatus(string message)
+    {
+        _statusLabel.Text = message;
+        _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
+    }
+
+    private void SetSuccess(string message)
+    {
+        _statusLabel.Text = message;
+        _statusLabel.ForeColor = J20MvpUi.Colors.Success;
+    }
+
+    private void SetWarning(string message)
+    {
+        _statusLabel.Text = message;
+        _statusLabel.ForeColor = J20MvpUi.Colors.Warning;
+    }
+
+    private void SetError(string message)
+    {
+        _statusLabel.Text = message;
+        _statusLabel.ForeColor = J20MvpUi.Colors.Danger;
+    }
+
+    private static bool TryParseReceiptWidth(string value, out int receiptWidthMm)
+    {
+        string normalized = value.Replace("mm", string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
+
+        if (int.TryParse(normalized, out receiptWidthMm) && receiptWidthMm is 58 or 80)
+        {
+            return true;
+        }
+
+        receiptWidthMm = 0;
+        return false;
+    }
+
+    private static bool TryParseMode(string value, out bool enabled)
+    {
+        string normalized = value.Trim();
+
+        if (normalized.Equals("Enabled", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("True", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("Yes", StringComparison.OrdinalIgnoreCase))
+        {
+            enabled = true;
+            return true;
+        }
+
+        if (normalized.Equals("Disabled", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("False", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("No", StringComparison.OrdinalIgnoreCase))
+        {
+            enabled = false;
+            return true;
+        }
+
+        enabled = false;
+        return false;
     }
 }
