@@ -84,6 +84,14 @@ public static class PosStabB4UsersAdminChecks
             shellText,
             "if (module.Key == ShellModuleKeys.Users)",
             "if (module.Key == ShellModuleKeys.Backup)");
+        string getRolesText = SliceBetween(
+            sqliteReadRepositoryText,
+            "public Task<Result<IReadOnlyList<UserRoleReadModel>>> GetRolesAsync",
+            "private Task<Result<UserReadModel?>> FindSingleAsync");
+        string roleExistsText = SliceBetween(
+            sqliteWriteRepositoryText,
+            "private static bool RoleExists",
+            "private static bool UsernameExists");
 
         RequireContains(usersRouteText, "OpenUsers();", "B4 Shell Users route must open the real Users form.");
         RequireContains(shellText, "using Salryn.App.WinForms.Features.Users;", "B4 Shell must reference the Users feature namespace.");
@@ -127,10 +135,15 @@ public static class PosStabB4UsersAdminChecks
         RequireContains(writeContractsText, "IUserWriteRepository", "B4 Core must define users write repository boundary.");
 
         RequireContains(sqliteReadRepositoryText, "GetRolesAsync", "B4 SQLite user read repository must implement role loading.");
+        RequireContains(getRolesText, "SELECT id, name, 1 AS is_active", "B4 role loading must synthesize active role state from the existing roles schema.");
+        RequireDoesNotContain(getRolesText, "is_active = 1", "B4 role loading must not filter on missing roles.is_active column.");
+        RequireDoesNotContain(getRolesText, "roles.is_active", "B4 role loading must not depend on missing roles.is_active column.");
         RequireContains(sqliteWriteRepositoryText, "SqliteUserWriteRepository", "B4 Infrastructure must implement users write repository.");
         RequireContains(sqliteWriteRepositoryText, "IUserWriteRepository", "B4 SQLite users repository must implement the Core boundary.");
-        RequireContains(sqliteWriteRepositoryText, "RoleExists", "B4 Users writer must validate existing active roles.");
+        RequireContains(sqliteWriteRepositoryText, "RoleExists", "B4 Users writer must validate existing roles.");
         RequireContains(sqliteWriteRepositoryText, "UsernameExists", "B4 Users writer must block duplicate usernames.");
+        RequireContains(roleExistsText, "WHERE id = $roleId;", "B4 role validation must use the existing roles.id column.");
+        RequireDoesNotContain(roleExistsText, "is_active", "B4 role validation must not depend on missing roles.is_active column.");
         RequireContains(sqliteWriteRepositoryText, "request.UserId == request.ChangedByUserId", "B4 Users writer must keep backend self-deactivation guard.");
         RequireContains(sqliteWriteRepositoryText, "Users.SelfDeactivateBlocked", "B4 Users writer must surface self-deactivation guard.");
         RequireContains(sqliteWriteRepositoryText, "Users.DeactivateReasonRequired", "B4 Users writer must require deactivation reason.");
