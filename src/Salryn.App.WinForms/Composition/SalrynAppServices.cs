@@ -1,5 +1,6 @@
 using Salryn.App.WinForms.Features.Checkout;
 using Salryn.App.WinForms.Features.OfficialOutput;
+using Salryn.Core.Common;
 using Salryn.Core.Deployment;
 using Salryn.Core.Repositories;
 using Salryn.Core.Services;
@@ -10,6 +11,7 @@ using Salryn.Infrastructure.Data.Services;
 using Salryn.Infrastructure.OfficialOutput;
 using Salryn.Infrastructure.Paths;
 using Salryn.Host.Local.Composition;
+using System.Globalization;
 
 namespace Salryn.App.WinForms.Composition;
 
@@ -269,6 +271,54 @@ public sealed class SalrynAppServices
 
     // Kirch: Read-only passive gateway exposure for future ProductLookup wiring; not connected to UI behavior yet.
     public IAppLocalHostProductLookupGateway LocalHostProductLookupGateway { get; }
+
+    public Result<string> CreateLocalDatabaseBackup()
+    {
+        try
+        {
+            string sourcePath = DbPaths.DatabasePath;
+            string backupFolder = DbPaths.BackupPath;
+
+            if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
+            {
+                return Result<string>.Fail(Error.Failure(
+                    "Backup.DatabaseNotFound",
+                    "Live database file was not found."));
+            }
+
+            Directory.CreateDirectory(backupFolder);
+
+            string fileName = "salryn-backup-" +
+                DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) +
+                ".db";
+            string destinationPath = Path.Combine(backupFolder, fileName);
+
+            if (File.Exists(destinationPath))
+            {
+                return Result<string>.Fail(Error.Conflict(
+                    "Backup.DestinationExists",
+                    "Backup destination already exists. Wait a moment and try again."));
+            }
+
+            SqliteConnectionFactory.ClearAllPools();
+            File.Copy(sourcePath, destinationPath, overwrite: false);
+
+            FileInfo backupFile = new(destinationPath);
+            return Result<string>.Success(backupFile.FullName);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Result<string>.Fail(Error.Failure(
+                "Backup.AccessDenied",
+                "Backup access failed: " + ex.Message));
+        }
+        catch (IOException ex)
+        {
+            return Result<string>.Fail(Error.Failure(
+                "Backup.CopyFailed",
+                "Backup failed: " + ex.Message));
+        }
+    }
 
     // Kirch: Production mode uses the real local app database paths.
     public static SalrynAppServices CreateProduction()

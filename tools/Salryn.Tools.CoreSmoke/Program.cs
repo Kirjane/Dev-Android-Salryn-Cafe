@@ -70,6 +70,7 @@ public static class Program
         PosStabA3SalesVoidChecks.Run();
         PosStabA4InventoryAdjustmentChecks.Run();
         PosStabA5ReceiptPrintingChecks.Run();
+        PosStabB2BackupUiChecks.Run();
         J21Rmo242023ComplianceMatrixGuardChecks.Run();
         J21Rmo242023MachineProfileSchemaChecks.Run();
         J21Rmo242023OfficialDocumentSequenceSchemaChecks.Run();

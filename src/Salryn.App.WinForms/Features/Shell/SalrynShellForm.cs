@@ -1,4 +1,5 @@
 ﻿using Salryn.App.WinForms.Composition;
+using Salryn.App.WinForms.Features.Backup;
 using Salryn.App.WinForms.Features.Checkout;
 using Salryn.App.WinForms.Features.Dashboard;
 using Salryn.App.WinForms.Features.Inventory;
@@ -274,6 +275,12 @@ public sealed class SalrynShellForm : Form
             return;
         }
 
+        if (module.Key == ShellModuleKeys.Backup)
+        {
+            OpenBackup();
+            return;
+        }
+
         ShowPlaceholder(
             module.Title,
             module.Description,
@@ -325,6 +332,14 @@ public sealed class SalrynShellForm : Form
         settingsForm.StartPosition = FormStartPosition.CenterParent;
         settingsForm.ShowDialog(this);
     }
+
+    private void OpenBackup()
+    {
+        using BackupForm backupForm = new(_services);
+        backupForm.StartPosition = FormStartPosition.CenterParent;
+        backupForm.ShowDialog(this);
+    }
+
     // Kirch: This opens product management with read/write/catalog services from the composition root.
     private void OpenProducts()
     {
