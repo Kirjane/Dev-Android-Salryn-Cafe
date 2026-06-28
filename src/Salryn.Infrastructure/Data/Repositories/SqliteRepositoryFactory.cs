@@ -55,6 +55,12 @@ public sealed class SqliteRepositoryFactory
     {
         return new SqliteUserReadRepository(_connectionFactory);
     }
+
+    public IUserWriteRepository CreateUserWriteRepository()
+    {
+        return new SqliteUserWriteRepository(_connectionFactory);
+    }
+
     public IUserPermissionReadRepository CreateUserPermissionReadRepository()
     {
         return new SqliteUserPermissionReadRepository(_connectionFactory);
