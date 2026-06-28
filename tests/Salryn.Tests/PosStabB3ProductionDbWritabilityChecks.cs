@@ -11,13 +11,14 @@ public static class PosStabB3ProductionDbWritabilityChecks
         string dbPathsText = ReadRequiredFile(repoRoot, "src", "Salryn.Infrastructure", "Paths", "DbPaths.cs");
         string coreSmokeText = ReadRequiredFile(repoRoot, "tools", "Salryn.Tools.CoreSmoke", "Program.cs");
 
-        RequireContains(programText, "SalrynAppLaunchModeResolver.Resolve(args);", "B3 startup must resolve launch mode before composing services.");
-        RequireContains(programText, "launchPlan.Mode == SalrynAppLaunchMode.Production", "B3 production database writability preflight must be production-only.");
-        RequireContains(programText, "DbPaths.CreateProduction().ValidateProductionWritability();", "B3 startup must run explicit production DB writability validation before migrations.");
-        RequireContains(programText, "ShowStartupFailure(BuildStartupFailureMessage(writabilityResult.ErrorDetail));", "B3 startup must show a clear operator-facing preflight error.");
-        RequireContains(programText, "SalrynAppServices.CreateDevelopment(launchPlan.ProjectRoot!)", "B3 startup must preserve the separate development database path.");
-        RequireContains(programText, "SalrynAppServices.CreateProduction()", "B3 startup must preserve production service composition after preflight.");
+        RequireContains(programText, "SalrynAppLaunchModeResolver.CreateServices(args);", "B3 startup must preserve the app launch resolver composition entry point.");
+        RequireContains(programText, "ShowStartupFailure(BuildStartupFailureMessage(ex.Message));", "B3 startup must show a clear operator-facing preflight error.");
 
+        RequireContains(launchResolverText, "SalrynAppLaunchPlan plan = Resolve(args);", "B3 launch resolver must still resolve launch mode before composing services.");
+        RequireContains(launchResolverText, "plan.Mode == SalrynAppLaunchMode.Production", "B3 production database writability preflight must be production-only.");
+        RequireContains(launchResolverText, "DbPaths.CreateProduction().ValidateProductionWritability();", "B3 startup must run explicit production DB writability validation before migrations.");
+        RequireContains(launchResolverText, "SalrynAppServices.CreateDevelopment(plan.ProjectRoot!)", "B3 startup must preserve the separate development database path.");
+        RequireContains(launchResolverText, "SalrynAppServices.CreateProduction()", "B3 startup must preserve production service composition after preflight.");
         RequireContains(launchResolverText, "--dev", "B3 launch mode guard expects development mode to remain explicit.");
 
         RequireContains(dbPathsText, "ValidateProductionWritability", "B3 DbPaths must expose production writability validation.");
