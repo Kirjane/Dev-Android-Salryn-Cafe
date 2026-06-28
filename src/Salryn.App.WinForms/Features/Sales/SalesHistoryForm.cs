@@ -13,26 +13,33 @@ namespace Salryn.App.WinForms.Features.Sales;
 // UI location: opened from Shell > Sales History.
 // Frontend note: restyle search/grid/detail buttons here; receipt data must come through SaleReadRepository via AppServices.
 
-// Kirch: Minimal Sales History screen for June 20 MVP.
-// Keep the grid simple; deeper filtering, voiding, and reprint policies belong in later phases.
+// Kirch: Sales History supports filter, paging, receipt preview, and void workflow.
+// Kirch UI map: date/status/receipt filters drive the grid; View Receipt opens ReceiptPreviewForm; Void Sale keeps the A3 workflow.
+
 public sealed class SalesHistoryForm : Form
 {
+    private static readonly int[] AllowedPageSizes = { 25, 50, 100, 200 };
+
     private readonly SalrynAppServices _services;
     private readonly CurrentAppSession? _session;
 
-    // Kirch UI map: sales history controls.
-    // UI side: receipt search input filters the grid; View Receipt opens the receipt preview modal.
-    // Frontend safe zone: search placement, grid polish, empty/loading states, and action button styling.
-    // Do not change: sale detail lookup must stay through SaleReadRepository via AppServices.
+    private readonly DateTimePicker _fromDatePicker = new();
+    private readonly DateTimePicker _toDatePicker = new();
+    private readonly ComboBox _statusFilterComboBox = new();
     private readonly TextBox _receiptSearchTextBox = new();
+    private readonly ComboBox _pageSizeComboBox = new();
+    private readonly Button _applyButton = new();
     private readonly Button _refreshButton = new();
+    private readonly Button _previousPageButton = new();
+    private readonly Button _nextPageButton = new();
     private readonly Button _viewReceiptButton = new();
     private readonly Button _voidSaleButton = new();
     private readonly DataGridView _salesGrid = J20MvpUi.Grid();
     private readonly Label _statusLabel = new();
-
-    // Kirch B7: hover guidance for the sales history actions.
     private readonly ToolTip _toolTip = J20MvpUi.CreateToolTip();
+
+    private int _pageNumber = 1;
+    private PagedResult<SaleHistoryItemReadModel>? _salesPage;
 
     public SalesHistoryForm(SalrynAppServices services)
         : this(services, session: null)
@@ -48,8 +55,8 @@ public sealed class SalesHistoryForm : Form
 
         Text = "SALRYN Sales History";
         StartPosition = FormStartPosition.CenterParent;
-        MinimumSize = new Size(1040, 660);
-        Size = new Size(1160, 720);
+        MinimumSize = new Size(1120, 720);
+        Size = new Size(1240, 780);
         Font = new Font("Segoe UI", 9F);
         BackColor = J20MvpUi.Colors.AppBackground;
 
@@ -60,12 +67,13 @@ public sealed class SalesHistoryForm : Form
     protected override async void OnShown(EventArgs e)
     {
         base.OnShown(e);
-        await LoadSalesAsync().ConfigureAwait(true);
+        await LoadSalesPageAsync(resetPage: true).ConfigureAwait(true);
     }
 
     private void BuildLayout()
     {
-        TableLayoutPanel root = J20MvpUi.RootLayout(rowCount: 4);
+        TableLayoutPanel root = J20MvpUi.RootLayout(rowCount: 5);
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 72F));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 72F));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 52F));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
@@ -75,56 +83,163 @@ public sealed class SalesHistoryForm : Form
 
         root.Controls.Add(J20MvpUi.Header(
             "Sales History",
-            "Search receipts and review completed sales."), 0, 0);
+            "Filter, page, and review completed or voided sales. Receipt preview and voiding stay on the selected row."), 0, 0);
 
-        TableLayoutPanel toolbar = new()
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 5,
-            RowCount = 1,
-            BackColor = J20MvpUi.Colors.AppBackground
-        };
-
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150F));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150F));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150F));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 10F));
-
-        _receiptSearchTextBox.Dock = DockStyle.Fill;
-        _receiptSearchTextBox.Font = new Font("Segoe UI", 10.5F);
-        _receiptSearchTextBox.PlaceholderText = "Search receipt number...";
-
-        J20MvpUi.ConfigurePrimaryButton(_refreshButton, "Search");
-        J20MvpUi.ConfigureSecondaryButton(_viewReceiptButton, "View Receipt");
-        J20MvpUi.ConfigureSecondaryButton(_voidSaleButton, "Void Sale");
-
-        _toolTip.SetToolTip(_receiptSearchTextBox, "Type a receipt number, then press Enter or Search. Leave blank to list recent sales.");
-        _toolTip.SetToolTip(_refreshButton, "Search receipts (or list recent sales when the box is empty).");
-        _toolTip.SetToolTip(_viewReceiptButton, "Open the selected sale's receipt preview.");
-        _toolTip.SetToolTip(_voidSaleButton, "Void the selected completed sale (requires permission and a reason).");
-
-        toolbar.Controls.Add(_receiptSearchTextBox, 0, 0);
-        toolbar.Controls.Add(_refreshButton, 1, 0);
-        toolbar.Controls.Add(_viewReceiptButton, 2, 0);
-        toolbar.Controls.Add(_voidSaleButton, 3, 0);
-
-        root.Controls.Add(toolbar, 0, 1);
+        root.Controls.Add(BuildFilterPanel(), 0, 1);
+        root.Controls.Add(BuildActionPagingPanel(), 0, 2);
 
         Panel gridCard = J20MvpUi.Card();
         _salesGrid.Dock = DockStyle.Fill;
         gridCard.Controls.Add(_salesGrid);
-        root.Controls.Add(gridCard, 0, 2);
+        root.Controls.Add(gridCard, 0, 3);
 
         _statusLabel.Dock = DockStyle.Fill;
         _statusLabel.TextAlign = ContentAlignment.MiddleLeft;
         _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
-        root.Controls.Add(_statusLabel, 0, 3);
+        root.Controls.Add(_statusLabel, 0, 4);
+    }
+
+    private Control BuildFilterPanel()
+    {
+        TableLayoutPanel panel = new()
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 9,
+            RowCount = 1,
+            BackColor = J20MvpUi.Colors.AppBackground
+        };
+
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 52F));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130F));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 40F));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130F));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 52F));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110F));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 70F));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100F));
+
+        ConfigureDatePicker(_fromDatePicker);
+        ConfigureDatePicker(_toDatePicker);
+
+        _statusFilterComboBox.Dock = DockStyle.Fill;
+        _statusFilterComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        _statusFilterComboBox.Items.AddRange(new object[] { "All", "Completed", "Voided" });
+        _statusFilterComboBox.SelectedIndex = 0;
+
+        _receiptSearchTextBox.Dock = DockStyle.Fill;
+        _receiptSearchTextBox.Font = new Font("Segoe UI", 10F);
+        _receiptSearchTextBox.PlaceholderText = "Search receipt number...";
+
+        _pageSizeComboBox.Dock = DockStyle.Fill;
+        _pageSizeComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        _pageSizeComboBox.Items.AddRange(AllowedPageSizes.Select(static size => (object)size).ToArray());
+        _pageSizeComboBox.SelectedItem = 50;
+
+        J20MvpUi.ConfigurePrimaryButton(_applyButton, "Apply");
+
+        _toolTip.SetToolTip(_fromDatePicker, "Optional start date. Tick the box to enable this filter.");
+        _toolTip.SetToolTip(_toDatePicker, "Optional end date. Tick the box to enable this filter.");
+        _toolTip.SetToolTip(_statusFilterComboBox, "Filter by sale status.");
+        _toolTip.SetToolTip(_receiptSearchTextBox, "Type a receipt number, then click Apply. Leave blank to list sales.");
+        _toolTip.SetToolTip(_pageSizeComboBox, "How many rows to show per page.");
+        _toolTip.SetToolTip(_applyButton, "Apply filters and reload from page 1.");
+
+        panel.Controls.Add(CreateFieldLabel("From"), 0, 0);
+        panel.Controls.Add(_fromDatePicker, 1, 0);
+        panel.Controls.Add(CreateFieldLabel("To"), 2, 0);
+        panel.Controls.Add(_toDatePicker, 3, 0);
+        panel.Controls.Add(CreateFieldLabel("Status"), 4, 0);
+        panel.Controls.Add(_statusFilterComboBox, 5, 0);
+        panel.Controls.Add(_receiptSearchTextBox, 6, 0);
+        panel.Controls.Add(_pageSizeComboBox, 7, 0);
+        panel.Controls.Add(_applyButton, 8, 0);
+
+        return panel;
+    }
+
+    private Control BuildActionPagingPanel()
+    {
+        TableLayoutPanel panel = new()
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            BackColor = J20MvpUi.Colors.AppBackground,
+            Padding = new Padding(0, 8, 0, 0)
+        };
+
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+
+        FlowLayoutPanel actions = new()
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            BackColor = J20MvpUi.Colors.AppBackground
+        };
+
+        J20MvpUi.ConfigureSecondaryButton(_viewReceiptButton, "View Receipt");
+        J20MvpUi.ConfigureSecondaryButton(_voidSaleButton, "Void Sale");
+
+        _toolTip.SetToolTip(_viewReceiptButton, "Open the selected sale's receipt preview.");
+        _toolTip.SetToolTip(_voidSaleButton, "Void the selected completed sale (requires permission and a reason).");
+
+        actions.Controls.Add(_viewReceiptButton);
+        actions.Controls.Add(_voidSaleButton);
+
+        FlowLayoutPanel paging = new()
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            BackColor = J20MvpUi.Colors.AppBackground
+        };
+
+        J20MvpUi.ConfigureSecondaryButton(_nextPageButton, "Next Page");
+        J20MvpUi.ConfigureSecondaryButton(_previousPageButton, "Previous Page");
+        J20MvpUi.ConfigureSecondaryButton(_refreshButton, "Refresh");
+
+        _toolTip.SetToolTip(_nextPageButton, "Go to the next page of sales.");
+        _toolTip.SetToolTip(_previousPageButton, "Go to the previous page of sales.");
+        _toolTip.SetToolTip(_refreshButton, "Reload the current page with the current filters.");
+
+        paging.Controls.Add(_nextPageButton);
+        paging.Controls.Add(_previousPageButton);
+        paging.Controls.Add(_refreshButton);
+
+        panel.Controls.Add(actions, 0, 0);
+        panel.Controls.Add(paging, 1, 0);
+
+        return panel;
+    }
+
+    private static Label CreateFieldLabel(string text)
+    {
+        return new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = text,
+            TextAlign = ContentAlignment.MiddleRight,
+            ForeColor = J20MvpUi.Colors.TextStrong
+        };
+    }
+
+    private static void ConfigureDatePicker(DateTimePicker picker)
+    {
+        picker.Dock = DockStyle.Fill;
+        picker.Format = DateTimePickerFormat.Short;
+        picker.ShowCheckBox = true;
+        picker.Checked = false;
+        picker.Value = DateTime.Today;
     }
 
     private void WireEvents()
     {
-        _refreshButton.Click += async (_, _) => await LoadSalesAsync().ConfigureAwait(true);
+        _applyButton.Click += async (_, _) => await LoadSalesPageAsync(resetPage: true).ConfigureAwait(true);
+        _refreshButton.Click += async (_, _) => await LoadSalesPageAsync(resetPage: false).ConfigureAwait(true);
+        _previousPageButton.Click += async (_, _) => await ChangePageAsync(-1).ConfigureAwait(true);
+        _nextPageButton.Click += async (_, _) => await ChangePageAsync(1).ConfigureAwait(true);
+        _pageSizeComboBox.SelectedIndexChanged += async (_, _) => await LoadSalesPageAsync(resetPage: true).ConfigureAwait(true);
 
         _receiptSearchTextBox.KeyDown += async (_, e) =>
         {
@@ -134,7 +249,7 @@ public sealed class SalesHistoryForm : Form
             }
 
             e.SuppressKeyPress = true;
-            await LoadSalesAsync().ConfigureAwait(true);
+            await LoadSalesPageAsync(resetPage: true).ConfigureAwait(true);
         };
 
         _viewReceiptButton.Click += async (_, _) => await OpenSelectedReceiptAsync().ConfigureAwait(true);
@@ -143,55 +258,163 @@ public sealed class SalesHistoryForm : Form
         _salesGrid.SelectionChanged += (_, _) => UpdateActionButtons();
     }
 
-    private async Task LoadSalesAsync()
+    private async Task ChangePageAsync(int delta)
     {
-        _statusLabel.Text = "Loading sales...";
-        _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
+        _pageNumber = Math.Max(1, _pageNumber + delta);
+        await LoadSalesPageAsync(resetPage: false).ConfigureAwait(true);
+    }
 
+    private async Task LoadSalesPageAsync(bool resetPage)
+    {
+        if (resetPage)
+        {
+            _pageNumber = 1;
+        }
+
+        SetBusy("Loading sales...");
+
+        try
+        {
+            SaleHistoryFilter filter = BuildFilter(_pageNumber);
+            var result = await _services.SaleReadRepository.SearchSalesAsync(filter).ConfigureAwait(true);
+
+            if (result.IsFailure)
+            {
+                _salesGrid.DataSource = Array.Empty<SaleHistoryRow>();
+                _salesPage = null;
+                SetError($"{result.ErrorDetail.Code}: {result.ErrorDetail.Message}");
+                return;
+            }
+
+            _salesPage = result.Value;
+            _pageNumber = result.Value.PageNumber;
+
+            _salesGrid.DataSource = result.Value.Items
+                .Select(item => new SaleHistoryRow(
+                    SaleId: item.Id,
+                    ReceiptNo: item.ReceiptNo,
+                    Date: item.SaleDate.ToLocalTime().ToString("yyyy-MM-dd HH:mm"),
+                    Cashier: item.CashierDisplayName,
+                    Total: item.Total.ToString(),
+                    Paid: item.AmountPaid.ToString(),
+                    Change: item.Change.ToString(),
+                    Status: item.Status.ToString(),
+                    VoidReason: item.VoidReason ?? string.Empty))
+                .ToList();
+
+            if (_salesGrid.Columns["SaleId"] is not null)
+            {
+                _salesGrid.Columns["SaleId"]!.Visible = false;
+            }
+
+            UpdateActionButtons();
+            SetStatusForPage();
+        }
+        finally
+        {
+            SetReady();
+        }
+    }
+
+    private SaleHistoryFilter BuildFilter(int pageNumber)
+    {
         string? receiptNo = string.IsNullOrWhiteSpace(_receiptSearchTextBox.Text)
             ? null
             : _receiptSearchTextBox.Text.Trim();
 
-        var result = await _services.SaleReadRepository.SearchSalesAsync(
-            new SaleHistoryFilter(
-                From: null,
-                To: null,
-                CashierUserId: null,
-                Status: null,
-                ReceiptNo: receiptNo,
-                Page: PageRequest.FirstPage(100))).ConfigureAwait(true);
+        return new SaleHistoryFilter(
+            From: GetFromDate(),
+            To: GetToDate(),
+            CashierUserId: null,
+            Status: GetSelectedStatus(),
+            ReceiptNo: receiptNo,
+            Page: new PageRequest(pageNumber, GetSelectedPageSize()));
+    }
 
-        if (result.IsFailure)
+    private int GetSelectedPageSize()
+    {
+        if (_pageSizeComboBox.SelectedItem is int pageSize &&
+            AllowedPageSizes.Contains(pageSize))
         {
-            _salesGrid.DataSource = Array.Empty<SaleHistoryRow>();
-            _statusLabel.Text = $"{result.ErrorDetail.Code}: {result.ErrorDetail.Message}";
-            _statusLabel.ForeColor = J20MvpUi.Colors.Danger;
+            return pageSize;
+        }
+
+        return 50;
+    }
+
+    private SaleStatus? GetSelectedStatus()
+    {
+        return _statusFilterComboBox.SelectedItem switch
+        {
+            "Completed" => SaleStatus.Completed,
+            "Voided" => SaleStatus.Voided,
+            _ => null
+        };
+    }
+
+    private DateTimeOffset? GetFromDate()
+    {
+        if (!_fromDatePicker.Checked)
+        {
+            return null;
+        }
+
+        DateTime localDate = _fromDatePicker.Value.Date;
+        return new DateTimeOffset(localDate, TimeZoneInfo.Local.GetUtcOffset(localDate));
+    }
+
+    private DateTimeOffset? GetToDate()
+    {
+        if (!_toDatePicker.Checked)
+        {
+            return null;
+        }
+
+        DateTime localEnd = _toDatePicker.Value.Date.AddDays(1).AddTicks(-1);
+        return new DateTimeOffset(localEnd, TimeZoneInfo.Local.GetUtcOffset(localEnd));
+    }
+
+    private void SetStatusForPage()
+    {
+        if (_salesPage is null)
+        {
             return;
         }
 
-        _salesGrid.DataSource = result.Value.Items
-            .Select(item => new SaleHistoryRow(
-                SaleId: item.Id,
-                ReceiptNo: item.ReceiptNo,
-                Date: item.SaleDate.ToLocalTime().ToString("yyyy-MM-dd HH:mm"),
-                Cashier: item.CashierDisplayName,
-                Total: item.Total.ToString(),
-                Paid: item.AmountPaid.ToString(),
-                Change: item.Change.ToString(),
-                Status: item.Status.ToString(),
-                VoidReason: item.VoidReason ?? string.Empty))
-            .ToList();
-
-        if (_salesGrid.Columns["SaleId"] is not null)
+        if (_salesPage.Items.Count == 0)
         {
-            _salesGrid.Columns["SaleId"]!.Visible = false;
+            _statusLabel.Text = J20MvpUi.StateText.NothingToShow + " No sales match your filters.";
+            _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
+            return;
         }
 
-        UpdateActionButtons();
-        _statusLabel.Text = result.Value.Items.Count == 0
-            ? J20MvpUi.StateText.NothingToShow + " No sales match your search."
-            : $"Loaded {result.Value.Items.Count} sale rows. Total matches: {result.Value.TotalCount}.";
+        _statusLabel.Text =
+            $"Sales page {_salesPage.PageNumber} of {Math.Max(1, _salesPage.TotalPages)}; " +
+            $"loaded {_salesPage.Items.Count} of {_salesPage.TotalCount} row(s).";
         _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
+    }
+
+    private void SetBusy(string message)
+    {
+        _applyButton.Enabled = false;
+        _refreshButton.Enabled = false;
+        _previousPageButton.Enabled = false;
+        _nextPageButton.Enabled = false;
+        _statusLabel.Text = message;
+        _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
+    }
+
+    private void SetReady()
+    {
+        _applyButton.Enabled = true;
+        _refreshButton.Enabled = true;
+        UpdatePagingButtons();
+    }
+
+    private void UpdatePagingButtons()
+    {
+        _previousPageButton.Enabled = _salesPage?.HasPreviousPage == true;
+        _nextPageButton.Enabled = _salesPage?.HasNextPage == true;
     }
 
     private async Task OpenSelectedReceiptAsync()
@@ -340,7 +563,7 @@ public sealed class SalesHistoryForm : Form
             return;
         }
 
-        await LoadSalesAsync().ConfigureAwait(true);
+        await LoadSalesPageAsync(resetPage: false).ConfigureAwait(true);
 
         _statusLabel.Text = "Voided sale " + selectedSale.ReceiptNo + ".";
         _statusLabel.ForeColor = J20MvpUi.Colors.Success;
@@ -435,6 +658,7 @@ public sealed class SalesHistoryForm : Form
     {
         _statusLabel.Text = message;
         _statusLabel.ForeColor = J20MvpUi.Colors.Danger;
+        UpdatePagingButtons();
     }
 
     private sealed record SaleHistoryRow(

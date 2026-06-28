@@ -350,8 +350,8 @@ public sealed class SqliteSaleReadRepository :
             ? null
             : filter.ReceiptNo.Trim();
 
-        command.Parameters.AddWithValue("$from", filter.From?.ToString("O") ?? (object)DBNull.Value);
-        command.Parameters.AddWithValue("$to", filter.To?.ToString("O") ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$from", filter.From?.ToUniversalTime().ToString("O") ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$to", filter.To?.ToUniversalTime().ToString("O") ?? (object)DBNull.Value);
         command.Parameters.AddWithValue("$cashierUserId", filter.CashierUserId?.ToString("D") ?? (object)DBNull.Value);
         command.Parameters.AddWithValue("$status", filter.Status.HasValue ? Convert.ToInt32(filter.Status.Value) : DBNull.Value);
         command.Parameters.AddWithValue("$receiptNo", receiptNo ?? (object)DBNull.Value);
