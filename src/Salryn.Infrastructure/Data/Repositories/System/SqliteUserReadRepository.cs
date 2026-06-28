@@ -73,6 +73,48 @@ public sealed class SqliteUserReadRepository :
         }
     }
 
+    public Task<Result<IReadOnlyList<UserRoleReadModel>>> GetRolesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        try
+        {
+            using var connection = CreateOpenConnection();
+            using var command = connection.CreateCommand();
+
+            command.CommandText = """
+                SELECT id, name, is_active
+                FROM roles
+                WHERE is_active = 1
+                ORDER BY name;
+                """;
+
+            using var reader = command.ExecuteReader();
+
+            List<UserRoleReadModel> roles = new();
+
+            while (reader.Read())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                roles.Add(new UserRoleReadModel(
+                    Guid.Parse(reader.GetString(0)),
+                    reader.GetString(1),
+                    reader.GetBoolean(2)));
+            }
+
+            IReadOnlyList<UserRoleReadModel> result = roles;
+
+            return Task.FromResult(Result<IReadOnlyList<UserRoleReadModel>>.Success(result));
+        }
+        catch (Exception ex) when (ex is SqliteException or InvalidOperationException or FormatException)
+        {
+            return Task.FromResult(Unexpected<IReadOnlyList<UserRoleReadModel>>(
+                "Users.GetRolesFailed",
+                ex));
+        }
+    }
+
     private Task<Result<UserReadModel?>> FindSingleAsync(
         string errorCode,
         string whereClause,
