@@ -49,6 +49,25 @@ public interface IInventoryWriteRepository
         CancellationToken cancellationToken = default);
 }
 
+public sealed record StoreSettingsUpdateRequest(
+    Guid StoreSettingsId,
+    string StoreName,
+    string? BusinessName,
+    string? Address,
+    string? ContactNumber,
+    string? Tin,
+    string CurrencyLabel,
+    int ReceiptWidthMm,
+    bool TaxModeEnabled,
+    bool ShiftModeEnabled);
+
+public interface IStoreSettingsWriteRepository
+{
+    Task<Result> UpdateAsync(
+        StoreSettingsUpdateRequest request,
+        CancellationToken cancellationToken = default);
+}
+
 public interface ICashierSessionWriteRepository
 {
     Task<Result> OpenAsync(
@@ -82,4 +101,3 @@ public interface IErrorLogWriteRepository
         ErrorLog errorLog,
         CancellationToken cancellationToken = default);
 }
-
