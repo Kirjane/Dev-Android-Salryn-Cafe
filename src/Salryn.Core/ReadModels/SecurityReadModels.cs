@@ -2,6 +2,11 @@
 
 namespace Salryn.Core.ReadModels;
 
+public sealed record UserRoleReadModel(
+    Guid RoleId,
+    string RoleName,
+    bool IsActive);
+
 public sealed record UserPermissionReadModel(
     Guid UserId,
     Guid RoleId,
