@@ -84,9 +84,8 @@ public sealed class SqliteUserReadRepository :
             using var command = connection.CreateCommand();
 
             command.CommandText = """
-                SELECT id, name, is_active
+                SELECT id, name, 1 AS is_active
                 FROM roles
-                WHERE is_active = 1
                 ORDER BY name;
                 """;
 
