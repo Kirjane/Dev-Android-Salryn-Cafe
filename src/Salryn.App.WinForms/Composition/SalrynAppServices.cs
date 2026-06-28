@@ -39,6 +39,7 @@ public sealed class SalrynAppServices
         IInventoryReadRepository inventoryReadRepository,
         IInventoryWriteRepository inventoryWriteRepository,
         IStoreSettingsReadRepository storeSettingsReadRepository,
+        IStoreSettingsWriteRepository storeSettingsWriteRepository,
         IAuditReadRepository auditReadRepository,
         IErrorLogReadRepository errorLogReadRepository,
         ICashierSessionService cashierSessions,
@@ -62,6 +63,7 @@ public sealed class SalrynAppServices
         InventoryReadRepository = inventoryReadRepository;
         InventoryWriteRepository = inventoryWriteRepository;
         StoreSettingsReadRepository = storeSettingsReadRepository;
+        StoreSettingsWriteRepository = storeSettingsWriteRepository;
         AuditReadRepository = auditReadRepository;
         ErrorLogReadRepository = errorLogReadRepository;
         CashierSessions = cashierSessions;
@@ -219,6 +221,9 @@ public sealed class SalrynAppServices
 
     // Kirch: Store Settings and receipt header MVP screens read store profile fields through this repository.
     public IStoreSettingsReadRepository StoreSettingsReadRepository { get; }
+
+    // Kirch: Store Settings edits stay behind AppServices and repository boundaries.
+    public IStoreSettingsWriteRepository StoreSettingsWriteRepository { get; }
 
     public IAuditReadRepository AuditReadRepository { get; }
 
@@ -446,6 +451,9 @@ public sealed class SalrynAppServices
         IStoreSettingsReadRepository storeSettingsReadRepository =
             repositories.CreateStoreSettingsReadRepository();
 
+        IStoreSettingsWriteRepository storeSettingsWriteRepository =
+            repositories.CreateStoreSettingsWriteRepository();
+
         IAuditReadRepository auditReadRepository =
             repositories.CreateAuditReadRepository();
 
@@ -480,6 +488,7 @@ public sealed class SalrynAppServices
             inventoryReadRepository,
             inventoryWriteRepository,
             storeSettingsReadRepository,
+            storeSettingsWriteRepository,
             auditReadRepository,
             errorLogReadRepository,
             cashierSessions,
