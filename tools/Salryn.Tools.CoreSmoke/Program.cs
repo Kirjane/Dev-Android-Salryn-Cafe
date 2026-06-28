@@ -66,6 +66,7 @@ public static class Program
         J20DevelopmentLaunchModeChecks.Run();
         J20UiWorkflowReadinessChecks.Run();
         PosStabA1StartupLoginReadinessChecks.Run();
+        PosStabA2ShiftCloseChecks.Run();
         J21Rmo242023ComplianceMatrixGuardChecks.Run();
         J21Rmo242023MachineProfileSchemaChecks.Run();
         J21Rmo242023OfficialDocumentSequenceSchemaChecks.Run();

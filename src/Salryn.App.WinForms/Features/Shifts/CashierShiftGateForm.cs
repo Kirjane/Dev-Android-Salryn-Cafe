@@ -22,8 +22,10 @@ public sealed class CashierShiftGateForm : Form
     private Label _detailLabel = null!;
     private Label _messageLabel = null!;
     private TextBox _openingCashTextBox = null!;
+    private TextBox _countedCashTextBox = null!;
     private TextBox _notesTextBox = null!;
     private Button _openShiftButton = null!;
+    private Button _closeShiftButton = null!;
     private Button _enterCheckoutButton = null!;
     private Button _cancelButton = null!;
 
@@ -46,21 +48,22 @@ public sealed class CashierShiftGateForm : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
-        ClientSize = new Size(520, 520);
+        ClientSize = new Size(560, 610);
         BackColor = Color.FromArgb(246, 247, 249);
 
         var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 8,
+            RowCount = 9,
             Padding = new Padding(28)
         };
 
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -108,7 +111,8 @@ public sealed class CashierShiftGateForm : Form
         root.Controls.Add(_detailLabel, 0, 3);
 
         root.Controls.Add(BuildOpeningCashPanel(), 0, 4);
-        root.Controls.Add(BuildNotesPanel(), 0, 5);
+        root.Controls.Add(BuildCountedCashPanel(), 0, 5);
+        root.Controls.Add(BuildNotesPanel(), 0, 6);
 
         _messageLabel = new Label
         {
@@ -119,7 +123,7 @@ public sealed class CashierShiftGateForm : Form
             Padding = new Padding(0, 12, 0, 0)
         };
 
-        root.Controls.Add(_messageLabel, 0, 6);
+        root.Controls.Add(_messageLabel, 0, 7);
 
         var actions = new FlowLayoutPanel
         {
@@ -155,6 +159,16 @@ public sealed class CashierShiftGateForm : Form
 
         _openShiftButton.Click += async (_, _) => await OpenShiftAsync();
 
+        _closeShiftButton = new Button
+        {
+            Width = 110,
+            Height = 36,
+            Text = "Close Shift",
+            Enabled = false
+        };
+
+        _closeShiftButton.Click += async (_, _) => await CloseShiftAsync();
+
         _cancelButton = new Button
         {
             Width = 90,
@@ -169,10 +183,11 @@ public sealed class CashierShiftGateForm : Form
         };
 
         actions.Controls.Add(_enterCheckoutButton);
+        actions.Controls.Add(_closeShiftButton);
         actions.Controls.Add(_openShiftButton);
         actions.Controls.Add(_cancelButton);
 
-        root.Controls.Add(actions, 0, 7);
+        root.Controls.Add(actions, 0, 8);
     }
 
     private Control BuildOpeningCashPanel()
@@ -204,6 +219,40 @@ public sealed class CashierShiftGateForm : Form
         };
 
         panel.Controls.Add(_openingCashTextBox, 0, 1);
+
+        return panel;
+    }
+
+    private Control BuildCountedCashPanel()
+    {
+        var panel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            Margin = new Padding(0, 0, 0, 8)
+        };
+
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
+        panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        panel.Controls.Add(new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = "Counted cash",
+            ForeColor = Color.FromArgb(55, 65, 81),
+            TextAlign = ContentAlignment.MiddleLeft
+        }, 0, 0);
+
+        _countedCashTextBox = new TextBox
+        {
+            Dock = DockStyle.Fill,
+            Text = "0.00",
+            Enabled = false,
+            Font = SystemFonts.MessageBoxFont
+        };
+
+        panel.Controls.Add(_countedCashTextBox, 0, 1);
 
         return panel;
     }
@@ -290,6 +339,45 @@ public sealed class CashierShiftGateForm : Form
         SetBusy(false, "Shift is open. You can now enter checkout.");
     }
 
+    // Kirch workflow: close cashier shift.
+    // UI side: Close Shift button sends counted cash and notes to the presenter.
+    // Frontend note: variance display comes from the closed session read-back, not UI calculation.
+    private async Task CloseShiftAsync()
+    {
+        if (OpenSession is null)
+        {
+            _messageLabel.Text = "An open cashier shift is required before closing.";
+            return;
+        }
+
+        if (!decimal.TryParse(
+            _countedCashTextBox.Text.Trim(),
+            NumberStyles.Number,
+            CultureInfo.CurrentCulture,
+            out decimal countedCash))
+        {
+            _messageLabel.Text = "Counted cash must be a valid number.";
+            return;
+        }
+
+        SetBusy(true, "Closing cashier shift...");
+
+        Result<CashierShiftGateViewModel> result =
+            await _presenter.CloseShiftAsync(
+                OpenSession.Id,
+                countedCash,
+                _notesTextBox.Text);
+
+        if (result.IsFailure)
+        {
+            SetBusy(false, result.Error);
+            return;
+        }
+
+        Render(result.Value);
+        SetBusy(false, "Shift is closed. Variance is shown above.");
+    }
+
     private void Render(CashierShiftGateViewModel state)
     {
         OpenSession = state.OpenSession;
@@ -299,17 +387,30 @@ public sealed class CashierShiftGateForm : Form
         _detailLabel.Text = state.DetailLine;
 
         _openingCashTextBox.Enabled = state.CanOpenShift;
-        _notesTextBox.Enabled = state.CanOpenShift;
+        _countedCashTextBox.Enabled = state.CanCloseShift;
+        _notesTextBox.Enabled = state.CanOpenShift || state.CanCloseShift;
         _openShiftButton.Enabled = state.CanOpenShift;
         _enterCheckoutButton.Enabled = state.CanEnterCheckout;
+        _closeShiftButton.Enabled = state.CanCloseShift;
+
+        if (state.OpenSession is not null)
+        {
+            _countedCashTextBox.Text = state.OpenSession.ExpectedCash.ToPesos().ToString("0.00", CultureInfo.CurrentCulture);
+        }
+        else if (state.ClosedSession is not null && state.ClosedSession.CountedCash.HasValue)
+        {
+            _countedCashTextBox.Text = state.ClosedSession.CountedCash.Value.ToPesos().ToString("0.00", CultureInfo.CurrentCulture);
+        }
     }
 
     private void SetBusy(bool isBusy, string message)
     {
         _openShiftButton.Enabled = !isBusy && _openShiftButton.Enabled;
+        _closeShiftButton.Enabled = !isBusy && _closeShiftButton.Enabled;
         _enterCheckoutButton.Enabled = !isBusy && _enterCheckoutButton.Enabled;
         _cancelButton.Enabled = !isBusy;
         _openingCashTextBox.Enabled = !isBusy && _openingCashTextBox.Enabled;
+        _countedCashTextBox.Enabled = !isBusy && _countedCashTextBox.Enabled;
         _notesTextBox.Enabled = !isBusy && _notesTextBox.Enabled;
         _messageLabel.Text = message;
     }
