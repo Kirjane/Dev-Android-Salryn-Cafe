@@ -9,6 +9,7 @@ using Salryn.App.WinForms.Features.Products;
 using Salryn.App.WinForms.Features.Sales;
 using Salryn.App.WinForms.Features.Settings;
 using Salryn.App.WinForms.Features.Shifts;
+using Salryn.App.WinForms.Features.Users;
 
 namespace Salryn.App.WinForms.Features.Shell;
 
@@ -276,6 +277,12 @@ public sealed class SalrynShellForm : Form
             return;
         }
 
+        if (module.Key == ShellModuleKeys.Users)
+        {
+            OpenUsers();
+            return;
+        }
+
         if (module.Key == ShellModuleKeys.Backup)
         {
             OpenBackup();
@@ -338,6 +345,28 @@ public sealed class SalrynShellForm : Form
         using StoreSettingsForm settingsForm = new StoreSettingsForm(_services);
         settingsForm.StartPosition = FormStartPosition.CenterParent;
         settingsForm.ShowDialog(this);
+    }
+
+    private void OpenUsers()
+    {
+        if (_session is null)
+        {
+            ShowPlaceholder(
+                "Users",
+                "Users admin requires an authenticated user session.",
+                "Login again before opening the users admin workspace.");
+
+            return;
+        }
+
+        using UsersAdminForm usersForm = new UsersAdminForm(
+            new UsersAdminPresenter(
+                _services.UserReadRepository,
+                _services.CreateUserWriteRepository(),
+                _session));
+
+        usersForm.StartPosition = FormStartPosition.CenterParent;
+        usersForm.ShowDialog(this);
     }
 
     private void OpenBackup()
