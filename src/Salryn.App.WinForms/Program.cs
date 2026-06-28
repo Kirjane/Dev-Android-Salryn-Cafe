@@ -1,6 +1,8 @@
 ﻿using Salryn.App.WinForms.Composition;
 using Salryn.App.WinForms.Features.Auth;
 using Salryn.App.WinForms.Features.Shell;
+using Salryn.Core.Common;
+using Salryn.Infrastructure.Paths;
 
 namespace Salryn.App.WinForms;
 
@@ -19,7 +21,22 @@ static class Program
 
         try
         {
-            services = SalrynAppLaunchModeResolver.CreateServices(args);
+            SalrynAppLaunchPlan launchPlan = SalrynAppLaunchModeResolver.Resolve(args);
+
+            if (launchPlan.Mode == SalrynAppLaunchMode.Production)
+            {
+                Result writabilityResult = DbPaths.CreateProduction().ValidateProductionWritability();
+
+                if (writabilityResult.IsFailure)
+                {
+                    ShowStartupFailure(BuildStartupFailureMessage(writabilityResult.ErrorDetail));
+                    return;
+                }
+            }
+
+            services = launchPlan.Mode == SalrynAppLaunchMode.Development
+                ? SalrynAppServices.CreateDevelopment(launchPlan.ProjectRoot!)
+                : SalrynAppServices.CreateProduction();
         }
         catch (Exception ex)
         {
@@ -31,7 +48,7 @@ static class Program
 
         if (initializationResult.IsFailure)
         {
-            ShowStartupFailure(BuildStartupFailureMessage(initializationResult.Error));
+            ShowStartupFailure(BuildStartupFailureMessage(initializationResult.ErrorDetail));
             return;
         }
 
@@ -47,6 +64,11 @@ static class Program
         Application.Run(new SalrynShellForm(
             services,
             authForm.AuthenticatedSession));
+    }
+
+    private static string BuildStartupFailureMessage(Error detail)
+    {
+        return BuildStartupFailureMessage(detail.Code + ": " + detail.Message);
     }
 
     private static string BuildStartupFailureMessage(string detail)
