@@ -309,7 +309,9 @@ public sealed class SalrynShellForm : Form
     // Kirch: Opens the June 20 MVP sales history skeleton through AppServices.
     private void OpenSalesHistory()
     {
-        using SalesHistoryForm salesHistoryForm = new SalesHistoryForm(_services);
+        using SalesHistoryForm salesHistoryForm = _session is null
+            ? new SalesHistoryForm(_services)
+            : new SalesHistoryForm(_services, _session);
         salesHistoryForm.StartPosition = FormStartPosition.CenterParent;
         salesHistoryForm.ShowDialog(this);
     }

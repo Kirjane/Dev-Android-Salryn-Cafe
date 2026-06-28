@@ -33,6 +33,7 @@ public sealed class SalrynAppServices
         IProductWriteRepository productWriteRepository,
         ICatalogReadRepository catalogReadRepository,
         ISaleReadRepository saleReadRepository,
+        ISaleWriteRepository saleWriteRepository,
         IInventoryReadRepository inventoryReadRepository,
         IInventoryWriteRepository inventoryWriteRepository,
         IStoreSettingsReadRepository storeSettingsReadRepository,
@@ -53,6 +54,7 @@ public sealed class SalrynAppServices
         CatalogReadRepository = catalogReadRepository;
         // Kirch: June 20 MVP screens use these read/write services through AppServices, not direct repository construction.
         SaleReadRepository = saleReadRepository;
+        SaleWriteRepository = saleWriteRepository;
         InventoryReadRepository = inventoryReadRepository;
         InventoryWriteRepository = inventoryWriteRepository;
         StoreSettingsReadRepository = storeSettingsReadRepository;
@@ -199,6 +201,9 @@ public sealed class SalrynAppServices
 
     // Kirch: Sales History and receipt preview MVP screens read completed sales through this repository.
     public ISaleReadRepository SaleReadRepository { get; }
+
+    // Kirch: Controlled sales operations such as voiding must use the repository boundary, not direct UI SQL.
+    public ISaleWriteRepository SaleWriteRepository { get; }
 
     // Kirch: Inventory and dashboard MVP screens read low-stock data and stock movement history through this repository.
     public IInventoryReadRepository InventoryReadRepository { get; }
@@ -371,6 +376,9 @@ public sealed class SalrynAppServices
         ISaleReadRepository saleReadRepository =
             repositories.CreateSaleReadRepository();
 
+        ISaleWriteRepository saleWriteRepository =
+            repositories.CreateSaleWriteRepository();
+
         IInventoryReadRepository inventoryReadRepository =
             repositories.CreateInventoryReadRepository();
 
@@ -385,7 +393,7 @@ public sealed class SalrynAppServices
             repositories.CreateCashierSessionReadRepository());
 
         IPosCheckoutService posCheckout = new PosCheckoutService(
-            repositories.CreateSaleWriteRepository(),
+            saleWriteRepository,
             cashierSessions);
 
         // Kirch: Checkout completion must re-read product facts before committing a sale.
@@ -404,6 +412,7 @@ public sealed class SalrynAppServices
             productWriteRepository,
             catalogReadRepository,
             saleReadRepository,
+            saleWriteRepository,
             inventoryReadRepository,
             inventoryWriteRepository,
             storeSettingsReadRepository,

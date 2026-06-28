@@ -115,7 +115,9 @@ public sealed class SqliteInventoryReadRepository :
             WHERE ($productId IS NULL OR sm.product_id = $productId)
               AND ($movementType IS NULL OR sm.movement_type = $movementType)
               AND ($from IS NULL OR sm.created_at >= $from)
-              AND ($to IS NULL OR sm.created_at <= $to);
+              AND ($to IS NULL OR sm.created_at <= $to)
+              AND ($referenceType IS NULL OR sm.reference_type = $referenceType)
+              AND ($referenceId IS NULL OR sm.reference_id = $referenceId);
             """;
 
         AddStockMovementFilterParameters(command, filter);
@@ -152,6 +154,8 @@ public sealed class SqliteInventoryReadRepository :
               AND ($movementType IS NULL OR sm.movement_type = $movementType)
               AND ($from IS NULL OR sm.created_at >= $from)
               AND ($to IS NULL OR sm.created_at <= $to)
+              AND ($referenceType IS NULL OR sm.reference_type = $referenceType)
+              AND ($referenceId IS NULL OR sm.reference_id = $referenceId)
             ORDER BY sm.created_at DESC
             LIMIT $limit OFFSET $offset;
             """;
@@ -196,5 +200,15 @@ public sealed class SqliteInventoryReadRepository :
         command.Parameters.AddWithValue("$movementType", filter.MovementType.HasValue ? Convert.ToInt32(filter.MovementType.Value) : DBNull.Value);
         command.Parameters.AddWithValue("$from", filter.From?.ToString("O") ?? (object)DBNull.Value);
         command.Parameters.AddWithValue("$to", filter.To?.ToString("O") ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue(
+            "$referenceType",
+            string.IsNullOrWhiteSpace(filter.ReferenceType)
+                ? DBNull.Value
+                : filter.ReferenceType.Trim());
+        command.Parameters.AddWithValue(
+            "$referenceId",
+            string.IsNullOrWhiteSpace(filter.ReferenceId)
+                ? DBNull.Value
+                : filter.ReferenceId.Trim());
     }
 }

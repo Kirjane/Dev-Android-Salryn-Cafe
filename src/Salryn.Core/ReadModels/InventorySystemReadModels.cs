@@ -30,7 +30,9 @@ public sealed record StockMovementFilter(
     StockMovementType? MovementType,
     DateTimeOffset? From,
     DateTimeOffset? To,
-    PageRequest Page);
+    PageRequest Page,
+    string? ReferenceType = null,
+    string? ReferenceId = null);
 
 public sealed record UserReadModel(
     Guid Id,
