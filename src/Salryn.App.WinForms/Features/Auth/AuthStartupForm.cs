@@ -203,16 +203,16 @@ public sealed class AuthStartupForm : Form
         {
             Text = "SALRYN First-Run Setup";
             _subtitleLabel.Text = "Create the first Admin account for this local SALRYN database.";
-            _displayNameTextBox.Visible = true;
-            _confirmPasswordTextBox.Visible = true;
+            SetFieldVisible(_displayNameTextBox, true);
+            SetFieldVisible(_confirmPasswordTextBox, true);
             _submitButton.Text = "Create Admin";
         }
         else
         {
             Text = "SALRYN Login";
             _subtitleLabel.Text = "Login with an active SALRYN user account.";
-            _displayNameTextBox.Visible = false;
-            _confirmPasswordTextBox.Visible = false;
+            SetFieldVisible(_displayNameTextBox, false);
+            SetFieldVisible(_confirmPasswordTextBox, false);
             _submitButton.Text = "Login";
         }
 
@@ -271,5 +271,17 @@ public sealed class AuthStartupForm : Form
         _passwordTextBox.Enabled = !isBusy;
         _confirmPasswordTextBox.Enabled = !isBusy;
         _messageLabel.Text = message;
+    }
+
+    private static void SetFieldVisible(
+        TextBox textBox,
+        bool visible)
+    {
+        textBox.Visible = visible;
+
+        if (textBox.Parent is Control parent)
+        {
+            parent.Visible = visible;
+        }
     }
 }

@@ -65,6 +65,7 @@ public static class Program
         J20MvpSkeletonUiChecks.Run();
         J20DevelopmentLaunchModeChecks.Run();
         J20UiWorkflowReadinessChecks.Run();
+        PosStabA1StartupLoginReadinessChecks.Run();
         J21Rmo242023ComplianceMatrixGuardChecks.Run();
         J21Rmo242023MachineProfileSchemaChecks.Run();
         J21Rmo242023OfficialDocumentSequenceSchemaChecks.Run();
