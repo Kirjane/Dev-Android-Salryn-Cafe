@@ -84,6 +84,9 @@ public interface IUserReadRepository
 
     Task<Result<IReadOnlyList<UserReadModel>>> GetAllAsync(
         CancellationToken cancellationToken = default);
+
+    Task<Result<IReadOnlyList<UserRoleReadModel>>> GetRolesAsync(
+        CancellationToken cancellationToken = default);
 }
 public interface IUserPermissionReadRepository
 {
