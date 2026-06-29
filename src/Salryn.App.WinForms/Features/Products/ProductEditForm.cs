@@ -72,20 +72,15 @@ public sealed class ProductEditForm : Form
 
         Controls.Add(root);
 
-        root.Controls.Add(new Label
-        {
-            Dock = DockStyle.Fill,
-            Text = "Edit Product",
-            Font = SalrynUi.Typography.Title,
-            ForeColor = SalrynUi.Colors.TextStrong,
-            TextAlign = ContentAlignment.MiddleLeft
-        }, 0, 0);
+        // P1C: stronger header
+        var header = SalrynUi.CreatePageHeader("Edit Product", "Update catalog details. Stock is managed via Inventory.");
+        root.Controls.Add(header, 0, 0);
 
         var formPanel = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 16,
+            RowCount = 17,
             AutoScroll = true,
             BackColor = SalrynUi.Colors.Surface,
             Padding = new Padding(14)
@@ -94,10 +89,15 @@ public sealed class ProductEditForm : Form
         formPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190));
         formPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        for (int i = 0; i < 16; i++)
+        for (int i = 0; i < 17; i++)
         {
-            formPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, i is 3 or 15 ? 82 : 42));
+            formPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, i is 3 or 16 ? 82 : 42));
         }
+
+        // Section title inside the card area
+        var section = SalrynUi.CreateSectionTitle("Product Details");
+        formPanel.Controls.Add(section, 0, 0);
+        formPanel.SetColumnSpan(section, 2);
 
         _skuTextBox = BuildTextBox();
         _barcodeTextBox = BuildTextBox();
@@ -118,22 +118,37 @@ public sealed class ProductEditForm : Form
         _allowDiscountCheckBox = new CheckBox { Dock = DockStyle.Fill, Text = "Allow discount for this product" };
         _notesTextBox = BuildMultilineTextBox();
 
-        AddRow(formPanel, 0, "SKU", _skuTextBox);
-        AddRow(formPanel, 1, "Barcode", _barcodeTextBox);
-        AddRow(formPanel, 2, "Name *", _nameTextBox);
-        AddRow(formPanel, 3, "Description", _descriptionTextBox);
-        AddRow(formPanel, 4, "Unit *", _unitComboBox);
-        AddRow(formPanel, 5, "Category", _categoryComboBox);
-        AddRow(formPanel, 6, "Brand", _brandComboBox);
-        AddRow(formPanel, 7, "Supplier", _supplierComboBox);
-        AddRow(formPanel, 8, "Selling Price *", _sellingPriceTextBox);
-        AddRow(formPanel, 9, "Cost Price", _costPriceTextBox);
-        AddRow(formPanel, 10, "Wholesale Price", _wholesalePriceTextBox);
-        AddRow(formPanel, 11, "Stock On Hand (read-only)", _stockOnHandTextBox);
-        AddRow(formPanel, 12, "Reorder Level", _reorderLevelTextBox);
-        AddRow(formPanel, 13, "Stock Tracking", _trackStockCheckBox);
-        AddRow(formPanel, 14, "Discount", _allowDiscountCheckBox);
-        AddRow(formPanel, 15, "Notes", _notesTextBox);
+        AddRow(formPanel, 1, "SKU", _skuTextBox);
+        AddRow(formPanel, 2, "Barcode", _barcodeTextBox);
+        AddRow(formPanel, 3, "Name *", _nameTextBox);
+        AddRow(formPanel, 4, "Description", _descriptionTextBox);
+        AddRow(formPanel, 5, "Unit *", _unitComboBox);
+        AddRow(formPanel, 6, "Category", _categoryComboBox);
+        AddRow(formPanel, 7, "Brand", _brandComboBox);
+        AddRow(formPanel, 8, "Supplier", _supplierComboBox);
+        AddRow(formPanel, 9, "Selling Price *", _sellingPriceTextBox);
+        AddRow(formPanel, 10, "Cost Price", _costPriceTextBox);
+        AddRow(formPanel, 11, "Wholesale Price", _wholesalePriceTextBox);
+        // P1C: stock host with helper text under (read-only remains enforced)
+        var stockHost = new Panel { Dock = DockStyle.Fill };
+        _stockOnHandTextBox.Dock = DockStyle.Top;
+        _stockOnHandTextBox.Height = SalrynUi.Spacing.FieldHeight;
+        stockHost.Controls.Add(_stockOnHandTextBox);
+        var stockNote = new Label
+        {
+            Dock = DockStyle.Bottom,
+            Height = 18,
+            Text = "Stock is adjusted from Inventory, not Product Edit.",
+            Font = SalrynUi.Typography.Small,
+            ForeColor = SalrynUi.Colors.TextMuted,
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+        stockHost.Controls.Add(stockNote);
+        AddRow(formPanel, 12, "Stock On Hand (read-only)", stockHost);
+        AddRow(formPanel, 13, "Reorder Level", _reorderLevelTextBox);
+        AddRow(formPanel, 14, "Stock Tracking", _trackStockCheckBox);
+        AddRow(formPanel, 15, "Discount", _allowDiscountCheckBox);
+        AddRow(formPanel, 16, "Notes", _notesTextBox);
 
         root.Controls.Add(formPanel, 0, 1);
 
@@ -151,6 +166,7 @@ public sealed class ProductEditForm : Form
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.RightToLeft
         };
+        SalrynUi.StyleFooterStrip(buttonsPanel);
 
         _saveButton = BuildButton("Save", Color.FromArgb(31, 41, 55), Color.White);
         SalrynUi.ConfigurePrimaryButton(_saveButton, "Save");
@@ -311,20 +327,8 @@ public sealed class ProductEditForm : Form
         string labelText,
         Control control)
     {
-        var label = new Label
-        {
-            Dock = DockStyle.Fill,
-            Text = labelText,
-            TextAlign = ContentAlignment.MiddleLeft,
-            ForeColor = Color.FromArgb(55, 65, 81)
-        };
-
-        // P1B: color the required asterisk red when present in label
-        if (labelText.Contains('*'))
-        {
-            // Keep simple text for now; asterisk color is a visual cue via font weight in reference.
-            // Full rich text would require additional control; current text already signals required.
-        }
+        bool required = labelText.Contains('*');
+        var label = SalrynUi.CreateFieldLabel(labelText.Replace(" *", ""), required);
 
         panel.Controls.Add(label, 0, row);
         panel.Controls.Add(control, 1, row);

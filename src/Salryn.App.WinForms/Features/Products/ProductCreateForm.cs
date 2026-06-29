@@ -73,22 +73,15 @@ public sealed class ProductCreateForm : Form
 
         Controls.Add(root);
 
-        var titleLabel = new Label
-        {
-            Dock = DockStyle.Fill,
-            Text = "Add Product",
-            Font = SalrynUi.Typography.Title,
-            ForeColor = SalrynUi.Colors.TextStrong,
-            TextAlign = ContentAlignment.MiddleLeft
-        };
-
-        root.Controls.Add(titleLabel, 0, 0);
+        // P1C: stronger header + section
+        var header = SalrynUi.CreatePageHeader("Add Product", "Create a new catalog item. Initial stock may be set here.");
+        root.Controls.Add(header, 0, 0);
 
         var formPanel = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 16,
+            RowCount = 17,
             AutoScroll = true,
             BackColor = SalrynUi.Colors.Surface,
             Padding = new Padding(14)
@@ -97,10 +90,14 @@ public sealed class ProductCreateForm : Form
         formPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 170));
         formPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        for (int i = 0; i < 16; i++)
+        for (int i = 0; i < 17; i++)
         {
-            formPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, i is 3 or 15 ? 82 : 42));
+            formPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, i is 3 or 16 ? 82 : 42));
         }
+
+        var section = SalrynUi.CreateSectionTitle("Product Details");
+        formPanel.Controls.Add(section, 0, 0);
+        formPanel.SetColumnSpan(section, 2);
 
         root.Controls.Add(formPanel, 0, 1);
 
@@ -136,22 +133,22 @@ public sealed class ProductCreateForm : Form
 
         _notesTextBox = BuildMultilineTextBox();
 
-        AddRow(formPanel, 0, "SKU", _skuTextBox);
-        AddRow(formPanel, 1, "Barcode", _barcodeTextBox);
-        AddRow(formPanel, 2, "Name *", _nameTextBox);
-        AddRow(formPanel, 3, "Description", _descriptionTextBox);
-        AddRow(formPanel, 4, "Unit *", _unitComboBox);
-        AddRow(formPanel, 5, "Category", _categoryComboBox);
-        AddRow(formPanel, 6, "Brand", _brandComboBox);
-        AddRow(formPanel, 7, "Supplier", _supplierComboBox);
-        AddRow(formPanel, 8, "Selling Price *", _sellingPriceTextBox);
-        AddRow(formPanel, 9, "Cost Price", _costPriceTextBox);
-        AddRow(formPanel, 10, "Wholesale Price", _wholesalePriceTextBox);
-        AddRow(formPanel, 11, "Stock On Hand", _stockOnHandTextBox);
-        AddRow(formPanel, 12, "Reorder Level", _reorderLevelTextBox);
-        AddRow(formPanel, 13, "Stock Tracking", _trackStockCheckBox);
-        AddRow(formPanel, 14, "Discount", _allowDiscountCheckBox);
-        AddRow(formPanel, 15, "Notes", _notesTextBox);
+        AddRow(formPanel, 1, "SKU", _skuTextBox);
+        AddRow(formPanel, 2, "Barcode", _barcodeTextBox);
+        AddRow(formPanel, 3, "Name *", _nameTextBox);
+        AddRow(formPanel, 4, "Description", _descriptionTextBox);
+        AddRow(formPanel, 5, "Unit *", _unitComboBox);
+        AddRow(formPanel, 6, "Category", _categoryComboBox);
+        AddRow(formPanel, 7, "Brand", _brandComboBox);
+        AddRow(formPanel, 8, "Supplier", _supplierComboBox);
+        AddRow(formPanel, 9, "Selling Price *", _sellingPriceTextBox);
+        AddRow(formPanel, 10, "Cost Price", _costPriceTextBox);
+        AddRow(formPanel, 11, "Wholesale Price", _wholesalePriceTextBox);
+        AddRow(formPanel, 12, "Stock On Hand", _stockOnHandTextBox);
+        AddRow(formPanel, 13, "Reorder Level", _reorderLevelTextBox);
+        AddRow(formPanel, 14, "Stock Tracking", _trackStockCheckBox);
+        AddRow(formPanel, 15, "Discount", _allowDiscountCheckBox);
+        AddRow(formPanel, 16, "Notes", _notesTextBox);
 
         _statusLabel = new Label
         {
@@ -167,6 +164,7 @@ public sealed class ProductCreateForm : Form
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.RightToLeft
         };
+        SalrynUi.StyleFooterStrip(buttonsPanel);
 
         _saveButton = new Button { Width = 120, Height = 38 };
         SalrynUi.ConfigurePrimaryButton(_saveButton, "Save");
@@ -291,13 +289,8 @@ public sealed class ProductCreateForm : Form
         string labelText,
         Control control)
     {
-        var label = new Label
-        {
-            Dock = DockStyle.Fill,
-            Text = labelText,
-            TextAlign = ContentAlignment.MiddleLeft,
-            ForeColor = Color.FromArgb(55, 65, 81)
-        };
+        bool required = labelText.Contains('*');
+        var label = SalrynUi.CreateFieldLabel(labelText.Replace(" *", ""), required);
 
         panel.Controls.Add(label, 0, row);
         panel.Controls.Add(control, 1, row);

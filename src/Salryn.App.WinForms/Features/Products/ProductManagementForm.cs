@@ -72,39 +72,31 @@ public sealed class ProductManagementForm : Form
             BackColor = SalrynUi.Colors.AppBackground
         };
 
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));   // summary strip
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));   // command bar
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));   // header + subtitle
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));   // summary metric strip
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));   // command bar
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));   // grid
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));   // status
 
         Controls.Add(root);
 
-        // Strong Product Management header (reference-aligned)
-        var titleLabel = new Label
-        {
-            Dock = DockStyle.Fill,
-            Text = "Products",
-            Font = SalrynUi.Typography.Title,
-            ForeColor = SalrynUi.Colors.TextStrong,
-            TextAlign = ContentAlignment.MiddleLeft
-        };
+        // P1C: header with title + subtitle (ledger console)
+        var header = SalrynUi.CreatePageHeader("Products", "Catalog • Search, add, edit or deactivate products");
+        root.Controls.Add(header, 0, 0);
 
-        root.Controls.Add(titleLabel, 0, 0);
-
-        // Summary strip (computed client-side from loaded rows)
+        // Summary strip styled as metric row (client-side only from loaded rows)
         var summaryBar = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.LeftToRight,
             BackColor = SalrynUi.Colors.SurfaceMuted,
-            Padding = new Padding(8, 2, 8, 2)
+            Padding = new Padding(6, 3, 6, 3)
         };
 
-        _summaryTotal = CreateSummaryLabel("Total: --");
-        _summaryActive = CreateSummaryLabel("Active: --");
-        _summaryLowStock = CreateSummaryLabel("Low Stock: --");
-        _summaryTracked = CreateSummaryLabel("Tracked: --");
+        _summaryTotal = SalrynUi.CreateSummaryMetric("Total: --");
+        _summaryActive = SalrynUi.CreateSummaryMetric("Active: --");
+        _summaryLowStock = SalrynUi.CreateSummaryMetric("Low Stock: --");
+        _summaryTracked = SalrynUi.CreateSummaryMetric("Tracked: --");
 
         summaryBar.Controls.Add(_summaryTotal);
         summaryBar.Controls.Add(_summaryActive);
@@ -113,19 +105,23 @@ public sealed class ProductManagementForm : Form
 
         root.Controls.Add(summaryBar, 0, 1);
 
+        // P1C: grouped command bar (search + actions)
+        var cmdHost = SalrynUi.CreateCommandBar();
         var searchPanel = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 7,
+            ColumnCount = 9,
             RowCount = 1
         };
 
         searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
-        searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
-        searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
-        searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
-        searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
+        searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90));
+        searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90));
+        searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 106));
+        searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 106));
+        searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 6));  // danger sep
+        searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 106));
+        searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 6));
         searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 12));
 
         _searchTextBox = new TextBox
@@ -162,10 +158,13 @@ public sealed class ProductManagementForm : Form
         SalrynUi.ConfigurePrimaryButton(_editButton, "Edit");
         _editButton.Click += async (_, _) => await OpenEditFormAsync();
 
+        // Visual danger separator before destructive action (far right group)
+        var dangerSep = SalrynUi.CreateDangerSeparator();
+        dangerSep.Dock = DockStyle.Fill;
+
         _deactivateButton = new Button { Dock = DockStyle.Fill };
         SalrynUi.ConfigureDangerButton(_deactivateButton, "Deactivate");
-        // Visually separated from benign actions (extra left margin already present via column layout)
-        _deactivateButton.Margin = new Padding(16, 0, 0, 0);
+        _deactivateButton.Margin = new Padding(2, 0, 0, 0);
 
         _deactivateButton.Click += async (_, _) => await DeactivateSelectedProductAsync();
 
@@ -181,9 +180,11 @@ public sealed class ProductManagementForm : Form
         searchPanel.Controls.Add(_refreshButton, 2, 0);
         searchPanel.Controls.Add(_addButton, 3, 0);
         searchPanel.Controls.Add(_editButton, 4, 0);
-        searchPanel.Controls.Add(_deactivateButton, 5, 0);
+        searchPanel.Controls.Add(dangerSep, 5, 0);
+        searchPanel.Controls.Add(_deactivateButton, 6, 0);
 
-        root.Controls.Add(searchPanel, 0, 2);
+        cmdHost.Controls.Add(searchPanel);
+        root.Controls.Add(cmdHost, 0, 2);
 
         _productsGrid = new DataGridView();
         SalrynUi.ConfigureLedgerGrid(_productsGrid);
@@ -218,9 +219,13 @@ public sealed class ProductManagementForm : Form
             TextAlign = ContentAlignment.MiddleLeft
         };
         SalrynUi.SetStatusNeutral(_statusLabel, string.Empty);
+        SalrynUi.ConfigureFooterStatus(_statusLabel);
 
         root.Controls.Add(_statusLabel, 0, 4);
         UpdateActionButtonState();
+
+        // P1C: cell-level visual badges (status coloring) using existing bound data only
+        WireGridStatusBadges();
     }
 
     private void AddTextColumn(
@@ -535,5 +540,27 @@ public sealed class ProductManagementForm : Form
         _summaryActive.Text = $"Active: {active}";
         _summaryLowStock.Text = $"Low Stock: {lowStock}";
         _summaryTracked.Text = $"Tracked: {tracked}";
+    }
+
+    private void WireGridStatusBadges()
+    {
+        _productsGrid.CellFormatting += (_, e) =>
+        {
+            if (e.RowIndex < 0 || e.ColumnIndex < 0) return;
+            var col = _productsGrid.Columns[e.ColumnIndex];
+            if (col != null && string.Equals(col.HeaderText, "Status", StringComparison.OrdinalIgnoreCase) && e.Value is string val)
+            {
+                if (string.Equals(val, "Active", StringComparison.OrdinalIgnoreCase))
+                {
+                    e.CellStyle.BackColor = Color.FromArgb(220, 252, 231);
+                    e.CellStyle.ForeColor = Color.FromArgb(22, 101, 52);
+                }
+                else
+                {
+                    e.CellStyle.BackColor = Color.FromArgb(254, 226, 226);
+                    e.CellStyle.ForeColor = SalrynUi.Colors.Danger;
+                }
+            }
+        };
     }
 }

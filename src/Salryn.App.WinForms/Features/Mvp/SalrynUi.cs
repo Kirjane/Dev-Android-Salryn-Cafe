@@ -178,18 +178,20 @@ public static class SalrynUi
             MinimizeBox = false,
             MaximizeBox = false,
             ShowInTaskbar = false,
-            Size = new Size(420, 180)
+            BackColor = Colors.Surface,
+            Size = new Size(440, 200)
         };
 
         // Reference-aligned dangerous dialog
         var titleLabel = new Label
         {
             Dock = DockStyle.Top,
-            Height = 32,
+            Height = 34,
             Text = title,
-            Font = new Font("Segoe UI", 11F, FontStyle.Bold),
-            ForeColor = Colors.TextStrong,
-            Padding = new Padding(4, 4, 4, 0)
+            Font = new Font("Segoe UI", 12F, FontStyle.Bold),
+            ForeColor = Colors.Danger,
+            BackColor = Colors.Surface,
+            Padding = new Padding(12, 6, 12, 0)
         };
 
         var layout = new TableLayoutPanel
@@ -208,7 +210,8 @@ public static class SalrynUi
             Dock = DockStyle.Fill,
             Text = message,
             TextAlign = ContentAlignment.MiddleLeft,
-            Font = Typography.Body
+            Font = Typography.Body,
+            ForeColor = Colors.TextStrong
         };
 
         var buttons = new FlowLayoutPanel
@@ -260,7 +263,18 @@ public static class SalrynUi
             MinimizeBox = false,
             MaximizeBox = false,
             ShowInTaskbar = false,
-            Size = new Size(460, 240)
+            BackColor = Colors.Surface,
+            Size = new Size(480, 260)
+        };
+
+        var header = new Label
+        {
+            Dock = DockStyle.Top,
+            Height = 32,
+            Text = title,
+            Font = new Font("Segoe UI", 11F, FontStyle.Bold),
+            ForeColor = Colors.TextStrong,
+            Padding = new Padding(12, 6, 12, 0)
         };
 
         var layout = new TableLayoutPanel
@@ -270,9 +284,9 @@ public static class SalrynUi
             RowCount = 4,
             Padding = new Padding(16)
         };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 12));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 8));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
 
         var label = new Label
@@ -280,14 +294,17 @@ public static class SalrynUi
             Dock = DockStyle.Fill,
             Text = prompt,
             TextAlign = ContentAlignment.MiddleLeft,
-            Font = Typography.Body
+            Font = Typography.Body,
+            ForeColor = Colors.TextStrong
         };
 
         var input = new TextBox
         {
             Dock = DockStyle.Fill,
             Multiline = true,
-            ScrollBars = ScrollBars.Vertical
+            ScrollBars = ScrollBars.Vertical,
+            BorderStyle = BorderStyle.FixedSingle,
+            BackColor = Colors.Surface
         };
 
         var buttons = new FlowLayoutPanel
@@ -297,7 +314,12 @@ public static class SalrynUi
         };
 
         var ok = new Button { Text = "OK", Width = 100, Height = 32, DialogResult = DialogResult.OK };
+        SalrynUi.ConfigurePrimaryButton(ok, "OK");
+        ok.Width = 100; ok.Height = 32;
+
         var cancel = new Button { Text = "Cancel", Width = 90, Height = 32, DialogResult = DialogResult.Cancel };
+        SalrynUi.ConfigureSecondaryButton(cancel, "Cancel");
+        cancel.Width = 90; cancel.Height = 32;
 
         buttons.Controls.Add(cancel);
         buttons.Controls.Add(ok);
@@ -305,6 +327,8 @@ public static class SalrynUi
         layout.Controls.Add(label, 0, 0);
         layout.Controls.Add(input, 0, 1);
         layout.Controls.Add(buttons, 0, 3);
+
+        dlg.Controls.Add(header);
         dlg.Controls.Add(layout);
 
         dlg.AcceptButton = ok;
@@ -338,5 +362,151 @@ public static class SalrynUi
             title,
             MessageBoxButtons.OK,
             MessageBoxIcon.Error);
+    }
+
+    // --- P1C visual parity helpers (WinForms-only; catalog visuals only - no asset fields) ---
+
+    /// <summary>Creates a simple page header panel with title + subtitle for ledger console screens.</summary>
+    public static Panel CreatePageHeader(string title, string subtitle)
+    {
+        var panel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Colors.Surface,
+            Padding = new Padding(4, 2, 4, 6)
+        };
+
+        var titleLabel = new Label
+        {
+            Dock = DockStyle.Top,
+            Height = 30,
+            Text = title,
+            Font = Typography.Title,
+            ForeColor = Colors.TextStrong,
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+
+        var subLabel = new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = subtitle,
+            Font = Typography.Small,
+            ForeColor = Colors.TextMuted,
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+
+        panel.Controls.Add(subLabel);
+        panel.Controls.Add(titleLabel);
+        return panel;
+    }
+
+    /// <summary>Creates a visually grouped command bar container (surface + subtle border).</summary>
+    public static Panel CreateCommandBar()
+    {
+        return new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Colors.Surface,
+            BorderStyle = BorderStyle.FixedSingle,
+            Padding = new Padding(6)
+        };
+    }
+
+    /// <summary>Creates a metric-style label for summary strips (bold, tight, surface-muted).</summary>
+    public static Label CreateSummaryMetric(string text)
+    {
+        return new Label
+        {
+            Text = text,
+            Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+            ForeColor = Colors.TextStrong,
+            BackColor = Colors.SurfaceMuted,
+            AutoSize = true,
+            Margin = new Padding(2, 1, 10, 1),
+            Padding = new Padding(6, 3, 6, 3)
+        };
+    }
+
+    /// <summary>Section title label for form areas (e.g. "Product Details").</summary>
+    public static Label CreateSectionTitle(string text)
+    {
+        return new Label
+        {
+            Text = text,
+            Font = Typography.Section,
+            ForeColor = Colors.TextStrong,
+            Dock = DockStyle.Top,
+            Height = 22,
+            Padding = new Padding(0, 4, 0, 2)
+        };
+    }
+
+    /// <summary>Consistent field label; pass true for required to append visual marker.</summary>
+    public static Label CreateFieldLabel(string text, bool required = false)
+    {
+        string display = required ? text + " *" : text;
+        return new Label
+        {
+            Text = display,
+            Font = Typography.Body,
+            ForeColor = Colors.TextStrong,
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Padding = new Padding(2, 0, 2, 0)
+        };
+    }
+
+    /// <summary>Styles a label as a small status/tag badge using existing data values (Active etc).</summary>
+    public static void StyleAsTag(Label label, string value)
+    {
+        label.AutoSize = true;
+        label.Font = Typography.Small;
+        label.Padding = new Padding(4, 1, 4, 1);
+        label.TextAlign = ContentAlignment.MiddleCenter;
+        label.Margin = new Padding(2, 0, 2, 0);
+
+        if (string.Equals(value, "Active", StringComparison.OrdinalIgnoreCase))
+        {
+            label.BackColor = Color.FromArgb(220, 252, 231);
+            label.ForeColor = Color.FromArgb(22, 101, 52);
+        }
+        else if (string.Equals(value, "Inactive", StringComparison.OrdinalIgnoreCase) || string.Equals(value, "Deactivated", StringComparison.OrdinalIgnoreCase))
+        {
+            label.BackColor = Color.FromArgb(254, 226, 226);
+            label.ForeColor = Colors.Danger;
+        }
+        else
+        {
+            label.BackColor = Colors.SurfaceMuted;
+            label.ForeColor = Colors.TextMuted;
+        }
+    }
+
+    /// <summary>Configures a label as the bottom status/footer strip for intentional look.</summary>
+    public static void ConfigureFooterStatus(Label label)
+    {
+        label.BackColor = Colors.SurfaceMuted;
+        label.BorderStyle = BorderStyle.FixedSingle;
+        label.Padding = new Padding(8, 0, 8, 0);
+    }
+
+    /// <summary>Thin vertical danger visual separator for action grouping (e.g. before Deactivate).</summary>
+    public static Panel CreateDangerSeparator()
+    {
+        return new Panel
+        {
+            Width = 2,
+            Height = 28,
+            BackColor = Colors.Danger,
+            Margin = new Padding(10, 4, 6, 4)
+        };
+    }
+
+    /// <summary>Applies ledger-style footer container look to a buttons/status host panel.</summary>
+    public static void StyleFooterStrip(Panel panel)
+    {
+        panel.BackColor = Colors.SurfaceMuted;
+        panel.BorderStyle = BorderStyle.FixedSingle;
+        panel.Padding = new Padding(8);
     }
 }
