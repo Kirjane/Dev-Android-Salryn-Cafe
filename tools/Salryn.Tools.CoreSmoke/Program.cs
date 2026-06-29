@@ -63,6 +63,7 @@ public static class Program
         Phase66G8ACheckoutLocalHostDatabaseSmokeCleanupHardeningChecks.Run();
         J20MvpAppServicesExposureChecks.Run();
         J20MvpSkeletonUiChecks.Run();
+        UiA1VisualSystemFoundationChecks.Run();
         J20DevelopmentLaunchModeChecks.Run();
         J20UiWorkflowReadinessChecks.Run();
         PosStabA1StartupLoginReadinessChecks.Run();

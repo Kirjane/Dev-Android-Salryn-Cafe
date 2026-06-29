@@ -68,7 +68,8 @@ public sealed class DashboardForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 4,
             RowCount = 1,
-            BackColor = J20MvpUi.Colors.AppBackground
+            BackColor = J20MvpUi.Colors.AppBackground,
+            Padding = new Padding(0, 4, 0, 4)
         };
 
         for (int i = 0; i < 4; i++)
@@ -76,6 +77,7 @@ public sealed class DashboardForm : Form
             cards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
         }
 
+        // UI-A1: use improved visual weight cards for the console feel.
         cards.Controls.Add(J20MvpUi.MetricCard("Today Sales", _todaySalesValueLabel, "Completed sales total"), 0, 0);
         cards.Controls.Add(J20MvpUi.MetricCard("Transactions", _transactionsValueLabel, "Completed today"), 1, 0);
         cards.Controls.Add(J20MvpUi.MetricCard("Products", _productsValueLabel, "Catalog records"), 2, 0);
@@ -83,11 +85,10 @@ public sealed class DashboardForm : Form
 
         root.Controls.Add(cards, 0, 1);
 
-        Panel noteCard = J20MvpUi.Card();
+        // UI-A1: use accent card for subtle visual separation in the console layout.
+        Panel noteCard = J20MvpUi.CardWithAccent();
         Label note = J20MvpUi.BodyText(
-            "Track daily sales, transaction count, product records, and low-stock alerts from one screen." +
-            "" +
-            "");
+            "Track daily sales, transaction count, product records, and low-stock alerts from one screen.");
         note.Dock = DockStyle.Fill;
         noteCard.Controls.Add(note);
 

@@ -67,7 +67,7 @@ public sealed class SalrynShellForm : Form
             ColumnCount = 1,
             RowCount = 3,
             Padding = new Padding(16),
-            BackColor = Color.FromArgb(246, 247, 249)
+            BackColor = J20MvpUi.Colors.AppBackground
         };
 
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 84));
@@ -99,7 +99,7 @@ public sealed class SalrynShellForm : Form
             WrapContents = false,
             AutoScroll = true,
             Padding = new Padding(0),
-            BackColor = Color.FromArgb(246, 247, 249)
+            BackColor = J20MvpUi.Colors.AppBackground
         };
 
         body.Controls.Add(_navigationPanel, 0, 0);
@@ -128,7 +128,7 @@ public sealed class SalrynShellForm : Form
         var header = new Panel
         {
             Dock = DockStyle.Fill,
-            BackColor = Color.FromArgb(31, 41, 55),
+            BackColor = J20MvpUi.Colors.Header,
             Padding = new Padding(22, 12, 22, 12)
         };
 
@@ -195,23 +195,13 @@ public sealed class SalrynShellForm : Form
 
     private Button BuildModuleButton(ShellModule module)
     {
-        var button = new Button
-        {
-            Width = 260,
-            Height = 54,
-            Margin = new Padding(0, 0, 0, 10),
-            Text = module.IsEnabled
-                ? module.Title
-                : module.Title + " (Locked)",
-            TextAlign = ContentAlignment.MiddleLeft,
-            Padding = new Padding(14, 0, 14, 0),
-            Enabled = true,
-            FlatStyle = FlatStyle.Flat,
-            BackColor = module.IsEnabled ? Color.White : Color.FromArgb(229, 231, 235),
-            ForeColor = module.IsEnabled ? Color.FromArgb(17, 24, 39) : Color.FromArgb(107, 114, 128)
-        };
+        var button = new Button();
+        string label = module.IsEnabled ? module.Title : module.Title + " (Locked)";
 
-        button.FlatAppearance.BorderColor = Color.FromArgb(209, 213, 219);
+        // UI-A1: use shared visual token helper for consistent modern nav look.
+        J20MvpUi.ConfigureNavButton(button, label, isActive: false);
+
+        button.Enabled = true;
         button.Click += (_, _) => ActivateModule(module.Key);
 
         // Kirch B7: hover guidance — enabled modules describe themselves; locked modules state the reason.
