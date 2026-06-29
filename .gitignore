@@ -36,3 +36,4 @@ desktop.ini
 # Node / web frontend
 node_modules/
 dist/
+*.tsbuildinfo
