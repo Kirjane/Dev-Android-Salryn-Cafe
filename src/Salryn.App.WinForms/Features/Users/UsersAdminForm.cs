@@ -54,27 +54,20 @@ public sealed class UsersAdminForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 4,
-            Padding = new Padding(18),
-            BackColor = Color.FromArgb(246, 247, 249)
+            Padding = new Padding(SalrynUi.Spacing.FormPadding),
+            BackColor = SalrynUi.Colors.AppBackground
         };
 
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 182));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 196));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
 
         Controls.Add(root);
 
-        var titleLabel = new Label
-        {
-            Dock = DockStyle.Fill,
-            Text = "Users",
-            Font = new Font(Font.FontFamily, 20, FontStyle.Bold),
-            ForeColor = Color.FromArgb(17, 24, 39),
-            TextAlign = ContentAlignment.MiddleLeft
-        };
-
-        root.Controls.Add(titleLabel, 0, 0);
+        root.Controls.Add(SalrynUi.CreatePageHeader(
+            "Users",
+            "Manage operator accounts: create, edit roles, reset passwords, and control access."), 0, 0);
 
         _usersGrid = new DataGridView
         {
@@ -102,6 +95,9 @@ public sealed class UsersAdminForm : Form
         AddTextColumn("StatusText", "Status", 100);
         AddTextColumn("CreatedAtText", "Created", 150);
 
+        SalrynUi.ApplyLedgerGridStyle(_usersGrid);
+        _usersGrid.CellFormatting += UsersGridStatusFormatting;
+
         root.Controls.Add(_usersGrid, 0, 1);
 
         root.Controls.Add(BuildEditor(), 0, 2);
@@ -110,21 +106,46 @@ public sealed class UsersAdminForm : Form
         {
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleLeft,
-            ForeColor = Color.FromArgb(75, 85, 99)
+            ForeColor = SalrynUi.Colors.TextMuted
         };
+        SalrynUi.ConfigureFooterStatus(_statusLabel);
 
         root.Controls.Add(_statusLabel, 0, 3);
         UpdateActionState();
     }
 
+    // Client-side semantic coloring of the Status column from existing row values.
+    private void UsersGridStatusFormatting(object? sender, DataGridViewCellFormattingEventArgs e)
+    {
+        if (e.RowIndex < 0)
+        {
+            return;
+        }
+
+        DataGridViewColumn column = _usersGrid.Columns[e.ColumnIndex];
+
+        if (string.Equals(column.HeaderText, "Status", StringComparison.Ordinal))
+        {
+            SalrynUi.ApplyStatusCellColor(e.CellStyle, Convert.ToString(e.Value) ?? string.Empty);
+        }
+    }
+
     private Control BuildEditor()
     {
+        var card = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = SalrynUi.Colors.Surface,
+            BorderStyle = BorderStyle.FixedSingle,
+            Padding = new Padding(10, 6, 10, 6)
+        };
+
         var panel = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 6,
             RowCount = 4,
-            Padding = new Padding(0, 12, 0, 0)
+            Padding = new Padding(0, 8, 0, 0)
         };
 
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
@@ -179,7 +200,7 @@ public sealed class UsersAdminForm : Form
             PlaceholderText = "confirm"
         };
 
-        _refreshButton = BuildActionButton("Refresh", Color.White, Color.FromArgb(17, 24, 39));
+        _refreshButton = BuildSemanticButton("Refresh", SalrynUi.ConfigureSecondaryButton);
         _refreshButton.Click += async (_, _) => await LoadUsersAsync();
 
         panel.Controls.Add(_usernameTextBox, 0, 1);
@@ -189,19 +210,21 @@ public sealed class UsersAdminForm : Form
         panel.Controls.Add(_confirmPasswordTextBox, 4, 1);
         panel.Controls.Add(_refreshButton, 5, 1);
 
-        _createButton = BuildActionButton("Create", Color.FromArgb(22, 101, 52), Color.White);
+        // Semantic action styling: create=success, save=primary, reset=warning,
+        // deactivate=danger, reactivate=success.
+        _createButton = BuildSemanticButton("Create", SalrynUi.ConfigureSuccessButton);
         _createButton.Click += async (_, _) => await CreateUserAsync();
 
-        _saveButton = BuildActionButton("Save", Color.FromArgb(37, 99, 235), Color.White);
+        _saveButton = BuildSemanticButton("Save", SalrynUi.ConfigurePrimaryButton);
         _saveButton.Click += async (_, _) => await SaveUserAsync();
 
-        _resetPasswordButton = BuildActionButton("Reset Password", Color.FromArgb(88, 28, 135), Color.White);
+        _resetPasswordButton = BuildSemanticButton("Reset Password", SalrynUi.ConfigureWarningButton);
         _resetPasswordButton.Click += async (_, _) => await ResetPasswordAsync();
 
-        _deactivateButton = BuildActionButton("Deactivate", Color.FromArgb(185, 28, 28), Color.White);
+        _deactivateButton = BuildSemanticButton("Deactivate", SalrynUi.ConfigureDangerButton);
         _deactivateButton.Click += async (_, _) => await DeactivateUserAsync();
 
-        _reactivateButton = BuildActionButton("Reactivate", Color.FromArgb(21, 128, 61), Color.White);
+        _reactivateButton = BuildSemanticButton("Reactivate", SalrynUi.ConfigureSuccessButton);
         _reactivateButton.Click += async (_, _) => await ReactivateUserAsync();
 
         _toolTip.SetToolTip(_createButton, "Create a new user from the fields above.");
@@ -220,7 +243,9 @@ public sealed class UsersAdminForm : Form
         panel.Controls.Add(_deactivateButton, 3, 3);
         panel.Controls.Add(_reactivateButton, 4, 3);
 
-        return panel;
+        card.Controls.Add(panel);
+        card.Controls.Add(SalrynUi.CreateSectionTitle("User Editor"));
+        return card;
     }
 
     private static Label BuildLabel(string text)
@@ -234,22 +259,15 @@ public sealed class UsersAdminForm : Form
         };
     }
 
-    private static Button BuildActionButton(
+    // Build a semantic action button styled via SalrynUi, kept fill-docked for the editor grid.
+    private static Button BuildSemanticButton(
         string text,
-        Color backColor,
-        Color foreColor)
+        Action<Button, string> configure)
     {
-        var button = new Button
-        {
-            Dock = DockStyle.Fill,
-            Text = text,
-            Margin = new Padding(4),
-            BackColor = backColor,
-            ForeColor = foreColor,
-            FlatStyle = FlatStyle.Flat
-        };
-
-        button.FlatAppearance.BorderColor = Color.FromArgb(209, 213, 219);
+        var button = new Button();
+        configure(button, text);
+        button.Dock = DockStyle.Fill;
+        button.Margin = new Padding(4);
         return button;
     }
 

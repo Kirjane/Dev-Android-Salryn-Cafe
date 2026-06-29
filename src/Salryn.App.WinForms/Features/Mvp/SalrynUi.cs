@@ -564,4 +564,67 @@ public static class SalrynUi
             label.ForeColor = Colors.Success;
         }
     }
+
+    // --- Admin / history table visual helpers (P3) ---
+
+    /// <summary>
+    /// Applies ledger console visual styling to a grid WITHOUT changing column
+    /// generation or data binding. Safe for grids that rely on auto-generated columns.
+    /// </summary>
+    public static void ApplyLedgerGridStyle(DataGridView grid)
+    {
+        grid.BackgroundColor = Colors.Surface;
+        grid.BorderStyle = BorderStyle.FixedSingle;
+        grid.EnableHeadersVisualStyles = false;
+        grid.RowHeadersVisible = false;
+        grid.AllowUserToAddRows = false;
+        grid.AllowUserToDeleteRows = false;
+        grid.AllowUserToResizeRows = false;
+        grid.ReadOnly = true;
+        grid.MultiSelect = false;
+        grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+        grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
+
+        grid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(241, 245, 249);
+        grid.ColumnHeadersDefaultCellStyle.ForeColor = Colors.TextStrong;
+        grid.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+        grid.ColumnHeadersDefaultCellStyle.Padding = new Padding(6, 4, 6, 4);
+
+        grid.DefaultCellStyle.Font = new Font("Segoe UI", 9F, FontStyle.Regular);
+        grid.DefaultCellStyle.ForeColor = Colors.TextStrong;
+        grid.DefaultCellStyle.SelectionBackColor = Color.FromArgb(219, 234, 254);
+        grid.DefaultCellStyle.SelectionForeColor = Colors.TextStrong;
+
+        grid.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(250, 250, 252);
+        grid.RowTemplate.Height = 28;
+    }
+
+    /// <summary>
+    /// Semantic color for a status value already present in a loaded row.
+    /// Completed/Active read as success; Voided/Inactive/Deactivated read as danger.
+    /// </summary>
+    public static Color GetStatusColor(string value)
+    {
+        if (string.Equals(value, "Completed", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(value, "Active", StringComparison.OrdinalIgnoreCase))
+        {
+            return Colors.Success;
+        }
+
+        if (string.Equals(value, "Voided", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(value, "Inactive", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(value, "Deactivated", StringComparison.OrdinalIgnoreCase))
+        {
+            return Colors.Danger;
+        }
+
+        return Colors.TextMuted;
+    }
+
+    /// <summary>Applies semantic status coloring to a grid cell style from an existing string value.</summary>
+    public static void ApplyStatusCellColor(DataGridViewCellStyle style, string value)
+    {
+        style.ForeColor = GetStatusColor(value);
+        style.SelectionForeColor = GetStatusColor(value);
+    }
 }

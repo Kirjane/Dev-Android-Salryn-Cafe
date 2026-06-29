@@ -58,7 +58,7 @@ public sealed class SalesHistoryForm : Form
         MinimumSize = new Size(1120, 720);
         Size = new Size(1240, 780);
         Font = new Font("Segoe UI", 9F);
-        BackColor = J20MvpUi.Colors.AppBackground;
+        BackColor = SalrynUi.Colors.AppBackground;
 
         BuildLayout();
         WireEvents();
@@ -72,41 +72,76 @@ public sealed class SalesHistoryForm : Form
 
     private void BuildLayout()
     {
-        TableLayoutPanel root = J20MvpUi.RootLayout(rowCount: 5);
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 72F));
+        var root = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 5,
+            Padding = new Padding(SalrynUi.Spacing.FormPadding),
+            BackColor = SalrynUi.Colors.AppBackground
+        };
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58F));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 72F));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 52F));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
 
         Controls.Add(root);
 
-        root.Controls.Add(J20MvpUi.Header(
+        root.Controls.Add(SalrynUi.CreatePageHeader(
             "Sales History",
             "Filter, page, and review completed or voided sales. Receipt preview and voiding stay on the selected row."), 0, 0);
 
         root.Controls.Add(BuildFilterPanel(), 0, 1);
         root.Controls.Add(BuildActionPagingPanel(), 0, 2);
 
-        Panel gridCard = J20MvpUi.Card();
+        var gridCard = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = SalrynUi.Colors.Surface,
+            BorderStyle = BorderStyle.FixedSingle,
+            Padding = new Padding(1)
+        };
         _salesGrid.Dock = DockStyle.Fill;
+        SalrynUi.ApplyLedgerGridStyle(_salesGrid);
+        _salesGrid.CellFormatting += SalesGridStatusFormatting;
         gridCard.Controls.Add(_salesGrid);
         root.Controls.Add(gridCard, 0, 3);
 
         _statusLabel.Dock = DockStyle.Fill;
         _statusLabel.TextAlign = ContentAlignment.MiddleLeft;
-        _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
+        SalrynUi.SetStatusNeutral(_statusLabel, string.Empty);
+        SalrynUi.ConfigureFooterStatus(_statusLabel);
         root.Controls.Add(_statusLabel, 0, 4);
+    }
+
+    // Client-side semantic coloring of the Status column from already-loaded row values.
+    private void SalesGridStatusFormatting(object? sender, DataGridViewCellFormattingEventArgs e)
+    {
+        if (e.RowIndex < 0)
+        {
+            return;
+        }
+
+        DataGridViewColumn column = _salesGrid.Columns[e.ColumnIndex];
+
+        if (string.Equals(column.DataPropertyName, "Status", StringComparison.Ordinal) ||
+            string.Equals(column.HeaderText, "Status", StringComparison.Ordinal))
+        {
+            SalrynUi.ApplyStatusCellColor(e.CellStyle, Convert.ToString(e.Value) ?? string.Empty);
+        }
     }
 
     private Control BuildFilterPanel()
     {
+        Panel commandBar = SalrynUi.CreateCommandBar();
+
         TableLayoutPanel panel = new()
         {
             Dock = DockStyle.Fill,
             ColumnCount = 9,
             RowCount = 1,
-            BackColor = J20MvpUi.Colors.AppBackground
+            BackColor = SalrynUi.Colors.Surface
         };
 
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 52F));
@@ -136,7 +171,7 @@ public sealed class SalesHistoryForm : Form
         _pageSizeComboBox.Items.AddRange(AllowedPageSizes.Select(static size => (object)size).ToArray());
         _pageSizeComboBox.SelectedItem = 50;
 
-        J20MvpUi.ConfigurePrimaryButton(_applyButton, "Apply");
+        SalrynUi.ConfigurePrimaryButton(_applyButton, "Apply");
 
         _toolTip.SetToolTip(_fromDatePicker, "Optional start date. Tick the box to enable this filter.");
         _toolTip.SetToolTip(_toDatePicker, "Optional end date. Tick the box to enable this filter.");
@@ -155,7 +190,8 @@ public sealed class SalesHistoryForm : Form
         panel.Controls.Add(_pageSizeComboBox, 7, 0);
         panel.Controls.Add(_applyButton, 8, 0);
 
-        return panel;
+        commandBar.Controls.Add(panel);
+        return commandBar;
     }
 
     private Control BuildActionPagingPanel()
@@ -165,7 +201,7 @@ public sealed class SalesHistoryForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 2,
             RowCount = 1,
-            BackColor = J20MvpUi.Colors.AppBackground,
+            BackColor = SalrynUi.Colors.AppBackground,
             Padding = new Padding(0, 8, 0, 0)
         };
 
@@ -176,28 +212,30 @@ public sealed class SalesHistoryForm : Form
         {
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.LeftToRight,
-            BackColor = J20MvpUi.Colors.AppBackground
+            BackColor = SalrynUi.Colors.AppBackground
         };
 
-        J20MvpUi.ConfigureSecondaryButton(_viewReceiptButton, "View Receipt");
-        J20MvpUi.ConfigureSecondaryButton(_voidSaleButton, "Void Sale");
+        // View Receipt = secondary; Void Sale = danger, visually separated.
+        SalrynUi.ConfigureSecondaryButton(_viewReceiptButton, "View Receipt");
+        SalrynUi.ConfigureDangerButton(_voidSaleButton, "Void Sale");
 
         _toolTip.SetToolTip(_viewReceiptButton, "Open the selected sale's receipt preview.");
         _toolTip.SetToolTip(_voidSaleButton, "Void the selected completed sale (requires permission and a reason).");
 
         actions.Controls.Add(_viewReceiptButton);
+        actions.Controls.Add(SalrynUi.CreateDangerSeparator());
         actions.Controls.Add(_voidSaleButton);
 
         FlowLayoutPanel paging = new()
         {
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.RightToLeft,
-            BackColor = J20MvpUi.Colors.AppBackground
+            BackColor = SalrynUi.Colors.AppBackground
         };
 
-        J20MvpUi.ConfigureSecondaryButton(_nextPageButton, "Next Page");
-        J20MvpUi.ConfigureSecondaryButton(_previousPageButton, "Previous Page");
-        J20MvpUi.ConfigureSecondaryButton(_refreshButton, "Refresh");
+        SalrynUi.ConfigureSecondaryButton(_nextPageButton, "Next Page");
+        SalrynUi.ConfigureSecondaryButton(_previousPageButton, "Previous Page");
+        SalrynUi.ConfigureSecondaryButton(_refreshButton, "Refresh");
 
         _toolTip.SetToolTip(_nextPageButton, "Go to the next page of sales.");
         _toolTip.SetToolTip(_previousPageButton, "Go to the previous page of sales.");

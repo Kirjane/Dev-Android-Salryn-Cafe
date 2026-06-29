@@ -68,6 +68,7 @@ public static class Program
         UiA1RProductMockupAlignmentChecks.Run();
         UiA1RProductVisualParityChecks.Run();
         UiA1RInventoryVisualAlignmentChecks.Run();
+        UiA1RAdminTablesVisualAlignmentChecks.Run();
         J20DevelopmentLaunchModeChecks.Run();
         J20UiWorkflowReadinessChecks.Run();
         PosStabA1StartupLoginReadinessChecks.Run();

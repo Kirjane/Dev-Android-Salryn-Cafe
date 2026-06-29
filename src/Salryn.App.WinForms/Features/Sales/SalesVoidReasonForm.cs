@@ -17,9 +17,9 @@ public sealed class SalesVoidReasonForm : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
-        Size = new Size(520, 260);
+        Size = new Size(520, 280);
         Font = new Font("Segoe UI", 9F);
-        BackColor = J20MvpUi.Colors.AppBackground;
+        BackColor = SalrynUi.Colors.Surface;
 
         BuildLayout(receiptNo);
         WireEvents();
@@ -29,52 +29,65 @@ public sealed class SalesVoidReasonForm : Form
 
     private void BuildLayout(string receiptNo)
     {
-        TableLayoutPanel root = J20MvpUi.RootLayout(rowCount: 4);
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 56F));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        var root = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 5,
+            Padding = new Padding(SalrynUi.Spacing.FormPadding),
+            BackColor = SalrynUi.Colors.Surface
+        };
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 22F));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
 
         Controls.Add(root);
 
+        // Dialog System reference: danger title treatment for a destructive action.
         Label header = new()
         {
             Dock = DockStyle.Fill,
             Text = "Void sale " + receiptNo,
             Font = new Font("Segoe UI", 12F, FontStyle.Bold),
-            ForeColor = J20MvpUi.Colors.TextStrong,
+            ForeColor = SalrynUi.Colors.Danger,
             TextAlign = ContentAlignment.MiddleLeft
         };
 
         root.Controls.Add(header, 0, 0);
+
+        root.Controls.Add(SalrynUi.CreateFieldLabel("Reason", required: true), 0, 1);
 
         _reasonTextBox.Dock = DockStyle.Fill;
         _reasonTextBox.Multiline = true;
         _reasonTextBox.MaxLength = 500;
         _reasonTextBox.PlaceholderText = "Required reason...";
         _reasonTextBox.Font = new Font("Segoe UI", 10F);
+        _reasonTextBox.BorderStyle = BorderStyle.FixedSingle;
 
-        root.Controls.Add(_reasonTextBox, 0, 1);
+        root.Controls.Add(_reasonTextBox, 0, 2);
 
         _statusLabel.Dock = DockStyle.Fill;
         _statusLabel.TextAlign = ContentAlignment.MiddleLeft;
-        _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
-        root.Controls.Add(_statusLabel, 0, 2);
+        SalrynUi.SetStatusNeutral(_statusLabel, string.Empty);
+        root.Controls.Add(_statusLabel, 0, 3);
 
-        FlowLayoutPanel actions = new()
+        var actions = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.RightToLeft,
-            BackColor = J20MvpUi.Colors.AppBackground
+            BackColor = SalrynUi.Colors.Surface
         };
 
-        J20MvpUi.ConfigurePrimaryButton(_voidButton, "Void Sale");
-        J20MvpUi.ConfigureSecondaryButton(_cancelButton, "Cancel");
+        // Void = danger action; Cancel = safe secondary.
+        SalrynUi.ConfigureDangerButton(_voidButton, "Void Sale");
+        SalrynUi.ConfigureSecondaryButton(_cancelButton, "Cancel");
 
         actions.Controls.Add(_voidButton);
         actions.Controls.Add(_cancelButton);
 
-        root.Controls.Add(actions, 0, 3);
+        root.Controls.Add(actions, 0, 4);
     }
 
     private void WireEvents()
@@ -89,8 +102,7 @@ public sealed class SalesVoidReasonForm : Form
         {
             if (string.IsNullOrWhiteSpace(_reasonTextBox.Text))
             {
-                _statusLabel.Text = "Void reason is required.";
-                _statusLabel.ForeColor = J20MvpUi.Colors.Danger;
+                SalrynUi.SetStatusError(_statusLabel, "Void reason is required.");
                 return;
             }
 
