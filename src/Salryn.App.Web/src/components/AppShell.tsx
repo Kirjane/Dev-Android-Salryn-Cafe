@@ -1,34 +1,23 @@
 import { useState, type ReactNode } from "react";
 import type { SessionState } from "../api/session";
+import { navItems, type AppPage } from "../navigation";
 import { ConfirmDialog, StatusPill } from "./ui";
-
-type NavItem = {
-  label: string;
-  // WEB-A4: only Dashboard is active. Every other module is a visual placeholder
-  // and intentionally has no route/page/API wiring yet.
-  active?: boolean;
-};
-
-const navItems: NavItem[] = [
-  { label: "Dashboard", active: true },
-  { label: "POS Checkout" },
-  { label: "Products" },
-  { label: "Inventory" },
-  { label: "Sales History" },
-  { label: "Official Output Text File" },
-  { label: "Settings" },
-  { label: "Users" },
-  { label: "Backup" },
-  { label: "Audit" },
-];
 
 type AppShellProps = {
   session: SessionState;
+  currentPage: AppPage;
+  onNavigate: (page: AppPage) => void;
   onLogout: () => void;
   children: ReactNode;
 };
 
-export function AppShell({ session, onLogout, children }: AppShellProps) {
+export function AppShell({
+  session,
+  currentPage,
+  onNavigate,
+  onLogout,
+  children,
+}: AppShellProps) {
   const [confirmLogout, setConfirmLogout] = useState(false);
 
   return (
@@ -61,24 +50,39 @@ export function AppShell({ session, onLogout, children }: AppShellProps) {
       <div className="flex min-h-0 flex-1">
         <aside className="flex w-60 flex-col bg-navy-800 text-slate-200">
           <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
-            {navItems.map((item) => (
-              <div
-                key={item.label}
-                aria-disabled={!item.active}
-                className={`flex items-center justify-between rounded-md px-3 py-2 text-sm ${
-                  item.active
-                    ? "border-l-2 border-blue-500 bg-navy-700 font-medium text-white"
-                    : "cursor-not-allowed border-l-2 border-transparent text-slate-400"
-                }`}
-              >
-                <span>{item.label}</span>
-                {!item.active ? (
-                  <span className="text-[0.6rem] uppercase tracking-wide text-slate-500">
-                    Later
-                  </span>
-                ) : null}
-              </div>
-            ))}
+            {navItems.map((item) => {
+              const isActive = item.enabled && item.id === currentPage;
+
+              if (!item.enabled) {
+                return (
+                  <div
+                    key={item.label}
+                    aria-disabled
+                    className="flex cursor-not-allowed items-center justify-between rounded-md border-l-2 border-transparent px-3 py-2 text-sm text-slate-400"
+                  >
+                    <span>{item.label}</span>
+                    <span className="text-[0.6rem] uppercase tracking-wide text-slate-500">
+                      Later
+                    </span>
+                  </div>
+                );
+              }
+
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => onNavigate(item.id)}
+                  className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm ${
+                    isActive
+                      ? "border-l-2 border-blue-500 bg-navy-700 font-medium text-white"
+                      : "border-l-2 border-transparent text-slate-300 hover:bg-navy-700/50"
+                  }`}
+                >
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
           </nav>
           <div className="border-t border-white/5 px-4 py-3 text-[0.7rem] text-slate-400">
             Local API · 127.0.0.1:5299
@@ -90,9 +94,9 @@ export function AppShell({ session, onLogout, children }: AppShellProps) {
           <footer className="flex items-center justify-between border-t border-slate-200 bg-white px-6 py-2 text-xs text-slate-500">
             <span className="flex items-center gap-2">
               <StatusPill tone="success">System Ready</StatusPill>
-              Salryn local web console
+              Salryn read-only operator console
             </span>
-            <span>WEB-A4 native dev host</span>
+            <span>WEB-B0 read-only surfaces</span>
           </footer>
         </div>
       </div>

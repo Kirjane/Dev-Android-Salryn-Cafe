@@ -17,7 +17,12 @@ public sealed class SalrynLocalComposition
         IAuthenticationService authentication,
         ISaleReadRepository saleReadRepository,
         IProductReadRepository productReadRepository,
-        IInventoryReadRepository inventoryReadRepository)
+        IInventoryReadRepository inventoryReadRepository,
+        ICatalogReadRepository catalogReadRepository,
+        IUserReadRepository userReadRepository,
+        IUserPermissionReadRepository userPermissionReadRepository,
+        IAuditReadRepository auditReadRepository,
+        IErrorLogReadRepository errorLogReadRepository)
     {
         DbPaths = dbPaths;
         ConnectionFactory = connectionFactory;
@@ -26,6 +31,11 @@ public sealed class SalrynLocalComposition
         SaleReadRepository = saleReadRepository;
         ProductReadRepository = productReadRepository;
         InventoryReadRepository = inventoryReadRepository;
+        CatalogReadRepository = catalogReadRepository;
+        UserReadRepository = userReadRepository;
+        UserPermissionReadRepository = userPermissionReadRepository;
+        AuditReadRepository = auditReadRepository;
+        ErrorLogReadRepository = errorLogReadRepository;
     }
 
     public DbPaths DbPaths { get; }
@@ -41,6 +51,16 @@ public sealed class SalrynLocalComposition
     public IProductReadRepository ProductReadRepository { get; }
 
     public IInventoryReadRepository InventoryReadRepository { get; }
+
+    public ICatalogReadRepository CatalogReadRepository { get; }
+
+    public IUserReadRepository UserReadRepository { get; }
+
+    public IUserPermissionReadRepository UserPermissionReadRepository { get; }
+
+    public IAuditReadRepository AuditReadRepository { get; }
+
+    public IErrorLogReadRepository ErrorLogReadRepository { get; }
 
     public static SalrynLocalComposition CreateProduction()
     {
@@ -91,7 +111,12 @@ public sealed class SalrynLocalComposition
             authentication,
             repositories.CreateSaleReadRepository(),
             repositories.CreateProductReadRepository(),
-            repositories.CreateInventoryReadRepository());
+            repositories.CreateInventoryReadRepository(),
+            repositories.CreateCatalogReadRepository(),
+            repositories.CreateUserReadRepository(),
+            userPermissionReadRepository,
+            repositories.CreateAuditReadRepository(),
+            repositories.CreateErrorLogReadRepository());
     }
 
     public Task InitializeDatabaseAsync(CancellationToken cancellationToken = default)

@@ -19,6 +19,7 @@ public static class WebA3ShellDesignSystemChecks
 
         string sessionApiText = ReadRequiredFile(webSrc, "api", "session.ts");
         string dashboardApiText = ReadRequiredFile(webSrc, "api", "dashboard.ts");
+        string webAppText = ReadRequiredFile(webSrc, "App.tsx");
         string dashboardPageText = ReadRequiredFile(webSrc, "pages", "DashboardPage.tsx");
         string loginPageText = ReadRequiredFile(webSrc, "pages", "LoginPage.tsx");
         string coreSmokeText = ReadRequiredFile(
@@ -28,8 +29,9 @@ public static class WebA3ShellDesignSystemChecks
         RequireContains(sessionApiText, "/api/auth/login", "Web app must call /api/auth/login.");
         RequireContains(sessionApiText, "/api/session", "Web app must call /api/session.");
         RequireContains(dashboardApiText, "/api/dashboard/summary", "Web app must call /api/dashboard/summary.");
-        RequireContains(dashboardPageText, "AppShell", "Dashboard must render through the upgraded AppShell.");
-        RequireContains(dashboardPageText, "useAppSession", "Dashboard must remain session-aware.");
+        RequireContains(dashboardPageText, "fetchDashboardSummary", "Dashboard must read the dashboard summary.");
+        RequireContains(webAppText, "AppShell", "Authenticated app must render through AppShell.");
+        RequireContains(webAppText, "useAppSession", "App must remain session-aware.");
         RequireContains(loginPageText, "Sign in to Salryn Ledger Console", "Login must keep Ledger Console branding.");
         RequireContains(loginPageText, "connects to the Salryn local API on this device", "Login must describe local API connection.");
 
@@ -44,18 +46,22 @@ public static class WebA3ShellDesignSystemChecks
             RequireNotContains(scoped, "NativeHandoff", "WEB-A3 must not reintroduce native handoff.");
         }
 
-        // No forbidden module pages were added.
+        // Read-only module pages are allowed after WEB-B0.
         string[] forbiddenPagePrefixes =
         {
-            "Products", "Product", "Inventory", "Sales", "Users", "User",
-            "Backup", "Audit", "Settings", "Checkout", "OfficialOutput",
+            "Checkout", "Backup", "Settings", "OfficialOutput",
         };
         string pagesDir = Path.Combine(webSrc, "pages");
         foreach (string pageFile in Directory.GetFiles(pagesDir, "*.tsx", SearchOption.AllDirectories))
         {
             string name = Path.GetFileName(pageFile);
             if (name.Equals("LoginPage.tsx", StringComparison.Ordinal) ||
-                name.Equals("DashboardPage.tsx", StringComparison.Ordinal))
+                name.Equals("DashboardPage.tsx", StringComparison.Ordinal) ||
+                name.Equals("ProductsPage.tsx", StringComparison.Ordinal) ||
+                name.Equals("InventoryPage.tsx", StringComparison.Ordinal) ||
+                name.Equals("SalesHistoryPage.tsx", StringComparison.Ordinal) ||
+                name.Equals("UsersPage.tsx", StringComparison.Ordinal) ||
+                name.Equals("AuditPage.tsx", StringComparison.Ordinal))
             {
                 continue;
             }

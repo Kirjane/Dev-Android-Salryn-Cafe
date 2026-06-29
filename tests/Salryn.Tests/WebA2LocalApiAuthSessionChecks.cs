@@ -15,6 +15,7 @@ public static class WebA2LocalApiAuthSessionChecks
         string webSessionApiText = ReadRequiredFile(repoRoot, "src", "Salryn.App.Web", "src", "api", "session.ts");
         string webLoginPageText = ReadRequiredFile(repoRoot, "src", "Salryn.App.Web", "src", "pages", "LoginPage.tsx");
         string webAppText = ReadRequiredFile(repoRoot, "src", "Salryn.App.Web", "src", "App.tsx");
+        string webUseAppSessionText = ReadRequiredFile(repoRoot, "src", "Salryn.App.Web", "src", "hooks", "useAppSession.ts");
         string webDashboardPageText = ReadRequiredFile(repoRoot, "src", "Salryn.App.Web", "src", "pages", "DashboardPage.tsx");
         string coreSmokeText = ReadRequiredFile(repoRoot, "tools", "Salryn.Tools.CoreSmoke", "Program.cs");
         string solutionText = ReadRequiredFile(repoRoot, "Salryn.sln");
@@ -63,7 +64,8 @@ public static class WebA2LocalApiAuthSessionChecks
         RequireNotContains(webLoginPageText, "WinForms login first", "Web login copy must not describe native login-first flow.");
         RequireNotContains(webLoginPageText, "Chromium shell handoff", "Web login copy must not describe native handoff.");
         RequireNotContains(webLoginPageText, "native login handoff", "Web login copy must not describe native login handoff.");
-        RequireContains(webDashboardPageText, "useAppSession", "Web dashboard must remain session-aware.");
+        RequireContains(webUseAppSessionText, "fetchSession", "Web app must remain session-aware.");
+        RequireContains(webAppText, "useAppSession", "App must use session hook.");
         RequireNotContains(webSessionApiText, "upload", "Web app must not include upload support.");
         RequireNotContains(webSessionApiText, "blob", "Web app must not include blob support.");
         RequireNotContains(webSessionApiText, "file-picker", "Web app must not include file-picker support.");

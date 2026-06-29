@@ -44,6 +44,7 @@ public static class WebA4NativeHostVisualFidelityChecks
         // --- Web foundation still wired to real backend ---
         string sessionApiText = ReadRequiredFile(webSrc, "api", "session.ts");
         string dashboardApiText = ReadRequiredFile(webSrc, "api", "dashboard.ts");
+        string webAppText = ReadRequiredFile(webSrc, "App.tsx");
         string dashboardPageText = ReadRequiredFile(webSrc, "pages", "DashboardPage.tsx");
         string loginPageText = ReadRequiredFile(webSrc, "pages", "LoginPage.tsx");
         string coreSmokeText = ReadRequiredFile(
@@ -55,7 +56,8 @@ public static class WebA4NativeHostVisualFidelityChecks
         RequireContains(loginPageText, "login(", "Login page must invoke the login client.");
         RequireContains(dashboardApiText, "/api/dashboard/summary", "Web app must call /api/dashboard/summary.");
         RequireContains(dashboardPageText, "fetchDashboardSummary", "Dashboard must read the dashboard summary.");
-        RequireContains(dashboardPageText, "AppShell", "Dashboard must render through AppShell.");
+        RequireContains(dashboardPageText, "fetchDashboardSummary", "Dashboard must read the dashboard summary.");
+        RequireContains(webAppText, "AppShell", "Authenticated app must render through AppShell.");
 
         RequireContains(coreSmokeText, "WebA4NativeHostVisualFidelityChecks.Run();", "CoreSmoke must run WEB-A4 checks.");
 
@@ -67,18 +69,22 @@ public static class WebA4NativeHostVisualFidelityChecks
             RequireNotContains(scoped, "NativeHandoff", "WEB-A4 must not reintroduce native handoff.");
         }
 
-        // --- No forbidden module pages were added ---
+        // Read-only module pages are allowed after WEB-B0.
         string[] forbiddenPagePrefixes =
         {
-            "Products", "Product", "Inventory", "Sales", "Users", "User",
-            "Backup", "Audit", "Settings", "Checkout", "OfficialOutput", "Rmo",
+            "Checkout", "Backup", "Settings", "OfficialOutput", "Rmo",
         };
         string pagesDir = Path.Combine(webSrc, "pages");
         foreach (string pageFile in Directory.GetFiles(pagesDir, "*.tsx", SearchOption.AllDirectories))
         {
             string name = Path.GetFileName(pageFile);
             if (name.Equals("LoginPage.tsx", StringComparison.Ordinal) ||
-                name.Equals("DashboardPage.tsx", StringComparison.Ordinal))
+                name.Equals("DashboardPage.tsx", StringComparison.Ordinal) ||
+                name.Equals("ProductsPage.tsx", StringComparison.Ordinal) ||
+                name.Equals("InventoryPage.tsx", StringComparison.Ordinal) ||
+                name.Equals("SalesHistoryPage.tsx", StringComparison.Ordinal) ||
+                name.Equals("UsersPage.tsx", StringComparison.Ordinal) ||
+                name.Equals("AuditPage.tsx", StringComparison.Ordinal))
             {
                 continue;
             }

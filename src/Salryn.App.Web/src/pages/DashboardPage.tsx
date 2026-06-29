@@ -1,8 +1,7 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { fetchDashboardSummary } from "../api/dashboard";
 import { ApiError } from "../api/http";
-import { fetchSession, logout, type SessionState } from "../api/session";
-import { AppShell } from "../components/AppShell";
+import type { SessionState } from "../api/session";
 import {
   Alert,
   Button,
@@ -17,13 +16,7 @@ import {
   MetricCard,
   StatusPill,
 } from "../components/ui";
-
-function formatMoney(amount: number): string {
-  return `PHP ${amount.toLocaleString("en-PH", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
+import { formatMoney } from "../utils/format";
 
 type DashboardPageProps = {
   session: SessionState;
@@ -31,8 +24,6 @@ type DashboardPageProps = {
 };
 
 export function DashboardPage({ session, onLogout }: DashboardPageProps) {
-  const queryClient = useQueryClient();
-
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ["dashboard-summary"],
     queryFn: fetchDashboardSummary,
@@ -42,26 +33,11 @@ export function DashboardPage({ session, onLogout }: DashboardPageProps) {
 
   const sessionExpired = isError && error instanceof ApiError && error.status === 401;
 
-  async function handleLogout() {
-    try {
-      await logout();
-    } catch {
-      // The session may already be gone; clearing local state is enough.
-    }
-    queryClient.removeQueries({ queryKey: ["dashboard-summary"] });
-    onLogout();
-  }
-
-  function handleReauthenticate() {
-    queryClient.removeQueries({ queryKey: ["dashboard-summary"] });
-    onLogout();
-  }
-
   const hasWarnings = data ? data.warnings.length > 0 : false;
   const lowStock = data?.lowStockCount ?? 0;
 
   return (
-    <AppShell session={session} onLogout={handleLogout}>
+    <>
       <div className="space-y-6">
         <CommandBar
           title="Dashboard"
@@ -157,17 +133,9 @@ export function DashboardPage({ session, onLogout }: DashboardPageProps) {
         open={sessionExpired}
         title="Session expired"
         description="Your session is no longer valid. Please sign in again to continue."
-        onClose={handleReauthenticate}
-        footer={<Button onClick={handleReauthenticate}>Sign in again</Button>}
+        onClose={() => onLogout()}
+        footer={<Button onClick={() => onLogout()}>Sign in again</Button>}
       />
-    </AppShell>
+    </>
   );
-}
-
-export function useAppSession() {
-  return useQuery({
-    queryKey: ["session"],
-    queryFn: fetchSession,
-    retry: false,
-  });
 }

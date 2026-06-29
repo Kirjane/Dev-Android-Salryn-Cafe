@@ -14,6 +14,8 @@ type DataTableProps<TRow> = {
   getRowKey: (row: TRow) => string;
   emptyTitle?: string;
   emptyDescription?: string;
+  onRowClick?: (row: TRow) => void;
+  selectedRowKey?: string | null;
 };
 
 const alignClass = {
@@ -30,6 +32,8 @@ export function DataTable<TRow>({
   getRowKey,
   emptyTitle = "No records",
   emptyDescription = "There is nothing to show yet.",
+  onRowClick,
+  selectedRowKey,
 }: DataTableProps<TRow>) {
   if (rows.length === 0) {
     return <EmptyState title={emptyTitle} description={emptyDescription} />;
@@ -54,8 +58,16 @@ export function DataTable<TRow>({
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100 bg-white">
-          {rows.map((row) => (
-            <tr key={getRowKey(row)} className="hover:bg-slate-50">
+          {rows.map((row) => {
+            const rowKey = getRowKey(row);
+            return (
+            <tr
+              key={rowKey}
+              className={`hover:bg-slate-50 ${
+                selectedRowKey === rowKey ? "bg-sky-50" : ""
+              } ${onRowClick ? "cursor-pointer" : ""}`}
+              onClick={onRowClick ? () => onRowClick(row) : undefined}
+            >
               {columns.map((column) => (
                 <td
                   key={column.key}
@@ -65,7 +77,8 @@ export function DataTable<TRow>({
                 </td>
               ))}
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>

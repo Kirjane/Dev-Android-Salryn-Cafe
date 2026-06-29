@@ -1,4 +1,5 @@
 using Microsoft.Extensions.FileProviders;
+using Salryn.Api.Local;
 using Salryn.Api.Local.Auth;
 using Salryn.Api.Local.Contracts;
 using Salryn.Api.Local.Services;
@@ -30,6 +31,7 @@ builder.Services.AddSingleton(composition);
 builder.Services.AddSingleton<ILocalApiSessionStore>(sessionStore);
 builder.Services.AddSingleton(sessionService);
 builder.Services.AddSingleton(dashboardSummaryService);
+builder.Services.AddSingleton<OperatorReadService>();
 
 builder.Services.AddCors(options =>
 {
@@ -122,6 +124,8 @@ app.MapGet("/api/dashboard/summary", async (
     var summary = await summaryService.GetSummaryAsync(cancellationToken).ConfigureAwait(false);
     return Results.Ok(summary);
 });
+
+app.MapReadOnlyOperatorEndpoints();
 
 // SPA fallback: serve index.html for client-side routes only when static hosting is
 // enabled. API and health routes are never shadowed by the fallback.
@@ -248,6 +252,16 @@ static async Task RunSmokeAsync(string[] args)
 
     var summary = await summaryService.GetSummaryAsync().ConfigureAwait(false);
 
+    OperatorReadService operatorReads = new(composition);
+    Result<PagedApiResponse<ProductListItemResponse>> productsProbe =
+        await operatorReads.SearchProductsAsync(null, null, null, null, 1, 1).ConfigureAwait(false);
+
+    if (productsProbe.IsFailure)
+    {
+        throw new InvalidOperationException(
+            $"API smoke expected products read probe to succeed: {productsProbe.ErrorDetail.Message}");
+    }
+
     Console.WriteLine(
-        $"API smoke passed: session=unauthenticated, invalidLogin={invalidLogin.ErrorDetail.Code}, products={summary.ProductCount}, lowStock={summary.LowStockCount}");
+        $"API smoke passed: session=unauthenticated, invalidLogin={invalidLogin.ErrorDetail.Code}, products={summary.ProductCount}, lowStock={summary.LowStockCount}, readProbeItems={productsProbe.Value.Items.Count}");
 }

@@ -320,6 +320,66 @@ $env:SALRYN_WEB_URL = "http://127.0.0.1:5299/"
 dotnet run --project .\src\Salryn.Desktop.WebView\Salryn.Desktop.WebView.csproj
 ```
 
+## WEB-B0 Read-Only Operator Surfaces
+
+WEB-B0 wires real backend read repositories into the web console as **read-only** pages.
+No mutations, no checkout, no admin writes.
+
+### Enabled pages
+
+```text
+Dashboard
+Products
+Inventory
+Sales History
+Users
+Audit
+```
+
+### Disabled pages (still placeholder)
+
+```text
+POS Checkout
+Official Output Text File
+Settings
+Backup
+```
+
+### GET endpoints (all require authenticated session)
+
+```text
+GET /api/products
+GET /api/products/{id}
+GET /api/products/catalog/categories
+GET /api/products/catalog/brands
+GET /api/inventory/low-stock
+GET /api/inventory/movements
+GET /api/sales/history
+GET /api/sales/{id}
+GET /api/users
+GET /api/users/{id}
+GET /api/users/roles
+GET /api/audit/logs
+GET /api/audit/errors
+```
+
+No POST, PUT, PATCH, or DELETE module endpoints were added.
+
+### Run (dev)
+
+```powershell
+dotnet run --project .\src\Salryn.Api.Local\Salryn.Api.Local.csproj -- --dev
+cd .\src\Salryn.App.Web
+npm run dev
+dotnet run --project .\src\Salryn.Desktop.WebView\Salryn.Desktop.WebView.csproj
+```
+
+### Known limitations
+
+- Read-only: no product CRUD, inventory adjustment, sales void, or user admin writes.
+- Error log API responses omit raw technical stack details.
+- Pagination and filters only where existing repository filters support them.
+
 ## Verification Baseline
 
 Run from repo root unless noted:
