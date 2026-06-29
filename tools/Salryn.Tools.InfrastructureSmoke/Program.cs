@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Salryn.Core.Common;
 using Salryn.Infrastructure.Data;
 using Salryn.Infrastructure.Data.Initialization;
@@ -124,6 +124,10 @@ try
             PosStoreDayRegressionSmokeChecks.Run(projectRoot);
             break;
 
+        case "pos-admin-operations-regression":
+            PosAdminOperationsRegressionSmokeChecks.Run(projectRoot);
+            break;
+
         case "pos-checkout-draft-transaction-builder":
             PosCheckoutDraftTransactionBuilderSmokeChecks.Run(projectRoot);
             break;
@@ -199,7 +203,7 @@ try
 
         default:
             Console.WriteLine("Unknown command.");
-            Console.WriteLine("Use: status | init | inspect | reset | repositories | auth-first-run | mvp-business-flow | dev-prelaunch-seed | qa-products-seed | product-write | product-write-edge | inventory-write | inventory-write-edge | sales-write | sales-write-edge | sales-read-write | cashier-session-write | cashier-session-write-edge | cashier-session-read-write | cashier-session-service | cashier-session-service-edge | pos-checkout-session-enforcement | pos-checkout-repository-integration | pos-checkout-application-boundary | pos-checkout-application-repository | pos-store-day-regression | pos-checkout-draft-transaction-builder | pos-checkout-product-picker-boundary | pos-checkout-product-picker-repository-integration | pos-checkout-ui-presenter-viewmodel | pos-checkout-ui-product-search-presenter-boundary | pos-checkout-ui-product-repository-search-boundary | official-output-text-file | official-output-text-file-dev-candidate | full");
+            Console.WriteLine("Use: status | init | inspect | reset | repositories | auth-first-run | mvp-business-flow | dev-prelaunch-seed | qa-products-seed | product-write | product-write-edge | inventory-write | inventory-write-edge | sales-write | sales-write-edge | sales-read-write | cashier-session-write | cashier-session-write-edge | cashier-session-read-write | cashier-session-service | cashier-session-service-edge | pos-checkout-session-enforcement | pos-checkout-repository-integration | pos-checkout-application-boundary | pos-checkout-application-repository | pos-store-day-regression | pos-admin-operations-regression | pos-checkout-draft-transaction-builder | pos-checkout-product-picker-boundary | pos-checkout-product-picker-repository-integration | pos-checkout-ui-presenter-viewmodel | pos-checkout-ui-product-search-presenter-boundary | pos-checkout-ui-product-repository-search-boundary | official-output-text-file | official-output-text-file-dev-candidate | full");
             Environment.ExitCode = 1;
             break;
     }
@@ -220,7 +224,7 @@ static void PrintStatus(string projectRoot)
 
     if (statusResult.IsFailure)
     {
-        Fail(statusResult.Error);
+        Fail(statusResult.Error?.ToString() ?? "Status check failed.");
         return;
     }
 
@@ -249,7 +253,7 @@ static void Initialize(string projectRoot)
 
     if (result.IsFailure)
     {
-        Fail(result.Error);
+        Fail(result.Error?.ToString() ?? "Initialization failed.");
         return;
     }
 
@@ -492,5 +496,3 @@ static string FindProjectRoot(string startPath)
 
     throw new InvalidOperationException("Could not find Salryn.sln from current directory.");
 }
-
-
