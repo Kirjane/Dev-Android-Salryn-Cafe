@@ -38,7 +38,7 @@ public sealed class BackupForm : Form
         MinimumSize = new Size(920, 680);
         Size = new Size(1040, 740);
         Font = new Font("Segoe UI", 9F);
-        BackColor = J20MvpUi.Colors.AppBackground;
+        BackColor = SalrynUi.Colors.AppBackground;
 
         BuildLayout();
         RenderPaths();
@@ -47,18 +47,25 @@ public sealed class BackupForm : Form
 
     private void BuildLayout()
     {
-        TableLayoutPanel root = J20MvpUi.RootLayout(rowCount: 7);
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 72F));
+        var root = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 7,
+            Padding = new Padding(SalrynUi.Spacing.FormPadding),
+            BackColor = SalrynUi.Colors.AppBackground
+        };
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58F));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 62F));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 62F));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 56F));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 116F));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 54F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
 
         Controls.Add(root);
 
-        root.Controls.Add(J20MvpUi.Header(
+        root.Controls.Add(SalrynUi.CreatePageHeader(
             "Database Backup Recovery",
             "Create, list, verify, and guarded-restore local SALRYN SQLite backups."), 0, 0);
 
@@ -71,37 +78,40 @@ public sealed class BackupForm : Form
 
         _statusLabel.Dock = DockStyle.Fill;
         _statusLabel.TextAlign = ContentAlignment.MiddleLeft;
-        _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
-        _statusLabel.Padding = new Padding(4, 8, 4, 4);
+        SalrynUi.SetStatusNeutral(_statusLabel, string.Empty);
+        SalrynUi.ConfigureFooterStatus(_statusLabel);
         root.Controls.Add(_statusLabel, 0, 6);
     }
 
     private Control BuildActions()
     {
+        // Group the backup actions inside a clear command surface.
+        Panel commandBar = SalrynUi.CreateCommandBar();
+
         FlowLayoutPanel actions = new()
         {
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.RightToLeft,
-            BackColor = J20MvpUi.Colors.AppBackground,
-            Padding = new Padding(0, 8, 0, 0)
+            BackColor = SalrynUi.Colors.Surface
         };
 
-        J20MvpUi.ConfigurePrimaryButton(_createBackupButton, "Create Backup");
+        // Create Backup is the affirmative action (success); restore stays a guarded danger action.
+        SalrynUi.ConfigureSuccessButton(_createBackupButton, "Create Backup");
         _toolTip.SetToolTip(_createBackupButton, "Save a fresh copy of the live database into the backup folder.");
         _createBackupButton.Click += (_, _) => CreateBackup();
         actions.Controls.Add(_createBackupButton);
 
-        J20MvpUi.ConfigureSecondaryButton(_refreshBackupsButton, "Refresh List");
+        SalrynUi.ConfigureSecondaryButton(_refreshBackupsButton, "Refresh List");
         _toolTip.SetToolTip(_refreshBackupsButton, "Re-read the backup folder and list available backup files.");
         _refreshBackupsButton.Click += (_, _) => RefreshBackups();
         actions.Controls.Add(_refreshBackupsButton);
 
-        J20MvpUi.ConfigureSecondaryButton(_verifyBackupButton, "Verify Backup");
+        SalrynUi.ConfigureWarningButton(_verifyBackupButton, "Verify Backup");
         _toolTip.SetToolTip(_verifyBackupButton, "Check the selected backup's shape before it can be restored.");
         _verifyBackupButton.Click += (_, _) => VerifySelectedBackup();
         actions.Controls.Add(_verifyBackupButton);
 
-        J20MvpUi.ConfigureSecondaryButton(_restoreBackupButton, "Restore Backup");
+        SalrynUi.ConfigureDangerButton(_restoreBackupButton, "Restore Backup");
         _toolTip.SetToolTip(_restoreBackupButton, "Replace the live database with the verified backup (a safety backup is made first).");
         _restoreBackupButton.Click += (_, _) => RestoreVerifiedBackup();
         actions.Controls.Add(_restoreBackupButton);
@@ -117,11 +127,13 @@ public sealed class BackupForm : Form
             Environment.NewLine +
             "Restoring replaces all current data with the backup's data."));
 
-        return actions;
+        commandBar.Controls.Add(actions);
+        return commandBar;
     }
 
     private Control BuildBackupsGrid()
     {
+        SalrynUi.ApplyLedgerGridStyle(_backupsGrid);
         _backupsGrid.AutoGenerateColumns = false;
         _backupsGrid.SelectionChanged += (_, _) =>
         {
@@ -144,25 +156,19 @@ public sealed class BackupForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 3,
-            BackColor = J20MvpUi.Colors.AppBackground
+            BackColor = SalrynUi.Colors.AppBackground
         };
 
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 28F));
         panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
 
-        Label title = new()
-        {
-            Dock = DockStyle.Fill,
-            Text = "Verification Summary / Restore Confirmation",
-            TextAlign = ContentAlignment.BottomLeft,
-            ForeColor = J20MvpUi.Colors.TextStrong,
-            Font = new Font("Segoe UI", 9F, FontStyle.Bold)
-        };
+        Label title = SalrynUi.CreateSectionTitle("Verification Summary / Restore Confirmation");
 
         _verificationLabel.Dock = DockStyle.Fill;
         _verificationLabel.TextAlign = ContentAlignment.TopLeft;
-        _verificationLabel.ForeColor = J20MvpUi.Colors.TextMuted;
+        _verificationLabel.ForeColor = SalrynUi.Colors.TextMuted;
+        _verificationLabel.BackColor = SalrynUi.Colors.Surface;
         _verificationLabel.BorderStyle = BorderStyle.FixedSingle;
         _verificationLabel.Padding = new Padding(8);
 
@@ -197,24 +203,18 @@ public sealed class BackupForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 2,
-            BackColor = J20MvpUi.Colors.AppBackground
+            BackColor = SalrynUi.Colors.AppBackground
         };
 
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 24F));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
 
-        Label label = new()
-        {
-            Dock = DockStyle.Fill,
-            Text = labelText,
-            TextAlign = ContentAlignment.BottomLeft,
-            ForeColor = J20MvpUi.Colors.TextStrong,
-            Font = new Font("Segoe UI", 9F, FontStyle.Bold)
-        };
+        Label label = SalrynUi.CreateFieldLabel(labelText);
 
         textBox.Dock = DockStyle.Fill;
         textBox.ReadOnly = true;
-        textBox.BackColor = Color.White;
+        textBox.BackColor = SalrynUi.Colors.Surface;
+        textBox.BorderStyle = BorderStyle.FixedSingle;
 
         panel.Controls.Add(label, 0, 0);
         panel.Controls.Add(textBox, 0, 1);
@@ -227,8 +227,7 @@ public sealed class BackupForm : Form
         _databasePathTextBox.Text = _services.DbPaths.DatabasePath;
         _backupFolderTextBox.Text = _services.DbPaths.BackupPath;
         _verificationLabel.Text = "Select a backup and click Verify Backup.";
-        _statusLabel.Text = "Backup recovery ready. Restore requires a verified backup and typed confirmation.";
-        _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
+        SalrynUi.SetStatusNeutral(_statusLabel, "Backup recovery ready. Restore requires a verified backup and typed confirmation.");
         _restoreBackupButton.Enabled = false;
     }
 
@@ -386,8 +385,7 @@ public sealed class BackupForm : Form
         _refreshBackupsButton.Enabled = false;
         _verifyBackupButton.Enabled = false;
         _restoreBackupButton.Enabled = false;
-        _statusLabel.Text = message;
-        _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
+        SalrynUi.SetStatusNeutral(_statusLabel, message);
     }
 
     private void SetReady()
@@ -400,21 +398,18 @@ public sealed class BackupForm : Form
 
     private void SetSuccess(string message)
     {
-        _statusLabel.Text = message;
-        _statusLabel.ForeColor = J20MvpUi.Colors.Success;
+        SalrynUi.SetStatusSuccess(_statusLabel, message);
     }
 
     private void SetStatusMessage(string message)
     {
-        _statusLabel.Text = message;
-        _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
+        SalrynUi.SetStatusNeutral(_statusLabel, message);
         SetReady();
     }
 
     private void SetError(string message)
     {
-        _statusLabel.Text = message;
-        _statusLabel.ForeColor = J20MvpUi.Colors.Danger;
+        SalrynUi.SetStatusError(_statusLabel, message);
         SetReady();
     }
 }

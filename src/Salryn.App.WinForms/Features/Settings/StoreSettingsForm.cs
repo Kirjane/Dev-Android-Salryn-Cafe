@@ -42,7 +42,7 @@ public sealed class StoreSettingsForm : Form
         MinimumSize = new Size(760, 620);
         Size = new Size(840, 680);
         Font = new Font("Segoe UI", 9F);
-        BackColor = J20MvpUi.Colors.AppBackground;
+        BackColor = SalrynUi.Colors.AppBackground;
 
         BuildLayout();
         WireEvents();
@@ -58,29 +58,49 @@ public sealed class StoreSettingsForm : Form
 
     private void BuildLayout()
     {
-        TableLayoutPanel root = J20MvpUi.RootLayout(rowCount: 4);
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 72F));
+        var root = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 4,
+            Padding = new Padding(SalrynUi.Spacing.FormPadding),
+            BackColor = SalrynUi.Colors.AppBackground
+        };
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58F));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 56F));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
 
         Controls.Add(root);
 
-        root.Controls.Add(J20MvpUi.Header(
+        root.Controls.Add(SalrynUi.CreatePageHeader(
             "Store Settings",
             "Store profile and receipt header settings."), 0, 0);
 
-        Panel card = J20MvpUi.Card();
+        var card = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = SalrynUi.Colors.Surface,
+            BorderStyle = BorderStyle.FixedSingle,
+            Padding = new Padding(12, 8, 12, 8)
+        };
+
         TableLayoutPanel form = new()
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 9,
-            BackColor = Color.White
+            RowCount = 10,
+            BackColor = SalrynUi.Colors.Surface
         };
 
         form.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190F));
         form.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+
+        // Section title for the store profile / receipt settings area.
+        form.RowStyles.Add(new RowStyle(SizeType.Absolute, 26F));
+        Label sectionTitle = SalrynUi.CreateSectionTitle("Store Profile & Receipt Settings");
+        form.Controls.Add(sectionTitle, 0, 0);
+        form.SetColumnSpan(sectionTitle, 2);
 
         string[] labels =
         {
@@ -95,10 +115,11 @@ public sealed class StoreSettingsForm : Form
             "Shift Mode"
         };
 
-        for (int row = 0; row < labels.Length; row++)
+        for (int i = 0; i < labels.Length; i++)
         {
+            int row = i + 1;
             form.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
-            AddField(form, row, labels[row]);
+            AddField(form, row, labels[i]);
         }
 
         card.Controls.Add(form);
@@ -110,17 +131,18 @@ public sealed class StoreSettingsForm : Form
         note.Dock = DockStyle.Fill;
         root.Controls.Add(note, 0, 2);
 
-        FlowLayoutPanel footer = new()
+        var footer = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
-            FlowDirection = FlowDirection.RightToLeft,
-            BackColor = J20MvpUi.Colors.AppBackground
+            FlowDirection = FlowDirection.RightToLeft
         };
+        SalrynUi.StyleFooterStrip(footer);
 
-        J20MvpUi.ConfigurePrimaryButton(_saveButton, "Save");
-        J20MvpUi.ConfigureSecondaryButton(_cancelButton, "Cancel");
-        J20MvpUi.ConfigureSecondaryButton(_editButton, "Edit");
-        J20MvpUi.ConfigureSecondaryButton(_refreshButton, "Refresh");
+        // Save is the affirmative action (success); the rest are secondary.
+        SalrynUi.ConfigureSuccessButton(_saveButton, "Save");
+        SalrynUi.ConfigureSecondaryButton(_cancelButton, "Cancel");
+        SalrynUi.ConfigureSecondaryButton(_editButton, "Edit");
+        SalrynUi.ConfigureSecondaryButton(_refreshButton, "Refresh");
         _toolTip.SetToolTip(_saveButton, "Save your changes to store settings.");
         _toolTip.SetToolTip(_cancelButton, "Discard changes and leave edit mode.");
         _toolTip.SetToolTip(_editButton, "Unlock the fields to edit store settings.");
@@ -140,7 +162,8 @@ public sealed class StoreSettingsForm : Form
 
         _statusLabel.Dock = DockStyle.Fill;
         _statusLabel.TextAlign = ContentAlignment.MiddleLeft;
-        _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
+        SalrynUi.SetStatusNeutral(_statusLabel, string.Empty);
+        SalrynUi.ConfigureFooterStatus(_statusLabel);
         footer.Controls.Add(_statusLabel);
 
         root.Controls.Add(footer, 0, 3);
@@ -148,21 +171,15 @@ public sealed class StoreSettingsForm : Form
 
     private void AddField(TableLayoutPanel form, int row, string labelText)
     {
-        Label label = new()
-        {
-            Dock = DockStyle.Fill,
-            Text = labelText,
-            Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
-            ForeColor = J20MvpUi.Colors.TextStrong,
-            TextAlign = ContentAlignment.MiddleLeft
-        };
+        Label label = SalrynUi.CreateFieldLabel(labelText);
 
         TextBox textBox = new()
         {
             Dock = DockStyle.Fill,
             ReadOnly = true,
             Font = new Font("Segoe UI", 10F),
-            BackColor = Color.White
+            BackColor = SalrynUi.Colors.Surface,
+            BorderStyle = BorderStyle.FixedSingle
         };
 
         form.Controls.Add(label, 0, row);
@@ -400,26 +417,22 @@ public sealed class StoreSettingsForm : Form
 
     private void SetStatus(string message)
     {
-        _statusLabel.Text = message;
-        _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
+        SalrynUi.SetStatusNeutral(_statusLabel, message);
     }
 
     private void SetSuccess(string message)
     {
-        _statusLabel.Text = message;
-        _statusLabel.ForeColor = J20MvpUi.Colors.Success;
+        SalrynUi.SetStatusSuccess(_statusLabel, message);
     }
 
     private void SetWarning(string message)
     {
-        _statusLabel.Text = message;
-        _statusLabel.ForeColor = J20MvpUi.Colors.Warning;
+        SalrynUi.SetStatusWarning(_statusLabel, message);
     }
 
     private void SetError(string message)
     {
-        _statusLabel.Text = message;
-        _statusLabel.ForeColor = J20MvpUi.Colors.Danger;
+        SalrynUi.SetStatusError(_statusLabel, message);
     }
 
     private static bool TryParseReceiptWidth(string value, out int receiptWidthMm)
