@@ -1,61 +1,45 @@
-using Salryn.Api.Local.Composition;
+namespace Salryn.Composition.Local;
 
-namespace Salryn.Api.Local;
-
-internal enum SalrynApiLaunchMode
+public enum SalrynLocalLaunchMode
 {
     Production = 0,
     Development = 1
 }
 
-internal sealed record SalrynApiLaunchPlan(
-    SalrynApiLaunchMode Mode,
+public sealed record SalrynLocalLaunchPlan(
+    SalrynLocalLaunchMode Mode,
     string? ProjectRoot);
 
-internal static class ApiLaunchModeResolver
+public static class SalrynLocalLaunchModeResolver
 {
     public const string DevelopmentArgument = "--dev";
-    public const string SmokeArgument = "--smoke";
-    public const string SmokeIfSupportedArgument = "--smoke-if-supported";
     public const string DevelopmentEnvironmentVariable = "SALRYN_APP_ENV";
     public const string ProjectRootEnvironmentVariable = "SALRYN_PROJECT_ROOT";
 
-    public static SalrynApiComposition CreateComposition(IReadOnlyList<string>? args)
+    public static SalrynLocalComposition CreateComposition(IReadOnlyList<string>? args)
     {
-        SalrynApiLaunchPlan plan = Resolve(args);
+        SalrynLocalLaunchPlan plan = Resolve(args);
 
-        return plan.Mode == SalrynApiLaunchMode.Development
-            ? SalrynApiComposition.CreateDevelopment(plan.ProjectRoot!)
-            : SalrynApiComposition.CreateProduction();
+        return plan.Mode == SalrynLocalLaunchMode.Development
+            ? SalrynLocalComposition.CreateDevelopment(plan.ProjectRoot!)
+            : SalrynLocalComposition.CreateProduction();
     }
 
-    public static SalrynApiLaunchPlan Resolve(IReadOnlyList<string>? args)
+    public static SalrynLocalLaunchPlan Resolve(IReadOnlyList<string>? args)
     {
         if (!IsDevelopmentRequested(args))
         {
-            return new SalrynApiLaunchPlan(
-                SalrynApiLaunchMode.Production,
+            return new SalrynLocalLaunchPlan(
+                SalrynLocalLaunchMode.Production,
                 ProjectRoot: null);
         }
 
-        return new SalrynApiLaunchPlan(
-            SalrynApiLaunchMode.Development,
+        return new SalrynLocalLaunchPlan(
+            SalrynLocalLaunchMode.Development,
             ResolveProjectRoot());
     }
 
-    public static bool IsSmokeRequested(IReadOnlyList<string>? args)
-    {
-        if (args is null)
-        {
-            return false;
-        }
-
-        return args.Any(item =>
-            string.Equals(item, SmokeArgument, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(item, SmokeIfSupportedArgument, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static bool IsDevelopmentRequested(IReadOnlyList<string>? args)
+    public static bool IsDevelopmentRequested(IReadOnlyList<string>? args)
     {
         if (args is not null &&
             args.Any(item => string.Equals(item, DevelopmentArgument, StringComparison.OrdinalIgnoreCase)))
@@ -70,7 +54,7 @@ internal static class ApiLaunchModeResolver
             string.Equals(appEnvironment, "Dev", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string ResolveProjectRoot()
+    public static string ResolveProjectRoot()
     {
         string? configuredRoot =
             Environment.GetEnvironmentVariable(ProjectRootEnvironmentVariable);

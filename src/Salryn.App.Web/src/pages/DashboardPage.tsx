@@ -1,5 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchDashboardSummary } from "../api/dashboard";
+import { fetchSession, logout, type SessionState } from "../api/session";
 import { MetricCard } from "../components/MetricCard";
 import { Shell } from "../components/Shell";
 
@@ -10,20 +11,34 @@ function formatMoney(amount: number): string {
   })}`;
 }
 
-export function DashboardPage() {
+type DashboardPageProps = {
+  session: SessionState;
+  onLogout: () => void;
+};
+
+export function DashboardPage({ session, onLogout }: DashboardPageProps) {
+  const queryClient = useQueryClient();
+
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ["dashboard-summary"],
     queryFn: fetchDashboardSummary,
+    enabled: session.isAuthenticated,
   });
 
+  async function handleLogout() {
+    await logout();
+    queryClient.removeQueries({ queryKey: ["dashboard-summary"] });
+    onLogout();
+  }
+
   return (
-    <Shell>
+    <Shell session={session} onLogout={handleLogout}>
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
             <h2 className="text-2xl font-semibold text-slate-900">Dashboard</h2>
             <p className="mt-1 text-sm text-slate-500">
-              Sales, product, and inventory overview from the local API.
+              Signed in as {session.user?.displayName} ({session.user?.roleName}).
             </p>
           </div>
           <button
@@ -89,4 +104,12 @@ export function DashboardPage() {
       </div>
     </Shell>
   );
+}
+
+export function useAppSession() {
+  return useQuery({
+    queryKey: ["session"],
+    queryFn: fetchSession,
+    retry: false,
+  });
 }

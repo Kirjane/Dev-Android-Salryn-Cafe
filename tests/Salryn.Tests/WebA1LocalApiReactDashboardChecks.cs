@@ -15,8 +15,7 @@ public static class WebA1LocalApiReactDashboardChecks
         string solutionText = ReadRequiredFile(repoRoot, "Salryn.sln");
 
         RequireContains(solutionText, "Salryn.Api.Local", "Solution must include Salryn.Api.Local.");
-        RequireContains(apiCsprojText, "Salryn.Core", "API must reference Salryn.Core.");
-        RequireContains(apiCsprojText, "Salryn.Infrastructure", "API must reference Salryn.Infrastructure.");
+        RequireContains(apiCsprojText, "Salryn.Composition.Local", "API must use shared composition.");
         RequireNotContains(apiCsprojText, "Salryn.App.WinForms", "API must not reference WinForms.");
 
         RequireContains(apiProgramText, "127.0.0.1", "API must bind to localhost only.");

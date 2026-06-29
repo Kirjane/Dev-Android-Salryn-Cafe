@@ -1,18 +1,20 @@
 using Salryn.Core.Common;
 using Salryn.Core.Repositories;
+using Salryn.Core.Services;
 using Salryn.Infrastructure.Data;
 using Salryn.Infrastructure.Data.Initialization;
 using Salryn.Infrastructure.Data.Repositories;
 using Salryn.Infrastructure.Paths;
 
-namespace Salryn.Api.Local.Composition;
+namespace Salryn.Composition.Local;
 
-public sealed class SalrynApiComposition
+public sealed class SalrynLocalComposition
 {
-    private SalrynApiComposition(
+    private SalrynLocalComposition(
         DbPaths dbPaths,
         SqliteConnectionFactory connectionFactory,
         DatabaseInitializationOrchestrator databaseInitialization,
+        IAuthenticationService authentication,
         ISaleReadRepository saleReadRepository,
         IProductReadRepository productReadRepository,
         IInventoryReadRepository inventoryReadRepository)
@@ -20,6 +22,7 @@ public sealed class SalrynApiComposition
         DbPaths = dbPaths;
         ConnectionFactory = connectionFactory;
         DatabaseInitialization = databaseInitialization;
+        Authentication = authentication;
         SaleReadRepository = saleReadRepository;
         ProductReadRepository = productReadRepository;
         InventoryReadRepository = inventoryReadRepository;
@@ -31,13 +34,15 @@ public sealed class SalrynApiComposition
 
     public DatabaseInitializationOrchestrator DatabaseInitialization { get; }
 
+    public IAuthenticationService Authentication { get; }
+
     public ISaleReadRepository SaleReadRepository { get; }
 
     public IProductReadRepository ProductReadRepository { get; }
 
     public IInventoryReadRepository InventoryReadRepository { get; }
 
-    public static SalrynApiComposition CreateProduction()
+    public static SalrynLocalComposition CreateProduction()
     {
         DbPaths productionPaths = DbPaths.CreateProduction();
         Result writabilityResult = productionPaths.ValidateProductionWritability();
@@ -51,7 +56,7 @@ public sealed class SalrynApiComposition
         return Create(productionPaths);
     }
 
-    public static SalrynApiComposition CreateDevelopment(string projectRoot)
+    public static SalrynLocalComposition CreateDevelopment(string projectRoot)
     {
         if (string.IsNullOrWhiteSpace(projectRoot))
         {
@@ -61,7 +66,7 @@ public sealed class SalrynApiComposition
         return Create(DbPaths.CreateDevelopment(projectRoot));
     }
 
-    public static SalrynApiComposition Create(DbPaths dbPaths)
+    public static SalrynLocalComposition Create(DbPaths dbPaths)
     {
         ArgumentNullException.ThrowIfNull(dbPaths);
 
@@ -72,10 +77,18 @@ public sealed class SalrynApiComposition
 
         SqliteRepositoryFactory repositories = new(connectionFactory);
 
-        return new SalrynApiComposition(
+        IUserPermissionReadRepository userPermissionReadRepository =
+            repositories.CreateUserPermissionReadRepository();
+
+        IAuthenticationService authentication = new AuthenticationService(
+            repositories.CreateAuthenticationRepository(),
+            userPermissionReadRepository);
+
+        return new SalrynLocalComposition(
             dbPaths,
             connectionFactory,
             databaseInitialization,
+            authentication,
             repositories.CreateSaleReadRepository(),
             repositories.CreateProductReadRepository(),
             repositories.CreateInventoryReadRepository());

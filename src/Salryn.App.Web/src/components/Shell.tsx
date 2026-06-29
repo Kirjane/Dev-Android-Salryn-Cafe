@@ -1,21 +1,35 @@
 import type { ReactNode } from "react";
+import type { SessionState } from "../api/session";
 
 type ShellProps = {
   children: ReactNode;
+  session: SessionState;
+  onLogout: () => void;
 };
 
 const navItems = ["Dashboard", "Products", "Inventory", "Sales", "Users", "Settings"];
 
-export function Shell({ children }: ShellProps) {
+export function Shell({ children, session, onLogout }: ShellProps) {
   return (
     <div className="min-h-screen bg-slate-100">
       <header className="bg-navy-900 px-6 py-4 text-white shadow">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-slate-300">Salryn</p>
             <h1 className="text-xl font-semibold">Operator Console</h1>
           </div>
-          <p className="text-sm text-slate-300">WEB-A1 proof dashboard</p>
+          <div className="text-right">
+            <p className="text-sm text-slate-200">
+              {session.user?.displayName} · {session.user?.roleName}
+            </p>
+            <button
+              type="button"
+              onClick={onLogout}
+              className="mt-1 text-xs text-slate-300 underline hover:text-white"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
 

@@ -1,19 +1,19 @@
-using Salryn.Api.Local.Composition;
-using Salryn.Api.Local.Contracts;
-using Salryn.Core.ReadModels;
+using Salryn.Api.Local.Auth;
+using Salryn.Composition.Local;
 
 namespace Salryn.Api.Local.Services;
 
 public sealed class DashboardSummaryService
 {
-    private readonly SalrynApiComposition _composition;
+    private readonly SalrynLocalComposition _composition;
 
-    public DashboardSummaryService(SalrynApiComposition composition)
+    public DashboardSummaryService(SalrynLocalComposition composition)
     {
         _composition = composition ?? throw new ArgumentNullException(nameof(composition));
     }
 
-    public async Task<DashboardSummaryResponse> GetSummaryAsync(CancellationToken cancellationToken = default)
+    public async Task<Contracts.DashboardSummaryResponse> GetSummaryAsync(
+        CancellationToken cancellationToken = default)
     {
         List<string> warnings = [];
         DateTime today = DateTime.Today;
@@ -25,13 +25,13 @@ public sealed class DashboardSummaryService
         int lowStockCount = 0;
 
         var salesResult = await _composition.SaleReadRepository.SearchSalesAsync(
-            new SaleHistoryFilter(
+            new Core.ReadModels.SaleHistoryFilter(
                 From: new DateTimeOffset(today),
                 To: new DateTimeOffset(tomorrow),
                 CashierUserId: null,
                 Status: null,
                 ReceiptNo: null,
-                Page: PageRequest.FirstPage(200)),
+                Page: Core.ReadModels.PageRequest.FirstPage(200)),
             cancellationToken).ConfigureAwait(false);
 
         if (salesResult.IsSuccess)
@@ -45,13 +45,13 @@ public sealed class DashboardSummaryService
         }
 
         var productsResult = await _composition.ProductReadRepository.SearchAsync(
-            new ProductSearchFilter(
+            new Core.ReadModels.ProductSearchFilter(
                 SearchText: null,
                 CategoryId: null,
                 BrandId: null,
                 IsActive: null,
                 IncludeInactive: true,
-                Page: PageRequest.FirstPage(1)),
+                Page: Core.ReadModels.PageRequest.FirstPage(1)),
             cancellationToken).ConfigureAwait(false);
 
         if (productsResult.IsSuccess)
@@ -80,7 +80,7 @@ public sealed class DashboardSummaryService
             ? "ok"
             : "warning";
 
-        return new DashboardSummaryResponse(
+        return new Contracts.DashboardSummaryResponse(
             TodaySalesTotal: todaySalesCents / 100m,
             TodayTransactionCount: todayTransactionCount,
             ProductCount: productCount,

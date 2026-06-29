@@ -72,6 +72,7 @@ public static class Program
         UiA1RSettingsBackupAuditVisualAlignmentChecks.Run();
         J20DevelopmentLaunchModeChecks.Run();
         WebA1LocalApiReactDashboardChecks.Run();
+        WebA2LocalApiAuthSessionChecks.Run();
         J20UiWorkflowReadinessChecks.Run();
         PosStabA1StartupLoginReadinessChecks.Run();
         PosStabA2ShiftCloseChecks.Run();
