@@ -1,4 +1,6 @@
-﻿namespace Salryn.App.WinForms.Features.Products;
+﻿using Salryn.App.WinForms.Features.Mvp;
+
+namespace Salryn.App.WinForms.Features.Products;
 
 // Kirch file guide: add product modal form.
 // UI location: opened from the Products screen Add Product button.
@@ -60,8 +62,8 @@ public sealed class ProductCreateForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 4,
-            Padding = new Padding(18),
-            BackColor = Color.FromArgb(246, 247, 249)
+            Padding = new Padding(SalrynUi.Spacing.FormPadding),
+            BackColor = SalrynUi.Colors.AppBackground
         };
 
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
@@ -75,8 +77,8 @@ public sealed class ProductCreateForm : Form
         {
             Dock = DockStyle.Fill,
             Text = "Add Product",
-            Font = new Font(Font.FontFamily, 18, FontStyle.Bold),
-            ForeColor = Color.FromArgb(17, 24, 39),
+            Font = SalrynUi.Typography.Title,
+            ForeColor = SalrynUi.Colors.TextStrong,
             TextAlign = ContentAlignment.MiddleLeft
         };
 
@@ -88,7 +90,7 @@ public sealed class ProductCreateForm : Form
             ColumnCount = 2,
             RowCount = 16,
             AutoScroll = true,
-            BackColor = Color.White,
+            BackColor = SalrynUi.Colors.Surface,
             Padding = new Padding(14)
         };
 
@@ -154,9 +156,9 @@ public sealed class ProductCreateForm : Form
         _statusLabel = new Label
         {
             Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleLeft,
-            ForeColor = Color.FromArgb(75, 85, 99)
+            TextAlign = ContentAlignment.MiddleLeft
         };
+        SalrynUi.SetStatusNeutral(_statusLabel, string.Empty);
 
         root.Controls.Add(_statusLabel, 0, 2);
 
@@ -166,27 +168,12 @@ public sealed class ProductCreateForm : Form
             FlowDirection = FlowDirection.RightToLeft
         };
 
-        _saveButton = new Button
-        {
-            Width = 120,
-            Height = 38,
-            Text = "Save",
-            BackColor = Color.FromArgb(31, 41, 55),
-            ForeColor = Color.White,
-            FlatStyle = FlatStyle.Flat
-        };
-
+        _saveButton = new Button { Width = 120, Height = 38 };
+        SalrynUi.ConfigurePrimaryButton(_saveButton, "Save");
         _saveButton.Click += async (_, _) => await SaveAsync();
 
-        _cancelButton = new Button
-        {
-            Width = 120,
-            Height = 38,
-            Text = "Cancel",
-            BackColor = Color.White,
-            ForeColor = Color.FromArgb(17, 24, 39),
-            FlatStyle = FlatStyle.Flat
-        };
+        _cancelButton = new Button { Width = 120, Height = 38 };
+        SalrynUi.ConfigureSecondaryButton(_cancelButton, "Cancel");
 
         _cancelButton.Click += (_, _) =>
         {

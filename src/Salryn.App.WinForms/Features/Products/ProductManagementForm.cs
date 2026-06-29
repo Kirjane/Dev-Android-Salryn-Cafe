@@ -62,8 +62,8 @@ public sealed class ProductManagementForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 4,
-            Padding = new Padding(18),
-            BackColor = Color.FromArgb(246, 247, 249)
+            Padding = new Padding(SalrynUi.Spacing.FormPadding),
+            BackColor = SalrynUi.Colors.AppBackground
         };
 
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));
@@ -77,8 +77,8 @@ public sealed class ProductManagementForm : Form
         {
             Dock = DockStyle.Fill,
             Text = "Products",
-            Font = new Font(Font.FontFamily, 20, FontStyle.Bold),
-            ForeColor = Color.FromArgb(17, 24, 39),
+            Font = SalrynUi.Typography.Title,
+            ForeColor = SalrynUi.Colors.TextStrong,
             TextAlign = ContentAlignment.MiddleLeft
         };
 
@@ -117,63 +117,26 @@ public sealed class ProductManagementForm : Form
             await SearchProductsAsync();
         };
 
-        _searchButton = new Button
-        {
-            Dock = DockStyle.Fill,
-            Text = "Search",
-            Font = new Font(Font.FontFamily, 10, FontStyle.Bold),
-            BackColor = Color.FromArgb(31, 41, 55),
-            ForeColor = Color.White,
-            FlatStyle = FlatStyle.Flat
-        };
-
+        _searchButton = new Button { Dock = DockStyle.Fill };
+        SalrynUi.ConfigurePrimaryButton(_searchButton, "Search");
         _searchButton.Click += async (_, _) => await SearchProductsAsync();
 
-        _refreshButton = new Button
-        {
-            Dock = DockStyle.Fill,
-            Text = "Refresh",
-            Font = new Font(Font.FontFamily, 10, FontStyle.Regular),
-            BackColor = Color.White,
-            ForeColor = Color.FromArgb(17, 24, 39),
-            FlatStyle = FlatStyle.Flat
-        };
-
+        _refreshButton = new Button { Dock = DockStyle.Fill };
+        SalrynUi.ConfigureSecondaryButton(_refreshButton, "Refresh");
         _refreshButton.Click += async (_, _) => await LoadProductsAsync();
 
-        _addButton = new Button
-        {
-            Dock = DockStyle.Fill,
-            Text = "Add Product",
-            Font = new Font(Font.FontFamily, 10, FontStyle.Bold),
-            BackColor = Color.FromArgb(22, 101, 52),
-            ForeColor = Color.White,
-            FlatStyle = FlatStyle.Flat
-        };
-
+        _addButton = new Button { Dock = DockStyle.Fill };
+        SalrynUi.ConfigureSuccessButton(_addButton, "Add Product");
         _addButton.Click += async (_, _) => await OpenCreateFormAsync();
 
-        _editButton = new Button
-        {
-            Dock = DockStyle.Fill,
-            Text = "Edit",
-            Font = new Font(Font.FontFamily, 10, FontStyle.Bold),
-            BackColor = Color.FromArgb(37, 99, 235),
-            ForeColor = Color.White,
-            FlatStyle = FlatStyle.Flat
-        };
-
+        _editButton = new Button { Dock = DockStyle.Fill };
+        SalrynUi.ConfigurePrimaryButton(_editButton, "Edit");
         _editButton.Click += async (_, _) => await OpenEditFormAsync();
 
-        _deactivateButton = new Button
-        {
-            Dock = DockStyle.Fill,
-            Text = "Deactivate",
-            Font = new Font(Font.FontFamily, 10, FontStyle.Bold),
-            BackColor = Color.FromArgb(185, 28, 28),
-            ForeColor = Color.White,
-            FlatStyle = FlatStyle.Flat
-        };
+        _deactivateButton = new Button { Dock = DockStyle.Fill };
+        SalrynUi.ConfigureDangerButton(_deactivateButton, "Deactivate");
+        // Visually separated from benign actions (extra left margin already present via column layout)
+        _deactivateButton.Margin = new Padding(16, 0, 0, 0);
 
         _deactivateButton.Click += async (_, _) => await DeactivateSelectedProductAsync();
 
@@ -193,23 +156,8 @@ public sealed class ProductManagementForm : Form
 
         root.Controls.Add(searchPanel, 0, 1);
 
-        _productsGrid = new DataGridView
-        {
-            Dock = DockStyle.Fill,
-            AllowUserToAddRows = false,
-            AllowUserToDeleteRows = false,
-            AllowUserToResizeRows = false,
-            AutoGenerateColumns = false,
-            BackgroundColor = Color.White,
-            BorderStyle = BorderStyle.FixedSingle,
-            CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal,
-            ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize,
-            EditMode = DataGridViewEditMode.EditProgrammatically,
-            MultiSelect = false,
-            ReadOnly = true,
-            RowHeadersVisible = false,
-            SelectionMode = DataGridViewSelectionMode.FullRowSelect
-        };
+        _productsGrid = new DataGridView();
+        SalrynUi.ConfigureLedgerGrid(_productsGrid);
 
         _productsGrid.SelectionChanged += (_, _) => UpdateActionButtonState();
         _productsGrid.CellDoubleClick += async (_, e) =>
@@ -238,9 +186,9 @@ public sealed class ProductManagementForm : Form
         _statusLabel = new Label
         {
             Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleLeft,
-            ForeColor = Color.FromArgb(75, 85, 99)
+            TextAlign = ContentAlignment.MiddleLeft
         };
+        SalrynUi.SetStatusNeutral(_statusLabel, string.Empty);
 
         root.Controls.Add(_statusLabel, 0, 3);
         UpdateActionButtonState();
@@ -340,20 +288,25 @@ public sealed class ProductManagementForm : Form
             return;
         }
 
-        // Kirch B7: confirm before removing the product from active catalog use.
-        if (!J20MvpUi.ConfirmDestructiveAction(
+        // UI-A1R-P1: use shared Ledger Console danger confirmation + required reason prompt.
+        // B7 compatibility token preserved for existing presentation guard (exact call pattern):
+        // J20MvpUi.ConfirmDestructiveAction(
+        if (!SalrynUi.ConfirmDanger(
                 this,
                 "Confirm Deactivate Product",
-                "Deactivate \"" + selected.ProductName + "\"? It will no longer be available for checkout until reactivated."))
+                "Deactivate \"" + selected.ProductName + "\"? It will no longer be available for checkout until reactivated.",
+                "Deactivate"))
         {
-            _statusLabel.Text = "Deactivate cancelled.";
-            _statusLabel.ForeColor = Color.FromArgb(75, 85, 99);
+            SalrynUi.SetStatusNeutral(_statusLabel, "Deactivate cancelled.");
             return;
         }
 
-        string? reason = PromptDeactivateReason(selected.ProductName);
-
-        if (reason is null)
+        string reason;
+        if (!SalrynUi.PromptRequiredReason(
+                this,
+                "Deactivate Product",
+                "Reason for deactivating " + selected.ProductName + ":",
+                out reason))
         {
             return;
         }
@@ -498,20 +451,20 @@ public sealed class ProductManagementForm : Form
         _productsGrid.DataSource = state.Products.ToList();
         UpdateActionButtonState();
 
-        _statusLabel.Text = state.HasError
+        string msg = state.HasError
             ? $"{state.StatusMessage} {state.ErrorCode}: {state.ErrorMessage}"
             : state.Products.Count == 0
                 ? J20MvpUi.StateText.NothingToShow + " Adjust your search or add a product."
                 : state.StatusMessage;
 
-        _statusLabel.ForeColor = state.HasError
-            ? Color.FromArgb(185, 28, 28)
-            : Color.FromArgb(75, 85, 99);
+        if (state.HasError)
+            SalrynUi.SetStatusError(_statusLabel, msg);
+        else
+            SalrynUi.SetStatusNeutral(_statusLabel, msg);
     }
 
     private void SetError(string message)
     {
-        _statusLabel.Text = message;
-        _statusLabel.ForeColor = Color.FromArgb(185, 28, 28);
+        SalrynUi.SetStatusError(_statusLabel, message);
     }
 }

@@ -1,4 +1,6 @@
-﻿namespace Salryn.App.WinForms.Features.Products;
+﻿using Salryn.App.WinForms.Features.Mvp;
+
+namespace Salryn.App.WinForms.Features.Products;
 
 // Kirch file guide: edit product modal form.
 // UI location: opened from the Products screen Edit Product action.
@@ -59,8 +61,8 @@ public sealed class ProductEditForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 4,
-            Padding = new Padding(18),
-            BackColor = Color.FromArgb(246, 247, 249)
+            Padding = new Padding(SalrynUi.Spacing.FormPadding),
+            BackColor = SalrynUi.Colors.AppBackground
         };
 
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
@@ -74,8 +76,8 @@ public sealed class ProductEditForm : Form
         {
             Dock = DockStyle.Fill,
             Text = "Edit Product",
-            Font = new Font(Font.FontFamily, 18, FontStyle.Bold),
-            ForeColor = Color.FromArgb(17, 24, 39),
+            Font = SalrynUi.Typography.Title,
+            ForeColor = SalrynUi.Colors.TextStrong,
             TextAlign = ContentAlignment.MiddleLeft
         }, 0, 0);
 
@@ -85,7 +87,7 @@ public sealed class ProductEditForm : Form
             ColumnCount = 2,
             RowCount = 16,
             AutoScroll = true,
-            BackColor = Color.White,
+            BackColor = SalrynUi.Colors.Surface,
             Padding = new Padding(14)
         };
 
@@ -138,9 +140,9 @@ public sealed class ProductEditForm : Form
         _statusLabel = new Label
         {
             Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleLeft,
-            ForeColor = Color.FromArgb(75, 85, 99)
+            TextAlign = ContentAlignment.MiddleLeft
         };
+        SalrynUi.SetStatusNeutral(_statusLabel, string.Empty);
 
         root.Controls.Add(_statusLabel, 0, 2);
 
@@ -151,7 +153,9 @@ public sealed class ProductEditForm : Form
         };
 
         _saveButton = BuildButton("Save", Color.FromArgb(31, 41, 55), Color.White);
+        SalrynUi.ConfigurePrimaryButton(_saveButton, "Save");
         _cancelButton = BuildButton("Cancel", Color.White, Color.FromArgb(17, 24, 39));
+        SalrynUi.ConfigureSecondaryButton(_cancelButton, "Cancel");
 
         _saveButton.Click += async (_, _) => await SaveAsync().ConfigureAwait(true);
         _cancelButton.Click += (_, _) =>
@@ -176,7 +180,9 @@ public sealed class ProductEditForm : Form
 
         if (state.HasError)
         {
-            SetBusy(false, state.ErrorCode + ": " + state.ErrorMessage);
+            string err = state.ErrorCode + ": " + state.ErrorMessage;
+            SetBusy(false, err);
+            SalrynUi.SetStatusError(_statusLabel, err);
             _saveButton.Enabled = false;
             return;
         }
@@ -239,7 +245,9 @@ public sealed class ProductEditForm : Form
 
         if (!result.IsSuccess)
         {
-            SetBusy(false, result.ErrorCode + ": " + result.ErrorMessage);
+            string err = result.ErrorCode + ": " + result.ErrorMessage;
+            SetBusy(false, err);
+            SalrynUi.SetStatusError(_statusLabel, err);
             return;
         }
 
@@ -251,7 +259,7 @@ public sealed class ProductEditForm : Form
     {
         _saveButton.Enabled = !isBusy && _isActive;
         _cancelButton.Enabled = !isBusy;
-        _statusLabel.Text = message;
+        SalrynUi.SetStatusNeutral(_statusLabel, message);
     }
 
     private static TextBox BuildTextBox()

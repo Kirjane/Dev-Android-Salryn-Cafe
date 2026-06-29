@@ -164,28 +164,14 @@ public static class J20MvpUi
 
     public static void ConfigurePrimaryButton(Button button, string text)
     {
-        button.Width = 150;
-        button.Height = 36;
-        button.Text = text;
-        button.Font = new Font("Segoe UI", 9.5F, FontStyle.Bold);
-        button.BackColor = Colors.Primary;
-        button.ForeColor = Color.White;
-        button.FlatStyle = FlatStyle.Flat;
-        button.FlatAppearance.BorderColor = Colors.Primary;
-        button.Margin = new Padding(8, 0, 0, 0);
+        // Compatibility delegation to SalrynUi (Ledger Console)
+        SalrynUi.ConfigurePrimaryButton(button, text);
     }
 
     public static void ConfigureSecondaryButton(Button button, string text)
     {
-        button.Width = 150;
-        button.Height = 36;
-        button.Text = text;
-        button.Font = new Font("Segoe UI", 9.5F, FontStyle.Regular);
-        button.BackColor = Color.White;
-        button.ForeColor = Colors.TextStrong;
-        button.FlatStyle = FlatStyle.Flat;
-        button.FlatAppearance.BorderColor = Colors.Border;
-        button.Margin = new Padding(8, 0, 0, 0);
+        // Compatibility delegation to SalrynUi (Ledger Console)
+        SalrynUi.ConfigureSecondaryButton(button, text);
     }
 
     // Kirch B7 (Presentation & Operator UX): shared operator-facing copy so empty/loading/error
