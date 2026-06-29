@@ -13,7 +13,9 @@ public static class WebA2LocalApiAuthSessionChecks
         string sessionServiceText = ReadRequiredFile(repoRoot, "src", "Salryn.Api.Local", "Auth", "LocalApiSessionService.cs");
         string sessionContractsText = ReadRequiredFile(repoRoot, "src", "Salryn.Api.Local", "Contracts", "AuthSessionContracts.cs");
         string webSessionApiText = ReadRequiredFile(repoRoot, "src", "Salryn.App.Web", "src", "api", "session.ts");
+        string webLoginPageText = ReadRequiredFile(repoRoot, "src", "Salryn.App.Web", "src", "pages", "LoginPage.tsx");
         string webAppText = ReadRequiredFile(repoRoot, "src", "Salryn.App.Web", "src", "App.tsx");
+        string webDashboardPageText = ReadRequiredFile(repoRoot, "src", "Salryn.App.Web", "src", "pages", "DashboardPage.tsx");
         string coreSmokeText = ReadRequiredFile(repoRoot, "tools", "Salryn.Tools.CoreSmoke", "Program.cs");
         string solutionText = ReadRequiredFile(repoRoot, "Salryn.sln");
 
@@ -35,21 +37,37 @@ public static class WebA2LocalApiAuthSessionChecks
         RequireContains(apiProgramText, "/api/auth/login", "API must expose POST /api/auth/login.");
         RequireContains(apiProgramText, "/api/auth/logout", "API must expose POST /api/auth/logout.");
         RequireContains(apiProgramText, "/api/session", "API must expose GET /api/session.");
+        RequireContains(apiProgramText, "sessions.LoginAsync", "API login must use session service LoginAsync.");
         RequireNotContains(apiProgramText, "ListenAnyIP", "API must not listen on any IP.");
         RequireNotContains(apiProgramText, "0.0.0.0", "API must not bind to 0.0.0.0.");
+        RequireNotContains(apiProgramText, "/api/session/handoff/register", "API must not expose handoff register endpoint.");
+        RequireNotContains(apiProgramText, "/api/session/handoff/complete", "API must not expose handoff complete endpoint.");
+        RequireNotContains(apiProgramText, "NativeHandoff", "API must not include native handoff types.");
+        RequireNotContains(apiProgramText, "checkout", "API must not include checkout mutation endpoints.");
 
         RequireContains(sessionServiceText, "IAuthenticationService", "Session service must use existing authentication service.");
-        RequireContains(sessionServiceText, "LoginAsync", "Session service must call existing LoginAsync.");
-        RequireContains(sessionServiceText, "EstablishSessionFromAuthenticatedUser", "Session service must support native handoff foundation.");
+        RequireContains(sessionServiceText, "_authentication.LoginAsync", "Session service must call IAuthenticationService.LoginAsync.");
+        RequireNotContains(sessionServiceText, "NativeHandoff", "Session service must not include native handoff code.");
+        RequireNotContains(sessionServiceText, "RegisterNativeHandoff", "Session service must not register native handoff sessions.");
+        RequireNotContains(sessionServiceText, "CompleteNativeHandoff", "Session service must not complete native handoff sessions.");
+        RequireNotContains(sessionServiceText, "EstablishSessionFromAuthenticatedUser", "Session service must not mint sessions from caller-supplied identity.");
         RequireNotContains(sessionContractsText, "PasswordHash", "Session contracts must not expose password hashes.");
+        RequireNotContains(sessionContractsText, "NativeHandoff", "Session contracts must not include native handoff contracts.");
         RequireNotContains(sessionServiceText, "SalrynPasswordHasher", "Session service must not bypass authentication hashing path.");
 
         RequireContains(webSessionApiText, "/api/session", "Web app must read session state.");
-        RequireContains(webSessionApiText, "/api/auth/login", "Web app must support API login fallback.");
-        RequireContains(webAppText, "LoginPage", "Web app must include dev login fallback.");
+        RequireContains(webSessionApiText, "/api/auth/login", "Web app must call /api/auth/login.");
+        RequireContains(webAppText, "LoginPage", "Web app must include login page.");
+        RequireContains(webLoginPageText, "Sign in to Salryn Ledger Console", "Web login copy must match web auth direction.");
+        RequireContains(webLoginPageText, "connects to the Salryn local API on this device", "Web login copy must describe local API connection.");
+        RequireNotContains(webLoginPageText, "WinForms login first", "Web login copy must not describe native login-first flow.");
+        RequireNotContains(webLoginPageText, "Chromium shell handoff", "Web login copy must not describe native handoff.");
+        RequireNotContains(webLoginPageText, "native login handoff", "Web login copy must not describe native login handoff.");
+        RequireContains(webDashboardPageText, "useAppSession", "Web dashboard must remain session-aware.");
         RequireNotContains(webSessionApiText, "upload", "Web app must not include upload support.");
         RequireNotContains(webSessionApiText, "blob", "Web app must not include blob support.");
         RequireNotContains(webSessionApiText, "file-picker", "Web app must not include file-picker support.");
+        RequireNotContains(webDashboardPageText, "checkout", "Web app must not include checkout completion logic.");
 
         RequireContains(coreSmokeText, "WebA2LocalApiAuthSessionChecks.Run();", "CoreSmoke must run WEB-A2 checks.");
 

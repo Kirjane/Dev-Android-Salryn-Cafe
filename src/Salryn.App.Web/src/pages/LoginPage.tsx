@@ -30,10 +30,9 @@ export function LoginPage({ onLoggedIn }: LoginPageProps) {
     <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
         <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Salryn</p>
-        <h1 className="mt-2 text-2xl font-semibold text-slate-900">Web Dev Login</h1>
+        <h1 className="mt-2 text-2xl font-semibold text-slate-900">Sign in to Salryn Ledger Console</h1>
         <p className="mt-2 text-sm text-slate-500">
-          Temporary API login for local web testing. Production desktop flow remains native
-          WinForms login first, then Chromium shell handoff.
+          This local web console connects to the Salryn local API on this device.
         </p>
 
         <form className="mt-6 space-y-4" onSubmit={handleSubmit}>

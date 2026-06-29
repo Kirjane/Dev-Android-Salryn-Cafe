@@ -1,10 +1,8 @@
-using Salryn.Api.Local;
 using Salryn.Api.Local.Auth;
 using Salryn.Api.Local.Contracts;
 using Salryn.Api.Local.Services;
 using Salryn.Composition.Local;
 using Salryn.Core.Common;
-using Salryn.Core.Models;
 using Salryn.Core.Security;
 
 const string SmokeArgument = "--smoke";
@@ -90,43 +88,6 @@ app.MapGet("/api/session", (
 {
     string? sessionId = httpContext.Request.Cookies[LocalApiSessionService.SessionCookieName];
     return Results.Ok(sessions.GetSession(sessionId));
-});
-
-app.MapPost("/api/session/handoff/register", (
-    NativeHandoffRegisterRequest request,
-    LocalApiSessionService sessions) =>
-{
-    AuthenticatedUserReadModel user = new(
-        request.UserId,
-        request.Username,
-        request.DisplayName,
-        request.RoleName,
-        Enum.Parse<UserStatus>(request.Status, ignoreCase: true),
-        request.Permissions)
-    {
-        RoleId = request.RoleId
-    };
-
-    string handoffKey = sessions.RegisterNativeHandoff(user);
-    return Results.Ok(new { handoffKey });
-});
-
-app.MapPost("/api/session/handoff/complete", (
-    NativeHandoffCompleteRequest request,
-    HttpContext httpContext,
-    LocalApiSessionService sessions) =>
-{
-    Result<LocalApiSession> handoffResult = sessions.CompleteNativeHandoff(request.HandoffKey);
-
-    if (handoffResult.IsFailure)
-    {
-        return Results.Json(
-            new { error = handoffResult.ErrorDetail.Message },
-            statusCode: StatusCodeForAuthError(handoffResult.ErrorDetail));
-    }
-
-    AppendSessionCookie(httpContext, handoffResult.Value.SessionId);
-    return Results.Ok(LocalApiSessionService.ToSessionResponse(handoffResult.Value));
 });
 
 app.MapGet("/api/dashboard/summary", async (
