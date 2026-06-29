@@ -128,6 +128,15 @@ try
             PosAdminOperationsRegressionSmokeChecks.Run(projectRoot);
             break;
 
+        case "pos-phase-b-regression":
+            Console.WriteLine("===== POS PHASE-B REGRESSION GATE =====");
+            Console.WriteLine("===== POS PHASE-B B1: STORE-DAY REGRESSION =====");
+            PosStoreDayRegressionSmokeChecks.Run(projectRoot);
+            Console.WriteLine("===== POS PHASE-B B2: ADMIN OPERATIONS REGRESSION =====");
+            PosAdminOperationsRegressionSmokeChecks.Run(projectRoot);
+            Console.WriteLine("POS Phase-B regression gate passed.");
+            break;
+
         case "pos-checkout-draft-transaction-builder":
             PosCheckoutDraftTransactionBuilderSmokeChecks.Run(projectRoot);
             break;
@@ -203,7 +212,7 @@ try
 
         default:
             Console.WriteLine("Unknown command.");
-            Console.WriteLine("Use: status | init | inspect | reset | repositories | auth-first-run | mvp-business-flow | dev-prelaunch-seed | qa-products-seed | product-write | product-write-edge | inventory-write | inventory-write-edge | sales-write | sales-write-edge | sales-read-write | cashier-session-write | cashier-session-write-edge | cashier-session-read-write | cashier-session-service | cashier-session-service-edge | pos-checkout-session-enforcement | pos-checkout-repository-integration | pos-checkout-application-boundary | pos-checkout-application-repository | pos-store-day-regression | pos-admin-operations-regression | pos-checkout-draft-transaction-builder | pos-checkout-product-picker-boundary | pos-checkout-product-picker-repository-integration | pos-checkout-ui-presenter-viewmodel | pos-checkout-ui-product-search-presenter-boundary | pos-checkout-ui-product-repository-search-boundary | official-output-text-file | official-output-text-file-dev-candidate | full");
+            Console.WriteLine("Use: status | init | inspect | reset | repositories | auth-first-run | mvp-business-flow | dev-prelaunch-seed | qa-products-seed | product-write | product-write-edge | inventory-write | inventory-write-edge | sales-write | sales-write-edge | sales-read-write | cashier-session-write | cashier-session-write-edge | cashier-session-read-write | cashier-session-service | cashier-session-service-edge | pos-checkout-session-enforcement | pos-checkout-repository-integration | pos-checkout-application-boundary | pos-checkout-application-repository | pos-store-day-regression | pos-admin-operations-regression | pos-phase-b-regression | pos-checkout-draft-transaction-builder | pos-checkout-product-picker-boundary | pos-checkout-product-picker-repository-integration | pos-checkout-ui-presenter-viewmodel | pos-checkout-ui-product-search-presenter-boundary | pos-checkout-ui-product-repository-search-boundary | official-output-text-file | official-output-text-file-dev-candidate | full");
             Environment.ExitCode = 1;
             break;
     }
