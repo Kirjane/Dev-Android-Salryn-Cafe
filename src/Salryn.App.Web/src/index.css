@@ -2,8 +2,32 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* Salryn web design tokens (WEB-A3 foundation) */
+  --salryn-shell-bg: #0f1b2d;
+  --salryn-rail-bg: #152238;
+  --salryn-rail-active-bg: #1c2d47;
+  --salryn-workspace-bg: #f4f6f9;
+  --salryn-card-bg: #ffffff;
+  --salryn-border: #e2e8f0;
+  --salryn-text-muted: #64748b;
+  --salryn-primary: #1c2d47;
+  --salryn-danger: #b91c1c;
+  --salryn-success: #047857;
+  --salryn-warning: #b45309;
+  --salryn-info: #0369a1;
+  --salryn-focus-ring: #2563eb;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
 body {
   margin: 0;
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
-  background: #f4f6f9;
+  background: var(--salryn-workspace-bg);
+  color: #0f172a;
 }

@@ -73,6 +73,7 @@ public static class Program
         J20DevelopmentLaunchModeChecks.Run();
         WebA1LocalApiReactDashboardChecks.Run();
         WebA2LocalApiAuthSessionChecks.Run();
+        WebA3ShellDesignSystemChecks.Run();
         J20UiWorkflowReadinessChecks.Run();
         PosStabA1StartupLoginReadinessChecks.Run();
         PosStabA2ShiftCloseChecks.Run();

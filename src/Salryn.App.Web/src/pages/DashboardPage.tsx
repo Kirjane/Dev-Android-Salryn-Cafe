@@ -1,8 +1,20 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchDashboardSummary } from "../api/dashboard";
 import { fetchSession, logout, type SessionState } from "../api/session";
-import { MetricCard } from "../components/MetricCard";
-import { Shell } from "../components/Shell";
+import { AppShell } from "../components/AppShell";
+import {
+  Alert,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  CardTitle,
+  CommandBar,
+  ErrorState,
+  LoadingState,
+  MetricCard,
+  StatusPill,
+} from "../components/ui";
 
 function formatMoney(amount: number): string {
   return `PHP ${amount.toLocaleString("en-PH", {
@@ -31,33 +43,42 @@ export function DashboardPage({ session, onLogout }: DashboardPageProps) {
     onLogout();
   }
 
-  return (
-    <Shell session={session} onLogout={handleLogout}>
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-6 flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-2xl font-semibold text-slate-900">Dashboard</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Signed in as {session.user?.displayName} ({session.user?.roleName}).
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => refetch()}
-            className="rounded-lg bg-navy-900 px-4 py-2 text-sm font-medium text-white hover:bg-navy-800"
-          >
-            Refresh
-          </button>
-        </div>
+  const hasWarnings = data ? data.warnings.length > 0 : false;
+  const lowStock = data?.lowStockCount ?? 0;
 
-        {isLoading || isFetching ? (
-          <p className="text-sm text-slate-500">Loading dashboard...</p>
-        ) : null}
+  return (
+    <AppShell session={session} onLogout={handleLogout}>
+      <div className="space-y-6">
+        <CommandBar
+          title="Dashboard"
+          subtitle={`Signed in as ${session.user?.displayName ?? ""} (${
+            session.user?.roleName ?? ""
+          }).`}
+          status={
+            data ? (
+              <StatusPill tone={data.status === "ok" ? "success" : "warning"}>
+                {data.status === "ok" ? "All reads healthy" : "Read warnings present"}
+              </StatusPill>
+            ) : null
+          }
+          actions={
+            <Button variant="secondary" onClick={() => refetch()} disabled={isFetching}>
+              {isFetching ? "Refreshing..." : "Refresh"}
+            </Button>
+          }
+        />
+
+        {isLoading ? <LoadingState label="Loading dashboard..." /> : null}
 
         {isError ? (
-          <p className="text-sm text-amber-700">
-            {(error as Error).message || "Failed to load dashboard summary."}
-          </p>
+          <ErrorState
+            message={(error as Error).message || "Failed to load dashboard summary."}
+            action={
+              <Button variant="secondary" size="sm" onClick={() => refetch()}>
+                Try again
+              </Button>
+            }
+          />
         ) : null}
 
         {data ? (
@@ -80,29 +101,44 @@ export function DashboardPage({ session, onLogout }: DashboardPageProps) {
               />
               <MetricCard
                 title="Low Stock"
-                value={data.lowStockCount.toLocaleString()}
+                value={lowStock.toLocaleString()}
                 subtitle="Needs attention"
+                tone={lowStock > 0 ? "warning" : "success"}
+                badge={lowStock > 0 ? "Review" : "OK"}
+                emphasis={lowStock > 0}
               />
             </div>
 
-            <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-sm text-slate-600">
-                {data.status === "ok"
-                  ? `Dashboard refreshed ${new Date(data.refreshedAt).toLocaleString()}.`
-                  : "Dashboard loaded with one or more repository warnings."}
-              </p>
-              {data.warnings.length > 0 ? (
-                <ul className="mt-2 list-disc pl-5 text-sm text-amber-700">
-                  {data.warnings.map((warning) => (
-                    <li key={warning}>{warning}</li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle>Backend status</CardTitle>
+                  <StatusPill tone={hasWarnings ? "warning" : "success"}>
+                    {hasWarnings ? "Warnings" : "Healthy"}
+                  </StatusPill>
+                </div>
+              </CardHeader>
+              <CardBody>
+                <p className="text-sm text-slate-600">
+                  {data.status === "ok"
+                    ? `Dashboard refreshed ${new Date(data.refreshedAt).toLocaleString()}.`
+                    : "Dashboard loaded with one or more repository warnings."}
+                </p>
+                {hasWarnings ? (
+                  <div className="mt-3 space-y-2">
+                    {data.warnings.map((warning) => (
+                      <Alert key={warning} tone="warning">
+                        {warning}
+                      </Alert>
+                    ))}
+                  </div>
+                ) : null}
+              </CardBody>
+            </Card>
           </>
         ) : null}
       </div>
-    </Shell>
+    </AppShell>
   );
 }
 
