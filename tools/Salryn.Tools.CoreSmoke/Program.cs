@@ -65,6 +65,7 @@ public static class Program
         J20MvpSkeletonUiChecks.Run();
         UiA1VisualSystemFoundationChecks.Run();
         UiA1RProductManagementVisualPilotChecks.Run();
+        UiA1RProductMockupAlignmentChecks.Run();
         J20DevelopmentLaunchModeChecks.Run();
         J20UiWorkflowReadinessChecks.Run();
         PosStabA1StartupLoginReadinessChecks.Run();

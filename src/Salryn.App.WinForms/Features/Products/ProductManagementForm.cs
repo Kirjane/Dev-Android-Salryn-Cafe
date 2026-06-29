@@ -25,6 +25,12 @@ public sealed class ProductManagementForm : Form
     private DataGridView _productsGrid = null!;
     private Label _statusLabel = null!;
 
+    // P1B mockup: summary strip using already-loaded row data
+    private Label _summaryTotal = null!;
+    private Label _summaryActive = null!;
+    private Label _summaryLowStock = null!;
+    private Label _summaryTracked = null!;
+
     // Kirch B7: hover guidance for the product catalog toolbar actions.
     private readonly ToolTip _toolTip = J20MvpUi.CreateToolTip();
 
@@ -61,18 +67,20 @@ public sealed class ProductManagementForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 4,
+            RowCount = 5,
             Padding = new Padding(SalrynUi.Spacing.FormPadding),
             BackColor = SalrynUi.Colors.AppBackground
         };
 
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));   // summary strip
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));   // command bar
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));   // grid
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));   // status
 
         Controls.Add(root);
 
+        // Strong Product Management header (reference-aligned)
         var titleLabel = new Label
         {
             Dock = DockStyle.Fill,
@@ -83,6 +91,27 @@ public sealed class ProductManagementForm : Form
         };
 
         root.Controls.Add(titleLabel, 0, 0);
+
+        // Summary strip (computed client-side from loaded rows)
+        var summaryBar = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            BackColor = SalrynUi.Colors.SurfaceMuted,
+            Padding = new Padding(8, 2, 8, 2)
+        };
+
+        _summaryTotal = CreateSummaryLabel("Total: --");
+        _summaryActive = CreateSummaryLabel("Active: --");
+        _summaryLowStock = CreateSummaryLabel("Low Stock: --");
+        _summaryTracked = CreateSummaryLabel("Tracked: --");
+
+        summaryBar.Controls.Add(_summaryTotal);
+        summaryBar.Controls.Add(_summaryActive);
+        summaryBar.Controls.Add(_summaryLowStock);
+        summaryBar.Controls.Add(_summaryTracked);
+
+        root.Controls.Add(summaryBar, 0, 1);
 
         var searchPanel = new TableLayoutPanel
         {
@@ -154,7 +183,7 @@ public sealed class ProductManagementForm : Form
         searchPanel.Controls.Add(_editButton, 4, 0);
         searchPanel.Controls.Add(_deactivateButton, 5, 0);
 
-        root.Controls.Add(searchPanel, 0, 1);
+        root.Controls.Add(searchPanel, 0, 2);
 
         _productsGrid = new DataGridView();
         SalrynUi.ConfigureLedgerGrid(_productsGrid);
@@ -181,7 +210,7 @@ public sealed class ProductManagementForm : Form
         AddTextColumn("TrackStockText", "Stock Mode", 95);
         AddTextColumn("StatusText", "Status", 85);
 
-        root.Controls.Add(_productsGrid, 0, 2);
+        root.Controls.Add(_productsGrid, 0, 3);
 
         _statusLabel = new Label
         {
@@ -190,7 +219,7 @@ public sealed class ProductManagementForm : Form
         };
         SalrynUi.SetStatusNeutral(_statusLabel, string.Empty);
 
-        root.Controls.Add(_statusLabel, 0, 3);
+        root.Controls.Add(_statusLabel, 0, 4);
         UpdateActionButtonState();
     }
 
@@ -451,6 +480,11 @@ public sealed class ProductManagementForm : Form
         _productsGrid.DataSource = state.Products.ToList();
         UpdateActionButtonState();
 
+        if (!state.HasError)
+        {
+            UpdateSummary(state.Products);
+        }
+
         string msg = state.HasError
             ? $"{state.StatusMessage} {state.ErrorCode}: {state.ErrorMessage}"
             : state.Products.Count == 0
@@ -466,5 +500,40 @@ public sealed class ProductManagementForm : Form
     private void SetError(string message)
     {
         SalrynUi.SetStatusError(_statusLabel, message);
+    }
+
+    private static Label CreateSummaryLabel(string text)
+    {
+        return new Label
+        {
+            Text = text,
+            Font = SalrynUi.Typography.Small,
+            ForeColor = SalrynUi.Colors.TextMuted,
+            AutoSize = true,
+            Margin = new Padding(0, 0, 16, 0)
+        };
+    }
+
+    private void UpdateSummary(IReadOnlyList<ProductManagementRowViewModel> rows)
+    {
+        int total = rows.Count;
+        int active = rows.Count(r => string.Equals(r.StatusText, "Active", StringComparison.OrdinalIgnoreCase));
+        int tracked = rows.Count(r => string.Equals(r.TrackStockText, "Yes", StringComparison.OrdinalIgnoreCase));
+
+        int lowStock = 0;
+        foreach (var r in rows)
+        {
+            if (int.TryParse(r.StockOnHandText, out int soh) &&
+                int.TryParse(r.ReorderLevelText, out int reorder) &&
+                soh <= reorder)
+            {
+                lowStock++;
+            }
+        }
+
+        _summaryTotal.Text = $"Total: {total}";
+        _summaryActive.Text = $"Active: {active}";
+        _summaryLowStock.Text = $"Low Stock: {lowStock}";
+        _summaryTracked.Text = $"Tracked: {tracked}";
     }
 }

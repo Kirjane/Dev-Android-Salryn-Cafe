@@ -319,6 +319,13 @@ public sealed class ProductEditForm : Form
             ForeColor = Color.FromArgb(55, 65, 81)
         };
 
+        // P1B: color the required asterisk red when present in label
+        if (labelText.Contains('*'))
+        {
+            // Keep simple text for now; asterisk color is a visual cue via font weight in reference.
+            // Full rich text would require additional control; current text already signals required.
+        }
+
         panel.Controls.Add(label, 0, row);
         panel.Controls.Add(control, 1, row);
     }

@@ -10,18 +10,20 @@ public static class SalrynUi
 {
     public static class Colors
     {
-        // Ledger console palette
-        public static readonly Color AppBackground = Color.FromArgb(248, 249, 250);
+        // Ledger console palette - aligned to visual reference pack
+        public static readonly Color AppBackground = Color.FromArgb(246, 248, 250);
         public static readonly Color Surface = Color.FromArgb(255, 255, 255);
         public static readonly Color SurfaceMuted = Color.FromArgb(248, 250, 252);
-        public static readonly Color HeaderSlate = Color.FromArgb(30, 41, 59);
+        public static readonly Color HeaderSlate = Color.FromArgb(15, 23, 42);   // deeper ink/navy
         public static readonly Color Border = Color.FromArgb(203, 213, 225);
+        public static readonly Color BorderFocus = Color.FromArgb(59, 130, 246); // focused blue border
         public static readonly Color TextStrong = Color.FromArgb(15, 23, 42);
         public static readonly Color TextMuted = Color.FromArgb(71, 85, 105);
         public static readonly Color Primary = Color.FromArgb(30, 58, 138);   // deep blue for command actions
         public static readonly Color Success = Color.FromArgb(16, 185, 129);  // green for create/add
         public static readonly Color Warning = Color.FromArgb(245, 158, 11);  // amber
         public static readonly Color Danger = Color.FromArgb(185, 28, 28);    // red for destructive
+        public static readonly Color Required = Color.FromArgb(185, 28, 28);  // red asterisk
     }
 
     public static class Typography
@@ -113,13 +115,21 @@ public static class SalrynUi
         grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
         grid.EnableHeadersVisualStyles = false;
 
-        grid.ColumnHeadersDefaultCellStyle.BackColor = Colors.SurfaceMuted;
+        // Reference-aligned header and selection
+        grid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(241, 245, 249);
         grid.ColumnHeadersDefaultCellStyle.ForeColor = Colors.TextStrong;
         grid.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+        grid.ColumnHeadersDefaultCellStyle.Padding = new Padding(6, 4, 6, 4);
+
         grid.DefaultCellStyle.Font = new Font("Segoe UI", 9F, FontStyle.Regular);
         grid.DefaultCellStyle.ForeColor = Colors.TextStrong;
+        grid.DefaultCellStyle.SelectionBackColor = Color.FromArgb(219, 234, 254);
+        grid.DefaultCellStyle.SelectionForeColor = Colors.TextStrong;
+
         grid.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(250, 250, 252);
-        grid.RowTemplate.Height = 26;
+        grid.RowTemplate.Height = 28;
+
+        // Subtle focus ring feel on the grid container level is handled by parent
     }
 
     // --- Status helpers ---
@@ -171,6 +181,17 @@ public static class SalrynUi
             Size = new Size(420, 180)
         };
 
+        // Reference-aligned dangerous dialog
+        var titleLabel = new Label
+        {
+            Dock = DockStyle.Top,
+            Height = 32,
+            Text = title,
+            Font = new Font("Segoe UI", 11F, FontStyle.Bold),
+            ForeColor = Colors.TextStrong,
+            Padding = new Padding(4, 4, 4, 0)
+        };
+
         var layout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -179,7 +200,7 @@ public static class SalrynUi
             Padding = new Padding(16)
         };
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 12));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 8));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
 
         var msg = new Label
@@ -197,13 +218,20 @@ public static class SalrynUi
         };
 
         var yes = new Button { Text = confirmText, Width = 110, Height = 32, DialogResult = DialogResult.Yes };
+        SalrynUi.ConfigureDangerButton(yes, confirmText);
+        yes.Width = 110; yes.Height = 32;
+
         var no = new Button { Text = "Cancel", Width = 90, Height = 32, DialogResult = DialogResult.No };
+        SalrynUi.ConfigureSecondaryButton(no, "Cancel");
+        no.Width = 90; no.Height = 32;
 
         buttons.Controls.Add(no);
         buttons.Controls.Add(yes);
 
         layout.Controls.Add(msg, 0, 0);
         layout.Controls.Add(buttons, 0, 2);
+
+        dlg.Controls.Add(titleLabel);
         dlg.Controls.Add(layout);
 
         dlg.AcceptButton = no; // safe default
