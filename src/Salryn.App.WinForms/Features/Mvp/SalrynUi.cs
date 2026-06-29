@@ -509,4 +509,59 @@ public static class SalrynUi
         panel.BorderStyle = BorderStyle.FixedSingle;
         panel.Padding = new Padding(8);
     }
+
+    // --- Inventory visual helpers (P2) ---
+
+    /// <summary>Configure a dense ledger-style grid suitable for inventory lists.</summary>
+    public static void ConfigureInventoryGrid(DataGridView grid)
+    {
+        ConfigureLedgerGrid(grid);
+        grid.RowTemplate.Height = 26;
+    }
+
+    /// <summary>Returns a semantic color for stock level using already-loaded values (no backend call).</summary>
+    public static Color GetStockStatusColor(int onHand, int reorderLevel)
+    {
+        if (onHand <= 0) return Colors.Danger;
+        if (onHand <= reorderLevel) return Colors.Warning;
+        return Colors.Success;
+    }
+
+    /// <summary>Styles a button with warning/amber semantics (e.g. Adjust Stock action).</summary>
+    public static void ConfigureWarningButton(Button button, string text)
+    {
+        button.Text = text;
+        button.Font = Typography.Button;
+        button.BackColor = Colors.Warning;
+        button.ForeColor = Color.White;
+        button.FlatStyle = FlatStyle.Flat;
+        button.FlatAppearance.BorderColor = Colors.Warning;
+        button.Height = Spacing.ButtonHeight;
+        button.Margin = new Padding(8, 0, 0, 0);
+    }
+
+    /// <summary>Lightweight stock status tag styling for labels/badges from existing row data.</summary>
+    public static void StyleStockStatusTag(Label label, string statusKind)
+    {
+        label.AutoSize = true;
+        label.Font = Typography.Small;
+        label.Padding = new Padding(4, 1, 4, 1);
+        label.TextAlign = ContentAlignment.MiddleCenter;
+
+        if (statusKind.Contains("Low", StringComparison.OrdinalIgnoreCase) || statusKind.Contains("Reorder", StringComparison.OrdinalIgnoreCase))
+        {
+            label.BackColor = Color.FromArgb(254, 243, 199);
+            label.ForeColor = Colors.Warning;
+        }
+        else if (statusKind.Contains("Out", StringComparison.OrdinalIgnoreCase) || statusKind.Contains("Zero", StringComparison.OrdinalIgnoreCase))
+        {
+            label.BackColor = Color.FromArgb(254, 226, 226);
+            label.ForeColor = Colors.Danger;
+        }
+        else
+        {
+            label.BackColor = Color.FromArgb(220, 252, 231);
+            label.ForeColor = Colors.Success;
+        }
+    }
 }

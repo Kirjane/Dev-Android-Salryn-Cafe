@@ -38,7 +38,7 @@ public sealed class InventoryAdjustmentForm : Form
         MinimumSize = new Size(980, 640);
         Size = new Size(1080, 700);
         Font = new Font("Segoe UI", 9F);
-        BackColor = J20MvpUi.Colors.AppBackground;
+        BackColor = SalrynUi.Colors.AppBackground;
 
         BuildLayout();
         WireEvents();
@@ -52,94 +52,114 @@ public sealed class InventoryAdjustmentForm : Form
 
     private void BuildLayout()
     {
-        TableLayoutPanel root = J20MvpUi.RootLayout(rowCount: 5);
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 72F));
+        // P2: SalrynUi ledger console layout
+        var root = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 5,
+            Padding = new Padding(SalrynUi.Spacing.FormPadding),
+            BackColor = SalrynUi.Colors.AppBackground
+        };
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 52F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 120F));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 110F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
 
         Controls.Add(root);
 
-        root.Controls.Add(J20MvpUi.Header(
+        root.Controls.Add(SalrynUi.CreatePageHeader(
             "Adjust Inventory",
             "Search a stock-tracked product, enter a signed quantity delta, and record a reason."), 0, 0);
 
-        TableLayoutPanel searchPanel = new()
+        var cmdBar = SalrynUi.CreateCommandBar();
+        var searchPanel = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 3,
-            RowCount = 1,
-            BackColor = J20MvpUi.Colors.AppBackground
+            RowCount = 1
         };
-
         searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-        searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150F));
-        searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 10F));
+        searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100F));
+        searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 8F));
 
         _searchTextBox.Dock = DockStyle.Fill;
         _searchTextBox.Font = new Font("Segoe UI", 10.5F);
         _searchTextBox.PlaceholderText = "Search product name, barcode, or SKU...";
 
-        J20MvpUi.ConfigurePrimaryButton(_searchButton, "Search");
+        SalrynUi.ConfigurePrimaryButton(_searchButton, "Search");
 
         searchPanel.Controls.Add(_searchTextBox, 0, 0);
         searchPanel.Controls.Add(_searchButton, 1, 0);
+        cmdBar.Controls.Add(searchPanel);
+        root.Controls.Add(cmdBar, 0, 1);
 
-        root.Controls.Add(searchPanel, 0, 1);
-
-        Panel gridCard = J20MvpUi.Card();
-        _productsGrid.Dock = DockStyle.Fill;
+        var gridCard = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = SalrynUi.Colors.Surface,
+            BorderStyle = BorderStyle.FixedSingle
+        };
+        SalrynUi.ConfigureInventoryGrid(_productsGrid);
         gridCard.Controls.Add(_productsGrid);
         root.Controls.Add(gridCard, 0, 2);
 
-        TableLayoutPanel adjustmentPanel = new()
+        var adjustmentPanel = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 2,
-            BackColor = J20MvpUi.Colors.AppBackground
+            RowCount = 3,
+            BackColor = SalrynUi.Colors.Surface,
+            Padding = new Padding(8)
         };
-
-        adjustmentPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 210F));
+        adjustmentPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 170F));
         adjustmentPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-        adjustmentPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
+        adjustmentPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 32F));
+        adjustmentPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 32F));
         adjustmentPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
-        adjustmentPanel.Controls.Add(BuildLabel("Quantity delta"), 0, 0);
+        var section = SalrynUi.CreateSectionTitle("Adjustment");
+        adjustmentPanel.Controls.Add(section, 0, 0);
+        adjustmentPanel.SetColumnSpan(section, 2);
+
+        adjustmentPanel.Controls.Add(SalrynUi.CreateFieldLabel("Quantity delta", required: false), 0, 1);
 
         _quantityDeltaTextBox.Dock = DockStyle.Fill;
         _quantityDeltaTextBox.Font = new Font("Segoe UI", 10.5F);
         _quantityDeltaTextBox.PlaceholderText = "Use positive to add, negative to remove";
-        adjustmentPanel.Controls.Add(_quantityDeltaTextBox, 1, 0);
+        adjustmentPanel.Controls.Add(_quantityDeltaTextBox, 1, 1);
 
-        adjustmentPanel.Controls.Add(BuildLabel("Reason"), 0, 1);
+        // Required reason with visual marker
+        adjustmentPanel.Controls.Add(SalrynUi.CreateFieldLabel("Reason", required: true), 0, 2);
 
         _reasonTextBox.Dock = DockStyle.Fill;
         _reasonTextBox.Multiline = true;
         _reasonTextBox.MaxLength = 500;
         _reasonTextBox.Font = new Font("Segoe UI", 10F);
         _reasonTextBox.PlaceholderText = "Required adjustment reason...";
-        adjustmentPanel.Controls.Add(_reasonTextBox, 1, 1);
+        adjustmentPanel.Controls.Add(_reasonTextBox, 1, 2);
 
         root.Controls.Add(adjustmentPanel, 0, 3);
 
-        FlowLayoutPanel footer = new()
+        var footer = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
-            FlowDirection = FlowDirection.RightToLeft,
-            BackColor = J20MvpUi.Colors.AppBackground
+            FlowDirection = FlowDirection.RightToLeft
         };
+        SalrynUi.StyleFooterStrip(footer);
 
-        J20MvpUi.ConfigurePrimaryButton(_applyButton, "Apply");
-        J20MvpUi.ConfigureSecondaryButton(_cancelButton, "Cancel");
+        // Adjust action styled as warning/primary per target
+        SalrynUi.ConfigureWarningButton(_applyButton, "Adjust Stock");
+        SalrynUi.ConfigureSecondaryButton(_cancelButton, "Cancel");
 
         footer.Controls.Add(_applyButton);
         footer.Controls.Add(_cancelButton);
 
         _statusLabel.Dock = DockStyle.Fill;
         _statusLabel.TextAlign = ContentAlignment.MiddleLeft;
-        _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
+        SalrynUi.SetStatusNeutral(_statusLabel, string.Empty);
+        SalrynUi.ConfigureFooterStatus(_statusLabel);
         footer.Controls.Add(_statusLabel);
 
         root.Controls.Add(footer, 0, 4);
@@ -183,8 +203,7 @@ public sealed class InventoryAdjustmentForm : Form
 
     private async Task SearchProductsAsync()
     {
-        _statusLabel.Text = "Searching products...";
-        _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
+        SalrynUi.SetStatusNeutral(_statusLabel, "Searching products...");
 
         string? searchText = string.IsNullOrWhiteSpace(_searchTextBox.Text)
             ? null
@@ -222,8 +241,7 @@ public sealed class InventoryAdjustmentForm : Form
             _productsGrid.Columns["ProductId"]!.Visible = false;
         }
 
-        _statusLabel.Text = $"Loaded {result.Value.Items.Count} products. Total matches: {result.Value.TotalCount}.";
-        _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
+        SalrynUi.SetStatusNeutral(_statusLabel, $"Loaded {result.Value.Items.Count} products. Total matches: {result.Value.TotalCount}.");
     }
 
     private async Task ApplyAdjustmentAsync()
@@ -267,8 +285,7 @@ public sealed class InventoryAdjustmentForm : Form
         }
 
         _applyButton.Enabled = false;
-        _statusLabel.Text = "Saving inventory adjustment...";
-        _statusLabel.ForeColor = J20MvpUi.Colors.TextMuted;
+        SalrynUi.SetStatusNeutral(_statusLabel, "Saving inventory adjustment...");
 
         StockMovement movement = new()
         {
@@ -361,8 +378,7 @@ public sealed class InventoryAdjustmentForm : Form
 
     private void SetError(string message)
     {
-        _statusLabel.Text = message;
-        _statusLabel.ForeColor = J20MvpUi.Colors.Danger;
+        SalrynUi.SetStatusError(_statusLabel, message);
     }
 
     private sealed record ProductAdjustmentRow(
