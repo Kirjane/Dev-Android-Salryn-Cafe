@@ -228,9 +228,97 @@ Do not add these unless explicitly assigned:
 - printer/scanner/hardware
 - PDF/Crystal/ESC/POS
 - LAN exposure
-- WebView2 wrapper
+
+The native WebView2 dev host was added in WEB-A4 (see the WEB-A4 section). It is a
+presentation/dev host only and follows all the same rules: no business logic, no direct
+database access, localhost only.
 
 The web frontend must not reimplement business rules. It asks the native API; the native backend decides.
+
+## WEB-A4 Native WebView Dev Host
+
+WEB-A4 adds a native Windows desktop dev host that loads the existing web frontend in a
+Chromium-based Microsoft Edge WebView2 surface and talks to the local API at
+`http://127.0.0.1:5299`. It does **not** replace WinForms, does **not** reference any
+Salryn business project, and contains no business logic or direct database access.
+
+Project:
+
+```text
+src/Salryn.Desktop.WebView/Salryn.Desktop.WebView.csproj
+```
+
+### What WEB-A4 does
+
+- Native Windows host window (WebView2) sized for operator-console use.
+- WebView2 runtime detection with a clear native error dialog if missing.
+- Optional dev convenience: if the local API is not already healthy, it can launch
+  `Salryn.Api.Local` in dev mode as a child process and wait for `/health`.
+- Loads the frontend URL from `SALRYN_WEB_URL`, otherwise the Vite dev server at
+  `http://127.0.0.1:5173`. When the API serves the built app, `http://127.0.0.1:5299/`
+  also works.
+- Visual fidelity pass on `AppShell`, `LoginPage`, and `DashboardPage`.
+- UX dialogs tied only to real behavior: confirm logout, session expired, API unavailable.
+
+### What WEB-A4 does NOT do
+
+- No real POS Checkout, Products, Inventory, Sales History, Users, Backup, Audit,
+  Settings, Official Output, or RMO pages.
+- No fake module data, charts, or tables.
+- No product image/photo/media/upload/file-picker support.
+- No printer/scanner/PDF/Crystal/ESC/POS.
+- No LAN exposure, no `0.0.0.0`, no `ListenAnyIP`.
+- No native auth handoff.
+- Not production desktop packaging; this is a dev host only.
+
+### Required WebView2 runtime
+
+The Microsoft Edge WebView2 Runtime must be installed on the machine. WEB-A4 only
+detects the runtime; it never silently installs anything and never bundles a Chromium
+binary. If the runtime is missing, the host shows:
+
+```text
+Microsoft Edge WebView2 Runtime is required to run Salryn Web Console.
+Install the runtime, then restart Salryn.
+```
+
+### Optional static hosting
+
+`Salryn.Api.Local` serves the built React app only when
+`src/Salryn.App.Web/dist/index.html` exists. `GET /` returns the app, `/api/*` and
+`/health` keep working, and a SPA fallback returns `index.html` for non-API routes only.
+There is no upload, no directory browsing, and no new business endpoints.
+
+### Run: API + Vite + native host (dev server)
+
+```powershell
+dotnet run --project .\src\Salryn.Api.Local\Salryn.Api.Local.csproj -- --dev
+```
+
+```powershell
+cd .\src\Salryn.App.Web
+npm run dev
+```
+
+```powershell
+dotnet run --project .\src\Salryn.Desktop.WebView\Salryn.Desktop.WebView.csproj
+```
+
+### Run: API serving the built app + native host (static)
+
+```powershell
+cd .\src\Salryn.App.Web
+npm run build
+```
+
+```powershell
+dotnet run --project .\src\Salryn.Api.Local\Salryn.Api.Local.csproj -- --dev
+```
+
+```powershell
+$env:SALRYN_WEB_URL = "http://127.0.0.1:5299/"
+dotnet run --project .\src\Salryn.Desktop.WebView\Salryn.Desktop.WebView.csproj
+```
 
 ## Verification Baseline
 

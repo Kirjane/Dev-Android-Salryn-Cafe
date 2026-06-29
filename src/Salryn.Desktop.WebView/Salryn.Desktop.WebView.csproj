@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>Salryn.Desktop.WebView</RootNamespace>
+    <AssemblyName>Salryn.Desktop.WebView</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    WEB-A4 native dev host.
+    Intentionally references no Salryn business projects (no WinForms app, no Core,
+    no Infrastructure). It only hosts the web frontend in WebView2 and talks to the
+    local API over HTTP.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4022.49" />
+  </ItemGroup>
+
+</Project>

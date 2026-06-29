@@ -74,6 +74,7 @@ public static class Program
         WebA1LocalApiReactDashboardChecks.Run();
         WebA2LocalApiAuthSessionChecks.Run();
         WebA3ShellDesignSystemChecks.Run();
+        WebA4NativeHostVisualFidelityChecks.Run();
         J20UiWorkflowReadinessChecks.Run();
         PosStabA1StartupLoginReadinessChecks.Run();
         PosStabA2ShiftCloseChecks.Run();

@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchDashboardSummary } from "../api/dashboard";
+import { ApiError } from "../api/http";
 import { fetchSession, logout, type SessionState } from "../api/session";
 import { AppShell } from "../components/AppShell";
 import {
@@ -10,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
   CommandBar,
+  Dialog,
   ErrorState,
   LoadingState,
   MetricCard,
@@ -35,10 +37,22 @@ export function DashboardPage({ session, onLogout }: DashboardPageProps) {
     queryKey: ["dashboard-summary"],
     queryFn: fetchDashboardSummary,
     enabled: session.isAuthenticated,
+    retry: false,
   });
 
+  const sessionExpired = isError && error instanceof ApiError && error.status === 401;
+
   async function handleLogout() {
-    await logout();
+    try {
+      await logout();
+    } catch {
+      // The session may already be gone; clearing local state is enough.
+    }
+    queryClient.removeQueries({ queryKey: ["dashboard-summary"] });
+    onLogout();
+  }
+
+  function handleReauthenticate() {
     queryClient.removeQueries({ queryKey: ["dashboard-summary"] });
     onLogout();
   }
@@ -70,7 +84,7 @@ export function DashboardPage({ session, onLogout }: DashboardPageProps) {
 
         {isLoading ? <LoadingState label="Loading dashboard..." /> : null}
 
-        {isError ? (
+        {isError && !sessionExpired ? (
           <ErrorState
             message={(error as Error).message || "Failed to load dashboard summary."}
             action={
@@ -138,6 +152,14 @@ export function DashboardPage({ session, onLogout }: DashboardPageProps) {
           </>
         ) : null}
       </div>
+
+      <Dialog
+        open={sessionExpired}
+        title="Session expired"
+        description="Your session is no longer valid. Please sign in again to continue."
+        onClose={handleReauthenticate}
+        footer={<Button onClick={handleReauthenticate}>Sign in again</Button>}
+      />
     </AppShell>
   );
 }

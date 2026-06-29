@@ -1,3 +1,4 @@
+using Microsoft.Extensions.FileProviders;
 using Salryn.Api.Local.Auth;
 using Salryn.Api.Local.Contracts;
 using Salryn.Api.Local.Services;
@@ -44,6 +45,19 @@ builder.Services.AddCors(options =>
 WebApplication app = builder.Build();
 
 app.UseCors();
+
+// Optional static hosting of the built React app for the native WebView host.
+// Only enabled when src/Salryn.App.Web/dist/index.html exists. No upload, no
+// directory browsing, no broad file access, no LAN exposure, no new API surface.
+string? webDistPath = ResolveWebDistPath();
+
+if (webDistPath is not null)
+{
+    var distFileProvider = new PhysicalFileProvider(webDistPath);
+
+    app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = distFileProvider });
+    app.UseStaticFiles(new StaticFileOptions { FileProvider = distFileProvider });
+}
 
 app.MapGet("/health", () => Results.Ok(new
 {
@@ -109,7 +123,73 @@ app.MapGet("/api/dashboard/summary", async (
     return Results.Ok(summary);
 });
 
+// SPA fallback: serve index.html for client-side routes only when static hosting is
+// enabled. API and health routes are never shadowed by the fallback.
+if (webDistPath is not null)
+{
+    string indexHtmlPath = Path.Combine(webDistPath, "index.html");
+
+    app.MapFallback((HttpContext httpContext) =>
+    {
+        if (httpContext.Request.Path.StartsWithSegments("/api") ||
+            httpContext.Request.Path.StartsWithSegments("/health"))
+        {
+            return Results.NotFound();
+        }
+
+        return Results.File(indexHtmlPath, "text/html");
+    });
+}
+
 app.Run();
+
+static string? ResolveWebDistPath()
+{
+    foreach (string root in WebDistCandidateRoots())
+    {
+        string distPath = Path.Combine(root, "src", "Salryn.App.Web", "dist");
+
+        if (File.Exists(Path.Combine(distPath, "index.html")))
+        {
+            return distPath;
+        }
+    }
+
+    return null;
+}
+
+static IEnumerable<string> WebDistCandidateRoots()
+{
+    string? fromBase = FindRepositoryRootFrom(AppContext.BaseDirectory);
+    if (fromBase is not null)
+    {
+        yield return fromBase;
+    }
+
+    string? fromCurrent = FindRepositoryRootFrom(Directory.GetCurrentDirectory());
+    if (fromCurrent is not null &&
+        !string.Equals(fromCurrent, fromBase, StringComparison.OrdinalIgnoreCase))
+    {
+        yield return fromCurrent;
+    }
+}
+
+static string? FindRepositoryRootFrom(string startPath)
+{
+    DirectoryInfo? current = new(startPath);
+
+    while (current is not null)
+    {
+        if (File.Exists(Path.Combine(current.FullName, "Salryn.sln")))
+        {
+            return current.FullName;
+        }
+
+        current = current.Parent;
+    }
+
+    return null;
+}
 
 static bool IsSmokeRequested(string[] args)
 {

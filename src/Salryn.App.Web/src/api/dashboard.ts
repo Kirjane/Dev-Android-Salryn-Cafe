@@ -1,3 +1,5 @@
+import { readJson } from "./http";
+
 export type DashboardSummary = {
   todaySalesTotal: number;
   todayTransactionCount: number;
@@ -13,9 +15,5 @@ export async function fetchDashboardSummary(): Promise<DashboardSummary> {
     credentials: "include",
   });
 
-  if (!response.ok) {
-    throw new Error(`Dashboard summary request failed (${response.status})`);
-  }
-
-  return response.json() as Promise<DashboardSummary>;
+  return readJson<DashboardSummary>(response);
 }

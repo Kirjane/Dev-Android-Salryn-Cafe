@@ -1,3 +1,5 @@
+import { ApiError, readJson } from "./http";
+
 export type SessionUser = {
   userId: string;
   username: string;
@@ -13,15 +15,6 @@ export type SessionState = {
   user: SessionUser | null;
   sessionStartedAt: string | null;
 };
-
-async function readJson<T>(response: Response): Promise<T> {
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(body?.error || `Request failed (${response.status})`);
-  }
-
-  return response.json() as Promise<T>;
-}
 
 export async function fetchSession(): Promise<SessionState> {
   const response = await fetch("/api/session", {
@@ -51,6 +44,6 @@ export async function logout(): Promise<void> {
   });
 
   if (!response.ok) {
-    throw new Error(`Logout failed (${response.status})`);
+    throw new ApiError(`Logout failed (${response.status})`, response.status);
   }
 }
