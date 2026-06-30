@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   fetchProductBrands,
@@ -60,6 +60,16 @@ export function ProductsPage() {
     queryFn: () => fetchProductDetail(selectedId!),
     enabled: selectedId !== null,
   });
+
+  useEffect(() => {
+    if (productsQuery.data && productsQuery.data.totalPages > 0 && page > productsQuery.data.totalPages) {
+      setPage(productsQuery.data.totalPages);
+    }
+  }, [productsQuery.data?.totalPages]);
+
+  useEffect(() => {
+    setSelectedId(null);
+  }, [search, categoryId, brandId, statusFilter]);
 
   const columns = [
     { key: "sku", header: "SKU", render: (row: ProductListItem) => row.sku ?? "—" },
@@ -175,7 +185,7 @@ export function ProductsPage() {
               <div className="flex items-center justify-between text-sm text-slate-500">
                 <span>
                   {productsQuery.data.totalCount.toLocaleString()} products · page{" "}
-                  {productsQuery.data.pageNumber} of {productsQuery.data.totalPages || 1}
+                  {productsQuery.data.pageNumber} of {Math.max(1, productsQuery.data.totalPages || 1)}
                 </span>
                 <div className="flex gap-2">
                   <Button
@@ -204,7 +214,12 @@ export function ProductsPage() {
       {selectedId && detailQuery.data ? (
         <Card>
           <CardHeader>
-            <CardTitle>{detailQuery.data.name}</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle>{detailQuery.data.name}</CardTitle>
+              <Button variant="secondary" size="sm" onClick={() => setSelectedId(null)}>
+                Close
+              </Button>
+            </div>
           </CardHeader>
           <CardBody className="grid gap-2 text-sm text-slate-600 md:grid-cols-2">
             <p>SKU: {detailQuery.data.sku ?? "—"}</p>

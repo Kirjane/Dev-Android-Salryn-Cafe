@@ -80,7 +80,12 @@ export function UsersPage() {
       {selectedId && detailQuery.data ? (
         <Card>
           <CardHeader>
-            <CardTitle>{detailQuery.data.displayName}</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle>{detailQuery.data.displayName}</CardTitle>
+              <Button variant="secondary" size="sm" onClick={() => setSelectedId(null)}>
+                Close
+              </Button>
+            </div>
           </CardHeader>
           <CardBody className="space-y-2 text-sm text-slate-600">
             <p>Username: {detailQuery.data.username}</p>

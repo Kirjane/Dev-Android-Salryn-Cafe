@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchLowStockProducts, fetchStockMovements, type StockMovement } from "../api/inventory";
 import {
@@ -25,6 +25,12 @@ export function InventoryPage() {
     queryKey: ["inventory-movements", page],
     queryFn: () => fetchStockMovements({ page, pageSize: 25 }),
   });
+
+  useEffect(() => {
+    if (movementsQuery.data && movementsQuery.data.totalPages > 0 && page > movementsQuery.data.totalPages) {
+      setPage(movementsQuery.data.totalPages);
+    }
+  }, [movementsQuery.data?.totalPages]);
 
   const lowStockColumns = [
     { key: "product", header: "Product", render: (row: { productName: string }) => row.productName },
@@ -131,7 +137,7 @@ export function InventoryPage() {
               <div className="flex items-center justify-between text-sm text-slate-500">
                 <span>
                   {movementsQuery.data.totalCount.toLocaleString()} movements · page{" "}
-                  {movementsQuery.data.pageNumber} of {movementsQuery.data.totalPages || 1}
+                  {movementsQuery.data.pageNumber} of {Math.max(1, movementsQuery.data.totalPages || 1)}
                 </span>
                 <div className="flex gap-2">
                   <Button

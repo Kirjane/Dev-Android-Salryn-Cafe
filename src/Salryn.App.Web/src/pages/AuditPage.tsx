@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchAuditLogs, fetchErrorLogs, type AuditLog, type ErrorLog } from "../api/audit";
 import {
@@ -31,6 +31,13 @@ export function AuditPage() {
   });
 
   const activeQuery = tab === "audit" ? auditQuery : errorQuery;
+
+  useEffect(() => {
+    const data = activeQuery.data;
+    if (data && data.totalPages > 0 && page > data.totalPages) {
+      setPage(data.totalPages);
+    }
+  }, [activeQuery.data?.totalPages, tab]);
 
   const auditColumns = [
     {
@@ -159,7 +166,7 @@ function Pagination({
   return (
     <div className="flex items-center justify-between text-sm text-slate-500">
       <span>
-        {totalCount.toLocaleString()} records · page {page} of {totalPages || 1}
+        {totalCount.toLocaleString()} records · page {page} of {Math.max(1, totalPages || 1)}
       </span>
       <div className="flex gap-2">
         <Button variant="secondary" size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>

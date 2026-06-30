@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchSaleDetail, fetchSalesHistory, type SaleHistoryItem } from "../api/sales";
 import {
@@ -39,6 +39,16 @@ export function SalesHistoryPage() {
     enabled: selectedId !== null,
   });
 
+  useEffect(() => {
+    if (salesQuery.data && salesQuery.data.totalPages > 0 && page > salesQuery.data.totalPages) {
+      setPage(salesQuery.data.totalPages);
+    }
+  }, [salesQuery.data?.totalPages]);
+
+  useEffect(() => {
+    setSelectedId(null);
+  }, [receiptNo, status]);
+
   const columns = [
     { key: "receipt", header: "Receipt", render: (row: SaleHistoryItem) => row.receiptNo },
     {
@@ -70,7 +80,7 @@ export function SalesHistoryPage() {
         title="Sales History"
         subtitle="Read-only completed and voided sales from the local database."
         actions={
-          <Button variant="secondary" onClick={() => { salesQuery.refetch(); }}>
+          <Button variant="secondary" onClick={() => void salesQuery.refetch()}>
             Refresh
           </Button>
         }
@@ -118,7 +128,7 @@ export function SalesHistoryPage() {
               <div className="flex items-center justify-between text-sm text-slate-500">
                 <span>
                   {salesQuery.data.totalCount.toLocaleString()} sales · page {salesQuery.data.pageNumber}{" "}
-                  of {salesQuery.data.totalPages || 1}
+                  of {Math.max(1, salesQuery.data.totalPages || 1)}
                 </span>
                 <div className="flex gap-2">
                   <Button
@@ -147,7 +157,12 @@ export function SalesHistoryPage() {
       {selectedId && detailQuery.data ? (
         <Card>
           <CardHeader>
-            <CardTitle>Receipt {detailQuery.data.receiptNo}</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle>Receipt {detailQuery.data.receiptNo}</CardTitle>
+              <Button variant="secondary" size="sm" onClick={() => setSelectedId(null)}>
+                Close
+              </Button>
+            </div>
           </CardHeader>
           <CardBody className="space-y-3 text-sm text-slate-600">
             <p>
