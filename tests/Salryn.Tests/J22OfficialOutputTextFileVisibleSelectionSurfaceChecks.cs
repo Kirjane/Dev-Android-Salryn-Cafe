@@ -38,6 +38,9 @@ public static class J22OfficialOutputTextFileVisibleSelectionSurfaceChecks
         RequireContains(form, "Select an official evidence-backed candidate before running.", "M1-D1 form must block run without a selected official evidence candidate.");
         RequireContains(form, "Explicit output root path is required before running.", "M1-D1 form must require explicit output root path.");
         RequireContains(form, "An active app user session is required before running.", "M1-E1 form must require an active app user session.");
+        RequireContains(form, "SalrynPermissions.OfficialOutputRun", "RMO-A5 form must require OfficialOutput.Run before running.");
+        RequireContains(form, "Official output text-file workflow requires OfficialOutput.Run permission.", "RMO-A5 form must block run without OfficialOutput.Run.");
+        RequireContains(form, "CallerPermissions: _session.Permissions", "RMO-A5 form must pass caller permissions to the workflow UI boundary.");
         RequireContains(form, "Terminal id is required from official evidence or Local Host context before running.", "M1-E1 form must require a terminal id.");
 
         RequireContains(form, "catch (Exception ex)", "M1-E2 form must convert unexpected UI event exceptions into visible status errors.");
@@ -66,7 +69,9 @@ public static class J22OfficialOutputTextFileVisibleSelectionSurfaceChecks
         RequireContains(shellPresenter, "OfficialOutputTextFile", "M1-D1 shell must expose an explicit official output text-file module key.");
         RequireContains(shellPresenter, "OFFICIAL_OUTPUT_TEXT_FILE", "M1-D1 shell module key must be explicit.");
         RequireContains(shellPresenter, "\"Official Output Text File\"", "M1-D1 shell module title must be visible.");
-        RequireContains(shellPresenter, "Can(SalrynPermissions.ReportsView)", "M1-D1 shell route must use Reports.View until a dedicated permission exists.");
+        RequireContains(shellPresenter, "Can(SalrynPermissions.OfficialOutputRun)", "RMO-A5 shell route must require OfficialOutput.Run.");
+        RequireContains(shellPresenter, "Requires OfficialOutput.Run permission.", "RMO-A5 shell route must describe OfficialOutput.Run requirement.");
+        RequireContains(shellPresenter, "Can(SalrynPermissions.ReportsView)", "Dashboard shell route must continue to use Reports.View.");
         RequireContains(shellForm, "using Salryn.App.WinForms.Features.OfficialOutput;", "M1-D1 shell form must reference the OfficialOutput feature namespace.");
         RequireContains(shellForm, "OpenOfficialOutputTextFile", "M1-D1 shell must route to the official output text-file form.");
         RequireContains(shellForm, "new(_services, _session)", "M1-D1 shell must pass AppServices and the current session to the form.");

@@ -13,6 +13,7 @@ public static class SalrynPermissions
     public const string SalesVoid = "Sales.Void";
     public const string SalesViewHistory = "Sales.ViewHistory";
     public const string ReportsView = "Reports.View";
+    public const string OfficialOutputRun = "OfficialOutput.Run";
     public const string BackupManage = "Backup.Manage";
     public const string AuditView = "Audit.View";
     public const string ImportExportProducts = "ImportExport.Products";

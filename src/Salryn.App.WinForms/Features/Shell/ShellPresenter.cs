@@ -122,8 +122,8 @@ public sealed class ShellPresenter
                 ShellModuleKeys.OfficialOutputTextFile,
                 "Official Output Text File",
                 "Evidence-backed official output text-file selection and guarded workflow run.",
-                Can(SalrynPermissions.ReportsView),
-                "Requires Reports.View permission."),
+                Can(SalrynPermissions.OfficialOutputRun),
+                "Requires OfficialOutput.Run permission."),
 
             Module(
                 ShellModuleKeys.Settings,

@@ -1,5 +1,6 @@
 using Salryn.App.WinForms.Composition;
 using Salryn.Core.Common;
+using Salryn.Core.Security;
 using Salryn.Core.Services;
 
 namespace Salryn.App.WinForms.Features.OfficialOutput;
@@ -10,7 +11,8 @@ public sealed record OfficialOutputTextFileWorkflowUiTriggerRequest(
     Guid? RequestedByUserId,
     string? TerminalId,
     IReadOnlyDictionary<string, string>? Metadata,
-    OfficialOutputTextFileSourceSelectionRequest? SourceSelectionRequest = null);
+    OfficialOutputTextFileSourceSelectionRequest? SourceSelectionRequest = null,
+    IReadOnlyList<string>? CallerPermissions = null);
 
 public sealed record OfficialOutputTextFileWorkflowUiStatus(
     bool IsAvailable,
@@ -180,6 +182,20 @@ public sealed class OfficialOutputTextFileWorkflowUiBoundary : IOfficialOutputTe
                 .ConfigureAwait(false);
         }
 
+        Result callerPermission = ValidateCallerPermission(request);
+
+        if (callerPermission.IsFailure)
+        {
+            OfficialOutputTextFileWorkflowUiStatus permissionStatus =
+                OfficialOutputTextFileWorkflowUiStatus.Unavailable(
+                    callerPermission.ErrorDetail.Code,
+                    callerPermission.ErrorDetail.Message);
+
+            return OfficialOutputTextFileWorkflowUiCommandResult.ValidationBlocked(
+                permissionStatus,
+                callerPermission.ErrorDetail);
+        }
+
         Result<OfficialOutputExportPackage> packageResult =
             await TryGetSuppliedPackageAsync(request?.SourceSelectionRequest, cancellationToken).ConfigureAwait(false);
         OfficialOutputTextFileWorkflowUiStatus status = GetStatus(request, packageResult);
@@ -260,5 +276,21 @@ public sealed class OfficialOutputTextFileWorkflowUiBoundary : IOfficialOutputTe
         }
 
         return await packageSupplyBoundary.TryGetPackageAsync(selectedSourceRequest, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static Result ValidateCallerPermission(OfficialOutputTextFileWorkflowUiTriggerRequest? request)
+    {
+        IReadOnlyList<string>? callerPermissions = request?.CallerPermissions;
+
+        if (callerPermissions is null ||
+            !callerPermissions.Any(static permission =>
+                string.Equals(permission, SalrynPermissions.OfficialOutputRun, StringComparison.OrdinalIgnoreCase)))
+        {
+            return Result.Fail(Error.Forbidden(
+                "OfficialOutputTextFileWorkflowUi.PermissionRequired",
+                "Official output text-file workflow requires OfficialOutput.Run permission."));
+        }
+
+        return Result.Success();
     }
 }

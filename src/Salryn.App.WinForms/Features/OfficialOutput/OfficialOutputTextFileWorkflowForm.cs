@@ -3,6 +3,7 @@ using Salryn.App.WinForms.Features.Mvp;
 using Salryn.App.WinForms.Features.Shell;
 using Salryn.Core.Common;
 using Salryn.Core.Models;
+using Salryn.Core.Security;
 using Salryn.Core.Services;
 
 namespace Salryn.App.WinForms.Features.OfficialOutput;
@@ -340,6 +341,12 @@ public sealed class OfficialOutputTextFileWorkflowForm : Form
             return false;
         }
 
+        if (!_session.Can(SalrynPermissions.OfficialOutputRun))
+        {
+            SetStatus("Official output text-file workflow requires OfficialOutput.Run permission.", J20MvpUi.Colors.Danger);
+            return false;
+        }
+
         string? terminalId = ResolveTerminalId(candidate);
 
         if (terminalId is null)
@@ -372,7 +379,8 @@ public sealed class OfficialOutputTextFileWorkflowForm : Form
             RequestedByUserId: _session.UserId,
             TerminalId: terminalId,
             Metadata: metadata,
-            SourceSelectionRequest: sourceSelection.Value);
+            SourceSelectionRequest: sourceSelection.Value,
+            CallerPermissions: _session.Permissions);
 
         return true;
     }

@@ -18,6 +18,7 @@ public static class DefaultSeedData
         public const string SalesVoid = "Sales.Void";
         public const string SalesViewHistory = "Sales.ViewHistory";
         public const string ReportsView = "Reports.View";
+        public const string OfficialOutputRun = "OfficialOutput.Run";
         public const string BackupManage = "Backup.Manage";
         public const string AuditView = "Audit.View";
         public const string ImportExportProducts = "ImportExport.Products";
@@ -43,6 +44,7 @@ public static class DefaultSeedData
         Permissions.SalesVoid,
         Permissions.SalesViewHistory,
         Permissions.ReportsView,
+        Permissions.OfficialOutputRun,
         Permissions.BackupManage,
         Permissions.AuditView,
         Permissions.ImportExportProducts,
