@@ -24,6 +24,7 @@ internal static class OfficialDocumentAuditEventSmokeChecks
         RunVoidPathAndReadingGuard();
         RunCancelPath();
         RunCorrectionPath();
+        RunRefundPath();
         RunMissingSourcePath();
         RunPostZReadingBlockedPath();
 
@@ -182,6 +183,50 @@ internal static class OfficialDocumentAuditEventSmokeChecks
         RequireSuccess(second, "OfficialDocumentAuditEvent.Correction.Second");
         RequireEqual(2L, CountRowsWhere(database.Factory, "bir_electronic_journal_entry_events", "event_type = 'CORRECTION'"), "Multiple correction events are allowed when each is append-only and reasoned.");
         AssertOnlyAuditEventsAdded(before, CaptureMutationSnapshot(database.Factory), addedEvents: 2, "OfficialDocumentAuditEvent.Correction");
+    }
+
+    private static void RunRefundPath()
+    {
+        using SmokeDatabase database = SmokeDatabase.Create("salryn-official-audit-refund");
+        SeedBaseDependencies(database.Factory);
+
+        Guid journalEntryId = Guid.Parse("24000000-0000-0000-0000-000000000104");
+        InsertOfficialSaleAndEvidence(
+            database.Factory,
+            saleId: Guid.Parse("24000000-0000-0000-0000-000000000204"),
+            journalEntryId,
+            eventId: Guid.Parse("24000000-0000-0000-0000-000000000304"),
+            documentNumber: "OR-2026-000004",
+            transactionTimestamp: new DateTimeOffset(2026, 6, 25, 12, 0, 0, TimeSpan.Zero),
+            totalCents: 1800,
+            insertOriginalEvent: true,
+            includeSnapshotHash: true);
+
+        DatabaseMutationSnapshot before = CaptureMutationSnapshot(database.Factory);
+
+        Result<OfficialDocumentAuditEventResult> result =
+            database.Services.OfficialDocumentAuditEvents.AppendAsync(CreateAuditRequest(
+                journalEntryId,
+                OfficialDocumentAuditEventKind.Refund,
+                "Customer refund before Z-reading.")).GetAwaiter().GetResult();
+
+        RequireSuccess(result, "OfficialDocumentAuditEvent.Refund");
+        RequireEqual(1L, CountRowsWhere(database.Factory, "bir_electronic_journal_entry_events", "event_type = 'REFUND' AND refund_marker = 1"), "Refund event must be appended.");
+        AssertOnlyAuditEventsAdded(before, CaptureMutationSnapshot(database.Factory), addedEvents: 1, "OfficialDocumentAuditEvent.Refund");
+
+        Result<OfficialDocumentLifecycleResult> lifecycle =
+            database.Services.OfficialDocumentLifecycleRead.ReadAsync(
+                new OfficialDocumentLifecycleReadRequest(journalEntryId, null, null, null, null)).GetAwaiter().GetResult();
+
+        RequireSuccess(lifecycle, "OfficialDocumentLifecycle.Refund");
+        RequireEqual(OfficialDocumentLifecycleState.Refunded, lifecycle.Value.Summary.State, "Lifecycle must report refunded state.");
+
+        ExpectAuditFailure(
+            database.Services.OfficialDocumentAuditEvents.AppendAsync(CreateAuditRequest(
+                journalEntryId,
+                OfficialDocumentAuditEventKind.Void,
+                "Void after refund should fail.")).GetAwaiter().GetResult(),
+            "OfficialDocumentAuditEvent.TerminalEventAlreadyExists");
     }
 
     private static void RunMissingSourcePath()

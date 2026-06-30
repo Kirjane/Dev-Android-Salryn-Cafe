@@ -239,9 +239,10 @@ public sealed class SqliteOfficialDocumentAuditEventService : IOfficialDocumentA
             FROM bir_electronic_journal_entry_events
             WHERE journal_entry_id = $journalEntryId
               AND (
-                    event_type IN ('VOID', 'CANCEL')
+                    event_type IN ('VOID', 'CANCEL', 'REFUND')
                     OR void_marker = 1
                     OR cancel_marker = 1
+                    OR refund_marker = 1
                   )
             ORDER BY created_at ASC, id ASC
             LIMIT 1;
@@ -269,11 +270,19 @@ public sealed class SqliteOfficialDocumentAuditEventService : IOfficialDocumentA
                 "Official journal entry has already been cancelled."));
         }
 
-        if (eventKind is OfficialDocumentAuditEventKind.Void or OfficialDocumentAuditEventKind.Cancel)
+        if (eventKind == OfficialDocumentAuditEventKind.Refund &&
+            string.Equals(existingTerminalEvent, "REFUND", StringComparison.Ordinal))
+        {
+            return Result.Fail(Error.Conflict(
+                "OfficialDocumentAuditEvent.AlreadyRefunded",
+                "Official journal entry has already been refunded."));
+        }
+
+        if (eventKind is OfficialDocumentAuditEventKind.Void or OfficialDocumentAuditEventKind.Cancel or OfficialDocumentAuditEventKind.Refund)
         {
             return Result.Fail(Error.Conflict(
                 "OfficialDocumentAuditEvent.TerminalEventAlreadyExists",
-                "Official journal entry already has a terminal void or cancel event."));
+                "Official journal entry already has a terminal void, cancel, or refund event."));
         }
 
         return Result.Success();
@@ -343,7 +352,7 @@ public sealed class SqliteOfficialDocumentAuditEventService : IOfficialDocumentA
                 0,
                 0,
                 $voidMarker,
-                0,
+                $refundMarker,
                 $cancelMarker,
                 $cashierUserId,
                 $reason,
@@ -356,6 +365,7 @@ public sealed class SqliteOfficialDocumentAuditEventService : IOfficialDocumentA
         command.Parameters.AddWithValue("$journalEntryId", source.JournalEntryId.ToString("D"));
         command.Parameters.AddWithValue("$eventType", shape.EventType);
         command.Parameters.AddWithValue("$voidMarker", shape.VoidMarker);
+        command.Parameters.AddWithValue("$refundMarker", shape.RefundMarker);
         command.Parameters.AddWithValue("$cancelMarker", shape.CancelMarker);
         command.Parameters.AddWithValue("$cashierUserId", request.Request.ActorUserId.ToString("D"));
         command.Parameters.AddWithValue("$reason", request.Request.Reason!.Trim());
@@ -412,9 +422,10 @@ public sealed class SqliteOfficialDocumentAuditEventService : IOfficialDocumentA
     {
         return eventKind switch
         {
-            OfficialDocumentAuditEventKind.Void => new EventDatabaseShape("VOID", VoidMarker: 1, CancelMarker: 0),
-            OfficialDocumentAuditEventKind.Cancel => new EventDatabaseShape("CANCEL", VoidMarker: 0, CancelMarker: 1),
-            OfficialDocumentAuditEventKind.Correction => new EventDatabaseShape("CORRECTION", VoidMarker: 0, CancelMarker: 0),
+            OfficialDocumentAuditEventKind.Void => new EventDatabaseShape("VOID", VoidMarker: 1, RefundMarker: 0, CancelMarker: 0),
+            OfficialDocumentAuditEventKind.Cancel => new EventDatabaseShape("CANCEL", VoidMarker: 0, RefundMarker: 0, CancelMarker: 1),
+            OfficialDocumentAuditEventKind.Correction => new EventDatabaseShape("CORRECTION", VoidMarker: 0, RefundMarker: 0, CancelMarker: 0),
+            OfficialDocumentAuditEventKind.Refund => new EventDatabaseShape("REFUND", VoidMarker: 0, RefundMarker: 1, CancelMarker: 0),
             _ => throw new InvalidOperationException("Unsupported official document audit event kind.")
         };
     }
@@ -475,6 +486,7 @@ public sealed class SqliteOfficialDocumentAuditEventService : IOfficialDocumentA
     private sealed record EventDatabaseShape(
         string EventType,
         int VoidMarker,
+        int RefundMarker,
         int CancelMarker);
 
     private sealed record AuditEventMetadata(

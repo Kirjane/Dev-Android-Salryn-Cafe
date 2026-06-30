@@ -8,7 +8,8 @@ public enum OfficialDocumentLifecycleState
     Active = 1,
     Voided = 2,
     Cancelled = 3,
-    Invalid = 4
+    Invalid = 4,
+    Refunded = 5
 }
 
 public sealed record OfficialDocumentLifecycleReadRequest(
@@ -178,6 +179,7 @@ public static class OfficialDocumentLifecycleReadService
         int originalCount = events.Count(IsOriginalEvent);
         int voidCount = events.Count(IsVoidEvent);
         int cancelCount = events.Count(IsCancelEvent);
+        int refundCount = events.Count(IsRefundEvent);
 
         if (originalCount == 0)
         {
@@ -206,11 +208,25 @@ public static class OfficialDocumentLifecycleReadService
                 "Official document lifecycle has more than one CANCEL event."));
         }
 
+        if (refundCount > 1)
+        {
+            issues.Add(new OfficialDocumentLifecycleIssue(
+                "OfficialDocumentLifecycle.DuplicateRefundEvents",
+                "Official document lifecycle has more than one REFUND event."));
+        }
+
         if (voidCount > 0 && cancelCount > 0)
         {
             issues.Add(new OfficialDocumentLifecycleIssue(
                 "OfficialDocumentLifecycle.ContradictoryTerminalEvents",
                 "Official document lifecycle has both VOID and CANCEL terminal events."));
+        }
+
+        if (refundCount > 0 && (voidCount > 0 || cancelCount > 0))
+        {
+            issues.Add(new OfficialDocumentLifecycleIssue(
+                "OfficialDocumentLifecycle.ContradictoryTerminalEvents",
+                "Official document lifecycle has REFUND with VOID or CANCEL terminal events."));
         }
 
         foreach (OfficialDocumentLifecycleEventReadModel eventRow in events)
@@ -231,7 +247,9 @@ public static class OfficialDocumentLifecycleReadService
                 ? OfficialDocumentLifecycleState.Voided
                 : cancelCount == 1
                     ? OfficialDocumentLifecycleState.Cancelled
-                    : OfficialDocumentLifecycleState.Active;
+                    : refundCount == 1
+                        ? OfficialDocumentLifecycleState.Refunded
+                        : OfficialDocumentLifecycleState.Active;
 
         IReadOnlyList<OfficialDocumentLifecycleCorrectionReadModel> corrections =
             events
@@ -282,6 +300,12 @@ public static class OfficialDocumentLifecycleReadService
     {
         return string.Equals(eventRow.EventType, "CANCEL", StringComparison.Ordinal) ||
                eventRow.CancelMarker;
+    }
+
+    private static bool IsRefundEvent(OfficialDocumentLifecycleEventReadModel eventRow)
+    {
+        return string.Equals(eventRow.EventType, "REFUND", StringComparison.Ordinal) ||
+               eventRow.RefundMarker;
     }
 
     private static string? GetMarkerMismatchCode(OfficialDocumentLifecycleEventReadModel eventRow)

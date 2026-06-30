@@ -7,7 +7,8 @@ public enum OfficialDocumentAuditEventKind
 {
     Void = 1,
     Cancel = 2,
-    Correction = 3
+    Correction = 3,
+    Refund = 4
 }
 
 public sealed record OfficialDocumentAuditEventRequest(
