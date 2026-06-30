@@ -1346,3 +1346,36 @@ Salryn is not BIR-certified. This documentation seal does not make Salryn RMO 24
 - no e-journal implementation
 - no accreditation claim
 - no multi-tenant work
+
+## RMO-B1 Official Checkout Data-Integrity Current-State Seal
+
+RMO-B1 status: current-state documentation and guard seal only.
+
+Historical phase sections remain phase-local. Sections above record what was true at the time each J21 sub-phase was sealed and must not be read as the full current-state summary after later work.
+
+Current source now includes a single-machine official checkout data-integrity spine:
+
+- `SqliteOfficialCheckoutPersistenceService`
+- shared SQLite transaction boundary
+- official sequence allocation participant
+- completed sale write participant
+- electronic journal ORIGINAL append participant
+- runtime smoke for commit and rollback alignment
+
+RMO-B1 is documentation/guard only. It does not add runtime behavior.
+
+Current-state boundaries preserved by RMO-B1:
+
+- single-machine only
+- no LAN
+- no certification, accreditation, or full RMO 24-2023 compliance claim
+- no printer, PDF, Crystal, ESC/POS, or scanner claim
+- no Web/API official-output claim
+
+Next likely seals after review:
+
+- X-reading and Z-reading current-state seal
+- reprint, void, refund, and cancel policy seal
+- VAT bucket planning or calculator seal
+
+Evidence: `RMO_B1_OFFICIAL_CHECKOUT_DATA_INTEGRITY_CURRENT_STATE_SEAL.md`, `RmoB1OfficialCheckoutDataIntegrityCurrentStateSealChecks`.
