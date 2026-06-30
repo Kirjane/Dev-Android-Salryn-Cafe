@@ -19,6 +19,14 @@ public static class DefaultSeedData
         public const string SalesViewHistory = "Sales.ViewHistory";
         public const string ReportsView = "Reports.View";
         public const string OfficialOutputRun = "OfficialOutput.Run";
+        public const string OfficialDocumentReprint = "OfficialDocument.Reprint";
+        public const string OfficialDocumentVoid = "OfficialDocument.Void";
+        public const string OfficialDocumentCancel = "OfficialDocument.Cancel";
+        public const string OfficialDocumentCorrection = "OfficialDocument.Correction";
+        public const string OfficialDocumentRefund = "OfficialDocument.Refund";
+        public const string OfficialReadingView = "OfficialReading.View";
+        public const string OfficialReadingFinalize = "OfficialReading.Finalize";
+        public const string OfficialEvidenceExport = "OfficialEvidence.Export";
         public const string BackupManage = "Backup.Manage";
         public const string AuditView = "Audit.View";
         public const string ImportExportProducts = "ImportExport.Products";
@@ -45,6 +53,14 @@ public static class DefaultSeedData
         Permissions.SalesViewHistory,
         Permissions.ReportsView,
         Permissions.OfficialOutputRun,
+        Permissions.OfficialDocumentReprint,
+        Permissions.OfficialDocumentVoid,
+        Permissions.OfficialDocumentCancel,
+        Permissions.OfficialDocumentCorrection,
+        Permissions.OfficialDocumentRefund,
+        Permissions.OfficialReadingView,
+        Permissions.OfficialReadingFinalize,
+        Permissions.OfficialEvidenceExport,
         Permissions.BackupManage,
         Permissions.AuditView,
         Permissions.ImportExportProducts,
@@ -61,6 +77,8 @@ public static class DefaultSeedData
         Permissions.SalesVoid,
         Permissions.SalesViewHistory,
         Permissions.ReportsView,
+        Permissions.OfficialReadingView,
+        Permissions.OfficialEvidenceExport,
         Permissions.ImportExportProducts,
         Permissions.ShiftOpenClose
     };
