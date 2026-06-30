@@ -59,6 +59,94 @@ public sealed class OfficialDocumentTaxBucketDraftValidator
         return Result.Success();
     }
 
+    public Result ValidateEngineComputed(OfficialDocumentTaxBucketDraft draft)
+    {
+        if (draft is null)
+        {
+            return Result.Fail(Error.Validation(
+                "OfficialDocumentTaxBucketDraft.Required",
+                "Tax bucket draft is required."));
+        }
+
+        if (!Enum.IsDefined(typeof(OfficialDocumentTaxBucketDraftTaxpayerMode), draft.TaxpayerMode) ||
+            draft.TaxpayerMode == OfficialDocumentTaxBucketDraftTaxpayerMode.Unknown)
+        {
+            return Result.Fail(Error.Validation(
+                "OfficialDocumentTaxBucketDraft.TaxpayerModeRequired",
+                "Known taxpayer mode is required for the tax bucket draft."));
+        }
+
+        if (draft.Buckets is null || draft.Buckets.Count == 0)
+        {
+            return Result.Fail(Error.Validation(
+                "OfficialDocumentTaxBucketDraft.BucketsRequired",
+                "At least one tax bucket draft row is required."));
+        }
+
+        Result bucketValidation = ValidateBuckets(draft.Buckets);
+
+        if (bucketValidation.IsFailure)
+        {
+            return bucketValidation;
+        }
+
+        Result boundaryValidation = ValidateEngineComputedBoundaryNotes(draft.DeferredComplianceNotes);
+
+        if (boundaryValidation.IsFailure)
+        {
+            return boundaryValidation;
+        }
+
+        Result modeValidation = ValidateTaxpayerModeShape(draft);
+
+        if (modeValidation.IsFailure)
+        {
+            return modeValidation;
+        }
+
+        return Result.Success();
+    }
+
+    private static Result ValidateEngineComputedBoundaryNotes(IReadOnlyList<string> deferredComplianceNotes)
+    {
+        if (deferredComplianceNotes is null || deferredComplianceNotes.Count == 0)
+        {
+            return Result.Fail(Error.Validation(
+                "OfficialDocumentTaxBucketDraft.DeferredBoundaryRequired",
+                "Deferred compliance boundary notes are required."));
+        }
+
+        if (!ContainsBoundaryNote(deferredComplianceNotes, SalrynOfficialTaxBucketPolicy.EngineBoundaryNote))
+        {
+            return Result.Fail(Error.Validation(
+                "OfficialDocumentTaxBucketDraft.EngineBoundaryRequired",
+                "Engine-computed draft must preserve the engineering engine boundary note."));
+        }
+
+        if (!ContainsBoundaryNote(deferredComplianceNotes, SalrynOfficialTaxBucketPolicy.NoLegalVatClaimNote))
+        {
+            return Result.Fail(Error.Validation(
+                "OfficialDocumentTaxBucketDraft.NoLegalVatClaimRequired",
+                "Engine-computed draft must preserve the no-legal-VAT-claim boundary."));
+        }
+
+        if (!ContainsBoundaryNote(deferredComplianceNotes, SalrynOfficialTaxBucketPolicy.NoOfficialOutputRenderingNote))
+        {
+            return Result.Fail(Error.Validation(
+                "OfficialDocumentTaxBucketDraft.NoOutputBoundaryRequired",
+                "Deferred notes must preserve the no-output boundary."));
+        }
+
+        if (ContainsForbiddenOfficialOutputClaim(deferredComplianceNotes))
+        {
+            return Result.Fail(Error.Validation(
+                "OfficialDocumentTaxBucketDraft.OfficialOutputClaimNotAllowed",
+                "Tax bucket draft notes must not claim final official output readiness."));
+        }
+
+        return Result.Success();
+    }
+
     private static Result ValidateBuckets(IReadOnlyList<OfficialDocumentTaxBucketDraftBucket> buckets)
     {
         HashSet<OfficialDocumentTaxBucketDraftKind> seenKinds = new();
