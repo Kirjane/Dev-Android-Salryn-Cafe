@@ -39,7 +39,7 @@ public static class RmoA6OfficialOutputAuditTrailChecks
         RequireNotContains(recorderSource, "OfficialDocumentAuditEventService", "Official output audit recorder must not use lifecycle audit event service.");
         RequireContains(boundarySource, "FinalizeRunAsync", "UI boundary must finalize runs through audit-aware completion.");
         RequireContains(boundarySource, "RecordRunAttemptAsync", "UI boundary must record official output run attempts.");
-        RequireContains(boundarySource, "OfficialOutputTextFileWorkflowUi.AuditRecordFailed", "UI boundary must surface post-output audit failures.");
+        RequireContains(contractsSource, "OfficialOutputTextFileWorkflowUi.AuditRecordFailed", "Contracts must define the controlled post-output audit failure code.");
         RequireNotContains(recorderSource, "reprint", "Official output audit recorder must not introduce reprint wording.");
         RequireNotContains(contractsSource, "reprint", "Official output audit contracts must not introduce reprint wording.");
         RequireContains(navigation, "enabled: false", "Web nav must keep disabled official-output surfaces.");
@@ -106,7 +106,61 @@ public static class RmoA6OfficialOutputAuditTrailChecks
         RequireNotContains(successJson.Value, "PasswordHash", "Audit detail must exclude secrets.");
         RequireNotContains(successJson.Value, "reprint", "Audit detail must exclude reprint wording.");
 
+        RunAuditFailureSanitizationChecks(boundarySource, recorderSource, contractsSource);
+
         RunAuditRepositoryIntegration();
+    }
+
+    private static void RunAuditFailureSanitizationChecks(
+        string boundarySource,
+        string recorderSource,
+        string contractsSource)
+    {
+        RequireContains(contractsSource, "OfficialOutputTextFileWorkflowAuditFailure", "Contracts must expose the controlled audit-failure sanitizer.");
+        RequireContains(boundarySource, "BuildSanitizedAuditFailure", "UI boundary must route audit failures through a controlled sanitizer.");
+        RequireContains(boundarySource, "OfficialOutputTextFileWorkflowAuditFailure.SanitizedMessage", "UI boundary must use the controlled sanitized audit-failure message.");
+        RequireContains(boundarySource, "OfficialOutputTextFileWorkflowAuditFailure.AuditRecordFailedCode", "UI boundary must use the controlled audit-failure code.");
+        RequireSourceDoesNotContain(boundarySource, "auditResult.ErrorDetail", "UI boundary must not echo raw audit error detail to UI output.");
+        RequireContains(recorderSource, "OfficialOutputTextFileWorkflowAuditFailure.ControlledError", "Recorder must convert repository failures into a controlled audit failure.");
+
+        foreach (bool filesGenerated in new[] { true, false })
+        {
+            string message = OfficialOutputTextFileWorkflowAuditFailure.SanitizedMessage(filesGenerated);
+            Require(!string.IsNullOrWhiteSpace(message), "Sanitized audit-failure message must be present.");
+            Require(!message.Contains("rollback", StringComparison.OrdinalIgnoreCase), "Sanitized audit-failure message must not claim rollback.");
+            Require(!message.Contains("deleted", StringComparison.OrdinalIgnoreCase), "Sanitized audit-failure message must not claim deletion.");
+
+            foreach (string token in HostileAuditTokens())
+            {
+                RequireNotContains(message, token, "Sanitized audit-failure message must exclude hostile token: " + token);
+            }
+        }
+
+        Require(
+            OfficialOutputTextFileWorkflowAuditFailure.AuditRecordFailedCode ==
+                "OfficialOutputTextFileWorkflowUi.AuditRecordFailed",
+            "Controlled audit-failure code must stay stable.");
+
+        Error controlledError = OfficialOutputTextFileWorkflowAuditFailure.ControlledError();
+        Require(
+            controlledError.Code == OfficialOutputTextFileWorkflowAuditFailure.AuditRecordFailedCode,
+            "Controlled audit-failure error must use the controlled code.");
+
+        foreach (string token in HostileAuditTokens())
+        {
+            RequireNotContains(controlledError.Message, token, "Controlled audit-failure error must exclude hostile token: " + token);
+        }
+    }
+
+    private static IEnumerable<string> HostileAuditTokens()
+    {
+        yield return "SQLite";
+        yield return "FOREIGN KEY";
+        yield return "C:\\";
+        yield return ".salryn-dev";
+        yield return "salryn.db";
+        yield return "stack trace";
+        yield return "Exception";
     }
 
     private static void RunAuditRepositoryIntegration()
@@ -298,6 +352,14 @@ public static class RmoA6OfficialOutputAuditTrailChecks
     private static void RequireNotContains(string text, string value, string message)
     {
         if (text.Contains(value, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(message);
+        }
+    }
+
+    private static void RequireSourceDoesNotContain(string text, string value, string message)
+    {
+        if (text.Contains(value, StringComparison.Ordinal))
         {
             throw new InvalidOperationException(message);
         }

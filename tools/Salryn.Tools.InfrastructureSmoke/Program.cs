@@ -174,6 +174,7 @@ try
             break;
 
         case "official-output-text-file":
+            OfficialOutputTextFileWorkflowUiBoundaryAuditSmokeChecks.Run();
             OfficialTextFileExternalOutputSmokeChecks.Run(projectRoot);
             break;
 

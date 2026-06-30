@@ -331,23 +331,42 @@ public sealed class OfficialOutputTextFileWorkflowUiBoundary : IOfficialOutputTe
             return result;
         }
 
+        // Kirch: why - never echo the raw audit error detail (it may carry raw storage/IO/path text); only controlled, generic audit-failure strings may reach the UI.
+        return BuildSanitizedAuditFailure(status, result, filesGenerated);
+    }
+
+    private static OfficialOutputTextFileWorkflowUiCommandResult BuildSanitizedAuditFailure(
+        OfficialOutputTextFileWorkflowUiStatus status,
+        OfficialOutputTextFileWorkflowUiCommandResult result,
+        bool filesGenerated)
+    {
+        string sanitizedMessage =
+            OfficialOutputTextFileWorkflowAuditFailure.SanitizedMessage(filesGenerated);
+
         if (filesGenerated)
         {
             return new OfficialOutputTextFileWorkflowUiCommandResult(
                 Succeeded: false,
                 AttemptedExecution: result.AttemptedExecution,
-                StatusCode: "OfficialOutputTextFileWorkflowUi.AuditRecordFailed",
-                StatusMessage: "Official output text-file workflow completed but audit logging failed.",
-                ErrorCode: auditResult.ErrorDetail.Code,
-                ErrorMessage: auditResult.ErrorDetail.Message,
+                StatusCode: OfficialOutputTextFileWorkflowAuditFailure.AuditRecordFailedCode,
+                StatusMessage: sanitizedMessage,
+                ErrorCode: OfficialOutputTextFileWorkflowAuditFailure.AuditRecordFailedCode,
+                ErrorMessage: sanitizedMessage,
                 References: result.References,
-                RuntimeOutputRootPath: result.RuntimeOutputRootPath,
+                RuntimeOutputRootPath: null,
                 Status: status);
         }
 
-        return OfficialOutputTextFileWorkflowUiCommandResult.ValidationBlocked(
-            status,
-            auditResult.ErrorDetail);
+        return new OfficialOutputTextFileWorkflowUiCommandResult(
+            Succeeded: false,
+            AttemptedExecution: false,
+            StatusCode: OfficialOutputTextFileWorkflowAuditFailure.AuditRecordFailedCode,
+            StatusMessage: sanitizedMessage,
+            ErrorCode: OfficialOutputTextFileWorkflowAuditFailure.AuditRecordFailedCode,
+            ErrorMessage: sanitizedMessage,
+            References: null,
+            RuntimeOutputRootPath: null,
+            Status: status);
     }
 
     private Result<OfficialOutputExportPackage> TryGetSuppliedPackage(

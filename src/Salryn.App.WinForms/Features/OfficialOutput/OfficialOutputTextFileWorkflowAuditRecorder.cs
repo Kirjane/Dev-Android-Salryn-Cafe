@@ -14,7 +14,7 @@ public sealed class OfficialOutputTextFileWorkflowAuditRecorder : IOfficialOutpu
         _auditWriteRepository = auditWriteRepository ?? throw new ArgumentNullException(nameof(auditWriteRepository));
     }
 
-    public Task<Result> RecordRunAttemptAsync(
+    public async Task<Result> RecordRunAttemptAsync(
         OfficialOutputTextFileWorkflowAuditRecordRequest request,
         CancellationToken cancellationToken = default)
     {
@@ -31,7 +31,7 @@ public sealed class OfficialOutputTextFileWorkflowAuditRecorder : IOfficialOutpu
 
         if (newValueJson.IsFailure)
         {
-            return Task.FromResult(Result.Fail(newValueJson.ErrorDetail));
+            return Result.Fail(newValueJson.ErrorDetail);
         }
 
         AuditLog auditLog = new()
@@ -49,6 +49,16 @@ public sealed class OfficialOutputTextFileWorkflowAuditRecorder : IOfficialOutpu
             CreatedAt = request.RecordedAt ?? DateTimeOffset.UtcNow
         };
 
-        return _auditWriteRepository.AddAsync(auditLog, cancellationToken);
+        Result writeResult = await _auditWriteRepository
+            .AddAsync(auditLog, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (writeResult.IsSuccess)
+        {
+            return Result.Success();
+        }
+
+        // Kirch: why - drop any raw repository/storage/IO message here so callers never see storage internals, only a controlled audit-failure error.
+        return Result.Fail(OfficialOutputTextFileWorkflowAuditFailure.ControlledError());
     }
 }

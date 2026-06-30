@@ -79,6 +79,28 @@ public sealed record OfficialOutputTextFileWorkflowAuditRecordRequest(
     IReadOnlyDictionary<string, string>? Metadata,
     DateTimeOffset? RecordedAt = null);
 
+// Kirch: why - audit-write failures can carry raw storage/IO/path text; UI-facing output must only ever see these controlled, generic strings.
+public static class OfficialOutputTextFileWorkflowAuditFailure
+{
+    public const string AuditRecordFailedCode = "OfficialOutputTextFileWorkflowUi.AuditRecordFailed";
+
+    public const string PostOutputMessage =
+        "Official output audit record could not be written. The operation was not completed as fully auditable.";
+
+    public const string PreOutputMessage =
+        "Official output audit record could not be written. The official output run was blocked and not completed as fully auditable.";
+
+    public static string SanitizedMessage(bool filesGenerated)
+    {
+        return filesGenerated ? PostOutputMessage : PreOutputMessage;
+    }
+
+    public static Error ControlledError()
+    {
+        return Error.Unexpected(AuditRecordFailedCode, PreOutputMessage);
+    }
+}
+
 public interface IOfficialOutputTextFileWorkflowAuditRecorder
 {
     Task<Result> RecordRunAttemptAsync(
