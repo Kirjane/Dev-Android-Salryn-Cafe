@@ -106,6 +106,27 @@ public sealed class OfficialTextFileOutputPathPolicy
         return ResolveChild(rootResult.Value, child);
     }
 
+    public Result RejectIfOutputPackageDirectoryExists(
+        string outputRootPath,
+        string packageHash)
+    {
+        Result<string> directoryResult = ResolveOfficialOutputDirectory(outputRootPath, packageHash);
+
+        if (directoryResult.IsFailure)
+        {
+            return Result.Fail(directoryResult.ErrorDetail);
+        }
+
+        if (Directory.Exists(directoryResult.Value))
+        {
+            return Result.Fail(Error.Conflict(
+                "OfficialTextFileOutput.OutputPackageAlreadyExists",
+                "Official output for this package already exists in the selected output root. Choose a different output root or use a future authorized repeat-run workflow."));
+        }
+
+        return Result.Success();
+    }
+
     public Result<string> ResolveChild(
         string outputRootPath,
         string relativePath)

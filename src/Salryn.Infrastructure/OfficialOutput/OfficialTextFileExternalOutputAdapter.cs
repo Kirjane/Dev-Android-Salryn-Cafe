@@ -50,11 +50,13 @@ public sealed class OfficialTextFileExternalOutputAdapter : IOfficialExternalOut
             return Task.FromResult(Result<OfficialExternalOutputExecutionResult>.Fail(outputDirectoryResult.ErrorDetail));
         }
 
-        Result outputDirectoryCreate = TryCreateDirectory(outputDirectoryResult.Value);
+        Result duplicatePackageCheck = _pathPolicy.RejectIfOutputPackageDirectoryExists(
+            rootResult.Value,
+            package.PackageHash);
 
-        if (outputDirectoryCreate.IsFailure)
+        if (duplicatePackageCheck.IsFailure)
         {
-            return Task.FromResult(Result<OfficialExternalOutputExecutionResult>.Fail(outputDirectoryCreate.ErrorDetail));
+            return Task.FromResult(Result<OfficialExternalOutputExecutionResult>.Fail(duplicatePackageCheck.ErrorDetail));
         }
 
         List<OfficialExternalOutputWrittenArtifact> artifacts = new();

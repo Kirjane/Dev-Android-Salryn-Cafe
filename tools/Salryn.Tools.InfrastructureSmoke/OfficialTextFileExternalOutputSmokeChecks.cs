@@ -22,7 +22,9 @@ internal static class OfficialTextFileExternalOutputSmokeChecks
             OfficialOutputDeliveryResult delivery = Value(new OfficialInMemoryOutputDeliveryAdapter().DeliverAsync(new OfficialOutputDeliveryRequest(package, OfficialOutputDeliveryTarget.InMemory, UserId, Timestamp, "POS-SMOKE", null)).GetAwaiter().GetResult());
             OfficialOutputDeliveryLedgerPackage ledger = Value(new OfficialOutputDeliveryReceiptLedgerBuilder().Build(new[] { delivery }, Timestamp));
             OfficialExternalOutputDispatchPlan plan = CreateFileDispatchPlan(package, ledger);
-            OfficialExternalOutputExecutionResult execution = Value(new OfficialTextFileExternalOutputAdapter().ExecuteAsync(new OfficialExternalOutputExecutionRequest(plan, package, ledger, root, Timestamp, UserId, "POS-SMOKE", null)).GetAwaiter().GetResult());
+            OfficialTextFileExternalOutputAdapter adapter = new();
+            OfficialExternalOutputExecutionRequest executionRequest = new(plan, package, ledger, root, Timestamp, UserId, "POS-SMOKE", null);
+            OfficialExternalOutputExecutionResult execution = Value(adapter.ExecuteAsync(executionRequest).GetAwaiter().GetResult());
 
             Require(execution.WrittenArtifacts.Count >= 10, "Expected controlled output files to be written.");
             foreach (OfficialExternalOutputWrittenArtifact artifact in execution.WrittenArtifacts)
@@ -32,12 +34,38 @@ internal static class OfficialTextFileExternalOutputSmokeChecks
                 Require(File.Exists(fullPath), "Expected file missing: " + artifact.RelativePath);
             }
 
+            string manifestPath = Path.GetFullPath(Path.Combine(root, execution.WrittenArtifacts.First(static artifact => artifact.Role == OfficialExternalOutputWrittenArtifactRole.Manifest).RelativePath));
+            string manifestBeforeDuplicate = File.ReadAllText(manifestPath, Encoding.UTF8);
+            Result<OfficialExternalOutputExecutionResult> duplicateExecution = adapter.ExecuteAsync(executionRequest).GetAwaiter().GetResult();
+            RequireFailure(
+                duplicateExecution,
+                "OfficialTextFileOutput.OutputPackageAlreadyExists",
+                "Duplicate official output package run must be refused.");
+            Require(
+                string.Equals(File.ReadAllText(manifestPath, Encoding.UTF8), manifestBeforeDuplicate, StringComparison.Ordinal),
+                "Existing official output package files must not be overwritten.");
+
             OfficialExternalOutputExecutionLedgerPackage executionLedger = Value(new OfficialExternalOutputExecutionLedgerBuilder().Build(new[] { execution }, Timestamp));
             OfficialExternalOutputVerificationResult verification = Value(new OfficialTextFileExternalOutputVerifier().Verify(root, execution, Timestamp));
             Require(verification.VerificationStatus == OfficialExternalOutputVerificationStatus.Passed, "Verification must pass after write.");
-            OfficialExternalOutputWorkflowResult workflow = Value(new OfficialExternalOutputTextFileWorkflowRunner().RunAsync(new OfficialExternalOutputWorkflowRequest(package, root, Timestamp, UserId, "POS-SMOKE", null)).GetAwaiter().GetResult());
-            Require(workflow.Verified, "Workflow must return verified result.");
-            Require(workflow.ExecutionLedgerReference.StartsWith("salryn://official-external-output-execution-ledger/", StringComparison.Ordinal), "Execution ledger reference must be present.");
+
+            string workflowRoot = Path.Combine(Path.GetTempPath(), "salryn-official-output-smoke-workflow-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(workflowRoot);
+
+            try
+            {
+                OfficialExternalOutputWorkflowResult workflow = Value(new OfficialExternalOutputTextFileWorkflowRunner().RunAsync(new OfficialExternalOutputWorkflowRequest(package, workflowRoot, Timestamp, UserId, "POS-SMOKE", null)).GetAwaiter().GetResult());
+                Require(workflow.Verified, "Workflow must return verified result.");
+                Require(workflow.ExecutionLedgerReference.StartsWith("salryn://official-external-output-execution-ledger/", StringComparison.Ordinal), "Execution ledger reference must be present.");
+            }
+            finally
+            {
+                if (Directory.Exists(workflowRoot))
+                {
+                    Directory.Delete(workflowRoot, recursive: true);
+                }
+            }
+
             Require(executionLedger.ExecutionLedgerReference.StartsWith("salryn://official-external-output-execution-ledger/", StringComparison.Ordinal), "Execution ledger smoke result must be hash-addressed.");
 
             Console.WriteLine("Official text-file output smoke checks succeeded.");
@@ -106,6 +134,15 @@ internal static class OfficialTextFileExternalOutputSmokeChecks
         if (!condition)
         {
             throw new InvalidOperationException(message);
+        }
+    }
+
+    private static void RequireFailure<T>(Result<T> result, string expectedCode, string message)
+    {
+        if (result.IsSuccess || result.ErrorDetail.Code != expectedCode)
+        {
+            throw new InvalidOperationException(
+                message + $" Expected {expectedCode}, got {(result.IsSuccess ? "success" : result.ErrorDetail.Code)}.");
         }
     }
 }
