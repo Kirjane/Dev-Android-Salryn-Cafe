@@ -50,7 +50,10 @@ public sealed record OfficialXReadingResult(
     OfficialXReadingSummary Summary,
     OfficialXReadingDocumentRange? DocumentRange,
     IReadOnlyList<OfficialXReadingPaymentSummary> Payments,
-    IReadOnlyList<OfficialXReadingTaxModeSummary> TaxModes);
+    IReadOnlyList<OfficialXReadingTaxModeSummary> TaxModes,
+    OfficialXReadingLifecycleSummary Lifecycle,
+    IReadOnlyList<OfficialXReadingVatBucketSummary> VatBuckets,
+    OfficialXReadingAdjustedSummary AdjustedSummary);
 
 public interface IOfficialXReadingService
 {
@@ -63,10 +66,14 @@ public interface IOfficialXReadingService
 public sealed class OfficialXReadingService : IOfficialXReadingService
 {
     private readonly IOfficialEvidenceReadService _officialEvidenceRead;
+    private readonly IOfficialDocumentLifecycleReadService? _lifecycleRead;
 
-    public OfficialXReadingService(IOfficialEvidenceReadService officialEvidenceRead)
+    public OfficialXReadingService(
+        IOfficialEvidenceReadService officialEvidenceRead,
+        IOfficialDocumentLifecycleReadService? lifecycleRead = null)
     {
         _officialEvidenceRead = officialEvidenceRead ?? throw new ArgumentNullException(nameof(officialEvidenceRead));
+        _lifecycleRead = lifecycleRead;
     }
 
     public async Task<Result<OfficialXReadingResult>> ReadAsync(
@@ -113,6 +120,7 @@ public sealed class OfficialXReadingService : IOfficialXReadingService
         }
 
         List<ParsedXReadingSnapshot> snapshots = new();
+        List<OfficialEvidenceEntryReadModel> evidenceEntries = new();
 
         foreach (OfficialEvidenceEntryReadModel entry in evidence.Entries)
         {
@@ -124,9 +132,39 @@ public sealed class OfficialXReadingService : IOfficialXReadingService
             }
 
             snapshots.Add(parseResult.Value);
+            evidenceEntries.Add(entry);
         }
 
-        OfficialXReadingResult result = BuildResult(request, evidence.Manifest.ManifestHash, snapshots);
+        OfficialXReadingResult baseResult = BuildResult(request, evidence.Manifest.ManifestHash, snapshots);
+
+        List<OfficialXReadingLifecycleSnapshotTotals> lifecycleTotals = snapshots
+            .Select(snapshot => new OfficialXReadingLifecycleSnapshotTotals(
+                snapshot.GrossSalesCents,
+                snapshot.SubtotalCents,
+                snapshot.DiscountTotalCents,
+                snapshot.TaxTotalCents,
+                snapshot.TotalSalesCents,
+                snapshot.VatBucketLines))
+            .ToList();
+
+        Result<(OfficialXReadingLifecycleSummary Lifecycle, OfficialXReadingAdjustedSummary Adjusted, IReadOnlyList<OfficialXReadingVatBucketSummary> VatBuckets)> enrichmentResult =
+            await OfficialXReadingEnrichment.BuildAsync(
+                evidenceEntries,
+                lifecycleTotals,
+                _lifecycleRead,
+                cancellationToken);
+
+        if (enrichmentResult.IsFailure)
+        {
+            return Result<OfficialXReadingResult>.Fail(enrichmentResult.ErrorDetail);
+        }
+
+        OfficialXReadingResult result = baseResult with
+        {
+            Lifecycle = enrichmentResult.Value.Lifecycle,
+            VatBuckets = enrichmentResult.Value.VatBuckets,
+            AdjustedSummary = enrichmentResult.Value.Adjusted
+        };
 
         return Result<OfficialXReadingResult>.Success(result);
     }
@@ -199,7 +237,10 @@ public sealed class OfficialXReadingService : IOfficialXReadingService
             summary,
             DocumentRange: null,
             Payments: Array.Empty<OfficialXReadingPaymentSummary>(),
-            TaxModes: Array.Empty<OfficialXReadingTaxModeSummary>());
+            TaxModes: Array.Empty<OfficialXReadingTaxModeSummary>(),
+            Lifecycle: OfficialXReadingEnrichment.EmptyLifecycle,
+            VatBuckets: Array.Empty<OfficialXReadingVatBucketSummary>(),
+            AdjustedSummary: OfficialXReadingEnrichment.EmptyAdjusted);
     }
 
     private static OfficialXReadingResult BuildResult(
@@ -253,7 +294,14 @@ public sealed class OfficialXReadingService : IOfficialXReadingService
                     Notes: JoinDistinctNotes(group.Select(snapshot => snapshot.TaxModeNotes))))
                 .ToArray();
 
-        return new OfficialXReadingResult(summary, documentRange, payments, taxModes);
+        return new OfficialXReadingResult(
+            summary,
+            documentRange,
+            payments,
+            taxModes,
+            OfficialXReadingEnrichment.EmptyLifecycle,
+            Array.Empty<OfficialXReadingVatBucketSummary>(),
+            OfficialXReadingEnrichment.EmptyAdjusted);
     }
 
     private static Result<ParsedXReadingSnapshot> ParseSnapshot(
@@ -327,6 +375,8 @@ public sealed class OfficialXReadingService : IOfficialXReadingService
             string taxModeCode = RequireNonBlankString(taxMode, "taxModeCode");
             bool vatBucketEngineDeferred = RequireBoolean(taxMode, "vatBucketEngineDeferred");
             string? taxModeNotes = ReadOptionalString(taxMode, "notes");
+            IReadOnlyList<ParsedVatBucketLine> vatBucketLines =
+                OfficialXReadingEnrichment.ParseVatBucketLines(entry.SnapshotPayloadJson);
 
             return Result<ParsedXReadingSnapshot>.Success(new ParsedXReadingSnapshot(
                 OfficialDocumentNumber: documentNumber,
@@ -339,7 +389,8 @@ public sealed class OfficialXReadingService : IOfficialXReadingService
                 Payments: payments,
                 TaxModeCode: taxModeCode,
                 VatBucketEngineDeferred: vatBucketEngineDeferred,
-                TaxModeNotes: taxModeNotes));
+                TaxModeNotes: taxModeNotes,
+                VatBucketLines: vatBucketLines));
         }
         catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException or OverflowException)
         {
@@ -499,7 +550,8 @@ public sealed class OfficialXReadingService : IOfficialXReadingService
         IReadOnlyList<ParsedXReadingPayment> Payments,
         string TaxModeCode,
         bool VatBucketEngineDeferred,
-        string? TaxModeNotes);
+        string? TaxModeNotes,
+        IReadOnlyList<ParsedVatBucketLine> VatBucketLines);
 
     private sealed record ParsedXReadingPayment(
         string Method,

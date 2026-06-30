@@ -29,7 +29,7 @@ public static class J21Rmo242023OfficialXReadingFoundationChecks
         RequireNotContains(xReadingText, "Crystal", "X-reading must not wire reporting output.");
         RequireNotContains(xReadingText, "ESC/POS", "X-reading must not wire printer output.");
         RequireContains(appServicesText, "public IOfficialXReadingService OfficialXReading { get; }", "AppServices must expose X-reading through the Core contract.");
-        RequireContains(appServicesText, "new OfficialXReadingService(OfficialEvidenceRead)", "AppServices must compose X-reading over official evidence.");
+        RequireContains(appServicesText, "new OfficialXReadingService(OfficialEvidenceRead, OfficialDocumentLifecycleRead)", "AppServices must compose X-reading over official evidence and lifecycle.");
         RequireContains(coreSmokeText, "J21Rmo242023OfficialXReadingFoundationChecks.Run();", "CoreSmoke must run X-reading foundation checks.");
 
         VerifyRuntimeAggregationAndGuards();

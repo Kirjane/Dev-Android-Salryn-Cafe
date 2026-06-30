@@ -122,9 +122,11 @@ public sealed class SalrynAppServices
         OfficialEvidenceRead =
             new SqliteOfficialEvidenceReadService(connectionFactory);
 
-        // Kirch: why - X-reading stays read-only by consuming official evidence export instead of writing reports or counters.
+        OfficialDocumentLifecycleRead =
+            new SqliteOfficialDocumentLifecycleReadService(connectionFactory);
+
         OfficialXReading =
-            new OfficialXReadingService(OfficialEvidenceRead);
+            new OfficialXReadingService(OfficialEvidenceRead, OfficialDocumentLifecycleRead);
 
         // Kirch: why - Z-reading finalizes X-reading totals without touching original sales, sequence, stock, or journal evidence.
         OfficialZReading =
@@ -136,10 +138,6 @@ public sealed class SalrynAppServices
         OfficialDocumentAuditEvents =
             new OfficialDocumentAuditEventService(
                 new SqliteOfficialDocumentAuditEventService(connectionFactory));
-
-        // Kirch: why - lifecycle state must be read from official journal evidence and events before UI or reports consume it.
-        OfficialDocumentLifecycleRead =
-            new SqliteOfficialDocumentLifecycleReadService(connectionFactory);
 
         // Kirch: why - reprints are copy audit events over lifecycle-checked official evidence, not new official documents.
         OfficialDocumentReprints =

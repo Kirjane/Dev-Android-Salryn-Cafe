@@ -223,7 +223,14 @@ public static class J21Rmo242023OfficialZReadingFoundationChecks
                     Notes: "Detailed VAT bucket classification deferred.")
             };
 
-        return new OfficialXReadingResult(summary, documentRange, payments, taxModes);
+        return new OfficialXReadingResult(
+            summary,
+            documentRange,
+            payments,
+            taxModes,
+            OfficialXReadingEnrichment.EmptyLifecycle,
+            Array.Empty<OfficialXReadingVatBucketSummary>(),
+            OfficialXReadingEnrichment.EmptyAdjusted);
     }
 
     private static DirectoryInfo FindRepositoryRoot()
