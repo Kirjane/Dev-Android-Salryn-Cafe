@@ -1,3 +1,4 @@
+using System.Security;
 using System.Text;
 using Salryn.Core.Common;
 using Salryn.Core.Services;
@@ -32,7 +33,7 @@ public sealed class OfficialTextFileExternalOutputAdapter : IOfficialExternalOut
             return Task.FromResult(Result<OfficialExternalOutputExecutionResult>.Fail(validation.ErrorDetail));
         }
 
-        Result<string> rootResult = _pathPolicy.ResolveOutputRoot(request.OutputRootPath);
+        Result<string> rootResult = _pathPolicy.ValidateWritableOutputRoot(request.OutputRootPath);
 
         if (rootResult.IsFailure)
         {
@@ -49,7 +50,12 @@ public sealed class OfficialTextFileExternalOutputAdapter : IOfficialExternalOut
             return Task.FromResult(Result<OfficialExternalOutputExecutionResult>.Fail(outputDirectoryResult.ErrorDetail));
         }
 
-        Directory.CreateDirectory(outputDirectoryResult.Value);
+        Result outputDirectoryCreate = TryCreateDirectory(outputDirectoryResult.Value);
+
+        if (outputDirectoryCreate.IsFailure)
+        {
+            return Task.FromResult(Result<OfficialExternalOutputExecutionResult>.Fail(outputDirectoryCreate.ErrorDetail));
+        }
 
         List<OfficialExternalOutputWrittenArtifact> artifacts = new();
 
@@ -215,14 +221,39 @@ public sealed class OfficialTextFileExternalOutputAdapter : IOfficialExternalOut
 
         if (!string.IsNullOrWhiteSpace(directory))
         {
-            Directory.CreateDirectory(directory);
+            Result directoryCreate = TryCreateDirectory(directory);
+
+            if (directoryCreate.IsFailure)
+            {
+                return directoryCreate;
+            }
         }
 
-        File.WriteAllText(
-            pathResult.Value,
-            OfficialExternalOutputExecutionValidator.NormalizeText(content),
-            Encoding.UTF8);
+        try
+        {
+            File.WriteAllText(
+                pathResult.Value,
+                OfficialExternalOutputExecutionValidator.NormalizeText(content),
+                Encoding.UTF8);
 
-        return Result.Success();
+            return Result.Success();
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or DirectoryNotFoundException or PathTooLongException or SecurityException or ArgumentException or NotSupportedException)
+        {
+            return OfficialTextFileOutputPathPolicy.MapWriteException(ex);
+        }
+    }
+
+    private static Result TryCreateDirectory(string directoryPath)
+    {
+        try
+        {
+            Directory.CreateDirectory(directoryPath);
+            return Result.Success();
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or DirectoryNotFoundException or PathTooLongException or SecurityException or ArgumentException or NotSupportedException)
+        {
+            return OfficialTextFileOutputPathPolicy.MapWriteException(ex);
+        }
     }
 }
