@@ -6,7 +6,7 @@ public static class J21Rmo242023OfficialOutputPipelineCompletionSealChecks
     {
         DirectoryInfo root = FindRepositoryRoot();
         string coreSmoke = Read(root, "tools", "Salryn.Tools.CoreSmoke", "Program.cs");
-        string infraSmokeCommand = Read(root, "tools", "Salryn.Tools.InfrastructureSmoke", "OfficialTextFileExternalOutputSmokeCommand.cs");
+        string infraSmokeProgram = Read(root, "tools", "Salryn.Tools.InfrastructureSmoke", "Program.cs");
 
         RequireContains(Read(root, "src", "Salryn.Core", "Services", "OfficialOutputExportPackageBuilder.cs"), "OfficialOutputExportPackage", "09L package must exist.");
         RequireContains(Read(root, "src", "Salryn.Core", "Services", "OfficialInMemoryOutputDeliveryAdapter.cs"), "OfficialInMemoryOutputDeliveryAdapter", "09M delivery adapter must exist.");
@@ -16,7 +16,8 @@ public static class J21Rmo242023OfficialOutputPipelineCompletionSealChecks
         RequireContains(Read(root, "src", "Salryn.Core", "Services", "OfficialExternalOutputExecutionContracts.cs"), "OfficialExternalOutputExecutionLedgerBuilder", "09Q execution ledger must exist.");
         RequireContains(Read(root, "src", "Salryn.Infrastructure", "OfficialOutput", "OfficialTextFileExternalOutputVerifier.cs"), "OfficialTextFileExternalOutputVerifier", "09R verifier must exist.");
         RequireContains(Read(root, "src", "Salryn.Infrastructure", "OfficialOutput", "OfficialExternalOutputTextFileWorkflowRunner.cs"), "OfficialExternalOutputTextFileWorkflowRunner", "09S workflow runner must exist.");
-        RequireContains(infraSmokeCommand, "official-output-text-file", "InfrastructureSmoke must expose official-output-text-file command.");
+        RequireContains(infraSmokeProgram, "case \"official-output-text-file\":", "InfrastructureSmoke must expose official-output-text-file command.");
+        RequireContains(infraSmokeProgram, "OfficialTextFileExternalOutputSmokeChecks.Run(projectRoot);", "InfrastructureSmoke must route official-output-text-file to smoke checks.");
         RequireContains(coreSmoke, "J21Rmo242023OfficialOutputPipelineCompletionSealChecks.Run();", "CoreSmoke must run final output pipeline seal.");
 
         string[] productionFiles =

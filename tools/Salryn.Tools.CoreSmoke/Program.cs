@@ -164,6 +164,7 @@ public static class Program
         J22OfficialOutputTextFilePackageSupplyBoundaryChecks.Run();
         J22OfficialOutputTextFileTrustedPackageProducerChecks.RunAsync().GetAwaiter().GetResult();
         J22OfficialOutputTextFileVisibleSelectionSurfaceChecks.Run();
+        RmoA2OfficialOutputSmokeRoutingChecks.Run();
         J21Rmo242023ElectronicJournalPersistenceRuntimeDocumentationSealChecks.Run();
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }

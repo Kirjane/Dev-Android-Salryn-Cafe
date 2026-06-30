@@ -173,6 +173,10 @@ try
             PosCheckoutUiProductRepositorySearchBoundarySmokeChecks.Run(projectRoot);
             break;
 
+        case "official-output-text-file":
+            OfficialTextFileExternalOutputSmokeChecks.Run(projectRoot);
+            break;
+
         case "official-output-text-file-dev-candidate":
             OfficialOutputTextFileDevCandidateSmokeCommand.Run(projectRoot);
             break;
