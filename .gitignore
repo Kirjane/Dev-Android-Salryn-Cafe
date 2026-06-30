@@ -32,6 +32,8 @@ desktop.ini
 # Salryn local development databases
 .salryn-dev/
 .salryn-smoke/
+.salryn-*.log
+.salryn-*.log.err
 
 # Node / web frontend
 node_modules/

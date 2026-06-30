@@ -434,6 +434,48 @@ If login fails with `Invalid username or password`:
 
 Do not commit or document ad-hoc diagnostic passwords in source.
 
+## SEC-A1 Local API + WebView Security Baseline
+
+SEC-A1 hardens the existing local web/native stack before write workflows or promotion.
+
+### WebView URL allowlist
+
+`SALRYN_WEB_URL` is validated before use. Allowed frontend origins:
+
+```text
+http://127.0.0.1:5173
+http://localhost:5173
+http://127.0.0.1:5299
+http://localhost:5299
+```
+
+Invalid overrides (external sites, `https://`, `file://`, `data:`, `javascript:`, LAN IPs, `0.0.0.0`) are rejected with a native warning and the host falls back to `http://127.0.0.1:5173`.
+
+### WebView navigation restriction
+
+The native host blocks navigation and new-window requests outside the allowed local origins. `about:blank` is permitted for WebView2 internals.
+
+### API localhost/CORS
+
+```text
+API bind: http://127.0.0.1:5299 only
+CORS: http://127.0.0.1:5173 and http://localhost:5173 with AllowCredentials
+No AllowAnyOrigin, no 0.0.0.0, no ListenAnyIP, no LAN exposure
+```
+
+### Sensitive data
+
+```text
+No password hashes in API DTOs
+No DB path public endpoint
+Dev DB path diagnostic is console-only under --dev
+Error log DTOs omit TechnicalDetail
+```
+
+### Local diagnostic logs
+
+`.salryn-*.log` and `.salryn-*.log.err` are gitignored local dev artifacts. Do not commit them.
+
 ## Verification Baseline
 
 Run from repo root unless noted:

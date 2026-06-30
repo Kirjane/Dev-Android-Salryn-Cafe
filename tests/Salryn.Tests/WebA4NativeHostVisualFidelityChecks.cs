@@ -30,6 +30,8 @@ public static class WebA4NativeHostVisualFidelityChecks
         RequireContains(hostSource, "127.0.0.1", "Native host must target localhost only.");
         RequireContains(hostSource, "/health", "Native host must check API /health.");
         RequireContains(hostSource, "SALRYN_PROJECT_ROOT", "WebView API launcher must set SALRYN_PROJECT_ROOT for dev DB resolution.");
+        RequireContains(hostSource, "LocalWebOriginPolicy", "WebView host must validate local frontend origins.");
+        RequireContains(hostSource, "NavigationStarting", "WebView host must block non-local navigation.");
         RequireNotContains(hostSource, "0.0.0.0", "Native host must not target 0.0.0.0.");
         RequireNotContains(hostSource, "ListenAnyIP", "Native host must not use ListenAnyIP.");
         RequireNotContains(hostSource, "handoff", "Native host must not reintroduce session handoff.");

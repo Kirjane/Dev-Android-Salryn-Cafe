@@ -53,7 +53,16 @@ internal static class Program
             }
         }
 
-        string webUrl = DevHostConfig.ResolveWebUrl();
+        string webUrl = DevHostConfig.ResolveWebUrl(out string? configurationRejection);
+
+        if (configurationRejection is not null)
+        {
+            MessageBox.Show(
+                configurationRejection + "\n\nFalling back to " + DevHostConfig.DefaultViteUrl + ".",
+                "Salryn Ledger Console",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
 
         Application.Run(new MainForm(webUrl, apiManager));
     }

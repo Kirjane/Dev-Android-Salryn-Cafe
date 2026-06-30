@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
@@ -12,6 +11,7 @@ internal sealed class MainForm : Form
     private readonly string _webUrl;
     private readonly LocalApiProcessManager _apiManager;
     private readonly WebView2 _webView;
+    private bool _navigationWarningShown;
 
     public MainForm(string webUrl, LocalApiProcessManager apiManager)
     {
@@ -37,8 +37,6 @@ internal sealed class MainForm : Form
     {
         try
         {
-            // Keep the WebView2 user-data folder out of Program Files / source by
-            // anchoring it to the user's local app data.
             string userDataFolder = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Salryn",
@@ -52,6 +50,9 @@ internal sealed class MainForm : Form
 
             _webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
             _webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
+
+            _webView.CoreWebView2.NavigationStarting += OnNavigationStarting;
+            _webView.CoreWebView2.NewWindowRequested += OnNewWindowRequested;
 
             _webView.CoreWebView2.Navigate(_webUrl);
         }
@@ -68,6 +69,42 @@ internal sealed class MainForm : Form
         }
     }
 
+    private void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
+    {
+        if (LocalWebOriginPolicy.IsAllowedNavigationUri(e.Uri))
+        {
+            return;
+        }
+
+        e.Cancel = true;
+        ShowBlockedNavigationWarning(e.Uri);
+    }
+
+    private void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
+    {
+        e.Handled = true;
+        ShowBlockedNavigationWarning(e.Uri);
+    }
+
+    private void ShowBlockedNavigationWarning(string uri)
+    {
+        if (_navigationWarningShown)
+        {
+            return;
+        }
+
+        _navigationWarningShown = true;
+
+        MessageBox.Show(
+            this,
+            "Salryn blocked navigation to a non-local URL.\n\n" +
+            "Only localhost frontend/API origins on ports 5173 and 5299 are allowed.\n\n" +
+            "Blocked: " + uri,
+            "Salryn Ledger Console",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Warning);
+    }
+
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         base.OnFormClosing(e);
@@ -78,6 +115,12 @@ internal sealed class MainForm : Form
     {
         if (disposing)
         {
+            if (_webView.CoreWebView2 is not null)
+            {
+                _webView.CoreWebView2.NavigationStarting -= OnNavigationStarting;
+                _webView.CoreWebView2.NewWindowRequested -= OnNewWindowRequested;
+            }
+
             _webView.Dispose();
         }
 

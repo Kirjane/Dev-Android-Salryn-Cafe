@@ -14,18 +14,19 @@ internal static class DevHostConfig
 
     /// <summary>
     /// Resolves the frontend URL to load.
-    /// Priority: explicit SALRYN_WEB_URL override, otherwise the Vite dev server.
-    /// The local API ( http://127.0.0.1:5299/ ) can also be used when it serves the built app.
+    /// Priority: validated SALRYN_WEB_URL override, otherwise the Vite dev server.
     /// </summary>
-    public static string ResolveWebUrl()
+    public static string ResolveWebUrl(out string? configurationRejection)
     {
         string? configured = Environment.GetEnvironmentVariable(WebUrlEnvironmentVariable);
 
-        if (!string.IsNullOrWhiteSpace(configured))
+        if (LocalWebOriginPolicy.TryResolveConfiguredWebUrl(configured, out string resolved, out string? rejection))
         {
-            return configured.Trim();
+            configurationRejection = null;
+            return resolved;
         }
 
-        return DefaultViteUrl;
+        configurationRejection = rejection;
+        return resolved;
     }
 }

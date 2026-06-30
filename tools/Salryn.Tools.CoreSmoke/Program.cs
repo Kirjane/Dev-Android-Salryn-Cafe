@@ -76,6 +76,7 @@ public static class Program
         WebA3ShellDesignSystemChecks.Run();
         WebA4NativeHostVisualFidelityChecks.Run();
         WebB0ReadOnlyOperatorSurfacesChecks.Run();
+        SecA1LocalApiWebViewSecurityChecks.Run();
         J20UiWorkflowReadinessChecks.Run();
         PosStabA1StartupLoginReadinessChecks.Run();
         PosStabA2ShiftCloseChecks.Run();
