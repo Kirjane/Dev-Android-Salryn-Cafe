@@ -41,6 +41,7 @@ public sealed class SalrynAppServices
         IStoreSettingsReadRepository storeSettingsReadRepository,
         IStoreSettingsWriteRepository storeSettingsWriteRepository,
         IAuditReadRepository auditReadRepository,
+        IAuditWriteRepository auditWriteRepository,
         IErrorLogReadRepository errorLogReadRepository,
         ICashierSessionService cashierSessions,
         IPosCheckoutService posCheckout,
@@ -65,6 +66,7 @@ public sealed class SalrynAppServices
         StoreSettingsReadRepository = storeSettingsReadRepository;
         StoreSettingsWriteRepository = storeSettingsWriteRepository;
         AuditReadRepository = auditReadRepository;
+        AuditWriteRepository = auditWriteRepository;
         ErrorLogReadRepository = errorLogReadRepository;
         CashierSessions = cashierSessions;
         PosCheckout = posCheckout;
@@ -180,11 +182,15 @@ public sealed class SalrynAppServices
                 trustedPackageProducer: OfficialOutputTextFileTrustedPackageProducer,
                 sourceSelectionBoundary: OfficialOutputTextFileSourceSelection);
 
+        OfficialOutputTextFileWorkflowAudit =
+            new OfficialOutputTextFileWorkflowAuditRecorder(AuditWriteRepository);
+
         OfficialOutputTextFileWorkflowUi =
             new OfficialOutputTextFileWorkflowUiBoundary(
                 OfficialOutputTextFileWorkflowReadiness,
                 LocalHostOfficialOutputTextFileWorkflow,
-                OfficialOutputTextFilePackageSupply);
+                OfficialOutputTextFilePackageSupply,
+                OfficialOutputTextFileWorkflowAudit);
     }
 
     public DbPaths DbPaths { get; }
@@ -227,6 +233,8 @@ public sealed class SalrynAppServices
 
     public IAuditReadRepository AuditReadRepository { get; }
 
+    public IAuditWriteRepository AuditWriteRepository { get; }
+
     public IErrorLogReadRepository ErrorLogReadRepository { get; }
 
     public ICheckoutProductSearchBoundary CheckoutProductSearch { get; }
@@ -262,6 +270,8 @@ public sealed class SalrynAppServices
     public IOfficialOutputTextFileSourceSelectionBoundary OfficialOutputTextFileSourceSelection { get; }
 
     public IOfficialOutputTextFilePackageSupplyBoundary OfficialOutputTextFilePackageSupply { get; }
+
+    public IOfficialOutputTextFileWorkflowAuditRecorder OfficialOutputTextFileWorkflowAudit { get; }
 
     public IOfficialOutputTextFileWorkflowUiBoundary OfficialOutputTextFileWorkflowUi { get; }
 
@@ -466,6 +476,9 @@ public sealed class SalrynAppServices
         IAuditReadRepository auditReadRepository =
             repositories.CreateAuditReadRepository();
 
+        IAuditWriteRepository auditWriteRepository =
+            repositories.CreateAuditWriteRepository();
+
         IErrorLogReadRepository errorLogReadRepository =
             repositories.CreateErrorLogReadRepository();
 
@@ -499,6 +512,7 @@ public sealed class SalrynAppServices
             storeSettingsReadRepository,
             storeSettingsWriteRepository,
             auditReadRepository,
+            auditWriteRepository,
             errorLogReadRepository,
             cashierSessions,
             posCheckout,

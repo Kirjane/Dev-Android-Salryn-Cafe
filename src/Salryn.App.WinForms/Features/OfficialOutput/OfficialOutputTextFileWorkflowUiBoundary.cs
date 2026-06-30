@@ -131,15 +131,18 @@ public sealed class OfficialOutputTextFileWorkflowUiBoundary : IOfficialOutputTe
     private readonly IAppOfficialOutputTextFileWorkflowReadinessGateway? _readinessGateway;
     private readonly IAppOfficialOutputTextFileWorkflowGateway? _workflowGateway;
     private readonly IOfficialOutputTextFilePackageSupplyBoundary? _packageSupplyBoundary;
+    private readonly IOfficialOutputTextFileWorkflowAuditRecorder? _auditRecorder;
 
     public OfficialOutputTextFileWorkflowUiBoundary(
         IAppOfficialOutputTextFileWorkflowReadinessGateway? readinessGateway,
         IAppOfficialOutputTextFileWorkflowGateway? workflowGateway,
-        IOfficialOutputTextFilePackageSupplyBoundary? packageSupplyBoundary)
+        IOfficialOutputTextFilePackageSupplyBoundary? packageSupplyBoundary,
+        IOfficialOutputTextFileWorkflowAuditRecorder? auditRecorder = null)
     {
         _readinessGateway = readinessGateway;
         _workflowGateway = workflowGateway;
         _packageSupplyBoundary = packageSupplyBoundary;
+        _auditRecorder = auditRecorder;
     }
 
     public OfficialOutputTextFileWorkflowUiStatus GetStatus(
@@ -191,9 +194,16 @@ public sealed class OfficialOutputTextFileWorkflowUiBoundary : IOfficialOutputTe
                     callerPermission.ErrorDetail.Code,
                     callerPermission.ErrorDetail.Message);
 
-            return OfficialOutputTextFileWorkflowUiCommandResult.ValidationBlocked(
+            return await FinalizeRunAsync(
+                request,
                 permissionStatus,
-                callerPermission.ErrorDetail);
+                OfficialOutputTextFileWorkflowUiCommandResult.ValidationBlocked(
+                    permissionStatus,
+                    callerPermission.ErrorDetail),
+                package: null,
+                filesGenerated: false,
+                readinessBlocked: false,
+                cancellationToken).ConfigureAwait(false);
         }
 
         Result<OfficialOutputExportPackage> packageResult =
@@ -202,14 +212,28 @@ public sealed class OfficialOutputTextFileWorkflowUiBoundary : IOfficialOutputTe
 
         if (!status.IsAvailable)
         {
-            return OfficialOutputTextFileWorkflowUiCommandResult.Blocked(status);
+            return await FinalizeRunAsync(
+                request,
+                status,
+                OfficialOutputTextFileWorkflowUiCommandResult.Blocked(status),
+                package: packageResult.IsSuccess ? packageResult.Value : null,
+                filesGenerated: false,
+                readinessBlocked: true,
+                cancellationToken).ConfigureAwait(false);
         }
 
         if (packageResult.IsFailure)
         {
-            return OfficialOutputTextFileWorkflowUiCommandResult.ValidationBlocked(
+            return await FinalizeRunAsync(
+                request,
                 status,
-                packageResult.ErrorDetail);
+                OfficialOutputTextFileWorkflowUiCommandResult.ValidationBlocked(
+                    status,
+                    packageResult.ErrorDetail),
+                package: null,
+                filesGenerated: false,
+                readinessBlocked: false,
+                cancellationToken).ConfigureAwait(false);
         }
 
         IAppOfficialOutputTextFileWorkflowGateway? workflowGateway = _workflowGateway;
@@ -221,7 +245,14 @@ public sealed class OfficialOutputTextFileWorkflowUiBoundary : IOfficialOutputTe
                     "OfficialOutputTextFileWorkflowUi.WorkflowGatewayUnavailable",
                     "Official output text-file workflow gateway is not available.");
 
-            return OfficialOutputTextFileWorkflowUiCommandResult.Blocked(blockedStatus);
+            return await FinalizeRunAsync(
+                request,
+                blockedStatus,
+                OfficialOutputTextFileWorkflowUiCommandResult.Blocked(blockedStatus),
+                package: packageResult.Value,
+                filesGenerated: false,
+                readinessBlocked: true,
+                cancellationToken).ConfigureAwait(false);
         }
 
         AppOfficialOutputTextFileWorkflowRequest appRequest = new(
@@ -236,15 +267,87 @@ public sealed class OfficialOutputTextFileWorkflowUiBoundary : IOfficialOutputTe
 
         if (validation.IsFailure)
         {
-            return OfficialOutputTextFileWorkflowUiCommandResult.ValidationBlocked(
+            return await FinalizeRunAsync(
+                request,
                 status,
-                validation.ErrorDetail);
+                OfficialOutputTextFileWorkflowUiCommandResult.ValidationBlocked(
+                    status,
+                    validation.ErrorDetail),
+                package: packageResult.Value,
+                filesGenerated: false,
+                readinessBlocked: false,
+                cancellationToken).ConfigureAwait(false);
         }
 
         AppOfficialOutputTextFileWorkflowResult result =
             await workflowGateway.RunAsync(appRequest, cancellationToken).ConfigureAwait(false);
 
-        return OfficialOutputTextFileWorkflowUiCommandResult.FromWorkflowResult(status, result);
+        OfficialOutputTextFileWorkflowUiCommandResult commandResult =
+            OfficialOutputTextFileWorkflowUiCommandResult.FromWorkflowResult(status, result);
+
+        return await FinalizeRunAsync(
+            request,
+            status,
+            commandResult,
+            package: packageResult.Value,
+            filesGenerated: result.Succeeded,
+            readinessBlocked: false,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<OfficialOutputTextFileWorkflowUiCommandResult> FinalizeRunAsync(
+        OfficialOutputTextFileWorkflowUiTriggerRequest? request,
+        OfficialOutputTextFileWorkflowUiStatus status,
+        OfficialOutputTextFileWorkflowUiCommandResult result,
+        OfficialOutputExportPackage? package,
+        bool filesGenerated,
+        bool readinessBlocked,
+        CancellationToken cancellationToken)
+    {
+        IOfficialOutputTextFileWorkflowAuditRecorder? auditRecorder = _auditRecorder;
+
+        if (auditRecorder is null)
+        {
+            return result;
+        }
+
+        OfficialOutputTextFileWorkflowAuditRecordRequest auditRequest = new(
+            UserId: request?.RequestedByUserId,
+            TerminalId: request?.TerminalId,
+            PackageHash: package?.PackageHash,
+            WorkflowReference: result.References?.WorkflowReference,
+            ErrorCode: result.ErrorCode ?? result.StatusCode,
+            Succeeded: result.Succeeded,
+            ReadinessBlocked: readinessBlocked,
+            Metadata: request?.Metadata,
+            RecordedAt: request?.RequestedAt);
+
+        Result auditResult = await auditRecorder
+            .RecordRunAttemptAsync(auditRequest, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (auditResult.IsSuccess)
+        {
+            return result;
+        }
+
+        if (filesGenerated)
+        {
+            return new OfficialOutputTextFileWorkflowUiCommandResult(
+                Succeeded: false,
+                AttemptedExecution: result.AttemptedExecution,
+                StatusCode: "OfficialOutputTextFileWorkflowUi.AuditRecordFailed",
+                StatusMessage: "Official output text-file workflow completed but audit logging failed.",
+                ErrorCode: auditResult.ErrorDetail.Code,
+                ErrorMessage: auditResult.ErrorDetail.Message,
+                References: result.References,
+                RuntimeOutputRootPath: result.RuntimeOutputRootPath,
+                Status: status);
+        }
+
+        return OfficialOutputTextFileWorkflowUiCommandResult.ValidationBlocked(
+            status,
+            auditResult.ErrorDetail);
     }
 
     private Result<OfficialOutputExportPackage> TryGetSuppliedPackage(

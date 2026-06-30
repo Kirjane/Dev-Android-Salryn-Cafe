@@ -62,7 +62,7 @@ public static class J22OfficialOutputTextFileWorkflowUiTriggerShellChecks
         RequireContains(appServices, "new OfficialOutputTextFileWorkflowUiBoundary(", "10G AppServices must construct the guarded UI trigger boundary.");
         RequireContains(appServices, "OfficialOutputTextFileWorkflowReadiness,", "10G UI trigger must use the readiness surface.");
         RequireContains(appServices, "LocalHostOfficialOutputTextFileWorkflow,", "10G UI trigger must use the Local Host app gateway for guarded command execution.");
-        RequireContains(appServices, "OfficialOutputTextFilePackageSupply);", "10G/10H UI trigger must use the package supply boundary.");
+        RequireContains(appServices, "OfficialOutputTextFilePackageSupply,", "10G/10H UI trigger must use the package supply boundary.");
         RequireContains(appServices, "public IAppOfficialOutputTextFileWorkflowGateway OfficialOutputTextFileWorkflow { get; }", "10G must keep the direct 10A app gateway intact.");
         RequireContains(appServices, "public IAppOfficialOutputTextFileWorkflowGateway LocalHostOfficialOutputTextFileWorkflow { get; }", "10G must keep the Local Host 10D app gateway intact.");
         RequireContains(supplyBoundary, "public interface IOfficialOutputTextFilePackageSupplyBoundary", "10H package supply boundary must exist.");

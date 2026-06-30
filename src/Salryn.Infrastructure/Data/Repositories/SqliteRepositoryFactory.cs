@@ -95,6 +95,11 @@ public sealed class SqliteRepositoryFactory
         return new SqliteAuditReadRepository(_connectionFactory);
     }
 
+    public IAuditWriteRepository CreateAuditWriteRepository()
+    {
+        return new SqliteAuditWriteRepository(_connectionFactory);
+    }
+
     public IErrorLogReadRepository CreateErrorLogReadRepository()
     {
         return new SqliteErrorLogReadRepository(_connectionFactory);

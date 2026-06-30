@@ -168,6 +168,7 @@ public static class Program
         RmoA3OfficialOutputRootPolicyChecks.Run();
         RmoA4OfficialOutputRepeatRunPolicyChecks.Run();
         RmoA5OfficialOutputPermissionChecks.Run();
+        RmoA6OfficialOutputAuditTrailChecks.Run();
         J21Rmo242023ElectronicJournalPersistenceRuntimeDocumentationSealChecks.Run();
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }

@@ -75,7 +75,7 @@ public static class J22OfficialOutputTextFilePackageSupplyBoundaryChecks
         RequireContains(appServices, "public IOfficialOutputTextFileTrustedPackageProducer OfficialOutputTextFileTrustedPackageProducer { get; }", "RMO-M1-A AppServices must expose the trusted package producer.");
         RequireContains(appServices, "new OfficialOutputTextFileTrustedPackageProducer(OfficialOutputSourceRead)", "RMO-M1-A AppServices must wire producer to official output source.");
         RequireContains(appServices, "trustedPackageProducer: OfficialOutputTextFileTrustedPackageProducer", "RMO-M1-A AppServices package supply must be producer-connected.");
-        RequireContains(appServices, "OfficialOutputTextFilePackageSupply);", "10H AppServices must wire package supply into the UI shell.");
+        RequireContains(appServices, "OfficialOutputTextFilePackageSupply,", "10H AppServices must wire package supply into the UI shell.");
 
         RequireContains(appContracts, "IAppOfficialOutputTextFileWorkflowGateway", "10H must keep the app workflow gateway contract.");
         RequireContains(readinessContracts, "IAppOfficialOutputTextFileWorkflowReadinessGateway", "10H must keep readiness contract intact.");
