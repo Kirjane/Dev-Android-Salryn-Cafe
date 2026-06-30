@@ -1379,3 +1379,21 @@ Next likely seals after review:
 - VAT bucket planning or calculator seal
 
 Evidence: `RMO_B1_OFFICIAL_CHECKOUT_DATA_INTEGRITY_CURRENT_STATE_SEAL.md`, `RmoB1OfficialCheckoutDataIntegrityCurrentStateSealChecks`.
+
+## RMO Engineering Completion Candidate
+
+RMO-COMPLETE-1 status: engineering candidate only on `KIRCH-FREEHAND`.
+
+Implemented and test-backed in this candidate:
+
+- deterministic VAT/tax bucket engine and official checkout snapshot/journal wiring
+- refund lifecycle append support
+- lifecycle-adjusted X-reading enrichment and VAT bucket summaries
+- engineering evidence text-file package builder
+- official lifecycle permissions and fail-closed lifecycle operation boundary
+
+This candidate is not BIR certification, not accreditation, not legal approval, and not full production RMO compliance.
+
+No printer, PDF, Crystal, ESC/POS, scanner, or LAN claim is made by this candidate.
+
+Evidence: `RMO_ENGINEERING_COMPLETION_CANDIDATE_SEAL.md`, `RmoEngineeringCompletionCandidateChecks`, InfrastructureSmoke `rmo-engineering-candidate`.

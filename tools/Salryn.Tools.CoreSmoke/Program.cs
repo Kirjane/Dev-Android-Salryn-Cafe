@@ -171,6 +171,8 @@ public static class Program
         RmoA6OfficialOutputAuditTrailChecks.Run();
         RmoA7InternalOfficialOutputTextFileWorkflowSealChecks.Run();
         RmoB1OfficialCheckoutDataIntegrityCurrentStateSealChecks.Run();
+        RmoEngineeringVatTaxBucketEngineChecks.Run();
+        RmoEngineeringCompletionCandidateChecks.Run();
         J21Rmo242023ElectronicJournalPersistenceRuntimeDocumentationSealChecks.Run();
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }

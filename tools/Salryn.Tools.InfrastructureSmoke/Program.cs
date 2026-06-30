@@ -182,6 +182,10 @@ try
             OfficialOutputTextFileDevCandidateSmokeCommand.Run(projectRoot);
             break;
 
+        case "rmo-engineering-candidate":
+            RmoEngineeringCandidateSmokeChecks.Run(projectRoot);
+            break;
+
         case "reset":
             Reset(projectRoot);
             break;
