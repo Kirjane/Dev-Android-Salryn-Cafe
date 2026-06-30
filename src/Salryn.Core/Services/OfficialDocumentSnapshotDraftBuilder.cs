@@ -24,7 +24,9 @@ public sealed record OfficialDocumentSnapshotDraftBuildRequest(
     string CashierIdentifier,
     string? TerminalIdentifier,
     string TaxModeCode,
-    string? TaxModeNotes);
+    string? TaxModeNotes,
+    IReadOnlyList<OfficialDocumentLineTaxClassification>? LineTaxClassifications = null,
+    OfficialDocumentTaxBucketDraftTaxpayerMode? TaxpayerMode = null);
 
 // Kirch strict dev guide:
 // J21-4B owns in-memory draft building only.
@@ -34,6 +36,8 @@ public sealed record OfficialDocumentSnapshotDraftBuildRequest(
 // write sale snapshots, open databases, create journals, create X/Z readings, or claim official output readiness.
 public sealed class OfficialDocumentSnapshotDraftBuilder
 {
+    private readonly OfficialDocumentTaxBucketEngine _taxBucketEngine = new();
+
     public Result<OfficialDocumentSnapshotDraft> Build(OfficialDocumentSnapshotDraftBuildRequest request)
     {
         Result validation = ValidateRequest(request);
@@ -102,19 +106,71 @@ public sealed class OfficialDocumentSnapshotDraftBuilder
                 PaidAt: payment.PaidAt));
         }
 
-        OfficialDocumentSnapshotDraftTaxMode taxMode = new(
-            TaxModeCode: request.TaxModeCode.Trim().ToUpperInvariant(),
-            VatBucketEngineDeferred: true,
-            Notes: NormalizeOptional(request.TaxModeNotes));
+        OfficialDocumentTaxBucketDraft? taxBuckets = null;
+        bool vatBucketEngineDeferred = true;
+        string taxModeCode = request.TaxModeCode.Trim().ToUpperInvariant();
+        string? taxModeNotes = NormalizeOptional(request.TaxModeNotes);
 
-        string[] deferredNotes =
+        if (request.LineTaxClassifications is not null &&
+            request.TaxpayerMode.HasValue)
         {
-            "J21-4B draft builder only.",
-            "No official document rendering.",
-            "No saved sale snapshot write.",
-            "No checkout wiring.",
-            "No VAT bucket engine."
-        };
+            Result taxClassValidation = ValidateLineTaxClassifications(request.Items, request.LineTaxClassifications);
+
+            if (taxClassValidation.IsFailure)
+            {
+                return Result<OfficialDocumentSnapshotDraft>.Fail(taxClassValidation.ErrorDetail);
+            }
+
+            List<OfficialDocumentTaxBucketCalculationLine> calculationLines = new();
+
+            for (int index = 0; index < request.Items.Count; index++)
+            {
+                SaleItem item = request.Items[index];
+
+                calculationLines.Add(new OfficialDocumentTaxBucketCalculationLine(
+                    item.LineTotal.Cents,
+                    item.Discount.Cents,
+                    request.LineTaxClassifications[index]));
+            }
+
+            Result<OfficialDocumentTaxBucketDraft> bucketResult = _taxBucketEngine.Calculate(
+                new OfficialDocumentTaxBucketCalculationRequest(
+                    request.TaxpayerMode.Value,
+                    calculationLines,
+                    sale.Discount.Cents));
+
+            if (bucketResult.IsFailure)
+            {
+                return Result<OfficialDocumentSnapshotDraft>.Fail(bucketResult.ErrorDetail);
+            }
+
+            taxBuckets = bucketResult.Value;
+            vatBucketEngineDeferred = false;
+            taxModeCode = SalrynOfficialTaxBucketPolicy.EngineTaxModeCode;
+            taxModeNotes = SalrynOfficialTaxBucketPolicy.EngineBoundaryNote;
+        }
+
+        OfficialDocumentSnapshotDraftTaxMode taxMode = new(
+            TaxModeCode: taxModeCode,
+            VatBucketEngineDeferred: vatBucketEngineDeferred,
+            Notes: taxModeNotes);
+
+        string[] deferredNotes = vatBucketEngineDeferred
+            ?
+            [
+                "J21-4B draft builder only.",
+                "No official document rendering.",
+                "No saved sale snapshot write.",
+                "No checkout wiring.",
+                "No VAT bucket engine."
+            ]
+            :
+            [
+                SalrynOfficialTaxBucketPolicy.EngineBoundaryNote,
+                SalrynOfficialTaxBucketPolicy.NoLegalVatClaimNote,
+                "No official document rendering.",
+                "No saved sale snapshot write."
+            ];
 
         OfficialDocumentSnapshotDraft draft = new(
             request.DocumentKind,
@@ -123,7 +179,8 @@ public sealed class OfficialDocumentSnapshotDraftBuilder
             amounts,
             payments,
             taxMode,
-            deferredNotes);
+            deferredNotes,
+            taxBuckets);
 
         return Result<OfficialDocumentSnapshotDraft>.Success(draft);
     }
@@ -231,6 +288,30 @@ public sealed class OfficialDocumentSnapshotDraftBuilder
                 return Result.Fail(Error.Validation(
                     "OfficialDocumentDraft.PaymentMethodInvalid",
                     "Payment method is invalid."));
+            }
+        }
+
+        return Result.Success();
+    }
+
+    private static Result ValidateLineTaxClassifications(
+        IReadOnlyList<SaleItem> items,
+        IReadOnlyList<OfficialDocumentLineTaxClassification> classifications)
+    {
+        if (classifications.Count != items.Count)
+        {
+            return Result.Fail(Error.Validation(
+                "OfficialDocumentDraft.LineTaxClassificationCountMismatch",
+                "Line tax classifications must match sale item count."));
+        }
+
+        foreach (OfficialDocumentLineTaxClassification classification in classifications)
+        {
+            if (!Enum.IsDefined(typeof(OfficialDocumentLineTaxClassification), classification))
+            {
+                return Result.Fail(Error.Validation(
+                    "OfficialDocumentDraft.InvalidLineTaxClassification",
+                    "Line tax classification is invalid."));
             }
         }
 

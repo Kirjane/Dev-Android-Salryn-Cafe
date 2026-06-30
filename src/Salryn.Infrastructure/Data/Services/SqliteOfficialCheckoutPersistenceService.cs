@@ -13,7 +13,9 @@ public sealed record SqliteOfficialCheckoutPersistenceRequest(
     string CashierIdentifier,
     string? TerminalIdentifier,
     string TaxModeCode,
-    string? TaxModeNotes);
+    string? TaxModeNotes,
+    IReadOnlyList<OfficialDocumentLineTaxClassification>? LineTaxClassifications = null,
+    OfficialDocumentTaxBucketDraftTaxpayerMode? TaxpayerMode = null);
 
 public sealed record SqliteOfficialCheckoutPersistenceResult(
     Guid SaleId,
@@ -149,7 +151,9 @@ public sealed class SqliteOfficialCheckoutPersistenceService
                 request.CashierIdentifier,
                 request.TerminalIdentifier,
                 request.TaxModeCode,
-                request.TaxModeNotes));
+                request.TaxModeNotes,
+                request.LineTaxClassifications,
+                request.TaxpayerMode));
 
         if (snapshotResult.IsFailure)
         {

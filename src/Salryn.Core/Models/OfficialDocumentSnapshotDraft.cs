@@ -12,7 +12,8 @@ public sealed record OfficialDocumentSnapshotDraft(
     OfficialDocumentSnapshotDraftAmounts Amounts,
     IReadOnlyList<OfficialDocumentSnapshotDraftPayment> Payments,
     OfficialDocumentSnapshotDraftTaxMode TaxMode,
-    IReadOnlyList<string> DeferredComplianceNotes);
+    IReadOnlyList<string> DeferredComplianceNotes,
+    OfficialDocumentTaxBucketDraft? TaxBuckets = null);
 
 // Kirch strict dev guide:
 // Keep receipt/invoice distinction explicit in the draft contract.

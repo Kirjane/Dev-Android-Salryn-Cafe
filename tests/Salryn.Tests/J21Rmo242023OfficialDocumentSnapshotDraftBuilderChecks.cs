@@ -47,7 +47,8 @@ public static class J21Rmo242023OfficialDocumentSnapshotDraftBuilderChecks
         RequireContains(builderText, "UnitPriceCents: item.UnitPrice.Cents", "J21-4B must map item unit price.");
         RequireContains(builderText, "LineTotalCents: item.LineTotal.Cents", "J21-4B must map item line total.");
         RequireContains(builderText, "TotalCents: sale.Total.Cents", "J21-4B must map sale total.");
-        RequireContains(builderText, "VatBucketEngineDeferred: true", "J21-4B must keep VAT bucket engine deferred.");
+        RequireContains(builderText, "OfficialDocumentTaxBucketEngine", "J21-4B builder must use tax bucket engine when classifications are supplied.");
+        RequireContains(builderText, "VatBucketEngineDeferred: vatBucketEngineDeferred", "J21-4B builder must set VAT deferral from engine result.");
         RequireDoesNotContain(builderText, "Microsoft.Data.Sqlite", "J21-4B builder must not depend on SQLite.");
         RequireDoesNotContain(builderText, "SqliteConnection", "J21-4B builder must not open database connections.");
         RequireDoesNotContain(builderText, "ReceiptNumber.Create", "J21-4B builder must not allocate or format sequence numbers.");

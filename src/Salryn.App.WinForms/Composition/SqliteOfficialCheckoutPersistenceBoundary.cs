@@ -39,7 +39,9 @@ internal sealed class SqliteOfficialCheckoutPersistenceBoundary : IOfficialCheck
                     request.CashierIdentifier,
                     request.TerminalIdentifier,
                     request.TaxModeCode,
-                    request.TaxModeNotes),
+                    request.TaxModeNotes,
+                    request.LineTaxClassifications,
+                    request.TaxpayerMode),
                 cancellationToken).ConfigureAwait(false);
 
         return result.IsFailure

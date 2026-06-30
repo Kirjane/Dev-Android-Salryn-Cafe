@@ -174,6 +174,7 @@ public sealed class OfficialDocumentSnapshotEvidenceBuilder
         WriteAmounts(writer, draft.Amounts);
         WritePayments(writer, draft.Payments);
         WriteTaxMode(writer, draft.TaxMode);
+        WriteTaxBuckets(writer, draft.TaxBuckets);
         WriteDeferredComplianceNotes(writer, draft.DeferredComplianceNotes);
 
         writer.WriteEndObject();
@@ -270,6 +271,45 @@ public sealed class OfficialDocumentSnapshotEvidenceBuilder
         writer.WriteString("taxModeCode", taxMode.TaxModeCode);
         writer.WriteBoolean("vatBucketEngineDeferred", taxMode.VatBucketEngineDeferred);
         writer.WriteString("notes", taxMode.Notes);
+        writer.WriteEndObject();
+    }
+
+    private static void WriteTaxBuckets(
+        Utf8JsonWriter writer,
+        OfficialDocumentTaxBucketDraft? taxBuckets)
+    {
+        if (taxBuckets is null)
+        {
+            return;
+        }
+
+        writer.WritePropertyName("taxBuckets");
+        writer.WriteStartObject();
+        writer.WriteString("taxpayerMode", taxBuckets.TaxpayerMode.ToString());
+        writer.WriteString("nonVatStatement", taxBuckets.NonVatStatement);
+        writer.WritePropertyName("buckets");
+        writer.WriteStartArray();
+
+        foreach (OfficialDocumentTaxBucketDraftBucket bucket in taxBuckets.Buckets)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("kind", bucket.Kind.ToString());
+            writer.WriteNumber("salesAmountCents", bucket.SalesAmountCents);
+            writer.WriteNumber("taxAmountCents", bucket.TaxAmountCents);
+            writer.WriteString("notes", bucket.Notes);
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+        writer.WritePropertyName("deferredComplianceNotes");
+        writer.WriteStartArray();
+
+        foreach (string note in taxBuckets.DeferredComplianceNotes)
+        {
+            writer.WriteStringValue(note);
+        }
+
+        writer.WriteEndArray();
         writer.WriteEndObject();
     }
 

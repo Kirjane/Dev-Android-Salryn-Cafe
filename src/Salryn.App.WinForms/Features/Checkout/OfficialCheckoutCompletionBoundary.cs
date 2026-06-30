@@ -15,7 +15,9 @@ public sealed record OfficialCheckoutPersistenceBoundaryRequest(
     string CashierIdentifier,
     string? TerminalIdentifier,
     string TaxModeCode,
-    string? TaxModeNotes);
+    string? TaxModeNotes,
+    IReadOnlyList<OfficialDocumentLineTaxClassification>? LineTaxClassifications = null,
+    OfficialDocumentTaxBucketDraftTaxpayerMode? TaxpayerMode = null);
 
 public interface IOfficialCheckoutPersistenceBoundary
 {
@@ -35,9 +37,6 @@ public interface IOfficialCheckoutCompletionBoundary
 
 public sealed class OfficialCheckoutCompletionBoundary : IOfficialCheckoutCompletionBoundary
 {
-    private const string TaxModeCode = "VAT_BUCKET_ENGINE_DEFERRED";
-    private const string TaxModeNotes = "Official checkout completion boundary keeps VAT bucket engine deferred until C05 is implemented.";
-
     private readonly ITrustedPosCheckoutSaleBuilder _trustedSaleBuilder;
     private readonly ICashierSessionService _cashierSessionService;
     private readonly IOfficialCheckoutReadinessService _readinessService;
@@ -125,6 +124,11 @@ public sealed class OfficialCheckoutCompletionBoundary : IOfficialCheckoutComple
                 BuildReadinessBlockedMessage(readiness)));
         }
 
+        IReadOnlyList<OfficialDocumentLineTaxClassification> lineTaxClassifications =
+            trustedSaleResult.Value.Items
+                .Select(_ => OfficialDocumentLineTaxClassification.Vatable)
+                .ToArray();
+
         OfficialCheckoutPersistenceBoundaryRequest persistenceRequest = new(
             trustedSaleResult.Value,
             readiness.BirMachineProfileId,
@@ -134,8 +138,10 @@ public sealed class OfficialCheckoutCompletionBoundary : IOfficialCheckoutComple
             OfficialDocumentSnapshotDraftKind.OfficialReceipt,
             CashierIdentifier: stableRequest.CashierUserId.ToString("D"),
             TerminalIdentifier: _terminalIdentifierProvider(),
-            TaxModeCode: TaxModeCode,
-            TaxModeNotes: TaxModeNotes);
+            TaxModeCode: SalrynOfficialTaxBucketPolicy.EngineTaxModeCode,
+            TaxModeNotes: SalrynOfficialTaxBucketPolicy.EngineBoundaryNote,
+            LineTaxClassifications: lineTaxClassifications,
+            TaxpayerMode: OfficialDocumentTaxBucketDraftTaxpayerMode.VatRegistered);
 
         Result persistenceResult =
             await _officialPersistence.CompleteOfficialSaleAsync(
