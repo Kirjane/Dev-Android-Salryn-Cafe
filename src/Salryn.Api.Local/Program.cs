@@ -19,6 +19,12 @@ if (IsSmokeRequested(args))
 SalrynLocalComposition composition = SalrynLocalLaunchModeResolver.CreateComposition(args);
 await composition.InitializeDatabaseAsync().ConfigureAwait(false);
 
+if (SalrynLocalLaunchModeResolver.IsDevelopmentRequested(args))
+{
+    Console.WriteLine(
+        $"[Salryn Dev] SQLite database: {composition.DbPaths.DatabasePath}");
+}
+
 DashboardSummaryService dashboardSummaryService = new(composition);
 InMemoryLocalApiSessionStore sessionStore = new();
 LocalApiSessionService sessionService = new(composition.Authentication, sessionStore);

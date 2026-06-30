@@ -35,6 +35,8 @@ public static class WebA2LocalApiAuthSessionChecks
 
         RequireContains(apiProgramText, "SalrynLocalLaunchModeResolver", "API must resolve launch mode through shared composition.");
         RequireContains(apiProgramText, "127.0.0.1", "API must bind to localhost only.");
+        RequireContains(apiProgramText, "AllowCredentials", "API CORS must allow credentials for session cookies.");
+        RequireNotContains(apiProgramText, "AllowAnyOrigin", "API CORS must not use AllowAnyOrigin.");
         RequireContains(apiProgramText, "/api/auth/login", "API must expose POST /api/auth/login.");
         RequireContains(apiProgramText, "/api/auth/logout", "API must expose POST /api/auth/logout.");
         RequireContains(apiProgramText, "/api/session", "API must expose GET /api/session.");
@@ -58,6 +60,7 @@ public static class WebA2LocalApiAuthSessionChecks
 
         RequireContains(webSessionApiText, "/api/session", "Web app must read session state.");
         RequireContains(webSessionApiText, "/api/auth/login", "Web app must call /api/auth/login.");
+        RequireContains(webSessionApiText, "credentials: \"include\"", "Web session client must send cookies.");
         RequireContains(webAppText, "LoginPage", "Web app must include login page.");
         RequireContains(webLoginPageText, "Sign in to Salryn Ledger Console", "Web login copy must match web auth direction.");
         RequireContains(webLoginPageText, "connects to the Salryn local API on this device", "Web login copy must describe local API connection.");

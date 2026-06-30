@@ -75,13 +75,22 @@ internal sealed class LocalApiProcessManager : IDisposable
             return false;
         }
 
+        string? repositoryRoot = FindRepositoryRoot(Path.GetDirectoryName(apiProjectPath)!);
+
+        if (repositoryRoot is null)
+        {
+            return false;
+        }
+
         var startInfo = new ProcessStartInfo
         {
             FileName = "dotnet",
             UseShellExecute = false,
             CreateNoWindow = false,
-            WorkingDirectory = Path.GetDirectoryName(apiProjectPath)!,
+            WorkingDirectory = repositoryRoot,
         };
+
+        startInfo.Environment["SALRYN_PROJECT_ROOT"] = repositoryRoot;
 
         startInfo.ArgumentList.Add("run");
         startInfo.ArgumentList.Add("--project");

@@ -380,6 +380,60 @@ dotnet run --project .\src\Salryn.Desktop.WebView\Salryn.Desktop.WebView.csproj
 - Error log API responses omit raw technical stack details.
 - Pagination and filters only where existing repository filters support them.
 
+## WEB-B0.1 Dev Login and Database Path
+
+When the local API runs with `--dev`, it uses the repository-local development database:
+
+```text
+{repo-root}/.salryn-dev/data/salryn.db
+```
+
+On startup the API prints a dev-only console line:
+
+```text
+[Salryn Dev] SQLite database: ...
+```
+
+Use that path to confirm the web console is authenticating against the database you expect.
+
+### Dev vs production database
+
+```text
+--dev API          -> .salryn-dev/data/salryn.db (under the Salryn repo root)
+API without --dev  -> %ProgramData%/Salryn/data/salryn.db (production path)
+```
+
+WinForms first-run admin credentials apply only to the database that app initialized.
+The web console `--dev` API does not read the production database.
+
+### WebView child API launch
+
+`Salryn.Desktop.WebView` starts the local API with:
+
+```text
+WorkingDirectory = repository root
+SALRYN_PROJECT_ROOT = repository root
+--dev
+```
+
+This keeps WebView-launched and manually started `--dev` APIs on the same dev database path.
+
+### Vite / browser session cookies
+
+The Vite dev server proxies `/api` to `http://127.0.0.1:5299`.
+Session clients use `credentials: "include"`.
+Open the dev UI at `http://127.0.0.1:5173` (not mixed with a different host such as `localhost` on the API side).
+
+### Dev admin credentials
+
+If login fails with `Invalid username or password`:
+
+1. Check the `[Salryn Dev] SQLite database:` console line matches the database you seeded or configured.
+2. If you ran `dev-prelaunch-seed`, it resets `.salryn-dev` only. See `00-HANDOFF/J20_4C_DEV_DATABASE_PRELAUNCH_SEED.md` for the seeded dev admin account.
+3. If you created admin through WinForms first-run instead, confirm WinForms and the web API are using the same database mode (`--dev` vs production).
+
+Do not commit or document ad-hoc diagnostic passwords in source.
+
 ## Verification Baseline
 
 Run from repo root unless noted:
