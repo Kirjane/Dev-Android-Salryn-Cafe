@@ -184,6 +184,7 @@ public static class Program
         LanM4TerminalRegistryPairingPreparationChecks.Run();
         LanM5ControlledRemoteTransportGateChecks.Run();
         LanM6PairingActivationRemoteHandshakeChecks.Run();
+        LanM7SafeRemoteReadOnlyClientChecks.Run();
         J21Rmo242023ElectronicJournalPersistenceRuntimeDocumentationSealChecks.Run();
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }

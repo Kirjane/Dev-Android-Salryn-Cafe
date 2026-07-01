@@ -84,8 +84,9 @@ public static class LanM6PairingActivationRemoteHandshakeChecks
         Require(gateModels.Contains("HandshakeSessionId", StringComparison.Ordinal), "Remote envelope must carry handshake session id.");
         Require(gate.Contains("PairingActivation", StringComparison.Ordinal), "Gate must allow pairing activation through controlled remote path.");
         Require(remoteTransport.Contains("ValidateHandshakeSessionAsync", StringComparison.Ordinal), "Remote transport must validate handshake sessions for safe commands.");
-        Require(remoteTransport.Contains("StatusRead or HostCommandCategory.ProductRead", StringComparison.Ordinal), "Remote transport must allow only status/product reads after handshake.");
-        Require(remoteTransport.Contains("Only safe status/product reads", StringComparison.Ordinal), "Remote transport must block remote mutation categories after handshake.");
+        Require(remoteTransport.Contains("HostCommandCategory.StatusRead or HostCommandCategory.ProductRead or HostCommandCategory.DashboardRead or HostCommandCategory.TerminalStatusRead", StringComparison.Ordinal), "Remote transport must allow only safe remote read categories after handshake.");
+        Require(remoteTransport.Contains("RemoteHandshake.CategoryBlocked", StringComparison.Ordinal), "Remote transport must fail closed on mutation categories after handshake.");
+        Require(remoteTransport.Contains("Only safe status, product, dashboard, and terminal status reads", StringComparison.Ordinal), "Remote transport must block remote mutation categories after handshake.");
         Require(appServices.Contains("CreateTerminalPairingActivationService", StringComparison.Ordinal), "AppServices must expose activation service factory.");
         Require(appServices.Contains("CreateRemoteClientHandshakeService", StringComparison.Ordinal), "AppServices must expose handshake service factory.");
 

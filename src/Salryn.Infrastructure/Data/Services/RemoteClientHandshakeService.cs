@@ -12,7 +12,9 @@ public sealed class RemoteClientHandshakeService : IRemoteClientHandshakeService
     private static readonly RemoteClientAllowedCategory[] SafeRemoteCategories =
     {
         RemoteClientAllowedCategory.StatusRead,
-        RemoteClientAllowedCategory.ProductRead
+        RemoteClientAllowedCategory.ProductRead,
+        RemoteClientAllowedCategory.DashboardRead,
+        RemoteClientAllowedCategory.TerminalStatusRead
     };
 
     private readonly SqliteTerminalRegistryRepository _terminalRegistry;

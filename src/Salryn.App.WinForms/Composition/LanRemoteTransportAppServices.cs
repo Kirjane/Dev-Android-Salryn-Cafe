@@ -40,6 +40,14 @@ public static class LanRemoteTransportAppServices
             config);
     }
 
+    public static IRemoteReadOnlyClientService CreateRemoteReadOnlyClientService(
+        this SalrynAppServices services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        return new RemoteReadOnlyClientService(
+            new ControlledRemoteHostCommandTransport(services.CreateLanRemoteHostCommandTransport()));
+    }
+
     public static ILanRemoteTransportGate CreateLanRemoteTransportGate(
         this SalrynAppServices services)
     {
@@ -63,28 +71,20 @@ public static class LanRemoteTransportAppServices
         IRemoteClientHandshakeService handshake = services.CreateRemoteClientHandshakeService();
         SalrynHostCommandAuthorityGuard hostCommandAuthority = new(services.StoreHostAuthority);
 
-        SalrynHostCommandLoopbackSurface remoteSurface = HostCommandComposition.Create(
+        IHostCommandDispatcher remoteDispatcher = RemoteReadOnlyHostCommandComposition.CreateDispatcher(
             hostCommandAuthority,
             () => ResolveDeploymentIdentitySnapshot(services),
             HostCommandExecutorAdapters.CreateDeploymentStatusExecutor(services.DeploymentIdentity),
             HostCommandExecutorAdapters.CreateProductLookupExecutor(services.ProductReadRepository),
-            HostCommandExecutorAdapters.CreateOfficialCheckoutExecutor(services.OfficialCheckoutCompletion),
-            HostCommandExecutorAdapters.CreateOfficialLifecycleExecutor(services.OfficialDocumentLifecycleOperations),
-            HostCommandExecutorAdapters.CreateOfficialPreviewXExecutor(services.OfficialXReading),
-            HostCommandExecutorAdapters.CreateOfficialFinalizeZExecutor(services.OfficialZReading),
-            HostCommandExecutorAdapters.CreateBackupAuthorityExecutor(),
-            HostCommandExecutorAdapters.CreateTerminalRegistryListExecutor(services.TerminalRegistry),
-            HostCommandExecutorAdapters.CreateTerminalRegistryDisableExecutor(services.TerminalRegistry),
-            HostCommandExecutorAdapters.CreateTerminalRegistryRevokeExecutor(services.TerminalRegistry),
-            HostCommandExecutorAdapters.CreateTerminalPairingIssueExecutor(services.TerminalPairingPreparation),
-            HostCommandExecutorAdapters.CreateTerminalPairingRevokeExecutor(services.TerminalPairingPreparation),
-            HostCommandExecutorAdapters.CreateTerminalPairingListExecutor(services.TerminalPairingPreparation),
-            services.TerminalRegistry,
             HostCommandExecutorAdapters.CreateTerminalPairingActivationExecutor(activation),
-            HostCommandExecutorAdapters.CreateRemoteClientHandshakeExecutor(handshake));
+            HostCommandExecutorAdapters.CreateRemoteClientHandshakeExecutor(handshake),
+            new RemoteClientStatusHostCommandExecutor(),
+            new RemoteDashboardSummaryHostCommandExecutor(),
+            new RemoteTerminalStatusHostCommandExecutor(services.TerminalRegistry),
+            services.TerminalRegistry);
 
         return new SalrynHostCommandRemoteTransport(
-            remoteSurface.Dispatcher,
+            remoteDispatcher,
             services.CreateLanRemoteTransportGate(),
             handshake);
     }

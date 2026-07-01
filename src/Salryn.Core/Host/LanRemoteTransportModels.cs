@@ -19,7 +19,9 @@ public enum HostCommandCategory
     BackupMutation = 7,
     AuthorityProbe = 8,
     PairingActivation = 9,
-    RemoteHandshake = 10
+    RemoteHandshake = 10,
+    DashboardRead = 11,
+    TerminalStatusRead = 12
 }
 
 public sealed record LanRemoteTransportConfig(
@@ -107,7 +109,12 @@ public static class SalrynHostCommandCategoryCatalog
         category = normalized switch
         {
             SalrynHostCommandNames.DeploymentStatus => HostCommandCategory.StatusRead,
+            SalrynHostCommandNames.RemoteDeploymentStatus => HostCommandCategory.StatusRead,
+            SalrynHostCommandNames.RemoteClientStatus => HostCommandCategory.StatusRead,
             SalrynHostCommandNames.ProductLookup => HostCommandCategory.ProductRead,
+            SalrynHostCommandNames.RemoteProductLookup => HostCommandCategory.ProductRead,
+            SalrynHostCommandNames.RemoteDashboardSummary => HostCommandCategory.DashboardRead,
+            SalrynHostCommandNames.RemoteTerminalStatus => HostCommandCategory.TerminalStatusRead,
             SalrynHostCommandNames.TerminalRegistryList => HostCommandCategory.TerminalPairingRead,
             SalrynHostCommandNames.TerminalPairingList => HostCommandCategory.TerminalPairingRead,
             SalrynHostCommandNames.TerminalPairingActivate => HostCommandCategory.PairingActivation,
@@ -125,7 +132,12 @@ public static class SalrynHostCommandCategoryCatalog
         };
 
         return normalized == SalrynHostCommandNames.DeploymentStatus ||
+            normalized == SalrynHostCommandNames.RemoteDeploymentStatus ||
+            normalized == SalrynHostCommandNames.RemoteClientStatus ||
             normalized == SalrynHostCommandNames.ProductLookup ||
+            normalized == SalrynHostCommandNames.RemoteProductLookup ||
+            normalized == SalrynHostCommandNames.RemoteDashboardSummary ||
+            normalized == SalrynHostCommandNames.RemoteTerminalStatus ||
             normalized == SalrynHostCommandNames.TerminalRegistryList ||
             normalized == SalrynHostCommandNames.TerminalPairingList ||
             normalized == SalrynHostCommandNames.TerminalPairingActivate ||
@@ -147,29 +159,31 @@ public static class SalrynHostCommandCategoryCatalog
         {
             HostCommandCategory.StatusRead => Result.Success(),
             HostCommandCategory.ProductRead => Result.Success(),
+            HostCommandCategory.DashboardRead => Result.Success(),
+            HostCommandCategory.TerminalStatusRead => Result.Success(),
             HostCommandCategory.PairingActivation => Result.Success(),
             HostCommandCategory.RemoteHandshake => Result.Success(),
             HostCommandCategory.TerminalPairingRead => Result.Fail(Error.Forbidden(
                 "LanRemoteTransport.TerminalPairingReadRemoteBlocked",
-                "Terminal pairing reads are blocked remotely in LAN-M6.")),
+                "Terminal pairing reads are blocked remotely in LAN-M7.")),
             HostCommandCategory.OfficialMutation => Result.Fail(Error.Forbidden(
                 "LanRemoteTransport.OfficialCommandRemoteBlocked",
-                "Official command execution is blocked remotely in LAN-M6.")),
+                "Official command execution is blocked remotely in LAN-M7.")),
             HostCommandCategory.AdminMutation => Result.Fail(Error.Forbidden(
                 "LanRemoteTransport.AdminCommandRemoteBlocked",
-                "Administrative command execution is blocked remotely in LAN-M6.")),
+                "Administrative command execution is blocked remotely in LAN-M7.")),
             HostCommandCategory.AdminRead => Result.Fail(Error.Forbidden(
                 "LanRemoteTransport.AdminReadRemoteBlocked",
-                "Administrative reads are blocked remotely in LAN-M6.")),
+                "Administrative reads are blocked remotely in LAN-M7.")),
             HostCommandCategory.BackupMutation => Result.Fail(Error.Forbidden(
                 "LanRemoteTransport.BackupCommandRemoteBlocked",
-                "Backup command execution is blocked remotely in LAN-M6.")),
+                "Backup command execution is blocked remotely in LAN-M7.")),
             HostCommandCategory.AuthorityProbe => Result.Fail(Error.Forbidden(
                 "LanRemoteTransport.AuthorityProbeRemoteBlocked",
-                "Authority probes are blocked remotely in LAN-M6.")),
+                "Authority probes are blocked remotely in LAN-M7.")),
             _ => Result.Fail(Error.Forbidden(
                 "LanRemoteTransport.CommandCategoryBlocked",
-                "Remote command category is blocked in LAN-M6."))
+                "Remote command category is blocked in LAN-M7."))
         };
     }
 }

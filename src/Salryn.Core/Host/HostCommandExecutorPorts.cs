@@ -1,6 +1,7 @@
 using Salryn.Core.Common;
 using Salryn.Core.Deployment;
 using Salryn.Core.Models;
+using Salryn.Core.RemoteClients;
 using Salryn.Core.Services;
 using Salryn.Core.TerminalRegistry;
 
@@ -170,5 +171,27 @@ public interface IRemoteClientHandshakeHostCommandExecutor
 {
     Task<Result<RemoteClientHandshakeResult>> ExecuteAsync(
         RemoteClientHandshakeHostCommandPayload payload,
+        CancellationToken cancellationToken = default);
+}
+
+public interface IRemoteClientStatusHostCommandExecutor
+{
+    Task<Result<RemoteClientStatusHostCommandResponse>> ExecuteAsync(
+        RemoteReadOnlyClientContext context,
+        CancellationToken cancellationToken = default);
+}
+
+public interface IRemoteDashboardSummaryHostCommandExecutor
+{
+    Task<Result<RemoteDashboardSummaryHostCommandResponse>> ExecuteAsync(
+        RemoteReadOnlyClientContext context,
+        CancellationToken cancellationToken = default);
+}
+
+public interface IRemoteTerminalStatusHostCommandExecutor
+{
+    Task<Result<RemoteTerminalStatusHostCommandResponse>> ExecuteAsync(
+        Guid terminalId,
+        RemoteReadOnlyClientContext context,
         CancellationToken cancellationToken = default);
 }

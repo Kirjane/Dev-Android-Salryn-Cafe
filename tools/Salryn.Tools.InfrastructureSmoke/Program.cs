@@ -198,6 +198,10 @@ try
             PairingActivationHandshakeSmokeChecks.Run(projectRoot);
             break;
 
+        case "safe-remote-readonly-client":
+            SafeRemoteReadOnlyClientSmokeChecks.Run(projectRoot);
+            break;
+
         case "rmo-engineering-candidate":
             RmoEngineeringCandidateSmokeChecks.Run(projectRoot);
             break;
@@ -249,7 +253,7 @@ try
 
         default:
             Console.WriteLine("Unknown command.");
-            Console.WriteLine("Use: status | init | inspect | reset | repositories | auth-first-run | mvp-business-flow | dev-prelaunch-seed | qa-products-seed | product-write | product-write-edge | inventory-write | inventory-write-edge | sales-write | sales-write-edge | sales-read-write | cashier-session-write | cashier-session-write-edge | cashier-session-read-write | cashier-session-service | cashier-session-service-edge | pos-checkout-session-enforcement | pos-checkout-repository-integration | pos-checkout-application-boundary | pos-checkout-application-repository | pos-store-day-regression | pos-admin-operations-regression | pos-phase-b-regression | app-production-readiness | app-first-run-bootstrap-readiness | app-startup-failure-diagnostics | pos-checkout-draft-transaction-builder | pos-checkout-product-picker-boundary | pos-checkout-product-picker-repository-integration | pos-checkout-ui-presenter-viewmodel | pos-checkout-ui-product-search-presenter-boundary | pos-checkout-ui-product-repository-search-boundary | official-output-text-file | official-output-text-file-dev-candidate | host-command-loopback | terminal-registry-pairing | controlled-remote-transport-gate | pairing-activation-handshake | rmo-engineering-candidate | full");
+            Console.WriteLine("Use: status | init | inspect | reset | repositories | auth-first-run | mvp-business-flow | dev-prelaunch-seed | qa-products-seed | product-write | product-write-edge | inventory-write | inventory-write-edge | sales-write | sales-write-edge | sales-read-write | cashier-session-write | cashier-session-write-edge | cashier-session-read-write | cashier-session-service | cashier-session-service-edge | pos-checkout-session-enforcement | pos-checkout-repository-integration | pos-checkout-application-boundary | pos-checkout-application-repository | pos-store-day-regression | pos-admin-operations-regression | pos-phase-b-regression | app-production-readiness | app-first-run-bootstrap-readiness | app-startup-failure-diagnostics | pos-checkout-draft-transaction-builder | pos-checkout-product-picker-boundary | pos-checkout-product-picker-repository-integration | pos-checkout-ui-presenter-viewmodel | pos-checkout-ui-product-search-presenter-boundary | pos-checkout-ui-product-repository-search-boundary | official-output-text-file | official-output-text-file-dev-candidate | host-command-loopback | terminal-registry-pairing | controlled-remote-transport-gate | pairing-activation-handshake | safe-remote-readonly-client | rmo-engineering-candidate | full");
             Environment.ExitCode = 1;
             break;
     }

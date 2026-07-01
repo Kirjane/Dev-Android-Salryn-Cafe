@@ -17,4 +17,9 @@ public static class SalrynHostCommandNames
     public const string TerminalPairingList = "terminal.pairing.list";
     public const string TerminalPairingActivate = "terminal.pairing.activate";
     public const string TerminalRemoteHandshake = "terminal.remote.handshake";
+    public const string RemoteClientStatus = "remote.client.status";
+    public const string RemoteDeploymentStatus = "remote.deployment.status";
+    public const string RemoteProductLookup = "remote.products.lookup";
+    public const string RemoteDashboardSummary = "remote.dashboard.summary";
+    public const string RemoteTerminalStatus = "remote.terminal.status";
 }

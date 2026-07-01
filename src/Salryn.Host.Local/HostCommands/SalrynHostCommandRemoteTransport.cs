@@ -128,11 +128,11 @@ public sealed class SalrynHostCommandRemoteTransport
             return Result.Success();
         }
 
-        if (category is not (HostCommandCategory.StatusRead or HostCommandCategory.ProductRead))
+        if (category is not (HostCommandCategory.StatusRead or HostCommandCategory.ProductRead or HostCommandCategory.DashboardRead or HostCommandCategory.TerminalStatusRead))
         {
             return Result.Fail(Error.Forbidden(
                 "RemoteHandshake.CategoryBlocked",
-                "Only safe status/product reads can be executed after remote handshake in LAN-M6."));
+                "Only safe status, product, dashboard, and terminal status reads can be executed after remote handshake in LAN-M7."));
         }
 
         if (!remoteEnvelope.HandshakeSessionId.HasValue)

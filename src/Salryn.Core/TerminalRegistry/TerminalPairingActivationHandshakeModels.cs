@@ -15,7 +15,9 @@ public enum RemoteClientHandshakeStatus
 public enum RemoteClientAllowedCategory
 {
     StatusRead = 1,
-    ProductRead = 2
+    ProductRead = 2,
+    DashboardRead = 3,
+    TerminalStatusRead = 4
 }
 
 public sealed record TerminalPairingActivationRequest(
