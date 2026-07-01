@@ -1,4 +1,7 @@
-export type AppPage = "dashboard" | "products" | "inventory" | "sales" | "users" | "audit" | "remote-readonly";
+import type { SessionState } from "./api/session";
+import { canAccessPage, type AppPage } from "./security/permissions";
+
+export type { AppPage } from "./security/permissions";
 
 export type EnabledNavItem = {
   id: AppPage;
@@ -27,3 +30,7 @@ export const navItems: NavItemConfig[] = [
   { id: "disabled", label: "Backup", enabled: false },
   { id: "audit", label: "Audit", enabled: true },
 ];
+
+export function getNavItems(session: SessionState): NavItemConfig[] {
+  return navItems.filter((item) => !item.enabled || canAccessPage(session, item.id));
+}

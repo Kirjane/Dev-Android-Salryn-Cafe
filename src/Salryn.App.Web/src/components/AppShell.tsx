@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import type { SessionState } from "../api/session";
-import { navItems, type AppPage } from "../navigation";
+import { getNavItems, type AppPage } from "../navigation";
 import { ConfirmDialog, StatusPill } from "./ui";
 
 type AppShellProps = {
@@ -19,6 +19,7 @@ export function AppShell({
   children,
 }: AppShellProps) {
   const [confirmLogout, setConfirmLogout] = useState(false);
+  const visibleNavItems = getNavItems(session);
 
   return (
     <div className="flex h-screen flex-col bg-slate-100">
@@ -50,7 +51,7 @@ export function AppShell({
       <div className="flex min-h-0 flex-1">
         <aside className="flex w-60 flex-col bg-navy-800 text-slate-200">
           <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
-            {navItems.map((item) => {
+            {visibleNavItems.map((item) => {
               const isActive = item.enabled && item.id === currentPage;
 
               if (!item.enabled) {

@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { logout } from "./api/session";
+import { logout, type SessionState } from "./api/session";
 import { AppShell } from "./components/AppShell";
-import { Button } from "./components/ui";
+import { Button, Card, CardBody, CommandBar } from "./components/ui";
 import { useAppSession } from "./hooks/useAppSession";
 import { type AppPage } from "./navigation";
 import { AuditPage } from "./pages/AuditPage";
@@ -13,15 +13,78 @@ import { ProductsPage } from "./pages/ProductsPage";
 import { RemoteReadOnlyClientPage } from "./pages/RemoteReadOnlyClientPage";
 import { SalesHistoryPage } from "./pages/SalesHistoryPage";
 import { UsersPage } from "./pages/UsersPage";
+import { canAccessPage, getFirstAllowedPage } from "./security/permissions";
 
-function FullScreenCenter({ children }: { children: React.ReactNode }) {
+function FullScreenCenter({ children }: { children: ReactNode }) {
   return <div className="flex min-h-screen items-center justify-center bg-navy-900 px-4">{children}</div>;
+}
+
+function AccessDenied({ currentPage, onGoHome }: { currentPage: AppPage; onGoHome: () => void }) {
+  return (
+    <div className="space-y-6">
+      <CommandBar
+        title="Access denied"
+        subtitle="Your current operator permissions do not allow this page."
+      />
+      <Card>
+        <CardBody className="space-y-4">
+          <p className="text-sm text-slate-600">
+            The page request was blocked before rendering: <span className="font-medium">{currentPage}</span>.
+          </p>
+          <Button variant="secondary" onClick={onGoHome}>
+            Go to allowed page
+          </Button>
+        </CardBody>
+      </Card>
+    </div>
+  );
+}
+
+function renderPage(page: AppPage, session: SessionState, onLogout: () => void) {
+  switch (page) {
+    case "dashboard":
+      return <DashboardPage session={session} onLogout={onLogout} />;
+    case "remote-readonly":
+      return <RemoteReadOnlyClientPage />;
+    case "products":
+      return <ProductsPage />;
+    case "inventory":
+      return <InventoryPage />;
+    case "sales":
+      return <SalesHistoryPage />;
+    case "users":
+      return <UsersPage />;
+    case "audit":
+      return <AuditPage />;
+    default: {
+      const exhaustiveCheck: never = page;
+      return exhaustiveCheck;
+    }
+  }
 }
 
 function ConsoleApp() {
   const queryClient = useQueryClient();
   const sessionQuery = useAppSession();
   const [currentPage, setCurrentPage] = useState<AppPage>("dashboard");
+
+  useEffect(() => {
+    const session = sessionQuery.data;
+
+    if (!session?.isAuthenticated) {
+      return;
+    }
+
+    if (canAccessPage(session, currentPage)) {
+      return;
+    }
+
+    const firstAllowedPage = getFirstAllowedPage(session);
+
+    if (firstAllowedPage && firstAllowedPage !== currentPage) {
+      setCurrentPage(firstAllowedPage);
+    }
+  }, [currentPage, sessionQuery.data]);
 
   async function handleLogout() {
     try {
@@ -53,16 +116,16 @@ function ConsoleApp() {
   }
 
   const session = sessionQuery.data;
+  const firstAllowedPage = getFirstAllowedPage(session);
+  const pageContent = canAccessPage(session, currentPage) ? (
+    renderPage(currentPage, session, () => void handleLogout())
+  ) : (
+    <AccessDenied currentPage={currentPage} onGoHome={() => firstAllowedPage && setCurrentPage(firstAllowedPage)} />
+  );
 
   return (
     <AppShell session={session} currentPage={currentPage} onNavigate={setCurrentPage} onLogout={() => void handleLogout()}>
-      {currentPage === "dashboard" ? <DashboardPage session={session} onLogout={() => void handleLogout()} /> : null}
-      {currentPage === "remote-readonly" ? <RemoteReadOnlyClientPage /> : null}
-      {currentPage === "products" ? <ProductsPage /> : null}
-      {currentPage === "inventory" ? <InventoryPage /> : null}
-      {currentPage === "sales" ? <SalesHistoryPage /> : null}
-      {currentPage === "users" ? <UsersPage /> : null}
-      {currentPage === "audit" ? <AuditPage /> : null}
+      {pageContent}
     </AppShell>
   );
 }
