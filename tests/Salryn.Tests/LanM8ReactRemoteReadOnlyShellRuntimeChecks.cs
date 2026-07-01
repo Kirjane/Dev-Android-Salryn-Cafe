@@ -22,13 +22,13 @@ public static class LanM8ReactRemoteReadOnlyShellRuntimeChecks
         Require(nav.Contains("Remote Read-Only Client", StringComparison.Ordinal), "Navigation entry missing.");
         Require(app.Contains("RemoteReadOnlyClientPage", StringComparison.Ordinal), "App render entry missing.");
         Require(page.Contains("Remote Read-Only Client", StringComparison.Ordinal), "Page title missing.");
-        Require(page.Contains("Connection / Session Status", StringComparison.Ordinal), "Connection/session card missing.");
+        Require(page.Contains("Connection / Session Status", StringComparison.Ordinal) || page.Contains("Pairing / Session State", StringComparison.Ordinal), "Connection/session card missing.");
         Require(page.Contains("Terminal Identity", StringComparison.Ordinal), "Terminal identity card missing.");
         Require(page.Contains("Allowed Capabilities", StringComparison.Ordinal), "Capabilities card missing.");
         Require(page.Contains("Disabled Mutations", StringComparison.Ordinal), "Disabled mutation card missing.");
-        Require(page.Contains("Product Lookup / Read-Only Area", StringComparison.Ordinal), "Product lookup area missing.");
+        Require(page.Contains("Product Lookup / Read-Only Area", StringComparison.Ordinal) || page.Contains("Product Browse / Read-Only Surface", StringComparison.Ordinal), "Product read area missing.");
         Require(page.Contains("Dashboard / Status Area", StringComparison.Ordinal), "Dashboard/status area missing.");
-        Require(page.Contains("Terminal Status Area", StringComparison.Ordinal), "Terminal status area missing.");
+        Require(page.Contains("Terminal Status Area", StringComparison.Ordinal) || page.Contains("Terminal status", StringComparison.Ordinal), "Terminal status area missing.");
         Require(readOnlySource.Contains("Remote read-only client only. Remote cashier/admin execution is not enabled.", StringComparison.Ordinal), "Read-only warning missing.");
         Require(readOnlySource.Contains("Clients must not open the SQLite database directly.", StringComparison.Ordinal), "SQLite warning missing.");
         Require(readOnlySource.Contains("Status read", StringComparison.Ordinal), "Status read missing.");

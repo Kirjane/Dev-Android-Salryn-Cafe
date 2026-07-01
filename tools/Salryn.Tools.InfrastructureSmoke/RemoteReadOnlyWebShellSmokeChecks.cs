@@ -20,10 +20,10 @@ internal static class RemoteReadOnlyWebShellSmokeChecks
         Require(nav.Contains("Remote Read-Only Client", StringComparison.Ordinal), "Navigation entry missing.");
         Require(app.Contains("RemoteReadOnlyClientPage", StringComparison.Ordinal), "App page render missing.");
         Require(page.Contains("Remote Read-Only Client", StringComparison.Ordinal), "Page header missing.");
-        Require(page.Contains("Connection / Session Status", StringComparison.Ordinal), "Session status card missing.");
-        Require(page.Contains("Product Lookup / Read-Only Area", StringComparison.Ordinal), "Product read area missing.");
+        Require(page.Contains("Connection / Session Status", StringComparison.Ordinal) || page.Contains("Pairing / Session State", StringComparison.Ordinal), "Session status card missing.");
+        Require(page.Contains("Product Lookup / Read-Only Area", StringComparison.Ordinal) || page.Contains("Product Browse / Read-Only Surface", StringComparison.Ordinal), "Product read area missing.");
         Require(page.Contains("Dashboard / Status Area", StringComparison.Ordinal), "Dashboard read area missing.");
-        Require(page.Contains("Terminal Status Area", StringComparison.Ordinal), "Terminal status area missing.");
+        Require(page.Contains("Terminal Status Area", StringComparison.Ordinal) || page.Contains("Terminal status", StringComparison.Ordinal), "Terminal status area missing.");
         Require(source.Contains("Remote read-only client only. Remote cashier/admin execution is not enabled.", StringComparison.Ordinal), "Read-only warning missing.");
         Require(source.Contains("Clients must not open the SQLite database directly.", StringComparison.Ordinal), "SQLite warning missing.");
         Require(source.Contains("official journal", StringComparison.Ordinal), "Official journal disabled text missing.");

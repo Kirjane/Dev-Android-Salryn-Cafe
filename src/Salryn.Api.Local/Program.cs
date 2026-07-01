@@ -38,6 +38,7 @@ builder.Services.AddSingleton<ILocalApiSessionStore>(sessionStore);
 builder.Services.AddSingleton(sessionService);
 builder.Services.AddSingleton(dashboardSummaryService);
 builder.Services.AddSingleton<OperatorReadService>();
+builder.Services.AddSingleton<RemoteReadOnlyApiService>();
 
 builder.Services.AddCors(options =>
 {
@@ -132,6 +133,7 @@ app.MapGet("/api/dashboard/summary", async (
 });
 
 app.MapReadOnlyOperatorEndpoints();
+app.MapRemoteReadOnlyEndpoints();
 
 // SPA fallback: serve index.html for client-side routes only when static hosting is
 // enabled. API and health routes are never shadowed by the fallback.
@@ -266,6 +268,12 @@ static async Task RunSmokeAsync(string[] args)
     {
         throw new InvalidOperationException(
             $"API smoke expected products read probe to succeed: {productsProbe.ErrorDetail.Message}");
+    }
+
+    RemoteReadOnlyApiService remoteReadOnly = new(summaryService, operatorReads);
+    if (!string.Equals(remoteReadOnly.GetStatus().Mode, "LocalOnlyReadMode", StringComparison.Ordinal))
+    {
+        throw new InvalidOperationException("Remote read-only API smoke expected LocalOnlyReadMode status.");
     }
 
     Console.WriteLine(

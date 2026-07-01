@@ -1,14 +1,38 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  fetchRemoteReadOnlyAuditVisibility,
+  fetchRemoteReadOnlyBindPolicy,
   fetchRemoteReadOnlyDashboardSummary,
   fetchRemoteReadOnlyProducts,
+  fetchRemoteReadOnlyStatus,
+  fetchRemoteReadOnlyTerminalStatus,
   getRemoteReadOnlyShellState,
 } from "../api/remoteReadOnlyClient";
 
 export function useRemoteReadOnlyClient() {
   const [productSearchText, setProductSearchText] = useState("");
-  const shellState = useMemo(() => getRemoteReadOnlyShellState(), []);
+  const [productPage, setProductPage] = useState(1);
+  const [productPageSize, setProductPageSize] = useState(10);
+  const fallbackShellState = useMemo(() => getRemoteReadOnlyShellState(), []);
+
+  const statusQuery = useQuery({
+    queryKey: ["remote-readonly-status"],
+    queryFn: fetchRemoteReadOnlyStatus,
+    retry: false,
+  });
+
+  const bindPolicyQuery = useQuery({
+    queryKey: ["remote-readonly-bind-policy"],
+    queryFn: fetchRemoteReadOnlyBindPolicy,
+    retry: false,
+  });
+
+  const terminalStatusQuery = useQuery({
+    queryKey: ["remote-readonly-terminal-status"],
+    queryFn: fetchRemoteReadOnlyTerminalStatus,
+    retry: false,
+  });
 
   const dashboardQuery = useQuery({
     queryKey: ["remote-readonly-dashboard-summary"],
@@ -17,17 +41,32 @@ export function useRemoteReadOnlyClient() {
   });
 
   const productQuery = useQuery({
-    queryKey: ["remote-readonly-product-search", productSearchText],
-    queryFn: () => fetchRemoteReadOnlyProducts(productSearchText),
-    enabled: productSearchText.trim().length > 0,
+    queryKey: ["remote-readonly-product-search", productSearchText, productPage, productPageSize],
+    queryFn: () => fetchRemoteReadOnlyProducts(productSearchText, productPage, productPageSize),
     retry: false,
   });
 
+  const auditQuery = useQuery({
+    queryKey: ["remote-readonly-audit", 1, 10],
+    queryFn: () => fetchRemoteReadOnlyAuditVisibility(1, 10),
+    retry: false,
+  });
+
+  const shellState = statusQuery.data ?? fallbackShellState;
+
   return {
     shellState,
+    statusQuery,
+    bindPolicyQuery,
+    terminalStatusQuery,
     productSearchText,
     setProductSearchText,
+    productPage,
+    setProductPage,
+    productPageSize,
+    setProductPageSize,
     dashboardQuery,
     productQuery,
+    auditQuery,
   };
 }
