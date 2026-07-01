@@ -1,4 +1,5 @@
 using Salryn.Core.Common;
+using Salryn.Core.Deployment;
 using Salryn.Core.Models;
 using Salryn.Core.ReadModels;
 using Salryn.Core.Services;
@@ -41,6 +42,7 @@ public sealed class OfficialCheckoutCompletionBoundary : IOfficialCheckoutComple
     private readonly ICashierSessionService _cashierSessionService;
     private readonly IOfficialCheckoutReadinessService _readinessService;
     private readonly IOfficialCheckoutPersistenceBoundary _officialPersistence;
+    private readonly SalrynStoreHostAuthorityGuard? _storeHostAuthority;
     private readonly CheckoutCompletionBoundary _completionReadiness = new();
     private readonly Func<DateTimeOffset> _clock;
     private readonly Func<string?> _terminalIdentifierProvider;
@@ -50,6 +52,7 @@ public sealed class OfficialCheckoutCompletionBoundary : IOfficialCheckoutComple
         ICashierSessionService cashierSessionService,
         IOfficialCheckoutReadinessService readinessService,
         IOfficialCheckoutPersistenceBoundary officialPersistence,
+        SalrynStoreHostAuthorityGuard? storeHostAuthority = null,
         Func<DateTimeOffset>? clock = null,
         Func<string?>? terminalIdentifierProvider = null)
     {
@@ -57,6 +60,7 @@ public sealed class OfficialCheckoutCompletionBoundary : IOfficialCheckoutComple
         _cashierSessionService = cashierSessionService ?? throw new ArgumentNullException(nameof(cashierSessionService));
         _readinessService = readinessService ?? throw new ArgumentNullException(nameof(readinessService));
         _officialPersistence = officialPersistence ?? throw new ArgumentNullException(nameof(officialPersistence));
+        _storeHostAuthority = storeHostAuthority;
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
         _terminalIdentifierProvider = terminalIdentifierProvider ?? (() => Environment.MachineName);
     }
@@ -85,13 +89,15 @@ public sealed class OfficialCheckoutCompletionBoundary : IOfficialCheckoutComple
             : request with { SaleDate = stableSaleDate };
 
         // Kirch: why - official completion must share the trusted sale builder but must not persist through the standard sale path.
-        Result<CompleteCheckoutSaleRequest> trustedSaleResult =
+        Result<TrustedPosCheckoutSaleBuildResult> trustedSaleResult =
             await _trustedSaleBuilder.BuildAsync(stableRequest, cancellationToken).ConfigureAwait(false);
 
         if (trustedSaleResult.IsFailure)
         {
             return Result.Fail(trustedSaleResult.ErrorDetail);
         }
+
+        TrustedPosCheckoutSaleBuildResult trustedSale = trustedSaleResult.Value;
 
         // Kirch: why - official completion bypasses standard sale persistence, so it must enforce the same open shift gate here.
         Result sessionResult = await EnsureOpenCashierSessionAsync(stableRequest, cancellationToken).ConfigureAwait(false);
@@ -115,6 +121,23 @@ public sealed class OfficialCheckoutCompletionBoundary : IOfficialCheckoutComple
             return Result.Fail(readinessResult.ErrorDetail);
         }
 
+        if (_storeHostAuthority is not null)
+        {
+            Result journalAuthority = _storeHostAuthority.RequireJournalAuthority();
+
+            if (journalAuthority.IsFailure)
+            {
+                return journalAuthority;
+            }
+
+            Result sequenceAuthority = _storeHostAuthority.RequireOfficialSequenceAuthority();
+
+            if (sequenceAuthority.IsFailure)
+            {
+                return sequenceAuthority;
+            }
+        }
+
         OfficialCheckoutReadinessResult readiness = readinessResult.Value;
 
         if (!readiness.IsReady || readiness.MachineProfile is null)
@@ -124,13 +147,8 @@ public sealed class OfficialCheckoutCompletionBoundary : IOfficialCheckoutComple
                 BuildReadinessBlockedMessage(readiness)));
         }
 
-        IReadOnlyList<OfficialDocumentLineTaxClassification> lineTaxClassifications =
-            trustedSaleResult.Value.Items
-                .Select(_ => OfficialDocumentLineTaxClassification.Vatable)
-                .ToArray();
-
         OfficialCheckoutPersistenceBoundaryRequest persistenceRequest = new(
-            trustedSaleResult.Value,
+            trustedSale.Request,
             readiness.BirMachineProfileId,
             readiness.DocumentKind,
             readiness.SequenceScopeCode,
@@ -140,7 +158,7 @@ public sealed class OfficialCheckoutCompletionBoundary : IOfficialCheckoutComple
             TerminalIdentifier: _terminalIdentifierProvider(),
             TaxModeCode: SalrynOfficialTaxBucketPolicy.EngineTaxModeCode,
             TaxModeNotes: SalrynOfficialTaxBucketPolicy.EngineBoundaryNote,
-            LineTaxClassifications: lineTaxClassifications,
+            LineTaxClassifications: trustedSale.LineTaxClassifications,
             TaxpayerMode: OfficialDocumentTaxBucketDraftTaxpayerMode.VatRegistered);
 
         Result persistenceResult =

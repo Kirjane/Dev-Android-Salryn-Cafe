@@ -299,7 +299,8 @@ internal static class OfficialZReadingSmokeChecks
                 evidence_manifest_hash,
                 all_snapshot_hashes_match,
                 created_by_user_id,
-                terminal_id
+                terminal_id,
+                metadata_json
             FROM bir_z_readings
             WHERE id = $id;
             """;
@@ -327,6 +328,22 @@ internal static class OfficialZReadingSmokeChecks
         RequireEqual(reading.Summary.AllSnapshotHashesMatch ? 1 : 0, reader.GetInt32(12), "Persisted Z-reading hash flag must match result.");
         RequireEqual(CashierUserId.ToString("D"), ReadNullableString(reader, 13), "Persisted Z-reading user id must match request.");
         RequireEqual("POS-Z-READING", ReadNullableString(reader, 14), "Persisted Z-reading terminal id must match request.");
+
+        if (reading.Enrichment is not null)
+        {
+            string? metadataJson = ReadNullableString(reader, 15);
+            RequireTrue(!string.IsNullOrWhiteSpace(metadataJson), "Persisted Z-reading enrichment metadata must be present.");
+            RequireTrue(metadataJson!.Contains(OfficialZReadingEnrichmentPayload.SchemaV1, StringComparison.Ordinal), "Persisted Z-reading enrichment metadata must be versioned.");
+            Result<OfficialZReadingEnrichmentPayload?> deserialized =
+                OfficialZReadingEnrichmentSerializer.TryDeserialize(metadataJson);
+            if (deserialized.IsFailure || deserialized.Value is null)
+            {
+                throw new InvalidOperationException("Persisted Z-reading enrichment metadata must deserialize.");
+            }
+
+            RequireEqual(reading.Enrichment.Lifecycle.RefundCount, deserialized.Value.Lifecycle.RefundCount, "Persisted refund count must match result enrichment.");
+            RequireEqual(reading.Enrichment.AdjustedSummary.ActiveEntryCount, deserialized.Value.AdjustedSummary.ActiveEntryCount, "Persisted adjusted summary must match result enrichment.");
+        }
     }
 
     private static void SeedBaseDependencies(SqliteConnectionFactory factory)

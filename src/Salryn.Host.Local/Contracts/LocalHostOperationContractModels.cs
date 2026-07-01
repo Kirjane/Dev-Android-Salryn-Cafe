@@ -204,6 +204,7 @@ public sealed record LocalHostProductLookupResponse(
     long StockOnHandX1000,
     bool TrackStock,
     bool AllowDiscount,
+    int TaxClassification,
     bool IsActive);
 
 // Kirch: Local Host checkout request contract placeholder before real sale handler implementation.

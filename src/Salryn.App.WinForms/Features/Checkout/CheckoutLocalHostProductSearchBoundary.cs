@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Salryn.App.WinForms.Composition;
 using Salryn.Core.Common;
+using Salryn.Core.Models;
 using Salryn.Core.ReadModels;
 using Salryn.Core.ValueObjects;
 
@@ -85,6 +86,7 @@ public sealed class CheckoutLocalHostProductSearchBoundary : ICheckoutProductSea
             StockOnHand: stockOnHandResult.Value,
             TrackStock: product.TrackStock,
             AllowDiscount: product.AllowDiscount,
+            TaxClassification: product.TaxClassification,
             IsActive: product.IsActive);
 
         return Result<ProductLookupReadModel?>.Success(readModel);

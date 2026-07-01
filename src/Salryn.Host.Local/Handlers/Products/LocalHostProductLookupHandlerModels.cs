@@ -91,6 +91,7 @@ public sealed class LocalHostProductLookupHandler : IHostOperationHandler<LocalH
                 StockOnHandX1000: product.StockOnHand.ValueX1000,
                 TrackStock: product.TrackStock,
                 AllowDiscount: product.AllowDiscount,
+                TaxClassification: (int)product.TaxClassification,
                 IsActive: product.IsActive),
             Error: null);
     }

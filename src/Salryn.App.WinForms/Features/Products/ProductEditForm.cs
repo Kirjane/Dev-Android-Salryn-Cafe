@@ -1,4 +1,5 @@
 ﻿using Salryn.App.WinForms.Features.Mvp;
+using Salryn.Core.Models;
 
 namespace Salryn.App.WinForms.Features.Products;
 
@@ -26,6 +27,7 @@ public sealed class ProductEditForm : Form
     private TextBox _reorderLevelTextBox = null!;
     private CheckBox _trackStockCheckBox = null!;
     private CheckBox _allowDiscountCheckBox = null!;
+    private ComboBox _taxClassificationComboBox = null!;
     private TextBox _notesTextBox = null!;
     private Label _statusLabel = null!;
     private Button _saveButton = null!;
@@ -80,7 +82,7 @@ public sealed class ProductEditForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 17,
+            RowCount = 18,
             AutoScroll = true,
             BackColor = SalrynUi.Colors.Surface,
             Padding = new Padding(14)
@@ -89,9 +91,9 @@ public sealed class ProductEditForm : Form
         formPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190));
         formPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        for (int i = 0; i < 17; i++)
+        for (int i = 0; i < 18; i++)
         {
-            formPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, i is 3 or 16 ? 82 : 42));
+            formPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, i is 3 or 17 ? 82 : 42));
         }
 
         // Section title inside the card area
@@ -116,6 +118,7 @@ public sealed class ProductEditForm : Form
         _reorderLevelTextBox = BuildTextBox();
         _trackStockCheckBox = new CheckBox { Dock = DockStyle.Fill, Text = "Track stock for this product" };
         _allowDiscountCheckBox = new CheckBox { Dock = DockStyle.Fill, Text = "Allow discount for this product" };
+        _taxClassificationComboBox = BuildComboBox();
         _notesTextBox = BuildMultilineTextBox();
 
         AddRow(formPanel, 1, "SKU", _skuTextBox);
@@ -148,7 +151,8 @@ public sealed class ProductEditForm : Form
         AddRow(formPanel, 13, "Reorder Level", _reorderLevelTextBox);
         AddRow(formPanel, 14, "Stock Tracking", _trackStockCheckBox);
         AddRow(formPanel, 15, "Discount", _allowDiscountCheckBox);
-        AddRow(formPanel, 16, "Notes", _notesTextBox);
+        AddRow(formPanel, 16, "Tax Classification *", _taxClassificationComboBox);
+        AddRow(formPanel, 17, "Notes", _notesTextBox);
 
         root.Controls.Add(formPanel, 0, 1);
 
@@ -210,6 +214,8 @@ public sealed class ProductEditForm : Form
         BindComboBox(_categoryComboBox, state.Categories);
         BindComboBox(_brandComboBox, state.Brands);
         BindComboBox(_supplierComboBox, state.Suppliers);
+        BindTaxClassificationCombo(_taxClassificationComboBox);
+        SelectTaxClassification(_taxClassificationComboBox, state.TaxClassification);
 
         SelectOption(_unitComboBox, state.UnitId);
         SelectOption(_categoryComboBox, state.CategoryId);
@@ -252,6 +258,7 @@ public sealed class ProductEditForm : Form
             ReorderLevel: _reorderLevelTextBox.Text,
             TrackStock: _trackStockCheckBox.Checked,
             AllowDiscount: _allowDiscountCheckBox.Checked,
+            TaxClassification: SelectedTaxClassification(_taxClassificationComboBox),
             Notes: _notesTextBox.Text,
             CreatedAt: _createdAt);
 
@@ -364,6 +371,34 @@ public sealed class ProductEditForm : Form
         if (comboBox.Items.Count > 0)
         {
             comboBox.SelectedIndex = 0;
+        }
+    }
+
+    private static void BindTaxClassificationCombo(ComboBox comboBox)
+    {
+        comboBox.DataSource = ProductTaxClassificationMapper.GetDisplayOptions()
+            .Select(option => new ProductTaxClassificationOptionViewModel(option.Value, option.DisplayText))
+            .ToList();
+        comboBox.DisplayMember = nameof(ProductTaxClassificationOptionViewModel.DisplayText);
+        comboBox.SelectedIndex = 0;
+    }
+
+    private static ProductTaxClassification SelectedTaxClassification(ComboBox comboBox)
+    {
+        return comboBox.SelectedItem is ProductTaxClassificationOptionViewModel option
+            ? option.Value
+            : ProductTaxClassification.Vatable;
+    }
+
+    private static void SelectTaxClassification(ComboBox comboBox, ProductTaxClassification classification)
+    {
+        foreach (object item in comboBox.Items)
+        {
+            if (item is ProductTaxClassificationOptionViewModel option && option.Value == classification)
+            {
+                comboBox.SelectedItem = item;
+                return;
+            }
         }
     }
 }

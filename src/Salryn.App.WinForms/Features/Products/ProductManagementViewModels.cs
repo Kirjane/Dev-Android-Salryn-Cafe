@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Salryn.Core.Models;
 
 namespace Salryn.App.WinForms.Features.Products;
 
@@ -21,6 +22,7 @@ public sealed record ProductManagementRowViewModel(
     string StockOnHandText,
     string ReorderLevelText,
     string TrackStockText,
+    string TaxClassificationText,
     string StatusText);
 
 public sealed record ProductManagementViewModel(
@@ -64,6 +66,10 @@ public sealed record ProductCatalogOptionViewModel(
     Guid? Id,
     string DisplayText);
 
+public sealed record ProductTaxClassificationOptionViewModel(
+    ProductTaxClassification Value,
+    string DisplayText);
+
 public sealed record ProductCreateFormViewModel(
     IReadOnlyList<ProductCatalogOptionViewModel> Units,
     IReadOnlyList<ProductCatalogOptionViewModel> Categories,
@@ -91,6 +97,7 @@ public sealed record ProductCreateRequest(
     string? ReorderLevel,
     bool TrackStock,
     bool AllowDiscount,
+    ProductTaxClassification TaxClassification,
     string? Notes);
 
 public sealed record ProductCreateOperationResult(
@@ -117,6 +124,7 @@ public sealed record ProductEditFormViewModel(
     string ReorderLevel,
     bool TrackStock,
     bool AllowDiscount,
+    ProductTaxClassification TaxClassification,
     bool IsActive,
     string? Notes,
     DateTimeOffset CreatedAt,
@@ -147,6 +155,7 @@ public sealed record ProductEditRequest(
     string? ReorderLevel,
     bool TrackStock,
     bool AllowDiscount,
+    ProductTaxClassification TaxClassification,
     string? Notes,
     DateTimeOffset CreatedAt);
 

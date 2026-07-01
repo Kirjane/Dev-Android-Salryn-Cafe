@@ -31,6 +31,11 @@ public static class DefaultDatabaseInitializationFactory
         // Version 5 adds electronic journal DB hardening triggers without app behavior.
         // Version 6 adds Z-reading finalization records without rendering, printing, or mutating source evidence.
         // Version 7 lets CORRECTION remain an append-only journal event instead of a source-row rewrite.
+        // Version 8 adds persisted product tax classification for official checkout VAT bucket wiring.
+        // Version 9 adds LAN-M1 deployment identity and Salryn Store foundation.
+        // Version 10 adds LAN-M4 terminal registry and pairing preparation.
+        // Version 11 adds LAN-M5 controlled remote transport gate configuration.
+        // Version 12 adds LAN-M6 hash-only terminal credential and remote handshake state.
         IDatabaseMigration[] migrations =
         {
             new InitialSchemaMigration(),
@@ -39,7 +44,12 @@ public static class DefaultDatabaseInitializationFactory
             new BirElectronicJournalSchemaMigration(),
             new BirElectronicJournalSchemaHardeningMigration(),
             new BirZReadingSchemaMigration(),
-            new BirElectronicJournalCorrectionEventSchemaMigration()
+            new BirElectronicJournalCorrectionEventSchemaMigration(),
+            new ProductTaxClassificationSchemaMigration(),
+            new DeploymentIdentitySchemaMigration(),
+            new TerminalRegistrySchemaMigration(),
+            new LanRemoteTransportSchemaMigration(),
+            new TerminalCredentialHandshakeSchemaMigration()
         };
 
         MigrationRunner migrationRunner = new(connectionFactory, migrations);

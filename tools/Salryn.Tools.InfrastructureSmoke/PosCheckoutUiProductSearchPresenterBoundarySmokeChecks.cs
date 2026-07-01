@@ -1,5 +1,6 @@
 ﻿using Salryn.App.WinForms.Features.Checkout;
 using Salryn.Core.Common;
+using Salryn.Core.Models;
 using Salryn.Core.ReadModels;
 using Salryn.Core.ValueObjects;
 
@@ -153,6 +154,7 @@ internal static class PosCheckoutUiProductSearchPresenterBoundarySmokeChecks
             StockOnHand: QuantityX1000(stockX1000),
             TrackStock: trackStock,
             AllowDiscount: true,
+            TaxClassification: ProductTaxClassification.Vatable,
             IsActive: isActive);
     }
 

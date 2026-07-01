@@ -45,8 +45,11 @@ public sealed class DatabaseInitializationOrchestrator
                         IsDatabaseInitialized: false,
                         IsFirstRunRequired: true,
                         HasUsers: false,
-                        HasStoreSettings: false)));
+                        HasStoreSettings: false),
+                    PendingMigrationCount: ConfiguredMigrationCount));
         }
+
+        int pendingMigrationCount = _migrationRunner.GetPendingMigrationCount();
 
         Result<FirstRunStatus> firstRunStatusResult = _firstRunBootstrapper.CheckStatus();
 
@@ -61,7 +64,8 @@ public sealed class DatabaseInitializationOrchestrator
                 DatabaseFileExists: true,
                 ConfiguredMigrationCount: ConfiguredMigrationCount,
                 HasSeedDataFoundation: true,
-                FirstRunStatus: firstRunStatusResult.Value));
+                FirstRunStatus: firstRunStatusResult.Value,
+                PendingMigrationCount: pendingMigrationCount));
     }
 
     public Result<DatabaseInitializationSummary> InitializeDatabase()

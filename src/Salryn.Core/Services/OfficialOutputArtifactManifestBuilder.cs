@@ -196,6 +196,38 @@ public sealed class OfficialOutputArtifactManifestBuilder
                 metadata));
     }
 
+    public static Result<OfficialOutputArtifactManifestEntry> FromEngineeringEvidencePackage(
+        OfficialEngineeringEvidencePackageResult? result,
+        OfficialOutputArtifactManifestSource? source,
+        IReadOnlyDictionary<string, string>? metadata = null)
+    {
+        if (result is null || source is null)
+        {
+            return Result<OfficialOutputArtifactManifestEntry>.Fail(Error.Validation(
+                "OfficialOutputArtifactManifest.EngineeringEvidenceRequired",
+                "Official output artifact manifest requires an engineering evidence package."));
+        }
+
+        OfficialOutputArtifactManifestSource normalizedSource = FillSourceDefaults(
+            source,
+            reportKind: "EngineeringEvidence",
+            createdAt: null);
+
+        string contentHash = OfficialOutputExportPackageBuilder.ComputeContentHash(result.PackageText);
+
+        return Result<OfficialOutputArtifactManifestEntry>.Success(
+            new OfficialOutputArtifactManifestEntry(
+                OfficialOutputArtifactFamily.AuditEvidenceReport,
+                "OFFICIAL_ENGINEERING_EVIDENCE",
+                OfficialEngineeringEvidencePackageAssembler.BuildArtifactReference(contentHash),
+                contentHash,
+                HashAlgorithmName,
+                OfficialOutputExportPackageBuilder.CountLines(result.PackageText),
+                OfficialReportRenderFormat.Preview.ToString(),
+                normalizedSource,
+                metadata));
+    }
+
     internal static Result ValidateInput(
         IReadOnlyList<OfficialOutputArtifactManifestEntry>? entries,
         IReadOnlyDictionary<string, string>? metadata = null)

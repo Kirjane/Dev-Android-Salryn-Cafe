@@ -8,6 +8,7 @@
   </ItemGroup>
 
   <PropertyGroup>
+    <!-- PRELAN-HARDEN-4: Salryn verification is intentionally Windows-targeted; see 00-HANDOFF/PRELAN_HARDENING/VERIFICATION_TARGETS.md -->
     <TargetFramework>net10.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>

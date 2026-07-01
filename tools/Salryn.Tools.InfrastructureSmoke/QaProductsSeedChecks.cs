@@ -118,6 +118,7 @@ internal static class QaProductsSeedChecks
                     ReorderLevel: "5",
                     TrackStock: true,
                     AllowDiscount: true,
+                    TaxClassification: ProductTaxClassification.Vatable,
                     Notes: "QA product seed. Does not create users or passwords."))
                 .GetAwaiter()
                 .GetResult();

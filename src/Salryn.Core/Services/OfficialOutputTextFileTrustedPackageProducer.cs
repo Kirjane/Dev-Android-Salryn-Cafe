@@ -21,6 +21,7 @@ public interface IOfficialOutputTextFileTrustedPackageProducer
 public sealed class OfficialOutputTextFileTrustedPackageProducer : IOfficialOutputTextFileTrustedPackageProducer
 {
     private readonly IOfficialOutputSourceReadService _sourceReadService;
+    private readonly IOfficialEngineeringEvidencePackageAssembler _engineeringEvidenceAssembler;
     private readonly OfficialPrintableDocumentBuilder _printableDocumentBuilder;
     private readonly OfficialReportBindingBuilder _reportBindingBuilder;
     private readonly OfficialTextPreviewReportRenderer _textPreviewRenderer;
@@ -29,6 +30,7 @@ public sealed class OfficialOutputTextFileTrustedPackageProducer : IOfficialOutp
 
     public OfficialOutputTextFileTrustedPackageProducer(
         IOfficialOutputSourceReadService sourceReadService,
+        IOfficialEngineeringEvidencePackageAssembler? engineeringEvidenceAssembler = null,
         OfficialPrintableDocumentBuilder? printableDocumentBuilder = null,
         OfficialReportBindingBuilder? reportBindingBuilder = null,
         OfficialTextPreviewReportRenderer? textPreviewRenderer = null,
@@ -36,6 +38,8 @@ public sealed class OfficialOutputTextFileTrustedPackageProducer : IOfficialOutp
         OfficialOutputExportPackageBuilder? exportPackageBuilder = null)
     {
         _sourceReadService = sourceReadService ?? throw new ArgumentNullException(nameof(sourceReadService));
+        _engineeringEvidenceAssembler = engineeringEvidenceAssembler ??
+            new OfficialEngineeringEvidencePackageAssembler();
         _printableDocumentBuilder = printableDocumentBuilder ?? new OfficialPrintableDocumentBuilder();
         _reportBindingBuilder = reportBindingBuilder ?? new OfficialReportBindingBuilder();
         _textPreviewRenderer = textPreviewRenderer ?? new OfficialTextPreviewReportRenderer();
@@ -198,9 +202,40 @@ public sealed class OfficialOutputTextFileTrustedPackageProducer : IOfficialOutp
             return Result<OfficialOutputExportPackage>.Fail(payloadResult.ErrorDetail);
         }
 
+        Result<OfficialEngineeringEvidencePackageResult> engineeringResult =
+            await _engineeringEvidenceAssembler.AssembleAsync(source, cancellationToken)
+                .ConfigureAwait(false);
+
+        if (engineeringResult.IsFailure)
+        {
+            return Result<OfficialOutputExportPackage>.Fail(engineeringResult.ErrorDetail);
+        }
+
+        OfficialOutputArtifactManifestSource engineeringManifestSource =
+            BuildEngineeringManifestSource(source, engineeringResult.Value, requestedAt, terminalId);
+
+        Result<OfficialOutputArtifactManifestEntry> engineeringManifestEntryResult =
+            OfficialOutputArtifactManifestBuilder.FromEngineeringEvidencePackage(
+                engineeringResult.Value,
+                engineeringManifestSource,
+                BuildEngineeringEntryMetadata(engineeringResult.Value));
+
+        if (engineeringManifestEntryResult.IsFailure)
+        {
+            return Result<OfficialOutputExportPackage>.Fail(engineeringManifestEntryResult.ErrorDetail);
+        }
+
+        Result<OfficialOutputExportPayload> engineeringPayloadResult =
+            OfficialOutputExportPackageBuilder.FromEngineeringEvidencePackage(engineeringResult.Value);
+
+        if (engineeringPayloadResult.IsFailure)
+        {
+            return Result<OfficialOutputExportPackage>.Fail(engineeringPayloadResult.ErrorDetail);
+        }
+
         Result<OfficialOutputArtifactManifestPackage> manifestPackageResult =
             _manifestBuilder.Build(
-                new[] { manifestEntryResult.Value },
+                new[] { manifestEntryResult.Value, engineeringManifestEntryResult.Value },
                 requestedAt,
                 metadata);
 
@@ -211,7 +246,48 @@ public sealed class OfficialOutputTextFileTrustedPackageProducer : IOfficialOutp
 
         return _exportPackageBuilder.Build(
             manifestPackageResult.Value,
-            new[] { payloadResult.Value });
+            new[] { payloadResult.Value, engineeringPayloadResult.Value });
+    }
+
+    private static OfficialOutputArtifactManifestSource BuildEngineeringManifestSource(
+        OfficialOutputSourceResult source,
+        OfficialEngineeringEvidencePackageResult engineeringResult,
+        DateTimeOffset createdAt,
+        string? terminalId)
+    {
+        return new OfficialOutputArtifactManifestSource(
+            SourceKind: "OfficialEngineeringEvidencePackage",
+            SourceReference: "engineering:" + engineeringResult.PackageHash,
+            DocumentKind: source.Header.DocumentKind.ToString(),
+            OfficialDocumentNumber: source.Header.OfficialDocumentNumber,
+            ReportKind: "EngineeringEvidence",
+            ReportNumber: engineeringResult.PackageHash,
+            ReferenceNumber: source.Evidence.OriginalEventId.ToString("D"),
+            TerminalId: terminalId,
+            CashierIdentifier: source.Header.CashierIdentifier,
+            BusinessDate: DateOnly.FromDateTime(source.Header.TransactionTimestamp.Date),
+            PeriodStart: null,
+            PeriodEnd: null,
+            IsCopyOrReprint: false,
+            LifecycleState: source.Lifecycle.State.ToString(),
+            CreatedAt: createdAt,
+            Metadata: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["engineeringPackageHash"] = engineeringResult.PackageHash,
+                ["outputKind"] = "text-file-only",
+                ["snapshotPayloadHash"] = source.Evidence.SnapshotPayloadHash
+            });
+    }
+
+    private static IReadOnlyDictionary<string, string> BuildEngineeringEntryMetadata(
+        OfficialEngineeringEvidencePackageResult engineeringResult)
+    {
+        return new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["entry"] = OfficialOutputArtifactFamily.AuditEvidenceReport.ToString(),
+            ["artifactLabel"] = "OFFICIAL_ENGINEERING_EVIDENCE",
+            ["engineeringPackageHash"] = engineeringResult.PackageHash
+        };
     }
 
     private static OfficialOutputArtifactManifestSource BuildManifestSource(

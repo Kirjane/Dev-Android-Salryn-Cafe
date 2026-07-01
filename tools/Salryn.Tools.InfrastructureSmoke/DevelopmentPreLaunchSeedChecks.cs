@@ -148,6 +148,7 @@ internal static class DevelopmentPreLaunchSeedChecks
                     ReorderLevel: "5",
                     TrackStock: true,
                     AllowDiscount: true,
+                    TaxClassification: ProductTaxClassification.Vatable,
                     Notes: "J20-4C dev pre-launch seed product."))
                 .GetAwaiter()
                 .GetResult();

@@ -29,12 +29,17 @@ public sealed class OfficialOutputTextFileWorkflowForm : Form
 
     public OfficialOutputTextFileWorkflowForm(
         SalrynAppServices services,
-        CurrentAppSession? session)
+        CurrentAppSession? session,
+        string? windowTitle = null)
     {
         _services = services ?? throw new ArgumentNullException(nameof(services));
         _session = session;
 
         Text = "Official Output Text File";
+        if (!string.IsNullOrWhiteSpace(windowTitle))
+        {
+            Text = windowTitle;
+        }
         StartPosition = FormStartPosition.CenterParent;
         MinimumSize = new Size(1180, 720);
         Size = new Size(1280, 760);
@@ -341,9 +346,16 @@ public sealed class OfficialOutputTextFileWorkflowForm : Form
             return false;
         }
 
-        if (!_session.Can(SalrynPermissions.OfficialOutputRun))
+        bool canRunExportWorkflow =
+            OfficialOutputWorkflowPermissions.CanRunExportWorkflow(_session) &&
+            (_session.Can(SalrynPermissions.OfficialOutputRun) ||
+             _session.Can(SalrynPermissions.OfficialEvidenceExport));
+
+        if (!canRunExportWorkflow)
         {
-            SetStatus("Official output text-file workflow requires OfficialOutput.Run permission.", J20MvpUi.Colors.Danger);
+            SetStatus(
+                "Official output text-file workflow requires OfficialOutput.Run or OfficialEvidence.Export permission.",
+                J20MvpUi.Colors.Danger);
             return false;
         }
 

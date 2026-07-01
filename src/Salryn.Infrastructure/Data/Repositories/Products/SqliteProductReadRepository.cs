@@ -1,5 +1,6 @@
 ﻿using Microsoft.Data.Sqlite;
 using Salryn.Core.Common;
+using Salryn.Core.Models;
 using Salryn.Core.ReadModels;
 using Salryn.Core.Repositories;
 using Salryn.Core.ValueObjects;
@@ -255,6 +256,7 @@ public sealed class SqliteProductReadRepository :
                 p.stock_on_hand_x1000,
                 p.reorder_level_x1000,
                 p.track_stock,
+                p.tax_classification,
                 p.is_active
             FROM products p
             INNER JOIN units u ON u.id = p.unit_id
@@ -331,6 +333,7 @@ public sealed class SqliteProductReadRepository :
             reader.GetQuantityValue("reorder_level_x1000"),
             reader.GetBoolValue("track_stock"),
             reader.GetBoolValue("allow_discount"),
+            ReadTaxClassification(reader, "tax_classification"),
             reader.GetBoolValue("is_active"),
             reader.GetNullableString("notes"),
             reader.GetDateTimeOffsetValue("created_at"),
@@ -359,6 +362,7 @@ public sealed class SqliteProductReadRepository :
             reader.GetQuantityValue("stock_on_hand_x1000"),
             reader.GetBoolValue("track_stock"),
             reader.GetBoolValue("allow_discount"),
+            ReadTaxClassification(reader, "tax_classification"),
             reader.GetBoolValue("is_active"));
     }
 
@@ -377,7 +381,21 @@ public sealed class SqliteProductReadRepository :
             reader.GetQuantityValue("stock_on_hand_x1000"),
             reader.GetQuantityValue("reorder_level_x1000"),
             reader.GetBoolValue("track_stock"),
+            ReadTaxClassification(reader, "tax_classification"),
             reader.GetBoolValue("is_active"));
+    }
+
+    private static ProductTaxClassification ReadTaxClassification(SqliteDataReader reader, string columnName)
+    {
+        int storedValue = reader.GetInt32(reader.GetOrdinal(columnName));
+        Result<ProductTaxClassification> parsed = ProductTaxClassificationMapper.Parse(storedValue);
+
+        if (parsed.IsFailure)
+        {
+            throw new InvalidOperationException(parsed.Error);
+        }
+
+        return parsed.Value;
     }
 
     private const string ProductDetailSql = """
@@ -402,6 +420,7 @@ public sealed class SqliteProductReadRepository :
             p.reorder_level_x1000,
             p.track_stock,
             p.allow_discount,
+            p.tax_classification,
             p.is_active,
             p.notes,
             p.created_at,
@@ -424,6 +443,7 @@ public sealed class SqliteProductReadRepository :
             p.stock_on_hand_x1000,
             p.track_stock,
             p.allow_discount,
+            p.tax_classification,
             p.is_active
         FROM products p
         INNER JOIN units u ON u.id = p.unit_id

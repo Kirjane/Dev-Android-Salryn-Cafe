@@ -1,5 +1,6 @@
 ﻿using System.Threading;
 using System.Threading.Tasks;
+using Salryn.Core.Models;
 
 namespace Salryn.App.WinForms.Composition;
 
@@ -28,6 +29,7 @@ public sealed record AppLocalHostProductLookupProduct(
     long StockOnHandX1000,
     bool TrackStock,
     bool AllowDiscount,
+    ProductTaxClassification TaxClassification,
     bool IsActive);
 
 public sealed record AppLocalHostProductLookupResult(
@@ -48,6 +50,7 @@ public sealed record AppLocalHostProductLookupResult(
         long stockOnHandX1000,
         bool trackStock,
         bool allowDiscount,
+        ProductTaxClassification taxClassification,
         bool isActive)
     {
         return new AppLocalHostProductLookupResult(
@@ -64,6 +67,7 @@ public sealed record AppLocalHostProductLookupResult(
                 stockOnHandX1000,
                 trackStock,
                 allowDiscount,
+                taxClassification,
                 isActive),
             FailureCode: null,
             FailureMessage: null);

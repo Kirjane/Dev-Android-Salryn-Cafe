@@ -6,9 +6,13 @@ using Salryn.Core.ValueObjects;
 
 namespace Salryn.Core.Services;
 
+public sealed record TrustedPosCheckoutSaleBuildResult(
+    CompleteCheckoutSaleRequest Request,
+    IReadOnlyList<OfficialDocumentLineTaxClassification> LineTaxClassifications);
+
 public interface ITrustedPosCheckoutSaleBuilder
 {
-    Task<Result<CompleteCheckoutSaleRequest>> BuildAsync(
+    Task<Result<TrustedPosCheckoutSaleBuildResult>> BuildAsync(
         PosCheckoutApplicationRequest request,
         CancellationToken cancellationToken = default);
 }
@@ -26,7 +30,7 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
         _productReadRepository = productReadRepository ?? throw new ArgumentNullException(nameof(productReadRepository));
     }
 
-    public async Task<Result<CompleteCheckoutSaleRequest>> BuildAsync(
+    public async Task<Result<TrustedPosCheckoutSaleBuildResult>> BuildAsync(
         PosCheckoutApplicationRequest request,
         CancellationToken cancellationToken = default)
     {
@@ -36,7 +40,7 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
 
         if (validation.IsFailure)
         {
-            return Result<CompleteCheckoutSaleRequest>.Fail(validation.ErrorDetail);
+            return Result<TrustedPosCheckoutSaleBuildResult>.Fail(validation.ErrorDetail);
         }
 
         try
@@ -47,6 +51,7 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
 
             List<SaleItem> items = new();
             List<StockMovement> stockMovements = new();
+            List<OfficialDocumentLineTaxClassification> lineTaxClassifications = new();
 
             long subtotalCents = 0;
 
@@ -57,7 +62,7 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
 
                 if (snapshotResult.IsFailure)
                 {
-                    return Result<CompleteCheckoutSaleRequest>.Fail(snapshotResult.ErrorDetail);
+                    return Result<TrustedPosCheckoutSaleBuildResult>.Fail(snapshotResult.ErrorDetail);
                 }
 
                 ResolvedCheckoutLineSnapshot snapshot = snapshotResult.Value;
@@ -65,7 +70,7 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
 
                 if (quantityResult.IsFailure)
                 {
-                    return Result<CompleteCheckoutSaleRequest>.Fail(Error.Validation(
+                    return Result<TrustedPosCheckoutSaleBuildResult>.Fail(Error.Validation(
                         "CheckoutBoundary.InvalidQuantity",
                         "Checkout line quantity is invalid."));
                 }
@@ -81,7 +86,7 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
 
                 if (line.DiscountCents > grossLineTotalCents)
                 {
-                    return Result<CompleteCheckoutSaleRequest>.Fail(Error.Validation(
+                    return Result<TrustedPosCheckoutSaleBuildResult>.Fail(Error.Validation(
                         "CheckoutBoundary.LineDiscountExceedsGross",
                         "Checkout line discount cannot exceed line gross amount."));
                 }
@@ -107,6 +112,7 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
                 };
 
                 items.Add(item);
+                lineTaxClassifications.Add(snapshot.TaxClassification);
 
                 if (snapshot.TrackStock)
                 {
@@ -147,14 +153,14 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
 
             if (totalCents < 0)
             {
-                return Result<CompleteCheckoutSaleRequest>.Fail(Error.Validation(
+                return Result<TrustedPosCheckoutSaleBuildResult>.Fail(Error.Validation(
                     "CheckoutBoundary.TotalCannotBeNegative",
                     "Checkout total cannot be negative."));
             }
 
             if (amountPaidCents < totalCents)
             {
-                return Result<CompleteCheckoutSaleRequest>.Fail(Error.Validation(
+                return Result<TrustedPosCheckoutSaleBuildResult>.Fail(Error.Validation(
                     "CheckoutBoundary.InsufficientPayment",
                     "Checkout payment cannot be less than the sale total."));
             }
@@ -184,16 +190,18 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
                 CreatedAt = now
             };
 
-            return Result<CompleteCheckoutSaleRequest>.Success(
-                new CompleteCheckoutSaleRequest(
-                    sale,
-                    items,
-                    payments,
-                    stockMovements));
+            return Result<TrustedPosCheckoutSaleBuildResult>.Success(
+                new TrustedPosCheckoutSaleBuildResult(
+                    new CompleteCheckoutSaleRequest(
+                        sale,
+                        items,
+                        payments,
+                        stockMovements),
+                    lineTaxClassifications));
         }
         catch (OverflowException)
         {
-            return Result<CompleteCheckoutSaleRequest>.Fail(Error.Validation(
+            return Result<TrustedPosCheckoutSaleBuildResult>.Fail(Error.Validation(
                 "CheckoutBoundary.AmountOverflow",
                 "Checkout amount calculation is too large."));
         }
@@ -316,7 +324,8 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
                 product.UnitName,
                 product.SellingPrice.Cents,
                 product.CostPrice?.Cents,
-                product.TrackStock));
+                product.TrackStock,
+                ProductTaxClassificationMapper.ToOfficialLineClassification(product.TaxClassification)));
     }
 
     private static Result ValidateLine(PosCheckoutLineInput line)
@@ -413,7 +422,8 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
         string UnitNameSnapshot,
         long UnitPriceCents,
         long? CostPriceCents,
-        bool TrackStock)
+        bool TrackStock,
+        OfficialDocumentLineTaxClassification TaxClassification)
     {
         public static ResolvedCheckoutLineSnapshot FromInput(PosCheckoutLineInput line)
         {
@@ -424,7 +434,8 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
                 line.UnitNameSnapshot,
                 line.UnitPriceCents,
                 line.CostPriceCents,
-                line.TrackStock);
+                line.TrackStock,
+                ProductTaxClassificationMapper.ToOfficialLineClassification(line.TaxClassification));
         }
     }
 }

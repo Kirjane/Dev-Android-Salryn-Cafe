@@ -52,7 +52,7 @@ internal static class RepositorySmokeChecks
             orchestrator.CheckStatus(),
             "RepositorySmoke.CheckStatus");
 
-        if (!status.FirstRunStatus.IsDatabaseInitialized)
+        if (!status.FirstRunStatus.IsDatabaseInitialized || status.RequiresDatabaseUpgrade)
         {
             DatabaseInitializationSummary summary = RequireSuccess(
                 orchestrator.InitializeDatabase(),

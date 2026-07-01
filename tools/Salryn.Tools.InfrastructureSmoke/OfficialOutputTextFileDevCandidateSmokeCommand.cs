@@ -138,7 +138,7 @@ internal static class OfficialOutputTextFileDevCandidateSmokeCommand
 
         return RequireSuccess(
             builder.BuildAsync(request).GetAwaiter().GetResult(),
-            "DevCandidate.BuildTrustedCheckoutSale");
+            "DevCandidate.BuildTrustedCheckoutSale").Request;
     }
 
     private static UserReadModel ResolveCashier(IUserReadRepository userReadRepository)

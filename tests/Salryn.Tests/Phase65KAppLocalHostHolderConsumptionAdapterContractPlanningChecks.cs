@@ -19,13 +19,13 @@ public static class Phase65KAppLocalHostHolderConsumptionAdapterContractPlanning
         RequireContains(appServicesText, "public SalrynLocalHostCompositionHolder LocalHostProductLookupCompositionHolder { get; }", "65H holder property must remain available at the composition root.");
         RequireContains(appServicesText, "LocalHostProductLookupCompositionHolder =", "65H holder assignment must remain.");
         RequireContains(appServicesText, "CreateLocalHostProductLookupCompositionHolder(localHostProfile);", "65H holder creation must remain guarded.");
-        RequireContains(appServicesText, "CreateStandaloneLocalHostProfile());", "65H standalone startup profile injection must remain.");
+        RequireContains(appServicesText, "CreateStandaloneLocalHostProfile(),", "65H standalone startup profile injection must remain.");
         RequireContains(appServicesText, "Endpoint: null", "Startup profile must still have no endpoint wiring.");
         RequireContains(appServicesText, "new TerminalIdentity(", "Startup profile must still have no terminal wiring.");
 
         RequireExactlyOne(appServicesText, "public SalrynLocalHostCompositionHolder LocalHostProductLookupCompositionHolder { get; }", "65H holder property");
         RequireExactlyOne(appServicesText, "LocalHostProductLookupCompositionHolder =", "65H holder assignment");
-        RequireExactlyOne(appServicesText, "CreateStandaloneLocalHostProfile());", "65H standalone profile call");
+        RequireExactlyOne(appServicesText, "CreateStandaloneLocalHostProfile(),", "65H standalone profile call");
 
         RequireContains(holderText, "public sealed class SalrynLocalHostCompositionHolder", "Holder must remain sealed.");
         RequireContains(holderText, "if (!LocalHostBootstrapCompositionRules.IsCompositionValid(composition))", "Holder must remain validating.");

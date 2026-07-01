@@ -153,6 +153,29 @@ public sealed class OfficialOutputExportPackageBuilder
                 result.TextResult.Text));
     }
 
+    public static Result<OfficialOutputExportPayload> FromEngineeringEvidencePackage(
+        OfficialEngineeringEvidencePackageResult? result)
+    {
+        if (result is null)
+        {
+            return Result<OfficialOutputExportPayload>.Fail(Error.Validation(
+                "OfficialOutputExportPackage.EngineeringEvidenceRequired",
+                "Official output export package requires an engineering evidence payload."));
+        }
+
+        string contentHash = OfficialOutputExportPackageBuilder.ComputeContentHash(result.PackageText);
+
+        return Result<OfficialOutputExportPayload>.Success(
+            new OfficialOutputExportPayload(
+                OfficialOutputArtifactFamily.AuditEvidenceReport,
+                "OFFICIAL_ENGINEERING_EVIDENCE",
+                OfficialEngineeringEvidencePackageAssembler.BuildArtifactReference(contentHash),
+                contentHash,
+                HashAlgorithmName,
+                OfficialOutputExportPackageBuilder.CountLines(result.PackageText),
+                result.PackageText));
+    }
+
     internal static Result Validate(
         OfficialOutputArtifactManifestPackage? manifestPackage,
         IReadOnlyList<OfficialOutputExportPayload>? payloads)

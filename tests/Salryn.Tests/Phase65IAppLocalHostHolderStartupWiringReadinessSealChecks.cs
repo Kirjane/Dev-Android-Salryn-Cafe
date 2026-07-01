@@ -17,7 +17,7 @@ public static class Phase65IAppLocalHostHolderStartupWiringReadinessSealChecks
         string phase65IText = ReadRequiredFile(repoRoot, "00-HANDOFF", "PHASE_65I_APP_LOCAL_HOST_HOLDER_STARTUP_WIRING_READINESS_SEAL.md");
         string coreSmokeText = ReadRequiredFile(repoRoot, "tools", "Salryn.Tools.CoreSmoke", "Program.cs");
 
-        RequireContains(appServicesText, "StoreDeploymentProfile localHostProfile)", "65H constructor profile parameter must remain.");
+        RequireContains(appServicesText, "StoreDeploymentProfile localHostProfile,", "65H constructor profile parameter must remain.");
         RequireContains(appServicesText, "LocalHostProductLookupCompositionHolder =", "65H holder assignment must remain.");
         RequireContains(appServicesText, "CreateLocalHostProductLookupCompositionHolder(localHostProfile);", "65H holder assignment must use guarded holder factory.");
         RequireContains(appServicesText, "public SalrynLocalHostCompositionHolder LocalHostProductLookupCompositionHolder { get; }", "65H holder property must remain.");
@@ -30,12 +30,12 @@ public static class Phase65IAppLocalHostHolderStartupWiringReadinessSealChecks
         RequireContains(appServicesText, "SalrynDeploymentMode.Standalone", "Startup profile must remain standalone mode.");
         RequireContains(appServicesText, "Endpoint: null", "Startup profile must not introduce endpoint wiring.");
         RequireContains(appServicesText, "new TerminalIdentity(", "Startup profile must not introduce terminal wiring.");
-        RequireContains(appServicesText, "CreateStandaloneLocalHostProfile());", "AppServices factory must keep startup profile injection.");
+        RequireContains(appServicesText, "CreateStandaloneLocalHostProfile(),", "AppServices factory must keep startup profile injection.");
 
         RequireExactlyOne(appServicesText, "public SalrynLocalHostCompositionHolder LocalHostProductLookupCompositionHolder { get; }", "65H holder property");
         RequireExactlyOne(appServicesText, "LocalHostProductLookupCompositionHolder =", "65H holder assignment");
         RequireExactlyOne(appServicesText, "private static StoreDeploymentProfile CreateStandaloneLocalHostProfile()", "65H standalone profile factory");
-        RequireExactlyOne(appServicesText, "CreateStandaloneLocalHostProfile());", "65H standalone profile factory call");
+        RequireExactlyOne(appServicesText, "CreateStandaloneLocalHostProfile(),", "65H standalone profile factory call");
 
         RequireNotContains(appServicesText, "Guid.NewGuid", "Startup wiring must not generate random identities.");
         RequireNoRuntimeStartDispatchOrTransport(appServicesText, "SalrynAppServices");

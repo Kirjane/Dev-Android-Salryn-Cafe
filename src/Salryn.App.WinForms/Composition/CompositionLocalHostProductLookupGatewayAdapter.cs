@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Salryn.Core.Common;
 using Salryn.Core.Contracts;
+using Salryn.Core.Models;
 using Salryn.Host.Local.Contracts;
 
 namespace Salryn.App.WinForms.Composition;
@@ -162,6 +163,7 @@ public sealed class CompositionLocalHostProductLookupGatewayAdapter : IAppLocalH
                 stockOnHandX1000: response.Payload.StockOnHandX1000,
                 trackStock: response.Payload.TrackStock,
                 allowDiscount: response.Payload.AllowDiscount,
+                taxClassification: ParseTaxClassification(response.Payload.TaxClassification),
                 isActive: response.Payload.IsActive);
         }
 
@@ -172,5 +174,17 @@ public sealed class CompositionLocalHostProductLookupGatewayAdapter : IAppLocalH
 
         return AppLocalHostProductLookupResult.LocalHostUnavailable(
             response.Error?.Message ?? "Local Host ProductLookup dispatch did not return a product.");
+    }
+
+    private static ProductTaxClassification ParseTaxClassification(int storedValue)
+    {
+        Result<ProductTaxClassification> parsed = ProductTaxClassificationMapper.Parse(storedValue);
+
+        if (parsed.IsFailure)
+        {
+            throw new InvalidOperationException(parsed.Error);
+        }
+
+        return parsed.Value;
     }
 }

@@ -12,6 +12,7 @@ public sealed record PosCheckoutDraftLineInput(
     long UnitPriceCents,
     long? CostPriceCents,
     bool TrackStock,
+    ProductTaxClassification TaxClassification = ProductTaxClassification.Vatable,
     long DiscountCents = 0);
 
 public sealed record PosCheckoutDraftLine(
@@ -25,6 +26,7 @@ public sealed record PosCheckoutDraftLine(
     long? CostPriceCents,
     long DiscountCents,
     bool TrackStock,
+    ProductTaxClassification TaxClassification,
     long GrossCents,
     long LineTotalCents);
 
@@ -142,6 +144,7 @@ public sealed class PosCheckoutDraftTransactionBuilder
                 input.CostPriceCents,
                 input.DiscountCents,
                 input.TrackStock,
+                input.TaxClassification,
                 grossCents,
                 checked(grossCents - input.DiscountCents));
 
@@ -412,7 +415,8 @@ public sealed class PosCheckoutDraftTransactionBuilder
                     line.UnitPriceCents,
                     line.CostPriceCents,
                     line.DiscountCents,
-                    line.TrackStock)).ToArray(),
+                    line.TrackStock,
+                    line.TaxClassification)).ToArray(),
                 _payments.Select(payment => new PosCheckoutPaymentInput(
                     payment.Method,
                     payment.AmountCents)).ToArray(),

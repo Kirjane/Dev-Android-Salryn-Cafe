@@ -58,6 +58,8 @@ public static class J22OfficialOutputTextFileTrustedPackageProducerChecks
         RequireContains(producer, "OfficialOutputExportPackageBuilder", "RMO-M1-A producer must build the export package.");
         RequireContains(producer, "OfficialOutputArtifactManifestBuilder.FromReceiptInvoicePreview", "RMO-M1-A producer must manifest receipt/invoice preview artifacts.");
         RequireContains(producer, "OfficialOutputExportPackageBuilder.FromReceiptInvoicePreview", "RMO-M1-A producer must package receipt/invoice preview payloads.");
+        RequireContains(producer, "OfficialEngineeringEvidencePackageAssembler", "PRELAN-HARDEN-2 producer must assemble engineering evidence.");
+        RequireContains(producer, "FromEngineeringEvidencePackage", "PRELAN-HARDEN-2 producer must manifest engineering evidence artifacts.");
         RequireContains(producer, "OfficialOutputTextFileTrustedPackageProducer.SourceUnavailable", "RMO-M1-A producer must fail safely when official source is unavailable.");
         RequireContains(producer, "OfficialOutputSourceRead", "RMO-M1-A producer metadata must identify the official output source.");
 
@@ -82,7 +84,9 @@ public static class J22OfficialOutputTextFileTrustedPackageProducerChecks
         RequireDoesNotContain(uiBoundary, "request?.ExportPackage", "RMO-M1-A UI shell must not accept package data from UI state.");
 
         RequireContains(appServices, "public IOfficialOutputTextFileTrustedPackageProducer OfficialOutputTextFileTrustedPackageProducer { get; }", "RMO-M1-A AppServices must expose the trusted package producer.");
-        RequireContains(appServices, "new OfficialOutputTextFileTrustedPackageProducer(OfficialOutputSourceRead)", "RMO-M1-A AppServices must wire producer to official output source.");
+        RequireContains(appServices, "new OfficialOutputTextFileTrustedPackageProducer(", "RMO-M1-A AppServices must wire trusted package producer.");
+        RequireContains(appServices, "OfficialEngineeringEvidencePackageAssembler", "PRELAN-HARDEN-2 AppServices must wire engineering evidence assembler.");
+        RequireContains(appServices, "OfficialOutputSourceRead", "RMO-M1-A AppServices must wire producer to official output source.");
         RequireContains(appServices, "trustedPackageProducer: OfficialOutputTextFileTrustedPackageProducer", "RMO-M1-A package supply must be connected to the producer.");
 
         RequireDoesNotContain(checkoutPresenter, "OfficialOutputTextFileTrustedPackageProducer", "RMO-M1-A must not wire package production into checkout presenter.");
@@ -140,10 +144,14 @@ public static class J22OfficialOutputTextFileTrustedPackageProducerChecks
         OfficialOutputExportPackage second = RequireValue(secondResult);
 
         RequireEqual(OfficialOutputExportPackageKind.PreviewTextBundle, first.PackageKind, "RMO-M1-A package kind must remain the preview text bundle.");
-        RequireEqual(1, first.EntryCount, "RMO-M1-A package must contain the receipt/invoice manifest entry.");
-        RequireEqual(1, first.PayloadCount, "RMO-M1-A package must contain the receipt/invoice payload.");
-        RequireEqual(1, first.Items.Count, "RMO-M1-A package items must contain one receipt/invoice item.");
-        RequireEqual(OfficialOutputArtifactFamily.ReceiptInvoice, first.Items[0].Payload.ArtifactFamily, "RMO-M1-A package must use receipt/invoice artifact family.");
+        RequireEqual(2, first.EntryCount, "RMO-M1-A package must contain receipt/invoice and engineering evidence manifest entries.");
+        RequireEqual(2, first.PayloadCount, "RMO-M1-A package must contain receipt/invoice and engineering evidence payloads.");
+        RequireEqual(2, first.Items.Count, "RMO-M1-A package items must contain receipt/invoice and engineering evidence items.");
+        RequireEqual(OfficialOutputArtifactFamily.ReceiptInvoice, first.Items[0].Payload.ArtifactFamily, "RMO-M1-A package must keep receipt/invoice artifact family first.");
+        RequireEqual(OfficialOutputArtifactFamily.AuditEvidenceReport, first.Items[1].Payload.ArtifactFamily, "PRELAN-HARDEN-2 package must include engineering evidence artifact family.");
+        RequireContains(first.Items[1].Payload.Text, "NON_CERTIFICATION_FOOTER", "PRELAN-HARDEN-2 engineering evidence must include non-certification footer.");
+        RequireContains(first.Items[1].Payload.Text, "SALRYN_ENGINEERING_EVIDENCE_PACKAGE_V1", "PRELAN-HARDEN-2 engineering evidence package marker must be present.");
+        RequireContains(first.ManifestPackage.TextResult.Text, first.Items[1].Payload.ContentHash, "PRELAN-HARDEN-2 manifest must include engineering evidence artifact hash.");
         RequireStartsWith(first.PackageReference, "salryn://official-output-export-package/", "RMO-M1-A package reference must use the official export package prefix.");
         RequireEqual("salryn://official-output-export-package/" + first.PackageHash, first.PackageReference, "RMO-M1-A package reference must be hash-addressed.");
         RequireEqual(first.PackageHash, second.PackageHash, "RMO-M1-A package hash must be deterministic for the same trusted source.");

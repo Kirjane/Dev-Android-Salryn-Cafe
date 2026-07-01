@@ -40,7 +40,8 @@ public static class J21Rmo242023OfficialZReadingFoundationChecks
         RequireContains(sqliteText, "OfficialZReading.OverlappingRange", "SQLite Z-reading persistence must reject overlapping finalized ranges.");
         RequireContains(sqliteText, "RangesOverlapHalfOpen", "SQLite Z-reading persistence must use half-open overlap semantics.");
         RequireContains(sqliteText, "existingStart.UtcDateTime < newEnd.UtcDateTime", "Half-open overlap must allow adjacent range boundaries.");
-        RequireContains(sqliteText, "InsertZReading", "SQLite Z-reading persistence must insert only the final Z-reading proof.");
+        RequireContains(sqliteText, "metadata_json", "SQLite Z-reading persistence must persist enriched metadata.");
+        RequireContains(sqliteText, "OfficialZReadingEnrichmentSerializer", "SQLite Z-reading persistence must serialize enrichment payload.");
         RequireContains(sqliteText, "original journal evidence remains append-only", "SQLite Z-reading persistence must document append-only source evidence.");
         RequireNotContains(sqliteText, "receipt_snapshot", "SQLite Z-reading persistence must not read sales.receipt_snapshot.");
         RequireNotContains(sqliteText, "LocalHostCompleteSale", "SQLite Z-reading persistence must not wire Local Host complete-sale.");
@@ -91,6 +92,9 @@ public static class J21Rmo242023OfficialZReadingFoundationChecks
         RequireEqual("OR-2026-000002", result.Value.Summary.LastOfficialDocumentNumber, "Z-reading must preserve last official document number.");
         RequireEqual(3070L, result.Value.Summary.TotalSalesCents, "Z-reading must preserve evidence-derived totals.");
         RequireEqual("manifest-hash-2", result.Value.Summary.EvidenceManifestHash, "Z-reading must preserve the evidence manifest hash.");
+        RequireTrue(persistence.LastRequest?.Enrichment is not null, "Z-reading must persist enriched lifecycle/VAT payload.");
+        RequireEqual(OfficialZReadingEnrichmentPayload.SchemaV1, persistence.LastRequest!.Enrichment!.Schema, "Z-reading enrichment schema must be versioned.");
+        RequireEqual(2, persistence.LastRequest.Enrichment.AdjustedSummary.ActiveEntryCount, "Z-reading must persist adjusted summary from X-reading.");
         RequireEqual(CashierUserId, persistence.LastRequest?.Summary.CreatedByUserId, "Z-reading must persist the requested user id when supplied.");
         RequireEqual("POS-Z-READING", persistence.LastRequest?.Summary.TerminalId, "Z-reading must persist the requested terminal id when supplied.");
 
@@ -228,9 +232,12 @@ public static class J21Rmo242023OfficialZReadingFoundationChecks
             documentRange,
             payments,
             taxModes,
-            OfficialXReadingEnrichment.EmptyLifecycle,
-            Array.Empty<OfficialXReadingVatBucketSummary>(),
-            OfficialXReadingEnrichment.EmptyAdjusted);
+            new OfficialXReadingLifecycleSummary(1, 2, 3, 4, 5),
+            new[]
+            {
+                new OfficialXReadingVatBucketSummary("Vatable", 2500, 300, 2)
+            },
+            new OfficialXReadingAdjustedSummary(2, 3150, 3000, 150, 120, 3070));
     }
 
     private static DirectoryInfo FindRepositoryRoot()

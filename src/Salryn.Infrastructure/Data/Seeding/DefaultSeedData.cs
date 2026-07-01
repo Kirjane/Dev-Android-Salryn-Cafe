@@ -31,6 +31,11 @@ public static class DefaultSeedData
         public const string AuditView = "Audit.View";
         public const string ImportExportProducts = "ImportExport.Products";
         public const string ShiftOpenClose = "Shift.OpenClose";
+        public const string StoreDeploymentManage = "StoreDeployment.Manage";
+        public const string StoreTerminalView = "StoreTerminal.View";
+        public const string StoreTerminalManage = "StoreTerminal.Manage";
+        public const string StoreTerminalPairingIssue = "StoreTerminal.PairingIssue";
+        public const string StoreTerminalPairingRevoke = "StoreTerminal.PairingRevoke";
     }
 
     public static IReadOnlyList<SeedRole> Roles { get; } = new SeedRole[]
@@ -64,7 +69,12 @@ public static class DefaultSeedData
         Permissions.BackupManage,
         Permissions.AuditView,
         Permissions.ImportExportProducts,
-        Permissions.ShiftOpenClose
+        Permissions.ShiftOpenClose,
+        Permissions.StoreDeploymentManage,
+        Permissions.StoreTerminalView,
+        Permissions.StoreTerminalManage,
+        Permissions.StoreTerminalPairingIssue,
+        Permissions.StoreTerminalPairingRevoke
     };
 
     public static IReadOnlyList<string> ManagerPermissions { get; } = new string[]
@@ -80,7 +90,8 @@ public static class DefaultSeedData
         Permissions.OfficialReadingView,
         Permissions.OfficialEvidenceExport,
         Permissions.ImportExportProducts,
-        Permissions.ShiftOpenClose
+        Permissions.ShiftOpenClose,
+        Permissions.StoreTerminalView
     };
 
     public static IReadOnlyList<string> CashierPermissions { get; } = new string[]

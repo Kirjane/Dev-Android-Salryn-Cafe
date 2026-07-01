@@ -33,13 +33,14 @@ public static class RmoA5OfficialOutputPermissionChecks
         RequireContains(shellPresenter, "ShellModuleKeys.Reports", "Dashboard shell route must remain present.");
         RequireContains(shellPresenter, "Can(SalrynPermissions.ReportsView)", "Dashboard shell route must continue to use Reports.View.");
 
-        RequireContains(form, "_session.Can(SalrynPermissions.OfficialOutputRun)", "Form run-entry path must require OfficialOutput.Run.");
-        RequireContains(form, "Official output text-file workflow requires OfficialOutput.Run permission.", "Form must block missing OfficialOutput.Run.");
+        RequireContains(form, "OfficialOutputWorkflowPermissions.CanRunExportWorkflow", "Form run-entry path must require export workflow permission.");
+        RequireContains(form, "OfficialOutput.Run or OfficialEvidence.Export", "Form must describe export workflow permission requirement.");
         RequireContains(form, "CallerPermissions: _session.Permissions", "Form must pass caller permissions to the workflow UI boundary.");
 
         RequireContains(boundary, "CallerPermissions", "Workflow UI trigger request must carry caller permissions.");
         RequireContains(boundary, "ValidateCallerPermission", "Workflow UI boundary must validate caller permission.");
-        RequireContains(boundary, "SalrynPermissions.OfficialOutputRun", "Workflow UI boundary must check OfficialOutput.Run.");
+        RequireContains(boundary, "OfficialOutputWorkflowPermissions.CallerCanRunExportWorkflow", "Workflow UI boundary must check export workflow permissions.");
+        RequireContains(boundary, "OfficialOutput.Run or OfficialEvidence.Export", "Workflow UI boundary must describe export workflow permissions.");
         RequireContains(boundary, "Error.Forbidden", "Workflow UI boundary must return forbidden semantics for missing permission.");
         RequireContains(boundary, "OfficialOutputTextFileWorkflowUi.PermissionRequired", "Workflow UI boundary must use dedicated permission error code.");
         RequireNotContains(boundary, "reprint", "Permission boundary must not introduce reprint wording.");

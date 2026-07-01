@@ -14,6 +14,10 @@ public static class ShellModuleKeys
     public const string SalesHistory = "SALES_HISTORY";
     public const string Reports = "REPORTS";
     public const string OfficialOutputTextFile = "OFFICIAL_OUTPUT_TEXT_FILE";
+    public const string OfficialDocuments = "OFFICIAL_DOCUMENTS";
+    public const string OfficialReadings = "OFFICIAL_READINGS";
+    public const string OfficialEvidenceExport = "OFFICIAL_EVIDENCE_EXPORT";
+    public const string SalrynStore = "SALRYN_STORE";
     public const string Settings = "SETTINGS";
     public const string Users = "USERS";
     public const string Backup = "BACKUP";
@@ -126,6 +130,41 @@ public sealed class ShellPresenter
                 "Requires OfficialOutput.Run permission."),
 
             Module(
+                ShellModuleKeys.OfficialDocuments,
+                "Official Documents",
+                "Review official document lifecycle state and record controlled audit events.",
+                CanAny(
+                    SalrynPermissions.OfficialDocumentReprint,
+                    SalrynPermissions.OfficialDocumentVoid,
+                    SalrynPermissions.OfficialDocumentCancel,
+                    SalrynPermissions.OfficialDocumentCorrection,
+                    SalrynPermissions.OfficialDocumentRefund),
+                "Requires an official document lifecycle permission."),
+
+            Module(
+                ShellModuleKeys.OfficialReadings,
+                "Official Readings",
+                "Preview X-reading totals and finalize Z-reading with enriched persistence.",
+                Can(SalrynPermissions.OfficialReadingView) ||
+                Can(SalrynPermissions.OfficialReadingFinalize),
+                "Requires OfficialReading.View or OfficialReading.Finalize permission."),
+
+            Module(
+                ShellModuleKeys.OfficialEvidenceExport,
+                "Official Evidence Export",
+                "Run the trusted official engineering evidence text-file export workflow.",
+                Can(SalrynPermissions.OfficialEvidenceExport) ||
+                Can(SalrynPermissions.OfficialOutputRun),
+                "Requires OfficialEvidence.Export or OfficialOutput.Run permission."),
+
+            Module(
+                ShellModuleKeys.SalrynStore,
+                "Salryn Store",
+                "Manage deployment role, store identity, and future LAN readiness.",
+                Can(SalrynPermissions.StoreDeploymentManage),
+                "Requires StoreDeployment.Manage permission."),
+
+            Module(
                 ShellModuleKeys.Settings,
                 "Settings",
                 "Store settings, receipt settings, and system configuration.",
@@ -165,6 +204,10 @@ public sealed class ShellPresenter
             Module(ShellModuleKeys.SalesHistory, "Sales History", "Receipt lookup, transaction history, and sale review.", false, reason),
             Module(ShellModuleKeys.Reports, "Reports", "Sales, inventory, low-stock, and business summary reports.", false, reason),
             Module(ShellModuleKeys.OfficialOutputTextFile, "Official Output Text File", "Evidence-backed official output text-file selection and guarded workflow run.", false, reason),
+            Module(ShellModuleKeys.OfficialDocuments, "Official Documents", "Review official document lifecycle state and record controlled audit events.", false, reason),
+            Module(ShellModuleKeys.OfficialReadings, "Official Readings", "Preview X-reading totals and finalize Z-reading with enriched persistence.", false, reason),
+            Module(ShellModuleKeys.OfficialEvidenceExport, "Official Evidence Export", "Run the trusted official engineering evidence text-file export workflow.", false, reason),
+            Module(ShellModuleKeys.SalrynStore, "Salryn Store", "Manage deployment role, store identity, and future LAN readiness.", false, reason),
             Module(ShellModuleKeys.Settings, "Settings", "Store settings, receipt settings, and system configuration.", false, reason),
             Module(ShellModuleKeys.Users, "Users", "User and role administration.", false, reason),
             Module(ShellModuleKeys.Backup, "Backup", "Local database backup and restore workflow.", false, reason),
@@ -192,5 +235,10 @@ public sealed class ShellPresenter
         return _session is not null &&
             _session.IsActive &&
             _session.Can(permission);
+    }
+
+    private bool CanAny(params string[] permissions)
+    {
+        return permissions.Any(Can);
     }
 }

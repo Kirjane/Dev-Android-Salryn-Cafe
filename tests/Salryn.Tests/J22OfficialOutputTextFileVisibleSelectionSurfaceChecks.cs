@@ -38,9 +38,10 @@ public static class J22OfficialOutputTextFileVisibleSelectionSurfaceChecks
         RequireContains(form, "Select an official evidence-backed candidate before running.", "M1-D1 form must block run without a selected official evidence candidate.");
         RequireContains(form, "Explicit output root path is required before running.", "M1-D1 form must require explicit output root path.");
         RequireContains(form, "An active app user session is required before running.", "M1-E1 form must require an active app user session.");
-        RequireContains(form, "SalrynPermissions.OfficialOutputRun", "RMO-A5 form must require OfficialOutput.Run before running.");
-        RequireContains(form, "Official output text-file workflow requires OfficialOutput.Run permission.", "RMO-A5 form must block run without OfficialOutput.Run.");
+        RequireContains(form, "SalrynPermissions.OfficialOutputRun", "RMO-A5 form must reference OfficialOutput.Run permission.");
+        RequireContains(form, "OfficialOutput.Run or OfficialEvidence.Export", "RMO-A5 form must describe export workflow permissions.");
         RequireContains(form, "CallerPermissions: _session.Permissions", "RMO-A5 form must pass caller permissions to the workflow UI boundary.");
+        RequireContains(form, "OfficialOutputWorkflowPermissions.CanRunExportWorkflow", "Form should also expose shared export workflow permission helper.");
         RequireContains(form, "Terminal id is required from official evidence or Local Host context before running.", "M1-E1 form must require a terminal id.");
 
         RequireContains(form, "catch (Exception ex)", "M1-E2 form must convert unexpected UI event exceptions into visible status errors.");

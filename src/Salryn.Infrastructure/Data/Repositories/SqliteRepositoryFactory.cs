@@ -104,9 +104,27 @@ public sealed class SqliteRepositoryFactory
     {
         return new SqliteErrorLogReadRepository(_connectionFactory);
     }
+
+    public SqliteDeploymentIdentityRepository CreateDeploymentIdentityRepository()
+    {
+        return new SqliteDeploymentIdentityRepository(_connectionFactory);
+    }
+
+    public SqliteTerminalRegistryRepository CreateTerminalRegistryRepository()
+    {
+        return new SqliteTerminalRegistryRepository(_connectionFactory);
+    }
+
+    public SqliteTerminalPairingInviteRepository CreateTerminalPairingInviteRepository()
+    {
+        return new SqliteTerminalPairingInviteRepository(_connectionFactory);
+    }
+
+    public SqliteTerminalCredentialRepository CreateTerminalCredentialRepository()
+    {
+        return new SqliteTerminalCredentialRepository(_connectionFactory);
+    }
 }
-
-
 
 
 

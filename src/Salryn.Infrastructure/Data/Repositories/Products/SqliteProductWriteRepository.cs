@@ -53,6 +53,7 @@ public sealed class SqliteProductWriteRepository :
                     reorder_level_x1000,
                     track_stock,
                     allow_discount,
+                    tax_classification,
                     is_active,
                     notes,
                     created_at,
@@ -75,6 +76,7 @@ public sealed class SqliteProductWriteRepository :
                     $reorderLevelX1000,
                     $trackStock,
                     $allowDiscount,
+                    $taxClassification,
                     $isActive,
                     $notes,
                     $createdAt,
@@ -145,6 +147,7 @@ public sealed class SqliteProductWriteRepository :
                     reorder_level_x1000 = $reorderLevelX1000,
                     track_stock = $trackStock,
                     allow_discount = $allowDiscount,
+                    tax_classification = $taxClassification,
                     is_active = $isActive,
                     notes = $notes,
                     updated_at = $updatedAt
@@ -329,6 +332,13 @@ public sealed class SqliteProductWriteRepository :
                 "Product write operations require an active product. Use DeactivateAsync to deactivate products."));
         }
 
+        if (!Enum.IsDefined(typeof(ProductTaxClassification), product.TaxClassification))
+        {
+            return Result.Fail(Error.Validation(
+                "Products.InvalidTaxClassification",
+                "Product tax classification is invalid."));
+        }
+
         return Result.Success();
     }
 
@@ -354,6 +364,7 @@ public sealed class SqliteProductWriteRepository :
         command.Parameters.AddWithValue("$reorderLevelX1000", product.ReorderLevel.ValueX1000);
         command.Parameters.AddWithValue("$trackStock", product.TrackStock ? 1 : 0);
         command.Parameters.AddWithValue("$allowDiscount", product.AllowDiscount ? 1 : 0);
+        command.Parameters.AddWithValue("$taxClassification", (int)product.TaxClassification);
         command.Parameters.AddWithValue("$isActive", product.IsActive ? 1 : 0);
         command.Parameters.AddWithValue("$notes", DbNullableText(product.Notes));
         command.Parameters.AddWithValue("$createdAt", createdAt.ToString("O"));

@@ -209,6 +209,7 @@ public sealed class ProductManagementForm : Form
         AddTextColumn("StockOnHandText", "Stock", 90);
         AddTextColumn("ReorderLevelText", "Reorder", 90);
         AddTextColumn("TrackStockText", "Stock Mode", 95);
+        AddTextColumn("TaxClassificationText", "Tax Class", 110);
         AddTextColumn("StatusText", "Status", 85);
 
         root.Controls.Add(_productsGrid, 0, 3);

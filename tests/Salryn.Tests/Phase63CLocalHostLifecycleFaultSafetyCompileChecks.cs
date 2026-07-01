@@ -1,6 +1,7 @@
 ﻿using Salryn.Core.Contracts;
 using Salryn.Core.Deployment;
 using Salryn.Core.Hosting;
+using Salryn.Core.Models;
 using Salryn.Host.Local.Contracts;
 using Salryn.Host.Local.Dispatch;
 using Salryn.Host.Local.Runtime;
@@ -155,6 +156,7 @@ public static class Phase63CLocalHostLifecycleFaultSafetyCompileChecks
                     StockOnHandX1000: 1000,
                     TrackStock: true,
                     AllowDiscount: true,
+                    TaxClassification: (int)ProductTaxClassification.Vatable,
                     IsActive: true),
                 Error: null));
         }

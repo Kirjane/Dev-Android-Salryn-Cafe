@@ -7,10 +7,14 @@ public sealed record DatabaseInitializationStatus(
     bool DatabaseFileExists,
     int ConfiguredMigrationCount,
     bool HasSeedDataFoundation,
-    FirstRunStatus FirstRunStatus)
+    FirstRunStatus FirstRunStatus,
+    int PendingMigrationCount = 0)
 {
+    public bool RequiresDatabaseUpgrade => DatabaseFileExists && PendingMigrationCount > 0;
+
     public bool CanRunFirstRunBootstrap =>
         DatabaseFileExists &&
+        !RequiresDatabaseUpgrade &&
         FirstRunStatus.IsDatabaseInitialized &&
         FirstRunStatus.IsFirstRunRequired;
 }

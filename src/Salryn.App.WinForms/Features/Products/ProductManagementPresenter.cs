@@ -278,6 +278,7 @@ public sealed class ProductManagementPresenter
             ReorderLevel = reorderLevel,
             TrackStock = request.TrackStock,
             AllowDiscount = request.AllowDiscount,
+            TaxClassification = request.TaxClassification,
             IsActive = true,
             Notes = NormalizeOptionalText(request.Notes),
             CreatedAt = DateTimeOffset.UtcNow
@@ -379,6 +380,7 @@ public sealed class ProductManagementPresenter
             ReorderLevel: FormatQuantityInput(detail.ReorderLevel),
             TrackStock: detail.TrackStock,
             AllowDiscount: detail.AllowDiscount,
+            TaxClassification: detail.TaxClassification,
             IsActive: detail.IsActive,
             Notes: detail.Notes,
             CreatedAt: detail.CreatedAt,
@@ -507,6 +509,7 @@ public sealed class ProductManagementPresenter
             ReorderLevel = reorderLevel,
             TrackStock = request.TrackStock,
             AllowDiscount = request.AllowDiscount,
+            TaxClassification = request.TaxClassification,
             IsActive = existingDetail.IsActive,
             Notes = NormalizeOptionalText(request.Notes),
             CreatedAt = existingDetail.CreatedAt
@@ -604,6 +607,7 @@ public sealed class ProductManagementPresenter
             ReorderLevel: "0",
             TrackStock: true,
             AllowDiscount: true,
+            TaxClassification: ProductTaxClassification.Vatable,
             IsActive: false,
             Notes: null,
             CreatedAt: DateTimeOffset.UtcNow,
@@ -651,6 +655,7 @@ public sealed class ProductManagementPresenter
             StockOnHandText: product.TrackStock ? product.StockOnHand.ToString() : "Not tracked",
             ReorderLevelText: product.ReorderLevel.ToString(),
             TrackStockText: product.TrackStock ? "Tracked" : "Not tracked",
+            TaxClassificationText: ProductTaxClassificationMapper.ToDisplayText(product.TaxClassification),
             StatusText: product.IsActive ? "Active" : "Inactive");
     }
 

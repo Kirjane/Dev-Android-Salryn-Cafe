@@ -26,4 +26,9 @@ public static class SalrynPermissions
     public const string AuditView = "Audit.View";
     public const string ImportExportProducts = "ImportExport.Products";
     public const string ShiftOpenClose = "Shift.OpenClose";
+    public const string StoreDeploymentManage = "StoreDeployment.Manage";
+    public const string StoreTerminalView = "StoreTerminal.View";
+    public const string StoreTerminalManage = "StoreTerminal.Manage";
+    public const string StoreTerminalPairingIssue = "StoreTerminal.PairingIssue";
+    public const string StoreTerminalPairingRevoke = "StoreTerminal.PairingRevoke";
 }

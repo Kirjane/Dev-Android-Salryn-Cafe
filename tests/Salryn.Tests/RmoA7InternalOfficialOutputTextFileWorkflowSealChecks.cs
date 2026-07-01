@@ -46,7 +46,7 @@ public static class RmoA7InternalOfficialOutputTextFileWorkflowSealChecks
         RequireContains(permissions, "OfficialOutputRun = \"OfficialOutput.Run\"", "Source must still define OfficialOutput.Run permission.");
         RequireContains(seedData, "Permissions.OfficialOutputRun", "Seed data must still include OfficialOutput.Run for Admin.");
         RequireContains(shellPresenter, "SalrynPermissions.OfficialOutputRun", "Shell route must remain permission-gated.");
-        RequireContains(boundary, "SalrynPermissions.OfficialOutputRun", "UI boundary must remain permission-gated.");
+        RequireContains(boundary, "OfficialOutputWorkflowPermissions.CallerCanRunExportWorkflow", "UI boundary must remain permission-gated.");
         RequireContains(navigation, "Official Output Text File", "Web nav must still list Official Output Text File surface.");
         RequireContains(navigation, "enabled: false", "Web nav must keep official-output surfaces disabled.");
         RequireNotContains(readOnlyEndpoints, "official-output", "Read-only API must not expose official-output endpoints.");

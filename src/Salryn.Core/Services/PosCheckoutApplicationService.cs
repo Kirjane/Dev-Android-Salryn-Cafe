@@ -13,7 +13,8 @@ public sealed record PosCheckoutLineInput(
     long UnitPriceCents,
     long? CostPriceCents,
     long DiscountCents,
-    bool TrackStock);
+    bool TrackStock,
+    ProductTaxClassification TaxClassification = ProductTaxClassification.Vatable);
 
 public sealed record PosCheckoutPaymentInput(
     PaymentMethod Method,
@@ -68,7 +69,7 @@ public sealed class PosCheckoutApplicationService : IPosCheckoutApplicationServi
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        Result<CompleteCheckoutSaleRequest> trustedSaleResult =
+        Result<TrustedPosCheckoutSaleBuildResult> trustedSaleResult =
             await _trustedSaleBuilder.BuildAsync(request, cancellationToken).ConfigureAwait(false);
 
         if (trustedSaleResult.IsFailure)
@@ -77,7 +78,7 @@ public sealed class PosCheckoutApplicationService : IPosCheckoutApplicationServi
         }
 
         return await _checkoutService.CompleteSaleAsync(
-            trustedSaleResult.Value,
+            trustedSaleResult.Value.Request,
             cancellationToken).ConfigureAwait(false);
     }
 }

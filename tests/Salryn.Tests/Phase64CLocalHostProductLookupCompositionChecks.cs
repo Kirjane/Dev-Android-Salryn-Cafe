@@ -2,6 +2,7 @@
 using Salryn.Core.Contracts;
 using Salryn.Core.Deployment;
 using Salryn.Core.Hosting;
+using Salryn.Core.Models;
 using Salryn.Core.ReadModels;
 using Salryn.Core.Repositories;
 using Salryn.Core.ValueObjects;
@@ -194,6 +195,7 @@ public static class Phase64CLocalHostProductLookupCompositionChecks
                 StockOnHand: Quantity.FromUnits(6m).Value,
                 TrackStock: true,
                 AllowDiscount: true,
+                TaxClassification: ProductTaxClassification.Vatable,
                 IsActive: true);
 
             return Task.FromResult(Result<ProductLookupReadModel?>.Success(product));

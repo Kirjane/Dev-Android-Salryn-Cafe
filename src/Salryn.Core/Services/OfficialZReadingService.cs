@@ -37,12 +37,14 @@ public sealed record OfficialZReadingSummary(
 public sealed record OfficialZReadingResult(
     OfficialZReadingSummary Summary,
     IReadOnlyList<OfficialXReadingPaymentSummary> Payments,
-    IReadOnlyList<OfficialXReadingTaxModeSummary> TaxModes);
+    IReadOnlyList<OfficialXReadingTaxModeSummary> TaxModes,
+    OfficialZReadingEnrichmentPayload? Enrichment);
 
 public sealed record OfficialZReadingPersistenceRequest(
     OfficialZReadingSummary Summary,
     IReadOnlyList<OfficialXReadingPaymentSummary> Payments,
-    IReadOnlyList<OfficialXReadingTaxModeSummary> TaxModes);
+    IReadOnlyList<OfficialXReadingTaxModeSummary> TaxModes,
+    OfficialZReadingEnrichmentPayload? Enrichment);
 
 public sealed record OfficialZReadingPersistenceResult(Guid ZReadingId);
 
@@ -137,10 +139,17 @@ public sealed class OfficialZReadingService : IOfficialZReadingService
             CreatedByUserId: request.CreatedByUserId,
             TerminalId: NormalizeOptional(request.TerminalId));
 
+        OfficialZReadingEnrichmentPayload enrichment = new(
+            OfficialZReadingEnrichmentPayload.SchemaV1,
+            xReading.Lifecycle,
+            xReading.AdjustedSummary,
+            xReading.VatBuckets);
+
         OfficialZReadingPersistenceRequest persistenceRequest = new(
             summary,
             xReading.Payments,
-            xReading.TaxModes);
+            xReading.TaxModes,
+            enrichment);
 
         Result<OfficialZReadingPersistenceResult> persistenceResult =
             await _persistence.SaveAsync(persistenceRequest, cancellationToken);
@@ -151,7 +160,7 @@ public sealed class OfficialZReadingService : IOfficialZReadingService
         }
 
         return Result<OfficialZReadingResult>.Success(
-            new OfficialZReadingResult(summary, xReading.Payments, xReading.TaxModes));
+            new OfficialZReadingResult(summary, xReading.Payments, xReading.TaxModes, enrichment));
     }
 
     public static Result ValidateRequest(OfficialZReadingRequest? request)

@@ -1,4 +1,5 @@
 using Salryn.Core.Common;
+using Salryn.Core.Deployment;
 using Salryn.Core.Security;
 using Salryn.Core.Services;
 
@@ -18,10 +19,14 @@ public interface IOfficialDocumentLifecycleOperationBoundary
 public sealed class OfficialDocumentLifecycleOperationBoundary : IOfficialDocumentLifecycleOperationBoundary
 {
     private readonly IOfficialDocumentAuditEventService _auditEvents;
+    private readonly SalrynStoreHostAuthorityGuard? _storeHostAuthority;
 
-    public OfficialDocumentLifecycleOperationBoundary(IOfficialDocumentAuditEventService auditEvents)
+    public OfficialDocumentLifecycleOperationBoundary(
+        IOfficialDocumentAuditEventService auditEvents,
+        SalrynStoreHostAuthorityGuard? storeHostAuthority = null)
     {
         _auditEvents = auditEvents ?? throw new ArgumentNullException(nameof(auditEvents));
+        _storeHostAuthority = storeHostAuthority;
     }
 
     public Task<Result<OfficialDocumentAuditEventResult>> AppendLifecycleEventAsync(
@@ -59,6 +64,16 @@ public sealed class OfficialDocumentLifecycleOperationBoundary : IOfficialDocume
             return Task.FromResult(Result<OfficialDocumentAuditEventResult>.Fail(Error.Forbidden(
                 "OfficialDocumentLifecycleOperation.PermissionDenied",
                 "Official document lifecycle operation is not permitted for the current actor.")));
+        }
+
+        if (_storeHostAuthority is not null)
+        {
+            Result journalAuthority = _storeHostAuthority.RequireJournalAuthority();
+
+            if (journalAuthority.IsFailure)
+            {
+                return Task.FromResult(Result<OfficialDocumentAuditEventResult>.Fail(journalAuthority.ErrorDetail));
+            }
         }
 
         return _auditEvents.AppendAsync(request.AuditRequest, cancellationToken);

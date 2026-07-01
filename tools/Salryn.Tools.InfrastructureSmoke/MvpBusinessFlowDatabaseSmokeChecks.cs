@@ -90,6 +90,7 @@ internal static class MvpBusinessFlowDatabaseSmokeChecks
                     ReorderLevel: "1",
                     TrackStock: true,
                     AllowDiscount: true,
+                    TaxClassification: ProductTaxClassification.Vatable,
                     Notes: "J20-4A smoke product."))
                 .GetAwaiter()
                 .GetResult();

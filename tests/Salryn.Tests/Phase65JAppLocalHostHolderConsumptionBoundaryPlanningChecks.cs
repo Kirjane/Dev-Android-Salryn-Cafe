@@ -20,7 +20,7 @@ public static class Phase65JAppLocalHostHolderConsumptionBoundaryPlanningChecks
         RequireContains(appServicesText, "public SalrynLocalHostCompositionHolder LocalHostProductLookupCompositionHolder { get; }", "65H holder property must remain available at the composition root.");
         RequireContains(appServicesText, "LocalHostProductLookupCompositionHolder =", "65H holder assignment must remain.");
         RequireContains(appServicesText, "CreateLocalHostProductLookupCompositionHolder(localHostProfile);", "65H holder creation must remain guarded.");
-        RequireContains(appServicesText, "CreateStandaloneLocalHostProfile());", "65H standalone startup profile injection must remain.");
+        RequireContains(appServicesText, "CreateStandaloneLocalHostProfile(),", "65H standalone startup profile injection must remain.");
         RequireContains(appServicesText, "SalrynMachineRole.StandaloneHost", "Startup profile must remain standalone host.");
         RequireContains(appServicesText, "SalrynDeploymentMode.Standalone", "Startup profile must remain standalone mode.");
         RequireContains(appServicesText, "Endpoint: null", "Startup profile must not introduce endpoint wiring.");
@@ -28,7 +28,7 @@ public static class Phase65JAppLocalHostHolderConsumptionBoundaryPlanningChecks
 
         RequireExactlyOne(appServicesText, "public SalrynLocalHostCompositionHolder LocalHostProductLookupCompositionHolder { get; }", "65H holder property");
         RequireExactlyOne(appServicesText, "LocalHostProductLookupCompositionHolder =", "65H holder assignment");
-        RequireExactlyOne(appServicesText, "CreateStandaloneLocalHostProfile());", "65H standalone profile call");
+        RequireExactlyOne(appServicesText, "CreateStandaloneLocalHostProfile(),", "65H standalone profile call");
 
         RequireContains(holderText, "public sealed class SalrynLocalHostCompositionHolder", "Holder must remain sealed.");
         RequireContains(holderText, "if (!LocalHostBootstrapCompositionRules.IsCompositionValid(composition))", "Holder must remain validating.");

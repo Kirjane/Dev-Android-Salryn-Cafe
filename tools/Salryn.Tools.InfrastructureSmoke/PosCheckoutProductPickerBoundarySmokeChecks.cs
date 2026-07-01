@@ -1,4 +1,5 @@
 ﻿using Salryn.Core.Common;
+using Salryn.Core.Models;
 using Salryn.Core.ReadModels;
 using Salryn.Core.Services;
 using Salryn.Core.ValueObjects;
@@ -24,6 +25,7 @@ internal static class PosCheckoutProductPickerBoundarySmokeChecks
             QuantityX1000(10000),
             TrackStock: true,
             AllowDiscount: true,
+            TaxClassification: ProductTaxClassification.Vatable,
             IsActive: true);
 
         PosCheckoutDraftLineInput defaultTrackedLine = RequireSuccess(
@@ -74,6 +76,7 @@ internal static class PosCheckoutProductPickerBoundarySmokeChecks
             QuantityX1000(0),
             TrackStock: false,
             AllowDiscount: true,
+            TaxClassification: ProductTaxClassification.Vatable,
             IsActive: true);
 
         PosCheckoutDraftLineInput untrackedLine = RequireSuccess(
@@ -106,6 +109,7 @@ internal static class PosCheckoutProductPickerBoundarySmokeChecks
             QuantityX1000(5000),
             QuantityX1000(1000),
             TrackStock: true,
+            TaxClassification: ProductTaxClassification.Vatable,
             IsActive: true);
 
         PosCheckoutDraftLineInput listItemLine = RequireSuccess(

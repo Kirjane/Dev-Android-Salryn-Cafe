@@ -402,15 +402,11 @@ public sealed class OfficialOutputTextFileWorkflowUiBoundary : IOfficialOutputTe
 
     private static Result ValidateCallerPermission(OfficialOutputTextFileWorkflowUiTriggerRequest? request)
     {
-        IReadOnlyList<string>? callerPermissions = request?.CallerPermissions;
-
-        if (callerPermissions is null ||
-            !callerPermissions.Any(static permission =>
-                string.Equals(permission, SalrynPermissions.OfficialOutputRun, StringComparison.OrdinalIgnoreCase)))
+        if (!OfficialOutputWorkflowPermissions.CallerCanRunExportWorkflow(request?.CallerPermissions))
         {
             return Result.Fail(Error.Forbidden(
                 "OfficialOutputTextFileWorkflowUi.PermissionRequired",
-                "Official output text-file workflow requires OfficialOutput.Run permission."));
+                "Official output text-file workflow requires OfficialOutput.Run or OfficialEvidence.Export permission."));
         }
 
         return Result.Success();

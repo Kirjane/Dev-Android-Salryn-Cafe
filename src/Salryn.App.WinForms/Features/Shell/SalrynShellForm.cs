@@ -5,9 +5,12 @@ using Salryn.App.WinForms.Features.Checkout;
 using Salryn.App.WinForms.Features.Dashboard;
 using Salryn.App.WinForms.Features.Inventory;
 using Salryn.App.WinForms.Features.Mvp;
+using Salryn.App.WinForms.Features.OfficialDocuments;
 using Salryn.App.WinForms.Features.OfficialOutput;
+using Salryn.App.WinForms.Features.OfficialReadings;
 using Salryn.App.WinForms.Features.Products;
 using Salryn.App.WinForms.Features.Sales;
+using Salryn.App.WinForms.Features.SalrynStore;
 using Salryn.App.WinForms.Features.Settings;
 using Salryn.App.WinForms.Features.Shifts;
 using Salryn.App.WinForms.Features.Users;
@@ -277,6 +280,30 @@ public sealed class SalrynShellForm : Form
             return;
         }
 
+        if (module.Key == ShellModuleKeys.OfficialDocuments)
+        {
+            OpenOfficialDocuments();
+            return;
+        }
+
+        if (module.Key == ShellModuleKeys.OfficialReadings)
+        {
+            OpenOfficialReadings();
+            return;
+        }
+
+        if (module.Key == ShellModuleKeys.OfficialEvidenceExport)
+        {
+            OpenOfficialEvidenceExport();
+            return;
+        }
+
+        if (module.Key == ShellModuleKeys.SalrynStore)
+        {
+            OpenSalrynStore();
+            return;
+        }
+
         if (module.Key == ShellModuleKeys.Settings)
         {
             OpenSettings();
@@ -325,6 +352,47 @@ public sealed class SalrynShellForm : Form
         officialOutputForm.ShowDialog(this);
     }
 
+    private void OpenOfficialDocuments()
+    {
+        if (_session is null)
+        {
+            ShowPlaceholder(
+                "Official Documents",
+                "Official document lifecycle operations require an authenticated user session.",
+                "Login again before opening the official documents workspace.");
+
+            return;
+        }
+
+        using OfficialDocumentLifecycleForm form = new(_services, _session);
+        form.StartPosition = FormStartPosition.CenterParent;
+        form.ShowDialog(this);
+    }
+
+    private void OpenOfficialReadings()
+    {
+        if (_session is null)
+        {
+            ShowPlaceholder(
+                "Official Readings",
+                "Official reading operations require an authenticated user session.",
+                "Login again before opening the official readings workspace.");
+
+            return;
+        }
+
+        using OfficialReadingsForm form = new(_services, _session);
+        form.StartPosition = FormStartPosition.CenterParent;
+        form.ShowDialog(this);
+    }
+
+    private void OpenOfficialEvidenceExport()
+    {
+        using OfficialOutputTextFileWorkflowForm officialOutputForm = new(_services, _session, "Official Evidence Export");
+        officialOutputForm.StartPosition = FormStartPosition.CenterParent;
+        officialOutputForm.ShowDialog(this);
+    }
+
     // Kirch: Opens the June 20 MVP inventory skeleton through AppServices.
     private void OpenInventory()
     {
@@ -343,6 +411,13 @@ public sealed class SalrynShellForm : Form
             : new SalesHistoryForm(_services, _session);
         salesHistoryForm.StartPosition = FormStartPosition.CenterParent;
         salesHistoryForm.ShowDialog(this);
+    }
+
+    private void OpenSalrynStore()
+    {
+        using SalrynStoreForm form = new(_services, _session);
+        form.StartPosition = FormStartPosition.CenterParent;
+        form.ShowDialog(this);
     }
 
     // Kirch: Opens the June 20 MVP store settings skeleton through AppServices.

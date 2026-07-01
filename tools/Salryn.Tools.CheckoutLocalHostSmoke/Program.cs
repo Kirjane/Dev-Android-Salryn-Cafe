@@ -195,6 +195,7 @@ internal static class CheckoutLocalHostLookupSmokeChecks
                 stockOnHandX1000,
                 trackStock: true,
                 allowDiscount: true,
+                taxClassification: ProductTaxClassification.Vatable,
                 isActive: true));
         }
 

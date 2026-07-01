@@ -1,16 +1,20 @@
 using Salryn.App.WinForms.Features.Checkout;
 using Salryn.App.WinForms.Features.OfficialOutput;
+using Salryn.App.WinForms.HostCommands;
 using Salryn.Core.Common;
+using Salryn.Core.Host;
 using Salryn.Core.Deployment;
 using Salryn.Core.Repositories;
 using Salryn.Core.Services;
 using Salryn.Infrastructure.Data;
 using Salryn.Infrastructure.Data.Initialization;
 using Salryn.Infrastructure.Data.Repositories;
+using Salryn.Infrastructure.Data.Repositories.System;
 using Salryn.Infrastructure.Data.Services;
 using Salryn.Infrastructure.OfficialOutput;
 using Salryn.Infrastructure.Paths;
 using Salryn.Host.Local.Composition;
+using Salryn.Host.Local.HostCommands;
 using System.Globalization;
 
 namespace Salryn.App.WinForms.Composition;
@@ -46,7 +50,8 @@ public sealed class SalrynAppServices
         ICashierSessionService cashierSessions,
         IPosCheckoutService posCheckout,
         IPosCheckoutApplicationService posCheckoutApplication,
-        StoreDeploymentProfile localHostProfile)
+        StoreDeploymentProfile localHostProfile,
+        IDeploymentIdentityService deploymentIdentity)
     {
         DbPaths = dbPaths;
         ConnectionFactory = connectionFactory;
@@ -71,6 +76,12 @@ public sealed class SalrynAppServices
         CashierSessions = cashierSessions;
         PosCheckout = posCheckout;
         PosCheckoutApplication = posCheckoutApplication;
+        DeploymentIdentity = deploymentIdentity;
+        StoreHostAuthority = new SalrynStoreHostAuthorityGuard(() =>
+        {
+            Result<DeploymentIdentitySnapshot?> result = deploymentIdentity.GetCurrentAsync().GetAwaiter().GetResult();
+            return result.IsSuccess ? result.Value : null;
+        });
         // Kirch: Creates the passive holder before gateway wiring; this still does not start runtime, dispatch, or add transport.
         LocalHostProductLookupCompositionHolder =
             CreateLocalHostProductLookupCompositionHolder(localHostProfile);
@@ -116,7 +127,8 @@ public sealed class SalrynAppServices
                 cashierSessions,
                 officialReadinessService,
                 new SqliteOfficialCheckoutPersistenceBoundary(
-                    new SqliteOfficialCheckoutPersistenceService(connectionFactory)));
+                    new SqliteOfficialCheckoutPersistenceService(connectionFactory)),
+                StoreHostAuthority);
 
         // Kirch: why - official evidence reads must come from journal snapshot evidence, not checkout UI receipt text.
         OfficialEvidenceRead =
@@ -134,6 +146,9 @@ public sealed class SalrynAppServices
                 OfficialXReading,
                 new SqliteOfficialZReadingService(connectionFactory));
 
+        OfficialZReadingRead =
+            new SqliteOfficialZReadingReadService(connectionFactory);
+
         // Kirch: why - official void/cancel/correction remains a backend-only append event boundary, not a source-row rewrite.
         OfficialDocumentAuditEvents =
             new OfficialDocumentAuditEventService(
@@ -144,6 +159,9 @@ public sealed class SalrynAppServices
             new OfficialDocumentReprintService(
                 OfficialDocumentLifecycleRead,
                 new SqliteOfficialDocumentReprintService(connectionFactory));
+
+        OfficialDocumentLifecycleOperations =
+            new OfficialDocumentLifecycleOperationBoundary(OfficialDocumentAuditEvents, StoreHostAuthority);
 
         // Kirch: why - future official output must be fed by verified journal snapshot evidence plus lifecycle state.
         OfficialOutputSourceRead =
@@ -167,7 +185,11 @@ public sealed class SalrynAppServices
                 LocalHostSessionIdentityProvider);
 
         OfficialOutputTextFileTrustedPackageProducer =
-            new OfficialOutputTextFileTrustedPackageProducer(OfficialOutputSourceRead);
+            new OfficialOutputTextFileTrustedPackageProducer(
+                OfficialOutputSourceRead,
+                new OfficialEngineeringEvidencePackageAssembler(
+                    xReadingService: OfficialXReading,
+                    zReadingReadService: OfficialZReadingRead));
 
         OfficialOutputTextFileSourceIdentity =
             new OfficialOutputTextFileSourceIdentityBoundary(OfficialEvidenceRead);
@@ -189,6 +211,42 @@ public sealed class SalrynAppServices
                 LocalHostOfficialOutputTextFileWorkflow,
                 OfficialOutputTextFilePackageSupply,
                 OfficialOutputTextFileWorkflowAudit);
+
+        SalrynHostCommandAuthorityGuard hostCommandAuthority = new(StoreHostAuthority);
+
+        TerminalRegistry = new TerminalRegistryService(
+            repositories.CreateTerminalRegistryRepository(),
+            DeploymentIdentity,
+            StoreHostAuthority);
+
+        TerminalPairingPreparation = new TerminalPairingPreparationService(
+            repositories.CreateTerminalPairingInviteRepository(),
+            DeploymentIdentity,
+            StoreHostAuthority);
+
+        HostCommands = HostCommandComposition.Create(
+            hostCommandAuthority,
+            ResolveDeploymentIdentitySnapshot,
+            HostCommandExecutorAdapters.CreateDeploymentStatusExecutor(DeploymentIdentity),
+            HostCommandExecutorAdapters.CreateProductLookupExecutor(ProductReadRepository),
+            HostCommandExecutorAdapters.CreateOfficialCheckoutExecutor(OfficialCheckoutCompletion),
+            HostCommandExecutorAdapters.CreateOfficialLifecycleExecutor(OfficialDocumentLifecycleOperations),
+            HostCommandExecutorAdapters.CreateOfficialPreviewXExecutor(OfficialXReading),
+            HostCommandExecutorAdapters.CreateOfficialFinalizeZExecutor(OfficialZReading),
+            HostCommandExecutorAdapters.CreateBackupAuthorityExecutor(),
+            HostCommandExecutorAdapters.CreateTerminalRegistryListExecutor(TerminalRegistry),
+            HostCommandExecutorAdapters.CreateTerminalRegistryDisableExecutor(TerminalRegistry),
+            HostCommandExecutorAdapters.CreateTerminalRegistryRevokeExecutor(TerminalRegistry),
+            HostCommandExecutorAdapters.CreateTerminalPairingIssueExecutor(TerminalPairingPreparation),
+            HostCommandExecutorAdapters.CreateTerminalPairingRevokeExecutor(TerminalPairingPreparation),
+            HostCommandExecutorAdapters.CreateTerminalPairingListExecutor(TerminalPairingPreparation),
+            TerminalRegistry);
+    }
+
+    private DeploymentIdentitySnapshot? ResolveDeploymentIdentitySnapshot()
+    {
+        Result<DeploymentIdentitySnapshot?> result = DeploymentIdentity.GetCurrentAsync().GetAwaiter().GetResult();
+        return result.IsSuccess ? result.Value : null;
     }
 
     public DbPaths DbPaths { get; }
@@ -247,11 +305,15 @@ public sealed class SalrynAppServices
 
     public IOfficialZReadingService OfficialZReading { get; }
 
+    public IOfficialZReadingReadService OfficialZReadingRead { get; }
+
     public IOfficialDocumentAuditEventService OfficialDocumentAuditEvents { get; }
 
     public IOfficialDocumentLifecycleReadService OfficialDocumentLifecycleRead { get; }
 
     public IOfficialDocumentReprintService OfficialDocumentReprints { get; }
+
+    public IOfficialDocumentLifecycleOperationBoundary OfficialDocumentLifecycleOperations { get; }
 
     public IOfficialOutputSourceReadService OfficialOutputSourceRead { get; }
 
@@ -278,6 +340,16 @@ public sealed class SalrynAppServices
     public IPosCheckoutService PosCheckout { get; }
 
     public IPosCheckoutApplicationService PosCheckoutApplication { get; }
+
+    public IDeploymentIdentityService DeploymentIdentity { get; }
+
+    public ITerminalRegistryService TerminalRegistry { get; }
+
+    public ITerminalPairingPreparationService TerminalPairingPreparation { get; }
+
+    public SalrynStoreHostAuthorityGuard StoreHostAuthority { get; }
+
+    public SalrynHostCommandLoopbackSurface HostCommands { get; }
 
     public SalrynLocalHostCompositionHolder LocalHostProductLookupCompositionHolder { get; }
 
@@ -492,6 +564,11 @@ public sealed class SalrynAppServices
         IPosCheckoutApplicationService posCheckoutApplication =
             new PosCheckoutApplicationService(posCheckout, productReadRepository);
 
+        SqliteDeploymentIdentityRepository deploymentIdentityRepository =
+            repositories.CreateDeploymentIdentityRepository();
+
+        DeploymentIdentityService deploymentIdentity = new(deploymentIdentityRepository);
+
         return new SalrynAppServices(
             dbPaths,
             connectionFactory,
@@ -515,6 +592,7 @@ public sealed class SalrynAppServices
             cashierSessions,
             posCheckout,
             posCheckoutApplication,
-            CreateStandaloneLocalHostProfile());
+            CreateStandaloneLocalHostProfile(),
+            deploymentIdentity);
     }
 }

@@ -1,4 +1,5 @@
 ﻿using Salryn.App.WinForms.Features.Mvp;
+using Salryn.Core.Models;
 
 namespace Salryn.App.WinForms.Features.Products;
 
@@ -23,6 +24,7 @@ public sealed class ProductCreateForm : Form
     private ComboBox _categoryComboBox = null!;
     private ComboBox _brandComboBox = null!;
     private ComboBox _supplierComboBox = null!;
+    private ComboBox _taxClassificationComboBox = null!;
     private TextBox _sellingPriceTextBox = null!;
     private TextBox _costPriceTextBox = null!;
     private TextBox _wholesalePriceTextBox = null!;
@@ -109,6 +111,7 @@ public sealed class ProductCreateForm : Form
         _categoryComboBox = BuildComboBox();
         _brandComboBox = BuildComboBox();
         _supplierComboBox = BuildComboBox();
+        _taxClassificationComboBox = BuildComboBox();
         _sellingPriceTextBox = BuildTextBox();
         _costPriceTextBox = BuildTextBox();
         _wholesalePriceTextBox = BuildTextBox();
@@ -148,7 +151,8 @@ public sealed class ProductCreateForm : Form
         AddRow(formPanel, 13, "Reorder Level", _reorderLevelTextBox);
         AddRow(formPanel, 14, "Stock Tracking", _trackStockCheckBox);
         AddRow(formPanel, 15, "Discount", _allowDiscountCheckBox);
-        AddRow(formPanel, 16, "Notes", _notesTextBox);
+        AddRow(formPanel, 16, "Tax Classification *", _taxClassificationComboBox);
+        AddRow(formPanel, 17, "Notes", _notesTextBox);
 
         _statusLabel = new Label
         {
@@ -210,6 +214,7 @@ public sealed class ProductCreateForm : Form
         BindComboBox(_categoryComboBox, state.Categories);
         BindComboBox(_brandComboBox, state.Brands);
         BindComboBox(_supplierComboBox, state.Suppliers);
+        BindTaxClassificationCombo(_taxClassificationComboBox);
 
         SetBusy(false, state.StatusMessage);
     }
@@ -236,6 +241,7 @@ public sealed class ProductCreateForm : Form
             ReorderLevel: _reorderLevelTextBox.Text,
             TrackStock: _trackStockCheckBox.Checked,
             AllowDiscount: _allowDiscountCheckBox.Checked,
+            TaxClassification: SelectedTaxClassification(_taxClassificationComboBox),
             Notes: _notesTextBox.Text);
 
         SetBusy(true, "Saving product...");
@@ -308,6 +314,22 @@ public sealed class ProductCreateForm : Form
         {
             comboBox.SelectedIndex = 0;
         }
+    }
+
+    private static void BindTaxClassificationCombo(ComboBox comboBox)
+    {
+        comboBox.DataSource = ProductTaxClassificationMapper.GetDisplayOptions()
+            .Select(option => new ProductTaxClassificationOptionViewModel(option.Value, option.DisplayText))
+            .ToList();
+        comboBox.DisplayMember = nameof(ProductTaxClassificationOptionViewModel.DisplayText);
+        comboBox.SelectedIndex = 0;
+    }
+
+    private static ProductTaxClassification SelectedTaxClassification(ComboBox comboBox)
+    {
+        return comboBox.SelectedItem is ProductTaxClassificationOptionViewModel option
+            ? option.Value
+            : ProductTaxClassification.Vatable;
     }
 
     private static Guid? SelectedOptionId(ComboBox comboBox)

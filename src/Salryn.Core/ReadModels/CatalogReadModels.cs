@@ -1,4 +1,5 @@
-﻿using Salryn.Core.ValueObjects;
+﻿using Salryn.Core.Models;
+using Salryn.Core.ValueObjects;
 
 namespace Salryn.Core.ReadModels;
 
@@ -15,6 +16,7 @@ public sealed record ProductListItemReadModel(
     Quantity StockOnHand,
     Quantity ReorderLevel,
     bool TrackStock,
+    ProductTaxClassification TaxClassification,
     bool IsActive);
 
 public sealed record ProductLookupReadModel(
@@ -28,6 +30,7 @@ public sealed record ProductLookupReadModel(
     Quantity StockOnHand,
     bool TrackStock,
     bool AllowDiscount,
+    ProductTaxClassification TaxClassification,
     bool IsActive);
 
 // Kirch: Product detail carries the full editable product state so edit screens do not overwrite missing fields.
@@ -52,6 +55,7 @@ public sealed record ProductDetailReadModel(
     Quantity ReorderLevel,
     bool TrackStock,
     bool AllowDiscount,
+    ProductTaxClassification TaxClassification,
     bool IsActive,
     string? Notes,
     DateTimeOffset CreatedAt,

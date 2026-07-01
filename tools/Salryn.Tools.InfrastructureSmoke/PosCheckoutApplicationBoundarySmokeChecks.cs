@@ -174,6 +174,7 @@ internal static class PosCheckoutApplicationBoundarySmokeChecks
             StockOnHand: QuantityX1000(10000),
             TrackStock: true,
             AllowDiscount: true,
+            TaxClassification: ProductTaxClassification.Vatable,
             IsActive: true);
     }
 

@@ -80,6 +80,8 @@ public sealed class Product
 
     public bool AllowDiscount { get; init; } = true;
 
+    public ProductTaxClassification TaxClassification { get; init; } = ProductTaxClassification.Vatable;
+
     public bool IsActive { get; init; } = true;
 
     public string? Notes { get; init; }

@@ -174,6 +174,16 @@ public static class Program
         RmoEngineeringVatTaxBucketEngineChecks.Run();
         RmoEngineeringCompletionCandidateChecks.Run();
         RmoOfficialLifecycleOperationBoundaryPermissionChecks.RunAsync().GetAwaiter().GetResult();
+        PrelanHarden1ProductTaxClassificationChecks.Run();
+        DatabaseInitializationStatusReadOnlyChecks.Run();
+        PrelanHarden2EvidenceAndZPersistenceChecks.Run();
+        PrelanHarden3OfficialOperatorSurfaceChecks.Run();
+        PrelanHarden4VerificationHygieneChecks.Run();
+        LanM1DeploymentRoleAndStoreIdentityChecks.Run();
+        LanM2M3HostCommandLoopbackChecks.Run();
+        LanM4TerminalRegistryPairingPreparationChecks.Run();
+        LanM5ControlledRemoteTransportGateChecks.Run();
+        LanM6PairingActivationRemoteHandshakeChecks.Run();
         J21Rmo242023ElectronicJournalPersistenceRuntimeDocumentationSealChecks.Run();
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }

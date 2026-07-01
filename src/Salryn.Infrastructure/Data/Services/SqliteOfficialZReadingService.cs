@@ -225,6 +225,9 @@ public sealed class SqliteOfficialZReadingService : IOfficialZReadingPersistence
         OfficialZReadingSummary summary = request.Summary;
         string paymentSummaryJson = JsonSerializer.Serialize(request.Payments);
         string taxModeSummaryJson = JsonSerializer.Serialize(request.TaxModes);
+        string? metadataJson = request.Enrichment is null
+            ? null
+            : OfficialZReadingEnrichmentSerializer.Serialize(request.Enrichment);
 
         using SqliteCommand command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -251,6 +254,7 @@ public sealed class SqliteOfficialZReadingService : IOfficialZReadingPersistence
                 tax_mode_summary_json,
                 evidence_manifest_hash,
                 all_snapshot_hashes_match,
+                metadata_json,
                 created_by_user_id,
                 terminal_id,
                 status,
@@ -277,6 +281,7 @@ public sealed class SqliteOfficialZReadingService : IOfficialZReadingPersistence
                 $taxModeSummary,
                 $evidenceManifestHash,
                 $allSnapshotHashesMatch,
+                $metadataJson,
                 $createdByUserId,
                 $terminalId,
                 'FINALIZED',
@@ -303,6 +308,7 @@ public sealed class SqliteOfficialZReadingService : IOfficialZReadingPersistence
         command.Parameters.AddWithValue("$taxModeSummary", taxModeSummaryJson);
         command.Parameters.AddWithValue("$evidenceManifestHash", summary.EvidenceManifestHash);
         command.Parameters.AddWithValue("$allSnapshotHashesMatch", summary.AllSnapshotHashesMatch ? 1 : 0);
+        command.Parameters.AddWithValue("$metadataJson", metadataJson ?? (object)DBNull.Value);
         command.Parameters.AddWithValue("$createdByUserId", summary.CreatedByUserId?.ToString("D") ?? (object)DBNull.Value);
         command.Parameters.AddWithValue("$terminalId", NormalizeOptional(summary.TerminalId) ?? (object)DBNull.Value);
         command.Parameters.AddWithValue("$createdAt", summary.FinalizedAt.ToString("O", CultureInfo.InvariantCulture));

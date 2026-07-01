@@ -73,7 +73,9 @@ public static class J22OfficialOutputTextFilePackageSupplyBoundaryChecks
         RequireDoesNotContain(uiBoundary, "request?.ExportPackage", "10H UI trigger request must not take package data directly from UI state.");
         RequireContains(appServices, "public IOfficialOutputTextFilePackageSupplyBoundary OfficialOutputTextFilePackageSupply { get; }", "10H AppServices must expose the package supply boundary.");
         RequireContains(appServices, "public IOfficialOutputTextFileTrustedPackageProducer OfficialOutputTextFileTrustedPackageProducer { get; }", "RMO-M1-A AppServices must expose the trusted package producer.");
-        RequireContains(appServices, "new OfficialOutputTextFileTrustedPackageProducer(OfficialOutputSourceRead)", "RMO-M1-A AppServices must wire producer to official output source.");
+        RequireContains(appServices, "new OfficialOutputTextFileTrustedPackageProducer(", "RMO-M1-A AppServices must wire trusted package producer.");
+        RequireContains(appServices, "OfficialOutputSourceRead", "RMO-M1-A AppServices must wire producer to official output source.");
+        RequireContains(appServices, "OfficialEngineeringEvidencePackageAssembler", "PRELAN-HARDEN-2 AppServices must wire engineering evidence assembler.");
         RequireContains(appServices, "trustedPackageProducer: OfficialOutputTextFileTrustedPackageProducer", "RMO-M1-A AppServices package supply must be producer-connected.");
         RequireContains(appServices, "OfficialOutputTextFilePackageSupply,", "10H AppServices must wire package supply into the UI shell.");
 
