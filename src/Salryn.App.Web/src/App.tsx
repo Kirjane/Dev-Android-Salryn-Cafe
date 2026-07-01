@@ -10,15 +10,12 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { InventoryPage } from "./pages/InventoryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { ProductsPage } from "./pages/ProductsPage";
+import { RemoteReadOnlyClientPage } from "./pages/RemoteReadOnlyClientPage";
 import { SalesHistoryPage } from "./pages/SalesHistoryPage";
 import { UsersPage } from "./pages/UsersPage";
 
 function FullScreenCenter({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-navy-900 px-4">
-      {children}
-    </div>
-  );
+  return <div className="flex min-h-screen items-center justify-center bg-navy-900 px-4">{children}</div>;
 }
 
 function ConsoleApp() {
@@ -30,18 +27,13 @@ function ConsoleApp() {
     try {
       await logout();
     } catch {
-      // Session may already be gone.
     }
     queryClient.removeQueries();
     void sessionQuery.refetch();
   }
 
   if (sessionQuery.isLoading) {
-    return (
-      <FullScreenCenter>
-        <p className="text-sm text-slate-300">Connecting to the Salryn local API...</p>
-      </FullScreenCenter>
-    );
+    return <FullScreenCenter><p className="text-sm text-slate-300">Connecting to the Salryn local API...</p></FullScreenCenter>;
   }
 
   if (sessionQuery.isError) {
@@ -49,40 +41,23 @@ function ConsoleApp() {
       <FullScreenCenter>
         <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-card">
           <h1 className="text-xl font-semibold text-slate-900">Salryn local API unavailable</h1>
-          <p className="mt-2 text-sm text-slate-500">
-            The console could not reach the Salryn local API on this device. Make sure the local API
-            is running, then try again.
-          </p>
-          <div className="mt-6">
-            <Button onClick={() => void sessionQuery.refetch()}>Try again</Button>
-          </div>
+          <p className="mt-2 text-sm text-slate-500">The console could not reach the Salryn local API on this device.</p>
+          <div className="mt-6"><Button onClick={() => void sessionQuery.refetch()}>Try again</Button></div>
         </div>
       </FullScreenCenter>
     );
   }
 
   if (!sessionQuery.data?.isAuthenticated) {
-    return (
-      <LoginPage
-        onLoggedIn={() => {
-          void queryClient.invalidateQueries({ queryKey: ["session"] });
-        }}
-      />
-    );
+    return <LoginPage onLoggedIn={() => void queryClient.invalidateQueries({ queryKey: ["session"] })} />;
   }
 
   const session = sessionQuery.data;
 
   return (
-    <AppShell
-      session={session}
-      currentPage={currentPage}
-      onNavigate={setCurrentPage}
-      onLogout={() => void handleLogout()}
-    >
-      {currentPage === "dashboard" ? (
-        <DashboardPage session={session} onLogout={() => void handleLogout()} />
-      ) : null}
+    <AppShell session={session} currentPage={currentPage} onNavigate={setCurrentPage} onLogout={() => void handleLogout()}>
+      {currentPage === "dashboard" ? <DashboardPage session={session} onLogout={() => void handleLogout()} /> : null}
+      {currentPage === "remote-readonly" ? <RemoteReadOnlyClientPage /> : null}
       {currentPage === "products" ? <ProductsPage /> : null}
       {currentPage === "inventory" ? <InventoryPage /> : null}
       {currentPage === "sales" ? <SalesHistoryPage /> : null}

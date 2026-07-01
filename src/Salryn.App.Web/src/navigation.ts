@@ -1,4 +1,4 @@
-export type AppPage = "dashboard" | "products" | "inventory" | "sales" | "users" | "audit";
+export type AppPage = "dashboard" | "products" | "inventory" | "sales" | "users" | "audit" | "remote-readonly";
 
 export type EnabledNavItem = {
   id: AppPage;
@@ -17,6 +17,7 @@ export type NavItemConfig = EnabledNavItem | DisabledNavItem;
 export const navItems: NavItemConfig[] = [
   { id: "dashboard", label: "Dashboard", enabled: true },
   { id: "disabled", label: "POS Checkout", enabled: false },
+  { id: "remote-readonly", label: "Remote Read-Only Client", enabled: true },
   { id: "products", label: "Products", enabled: true },
   { id: "inventory", label: "Inventory", enabled: true },
   { id: "sales", label: "Sales History", enabled: true },
