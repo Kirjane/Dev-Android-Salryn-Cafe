@@ -5,7 +5,6 @@ using Salryn.Core.Services;
 namespace Salryn.App.WinForms.Features.OfficialOutput;
 
 public sealed record OfficialDocumentLifecycleOperationRequest(
-    OfficialDocumentAuditEventKind EventKind,
     OfficialDocumentAuditEventRequest AuditRequest,
     Func<IReadOnlyCollection<string>> PermissionProvider);
 
@@ -36,7 +35,15 @@ public sealed class OfficialDocumentLifecycleOperationBoundary : IOfficialDocume
                 "Official document lifecycle operation request is required.")));
         }
 
-        string? requiredPermission = ResolvePermission(request.EventKind);
+        if (request.AuditRequest is null)
+        {
+            return Task.FromResult(Result<OfficialDocumentAuditEventResult>.Fail(Error.Validation(
+                "OfficialDocumentLifecycleOperation.AuditRequestRequired",
+                "Official document lifecycle operation audit request is required.")));
+        }
+
+        OfficialDocumentAuditEventKind submittedEventKind = request.AuditRequest.EventKind;
+        string? requiredPermission = ResolvePermission(submittedEventKind);
 
         if (requiredPermission is null)
         {

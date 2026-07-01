@@ -173,6 +173,7 @@ public static class Program
         RmoB1OfficialCheckoutDataIntegrityCurrentStateSealChecks.Run();
         RmoEngineeringVatTaxBucketEngineChecks.Run();
         RmoEngineeringCompletionCandidateChecks.Run();
+        RmoOfficialLifecycleOperationBoundaryPermissionChecks.RunAsync().GetAwaiter().GetResult();
         J21Rmo242023ElectronicJournalPersistenceRuntimeDocumentationSealChecks.Run();
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
