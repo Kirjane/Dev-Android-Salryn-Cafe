@@ -22,6 +22,19 @@ public static class M6CandidateStackPromotionDryRunChecks
         string currentState = ReadRequiredFile(currentStatePath);
         string coreSmoke = ReadRequiredFile(coreSmokePath);
 
+        if (IsPostMSeriesPromotionCurrentState(currentState))
+        {
+            AssertContains(currentState, "Stable as of `bde69e28faa4f92dd7b6765da9f45a0c5cf02056`", "Current-state doc must contain the promoted M-series Sandbox SHA.");
+            AssertContains(currentState, "M-series is stable on Sandbox", "Current-state doc must mark the M-series stable after promotion.");
+            AssertContains(currentState, "LAN-M14-A is current candidate work and is not verified until Codex verifies it", "Current-state doc must mark LAN-M14-A as current candidate work.");
+            AssertContains(currentState, "LAN-M14-B is not started", "Current-state doc must state LAN-M14-B is not started.");
+            AssertContains(currentState, "M-series docs remain useful historical context", "Current-state doc must demote M-series docs to historical context after promotion.");
+            AssertContains(checklist, "Promotion still requires explicit Kirch command", "Dry-run checklist must remain available as historical promotion context.");
+            AssertContains(coreSmoke, "M6CandidateStackPromotionDryRunChecks.Run();", "M6 checks must remain explicitly wired in CoreSmoke.");
+            AssertM6ChangedFilesStayInScope(projectRoot, currentState);
+            return;
+        }
+
         AssertContains(checklist, StableSandboxSha, "Dry-run checklist must contain exact stable Sandbox SHA.");
         AssertContains(checklist, M6BaselineSha, "Dry-run checklist must contain exact Freehand SHA before M6.");
         AssertContains(checklist, RemoteM6CandidateSha, "Dry-run checklist must contain exact remote M6 candidate SHA before local verification.");
@@ -122,6 +135,12 @@ public static class M6CandidateStackPromotionDryRunChecks
 
     private static void AssertM6ChangedFilesStayInScope(string projectRoot, string currentState)
     {
+        if (IsPostMSeriesPromotionCurrentState(currentState))
+        {
+            Console.WriteLine("M6 changed-file scope guard skipped: M6 has been promoted. Static dry-run checks remain active.");
+            return;
+        }
+
         if (!currentState.Contains("M6 is current candidate work", StringComparison.Ordinal))
         {
             Console.WriteLine("M6 changed-file scope guard skipped: M6 is no longer current candidate work. Static dry-run checks remain active.");
@@ -208,6 +227,12 @@ public static class M6CandidateStackPromotionDryRunChecks
         {
             paths.Add(line.Trim().Replace('\\', '/'));
         }
+    }
+
+    private static bool IsPostMSeriesPromotionCurrentState(string currentState)
+    {
+        return currentState.Contains("M-series is stable on Sandbox", StringComparison.Ordinal)
+            && currentState.Contains("LAN-M14-A is current candidate work", StringComparison.Ordinal);
     }
 
     private static string? TryRunGit(string projectRoot, string arguments)

@@ -20,6 +20,19 @@ public static class M5VerifiedCandidateStackLedgerChecks
         string currentState = ReadRequiredFile(currentStatePath);
         string coreSmoke = ReadRequiredFile(coreSmokePath);
 
+        if (IsPostMSeriesPromotionCurrentState(currentState))
+        {
+            AssertContains(currentState, "Stable as of `bde69e28faa4f92dd7b6765da9f45a0c5cf02056`", "Current-state doc must contain the promoted M-series Sandbox SHA.");
+            AssertContains(currentState, "M-series is stable on Sandbox", "Current-state doc must mark the M-series stable after promotion.");
+            AssertContains(currentState, "LAN-M14-A is current candidate work and is not verified until Codex verifies it", "Current-state doc must mark LAN-M14-A as current candidate work.");
+            AssertContains(currentState, "LAN-M14-B is not started", "Current-state doc must state LAN-M14-B is not started.");
+            AssertContains(currentState, "M-series docs remain useful historical context", "Current-state doc must demote M-series docs to historical context after promotion.");
+            AssertContains(ledger, "## Candidate Stack File Manifest", "Ledger must remain available as historical candidate-stack context after promotion.");
+            AssertContains(coreSmoke, "M5VerifiedCandidateStackLedgerChecks.Run();", "M5 must remain explicitly wired into CoreSmoke.");
+            AssertM5ChangedFilesStayInScope(projectRoot, currentState);
+            return;
+        }
+
         AssertContains(ledger, StableSandboxSha, "Ledger must contain exact stable Sandbox SHA.");
         AssertContains(ledger, RemoteM5CandidateSha, "Ledger must contain exact remote M5 candidate SHA before local verification.");
 
@@ -141,6 +154,12 @@ public static class M5VerifiedCandidateStackLedgerChecks
 
     private static void AssertM5ChangedFilesStayInScope(string projectRoot, string currentState)
     {
+        if (IsPostMSeriesPromotionCurrentState(currentState))
+        {
+            Console.WriteLine("M5 changed-file scope guard skipped: M5 has been promoted. Static historical ledger checks remain active.");
+            return;
+        }
+
         if (!currentState.Contains("M5 is current candidate work", StringComparison.Ordinal))
         {
             Console.WriteLine("M5 changed-file scope guard skipped: M5 is no longer the current candidate work. Static ledger checks remain active.");
@@ -245,6 +264,12 @@ public static class M5VerifiedCandidateStackLedgerChecks
         {
             paths.Add(line.Trim().Replace('\\', '/'));
         }
+    }
+
+    private static bool IsPostMSeriesPromotionCurrentState(string currentState)
+    {
+        return currentState.Contains("M-series is stable on Sandbox", StringComparison.Ordinal)
+            && currentState.Contains("LAN-M14-A is current candidate work", StringComparison.Ordinal);
     }
 
     private static string? TryRunGit(string projectRoot, string arguments)

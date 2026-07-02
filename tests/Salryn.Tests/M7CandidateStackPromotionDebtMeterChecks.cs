@@ -23,6 +23,19 @@ public static class M7CandidateStackPromotionDebtMeterChecks
         string dryRunChecklist = ReadRequiredFile(dryRunPath);
         string coreSmoke = ReadRequiredFile(coreSmokePath);
 
+        if (IsPostMSeriesPromotionCurrentState(currentState))
+        {
+            AssertContains(currentState, "Stable as of `bde69e28faa4f92dd7b6765da9f45a0c5cf02056`", "Current-state doc must contain the promoted M-series Sandbox SHA.");
+            AssertContains(currentState, "M-series is stable on Sandbox", "Current-state doc must mark the M-series stable after promotion.");
+            AssertContains(currentState, "LAN-M14-A is current candidate work and is not verified until Codex verifies it", "Current-state doc must mark LAN-M14-A as current candidate work.");
+            AssertContains(currentState, "LAN-M14-B is not started", "Current-state doc must state LAN-M14-B is not started.");
+            AssertContains(currentState, "M-series docs remain useful historical context", "Current-state doc must demote M-series docs to historical context after promotion.");
+            AssertContains(debtMeter, "### HIGH", "Debt meter must remain available as historical promotion-debt context.");
+            AssertContains(coreSmoke, "M7CandidateStackPromotionDebtMeterChecks.Run();", "M7 checks must remain explicitly wired in CoreSmoke.");
+            AssertM7ChangedFilesStayInScope(projectRoot, currentState);
+            return;
+        }
+
         AssertContains(debtMeter, StableSandboxSha, "Debt meter must contain exact stable Sandbox SHA.");
         AssertContains(debtMeter, M7BaselineSha, "Debt meter must contain exact Freehand SHA before M7.");
         AssertContains(debtMeter, "Promotion status: parked", "Debt meter must state promotion is parked.");
@@ -103,6 +116,12 @@ public static class M7CandidateStackPromotionDebtMeterChecks
 
     private static void AssertM7ChangedFilesStayInScope(string projectRoot, string currentState)
     {
+        if (IsPostMSeriesPromotionCurrentState(currentState))
+        {
+            Console.WriteLine("M7 changed-file scope guard skipped: M7 has been promoted. Static debt-meter checks remain active.");
+            return;
+        }
+
         if (!currentState.Contains("M7 is current candidate work", StringComparison.Ordinal))
         {
             Console.WriteLine("M7 changed-file scope guard skipped: M7 is no longer current candidate work. Static debt-meter checks remain active.");
@@ -193,6 +212,12 @@ public static class M7CandidateStackPromotionDebtMeterChecks
         {
             paths.Add(line.Trim().Replace('\\', '/'));
         }
+    }
+
+    private static bool IsPostMSeriesPromotionCurrentState(string currentState)
+    {
+        return currentState.Contains("M-series is stable on Sandbox", StringComparison.Ordinal)
+            && currentState.Contains("LAN-M14-A is current candidate work", StringComparison.Ordinal);
     }
 
     private static string? TryRunGit(string projectRoot, string arguments)
