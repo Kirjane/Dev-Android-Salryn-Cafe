@@ -20,7 +20,10 @@ internal static class ReadOnlyEndpointExtensions
             int pageSize = 25,
             CancellationToken cancellationToken = default) =>
         {
-            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
+            if (LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    LocalApiPermissions.ProductsView) is IResult unauthorized)
             {
                 return unauthorized;
             }
@@ -40,7 +43,10 @@ internal static class ReadOnlyEndpointExtensions
             OperatorReadService reads,
             CancellationToken cancellationToken) =>
         {
-            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
+            if (LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    LocalApiPermissions.ProductsView) is IResult unauthorized)
             {
                 return unauthorized;
             }
@@ -64,7 +70,10 @@ internal static class ReadOnlyEndpointExtensions
             OperatorReadService reads,
             CancellationToken cancellationToken) =>
         {
-            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
+            if (LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    LocalApiPermissions.ProductsView) is IResult unauthorized)
             {
                 return unauthorized;
             }
@@ -81,7 +90,10 @@ internal static class ReadOnlyEndpointExtensions
             OperatorReadService reads,
             CancellationToken cancellationToken) =>
         {
-            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
+            if (LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    LocalApiPermissions.ProductsView) is IResult unauthorized)
             {
                 return unauthorized;
             }
@@ -98,7 +110,10 @@ internal static class ReadOnlyEndpointExtensions
             OperatorReadService reads,
             CancellationToken cancellationToken) =>
         {
-            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
+            if (LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    LocalApiPermissions.InventoryView) is IResult unauthorized)
             {
                 return unauthorized;
             }
@@ -121,7 +136,10 @@ internal static class ReadOnlyEndpointExtensions
             int pageSize = 25,
             CancellationToken cancellationToken = default) =>
         {
-            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
+            if (LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    LocalApiPermissions.InventoryView) is IResult unauthorized)
             {
                 return unauthorized;
             }
@@ -146,7 +164,10 @@ internal static class ReadOnlyEndpointExtensions
             int pageSize = 25,
             CancellationToken cancellationToken = default) =>
         {
-            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
+            if (LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    LocalApiPermissions.SalesViewHistory) is IResult unauthorized)
             {
                 return unauthorized;
             }
@@ -165,7 +186,10 @@ internal static class ReadOnlyEndpointExtensions
             OperatorReadService reads,
             CancellationToken cancellationToken) =>
         {
-            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
+            if (LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    LocalApiPermissions.SalesViewHistory) is IResult unauthorized)
             {
                 return unauthorized;
             }
@@ -189,7 +213,10 @@ internal static class ReadOnlyEndpointExtensions
             OperatorReadService reads,
             CancellationToken cancellationToken) =>
         {
-            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
+            if (LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    LocalApiPermissions.UsersManage) is IResult unauthorized)
             {
                 return unauthorized;
             }
@@ -206,7 +233,10 @@ internal static class ReadOnlyEndpointExtensions
             OperatorReadService reads,
             CancellationToken cancellationToken) =>
         {
-            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
+            if (LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    LocalApiPermissions.UsersManage) is IResult unauthorized)
             {
                 return unauthorized;
             }
@@ -224,7 +254,10 @@ internal static class ReadOnlyEndpointExtensions
             OperatorReadService reads,
             CancellationToken cancellationToken) =>
         {
-            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
+            if (LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    LocalApiPermissions.UsersManage) is IResult unauthorized)
             {
                 return unauthorized;
             }
@@ -253,7 +286,10 @@ internal static class ReadOnlyEndpointExtensions
             int pageSize = 25,
             CancellationToken cancellationToken = default) =>
         {
-            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
+            if (LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    LocalApiPermissions.AuditView) is IResult unauthorized)
             {
                 return unauthorized;
             }
@@ -276,7 +312,10 @@ internal static class ReadOnlyEndpointExtensions
             int pageSize = 25,
             CancellationToken cancellationToken = default) =>
         {
-            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
+            if (LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    LocalApiPermissions.AuditView) is IResult unauthorized)
             {
                 return unauthorized;
             }

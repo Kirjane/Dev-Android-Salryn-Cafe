@@ -77,6 +77,7 @@ public static class Program
         WebA4NativeHostVisualFidelityChecks.Run();
         WebB0ReadOnlyOperatorSurfacesChecks.Run();
         RoleM1OperatorRolePermissionUxCompileChecks.Run();
+        RoleM2BackendPermissionEnforcementChecks.Run();
         SecA1LocalApiWebViewSecurityChecks.Run();
         J20UiWorkflowReadinessChecks.Run();
         PosStabA1StartupLoginReadinessChecks.Run();

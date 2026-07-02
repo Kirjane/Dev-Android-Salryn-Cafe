@@ -75,8 +75,11 @@ internal static class RemoteReadOnlyLanUsabilitySmokeChecks
         Require(!endpoints.Contains("MapPut", StringComparison.Ordinal), "Remote-readonly endpoints must not map PUT routes.");
         Require(!endpoints.Contains("MapPatch", StringComparison.Ordinal), "Remote-readonly endpoints must not map PATCH routes.");
         Require(!endpoints.Contains("MapDelete", StringComparison.Ordinal), "Remote-readonly endpoints must not map DELETE routes.");
-        Require(endpoints.Contains("GetRequiredSession", StringComparison.Ordinal), "Remote-readonly endpoints must call GetRequiredSession.");
-        Require(CountOccurrences(endpoints, "RequireSession(httpContext, sessions)") >= getRoutes.Length, "Every remote-readonly route must be covered by RequireSession.");
+        Require(endpoints.Contains("LocalApiPermissionGuards", StringComparison.Ordinal), "Remote-readonly endpoints must use the shared local API permission guard.");
+        Require(CountOccurrences(endpoints, "LocalApiPermissionGuards.") >= getRoutes.Length, "Every remote-readonly route must be covered by the shared local API permission guard.");
+        Require(endpoints.Contains("LocalApiPermissions.ProductsView", StringComparison.Ordinal), "Remote product reads must require Products.View.");
+        Require(endpoints.Contains("LocalApiPermissions.StoreTerminalView", StringComparison.Ordinal), "Remote terminal status reads must require StoreTerminal.View.");
+        Require(endpoints.Contains("LocalApiPermissions.AuditView", StringComparison.Ordinal), "Remote audit visibility reads must require Audit.View.");
     }
 
     private static void RequireNoEndpointDisclosure(string text, string label)

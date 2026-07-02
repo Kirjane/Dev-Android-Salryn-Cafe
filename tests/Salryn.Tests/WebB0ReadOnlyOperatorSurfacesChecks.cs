@@ -33,7 +33,7 @@ public static class WebB0ReadOnlyOperatorSurfacesChecks
             RequireContains(readOnlyEndpoints, endpoint, $"API must expose GET {endpoint}.");
         }
 
-        RequireContains(readOnlyEndpoints, "RequireAuthenticatedSession", "Read endpoints must require authenticated session.");
+        RequireContains(readOnlyEndpoints, "LocalApiPermissionGuards.RequirePermission", "Read endpoints must require backend permission checks.");
         RequireContains(compositionText, "IUserReadRepository", "Composition must wire user read repository.");
         RequireContains(compositionText, "IAuditReadRepository", "Composition must wire audit read repository.");
         RequireContains(compositionText, "IErrorLogReadRepository", "Composition must wire error log read repository.");

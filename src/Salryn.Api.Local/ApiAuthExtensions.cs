@@ -9,16 +9,7 @@ internal static class ApiAuthExtensions
         HttpContext httpContext,
         LocalApiSessionService sessions)
     {
-        string? sessionId = httpContext.Request.Cookies[LocalApiSessionService.SessionCookieName];
-
-        if (sessions.GetRequiredSession(sessionId) is null)
-        {
-            return Results.Json(
-                new { error = "Authentication is required." },
-                statusCode: StatusCodes.Status401Unauthorized);
-        }
-
-        return null;
+        return LocalApiPermissionGuards.RequireAuthenticatedSession(httpContext, sessions);
     }
 
     public static IResult ToErrorResult<T>(Result<T> result)

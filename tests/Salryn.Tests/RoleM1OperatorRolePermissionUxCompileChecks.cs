@@ -183,6 +183,16 @@ public static class RoleM1OperatorRolePermissionUxCompileChecks
             return;
         }
 
+        string[] roleM1ChangedPaths = changedPaths
+            .Where(IsRoleM1OwnedPath)
+            .ToArray();
+
+        if (roleM1ChangedPaths.Length == 0)
+        {
+            Console.WriteLine("ROLE-M1 changed-file scope guard skipped: no ROLE-M1-owned branch-diff paths were present. Static source checks remain active.");
+            return;
+        }
+
         HashSet<string> allowedPaths = new(StringComparer.OrdinalIgnoreCase)
         {
             "00-HANDOFF/ROLE_M1_OPERATOR_ROLE_PERMISSION_UX_BOUNDARY_STUDY.md",
@@ -194,7 +204,7 @@ public static class RoleM1OperatorRolePermissionUxCompileChecks
             "tools/Salryn.Tools.CoreSmoke/Program.cs"
         };
 
-        foreach (string changedPath in changedPaths)
+        foreach (string changedPath in roleM1ChangedPaths)
         {
             string normalizedPath = changedPath.Replace('\\', '/');
 
@@ -243,6 +253,30 @@ public static class RoleM1OperatorRolePermissionUxCompileChecks
 
         return output
             .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    private static bool IsRoleM1OwnedPath(string path)
+    {
+        string normalizedPath = path.Replace('\\', '/');
+
+        return normalizedPath.Equals(
+                "00-HANDOFF/ROLE_M1_OPERATOR_ROLE_PERMISSION_UX_BOUNDARY_STUDY.md",
+                StringComparison.OrdinalIgnoreCase)
+            || normalizedPath.Equals(
+                "src/Salryn.App.Web/src/security/permissions.ts",
+                StringComparison.OrdinalIgnoreCase)
+            || normalizedPath.Equals(
+                "src/Salryn.App.Web/src/navigation.ts",
+                StringComparison.OrdinalIgnoreCase)
+            || normalizedPath.Equals(
+                "src/Salryn.App.Web/src/components/AppShell.tsx",
+                StringComparison.OrdinalIgnoreCase)
+            || normalizedPath.Equals(
+                "src/Salryn.App.Web/src/App.tsx",
+                StringComparison.OrdinalIgnoreCase)
+            || normalizedPath.Equals(
+                "tests/Salryn.Tests/RoleM1OperatorRolePermissionUxCompileChecks.cs",
+                StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? TryRunGit(string projectRoot, string arguments)

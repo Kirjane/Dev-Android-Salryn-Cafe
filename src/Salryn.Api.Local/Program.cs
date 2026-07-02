@@ -119,13 +119,9 @@ app.MapGet("/api/dashboard/summary", async (
     DashboardSummaryService summaryService,
     CancellationToken cancellationToken) =>
 {
-    string? sessionId = httpContext.Request.Cookies[LocalApiSessionService.SessionCookieName];
-
-    if (sessions.GetRequiredSession(sessionId) is null)
+    if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
     {
-        return Results.Json(
-            new { error = "Authentication is required." },
-            statusCode: StatusCodes.Status401Unauthorized);
+        return unauthorized;
     }
 
     var summary = await summaryService.GetSummaryAsync(cancellationToken).ConfigureAwait(false);

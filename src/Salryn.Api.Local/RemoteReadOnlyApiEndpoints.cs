@@ -16,7 +16,7 @@ public static class RemoteReadOnlyApiEndpoints
             LocalApiSessionService sessions,
             RemoteReadOnlyApiService remoteReadOnly) =>
         {
-            IResult? rejected = RequireSession(httpContext, sessions);
+            IResult? rejected = LocalApiPermissionGuards.RequireAuthenticatedSession(httpContext, sessions);
             return rejected ?? Results.Ok(remoteReadOnly.GetStatus());
         });
 
@@ -25,7 +25,7 @@ public static class RemoteReadOnlyApiEndpoints
             LocalApiSessionService sessions,
             RemoteReadOnlyApiService remoteReadOnly) =>
         {
-            IResult? rejected = RequireSession(httpContext, sessions);
+            IResult? rejected = LocalApiPermissionGuards.RequireAuthenticatedSession(httpContext, sessions);
             return rejected ?? Results.Ok(remoteReadOnly.GetCapabilities());
         });
 
@@ -35,7 +35,7 @@ public static class RemoteReadOnlyApiEndpoints
             RemoteReadOnlyApiService remoteReadOnly,
             CancellationToken cancellationToken) =>
         {
-            IResult? rejected = RequireSession(httpContext, sessions);
+            IResult? rejected = LocalApiPermissionGuards.RequireAuthenticatedSession(httpContext, sessions);
             if (rejected is not null)
             {
                 return rejected;
@@ -57,7 +57,10 @@ public static class RemoteReadOnlyApiEndpoints
             int pageSize,
             CancellationToken cancellationToken) =>
         {
-            IResult? rejected = RequireSession(httpContext, sessions);
+            IResult? rejected = LocalApiPermissionGuards.RequirePermission(
+                httpContext,
+                sessions,
+                LocalApiPermissions.ProductsView);
             if (rejected is not null)
             {
                 return rejected;
@@ -75,7 +78,10 @@ public static class RemoteReadOnlyApiEndpoints
             LocalApiSessionService sessions,
             RemoteReadOnlyApiService remoteReadOnly) =>
         {
-            IResult? rejected = RequireSession(httpContext, sessions);
+            IResult? rejected = LocalApiPermissionGuards.RequirePermission(
+                httpContext,
+                sessions,
+                LocalApiPermissions.StoreTerminalView);
             return rejected ?? Results.Ok(remoteReadOnly.GetTerminalStatus());
         });
 
@@ -84,7 +90,7 @@ public static class RemoteReadOnlyApiEndpoints
             LocalApiSessionService sessions,
             RemoteReadOnlyApiService remoteReadOnly) =>
         {
-            IResult? rejected = RequireSession(httpContext, sessions);
+            IResult? rejected = LocalApiPermissionGuards.RequireAuthenticatedSession(httpContext, sessions);
             return rejected ?? Results.Ok(remoteReadOnly.GetBindPolicy());
         });
 
@@ -95,26 +101,14 @@ public static class RemoteReadOnlyApiEndpoints
             int page,
             int pageSize) =>
         {
-            IResult? rejected = RequireSession(httpContext, sessions);
+            IResult? rejected = LocalApiPermissionGuards.RequirePermission(
+                httpContext,
+                sessions,
+                LocalApiPermissions.AuditView);
             return rejected ?? Results.Ok(remoteReadOnly.GetAuditVisibility(page, pageSize));
         });
 
         return app;
-    }
-
-    private static IResult? RequireSession(
-        HttpContext httpContext,
-        LocalApiSessionService sessions)
-    {
-        string? sessionId = httpContext.Request.Cookies[LocalApiSessionService.SessionCookieName];
-        if (sessions.GetRequiredSession(sessionId) is null)
-        {
-            return Results.Json(
-                new { error = "Authentication is required." },
-                statusCode: StatusCodes.Status401Unauthorized);
-        }
-
-        return null;
     }
 
     private static IResult ToApiResult<T>(Result<T> result)
