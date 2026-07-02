@@ -79,6 +79,11 @@ public static class Program
         RoleM1OperatorRolePermissionUxCompileChecks.Run();
         RoleM2BackendPermissionEnforcementChecks.Run();
         RoleM3HttpApiPermissionRuntimeChecks.RunAsync().GetAwaiter().GetResult();
+        RoleM4PermissionBoundaryRegressionMatrixChecks.RunAsync().GetAwaiter().GetResult();
+        M5VerifiedCandidateStackLedgerChecks.Run();
+        M6CandidateStackPromotionDryRunChecks.Run();
+        M7CandidateStackPromotionDebtMeterChecks.Run();
+        M8MSeriesCompletionLanTransitionGateChecks.Run();
         SecA1LocalApiWebViewSecurityChecks.Run();
         J20UiWorkflowReadinessChecks.Run();
         PosStabA1StartupLoginReadinessChecks.Run();
