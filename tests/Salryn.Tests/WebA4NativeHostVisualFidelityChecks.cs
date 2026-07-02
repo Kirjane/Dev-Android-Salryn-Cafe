@@ -37,7 +37,9 @@ public static class WebA4NativeHostVisualFidelityChecks
         RequireNotContains(hostSource, "handoff", "Native host must not reintroduce session handoff.");
 
         // --- Local API security posture preserved (with optional static hosting) ---
-        string apiProgram = ReadRequiredFile(repoRoot.FullName, "src", "Salryn.Api.Local", "Program.cs");
+        string apiProgram = ReadRequiredFile(repoRoot.FullName, "src", "Salryn.Api.Local", "Program.cs")
+            + "\n"
+            + ReadRequiredFile(repoRoot.FullName, "src", "Salryn.Api.Local", "LocalApiApplicationFactory.cs");
         RequireContains(apiProgram, "127.0.0.1", "API must bind to localhost only.");
         RequireNotContains(apiProgram, "0.0.0.0", "API must not bind to 0.0.0.0.");
         RequireNotContains(apiProgram, "ListenAnyIP", "API must not listen on any IP.");

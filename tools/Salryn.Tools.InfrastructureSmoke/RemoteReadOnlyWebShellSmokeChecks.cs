@@ -13,7 +13,9 @@ internal static class RemoteReadOnlyWebShellSmokeChecks
         string nav = Read(webRoot, "src", "navigation.ts");
         string page = Read(webRoot, "src", "pages", "RemoteReadOnlyClientPage.tsx");
         string source = Read(webRoot, "src", "api", "remoteReadOnlyClient.ts");
-        string localApiProgram = Read(apiRoot, "Program.cs");
+        string localApiProgram = Read(apiRoot, "Program.cs")
+            + "\n"
+            + Read(apiRoot, "LocalApiApplicationFactory.cs");
 
         Require(packageJson.Contains("react", StringComparison.OrdinalIgnoreCase), "React package marker missing.");
         Require(packageJson.Contains("vite", StringComparison.OrdinalIgnoreCase), "Vite package marker missing.");
@@ -33,7 +35,7 @@ internal static class RemoteReadOnlyWebShellSmokeChecks
         Require(source.Contains("Dashboard read", StringComparison.Ordinal), "Dashboard read capability missing.");
         Require(source.Contains("Terminal status read", StringComparison.Ordinal), "Terminal status read capability missing.");
         Require(!Directory.Exists(Path.Combine(root, "src", "Salryn.App.WinForms", "Features", "RemoteClient")), "WinForms RemoteClient UX path must not exist.");
-        Require(localApiProgram.Contains("UseUrls(\"http://127.0.0.1:5299\")", StringComparison.Ordinal), "Api.Local must remain localhost-only.");
+        Require(localApiProgram.Contains("http://127.0.0.1:5299", StringComparison.Ordinal), "Api.Local must remain localhost-only.");
         Require(!localApiProgram.Contains("0.0.0.0", StringComparison.Ordinal), "Api.Local must not bind to all interfaces.");
         RequireNoForbiddenWebMarkers(webRoot);
 

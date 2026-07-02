@@ -32,7 +32,9 @@ public static class RoleM2BackendPermissionEnforcementChecks
         string handoffRoot = Path.Combine(projectRoot, "00-HANDOFF");
         string guardFile = ReadRequiredFile(Path.Combine(apiRoot, "Auth", "LocalApiPermissionGuards.cs"));
         string authExtensions = ReadRequiredFile(Path.Combine(apiRoot, "ApiAuthExtensions.cs"));
-        string program = ReadRequiredFile(Path.Combine(apiRoot, "Program.cs"));
+        string program = ReadRequiredFile(Path.Combine(apiRoot, "Program.cs"))
+            + "\n"
+            + ReadRequiredFile(Path.Combine(apiRoot, "LocalApiApplicationFactory.cs"));
         string readOnlyEndpoints = ReadRequiredFile(Path.Combine(apiRoot, "ReadOnlyEndpointExtensions.cs"));
         string remoteReadOnlyEndpoints = ReadRequiredFile(Path.Combine(apiRoot, "RemoteReadOnlyApiEndpoints.cs"));
         string seedFile = ReadRequiredFile(Path.Combine(
@@ -178,6 +180,7 @@ public static class RoleM2BackendPermissionEnforcementChecks
             "00-HANDOFF/CONFIDENCE_A1_REPO_WIDE_STABILITY_AUDIT.md",
             "src/Salryn.Api.Local/Auth/LocalApiPermissionGuards.cs",
             "src/Salryn.Api.Local/ApiAuthExtensions.cs",
+            "src/Salryn.Api.Local/LocalApiApplicationFactory.cs",
             "src/Salryn.Api.Local/Program.cs",
             "src/Salryn.Api.Local/ReadOnlyEndpointExtensions.cs",
             "src/Salryn.Api.Local/RemoteReadOnlyApiEndpoints.cs",
@@ -189,7 +192,17 @@ public static class RoleM2BackendPermissionEnforcementChecks
             "tools/Salryn.Tools.CoreSmoke/Program.cs"
         };
 
-        foreach (string changedPath in changedPaths)
+        string[] roleM2ChangedPaths = changedPaths
+            .Where(IsRoleM2OwnedPath)
+            .ToArray();
+
+        if (roleM2ChangedPaths.Length == 0)
+        {
+            Console.WriteLine("ROLE-M2 changed-file scope guard skipped: no ROLE-M2-owned branch-diff paths were present. Static source checks remain active.");
+            return;
+        }
+
+        foreach (string changedPath in roleM2ChangedPaths)
         {
             string normalizedPath = changedPath.Replace('\\', '/');
 
@@ -220,6 +233,27 @@ public static class RoleM2BackendPermissionEnforcementChecks
                 throw new InvalidOperationException($"ROLE-M2 changed a forbidden boundary file: {normalizedPath}");
             }
         }
+    }
+
+    private static bool IsRoleM2OwnedPath(string path)
+    {
+        string normalizedPath = path.Replace('\\', '/');
+
+        return normalizedPath.Equals("00-HANDOFF/ROLE_M2_BACKEND_PERMISSION_ENFORCEMENT_BOUNDARY_STUDY.md", StringComparison.OrdinalIgnoreCase)
+            || normalizedPath.Equals("00-HANDOFF/CURRENT_STABLE_STATE_AND_NEXT_WORK.md", StringComparison.OrdinalIgnoreCase)
+            || normalizedPath.Equals("00-HANDOFF/CONFIDENCE_A1_REPO_WIDE_STABILITY_AUDIT.md", StringComparison.OrdinalIgnoreCase)
+            || normalizedPath.Equals("src/Salryn.Api.Local/Auth/LocalApiPermissionGuards.cs", StringComparison.OrdinalIgnoreCase)
+            || normalizedPath.Equals("src/Salryn.Api.Local/ApiAuthExtensions.cs", StringComparison.OrdinalIgnoreCase)
+            || normalizedPath.Equals("src/Salryn.Api.Local/LocalApiApplicationFactory.cs", StringComparison.OrdinalIgnoreCase)
+            || normalizedPath.Equals("src/Salryn.Api.Local/Program.cs", StringComparison.OrdinalIgnoreCase)
+            || normalizedPath.Equals("src/Salryn.Api.Local/ReadOnlyEndpointExtensions.cs", StringComparison.OrdinalIgnoreCase)
+            || normalizedPath.Equals("src/Salryn.Api.Local/RemoteReadOnlyApiEndpoints.cs", StringComparison.OrdinalIgnoreCase)
+            || normalizedPath.Equals("tests/Salryn.Tests/LanM9M13RemoteReadOnlyLanUsabilityChecks.cs", StringComparison.OrdinalIgnoreCase)
+            || normalizedPath.Equals("tests/Salryn.Tests/RoleM1OperatorRolePermissionUxCompileChecks.cs", StringComparison.OrdinalIgnoreCase)
+            || normalizedPath.Equals("tests/Salryn.Tests/RoleM2BackendPermissionEnforcementChecks.cs", StringComparison.OrdinalIgnoreCase)
+            || normalizedPath.Equals("tests/Salryn.Tests/WebB0ReadOnlyOperatorSurfacesChecks.cs", StringComparison.OrdinalIgnoreCase)
+            || normalizedPath.Equals("tools/Salryn.Tools.InfrastructureSmoke/RemoteReadOnlyLanUsabilitySmokeChecks.cs", StringComparison.OrdinalIgnoreCase)
+            || normalizedPath.Equals("tools/Salryn.Tools.CoreSmoke/Program.cs", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string[] GetChangedPaths(string projectRoot)

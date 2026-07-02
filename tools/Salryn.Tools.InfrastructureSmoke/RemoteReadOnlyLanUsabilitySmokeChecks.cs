@@ -11,7 +11,9 @@ internal static class RemoteReadOnlyLanUsabilitySmokeChecks
         string page = Read(webRoot, "src", "pages", "RemoteReadOnlyClientPage.tsx");
         string webApi = Read(webRoot, "src", "api", "remoteReadOnlyClient.ts");
         string hook = Read(webRoot, "src", "hooks", "useRemoteReadOnlyClient.ts");
-        string localProgram = Read(apiRoot, "Program.cs");
+        string localProgram = Read(apiRoot, "Program.cs")
+            + "\n"
+            + Read(apiRoot, "LocalApiApplicationFactory.cs");
         string endpoints = Read(apiRoot, "RemoteReadOnlyApiEndpoints.cs");
         string service = Read(apiRoot, "Services", "RemoteReadOnlyApiService.cs");
         string contracts = Read(apiRoot, "Contracts", "RemoteReadOnlyApiContracts.cs");
@@ -26,7 +28,7 @@ internal static class RemoteReadOnlyLanUsabilitySmokeChecks
         Require(hook.Contains("statusQuery", StringComparison.Ordinal), "Status hook missing.");
         Require(hook.Contains("bindPolicyQuery", StringComparison.Ordinal), "Bind policy hook missing.");
         Require(hook.Contains("auditQuery", StringComparison.Ordinal), "Audit visibility hook missing.");
-        Require(localProgram.Contains("UseUrls(\"http://127.0.0.1:5299\")", StringComparison.Ordinal), "Api.Local must remain localhost-only.");
+        Require(localProgram.Contains("http://127.0.0.1:5299", StringComparison.Ordinal), "Api.Local must remain localhost-only.");
         Require(localProgram.Contains("MapRemoteReadOnlyEndpoints", StringComparison.Ordinal), "Remote-readonly endpoint map missing.");
         Require(!localProgram.Contains("0.0.0.0", StringComparison.Ordinal), "All-interface bind must not exist.");
         RequireRemoteReadonlyEndpointShape(endpoints);

@@ -39,7 +39,9 @@ memory.
 
 ## Deferred / Risky
 
-- No HTTP-level Api.Local `WebApplicationFactory` or TestServer harness exists yet.
+- ROLE-M3 now provides an HTTP-level Api.Local runtime harness through
+  `LocalApiApplicationFactory`; no `WebApplicationFactory` or TestServer package
+  is used.
 - Live remote transport dispatch from Api.Local remains deferred.
 - React/WebView pairing activation remains deferred.
 - Runtime LAN bind configuration remains deferred.

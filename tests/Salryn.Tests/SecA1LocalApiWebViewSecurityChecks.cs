@@ -12,7 +12,9 @@ public static class SecA1LocalApiWebViewSecurityChecks
 
         RequireContains(coreSmokeText, "SecA1LocalApiWebViewSecurityChecks.Run();", "CoreSmoke must run SEC-A1 checks.");
 
-        string apiProgram = ReadRequiredFile(repoRoot.FullName, "src", "Salryn.Api.Local", "Program.cs");
+        string apiProgram = ReadRequiredFile(repoRoot.FullName, "src", "Salryn.Api.Local", "Program.cs")
+            + "\n"
+            + ReadRequiredFile(repoRoot.FullName, "src", "Salryn.Api.Local", "LocalApiApplicationFactory.cs");
         string readOnlyEndpoints = ReadRequiredFile(repoRoot.FullName, "src", "Salryn.Api.Local", "ReadOnlyEndpointExtensions.cs");
         string readOnlyContracts = ReadRequiredFile(repoRoot.FullName, "src", "Salryn.Api.Local", "Contracts", "ReadOnlyContracts.cs");
         string authSessionContracts = ReadRequiredFile(repoRoot.FullName, "src", "Salryn.Api.Local", "Contracts", "AuthSessionContracts.cs");

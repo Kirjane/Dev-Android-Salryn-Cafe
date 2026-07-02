@@ -7,7 +7,9 @@ public static class WebA1LocalApiReactDashboardChecks
         DirectoryInfo repoRoot = FindRepositoryRoot();
 
         string apiCsprojText = ReadRequiredFile(repoRoot, "src", "Salryn.Api.Local", "Salryn.Api.Local.csproj");
-        string apiProgramText = ReadRequiredFile(repoRoot, "src", "Salryn.Api.Local", "Program.cs");
+        string apiProgramText = ReadRequiredFile(repoRoot, "src", "Salryn.Api.Local", "Program.cs")
+            + "\n"
+            + ReadRequiredFile(repoRoot, "src", "Salryn.Api.Local", "LocalApiApplicationFactory.cs");
         string webPackageJsonText = ReadRequiredFile(repoRoot, "src", "Salryn.App.Web", "package.json");
         string dashboardApiText = ReadRequiredFile(repoRoot, "src", "Salryn.App.Web", "src", "api", "dashboard.ts");
         string dashboardPageText = ReadRequiredFile(repoRoot, "src", "Salryn.App.Web", "src", "pages", "DashboardPage.tsx");

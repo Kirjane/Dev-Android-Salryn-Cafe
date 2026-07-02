@@ -78,6 +78,7 @@ public static class Program
         WebB0ReadOnlyOperatorSurfacesChecks.Run();
         RoleM1OperatorRolePermissionUxCompileChecks.Run();
         RoleM2BackendPermissionEnforcementChecks.Run();
+        RoleM3HttpApiPermissionRuntimeChecks.RunAsync().GetAwaiter().GetResult();
         SecA1LocalApiWebViewSecurityChecks.Run();
         J20UiWorkflowReadinessChecks.Run();
         PosStabA1StartupLoginReadinessChecks.Run();

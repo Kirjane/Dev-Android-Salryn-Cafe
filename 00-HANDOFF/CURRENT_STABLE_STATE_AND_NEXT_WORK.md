@@ -3,38 +3,46 @@
 ## Source Stamp
 
 - Stable branch: `KIRCH-SANDBOX`
-- Stable SHA at ROLE-M2 closeout start: `bc01212ea4c6368f33ae9db460d7ec86001e1071`
+- Stable SHA before ROLE-M3 promotion review: `34fa718160d44c9cb66b408b963de56710d08594`
 - Candidate branch: `KIRCH-FREEHAND`
-- Candidate start for ROLE-M2 closeout: `399b2f23c9cad93d2a34e09f980227fda7078524`
+- ROLE-M3 status: candidate-ready after local verification; not stable until promoted
 
 ## Stable Stack
 
-Stable as of `bc01212ea4c6368f33ae9db460d7ec86001e1071`:
+Stable as of `34fa718160d44c9cb66b408b963de56710d08594`:
 
 - `LAN-M13` - remote read-only LAN usability
 - `ROLE-M1` - role-aware operator UX boundary
+- `ROLE-M2` - backend permission enforcement and confidence baseline
 
-`ROLE-M2` is candidate-ready only if the closeout implementation verifies on
-`KIRCH-FREEHAND`. It must not be described as stable until Kirch promotes it.
+`ROLE-M3` is not stable yet. It becomes stable only after Kirch promotes the verified candidate to `KIRCH-SANDBOX`.
 
 ## What Is Stable
 
 - Local API remains loopback-only at `127.0.0.1:5299`.
 - React/WebView is the operator UX target.
-- Remote read-only LAN usability is status/read only.
-- Store Host remains the authority for database, official sequence, journal,
-  inventory writes, and backups.
+- Remote read-only LAN usability remains status/read only.
+- Store Host remains the authority for database, official sequence, journal, inventory writes, and backups.
 - ROLE-M1 frontend page access uses `session.user.permissions`.
 - ROLE-M1 keeps disabled future pages disabled.
+- ROLE-M2 backend read-surface access uses `LocalApiSession.Permissions`.
+- ROLE-M2 keeps public and auth workflow endpoints reachable by design.
+- ROLE-M2 keeps `/api/session` usable for auth-state discovery.
 
-## What ROLE-M2 Completed In Candidate
+## ROLE-M3 Candidate Status
 
-- Added reusable Api.Local backend permission guards.
-- Added endpoint-level permission checks for existing protected read surfaces.
-- Kept public and auth workflow endpoints reachable by design.
-- Kept `/api/session` usable for auth-state discovery.
-- Added source guard coverage and explicit CoreSmoke wiring.
-- Updated this current-state index and the repo-wide confidence audit.
+ROLE-M3 now implements the Api.Local HTTP permission runtime harness on `KIRCH-FREEHAND`.
+
+Implemented candidate pieces:
+
+- `LocalApiApplicationFactory` testability seam for real `WebApplication` creation without calling `Run()`.
+- Production `Program.cs` delegates to the factory and still calls `app.Run()`.
+- Runtime HTTP harness starts the real endpoint pipeline on ephemeral loopback.
+- Runtime HTTP checks prove public, authenticated-only, permission-gated, and role-name-not-authorizing behavior.
+- CoreSmoke explicitly runs `RoleM3HttpApiPermissionRuntimeChecks.RunAsync()`.
+- Existing LAN/web source guards were adjusted to follow the factory extraction without weakening localhost/read-only boundaries.
+
+ROLE-M3 does not add production routes, DTO changes, seed changes, schema changes, LAN bind activation, live remote transport dispatch, or mutation behavior.
 
 ## What Remains Deferred
 
@@ -44,35 +52,33 @@ Stable as of `bc01212ea4c6368f33ae9db460d7ec86001e1071`:
 - Settings, Backup, Official Output, and Reports Web screens.
 - Live LAN bind and live remote transport dispatch.
 - React/WebView pairing activation.
-- HTTP-level Api.Local integration harness for 401/403 behavior.
+- LAN-M14.
+- M4 work.
 
 ## Docs Safe To Trust
 
 - This file.
 - `00-HANDOFF/CONFIDENCE_A1_REPO_WIDE_STABILITY_AUDIT.md`
+- `00-HANDOFF/ROLE_M3_HTTP_API_PERMISSION_RUNTIME_HARNESS_STUDY.md`
 - `00-HANDOFF/ROLE_M2_BACKEND_PERMISSION_ENFORCEMENT_BOUNDARY_STUDY.md`
 - `00-HANDOFF/ROLE_M1_OPERATOR_ROLE_PERMISSION_UX_BOUNDARY_STUDY.md`
 - LAN M9-M13 docs for current read-only LAN usability boundaries.
 
 ## Historical Handoffs Only
 
-Older phase documents, master plans, and RMO reconciliation studies are useful for
-intent and history, but they must not override the current source and the current
-state docs above. In particular, old references to future mobile, cloud, Crystal,
-PDF, printer, or broader RMO work are not current approval.
+Older phase documents, master plans, and RMO reconciliation studies remain useful for intent and history, but they must not override current source and the current state docs above. Old references to future mobile, cloud, Crystal, PDF, printer, broader RMO work, or live LAN execution are not current approval.
 
 ## Must Not Start Yet
 
-- M3 implementation before Kirch reviews this ROLE-M2 closeout.
+- M4 implementation.
 - LAN-M14 or any live LAN runtime expansion.
 - Remote cashier/admin execution.
 - Shared SQLite over LAN.
 - POS checkout implementation.
 - Role editor/custom permission manager.
+- Settings, Backup, Official Output, or Reports implementation.
 - RMO, printer, PDF, Crystal, or ESC/POS work.
 
-## Recommended M3 Planning Target
+## Recommended Next Planning Target
 
-If ROLE-M2 is verified and Kirch accepts the report, the safest M3 planning target
-is an HTTP-level Api.Local permission integration harness plus read-only endpoint
-401/403 runtime tests. That planning should not introduce new business features.
+After ROLE-M3 is promoted, the safest next planning target is M4: define the next permission-backed operator workflow boundary before implementation. M4 should start from the runtime-proven Api.Local permission harness and must not expand into checkout/admin mutation, live LAN bind, or RMO/printer work without explicit approval.

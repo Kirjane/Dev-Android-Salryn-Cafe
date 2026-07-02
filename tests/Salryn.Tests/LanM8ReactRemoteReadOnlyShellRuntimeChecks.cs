@@ -13,7 +13,9 @@ public static class LanM8ReactRemoteReadOnlyShellRuntimeChecks
         string nav = File.ReadAllText(Path.Combine(webRoot, "src", "navigation.ts"));
         string page = File.ReadAllText(Path.Combine(webRoot, "src", "pages", "RemoteReadOnlyClientPage.tsx"));
         string readOnlySource = File.ReadAllText(Path.Combine(webRoot, "src", "api", "remoteReadOnlyClient.ts"));
-        string localApiProgram = File.ReadAllText(Path.Combine(apiRoot, "Program.cs"));
+        string localApiProgram = File.ReadAllText(Path.Combine(apiRoot, "Program.cs"))
+            + "\n"
+            + File.ReadAllText(Path.Combine(apiRoot, "LocalApiApplicationFactory.cs"));
         string m7Service = File.ReadAllText(Path.Combine(root.FullName, "src", "Salryn.App.WinForms", "HostCommands", "RemoteReadOnlyClientService.cs"));
 
         Require(packageJson.Contains("react", StringComparison.OrdinalIgnoreCase), "React stack missing.");
@@ -44,7 +46,7 @@ public static class LanM8ReactRemoteReadOnlyShellRuntimeChecks
         Require(!Directory.Exists(Path.Combine(root.FullName, "src", "Salryn.App.WinForms", "Features", "RemoteClient")), "WinForms RemoteClient feature path must not exist.");
         Require(m7Service.Contains("IRemoteHostCommandTransport", StringComparison.Ordinal), "LAN-M7 transport abstraction missing.");
         Require(!m7Service.Contains("Salryn.Host.Local", StringComparison.Ordinal), "LAN-M7 service must not reference Host.Local.");
-        Require(localApiProgram.Contains("UseUrls(\"http://127.0.0.1:5299\")", StringComparison.Ordinal), "Api.Local must stay localhost-only.");
+        Require(localApiProgram.Contains("http://127.0.0.1:5299", StringComparison.Ordinal), "Api.Local must stay localhost-only.");
         Require(!localApiProgram.Contains("0.0.0.0", StringComparison.Ordinal), "Api.Local must not bind to all interfaces.");
         RequireNoForbiddenWebMarkers(webRoot);
         LanM5ControlledRemoteTransportGateChecks.Run();

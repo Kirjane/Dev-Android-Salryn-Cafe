@@ -8,7 +8,9 @@ public static class WebB0ReadOnlyOperatorSurfacesChecks
     {
         DirectoryInfo repoRoot = FindRepositoryRoot();
         string webSrc = Path.Combine(repoRoot.FullName, "src", "Salryn.App.Web", "src");
-        string apiProgram = ReadRequiredFile(repoRoot.FullName, "src", "Salryn.Api.Local", "Program.cs");
+        string apiProgram = ReadRequiredFile(repoRoot.FullName, "src", "Salryn.Api.Local", "Program.cs")
+            + "\n"
+            + ReadRequiredFile(repoRoot.FullName, "src", "Salryn.Api.Local", "LocalApiApplicationFactory.cs");
         string readOnlyEndpoints = ReadRequiredFile(repoRoot.FullName, "src", "Salryn.Api.Local", "ReadOnlyEndpointExtensions.cs");
         string compositionText = ReadRequiredFile(repoRoot.FullName, "src", "Salryn.Composition.Local", "SalrynLocalComposition.cs");
         string coreSmokeText = ReadRequiredFile(

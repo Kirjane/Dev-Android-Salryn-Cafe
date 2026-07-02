@@ -1,9 +1,11 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\..\src\Salryn.Core\Salryn.Core.csproj" />
     <ProjectReference Include="..\..\src\Salryn.Infrastructure\Salryn.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Salryn.Host.Local\Salryn.Host.Local.csproj" />
+    <ProjectReference Include="..\..\src\Salryn.Api.Local\Salryn.Api.Local.csproj" />
     <ProjectReference Include="..\..\src\Salryn.App.WinForms\Salryn.App.WinForms.csproj" />
   </ItemGroup>
 

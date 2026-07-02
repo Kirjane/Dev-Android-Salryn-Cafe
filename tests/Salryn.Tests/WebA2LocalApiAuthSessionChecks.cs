@@ -9,7 +9,9 @@ public static class WebA2LocalApiAuthSessionChecks
         string compositionCsprojText = ReadRequiredFile(repoRoot, "src", "Salryn.Composition.Local", "Salryn.Composition.Local.csproj");
         string compositionText = ReadRequiredFile(repoRoot, "src", "Salryn.Composition.Local", "SalrynLocalComposition.cs");
         string apiCsprojText = ReadRequiredFile(repoRoot, "src", "Salryn.Api.Local", "Salryn.Api.Local.csproj");
-        string apiProgramText = ReadRequiredFile(repoRoot, "src", "Salryn.Api.Local", "Program.cs");
+        string apiProgramText = ReadRequiredFile(repoRoot, "src", "Salryn.Api.Local", "Program.cs")
+            + "\n"
+            + ReadRequiredFile(repoRoot, "src", "Salryn.Api.Local", "LocalApiApplicationFactory.cs");
         string sessionServiceText = ReadRequiredFile(repoRoot, "src", "Salryn.Api.Local", "Auth", "LocalApiSessionService.cs");
         string sessionContractsText = ReadRequiredFile(repoRoot, "src", "Salryn.Api.Local", "Contracts", "AuthSessionContracts.cs");
         string webSessionApiText = ReadRequiredFile(repoRoot, "src", "Salryn.App.Web", "src", "api", "session.ts");
