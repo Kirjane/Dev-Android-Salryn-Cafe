@@ -18,6 +18,17 @@ public static class LanM14APostPromotionScopeAuditChecks
         string currentState = ReadRequiredFile(currentStatePath);
         string coreSmoke = ReadRequiredFile(coreSmokePath);
 
+        if (IsLanM14BCurrentCandidate(currentState))
+        {
+            AssertContains(currentState, "LAN-M14-A is stable", "Current-state doc must keep LAN-M14-A stable after LAN-M14-B starts.");
+            AssertContains(currentState, "LAN-M14-B is current candidate work pending Codex verification", "Current-state doc must mark LAN-M14-B as current candidate work.");
+            AssertContains(currentState, "LAN-M14-C is not started", "Current-state doc must state LAN-M14-C is not started.");
+            AssertContains(lanM14A, "LAN-M14-A does not implement LAN", "LAN-M14-A doc must remain available as historical cutline context.");
+            AssertContains(coreSmoke, "LanM14APostPromotionScopeAuditChecks.Run();", "CoreSmoke must keep LAN-M14-A checks wired.");
+            AssertLanM14AChangedFilesStayInScope(projectRoot, currentState);
+            return;
+        }
+
         AssertContains(currentState, PostPromotionBaselineSha, "Current-state doc must contain the post-promotion SHA.");
         AssertContains(currentState, "Sandbox and Freehand are aligned", "Current-state doc must state Sandbox and Freehand are aligned.");
         AssertContains(currentState, "M-series is stable on Sandbox", "Current-state doc must state M-series is stable on Sandbox.");
@@ -121,6 +132,12 @@ public static class LanM14APostPromotionScopeAuditChecks
 
     private static void AssertLanM14AChangedFilesStayInScope(string projectRoot, string currentState)
     {
+        if (IsLanM14BCurrentCandidate(currentState))
+        {
+            Console.WriteLine("LAN-M14-A changed-file scope guard skipped: LAN-M14-A has been promoted. Static LAN cutline checks remain active.");
+            return;
+        }
+
         if (!currentState.Contains("LAN-M14-A is current candidate work", StringComparison.Ordinal))
         {
             Console.WriteLine("LAN-M14-A changed-file scope guard skipped: LAN-M14-A is no longer current candidate work. Static LAN cutline checks remain active.");
@@ -242,6 +259,12 @@ public static class LanM14APostPromotionScopeAuditChecks
         {
             return null;
         }
+    }
+
+    private static bool IsLanM14BCurrentCandidate(string currentState)
+    {
+        return currentState.Contains("LAN-M14-A is stable", StringComparison.Ordinal)
+            && currentState.Contains("LAN-M14-B is current candidate work", StringComparison.Ordinal);
     }
 
     private static string ReadRequiredSourceByFileName(string projectRoot, string fileName)

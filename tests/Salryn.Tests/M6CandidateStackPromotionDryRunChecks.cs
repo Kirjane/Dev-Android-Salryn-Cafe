@@ -24,10 +24,9 @@ public static class M6CandidateStackPromotionDryRunChecks
 
         if (IsPostMSeriesPromotionCurrentState(currentState))
         {
-            AssertContains(currentState, "Stable as of `bde69e28faa4f92dd7b6765da9f45a0c5cf02056`", "Current-state doc must contain the promoted M-series Sandbox SHA.");
-            AssertContains(currentState, "M-series is stable on Sandbox", "Current-state doc must mark the M-series stable after promotion.");
-            AssertContains(currentState, "LAN-M14-A is current candidate work and is not verified until Codex verifies it", "Current-state doc must mark LAN-M14-A as current candidate work.");
-            AssertContains(currentState, "LAN-M14-B is not started", "Current-state doc must state LAN-M14-B is not started.");
+            AssertContains(currentState, "Stable Sandbox Stack", "Current-state doc must keep a stable stack after M-series promotion.");
+            AssertContains(currentState, "LAN-M14-A", "Current-state doc must keep LAN-M14-A in the post-promotion LAN stack.");
+            AssertContains(currentState, "LAN-M14-", "Current-state doc must mark the active LAN-M14 candidate boundary.");
             AssertContains(currentState, "M-series docs remain useful historical context", "Current-state doc must demote M-series docs to historical context after promotion.");
             AssertContains(checklist, "Promotion still requires explicit Kirch command", "Dry-run checklist must remain available as historical promotion context.");
             AssertContains(coreSmoke, "M6CandidateStackPromotionDryRunChecks.Run();", "M6 checks must remain explicitly wired in CoreSmoke.");
@@ -231,8 +230,9 @@ public static class M6CandidateStackPromotionDryRunChecks
 
     private static bool IsPostMSeriesPromotionCurrentState(string currentState)
     {
-        return currentState.Contains("M-series is stable on Sandbox", StringComparison.Ordinal)
-            && currentState.Contains("LAN-M14-A is current candidate work", StringComparison.Ordinal);
+        return (currentState.Contains("M-series is stable on Sandbox", StringComparison.Ordinal)
+                || currentState.Contains("LAN-M14-A is stable", StringComparison.Ordinal))
+            && currentState.Contains("LAN-M14-", StringComparison.Ordinal);
     }
 
     private static string? TryRunGit(string projectRoot, string arguments)

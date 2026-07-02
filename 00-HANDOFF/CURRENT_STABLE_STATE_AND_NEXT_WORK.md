@@ -3,15 +3,15 @@
 ## Source Stamp
 
 - Stable branch: `KIRCH-SANDBOX`
-- Stable SHA: `bde69e28faa4f92dd7b6765da9f45a0c5cf02056`
+- Stable SHA: `d8f2a8b346c3128336a14899567369278b801c75`
 - Candidate branch: `KIRCH-FREEHAND`
-- Candidate SHA before LAN-M14-A: `bde69e28faa4f92dd7b6765da9f45a0c5cf02056`
-- Ahead/behind before LAN-M14-A: `0 ahead / 0 behind`
-- Status: post-M-series promotion; Sandbox and Freehand are aligned.
+- Candidate SHA before LAN-M14-B: `d8f2a8b346c3128336a14899567369278b801c75`
+- Ahead/behind before LAN-M14-B: `0 ahead / 0 behind`
+- Status: LAN-M14-A is stable; Sandbox and Freehand are aligned before LAN-M14-B.
 
 ## Stable Sandbox Stack
 
-Stable as of `bde69e28faa4f92dd7b6765da9f45a0c5cf02056`:
+Stable as of `d8f2a8b346c3128336a14899567369278b801c75`:
 
 - `LAN-M13` - remote read-only LAN usability
 - `ROLE-M1` - role-aware operator UX boundary
@@ -22,36 +22,37 @@ Stable as of `bde69e28faa4f92dd7b6765da9f45a0c5cf02056`:
 - `M6` - candidate stack verification replay and promotion-readiness dry run
 - `M7` - candidate stack limit guard and promotion debt meter
 - `M8` - M-Series Completion Criteria + LAN Transition Gate
+- `LAN-M14-A` - Post-Promotion LAN Source Stamp + Completion Scope Audit / First Cutline
 
-M-series is stable on Sandbox after promotion. Sandbox and Freehand are aligned at `0 ahead / 0 behind`.
+LAN-M14-A is stable on Sandbox after promotion. Sandbox and Freehand are aligned at `0 ahead / 0 behind` before LAN-M14-B.
 
 ## Current Candidate Work
 
-LAN-M14-A is current candidate work and is not verified until Codex verifies it.
+LAN-M14-B is current candidate work pending Codex verification.
 
-LAN-M14-A adds a post-promotion LAN source stamp, current LAN baseline inventory, and first implementation cutline recommendation. It is study/cutline work only.
+LAN-M14-B defines explicit host-bind readiness and guarded runtime ownership cutline. It is study/guard/cutline work only.
 
-LAN completion series is now eligible for planning from fresh source truth, but LAN-M14 is not implemented yet.
-
-Recommended first implementation-planning target after Codex verifies LAN-M14-A: `LAN-M14-B` - Explicit Host Bind Configuration Readiness + Guarded Runtime Cutline.
+LAN-M14-C is not started.
 
 ## Current LAN Boundary
 
-- LAN-M14-B is not started.
 - LAN bind activation is not started.
+- Api.Local LAN bind is not started.
 - Live remote transport dispatch is not started.
 - LAN mutation is not started.
 - Remote cashier/admin behavior is not started.
 - QR, discovery, mobile, and cloud behavior are not started.
 - RMO, official-output, printer, PDF, Crystal, and ESC/POS work remain deferred.
 - Certification, accreditation, legal-compliance, and production-approval claims remain forbidden.
+- Deferred unsafe work remains deferred.
 
 ## Live Coordination Docs
 
-Only these docs are live coordination authority for the current post-promotion state:
+Only these docs are live coordination authority for the current post-LAN-M14-A state:
 
 - `00-HANDOFF/CURRENT_STABLE_STATE_AND_NEXT_WORK.md`
 - `00-HANDOFF/LAN_M14_A_POST_PROMOTION_SCOPE_AUDIT_AND_FIRST_CUTLINE.md`
+- `00-HANDOFF/LAN_M14_B_EXPLICIT_HOST_BIND_READINESS_AND_GUARDED_RUNTIME_CUTLINE.md`
 
 M-series docs remain useful historical context for what was promoted, but they are no longer the active current-candidate authority.
 
@@ -66,16 +67,17 @@ M-series docs remain useful historical context for what was promoted, but they a
 - `00-HANDOFF/ROLE_M3_HTTP_API_PERMISSION_RUNTIME_HARNESS_STUDY.md`
 - `00-HANDOFF/ROLE_M2_BACKEND_PERMISSION_ENFORCEMENT_BOUNDARY_STUDY.md`
 - `00-HANDOFF/ROLE_M1_OPERATOR_ROLE_PERMISSION_UX_BOUNDARY_STUDY.md`
-- LAN M9-M13 docs for current read-only LAN usability boundaries
+- LAN M9-M14-A docs for current read-only LAN usability and post-promotion cutline boundaries
 
 ## Historical Handoffs Only
 
-Older phase documents, master plans, RMO reconciliation studies, pre-promotion M-series handoffs, and pre-M14 LAN plans remain useful for intent and history, but they must not override current source, current GitHub branch truth, this current-state file, or the LAN-M14-A post-promotion source stamp and cutline. Old references to future mobile, cloud, Crystal, PDF, printer, broader RMO work, or live LAN execution are not current approval.
+Older phase documents, master plans, RMO reconciliation studies, pre-promotion M-series handoffs, and pre-M14-B LAN plans remain useful for intent and history, but they must not override current source, current GitHub branch truth, this current-state file, or the LAN-M14-B explicit host-bind readiness cutline. Old references to future mobile, cloud, Crystal, PDF, printer, broader RMO work, or live LAN execution are not current approval.
 
 ## Must Not Start Yet
 
-- LAN-M14-B implementation.
+- LAN-M14-C implementation.
 - Any live LAN runtime expansion.
+- Api.Local LAN bind.
 - LAN bind activation.
 - Live remote transport dispatch.
 - LAN mutation.
@@ -89,4 +91,4 @@ Older phase documents, master plans, RMO reconciliation studies, pre-promotion M
 
 ## Recommended Next Planning Target
 
-After LAN-M14-A receives Codex verification, the safest next target is `LAN-M14-B` planning or implementation handoff focused on explicit host bind configuration readiness and guarded runtime cutline. Do not start LAN-M14-B until LAN-M14-A is verified.
+After LAN-M14-B receives Codex verification, stop for maintainer review before selecting LAN-M14-C. LAN-M14-B does not authorize live bind, dispatch, runtime client execution, or mutation.
