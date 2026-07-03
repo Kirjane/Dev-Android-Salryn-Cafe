@@ -66,9 +66,11 @@ public sealed class RemoteReadOnlyApiService
                     SessionExpiresAtUtc: null,
                     BindPolicy: bindPolicy,
                     AllowedCapabilities: MapCapabilities(status.AllowedCapabilities),
-                    DisabledMutations: GetDisabledMutations());
+                    DisabledMutations: GetDisabledMutations(),
+                    SessionResilience: RemoteReadOnlySessionLifecycle.Active());
             }
 
+            string? errorCode = bridgeStatus.IsFailure ? bridgeStatus.ErrorDetail.Code : null;
             string errorMessage = bridgeStatus.IsFailure
                 ? bridgeStatus.ErrorDetail.Message
                 : bridgeStatus.Value.ErrorMessage ?? "Remote bridge status read failed.";
@@ -85,7 +87,8 @@ public sealed class RemoteReadOnlyApiService
                 SessionExpiresAtUtc: null,
                 BindPolicy: bindPolicy,
                 AllowedCapabilities: GetAllowedCapabilities(),
-                DisabledMutations: GetDisabledMutations());
+                DisabledMutations: GetDisabledMutations(),
+                SessionResilience: RemoteReadOnlySessionLifecycle.Classify(errorCode, errorMessage));
         }
 
         if (!config.RemoteTransportEnabled)
@@ -102,7 +105,8 @@ public sealed class RemoteReadOnlyApiService
                 SessionExpiresAtUtc: null,
                 BindPolicy: bindPolicy,
                 AllowedCapabilities: GetAllowedCapabilities(),
-                DisabledMutations: GetDisabledMutations());
+                DisabledMutations: GetDisabledMutations(),
+                SessionResilience: RemoteReadOnlySessionLifecycle.LocalOnly());
         }
 
         return new RemoteReadOnlyStatusResponse(
@@ -117,7 +121,8 @@ public sealed class RemoteReadOnlyApiService
             SessionExpiresAtUtc: null,
             BindPolicy: bindPolicy,
             AllowedCapabilities: GetAllowedCapabilities(),
-            DisabledMutations: GetDisabledMutations());
+            DisabledMutations: GetDisabledMutations(),
+            SessionResilience: RemoteReadOnlySessionLifecycle.LocalOnly());
     }
 
     public RemoteReadOnlyCapabilitiesResponse GetCapabilities()
@@ -275,7 +280,8 @@ public sealed class RemoteReadOnlyApiService
                 TerminalId: null,
                 TerminalName: null,
                 TerminalRole: "Read-only client",
-                SessionExpiresAtUtc: null);
+                SessionExpiresAtUtc: null,
+                SessionResilience: RemoteReadOnlySessionLifecycle.LocalOnly());
         }
 
         Result<RemoteReadOnlyClientResult<RemoteTerminalStatusHostCommandResponse>> bridgeResult =
@@ -292,7 +298,10 @@ public sealed class RemoteReadOnlyApiService
                 TerminalId: bridgeContext.TerminalId.ToString(),
                 TerminalName: null,
                 TerminalRole: "Read-only client",
-                SessionExpiresAtUtc: null);
+                SessionExpiresAtUtc: null,
+                SessionResilience: RemoteReadOnlySessionLifecycle.Classify(
+                    bridgeResult.ErrorDetail.Code,
+                    bridgeResult.ErrorDetail.Message));
         }
 
         RemoteReadOnlyClientResult<RemoteTerminalStatusHostCommandResponse> result = bridgeResult.Value;
@@ -305,7 +314,8 @@ public sealed class RemoteReadOnlyApiService
                 TerminalId: bridgeContext.TerminalId.ToString(),
                 TerminalName: null,
                 TerminalRole: "Read-only client",
-                SessionExpiresAtUtc: null);
+                SessionExpiresAtUtc: null,
+                SessionResilience: RemoteReadOnlySessionLifecycle.Classify(null, result.ErrorMessage));
         }
 
         RemoteTerminalStatusHostCommandResponse terminal = result.Response;
@@ -317,7 +327,8 @@ public sealed class RemoteReadOnlyApiService
             TerminalId: terminal.TerminalId.ToString(),
             TerminalName: terminal.TerminalName,
             TerminalRole: terminal.TerminalRole.ToString(),
-            SessionExpiresAtUtc: null);
+            SessionExpiresAtUtc: null,
+            SessionResilience: RemoteReadOnlySessionLifecycle.Active());
     }
 
     public async Task<RemoteReadOnlyAuditVisibilityResponse> GetAuditVisibilityAsync(

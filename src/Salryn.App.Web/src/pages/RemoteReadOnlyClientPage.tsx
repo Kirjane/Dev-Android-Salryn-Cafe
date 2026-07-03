@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Alert,
   Button,
@@ -13,6 +14,7 @@ import {
 } from "../components/ui";
 import { remoteReadOnlyWarnings } from "../api/remoteReadOnlyClient";
 import { useRemoteReadOnlyClient } from "../hooks/useRemoteReadOnlyClient";
+import { useLocalLanControl } from "../hooks/useLocalLanControl";
 
 export function RemoteReadOnlyClientPage() {
   const {
@@ -33,14 +35,40 @@ export function RemoteReadOnlyClientPage() {
     auditQuery,
   } = useRemoteReadOnlyClient();
 
+  const {
+    statusQuery: localControlQuery,
+    remoteTransportMutation,
+    disableTerminalMutation,
+    revokeTerminalMutation,
+  } = useLocalLanControl();
+
+  const [bindAddressInput, setBindAddressInput] = useState("");
+
   const bindPolicy = bindPolicyQuery.data ?? shellState.bindPolicy;
   const diagnostics = diagnosticsQuery.data;
   const preflight = preflightQuery.data;
   const terminalStatus = terminalStatusQuery.data;
+  const sessionResilience = shellState.sessionResilience ?? terminalStatus?.sessionResilience ?? null;
+  const lastSuccessfulStatusReadAt =
+    statusQuery.isSuccess && statusQuery.dataUpdatedAt > 0
+      ? new Date(statusQuery.dataUpdatedAt).toLocaleString()
+      : "No successful read yet";
+  const statusReadStale = statusQuery.isError && statusQuery.dataUpdatedAt > 0;
   const dashboard = dashboardQuery.data;
   const productPageData = productQuery.data;
   const products = productPageData?.items ?? [];
   const auditVisibility = auditQuery.data;
+  const localControl = localControlQuery.data;
+  const localControlAvailable = localControlQuery.isSuccess && Boolean(localControl);
+  const localControlBusy =
+    remoteTransportMutation.isPending ||
+    disableTerminalMutation.isPending ||
+    revokeTerminalMutation.isPending;
+  const localControlActionError =
+    (remoteTransportMutation.error as Error | null)?.message ??
+    (disableTerminalMutation.error as Error | null)?.message ??
+    (revokeTerminalMutation.error as Error | null)?.message ??
+    null;
 
   function refreshAll() {
     void statusQuery.refetch();
@@ -51,6 +79,7 @@ export function RemoteReadOnlyClientPage() {
     void dashboardQuery.refetch();
     void productQuery.refetch();
     void auditQuery.refetch();
+    void localControlQuery.refetch();
   }
 
   return (
@@ -139,6 +168,41 @@ export function RemoteReadOnlyClientPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle>Session Resilience / Lifecycle</CardTitle>
+        </CardHeader>
+        <CardBody>
+          <dl className="grid gap-3 text-sm md:grid-cols-2">
+            <Row label="Lifecycle state" value={sessionResilience?.lifecycleState ?? "Unknown"} />
+            <Row label="Last successful read" value={lastSuccessfulStatusReadAt} />
+            <Row label="Read-only refresh safe" value={sessionResilience?.readOnlyRefreshSafe === false ? "Blocked by operator" : "Yes"} />
+            <Row label="Re-pair required" value={sessionResilience?.repairRequired ? "Yes (manual, on POS host)" : "No"} />
+            <Row label="Automatic re-pair" value="Disabled" />
+            <Row label="Automatic discovery" value="Disabled" />
+          </dl>
+          <p className="mt-4 text-sm text-slate-600">
+            {sessionResilience?.guidance ??
+              "Read-only session guidance will appear here after a status refresh."}
+          </p>
+          {sessionResilience?.denialMessage ? (
+            <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              Denial reason: {sessionResilience.denialCode ?? "Denied"} — {sessionResilience.denialMessage}
+            </p>
+          ) : null}
+          {statusReadStale ? (
+            <Alert tone="warning">
+              {sessionResilience?.staleDataWarning ??
+                "The last read-only refresh failed. Displayed values may be stale. Use Refresh read-only state to retry; automatic retry is disabled to avoid request floods."}
+            </Alert>
+          ) : null}
+          <Alert tone="info">
+            Remote clients stay read-only. Session recovery never triggers checkout, admin, mutation, QR, discovery, or
+            network scan behavior.
+          </Alert>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Runtime Diagnostics</CardTitle>
         </CardHeader>
         <CardBody>
@@ -222,6 +286,112 @@ export function RemoteReadOnlyClientPage() {
           ) : (
             <p className="text-sm text-slate-500">Read-only LAN preflight results will appear here after refresh.</p>
           )}
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Local LAN Control (Operator-Only)</CardTitle>
+        </CardHeader>
+        <CardBody>
+          {localControlQuery.isLoading ? <LoadingState label="Checking local operator LAN control access..." /> : null}
+          {!localControlQuery.isLoading && !localControlAvailable ? (
+            <Alert tone="info">
+              Local LAN control is available only to the localhost operator on the POS host. Remote read-only clients cannot
+              enable/disable LAN, configure the bind address, or disable/revoke terminals.
+            </Alert>
+          ) : null}
+          {localControlAvailable && localControl ? (
+            <div className="space-y-4 text-sm">
+              <dl className="grid gap-3 md:grid-cols-2">
+                <Row label="Remote transport" value={localControl.remoteTransportEnabled ? "Enabled" : "Disabled (default)"} />
+                <Row label="Bind mode" value={localControl.bindMode} />
+                <Row label="Configured bind address" value={localControl.configuredBindAddress} />
+                <Row label="Terminal visibility" value={localControl.terminalVisibilityAvailable ? "Available" : "Restricted"} />
+              </dl>
+              <p className="text-slate-600">{localControl.message}</p>
+
+              <div className="space-y-2">
+                {localControl.warnings.map((warning) => (
+                  <Alert key={warning} tone="warning">
+                    {warning}
+                  </Alert>
+                ))}
+              </div>
+
+              {localControlActionError ? <ErrorState message={localControlActionError} /> : null}
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+                <p className="mb-2 font-medium text-slate-900">Remote read-only transport</p>
+                <p className="mb-3 text-slate-600">
+                  Enabling requires an explicit LAN IP address. Wildcard bind is never allowed. Remote clients always remain read-only.
+                </p>
+                <div className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
+                  <TextInput
+                    id="local-lan-control-bind-address"
+                    value={bindAddressInput}
+                    onChange={(event) => setBindAddressInput(event.target.value)}
+                    placeholder="Explicit LAN IP (e.g. 192.168.1.10)"
+                    disabled={localControlBusy}
+                  />
+                  <Button
+                    variant="secondary"
+                    disabled={localControlBusy || bindAddressInput.trim().length === 0}
+                    onClick={() => remoteTransportMutation.mutate({ enable: true, bindAddress: bindAddressInput.trim() })}
+                  >
+                    Enable on explicit IP
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled={localControlBusy}
+                    onClick={() => remoteTransportMutation.mutate({ enable: false, bindAddress: null })}
+                  >
+                    Disable transport
+                  </Button>
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 font-medium text-slate-900">Terminal trust management</p>
+                <p className="mb-3 text-slate-600">{localControl.terminalVisibilityMessage}</p>
+                {localControl.terminals.length > 0 ? (
+                  <ul className="space-y-2">
+                    {localControl.terminals.map((terminal) => (
+                      <li key={terminal.terminalId} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="font-medium text-slate-900">{terminal.terminalName}</p>
+                            <p className="text-slate-600">{terminal.terminalRole} / {terminal.trustState}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <StatusPill tone={terminal.trusted ? "success" : "warning"}>{terminal.status}</StatusPill>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              disabled={localControlBusy}
+                              onClick={() => disableTerminalMutation.mutate(terminal.terminalId)}
+                            >
+                              Disable
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              disabled={localControlBusy}
+                              onClick={() => revokeTerminalMutation.mutate(terminal.terminalId)}
+                            >
+                              Revoke
+                            </Button>
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-slate-500">No terminals are registered yet, or terminal visibility is restricted for this operator.</p>
+                )}
+              </div>
+            </div>
+          ) : null}
         </CardBody>
       </Card>
 

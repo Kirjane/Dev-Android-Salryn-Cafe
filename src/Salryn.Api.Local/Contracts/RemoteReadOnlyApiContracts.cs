@@ -23,7 +23,8 @@ public sealed record RemoteReadOnlyStatusResponse(
     string? SessionExpiresAtUtc,
     RemoteReadOnlyBindPolicyResponse BindPolicy,
     IReadOnlyList<string> AllowedCapabilities,
-    IReadOnlyList<string> DisabledMutations);
+    IReadOnlyList<string> DisabledMutations,
+    RemoteReadOnlySessionResilienceResponse? SessionResilience = null);
 
 public sealed record RemoteReadOnlyCapabilitiesResponse(
     IReadOnlyList<string> AllowedCapabilities,
@@ -37,7 +38,20 @@ public sealed record RemoteReadOnlyTerminalStatusResponse(
     string? TerminalId,
     string? TerminalName,
     string? TerminalRole,
-    string? SessionExpiresAtUtc);
+    string? SessionExpiresAtUtc,
+    RemoteReadOnlySessionResilienceResponse? SessionResilience = null);
+
+// LAN-M15-D: safe, read-only session lifecycle guidance for remote clients. This
+// never carries secrets and never instructs automatic re-pair, QR, or discovery.
+public sealed record RemoteReadOnlySessionResilienceResponse(
+    string LifecycleState,
+    string Guidance,
+    bool ReadOnlyRefreshSafe,
+    bool RepairRequired,
+    bool AutomaticRepairDisabled,
+    string StaleDataWarning,
+    string? DenialCode,
+    string? DenialMessage);
 
 public sealed record RemoteReadOnlyAuditItemResponse(
     string OccurredAtUtc,
@@ -87,3 +101,37 @@ public sealed record RemoteReadOnlyPreflightResponse(
     IReadOnlyList<RemoteReadOnlyPreflightCheckResponse> Checks,
     IReadOnlyList<string> SafeNextSteps,
     IReadOnlyList<string> BlockedReasons);
+
+public sealed record LocalLanControlTerminalResponse(
+    string TerminalId,
+    string TerminalName,
+    string TerminalRole,
+    string Status,
+    bool Trusted,
+    string TrustState,
+    string RegisteredAtUtc,
+    string? LastSeenAtUtc,
+    string? DisabledAtUtc,
+    string? RevokedAtUtc);
+
+public sealed record LocalLanControlStatusResponse(
+    bool LocalOperatorOnly,
+    bool RemoteTransportEnabled,
+    string BindMode,
+    string ConfiguredBindAddress,
+    RemoteReadOnlyBindPolicyResponse BindPolicy,
+    bool TerminalVisibilityAvailable,
+    string TerminalVisibilityMessage,
+    IReadOnlyList<LocalLanControlTerminalResponse> Terminals,
+    IReadOnlyList<string> Warnings,
+    string Message);
+
+public sealed record LocalLanControlRemoteTransportRequest(
+    bool Enable,
+    string? BindAddress);
+
+public sealed record LocalLanControlTerminalActionResponse(
+    string TerminalId,
+    string Status,
+    string TrustState,
+    string Message);
