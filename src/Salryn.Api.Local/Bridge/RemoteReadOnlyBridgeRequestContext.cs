@@ -1,4 +1,5 @@
 using System.Net;
+using Salryn.Api.Local.Auth;
 using Salryn.Core.RemoteClients;
 
 namespace Salryn.Api.Local.Bridge;
@@ -13,16 +14,32 @@ public sealed class RemoteReadOnlyBridgeRequestContext
 
     public bool IsRemoteBridgeRequest { get; }
 
+    public bool HasTerminalHeader { get; }
+
+    public bool HasHandshakeHeader { get; }
+
+    public bool IsLoopbackRequest { get; }
+
+    public bool HasOperatorSessionCookie { get; }
+
     private RemoteReadOnlyBridgeRequestContext(
         Guid terminalId,
         Guid handshakeSessionId,
         string originAddress,
-        bool isRemoteBridgeRequest)
+        bool isRemoteBridgeRequest,
+        bool hasTerminalHeader,
+        bool hasHandshakeHeader,
+        bool isLoopbackRequest,
+        bool hasOperatorSessionCookie)
     {
         TerminalId = terminalId;
         HandshakeSessionId = handshakeSessionId;
         OriginAddress = originAddress;
         IsRemoteBridgeRequest = isRemoteBridgeRequest;
+        HasTerminalHeader = hasTerminalHeader;
+        HasHandshakeHeader = hasHandshakeHeader;
+        IsLoopbackRequest = isLoopbackRequest;
+        HasOperatorSessionCookie = hasOperatorSessionCookie;
     }
 
     public static RemoteReadOnlyBridgeRequestContext FromHttpContext(HttpContext httpContext)
@@ -52,12 +69,17 @@ public sealed class RemoteReadOnlyBridgeRequestContext
         }
 
         string originAddress = ResolveOriginAddress(httpContext, originHeader);
+        bool hasOperatorSessionCookie = httpContext.Request.Cookies.ContainsKey(LocalApiSessionService.SessionCookieName);
 
         return new RemoteReadOnlyBridgeRequestContext(
             terminalId,
             handshakeSessionId,
             originAddress,
-            isRemoteBridgeRequest);
+            isRemoteBridgeRequest,
+            hasTerminalHeader,
+            hasSessionHeader,
+            isLoopbackRequest,
+            hasOperatorSessionCookie);
     }
 
     public RemoteReadOnlyClientContext ToRemoteReadOnlyClientContext(

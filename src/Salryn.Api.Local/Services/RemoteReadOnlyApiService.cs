@@ -1,3 +1,4 @@
+using Salryn.Api.Local.Bridge;
 using Salryn.Api.Local.Composition;
 using Salryn.Api.Local.Contracts;
 using Salryn.Composition.Local;
@@ -371,6 +372,30 @@ public sealed class RemoteReadOnlyApiService
         _ = BindPolicyGuardLiterals;
         LanRemoteTransportConfig config = await GetConfigAsync(cancellationToken).ConfigureAwait(false);
         return RemoteReadOnlyLanBindPolicyMapper.Map(config);
+    }
+
+    public async Task<RemoteReadOnlyDiagnosticsResponse> GetDiagnosticsAsync(
+        RemoteReadOnlyBridgeRequestContext? bridgeRequest = null,
+        CancellationToken cancellationToken = default)
+    {
+        LanRemoteTransportConfig config = await GetConfigAsync(cancellationToken).ConfigureAwait(false);
+
+        Result<PagedResult<AuditLogReadModel>> auditProbe = await _composition.AuditReadRepository
+            .SearchAuditLogsAsync(
+                new AuditLogSearchFilter(
+                    Page: new PageRequest(1, 1),
+                    From: null,
+                    To: null,
+                    Search: new SearchText("RemoteReadAttempt")),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        bool auditPolicyAvailable = auditProbe.IsSuccess;
+
+        return RemoteReadOnlyBridgeDiagnostics.BuildOperatorDiagnostics(
+            config,
+            auditPolicyAvailable,
+            bridgeRequest);
     }
 
     private static readonly string[] BindPolicyGuardLiterals =

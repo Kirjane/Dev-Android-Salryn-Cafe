@@ -4,6 +4,7 @@ import {
   fetchRemoteReadOnlyAuditVisibility,
   fetchRemoteReadOnlyBindPolicy,
   fetchRemoteReadOnlyDashboardSummary,
+  fetchRemoteReadOnlyDiagnostics,
   fetchRemoteReadOnlyProducts,
   fetchRemoteReadOnlyStatus,
   fetchRemoteReadOnlyTerminalStatus,
@@ -25,6 +26,12 @@ export function useRemoteReadOnlyClient() {
   const bindPolicyQuery = useQuery({
     queryKey: ["remote-readonly-bind-policy"],
     queryFn: fetchRemoteReadOnlyBindPolicy,
+    retry: false,
+  });
+
+  const diagnosticsQuery = useQuery({
+    queryKey: ["remote-readonly-diagnostics"],
+    queryFn: fetchRemoteReadOnlyDiagnostics,
     retry: false,
   });
 
@@ -58,6 +65,7 @@ export function useRemoteReadOnlyClient() {
     shellState,
     statusQuery,
     bindPolicyQuery,
+    diagnosticsQuery,
     terminalStatusQuery,
     productSearchText,
     setProductSearchText,

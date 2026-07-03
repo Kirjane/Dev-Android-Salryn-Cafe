@@ -19,6 +19,7 @@ export function RemoteReadOnlyClientPage() {
     shellState,
     statusQuery,
     bindPolicyQuery,
+    diagnosticsQuery,
     terminalStatusQuery,
     productSearchText,
     setProductSearchText,
@@ -32,6 +33,7 @@ export function RemoteReadOnlyClientPage() {
   } = useRemoteReadOnlyClient();
 
   const bindPolicy = bindPolicyQuery.data ?? shellState.bindPolicy;
+  const diagnostics = diagnosticsQuery.data;
   const terminalStatus = terminalStatusQuery.data;
   const dashboard = dashboardQuery.data;
   const productPageData = productQuery.data;
@@ -41,6 +43,7 @@ export function RemoteReadOnlyClientPage() {
   function refreshAll() {
     void statusQuery.refetch();
     void bindPolicyQuery.refetch();
+    void diagnosticsQuery.refetch();
     void terminalStatusQuery.refetch();
     void dashboardQuery.refetch();
     void productQuery.refetch();
@@ -76,12 +79,21 @@ export function RemoteReadOnlyClientPage() {
           <CardBody>
             <dl className="space-y-3 text-sm">
               <Row label="Connection status" value={shellState.connectionStatus} />
-              <Row label="Mode" value={shellState.mode ?? "LocalOnlyReadMode"} />
+              <Row label="Mode" value={diagnostics?.mode ?? shellState.mode ?? "LocalOnlyReadMode"} />
+              <Row label="Overall status" value={diagnostics?.overallStatus ?? shellState.connectionStatus} />
               <Row label="LAN readiness" value={bindPolicy.disabledByDefault ? "Disabled by default" : "Explicitly enabled"} />
               <Row label="Effective bind mode" value={bindPolicy.effectiveMode} />
+              <Row label="Terminal trust" value={diagnostics?.terminalIdentityRequired ? "Required" : "Not required"} />
+              <Row label="Handshake proof" value={diagnostics?.handshakeProofRequired ? "Required" : "Not required"} />
+              <Row label="Cookie LAN trust" value={diagnostics?.cookieTrustAcceptedForRemoteLan ? "Accepted" : "Rejected"} />
               <Row label="Session expiration" value={shellState.sessionExpiresAtUtc ?? shellState.sessionExpiresAt ?? "Not configured"} />
               <Row label="Operator instruction" value="Operator localhost session is separate from LAN remote terminal trust. Pairing and handshake remain required for remote reads." />
             </dl>
+            {diagnostics?.lastDenialMessage ? (
+              <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                Last safe denial: {diagnostics.lastDenialCode ?? "Denied"} — {diagnostics.lastDenialMessage}
+              </p>
+            ) : null}
             <p className="mt-4 text-sm text-slate-600">{shellState.message}</p>
           </CardBody>
         </Card>
@@ -121,6 +133,39 @@ export function RemoteReadOnlyClientPage() {
           </CardBody>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Runtime Diagnostics</CardTitle>
+        </CardHeader>
+        <CardBody>
+          {diagnosticsQuery.isLoading ? <LoadingState label="Loading safe runtime diagnostics..." /> : null}
+          {diagnosticsQuery.isError ? <ErrorState message={(diagnosticsQuery.error as Error).message} /> : null}
+          {diagnostics ? (
+            <div className="space-y-4 text-sm">
+              <dl className="grid gap-3 md:grid-cols-2">
+                <Row label="Read-only only" value={diagnostics.readOnlyOnly ? "Yes" : "No"} />
+                <Row label="LAN disabled by default" value={diagnostics.lanDisabledByDefault ? "Yes" : "No"} />
+                <Row label="Audit policy" value={diagnostics.auditPolicyAvailable ? "Available" : "Unavailable"} />
+                <Row label="CORS enabled" value={diagnostics.corsEnabled ? "Yes" : "No"} />
+                <Row label="Status refresh" value={statusQuery.isSuccess ? "Last status read succeeded" : statusQuery.isError ? "Last status read failed" : "Not refreshed yet"} />
+              </dl>
+              <p className="text-slate-600">{diagnostics.message}</p>
+              <ul className="grid gap-2 md:grid-cols-2">
+                {diagnostics.items.map((item) => (
+                  <li key={item.code} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="font-medium text-slate-900">{item.code}</p>
+                    <p className="text-slate-600">{item.message}</p>
+                    <p className="mt-1 text-xs uppercase tracking-wide text-slate-500">{item.category} / {item.severity}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">Safe runtime diagnostics will appear here after refresh.</p>
+          )}
+        </CardBody>
+      </Card>
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>

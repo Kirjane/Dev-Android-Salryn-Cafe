@@ -52,3 +52,24 @@ public sealed record RemoteReadOnlyAuditVisibilityResponse(
     int PageSize,
     int TotalCount,
     IReadOnlyList<RemoteReadOnlyAuditItemResponse> Items);
+
+public sealed record RemoteReadOnlyDiagnosticItemResponse(
+    string Code,
+    string Category,
+    string Severity,
+    string Message);
+
+public sealed record RemoteReadOnlyDiagnosticsResponse(
+    string Mode,
+    string OverallStatus,
+    string Message,
+    bool ReadOnlyOnly,
+    bool LanDisabledByDefault,
+    bool TerminalIdentityRequired,
+    bool HandshakeProofRequired,
+    bool CookieTrustAcceptedForRemoteLan,
+    bool CorsEnabled,
+    bool AuditPolicyAvailable,
+    string? LastDenialCode,
+    string? LastDenialMessage,
+    IReadOnlyList<RemoteReadOnlyDiagnosticItemResponse> Items);

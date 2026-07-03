@@ -202,6 +202,10 @@ try
             LanM14EndToEndRemoteReadOnlyLanClosureSmokeChecks.Run(projectRoot);
             break;
 
+        case "remote-readonly-lan-field-hardening":
+            LanM15RemoteReadOnlyLanFieldHardeningSmokeChecks.Run(projectRoot);
+            break;
+
         case "safe-remote-readonly-client":
             SafeRemoteReadOnlyClientSmokeChecks.Run(projectRoot);
             break;

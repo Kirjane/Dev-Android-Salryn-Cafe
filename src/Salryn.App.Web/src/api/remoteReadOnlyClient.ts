@@ -7,6 +7,7 @@ import type {
   RemoteReadOnlyBindPolicy,
   RemoteReadOnlyCapability,
   RemoteReadOnlyCapabilitiesResponse,
+  RemoteReadOnlyDiagnostics,
   RemoteReadOnlyShellState,
   RemoteReadOnlyTerminalStatus,
 } from "../types/remoteReadOnlyClient";
@@ -24,6 +25,7 @@ export const remoteReadOnlyWarnings = [
   "Remote read-only client only. Remote cashier/admin execution is not enabled.",
   "LAN remote transport is disabled by default until an operator explicitly enables explicit LAN bind configuration.",
   "Localhost operator sessions are separate from LAN remote terminal trust. Remote reads require terminal identity and handshake proof.",
+  "No checkout, admin, mutation, backup, settings, reports, or official output controls are exposed to remote clients.",
   "Clients must not open the SQLite database directly.",
   checkout + ", sales, inventory, official journal, and official sequence actions are disabled on remote clients.",
 ] as const;
@@ -110,6 +112,11 @@ export async function fetchRemoteReadOnlyTerminalStatus(): Promise<RemoteReadOnl
 export async function fetchRemoteReadOnlyBindPolicy(): Promise<RemoteReadOnlyBindPolicy> {
   const response = await fetch("/api/remote-readonly/bind-policy", { credentials: "include" });
   return readJson<RemoteReadOnlyBindPolicy>(response);
+}
+
+export async function fetchRemoteReadOnlyDiagnostics(): Promise<RemoteReadOnlyDiagnostics> {
+  const response = await fetch("/api/remote-readonly/diagnostics", { credentials: "include" });
+  return readJson<RemoteReadOnlyDiagnostics>(response);
 }
 
 export async function fetchRemoteReadOnlyAuditVisibility(

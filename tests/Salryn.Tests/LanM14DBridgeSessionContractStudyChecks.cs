@@ -54,7 +54,8 @@ public static class LanM14DBridgeSessionContractStudyChecks
         return currentState.Contains("LAN-M14-D is stable", StringComparison.Ordinal)
             && (currentState.Contains("LAN-M14-E is current candidate work", StringComparison.Ordinal)
                 || currentState.Contains("LAN-M14-F through LAN-M14-I are candidate work completed", StringComparison.Ordinal)
-                || currentState.Contains("LAN-M14-I is the LAN-M14 cap", StringComparison.Ordinal));
+                || currentState.Contains("LAN-M14-I is the LAN-M14 cap", StringComparison.Ordinal)
+                || currentState.Contains("LAN-M15-A is current candidate work on Freehand", StringComparison.Ordinal));
     }
 
     private static void AssertDocBoundaries(string currentState, string lanM14D, string coreSmoke)

@@ -189,6 +189,48 @@ public static class RemoteReadOnlyApiEndpoints
             return Results.Ok(bindPolicy);
         });
 
+        group.MapGet("/diagnostics", async (
+            HttpContext httpContext,
+            LocalApiSessionService sessions,
+            LanRemoteTransportApiServices lanServices,
+            RemoteReadOnlyApiService remoteReadOnly,
+            CancellationToken cancellationToken) =>
+        {
+            RemoteReadOnlyBridgeRequestContext bridgeRequest =
+                RemoteReadOnlyApiAuthorization.TryGetRemoteBridgeContext(httpContext);
+
+            if (bridgeRequest.IsRemoteBridgeRequest)
+            {
+                (IResult? rejected, RemoteReadOnlyClientContext? bridgeContext) = await RemoteReadOnlyApiAuthorization.AuthorizeBridgeAsync(
+                    bridgeRequest,
+                    lanServices,
+                    requestedOperation: "diagnostics",
+                    requestedCategory: "status",
+                    cancellationToken).ConfigureAwait(false);
+
+                if (rejected is not null)
+                {
+                    return rejected;
+                }
+
+                _ = bridgeContext;
+            }
+            else
+            {
+                IResult? localhostRejected = LocalApiPermissionGuards.RequireAuthenticatedSession(httpContext, sessions);
+                if (localhostRejected is not null)
+                {
+                    return localhostRejected;
+                }
+            }
+
+            RemoteReadOnlyDiagnosticsResponse diagnostics = await remoteReadOnly
+                .GetDiagnosticsAsync(bridgeRequest, cancellationToken)
+                .ConfigureAwait(false);
+
+            return Results.Ok(diagnostics);
+        });
+
         group.MapGet("/audit", async (
             HttpContext httpContext,
             LocalApiSessionService sessions,
@@ -262,8 +304,8 @@ public static class RemoteReadOnlyApiEndpoints
         return Results.Json(
             new
             {
-                error = result.ErrorDetail.Message,
-                code = result.ErrorDetail.Code
+                error = RemoteReadOnlyBridgeDiagnostics.SanitizePublicText(result.ErrorDetail.Message),
+                code = RemoteReadOnlyBridgeDiagnostics.SanitizePublicText(result.ErrorDetail.Code)
             },
             statusCode: StatusCodes.Status400BadRequest);
     }

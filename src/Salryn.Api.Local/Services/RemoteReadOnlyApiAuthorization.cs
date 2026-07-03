@@ -24,19 +24,20 @@ public static class RemoteReadOnlyApiAuthorization
 
         if (bridgeRequest.TerminalId == Guid.Empty || bridgeRequest.HandshakeSessionId == Guid.Empty)
         {
+            (string denialCode, string denialMessage, string auditReason) =
+                RemoteReadOnlyBridgeDiagnostics.ResolveBridgeDenial(bridgeRequest);
+
             await lanServices.ReadAttemptAudit
                 .RecordDeniedAsync(
                     requestedOperation,
                     requestedCategory,
                     bridgeRequest.TerminalId,
                     bridgeRequest.OriginAddress,
-                    "missing handshake",
+                    auditReason,
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            return (BridgeRejected(
-                "RemoteReadOnlyBridge.HandshakeRequired",
-                "Remote bridge requests require terminal identity and handshake session headers."), null);
+            return (BridgeRejected(denialCode, denialMessage), null);
         }
 
         Result<LanRemoteTransportConfig> configResult = await lanServices.Config
@@ -107,19 +108,20 @@ public static class RemoteReadOnlyApiAuthorization
 
         if (handshakeValidation.IsFailure)
         {
+            (string denialCode, string denialMessage, string auditReason) =
+                RemoteReadOnlyBridgeDiagnostics.MapHandshakeFailure(handshakeValidation.ErrorDetail.Code);
+
             await lanServices.ReadAttemptAudit
                 .RecordDeniedAsync(
                     requestedOperation,
                     requestedCategory,
                     bridgeRequest.TerminalId,
                     bridgeRequest.OriginAddress,
-                    handshakeValidation.ErrorDetail.Code,
+                    auditReason,
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            return (BridgeRejected(
-                handshakeValidation.ErrorDetail.Code,
-                handshakeValidation.ErrorDetail.Message), null);
+            return (BridgeRejected(denialCode, denialMessage), null);
         }
 
         RemoteReadOnlyClientContext clientContext = bridgeRequest.ToRemoteReadOnlyClientContext(
@@ -140,11 +142,21 @@ public static class RemoteReadOnlyApiAuthorization
 
     private static IResult BridgeRejected(string code, string message)
     {
+        string safeCode = RemoteReadOnlyBridgeDiagnostics.SanitizePublicText(code) ?? "RemoteReadOnlyBridge.Denied";
+        string safeMessage = RemoteReadOnlyBridgeDiagnostics.SanitizePublicText(message)
+            ?? "Remote bridge authorization failed.";
+
         return Results.Json(
             new
             {
-                error = message,
-                code
+                error = safeMessage,
+                code = safeCode,
+                diagnostic = new
+                {
+                    code = safeCode,
+                    category = "authorization",
+                    message = safeMessage
+                }
             },
             statusCode: StatusCodes.Status403Forbidden);
     }

@@ -82,6 +82,8 @@ public static class LanM14GRemoteReadonlyBridgeRuntimeChecks
         AssertContains(bridgeContext, "FromHttpContext", "RemoteReadOnlyBridgeRequestContext must parse HTTP context.");
         AssertContains(bridgeContext, "IPAddress.IsLoopback", "RemoteReadOnlyBridgeRequestContext must distinguish loopback from LAN requests.");
         AssertContains(bridgeContext, "hasTerminalHeader || hasSessionHeader || !isLoopbackRequest", "Remote LAN requests must be treated as bridge requests even without bridge headers.");
+        AssertContains(bridgeContext, "HasOperatorSessionCookie", "RemoteReadOnlyBridgeRequestContext must expose operator session cookie presence.");
+        AssertContains(bridgeContext, "IsLoopbackRequest", "RemoteReadOnlyBridgeRequestContext must expose loopback classification.");
 
         AssertContains(lanComposition, "LanRemoteTransportApiComposition", "LanRemoteTransportApiComposition must exist.");
         AssertContains(lanComposition, "RemoteReadOnlyClientService", "LanRemoteTransportApiComposition must wire RemoteReadOnlyClientService.");

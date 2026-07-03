@@ -75,3 +75,26 @@ export type RemoteReadOnlyAuditVisibility = {
   totalCount: number;
   items: RemoteReadOnlyAuditItem[];
 };
+
+export type RemoteReadOnlyDiagnosticItem = {
+  code: string;
+  category: string;
+  severity: string;
+  message: string;
+};
+
+export type RemoteReadOnlyDiagnostics = {
+  mode: string;
+  overallStatus: string;
+  message: string;
+  readOnlyOnly: boolean;
+  lanDisabledByDefault: boolean;
+  terminalIdentityRequired: boolean;
+  handshakeProofRequired: boolean;
+  cookieTrustAcceptedForRemoteLan: boolean;
+  corsEnabled: boolean;
+  auditPolicyAvailable: boolean;
+  lastDenialCode?: string | null;
+  lastDenialMessage?: string | null;
+  items: RemoteReadOnlyDiagnosticItem[];
+};

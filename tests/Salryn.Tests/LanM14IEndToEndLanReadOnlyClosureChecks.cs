@@ -112,7 +112,8 @@ public static class LanM14IEndToEndLanReadOnlyClosureChecks
 
     private static void AssertLanM14IChangedFilesStayInScope(string projectRoot, string currentState)
     {
-        if (!currentState.Contains("LAN-M14-F through LAN-M14-I are candidate work completed", StringComparison.Ordinal))
+        if (!currentState.Contains("LAN-M14-F through LAN-M14-I are candidate work completed", StringComparison.Ordinal)
+            || currentState.Contains("LAN-M15-A is current candidate work on Freehand", StringComparison.Ordinal))
         {
             Console.WriteLine("LAN-M14-I changed-file scope guard skipped: LAN-M14-I is no longer current candidate work. Static closure checks remain active.");
             return;
