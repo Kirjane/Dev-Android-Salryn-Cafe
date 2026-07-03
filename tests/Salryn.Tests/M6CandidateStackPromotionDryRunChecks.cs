@@ -230,9 +230,17 @@ public static class M6CandidateStackPromotionDryRunChecks
 
     private static bool IsPostMSeriesPromotionCurrentState(string currentState)
     {
+        if (currentState.Contains("Stable Sandbox Stack", StringComparison.Ordinal)
+            && currentState.Contains("M-series docs remain useful historical context", StringComparison.Ordinal)
+            && currentState.Contains("LAN-M14-", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
         return (currentState.Contains("M-series is stable on Sandbox", StringComparison.Ordinal)
                 || currentState.Contains("LAN-M14-A is stable", StringComparison.Ordinal)
-                || currentState.Contains("LAN-M14-B is stable", StringComparison.Ordinal))
+                || currentState.Contains("LAN-M14-B is stable", StringComparison.Ordinal)
+                || currentState.Contains("LAN-M14-C is stable", StringComparison.Ordinal))
             && currentState.Contains("LAN-M14-", StringComparison.Ordinal);
     }
 

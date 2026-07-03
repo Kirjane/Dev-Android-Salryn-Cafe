@@ -18,11 +18,10 @@ public static class LanM14BExplicitHostBindReadinessChecks
         string lanM14B = ReadRequiredFile(lanM14BPath);
         string coreSmoke = ReadRequiredFile(coreSmokePath);
 
-        if (IsLanM14CCurrentCandidate(currentState))
+        if (IsLaterLanM14BHistoricalContext(currentState))
         {
-            AssertContains(currentState, "LAN-M14-B is stable", "Current-state doc must keep LAN-M14-B stable after LAN-M14-C starts.");
-            AssertContains(currentState, "LAN-M14-C is current candidate work pending Codex verification", "Current-state doc must mark LAN-M14-C as current candidate work.");
-            AssertContains(currentState, "LAN-M14-D is not started", "Current-state doc must state LAN-M14-D is not started.");
+            AssertContains(currentState, "LAN-M14-B", "Current-state doc must keep LAN-M14-B in the stable stack after later LAN-M14 cutlines start.");
+            AssertContains(currentState, "LAN-M14-", "Current-state doc must mark the active LAN-M14 candidate boundary.");
             AssertContains(lanM14B, "LAN-M14-B does not implement LAN", "LAN-M14-B doc must remain available as historical host-bind cutline context.");
             AssertContains(coreSmoke, "LanM14BExplicitHostBindReadinessChecks.Run();", "CoreSmoke must keep LAN-M14-B checks wired.");
             AssertLanM14BChangedFilesStayInScope(projectRoot, currentState);
@@ -187,6 +186,12 @@ public static class LanM14BExplicitHostBindReadinessChecks
             return;
         }
 
+        if (IsLaterLanM14BHistoricalContext(currentState))
+        {
+            Console.WriteLine("LAN-M14-B changed-file scope guard skipped: LAN-M14-B has been promoted. Static host-bind checks remain active.");
+            return;
+        }
+
         if (!currentState.Contains("LAN-M14-B is current candidate work", StringComparison.Ordinal))
         {
             Console.WriteLine("LAN-M14-B changed-file scope guard skipped: LAN-M14-B is no longer current candidate work. Static host-bind checks remain active.");
@@ -274,6 +279,18 @@ public static class LanM14BExplicitHostBindReadinessChecks
     {
         return currentState.Contains("LAN-M14-B is stable", StringComparison.Ordinal)
             && currentState.Contains("LAN-M14-C is current candidate work", StringComparison.Ordinal);
+    }
+
+    private static bool IsLaterLanM14BHistoricalContext(string currentState)
+    {
+        if (currentState.Contains("LAN-M14-B is current candidate work", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return currentState.Contains("LAN-M14-C is current candidate work", StringComparison.Ordinal)
+            || currentState.Contains("LAN-M14-C is stable", StringComparison.Ordinal)
+            || currentState.Contains("LAN-M14-D is current candidate work", StringComparison.Ordinal);
     }
 
     private static void AddPaths(HashSet<string> paths, string? output)

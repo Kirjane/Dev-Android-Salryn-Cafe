@@ -18,9 +18,27 @@ public static class LanM14CRemoteReadonlySessionBridgeCutlineChecks
         string lanM14C = ReadRequiredFile(lanM14CPath);
         string coreSmoke = ReadRequiredFile(coreSmokePath);
 
+        if (IsLaterLanM14CHistoricalContext(currentState))
+        {
+            AssertContains(currentState, "LAN-M14-C is stable", "Current-state doc must keep LAN-M14-C stable after LAN-M14-D starts.");
+            AssertContains(currentState, "LAN-M14-D is current candidate work", "Current-state doc must mark LAN-M14-D as current candidate work.");
+            AssertContains(lanM14C, "It does not implement the bridge", "LAN-M14-C doc must remain available as historical bridge cutline context.");
+            AssertContains(lanM14C, "LAN-M14-C does not implement LAN", "LAN-M14-C doc must state it does not implement LAN.");
+            AssertContains(coreSmoke, "LanM14CRemoteReadonlySessionBridgeCutlineChecks.Run();", "CoreSmoke must keep LAN-M14-C checks wired.");
+            AssertSourceBridgeBoundaries(projectRoot);
+            AssertLanM14CChangedFilesStayInScope(projectRoot, currentState);
+            return;
+        }
+
         AssertDocBoundaries(currentState, lanM14C, coreSmoke);
         AssertSourceBridgeBoundaries(projectRoot);
         AssertLanM14CChangedFilesStayInScope(projectRoot, currentState);
+    }
+
+    private static bool IsLaterLanM14CHistoricalContext(string currentState)
+    {
+        return currentState.Contains("LAN-M14-C is stable", StringComparison.Ordinal)
+            && currentState.Contains("LAN-M14-D is current candidate work", StringComparison.Ordinal);
     }
 
     private static void AssertDocBoundaries(string currentState, string lanM14C, string coreSmoke)
