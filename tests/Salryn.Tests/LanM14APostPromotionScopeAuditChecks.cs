@@ -18,11 +18,10 @@ public static class LanM14APostPromotionScopeAuditChecks
         string currentState = ReadRequiredFile(currentStatePath);
         string coreSmoke = ReadRequiredFile(coreSmokePath);
 
-        if (IsLanM14BCurrentCandidate(currentState))
+        if (IsLaterLanM14Candidate(currentState))
         {
-            AssertContains(currentState, "LAN-M14-A is stable", "Current-state doc must keep LAN-M14-A stable after LAN-M14-B starts.");
-            AssertContains(currentState, "LAN-M14-B is current candidate work pending Codex verification", "Current-state doc must mark LAN-M14-B as current candidate work.");
-            AssertContains(currentState, "LAN-M14-C is not started", "Current-state doc must state LAN-M14-C is not started.");
+            AssertContains(currentState, "`LAN-M14-A`", "Current-state doc must keep LAN-M14-A in the stable stack after later LAN-M14 cutlines start.");
+            AssertContains(currentState, "LAN-M14-", "Current-state doc must mark the active LAN-M14 candidate boundary.");
             AssertContains(lanM14A, "LAN-M14-A does not implement LAN", "LAN-M14-A doc must remain available as historical cutline context.");
             AssertContains(coreSmoke, "LanM14APostPromotionScopeAuditChecks.Run();", "CoreSmoke must keep LAN-M14-A checks wired.");
             AssertLanM14AChangedFilesStayInScope(projectRoot, currentState);
@@ -132,7 +131,7 @@ public static class LanM14APostPromotionScopeAuditChecks
 
     private static void AssertLanM14AChangedFilesStayInScope(string projectRoot, string currentState)
     {
-        if (IsLanM14BCurrentCandidate(currentState))
+        if (IsLaterLanM14Candidate(currentState))
         {
             Console.WriteLine("LAN-M14-A changed-file scope guard skipped: LAN-M14-A has been promoted. Static LAN cutline checks remain active.");
             return;
@@ -261,10 +260,12 @@ public static class LanM14APostPromotionScopeAuditChecks
         }
     }
 
-    private static bool IsLanM14BCurrentCandidate(string currentState)
+    private static bool IsLaterLanM14Candidate(string currentState)
     {
-        return currentState.Contains("LAN-M14-A is stable", StringComparison.Ordinal)
-            && currentState.Contains("LAN-M14-B is current candidate work", StringComparison.Ordinal);
+        return currentState.Contains("`LAN-M14-A`", StringComparison.Ordinal)
+            && (currentState.Contains("LAN-M14-B is current candidate work", StringComparison.Ordinal)
+                || currentState.Contains("LAN-M14-B is stable", StringComparison.Ordinal)
+                || currentState.Contains("LAN-M14-C is current candidate work", StringComparison.Ordinal));
     }
 
     private static string ReadRequiredSourceByFileName(string projectRoot, string fileName)

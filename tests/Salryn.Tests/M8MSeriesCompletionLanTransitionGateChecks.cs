@@ -214,7 +214,8 @@ public static class M8MSeriesCompletionLanTransitionGateChecks
     private static bool IsPostMSeriesPromotionCurrentState(string currentState)
     {
         return (currentState.Contains("M-series is stable on Sandbox", StringComparison.Ordinal)
-                || currentState.Contains("LAN-M14-A is stable", StringComparison.Ordinal))
+                || currentState.Contains("LAN-M14-A is stable", StringComparison.Ordinal)
+                || currentState.Contains("LAN-M14-B is stable", StringComparison.Ordinal))
             && currentState.Contains("LAN-M14-", StringComparison.Ordinal);
     }
 
