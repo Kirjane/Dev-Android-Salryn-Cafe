@@ -36,12 +36,23 @@ public static class LanM15BRemoteReadonlyLanPreflightChecks
         AssertContains(currentState, "LAN-M14-A through LAN-M14-E are stable", "Current-state doc must keep LAN-M14-A through LAN-M14-E stable.");
         AssertContains(currentState, "LAN-M14-F through LAN-M14-I remain completed but unpromoted on Freehand", "Current-state doc must mark LAN-M14-F through LAN-M14-I as unpromoted.");
         AssertContains(currentState, "LAN-M15-A remains completed but unpromoted on Freehand", "Current-state doc must mark LAN-M15-A as unpromoted.");
-        AssertContains(currentState, "LAN-M15-B is current candidate work on Freehand", "Current-state doc must mark LAN-M15-B as current candidate work.");
-        AssertContains(currentState, "LAN-M15-C is not started", "Current-state doc must state LAN-M15-C is not started.");
         AssertContains(currentState, "LAN-M14-J does not exist and must not be created", "Current-state doc must forbid LAN-M14-J.");
         AssertContains(currentState, "no Sandbox promotion has occurred", "Current-state doc must state no Sandbox promotion has occurred.");
         AssertNotContains(currentState, "LAN-M14-J is current", "Current-state doc must not mark LAN-M14-J as current work.");
-        AssertNotContains(currentState, "LAN-M15-C is current", "Current-state doc must not mark LAN-M15-C as current work.");
+
+        if (IsLaterLanM15Context(currentState))
+        {
+            // LAN-M15-C or later is now the active/completed candidate work. The
+            // progression-specific assertions below are relaxed; the static preflight
+            // source boundaries and the LAN-M15-B doc remain enforced unconditionally.
+            AssertContains(currentState, "LAN-M15-B remains completed but unpromoted on Freehand", "Current-state doc must keep LAN-M15-B completed after later LAN-M15 work.");
+        }
+        else
+        {
+            AssertContains(currentState, "LAN-M15-B is current candidate work on Freehand", "Current-state doc must mark LAN-M15-B as current candidate work.");
+            AssertContains(currentState, "LAN-M15-C is not started", "Current-state doc must state LAN-M15-C is not started.");
+            AssertNotContains(currentState, "LAN-M15-C is current", "Current-state doc must not mark LAN-M15-C as current work.");
+        }
 
         string docPath = Path.Combine(handoffRoot, "LAN_M15_B_REMOTE_READONLY_LAN_PREFLIGHT_AND_OPERATOR_TROUBLESHOOTING.md");
         if (!File.Exists(docPath))
@@ -61,6 +72,12 @@ public static class LanM15BRemoteReadonlyLanPreflightChecks
         AssertContains(coreSmoke, "LanM15BRemoteReadonlyLanPreflightChecks.Run();", "CoreSmoke must wire LAN-M15-B checks.");
         AssertContains(infraSmoke, "remote-readonly-lan-preflight", "InfrastructureSmoke must wire remote-readonly-lan-preflight command.");
         AssertContains(infraSmoke, "LanM15RemoteReadOnlyLanPreflightSmokeChecks.Run", "InfrastructureSmoke must call LAN-M15-B preflight smoke.");
+    }
+
+    private static bool IsLaterLanM15Context(string currentState)
+    {
+        return currentState.Contains("LAN-M15-C remains completed but unpromoted on Freehand", StringComparison.Ordinal)
+            || currentState.Contains("LAN-M15-F is the LAN completion cap", StringComparison.Ordinal);
     }
 
     private static void AssertSourcePreflightBoundaries(string projectRoot)

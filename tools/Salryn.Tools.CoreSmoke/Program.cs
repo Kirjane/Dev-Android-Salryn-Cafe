@@ -204,6 +204,10 @@ public static class Program
         LanM14IEndToEndLanReadOnlyClosureChecks.Run();
         LanM15ARemoteReadonlyLanFieldHardeningChecks.Run();
         LanM15BRemoteReadonlyLanPreflightChecks.Run();
+        LanM15CLocalControlChecks.Run();
+        LanM15DSessionResilienceChecks.Run();
+        LanM15ENegativePathHardeningChecks.Run();
+        LanM15FFinalAcceptanceChecks.Run();
         J21Rmo242023ElectronicJournalPersistenceRuntimeDocumentationSealChecks.Run();
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }
