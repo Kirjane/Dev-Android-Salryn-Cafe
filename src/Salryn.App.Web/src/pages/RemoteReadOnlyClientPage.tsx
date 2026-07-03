@@ -77,8 +77,10 @@ export function RemoteReadOnlyClientPage() {
             <dl className="space-y-3 text-sm">
               <Row label="Connection status" value={shellState.connectionStatus} />
               <Row label="Mode" value={shellState.mode ?? "LocalOnlyReadMode"} />
+              <Row label="LAN readiness" value={bindPolicy.disabledByDefault ? "Disabled by default" : "Explicitly enabled"} />
+              <Row label="Effective bind mode" value={bindPolicy.effectiveMode} />
               <Row label="Session expiration" value={shellState.sessionExpiresAtUtc ?? shellState.sessionExpiresAt ?? "Not configured"} />
-              <Row label="Operator instruction" value="Use read-only local API status until safe live LAN session plumbing exists." />
+              <Row label="Operator instruction" value="Operator localhost session is separate from LAN remote terminal trust. Pairing and handshake remain required for remote reads." />
             </dl>
             <p className="mt-4 text-sm text-slate-600">{shellState.message}</p>
           </CardBody>
@@ -112,6 +114,8 @@ export function RemoteReadOnlyClientPage() {
               <Row label="Localhost only" value={bindPolicy.localhostOnly ? "Yes" : "No"} />
               <Row label="Explicit host bind required" value={bindPolicy.explicitHostBindRequired ? "Yes" : "No"} />
               <Row label="Specific IP only" value={bindPolicy.specificIpOnly ? "Yes" : "No"} />
+              <Row label="No wildcard bind" value={bindPolicy.noWildcardBind === false ? "No" : "Yes"} />
+              <Row label="No discovery" value={bindPolicy.noDiscovery === false ? "No" : "Yes"} />
             </dl>
             <p className="mt-4 text-sm text-slate-600">{bindPolicy.message}</p>
           </CardBody>

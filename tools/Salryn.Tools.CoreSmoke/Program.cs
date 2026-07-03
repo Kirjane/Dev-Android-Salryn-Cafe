@@ -198,6 +198,10 @@ public static class Program
         LanM14CRemoteReadonlySessionBridgeCutlineChecks.Run();
         LanM14DBridgeSessionContractStudyChecks.Run();
         LanM14EAuditReadAttemptPolicyCutlineChecks.Run();
+        LanM14FHostBindConfigSeamChecks.Run();
+        LanM14GRemoteReadonlyBridgeRuntimeChecks.Run();
+        LanM14HPairingOperatorUxSurfaceChecks.Run();
+        LanM14IEndToEndLanReadOnlyClosureChecks.Run();
         J21Rmo242023ElectronicJournalPersistenceRuntimeDocumentationSealChecks.Run();
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }

@@ -198,6 +198,10 @@ try
             PairingActivationHandshakeSmokeChecks.Run(projectRoot);
             break;
 
+        case "lan-m14-end-to-end-closure":
+            LanM14EndToEndRemoteReadOnlyLanClosureSmokeChecks.Run(projectRoot);
+            break;
+
         case "safe-remote-readonly-client":
             SafeRemoteReadOnlyClientSmokeChecks.Run(projectRoot);
             break;

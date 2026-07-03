@@ -29,6 +29,11 @@ public static class M7CandidateStackPromotionDebtMeterChecks
             AssertContains(currentState, "LAN-M14-A", "Current-state doc must keep LAN-M14-A in the post-promotion LAN stack.");
             AssertContains(currentState, "LAN-M14-", "Current-state doc must mark the active LAN-M14 candidate boundary.");
             AssertContains(currentState, "M-series docs remain useful historical context", "Current-state doc must demote M-series docs to historical context after promotion.");
+            if (currentState.Contains("LAN-M14-I is the LAN-M14 cap", StringComparison.Ordinal))
+            {
+                AssertContains(currentState, "LAN-M14-F through LAN-M14-I are candidate work completed", "Current-state doc must mark LAN-M14-F through LAN-M14-I as candidate work completed.");
+                AssertContains(currentState, "Hybrid bridge is implemented", "Current-state doc must state hybrid bridge is implemented.");
+            }
             AssertContains(debtMeter, "### HIGH", "Debt meter must remain available as historical promotion-debt context.");
             AssertContains(coreSmoke, "M7CandidateStackPromotionDebtMeterChecks.Run();", "M7 checks must remain explicitly wired in CoreSmoke.");
             AssertM7ChangedFilesStayInScope(projectRoot, currentState);

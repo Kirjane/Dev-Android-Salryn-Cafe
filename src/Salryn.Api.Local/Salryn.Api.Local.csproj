@@ -3,6 +3,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Salryn.Composition.Local\Salryn.Composition.Local.csproj" />
     <ProjectReference Include="..\Salryn.Core\Salryn.Core.csproj" />
+    <ProjectReference Include="..\Salryn.Host.Local\Salryn.Host.Local.csproj" />
+    <ProjectReference Include="..\Salryn.Infrastructure\Salryn.Infrastructure.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

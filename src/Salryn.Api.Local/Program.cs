@@ -1,5 +1,6 @@
 using Salryn.Api.Local;
 using Salryn.Api.Local.Auth;
+using Salryn.Api.Local.Composition;
 using Salryn.Api.Local.Contracts;
 using Salryn.Api.Local.Services;
 using Salryn.Composition.Local;
@@ -60,8 +61,10 @@ static async Task RunSmokeAsync(string[] args)
             $"API smoke expected products read probe to succeed: {productsProbe.ErrorDetail.Message}");
     }
 
-    RemoteReadOnlyApiService remoteReadOnly = new(summaryService, operatorReads);
-    if (!string.Equals(remoteReadOnly.GetStatus().Mode, "LocalOnlyReadMode", StringComparison.Ordinal))
+    LanRemoteTransportApiServices lanServices = LanRemoteTransportApiComposition.Create(composition);
+    RemoteReadOnlyApiService remoteReadOnly = new(summaryService, operatorReads, composition, lanServices);
+    RemoteReadOnlyStatusResponse remoteStatus = await remoteReadOnly.GetStatusAsync().ConfigureAwait(false);
+    if (!string.Equals(remoteStatus.Mode, "LocalOnlyReadMode", StringComparison.Ordinal))
     {
         throw new InvalidOperationException("Remote read-only API smoke expected LocalOnlyReadMode status.");
     }

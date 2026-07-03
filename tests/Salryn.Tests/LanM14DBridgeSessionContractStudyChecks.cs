@@ -20,25 +20,41 @@ public static class LanM14DBridgeSessionContractStudyChecks
 
         if (IsLaterLanM14DHistoricalContext(currentState))
         {
-            AssertContains(currentState, "LAN-M14-D is stable", "Current-state doc must keep LAN-M14-D stable after LAN-M14-E starts.");
-            AssertContains(currentState, "LAN-M14-E is current candidate work", "Current-state doc must mark LAN-M14-E as current candidate work.");
+            AssertContains(currentState, "LAN-M14-D is stable", "Current-state doc must keep LAN-M14-D stable after later LAN-M14 work.");
+            if (IsLanM14FThroughIImplementationContext(currentState))
+            {
+                AssertContains(currentState, "LAN-M14-F through LAN-M14-I are candidate work completed", "Current-state doc must mark LAN-M14-F through LAN-M14-I as candidate work completed.");
+            }
+            else
+            {
+                AssertContains(currentState, "LAN-M14-E is current candidate work", "Current-state doc must mark LAN-M14-E as current candidate work.");
+            }
+
             AssertContains(lanM14D, "LAN-M14-D defines the future bridge session contract", "LAN-M14-D doc must remain available as historical session contract context.");
             AssertContains(lanM14D, "It does not implement session runtime behavior", "LAN-M14-D doc must state it does not implement session runtime behavior.");
             AssertContains(coreSmoke, "LanM14DBridgeSessionContractStudyChecks.Run();", "CoreSmoke must keep LAN-M14-D checks wired.");
-            AssertSourceSessionContractBoundaries(projectRoot);
+            AssertSourceSessionContractBoundaries(projectRoot, currentState);
             AssertLanM14DChangedFilesStayInScope(projectRoot, currentState);
             return;
         }
 
         AssertDocBoundaries(currentState, lanM14D, coreSmoke);
-        AssertSourceSessionContractBoundaries(projectRoot);
+        AssertSourceSessionContractBoundaries(projectRoot, currentState);
         AssertLanM14DChangedFilesStayInScope(projectRoot, currentState);
+    }
+
+    private static bool IsLanM14FThroughIImplementationContext(string currentState)
+    {
+        return currentState.Contains("LAN-M14-F through LAN-M14-I are candidate work completed", StringComparison.Ordinal)
+            || currentState.Contains("LAN-M14-I is the LAN-M14 cap", StringComparison.Ordinal);
     }
 
     private static bool IsLaterLanM14DHistoricalContext(string currentState)
     {
         return currentState.Contains("LAN-M14-D is stable", StringComparison.Ordinal)
-            && currentState.Contains("LAN-M14-E is current candidate work", StringComparison.Ordinal);
+            && (currentState.Contains("LAN-M14-E is current candidate work", StringComparison.Ordinal)
+                || currentState.Contains("LAN-M14-F through LAN-M14-I are candidate work completed", StringComparison.Ordinal)
+                || currentState.Contains("LAN-M14-I is the LAN-M14 cap", StringComparison.Ordinal));
     }
 
     private static void AssertDocBoundaries(string currentState, string lanM14D, string coreSmoke)
@@ -85,7 +101,7 @@ public static class LanM14DBridgeSessionContractStudyChecks
         AssertContains(coreSmoke, "LanM14DBridgeSessionContractStudyChecks.Run();", "CoreSmoke must explicitly wire LAN-M14-D checks.");
     }
 
-    private static void AssertSourceSessionContractBoundaries(string projectRoot)
+    private static void AssertSourceSessionContractBoundaries(string projectRoot, string currentState)
     {
         string apiRoot = Path.Combine(projectRoot, "src", "Salryn.Api.Local");
         string webRoot = Path.Combine(projectRoot, "src", "Salryn.App.Web");
@@ -94,6 +110,8 @@ public static class LanM14DBridgeSessionContractStudyChecks
 
         string localApiApplicationFactory = ReadRequiredFile(apiRoot, "LocalApiApplicationFactory.cs");
         string remoteReadOnlyService = ReadRequiredFile(apiRoot, "Services", "RemoteReadOnlyApiService.cs");
+        string bindPolicyMapper = ReadRequiredFile(apiRoot, "Services", "RemoteReadOnlyLanBindPolicyMapper.cs");
+        string localApiLanUrlResolver = ReadRequiredFile(apiRoot, "Services", "LocalApiLanUrlResolver.cs");
         string remoteReadOnlyEndpoints = ReadRequiredFile(apiRoot, "RemoteReadOnlyApiEndpoints.cs");
         string remoteReadOnlyClient = ReadRequiredFile(webRoot, "src", "api", "remoteReadOnlyClient.ts");
         string remoteReadOnlyHook = ReadRequiredFile(webRoot, "src", "hooks", "useRemoteReadOnlyClient.ts");
@@ -112,6 +130,13 @@ public static class LanM14DBridgeSessionContractStudyChecks
         AssertContains(remoteReadOnlyService, "SpecificIpOnly", "RemoteReadOnlyApiService must keep SpecificIpOnly.");
         AssertContains(remoteReadOnlyService, "NoWildcardBind", "RemoteReadOnlyApiService must keep NoWildcardBind.");
         AssertContains(remoteReadOnlyService, "NoDiscovery", "RemoteReadOnlyApiService must keep NoDiscovery.");
+
+        if (IsLanM14FThroughIImplementationContext(currentState))
+        {
+            AssertContains(bindPolicyMapper, "HybridBridgeReadyMode", "RemoteReadOnlyLanBindPolicyMapper must define HybridBridgeReadyMode after LAN-M14-F implementation.");
+            AssertContains(localApiLanUrlResolver, "ResolveListenUrls", "LocalApiLanUrlResolver must resolve listen URLs after LAN-M14-F implementation.");
+            AssertContains(localApiApplicationFactory, "LocalApiLanUrlResolver.ResolveListenUrls", "LocalApiApplicationFactory must wire LocalApiLanUrlResolver after LAN-M14-F implementation.");
+        }
 
         AssertContains(remoteReadOnlyEndpoints, "MapGroup(\"/api/remote-readonly\")", "Remote-readonly endpoint group must remain under /api/remote-readonly.");
         AssertContains(remoteReadOnlyEndpoints, ".MapGet(", "Remote-readonly endpoints must remain GET routes.");

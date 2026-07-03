@@ -1,9 +1,11 @@
 using Microsoft.Extensions.FileProviders;
 using Salryn.Api.Local.Auth;
+using Salryn.Api.Local.Composition;
 using Salryn.Api.Local.Contracts;
 using Salryn.Api.Local.Services;
 using Salryn.Composition.Local;
 using Salryn.Core.Common;
+using Salryn.Core.Host;
 using Salryn.Core.Security;
 
 namespace Salryn.Api.Local;
@@ -47,15 +49,26 @@ public static class LocalApiApplicationFactory
         }
 
         DashboardSummaryService dashboardSummaryService = new(composition);
+        LanRemoteTransportApiServices lanRemoteTransportServices =
+            LanRemoteTransportApiComposition.Create(composition);
         ILocalApiSessionStore sessionStore =
             options.SessionStore ?? new InMemoryLocalApiSessionStore();
         LocalApiSessionService sessionService = new(composition.Authentication, sessionStore);
 
+        Result<LanRemoteTransportConfig> lanConfigResult = await lanRemoteTransportServices.Config
+            .GetCurrentAsync()
+            .ConfigureAwait(false);
+        LanRemoteTransportConfig lanConfig = lanConfigResult.IsSuccess
+            ? lanConfigResult.Value
+            : LanRemoteTransportConfig.CreateDefault();
+        IReadOnlyList<string> listenUrls = LocalApiLanUrlResolver.ResolveListenUrls(options.Url, lanConfig);
+
         WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
-        builder.WebHost.UseUrls(options.Url);
+        builder.WebHost.UseUrls(listenUrls.ToArray());
 
         builder.Services.AddSingleton(composition);
+        builder.Services.AddSingleton(lanRemoteTransportServices);
         builder.Services.AddSingleton(sessionStore);
         builder.Services.AddSingleton(sessionService);
         builder.Services.AddSingleton(dashboardSummaryService);

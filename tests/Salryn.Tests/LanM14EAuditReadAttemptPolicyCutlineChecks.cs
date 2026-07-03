@@ -18,9 +18,27 @@ public static class LanM14EAuditReadAttemptPolicyCutlineChecks
         string lanM14E = ReadRequiredFile(lanM14EPath);
         string coreSmoke = ReadRequiredFile(coreSmokePath);
 
+        if (IsLanM14FThroughIImplementationContext(currentState))
+        {
+            AssertContains(currentState, "`LAN-M14-E`", "Current-state doc must keep LAN-M14-E in the stable stack after LAN-M14-F through LAN-M14-I.");
+            AssertContains(currentState, "LAN-M14-F through LAN-M14-I are candidate work completed", "Current-state doc must mark LAN-M14-F through LAN-M14-I as candidate work completed.");
+            AssertContains(lanM14E, "Operator enable/disable audit", "LAN-M14-E doc must remain available as historical audit policy context.");
+            AssertContains(lanM14E, "Remote read-attempt audit", "LAN-M14-E doc must remain available as historical audit policy context.");
+            AssertContains(coreSmoke, "LanM14EAuditReadAttemptPolicyCutlineChecks.Run();", "CoreSmoke must keep LAN-M14-E checks wired.");
+            AssertSourceAuditPolicyBoundaries(projectRoot, currentState);
+            AssertLanM14EChangedFilesStayInScope(projectRoot, currentState);
+            return;
+        }
+
         AssertDocBoundaries(currentState, lanM14E, coreSmoke);
-        AssertSourceAuditPolicyBoundaries(projectRoot);
+        AssertSourceAuditPolicyBoundaries(projectRoot, currentState);
         AssertLanM14EChangedFilesStayInScope(projectRoot, currentState);
+    }
+
+    private static bool IsLanM14FThroughIImplementationContext(string currentState)
+    {
+        return currentState.Contains("LAN-M14-F through LAN-M14-I are candidate work completed", StringComparison.Ordinal)
+            || currentState.Contains("LAN-M14-I is the LAN-M14 cap", StringComparison.Ordinal);
     }
 
     private static void AssertDocBoundaries(string currentState, string lanM14E, string coreSmoke)
@@ -65,7 +83,7 @@ public static class LanM14EAuditReadAttemptPolicyCutlineChecks
         AssertContains(coreSmoke, "LanM14EAuditReadAttemptPolicyCutlineChecks.Run();", "CoreSmoke must explicitly wire LAN-M14-E checks.");
     }
 
-    private static void AssertSourceAuditPolicyBoundaries(string projectRoot)
+    private static void AssertSourceAuditPolicyBoundaries(string projectRoot, string currentState)
     {
         string apiRoot = Path.Combine(projectRoot, "src", "Salryn.Api.Local");
         string webRoot = Path.Combine(projectRoot, "src", "Salryn.App.Web");
@@ -74,6 +92,9 @@ public static class LanM14EAuditReadAttemptPolicyCutlineChecks
 
         string localApiApplicationFactory = ReadRequiredFile(apiRoot, "LocalApiApplicationFactory.cs");
         string remoteReadOnlyService = ReadRequiredFile(apiRoot, "Services", "RemoteReadOnlyApiService.cs");
+        string bindPolicyMapper = ReadRequiredFile(apiRoot, "Services", "RemoteReadOnlyLanBindPolicyMapper.cs");
+        string localApiLanUrlResolver = ReadRequiredFile(apiRoot, "Services", "LocalApiLanUrlResolver.cs");
+        string readAttemptAudit = ReadRequiredFile(apiRoot, "Services", "RemoteReadOnlyReadAttemptAuditRecorder.cs");
         string remoteReadOnlyEndpoints = ReadRequiredFile(apiRoot, "RemoteReadOnlyApiEndpoints.cs");
         string remoteReadOnlyClient = ReadRequiredFile(webRoot, "src", "api", "remoteReadOnlyClient.ts");
         string remoteReadOnlyHook = ReadRequiredFile(webRoot, "src", "hooks", "useRemoteReadOnlyClient.ts");
@@ -92,6 +113,14 @@ public static class LanM14EAuditReadAttemptPolicyCutlineChecks
         AssertContains(remoteReadOnlyService, "SpecificIpOnly", "RemoteReadOnlyApiService must keep SpecificIpOnly.");
         AssertContains(remoteReadOnlyService, "NoWildcardBind", "RemoteReadOnlyApiService must keep NoWildcardBind.");
         AssertContains(remoteReadOnlyService, "NoDiscovery", "RemoteReadOnlyApiService must keep NoDiscovery.");
+
+        if (IsLanM14FThroughIImplementationContext(currentState))
+        {
+            AssertContains(bindPolicyMapper, "HybridBridgeReadyMode", "RemoteReadOnlyLanBindPolicyMapper must define HybridBridgeReadyMode after LAN-M14-F implementation.");
+            AssertContains(localApiLanUrlResolver, "ResolveListenUrls", "LocalApiLanUrlResolver must resolve listen URLs after LAN-M14-F implementation.");
+            AssertContains(readAttemptAudit, "RemoteReadAttempt.Allowed", "Read-attempt audit recorder must record allowed attempts after LAN-M14-G implementation.");
+            AssertContains(readAttemptAudit, "RemoteReadAttempt.Denied", "Read-attempt audit recorder must record denied attempts after LAN-M14-G implementation.");
+        }
 
         AssertContains(remoteReadOnlyEndpoints, "MapGroup(\"/api/remote-readonly\")", "Remote-readonly endpoint group must remain under /api/remote-readonly.");
         AssertContains(remoteReadOnlyEndpoints, ".MapGet(", "Remote-readonly endpoints must remain GET routes.");

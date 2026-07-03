@@ -22,6 +22,8 @@ const officialSequence = "Official sequence";
 
 export const remoteReadOnlyWarnings = [
   "Remote read-only client only. Remote cashier/admin execution is not enabled.",
+  "LAN remote transport is disabled by default until an operator explicitly enables explicit LAN bind configuration.",
+  "Localhost operator sessions are separate from LAN remote terminal trust. Remote reads require terminal identity and handshake proof.",
   "Clients must not open the SQLite database directly.",
   checkout + ", sales, inventory, official journal, and official sequence actions are disabled on remote clients.",
 ] as const;

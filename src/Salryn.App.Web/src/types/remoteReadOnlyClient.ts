@@ -21,6 +21,8 @@ export type RemoteReadOnlyBindPolicy = {
   localhostOnly: boolean;
   explicitHostBindRequired: boolean;
   specificIpOnly: boolean;
+  noWildcardBind?: boolean;
+  noDiscovery?: boolean;
   message: string;
 };
 

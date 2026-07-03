@@ -31,6 +31,11 @@ public static class M8MSeriesCompletionLanTransitionGateChecks
             AssertContains(currentState, "LAN-M14-A", "Current-state doc must keep LAN-M14-A in the post-promotion LAN stack.");
             AssertContains(currentState, "LAN-M14-", "Current-state doc must mark the active LAN-M14 candidate boundary.");
             AssertContains(currentState, "M-series docs remain useful historical context", "Current-state doc must demote M-series docs to historical context after promotion.");
+            if (currentState.Contains("LAN-M14-I is the LAN-M14 cap", StringComparison.Ordinal))
+            {
+                AssertContains(currentState, "LAN-M14-F through LAN-M14-I are candidate work completed", "Current-state doc must mark LAN-M14-F through LAN-M14-I as candidate work completed.");
+                AssertContains(currentState, "Hybrid bridge is implemented", "Current-state doc must state hybrid bridge is implemented.");
+            }
             AssertContains(mSeriesGate, "## LAN Transition Gate", "M8 gate doc must remain available as historical LAN transition context.");
             AssertContains(coreSmoke, "M8MSeriesCompletionLanTransitionGateChecks.Run();", "M8 checks must remain explicitly wired in CoreSmoke.");
             AssertM8ChangedFilesStayInScope(projectRoot, currentState);

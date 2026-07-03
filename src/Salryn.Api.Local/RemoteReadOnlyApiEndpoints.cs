@@ -1,7 +1,10 @@
 using Salryn.Api.Local.Auth;
+using Salryn.Api.Local.Bridge;
+using Salryn.Api.Local.Composition;
 using Salryn.Api.Local.Contracts;
 using Salryn.Api.Local.Services;
 using Salryn.Core.Common;
+using Salryn.Core.RemoteClients;
 
 namespace Salryn.Api.Local;
 
@@ -11,38 +14,82 @@ public static class RemoteReadOnlyApiEndpoints
     {
         RouteGroupBuilder group = app.MapGroup("/api/remote-readonly");
 
-        group.MapGet("/status", (
+        group.MapGet("/status", async (
             HttpContext httpContext,
             LocalApiSessionService sessions,
-            RemoteReadOnlyApiService remoteReadOnly) =>
+            LanRemoteTransportApiServices lanServices,
+            RemoteReadOnlyApiService remoteReadOnly,
+            CancellationToken cancellationToken) =>
         {
-            IResult? rejected = LocalApiPermissionGuards.RequireAuthenticatedSession(httpContext, sessions);
-            return rejected ?? Results.Ok(remoteReadOnly.GetStatus());
+            (IResult? rejected, RemoteReadOnlyClientContext? bridgeContext) = await AuthorizeBridgeOrLocalhostAsync(
+                httpContext,
+                sessions,
+                lanServices,
+                () => LocalApiPermissionGuards.RequireAuthenticatedSession(httpContext, sessions),
+                requestedOperation: "status",
+                requestedCategory: "status",
+                cancellationToken).ConfigureAwait(false);
+
+            if (rejected is not null)
+            {
+                return rejected;
+            }
+
+            RemoteReadOnlyStatusResponse status = await remoteReadOnly
+                .GetStatusAsync(bridgeContext, cancellationToken)
+                .ConfigureAwait(false);
+
+            return Results.Ok(status);
         });
 
-        group.MapGet("/capabilities", (
+        group.MapGet("/capabilities", async (
             HttpContext httpContext,
             LocalApiSessionService sessions,
-            RemoteReadOnlyApiService remoteReadOnly) =>
+            LanRemoteTransportApiServices lanServices,
+            RemoteReadOnlyApiService remoteReadOnly,
+            CancellationToken cancellationToken) =>
         {
-            IResult? rejected = LocalApiPermissionGuards.RequireAuthenticatedSession(httpContext, sessions);
-            return rejected ?? Results.Ok(remoteReadOnly.GetCapabilities());
+            (IResult? rejected, RemoteReadOnlyClientContext? bridgeContext) = await AuthorizeBridgeOrLocalhostAsync(
+                httpContext,
+                sessions,
+                lanServices,
+                () => LocalApiPermissionGuards.RequireAuthenticatedSession(httpContext, sessions),
+                requestedOperation: "capabilities",
+                requestedCategory: "status",
+                cancellationToken).ConfigureAwait(false);
+
+            if (rejected is not null)
+            {
+                return rejected;
+            }
+
+            _ = bridgeContext;
+            return Results.Ok(remoteReadOnly.GetCapabilities());
         });
 
         group.MapGet("/dashboard-summary", async (
             HttpContext httpContext,
             LocalApiSessionService sessions,
+            LanRemoteTransportApiServices lanServices,
             RemoteReadOnlyApiService remoteReadOnly,
             CancellationToken cancellationToken) =>
         {
-            IResult? rejected = LocalApiPermissionGuards.RequireAuthenticatedSession(httpContext, sessions);
+            (IResult? rejected, RemoteReadOnlyClientContext? bridgeContext) = await AuthorizeBridgeOrLocalhostAsync(
+                httpContext,
+                sessions,
+                lanServices,
+                () => LocalApiPermissionGuards.RequireAuthenticatedSession(httpContext, sessions),
+                requestedOperation: "dashboard-summary",
+                requestedCategory: "dashboard",
+                cancellationToken).ConfigureAwait(false);
+
             if (rejected is not null)
             {
                 return rejected;
             }
 
             DashboardSummaryResponse summary = await remoteReadOnly
-                .GetDashboardSummaryAsync(cancellationToken)
+                .GetDashboardSummaryAsync(bridgeContext, cancellationToken)
                 .ConfigureAwait(false);
 
             return Results.Ok(summary);
@@ -51,64 +98,158 @@ public static class RemoteReadOnlyApiEndpoints
         group.MapGet("/products", async (
             HttpContext httpContext,
             LocalApiSessionService sessions,
+            LanRemoteTransportApiServices lanServices,
             RemoteReadOnlyApiService remoteReadOnly,
             string? searchText,
             int page,
             int pageSize,
             CancellationToken cancellationToken) =>
         {
-            IResult? rejected = LocalApiPermissionGuards.RequirePermission(
+            (IResult? rejected, RemoteReadOnlyClientContext? bridgeContext) = await AuthorizeBridgeOrLocalhostAsync(
                 httpContext,
                 sessions,
-                LocalApiPermissions.ProductsView);
+                lanServices,
+                () => LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    LocalApiPermissions.ProductsView),
+                requestedOperation: "products",
+                requestedCategory: "product",
+                cancellationToken).ConfigureAwait(false);
+
             if (rejected is not null)
             {
                 return rejected;
             }
 
             Result<PagedApiResponse<ProductListItemResponse>> products = await remoteReadOnly
-                .SearchProductsAsync(searchText, page, pageSize, cancellationToken)
+                .SearchProductsAsync(searchText, page, pageSize, bridgeContext, cancellationToken)
                 .ConfigureAwait(false);
 
             return ToApiResult(products);
         });
 
-        group.MapGet("/terminal-status", (
+        group.MapGet("/terminal-status", async (
             HttpContext httpContext,
             LocalApiSessionService sessions,
-            RemoteReadOnlyApiService remoteReadOnly) =>
+            LanRemoteTransportApiServices lanServices,
+            RemoteReadOnlyApiService remoteReadOnly,
+            CancellationToken cancellationToken) =>
         {
-            IResult? rejected = LocalApiPermissionGuards.RequirePermission(
+            (IResult? rejected, RemoteReadOnlyClientContext? bridgeContext) = await AuthorizeBridgeOrLocalhostAsync(
                 httpContext,
                 sessions,
-                LocalApiPermissions.StoreTerminalView);
-            return rejected ?? Results.Ok(remoteReadOnly.GetTerminalStatus());
+                lanServices,
+                () => LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    LocalApiPermissions.StoreTerminalView),
+                requestedOperation: "terminal-status",
+                requestedCategory: "terminal-status",
+                cancellationToken).ConfigureAwait(false);
+
+            if (rejected is not null)
+            {
+                return rejected;
+            }
+
+            RemoteReadOnlyTerminalStatusResponse terminalStatus = await remoteReadOnly
+                .GetTerminalStatusAsync(bridgeContext, cancellationToken)
+                .ConfigureAwait(false);
+
+            return Results.Ok(terminalStatus);
         });
 
-        group.MapGet("/bind-policy", (
+        group.MapGet("/bind-policy", async (
             HttpContext httpContext,
             LocalApiSessionService sessions,
-            RemoteReadOnlyApiService remoteReadOnly) =>
+            LanRemoteTransportApiServices lanServices,
+            RemoteReadOnlyApiService remoteReadOnly,
+            CancellationToken cancellationToken) =>
         {
-            IResult? rejected = LocalApiPermissionGuards.RequireAuthenticatedSession(httpContext, sessions);
-            return rejected ?? Results.Ok(remoteReadOnly.GetBindPolicy());
+            (IResult? rejected, RemoteReadOnlyClientContext? bridgeContext) = await AuthorizeBridgeOrLocalhostAsync(
+                httpContext,
+                sessions,
+                lanServices,
+                () => LocalApiPermissionGuards.RequireAuthenticatedSession(httpContext, sessions),
+                requestedOperation: "bind-policy",
+                requestedCategory: "status",
+                cancellationToken).ConfigureAwait(false);
+
+            if (rejected is not null)
+            {
+                return rejected;
+            }
+
+            _ = bridgeContext;
+            RemoteReadOnlyBindPolicyResponse bindPolicy = await remoteReadOnly
+                .GetBindPolicyAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            return Results.Ok(bindPolicy);
         });
 
-        group.MapGet("/audit", (
+        group.MapGet("/audit", async (
             HttpContext httpContext,
             LocalApiSessionService sessions,
+            LanRemoteTransportApiServices lanServices,
             RemoteReadOnlyApiService remoteReadOnly,
             int page,
-            int pageSize) =>
+            int pageSize,
+            CancellationToken cancellationToken) =>
         {
-            IResult? rejected = LocalApiPermissionGuards.RequirePermission(
+            (IResult? rejected, RemoteReadOnlyClientContext? bridgeContext) = await AuthorizeBridgeOrLocalhostAsync(
                 httpContext,
                 sessions,
-                LocalApiPermissions.AuditView);
-            return rejected ?? Results.Ok(remoteReadOnly.GetAuditVisibility(page, pageSize));
+                lanServices,
+                () => LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    LocalApiPermissions.AuditView),
+                requestedOperation: "audit",
+                requestedCategory: "audit",
+                cancellationToken).ConfigureAwait(false);
+
+            if (rejected is not null)
+            {
+                return rejected;
+            }
+
+            _ = bridgeContext;
+            RemoteReadOnlyAuditVisibilityResponse audit = await remoteReadOnly
+                .GetAuditVisibilityAsync(page, pageSize, cancellationToken)
+                .ConfigureAwait(false);
+
+            return Results.Ok(audit);
         });
 
         return app;
+    }
+
+    private static async Task<(IResult? Rejected, RemoteReadOnlyClientContext? BridgeContext)> AuthorizeBridgeOrLocalhostAsync(
+        HttpContext httpContext,
+        LocalApiSessionService sessions,
+        LanRemoteTransportApiServices lanServices,
+        Func<IResult?> localhostGuard,
+        string requestedOperation,
+        string requestedCategory,
+        CancellationToken cancellationToken)
+    {
+        _ = sessions;
+        RemoteReadOnlyBridgeRequestContext bridgeRequest =
+            RemoteReadOnlyApiAuthorization.TryGetRemoteBridgeContext(httpContext);
+
+        if (bridgeRequest.IsRemoteBridgeRequest)
+        {
+            return await RemoteReadOnlyApiAuthorization.AuthorizeBridgeAsync(
+                bridgeRequest,
+                lanServices,
+                requestedOperation,
+                requestedCategory,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return (localhostGuard(), null);
     }
 
     private static IResult ToApiResult<T>(Result<T> result)
