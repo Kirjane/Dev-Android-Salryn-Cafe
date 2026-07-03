@@ -1,3 +1,4 @@
+using System.Net;
 using Salryn.Core.RemoteClients;
 
 namespace Salryn.Api.Local.Bridge;
@@ -34,7 +35,9 @@ public sealed class RemoteReadOnlyBridgeRequestContext
 
         bool hasTerminalHeader = !string.IsNullOrWhiteSpace(terminalHeader);
         bool hasSessionHeader = !string.IsNullOrWhiteSpace(sessionHeader);
-        bool isRemoteBridgeRequest = hasTerminalHeader || hasSessionHeader;
+        IPAddress? remoteIpAddress = httpContext.Connection.RemoteIpAddress;
+        bool isLoopbackRequest = remoteIpAddress is null || IPAddress.IsLoopback(remoteIpAddress);
+        bool isRemoteBridgeRequest = hasTerminalHeader || hasSessionHeader || !isLoopbackRequest;
 
         Guid terminalId = Guid.Empty;
         if (hasTerminalHeader && !Guid.TryParse(terminalHeader, out terminalId))
