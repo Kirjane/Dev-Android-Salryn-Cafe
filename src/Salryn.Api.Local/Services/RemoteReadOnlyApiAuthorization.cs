@@ -22,10 +22,15 @@ public static class RemoteReadOnlyApiAuthorization
         ArgumentNullException.ThrowIfNull(bridgeRequest);
         ArgumentNullException.ThrowIfNull(lanServices);
 
-        if (bridgeRequest.TerminalId == Guid.Empty || bridgeRequest.HandshakeSessionId == Guid.Empty)
+        // LAN-M15-E: repeated denials are counted and flagged in memory. The soft-throttle
+        // never hard-locks a terminal; the authorization decision below stays fail-closed.
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        string denialKey = RemoteReadOnlyAbuseGuard.BuildDenialKey(bridgeRequest.TerminalId, bridgeRequest.OriginAddress);
+
+        async Task RecordDeniedAsync(string reason)
         {
-            (string denialCode, string denialMessage, string auditReason) =
-                RemoteReadOnlyBridgeDiagnostics.ResolveBridgeDenial(bridgeRequest);
+            SoftThrottleDecision throttle = RemoteReadOnlyAbuseGuard.RegisterDenial(denialKey, now);
+            string safeReason = throttle.IsSoftThrottled ? reason + " (soft-throttled)" : reason;
 
             await lanServices.ReadAttemptAudit
                 .RecordDeniedAsync(
@@ -33,9 +38,37 @@ public static class RemoteReadOnlyApiAuthorization
                     requestedCategory,
                     bridgeRequest.TerminalId,
                     bridgeRequest.OriginAddress,
-                    auditReason,
+                    safeReason,
                     cancellationToken)
                 .ConfigureAwait(false);
+        }
+
+        // LAN-M15-E: reject oversized request material before touching any service.
+        if (bridgeRequest.HasOversizedHeader)
+        {
+            await RecordDeniedAsync("oversized header rejected").ConfigureAwait(false);
+
+            return (BridgeRejected(
+                "RemoteReadOnlyBridge.OversizedHeaderRejected",
+                "Remote bridge request headers exceed the safe size limit."), null);
+        }
+
+        // LAN-M15-E: only allow-listed safe read categories may proceed.
+        if (!RemoteReadOnlyAbuseGuard.IsAcceptableCategory(requestedCategory))
+        {
+            await RecordDeniedAsync("unsupported category rejected").ConfigureAwait(false);
+
+            return (BridgeRejected(
+                RemoteReadOnlyBridgeDiagnostics.UnsafeCategoryDenied,
+                "Requested category is not an allowed read-only category."), null);
+        }
+
+        if (bridgeRequest.TerminalId == Guid.Empty || bridgeRequest.HandshakeSessionId == Guid.Empty)
+        {
+            (string denialCode, string denialMessage, string auditReason) =
+                RemoteReadOnlyBridgeDiagnostics.ResolveBridgeDenial(bridgeRequest);
+
+            await RecordDeniedAsync(auditReason).ConfigureAwait(false);
 
             return (BridgeRejected(denialCode, denialMessage), null);
         }
@@ -46,30 +79,14 @@ public static class RemoteReadOnlyApiAuthorization
 
         if (configResult.IsFailure)
         {
-            await lanServices.ReadAttemptAudit
-                .RecordDeniedAsync(
-                    requestedOperation,
-                    requestedCategory,
-                    bridgeRequest.TerminalId,
-                    bridgeRequest.OriginAddress,
-                    "remote disabled",
-                    cancellationToken)
-                .ConfigureAwait(false);
+            await RecordDeniedAsync("remote disabled").ConfigureAwait(false);
 
             return (BridgeRejected(configResult.ErrorDetail.Code, configResult.ErrorDetail.Message), null);
         }
 
         if (!configResult.Value.RemoteTransportEnabled)
         {
-            await lanServices.ReadAttemptAudit
-                .RecordDeniedAsync(
-                    requestedOperation,
-                    requestedCategory,
-                    bridgeRequest.TerminalId,
-                    bridgeRequest.OriginAddress,
-                    "remote disabled",
-                    cancellationToken)
-                .ConfigureAwait(false);
+            await RecordDeniedAsync("remote disabled").ConfigureAwait(false);
 
             return (BridgeRejected(
                 "RemoteReadOnlyBridge.RemoteDisabled",
@@ -82,15 +99,7 @@ public static class RemoteReadOnlyApiAuthorization
 
         if (identityResult.IsFailure || identityResult.Value is null || !identityResult.Value.IsConfigured)
         {
-            await lanServices.ReadAttemptAudit
-                .RecordDeniedAsync(
-                    requestedOperation,
-                    requestedCategory,
-                    bridgeRequest.TerminalId,
-                    bridgeRequest.OriginAddress,
-                    "deployment identity missing",
-                    cancellationToken)
-                .ConfigureAwait(false);
+            await RecordDeniedAsync("deployment identity missing").ConfigureAwait(false);
 
             return (BridgeRejected(
                 "RemoteReadOnlyBridge.DeploymentIdentityRequired",
@@ -111,15 +120,7 @@ public static class RemoteReadOnlyApiAuthorization
             (string denialCode, string denialMessage, string auditReason) =
                 RemoteReadOnlyBridgeDiagnostics.MapHandshakeFailure(handshakeValidation.ErrorDetail.Code);
 
-            await lanServices.ReadAttemptAudit
-                .RecordDeniedAsync(
-                    requestedOperation,
-                    requestedCategory,
-                    bridgeRequest.TerminalId,
-                    bridgeRequest.OriginAddress,
-                    auditReason,
-                    cancellationToken)
-                .ConfigureAwait(false);
+            await RecordDeniedAsync(auditReason).ConfigureAwait(false);
 
             return (BridgeRejected(denialCode, denialMessage), null);
         }

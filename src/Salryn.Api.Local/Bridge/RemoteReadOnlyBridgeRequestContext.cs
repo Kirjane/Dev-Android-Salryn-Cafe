@@ -1,5 +1,6 @@
 using System.Net;
 using Salryn.Api.Local.Auth;
+using Salryn.Api.Local.Services;
 using Salryn.Core.RemoteClients;
 
 namespace Salryn.Api.Local.Bridge;
@@ -22,6 +23,13 @@ public sealed class RemoteReadOnlyBridgeRequestContext
 
     public bool HasOperatorSessionCookie { get; }
 
+    // LAN-M15-E: negative-path classification for oversized / malformed request material.
+    public bool HasOversizedHeader { get; }
+
+    public bool HasMalformedTerminalId { get; }
+
+    public bool HasMalformedHandshakeId { get; }
+
     private RemoteReadOnlyBridgeRequestContext(
         Guid terminalId,
         Guid handshakeSessionId,
@@ -30,7 +38,10 @@ public sealed class RemoteReadOnlyBridgeRequestContext
         bool hasTerminalHeader,
         bool hasHandshakeHeader,
         bool isLoopbackRequest,
-        bool hasOperatorSessionCookie)
+        bool hasOperatorSessionCookie,
+        bool hasOversizedHeader,
+        bool hasMalformedTerminalId,
+        bool hasMalformedHandshakeId)
     {
         TerminalId = terminalId;
         HandshakeSessionId = handshakeSessionId;
@@ -40,6 +51,9 @@ public sealed class RemoteReadOnlyBridgeRequestContext
         HasHandshakeHeader = hasHandshakeHeader;
         IsLoopbackRequest = isLoopbackRequest;
         HasOperatorSessionCookie = hasOperatorSessionCookie;
+        HasOversizedHeader = hasOversizedHeader;
+        HasMalformedTerminalId = hasMalformedTerminalId;
+        HasMalformedHandshakeId = hasMalformedHandshakeId;
     }
 
     public static RemoteReadOnlyBridgeRequestContext FromHttpContext(HttpContext httpContext)
@@ -56,14 +70,21 @@ public sealed class RemoteReadOnlyBridgeRequestContext
         bool isLoopbackRequest = remoteIpAddress is null || IPAddress.IsLoopback(remoteIpAddress);
         bool isRemoteBridgeRequest = hasTerminalHeader || hasSessionHeader || !isLoopbackRequest;
 
+        bool hasOversizedHeader =
+            !RemoteReadOnlyAbuseGuard.IsHeaderValueWithinLimit(terminalHeader)
+            || !RemoteReadOnlyAbuseGuard.IsHeaderValueWithinLimit(sessionHeader)
+            || !RemoteReadOnlyAbuseGuard.IsHeaderValueWithinLimit(originHeader);
+
         Guid terminalId = Guid.Empty;
-        if (hasTerminalHeader && !Guid.TryParse(terminalHeader, out terminalId))
+        bool hasMalformedTerminalId = hasTerminalHeader && !Guid.TryParse(terminalHeader, out terminalId);
+        if (hasMalformedTerminalId)
         {
             terminalId = Guid.Empty;
         }
 
         Guid handshakeSessionId = Guid.Empty;
-        if (hasSessionHeader && !Guid.TryParse(sessionHeader, out handshakeSessionId))
+        bool hasMalformedHandshakeId = hasSessionHeader && !Guid.TryParse(sessionHeader, out handshakeSessionId);
+        if (hasMalformedHandshakeId)
         {
             handshakeSessionId = Guid.Empty;
         }
@@ -79,7 +100,10 @@ public sealed class RemoteReadOnlyBridgeRequestContext
             hasTerminalHeader,
             hasSessionHeader,
             isLoopbackRequest,
-            hasOperatorSessionCookie);
+            hasOperatorSessionCookie,
+            hasOversizedHeader,
+            hasMalformedTerminalId,
+            hasMalformedHandshakeId);
     }
 
     public RemoteReadOnlyClientContext ToRemoteReadOnlyClientContext(
@@ -101,7 +125,10 @@ public sealed class RemoteReadOnlyBridgeRequestContext
     {
         if (!string.IsNullOrWhiteSpace(originHeader))
         {
-            return originHeader.Trim();
+            // LAN-M15-E: sanitize any operator/attacker-supplied origin header before it is
+            // propagated into audit or the client context. Hostile control characters and
+            // secret markers are stripped/redacted here.
+            return RemoteReadOnlyAbuseGuard.SanitizeHostileText(originHeader);
         }
 
         return httpContext.Connection.RemoteIpAddress?.ToString() ?? string.Empty;
