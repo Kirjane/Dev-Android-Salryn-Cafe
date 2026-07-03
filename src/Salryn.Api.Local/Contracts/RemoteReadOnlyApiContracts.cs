@@ -73,3 +73,17 @@ public sealed record RemoteReadOnlyDiagnosticsResponse(
     string? LastDenialCode,
     string? LastDenialMessage,
     IReadOnlyList<RemoteReadOnlyDiagnosticItemResponse> Items);
+
+public sealed record RemoteReadOnlyPreflightCheckResponse(
+    string Code,
+    string Status,
+    string Category,
+    string Message);
+
+public sealed record RemoteReadOnlyPreflightResponse(
+    string OverallReadiness,
+    string Message,
+    bool ReadOnlyOnly,
+    IReadOnlyList<RemoteReadOnlyPreflightCheckResponse> Checks,
+    IReadOnlyList<string> SafeNextSteps,
+    IReadOnlyList<string> BlockedReasons);

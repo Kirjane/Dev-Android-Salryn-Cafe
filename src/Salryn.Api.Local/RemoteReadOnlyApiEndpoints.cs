@@ -231,6 +231,48 @@ public static class RemoteReadOnlyApiEndpoints
             return Results.Ok(diagnostics);
         });
 
+        group.MapGet("/preflight", async (
+            HttpContext httpContext,
+            LocalApiSessionService sessions,
+            LanRemoteTransportApiServices lanServices,
+            RemoteReadOnlyApiService remoteReadOnly,
+            CancellationToken cancellationToken) =>
+        {
+            RemoteReadOnlyBridgeRequestContext bridgeRequest =
+                RemoteReadOnlyApiAuthorization.TryGetRemoteBridgeContext(httpContext);
+
+            if (bridgeRequest.IsRemoteBridgeRequest)
+            {
+                (IResult? rejected, RemoteReadOnlyClientContext? bridgeContext) = await RemoteReadOnlyApiAuthorization.AuthorizeBridgeAsync(
+                    bridgeRequest,
+                    lanServices,
+                    requestedOperation: "preflight",
+                    requestedCategory: "status",
+                    cancellationToken).ConfigureAwait(false);
+
+                if (rejected is not null)
+                {
+                    return rejected;
+                }
+
+                _ = bridgeContext;
+            }
+            else
+            {
+                IResult? localhostRejected = LocalApiPermissionGuards.RequireAuthenticatedSession(httpContext, sessions);
+                if (localhostRejected is not null)
+                {
+                    return localhostRejected;
+                }
+            }
+
+            RemoteReadOnlyPreflightResponse preflight = await remoteReadOnly
+                .GetPreflightAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            return Results.Ok(preflight);
+        });
+
         group.MapGet("/audit", async (
             HttpContext httpContext,
             LocalApiSessionService sessions,

@@ -35,9 +35,9 @@ public static class LanM15ARemoteReadonlyLanFieldHardeningChecks
         AssertContains(currentState, LanM15ABaselineSha, "Current-state doc must contain the stable Sandbox SHA.");
         AssertContains(currentState, "LAN-M14-A through LAN-M14-E are stable", "Current-state doc must keep LAN-M14-A through LAN-M14-E stable.");
         AssertContains(currentState, "LAN-M14-F through LAN-M14-I are completed candidate work on Freehand", "Current-state doc must mark LAN-M14-F through LAN-M14-I as unpromoted candidate work.");
+        AssertContains(currentState, "LAN-M15-A remains completed but unpromoted on Freehand", "Current-state doc must mark LAN-M15-A as unpromoted.");
         AssertContains(currentState, "LAN-M14-I remains the LAN-M14 cap", "Current-state doc must state LAN-M14-I remains the LAN-M14 cap.");
         AssertContains(currentState, "LAN-M14-J does not exist and must not be created", "Current-state doc must forbid LAN-M14-J.");
-        AssertContains(currentState, "LAN-M15-A is current candidate work on Freehand", "Current-state doc must mark LAN-M15-A as current candidate work.");
         AssertContains(currentState, "no Sandbox promotion has occurred", "Current-state doc must state no Sandbox promotion has occurred.");
         AssertNotContains(currentState, "LAN-M14-J is current", "Current-state doc must not mark LAN-M14-J as current work.");
 
@@ -102,7 +102,8 @@ public static class LanM15ARemoteReadonlyLanFieldHardeningChecks
 
     private static void AssertLanM15AChangedFilesStayInScope(string projectRoot, string currentState)
     {
-        if (!currentState.Contains("LAN-M15-A is current candidate work on Freehand", StringComparison.Ordinal))
+        if (!currentState.Contains("LAN-M15-A is current candidate work on Freehand", StringComparison.Ordinal)
+            || currentState.Contains("LAN-M15-B is current candidate work on Freehand", StringComparison.Ordinal))
         {
             Console.WriteLine("LAN-M15-A changed-file scope guard skipped: LAN-M15-A is no longer current candidate work. Static field hardening checks remain active.");
             return;

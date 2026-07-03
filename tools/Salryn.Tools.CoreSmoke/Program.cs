@@ -203,6 +203,7 @@ public static class Program
         LanM14HPairingOperatorUxSurfaceChecks.Run();
         LanM14IEndToEndLanReadOnlyClosureChecks.Run();
         LanM15ARemoteReadonlyLanFieldHardeningChecks.Run();
+        LanM15BRemoteReadonlyLanPreflightChecks.Run();
         J21Rmo242023ElectronicJournalPersistenceRuntimeDocumentationSealChecks.Run();
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }

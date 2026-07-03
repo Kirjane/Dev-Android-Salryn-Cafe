@@ -20,6 +20,7 @@ export function RemoteReadOnlyClientPage() {
     statusQuery,
     bindPolicyQuery,
     diagnosticsQuery,
+    preflightQuery,
     terminalStatusQuery,
     productSearchText,
     setProductSearchText,
@@ -34,6 +35,7 @@ export function RemoteReadOnlyClientPage() {
 
   const bindPolicy = bindPolicyQuery.data ?? shellState.bindPolicy;
   const diagnostics = diagnosticsQuery.data;
+  const preflight = preflightQuery.data;
   const terminalStatus = terminalStatusQuery.data;
   const dashboard = dashboardQuery.data;
   const productPageData = productQuery.data;
@@ -44,6 +46,7 @@ export function RemoteReadOnlyClientPage() {
     void statusQuery.refetch();
     void bindPolicyQuery.refetch();
     void diagnosticsQuery.refetch();
+    void preflightQuery.refetch();
     void terminalStatusQuery.refetch();
     void dashboardQuery.refetch();
     void productQuery.refetch();
@@ -163,6 +166,61 @@ export function RemoteReadOnlyClientPage() {
             </div>
           ) : (
             <p className="text-sm text-slate-500">Safe runtime diagnostics will appear here after refresh.</p>
+          )}
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Preflight / Troubleshooting</CardTitle>
+        </CardHeader>
+        <CardBody>
+          {preflightQuery.isLoading ? <LoadingState label="Loading read-only LAN preflight..." /> : null}
+          {preflightQuery.isError ? <ErrorState message={(preflightQuery.error as Error).message} /> : null}
+          {preflight ? (
+            <div className="space-y-4 text-sm">
+              <dl className="grid gap-3 md:grid-cols-2">
+                <Row label="Overall readiness" value={preflight.overallReadiness} />
+                <Row label="Read-only only" value={preflight.readOnlyOnly ? "Yes" : "No"} />
+                <Row label="Preflight refresh" value={preflightQuery.isSuccess ? "Last preflight read succeeded" : preflightQuery.isError ? "Last preflight read failed" : "Not refreshed yet"} />
+              </dl>
+              <p className="text-slate-600">{preflight.message}</p>
+              {preflight.blockedReasons.length > 0 ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
+                  <p className="font-medium">Blocked reasons</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5">
+                    {preflight.blockedReasons.map((reason) => (
+                      <li key={reason}>{reason}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              <div>
+                <p className="mb-2 font-medium text-slate-900">Preflight checklist</p>
+                <ul className="grid gap-2 md:grid-cols-2">
+                  {preflight.checks.map((check) => (
+                    <li key={check.code} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                      <p className="font-medium text-slate-900">{check.code}</p>
+                      <p className="text-slate-600">{check.message}</p>
+                      <p className="mt-1 text-xs uppercase tracking-wide text-slate-500">{check.category} / {check.status}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <p className="mb-2 font-medium text-slate-900">Safe next steps</p>
+                <ul className="list-disc space-y-1 pl-5 text-slate-700">
+                  {preflight.safeNextSteps.map((step) => (
+                    <li key={step}>{step}</li>
+                  ))}
+                </ul>
+              </div>
+              <Alert tone="warning">
+                LAN remote transport is disabled by default. No checkout, admin, mutation, discovery, or network scan controls are exposed here.
+              </Alert>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">Read-only LAN preflight results will appear here after refresh.</p>
           )}
         </CardBody>
       </Card>

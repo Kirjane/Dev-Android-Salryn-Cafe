@@ -8,6 +8,7 @@ import type {
   RemoteReadOnlyCapability,
   RemoteReadOnlyCapabilitiesResponse,
   RemoteReadOnlyDiagnostics,
+  RemoteReadOnlyPreflight,
   RemoteReadOnlyShellState,
   RemoteReadOnlyTerminalStatus,
 } from "../types/remoteReadOnlyClient";
@@ -117,6 +118,11 @@ export async function fetchRemoteReadOnlyBindPolicy(): Promise<RemoteReadOnlyBin
 export async function fetchRemoteReadOnlyDiagnostics(): Promise<RemoteReadOnlyDiagnostics> {
   const response = await fetch("/api/remote-readonly/diagnostics", { credentials: "include" });
   return readJson<RemoteReadOnlyDiagnostics>(response);
+}
+
+export async function fetchRemoteReadOnlyPreflight(): Promise<RemoteReadOnlyPreflight> {
+  const response = await fetch("/api/remote-readonly/preflight", { credentials: "include" });
+  return readJson<RemoteReadOnlyPreflight>(response);
 }
 
 export async function fetchRemoteReadOnlyAuditVisibility(

@@ -206,6 +206,10 @@ try
             LanM15RemoteReadOnlyLanFieldHardeningSmokeChecks.Run(projectRoot);
             break;
 
+        case "remote-readonly-lan-preflight":
+            LanM15RemoteReadOnlyLanPreflightSmokeChecks.Run(projectRoot);
+            break;
+
         case "safe-remote-readonly-client":
             SafeRemoteReadOnlyClientSmokeChecks.Run(projectRoot);
             break;

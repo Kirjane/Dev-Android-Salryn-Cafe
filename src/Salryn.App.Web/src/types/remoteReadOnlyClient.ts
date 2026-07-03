@@ -98,3 +98,19 @@ export type RemoteReadOnlyDiagnostics = {
   lastDenialMessage?: string | null;
   items: RemoteReadOnlyDiagnosticItem[];
 };
+
+export type RemoteReadOnlyPreflightCheck = {
+  code: string;
+  status: string;
+  category: string;
+  message: string;
+};
+
+export type RemoteReadOnlyPreflight = {
+  overallReadiness: string;
+  message: string;
+  readOnlyOnly: boolean;
+  checks: RemoteReadOnlyPreflightCheck[];
+  safeNextSteps: string[];
+  blockedReasons: string[];
+};

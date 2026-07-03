@@ -398,6 +398,29 @@ public sealed class RemoteReadOnlyApiService
             bridgeRequest);
     }
 
+    public async Task<RemoteReadOnlyPreflightResponse> GetPreflightAsync(
+        CancellationToken cancellationToken = default)
+    {
+        LanRemoteTransportConfig config = await GetConfigAsync(cancellationToken).ConfigureAwait(false);
+
+        Result<PagedResult<AuditLogReadModel>> auditProbe = await _composition.AuditReadRepository
+            .SearchAuditLogsAsync(
+                new AuditLogSearchFilter(
+                    Page: new PageRequest(1, 1),
+                    From: null,
+                    To: null,
+                    Search: new SearchText("RemoteReadAttempt")),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        bool auditPolicyAvailable = auditProbe.IsSuccess;
+
+        return RemoteReadOnlyLanPreflightEvaluator.Evaluate(
+            config,
+            auditPolicyAvailable,
+            diagnosticsAvailable: true);
+    }
+
     private static readonly string[] BindPolicyGuardLiterals =
     [
         PolicyLocalhostOnly,

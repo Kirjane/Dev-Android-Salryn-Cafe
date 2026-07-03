@@ -5,6 +5,7 @@ import {
   fetchRemoteReadOnlyBindPolicy,
   fetchRemoteReadOnlyDashboardSummary,
   fetchRemoteReadOnlyDiagnostics,
+  fetchRemoteReadOnlyPreflight,
   fetchRemoteReadOnlyProducts,
   fetchRemoteReadOnlyStatus,
   fetchRemoteReadOnlyTerminalStatus,
@@ -32,6 +33,12 @@ export function useRemoteReadOnlyClient() {
   const diagnosticsQuery = useQuery({
     queryKey: ["remote-readonly-diagnostics"],
     queryFn: fetchRemoteReadOnlyDiagnostics,
+    retry: false,
+  });
+
+  const preflightQuery = useQuery({
+    queryKey: ["remote-readonly-preflight"],
+    queryFn: fetchRemoteReadOnlyPreflight,
     retry: false,
   });
 
@@ -66,6 +73,7 @@ export function useRemoteReadOnlyClient() {
     statusQuery,
     bindPolicyQuery,
     diagnosticsQuery,
+    preflightQuery,
     terminalStatusQuery,
     productSearchText,
     setProductSearchText,
