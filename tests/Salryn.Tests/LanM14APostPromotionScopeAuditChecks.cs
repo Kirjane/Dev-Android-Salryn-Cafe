@@ -267,7 +267,9 @@ public static class LanM14APostPromotionScopeAuditChecks
                 || currentState.Contains("LAN-M14-B is stable", StringComparison.Ordinal)
                 || currentState.Contains("LAN-M14-C is current candidate work", StringComparison.Ordinal)
                 || currentState.Contains("LAN-M14-C is stable", StringComparison.Ordinal)
-                || currentState.Contains("LAN-M14-D is current candidate work", StringComparison.Ordinal));
+                || currentState.Contains("LAN-M14-D is current candidate work", StringComparison.Ordinal)
+                || currentState.Contains("LAN-M14-D is stable", StringComparison.Ordinal)
+                || currentState.Contains("LAN-M14-E is current candidate work", StringComparison.Ordinal));
     }
 
     private static string ReadRequiredSourceByFileName(string projectRoot, string fileName)

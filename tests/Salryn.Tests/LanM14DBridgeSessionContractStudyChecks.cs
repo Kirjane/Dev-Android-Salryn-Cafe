@@ -18,9 +18,27 @@ public static class LanM14DBridgeSessionContractStudyChecks
         string lanM14D = ReadRequiredFile(lanM14DPath);
         string coreSmoke = ReadRequiredFile(coreSmokePath);
 
+        if (IsLaterLanM14DHistoricalContext(currentState))
+        {
+            AssertContains(currentState, "LAN-M14-D is stable", "Current-state doc must keep LAN-M14-D stable after LAN-M14-E starts.");
+            AssertContains(currentState, "LAN-M14-E is current candidate work", "Current-state doc must mark LAN-M14-E as current candidate work.");
+            AssertContains(lanM14D, "LAN-M14-D defines the future bridge session contract", "LAN-M14-D doc must remain available as historical session contract context.");
+            AssertContains(lanM14D, "It does not implement session runtime behavior", "LAN-M14-D doc must state it does not implement session runtime behavior.");
+            AssertContains(coreSmoke, "LanM14DBridgeSessionContractStudyChecks.Run();", "CoreSmoke must keep LAN-M14-D checks wired.");
+            AssertSourceSessionContractBoundaries(projectRoot);
+            AssertLanM14DChangedFilesStayInScope(projectRoot, currentState);
+            return;
+        }
+
         AssertDocBoundaries(currentState, lanM14D, coreSmoke);
         AssertSourceSessionContractBoundaries(projectRoot);
         AssertLanM14DChangedFilesStayInScope(projectRoot, currentState);
+    }
+
+    private static bool IsLaterLanM14DHistoricalContext(string currentState)
+    {
+        return currentState.Contains("LAN-M14-D is stable", StringComparison.Ordinal)
+            && currentState.Contains("LAN-M14-E is current candidate work", StringComparison.Ordinal);
     }
 
     private static void AssertDocBoundaries(string currentState, string lanM14D, string coreSmoke)
