@@ -74,6 +74,7 @@ public static class LocalApiApplicationFactory
         builder.Services.AddSingleton(dashboardSummaryService);
         builder.Services.AddSingleton<OperatorReadService>();
         builder.Services.AddSingleton<RemoteReadOnlyApiService>();
+        builder.Services.AddSingleton<LocalLanControlService>();
 
         builder.Services.AddCors(corsOptions =>
         {
@@ -166,6 +167,7 @@ public static class LocalApiApplicationFactory
 
         app.MapReadOnlyOperatorEndpoints();
         app.MapRemoteReadOnlyEndpoints();
+        app.MapLocalLanControlEndpoints();
 
         if (webDistPath is not null)
         {

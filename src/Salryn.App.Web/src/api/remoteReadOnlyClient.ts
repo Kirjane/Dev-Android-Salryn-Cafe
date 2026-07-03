@@ -3,6 +3,8 @@ import type { DashboardSummary } from "./dashboard";
 import type { ProductListItem } from "./products";
 import type { PagedResponse } from "./types";
 import type {
+  LocalLanControlStatus,
+  LocalLanControlTerminalAction,
   RemoteReadOnlyAuditVisibility,
   RemoteReadOnlyBindPolicy,
   RemoteReadOnlyCapability,
@@ -123,6 +125,44 @@ export async function fetchRemoteReadOnlyDiagnostics(): Promise<RemoteReadOnlyDi
 export async function fetchRemoteReadOnlyPreflight(): Promise<RemoteReadOnlyPreflight> {
   const response = await fetch("/api/remote-readonly/preflight", { credentials: "include" });
   return readJson<RemoteReadOnlyPreflight>(response);
+}
+
+export async function fetchLocalLanControlStatus(): Promise<LocalLanControlStatus> {
+  const response = await fetch("/api/lan-control/status", { credentials: "include" });
+  return readJson<LocalLanControlStatus>(response);
+}
+
+export async function setLocalLanControlRemoteTransport(
+  enable: boolean,
+  bindAddress: string | null,
+): Promise<LocalLanControlStatus> {
+  const response = await fetch("/api/lan-control/remote-transport", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enable, bindAddress }),
+  });
+  return readJson<LocalLanControlStatus>(response);
+}
+
+export async function disableLocalLanControlTerminal(
+  terminalId: string,
+): Promise<LocalLanControlTerminalAction> {
+  const response = await fetch(`/api/lan-control/terminals/${encodeURIComponent(terminalId)}/disable`, {
+    method: "POST",
+    credentials: "include",
+  });
+  return readJson<LocalLanControlTerminalAction>(response);
+}
+
+export async function revokeLocalLanControlTerminal(
+  terminalId: string,
+): Promise<LocalLanControlTerminalAction> {
+  const response = await fetch(`/api/lan-control/terminals/${encodeURIComponent(terminalId)}/revoke`, {
+    method: "POST",
+    credentials: "include",
+  });
+  return readJson<LocalLanControlTerminalAction>(response);
 }
 
 export async function fetchRemoteReadOnlyAuditVisibility(

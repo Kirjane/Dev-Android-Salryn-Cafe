@@ -8,6 +8,8 @@ internal static class LocalApiPermissions
     public const string UsersManage = "Users.Manage";
     public const string AuditView = "Audit.View";
     public const string StoreTerminalView = "StoreTerminal.View";
+    public const string StoreTerminalManage = "StoreTerminal.Manage";
+    public const string SettingsManage = "Settings.Manage";
 }
 
 internal static class LocalApiPermissionGuards
