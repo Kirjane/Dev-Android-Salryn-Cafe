@@ -208,6 +208,11 @@ public static class Program
         LanM15DSessionResilienceChecks.Run();
         LanM15ENegativePathHardeningChecks.Run();
         LanM15FFinalAcceptanceChecks.Run();
+        LanM16HostOwnedRemoteOperatorSessionChecks.Run();
+        LanM16RemotePosCommandAuthorizationChecks.Run();
+        LanM16RemoteCheckoutIdempotencyAndHostWriteChecks.Run();
+        LanM16HostClientIdentityUxChecks.Run();
+        LanM16FinalMultiTerminalAcceptanceChecks.Run();
         J21Rmo242023ElectronicJournalPersistenceRuntimeDocumentationSealChecks.Run();
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }

@@ -103,6 +103,21 @@ LAN-M15-G does not exist and must not be created unless a hard blocker proves LA
 
 Next step is one Codex verification of the full stacked candidate.
 
+## LAN-M16 Host-Owned Multi-Terminal Role Runtime Candidate
+
+- Sandbox remains `e477699dca27a21954a5ad9d388307fdb9ed08fd`.
+- Freehand remains unpromoted.
+- LAN-M14-F through LAN-M14-I remain unpromoted foundation work.
+- LAN-M15-A through LAN-M15-F remain unpromoted read-only LAN hardening work.
+- LAN-M16 is current host-owned multi-terminal role runtime candidate.
+- LAN-M16 adds actual remote cashier/manager/admin POS operation against host DB.
+- LAN-M16 does not use shared SQLite.
+- LAN-M16 does not imply sync between two independent hosts.
+- LAN-M16 keeps LAN bind explicit and host-controlled.
+- LAN-M16 adds a separate host-owned `/api/remote-pos` command surface; the `/api/remote-readonly` bridge remains read-only and GET-only.
+- LAN-M16 remote POS runtime is disabled by default and resets on host restart.
+- No promotion has occurred.
+
 ## Current LAN Boundary
 
 - Hybrid bridge remains implemented but disabled by default.
@@ -148,6 +163,7 @@ Only these docs are live coordination authority for the current post-LAN-M14-I s
 - `00-HANDOFF/LAN_M15_D_REMOTE_CLIENT_RESILIENCE_AND_SESSION_LIFECYCLE_HARDENING.md`
 - `00-HANDOFF/LAN_M15_E_ABUSE_FLOOD_NEGATIVE_PATH_HARDENING.md`
 - `00-HANDOFF/LAN_M15_F_FINAL_FIELD_ACCEPTANCE_CLOSURE_AND_CODEX_REVIEW_BUNDLE.md`
+- `00-HANDOFF/LAN_M16_HOST_OWNED_MULTI_TERMINAL_ROLE_RUNTIME.md`
 
 M-series docs remain useful historical context for what was promoted, but they are no longer the active current-candidate authority.
 

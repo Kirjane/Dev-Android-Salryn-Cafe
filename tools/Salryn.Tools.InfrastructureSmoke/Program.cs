@@ -230,6 +230,34 @@ try
             SafeRemoteReadOnlyClientSmokeChecks.Run(projectRoot);
             break;
 
+        case "remote-pos-operator-session":
+            RemotePosOperatorSessionSmokeChecks.Run(projectRoot);
+            break;
+
+        case "remote-pos-command-authorization":
+            RemotePosCommandAuthorizationSmokeChecks.Run(projectRoot);
+            break;
+
+        case "remote-pos-checkout-idempotency":
+            RemotePosCheckoutIdempotencySmokeChecks.Run(projectRoot);
+            break;
+
+        case "remote-pos-host-write-boundary":
+            RemotePosHostWriteBoundarySmokeChecks.Run(projectRoot);
+            break;
+
+        case "remote-pos-manager-admin-boundary":
+            RemotePosManagerAdminBoundarySmokeChecks.Run(projectRoot);
+            break;
+
+        case "remote-pos-host-client-identity":
+            RemotePosHostClientIdentitySmokeChecks.Run(projectRoot);
+            break;
+
+        case "remote-pos-final-acceptance":
+            RemotePosFinalAcceptanceSmokeChecks.Run(projectRoot);
+            break;
+
         case "rmo-engineering-candidate":
             RmoEngineeringCandidateSmokeChecks.Run(projectRoot);
             break;
@@ -281,7 +309,7 @@ try
 
         default:
             Console.WriteLine("Unknown command.");
-            Console.WriteLine("Use: status | init | inspect | reset | repositories | auth-first-run | mvp-business-flow | dev-prelaunch-seed | qa-products-seed | product-write | product-write-edge | inventory-write | inventory-write-edge | sales-write | sales-write-edge | sales-read-write | cashier-session-write | cashier-session-write-edge | cashier-session-read-write | cashier-session-service | cashier-session-service-edge | pos-checkout-session-enforcement | pos-checkout-repository-integration | pos-checkout-application-boundary | pos-checkout-application-repository | pos-store-day-regression | pos-admin-operations-regression | pos-phase-b-regression | app-production-readiness | app-first-run-bootstrap-readiness | app-startup-failure-diagnostics | pos-checkout-draft-transaction-builder | pos-checkout-product-picker-boundary | pos-checkout-product-picker-repository-integration | pos-checkout-ui-presenter-viewmodel | pos-checkout-ui-product-search-presenter-boundary | pos-checkout-ui-product-repository-search-boundary | official-output-text-file | official-output-text-file-dev-candidate | host-command-loopback | terminal-registry-pairing | controlled-remote-transport-gate | pairing-activation-handshake | safe-remote-readonly-client | rmo-engineering-candidate | full");
+            Console.WriteLine("Use: status | init | inspect | reset | repositories | auth-first-run | mvp-business-flow | dev-prelaunch-seed | qa-products-seed | product-write | product-write-edge | inventory-write | inventory-write-edge | sales-write | sales-write-edge | sales-read-write | cashier-session-write | cashier-session-write-edge | cashier-session-read-write | cashier-session-service | cashier-session-service-edge | pos-checkout-session-enforcement | pos-checkout-repository-integration | pos-checkout-application-boundary | pos-checkout-application-repository | pos-store-day-regression | pos-admin-operations-regression | pos-phase-b-regression | app-production-readiness | app-first-run-bootstrap-readiness | app-startup-failure-diagnostics | pos-checkout-draft-transaction-builder | pos-checkout-product-picker-boundary | pos-checkout-product-picker-repository-integration | pos-checkout-ui-presenter-viewmodel | pos-checkout-ui-product-search-presenter-boundary | pos-checkout-ui-product-repository-search-boundary | official-output-text-file | official-output-text-file-dev-candidate | host-command-loopback | terminal-registry-pairing | controlled-remote-transport-gate | pairing-activation-handshake | safe-remote-readonly-client | remote-pos-operator-session | remote-pos-command-authorization | remote-pos-checkout-idempotency | remote-pos-host-write-boundary | remote-pos-manager-admin-boundary | remote-pos-host-client-identity | remote-pos-final-acceptance | rmo-engineering-candidate | full");
             Environment.ExitCode = 1;
             break;
     }
