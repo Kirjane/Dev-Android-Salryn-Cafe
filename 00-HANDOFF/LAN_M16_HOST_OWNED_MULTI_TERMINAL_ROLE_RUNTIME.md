@@ -161,12 +161,55 @@ QR/mobile/cloud, no default LAN bind, no wildcard/`0.0.0.0` bind, no CORS relaxa
 origins, no cookie-only LAN trust, no remote access to `/api/lan-control`, no printer/PDF/Crystal/
 ESC-POS/RMO, and no certification/accreditation/legal claim.
 
+## Promotion limitations / product boundary
+
+LAN-M16 is a controlled host-owned remote POS runtime, but it is deliberately NOT a strict official
+checkout product. Reviewers and operators must read these limitations as the product boundary:
+
+- The remote POS sale is host-owned but is **not** a strict remote official / RMO checkout. It uses
+  the standard host-side sale completion path with host-owned monotonic `RPOS-` numbering.
+- The official electronic journal and strict BIR official document sequence remain **host-local**
+  (`official.checkout.complete`); the remote runtime never invokes them and cannot forge an official
+  number. Do not claim remote RMO/BIR compliance.
+- Manager override, void, refund, and discount over LAN are `NotSupported` (no safe remote domain
+  path) unless later implemented safely.
+- Remote tender is **Cash-only** in LAN-M16 unless later expanded.
+- Remote operator sessions, carts, and idempotency records are **in-memory and restart-scoped**
+  (host process). They are cleared on host restart (fail-safe), so a restart forces remote operators
+  to re-authenticate.
+- Independent hosts do **not** sync. Each host owns its own SQLite; there is no peer-to-peer sync,
+  no shared SQLite over LAN, and no discovery/network scan.
+- No printer/PDF/Crystal/ESC-POS/RMO output, no default LAN bind, no wildcard/`0.0.0.0` bind, and no
+  certification/accreditation/legal claim.
+
+## LAN-M16-QA-A Hardening
+
+LAN-M16-QA-A (focused hardening sprint) added, on `KIRCH-FREEHAND` only:
+
+- **Remote origin / session binding.** The remote operator session is bound at login to the trusted
+  server-observed connection origin (`RemoteReadOnlyBridgeRequestContext.ObservedOrigin`, derived
+  from `HttpContext.Connection.RemoteIpAddress`, never from the client-supplied
+  `X-Salryn-Remote-Origin` header). Every command re-checks the current server-observed origin
+  against the session's bound origin and fails closed with `RemotePos.OriginMismatch` on a mismatch.
+  Loopback canonicalizes to a stable token so the local operator is never falsely rejected. The
+  handshake's persisted `OriginAddress` is client-supplied/diagnostic and is intentionally not
+  treated as an authority; the server-observed origin is the authoritative binding.
+- **Post-commit audit safety.** After the host sale commits, the completed result is memoized to the
+  idempotency map and the cart is cleared **before** the best-effort audit runs. The audit write is
+  wrapped so a failure (thrown exception or failed `Result`) is swallowed as a safe diagnostic and
+  never flips the checkout to failed/unknown, never leaks exception detail, and never creates retry
+  ambiguity. A retry after a committed sale replays the original `Completed`/`DuplicateRequest`
+  result and never double-posts a sale or double-decrements inventory.
+- Guards: `LanM16OriginBindingChecks`, `LanM16PostCommitAuditSafetyChecks`. Smokes:
+  `remote-pos-origin-binding`, `remote-pos-post-commit-audit-safety`.
+
 ## Decision
 
 LAN-M16 chose the safest conservative implementation for ambiguous areas: a separate host-owned
 command surface rather than reusing the read-only authorization; explicit shift opening rather than
 silent auto-open; host-owned monotonic receipt numbering (relying on `receipt_no UNIQUE`) rather
 than invoking the strict official sequence remotely; and explicit `NotSupported` for manager/admin
-write actions that lack a safe remote domain path. The remote POS runtime is disabled by default
-and resets on restart. Promotion remains parked pending one Codex review of the full stacked
-candidate.
+write actions that lack a safe remote domain path. LAN-M16-QA-A additionally binds each remote
+operator session to the server-observed request origin (fail closed on mismatch) and makes the
+post-commit audit strictly best-effort. The remote POS runtime is disabled by default and resets on
+restart. Promotion remains parked pending Codex re-review of LAN-M16-QA-A.

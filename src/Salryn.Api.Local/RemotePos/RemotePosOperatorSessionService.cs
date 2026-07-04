@@ -24,12 +24,14 @@ public static class RemotePosSessionState
     public const string SessionRevoked = "SessionRevoked";
     public const string UserInactive = "UserInactive";
     public const string IdentityMismatch = "IdentityMismatch";
+    public const string OriginMismatch = "OriginMismatch";
 }
 
 /// <summary>
 /// A host-issued remote operator session. The token secret is never stored or logged in the
 /// clear: only a SHA-256 hash is retained for fixed-time comparison. The session binds the
-/// terminal, handshake, host, store, user, role, and permission snapshot with an explicit expiry.
+/// terminal, handshake, host, store, user, role, permission snapshot, and the server-observed
+/// request origin with an explicit expiry.
 /// </summary>
 public sealed class RemotePosOperatorSession
 {
@@ -40,6 +42,11 @@ public sealed class RemotePosOperatorSession
     public required Guid TerminalId { get; init; }
 
     public required Guid HandshakeSessionId { get; init; }
+
+    // LAN-M16-QA-A: the server-observed connection origin captured at login. Every subsequent
+    // command re-checks the current server-observed origin against this value and fails closed on
+    // a mismatch. This is never a client-supplied value, so it cannot be spoofed by the client.
+    public required string ObservedOrigin { get; init; }
 
     public required Guid StoreId { get; init; }
 
@@ -64,7 +71,10 @@ public sealed class RemotePosOperatorSession
     public DateTimeOffset? RevokedAtUtc { get; set; }
 }
 
-public sealed record RemotePosTrustContext(Guid TerminalId, Guid HandshakeSessionId, string OriginAddress);
+// LAN-M16-QA-A: ObservedOrigin is the trusted, server-observed connection origin (never a
+// client-supplied header). It is bound to the remote operator session at login and revalidated on
+// every command. Callers must supply the server-observed value (see RemotePosApiAuthorization).
+public sealed record RemotePosTrustContext(Guid TerminalId, Guid HandshakeSessionId, string ObservedOrigin);
 
 public sealed record RemotePosTrustResult(bool Ok, string State, string Code, string Message, Guid StoreId, Guid HostId);
 
@@ -270,6 +280,16 @@ public sealed class RemotePosOperatorSessionService
                 "Remote operator session host/store identity mismatch.");
         }
 
+        // Kirch: why - the session is bound to the server-observed origin captured at login. If the
+        // current request arrives from a different observed origin, fail closed: a leaked/replayed
+        // token from another machine cannot be used, and a client-supplied origin header can never
+        // satisfy this check because both values are server-observed only.
+        if (!string.Equals(session.ObservedOrigin, trust.ObservedOrigin ?? string.Empty, StringComparison.Ordinal))
+        {
+            return Invalid(RemotePosSessionState.OriginMismatch, "RemotePos.OriginMismatch",
+                "Remote POS session origin does not match the current request.");
+        }
+
         Result<UserReadModel?> userResult = await _userReadRepository
             .FindByIdAsync(session.UserId, cancellationToken)
             .ConfigureAwait(false);
@@ -319,6 +339,7 @@ public sealed class RemotePosOperatorSessionService
             TokenHash = tokenHash,
             TerminalId = trust.TerminalId,
             HandshakeSessionId = trust.HandshakeSessionId,
+            ObservedOrigin = trust.ObservedOrigin ?? string.Empty,
             StoreId = trustResult.StoreId,
             HostId = trustResult.HostId,
             UserId = user.UserId,

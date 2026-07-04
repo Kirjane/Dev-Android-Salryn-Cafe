@@ -331,9 +331,11 @@ public sealed class RemotePosCheckoutService
             }
 
             RemotePosCheckoutResultResponse result =
-                await ExecuteSubmitAsync(session, request, cancellationToken).ConfigureAwait(false);
+                await ExecuteSubmitAsync(session, request, key, cancellationToken).ConfigureAwait(false);
 
-            // Only durable, completed sales are memoized for idempotent replay.
+            // Backstop only: ExecuteSubmitAsync already memoizes a completed sale immediately after
+            // the host commit (before any best-effort side effect). Only durable, completed sales
+            // are memoized for idempotent replay; a pre-commit failure is intentionally not cached.
             if (result.Status == RemotePosCheckoutStatus.Completed)
             {
                 _idempotency[key] = result;
@@ -343,6 +345,9 @@ public sealed class RemotePosCheckoutService
         }
         catch (Exception)
         {
+            // Kirch: why - an exception here can only originate BEFORE the host sale commits (all
+            // post-commit work is memoized + wrapped best-effort inside ExecuteSubmitAsync). No sale
+            // was posted, so RetryableUnknown is safe: a retry re-runs from a clean state.
             return Result(RemotePosCheckoutStatus.RetryableUnknown, request.ClientRequestId,
                 "Remote checkout hit an unexpected error. Retry is safe.", duplicate: false);
         }
@@ -358,6 +363,7 @@ public sealed class RemotePosCheckoutService
     private async Task<RemotePosCheckoutResultResponse> ExecuteSubmitAsync(
         RemotePosOperatorSession session,
         RemotePosCheckoutSubmitRequest request,
+        string idempotencyKey,
         CancellationToken cancellationToken)
     {
         if (request.Payments is null || request.Payments.Count == 0)
@@ -450,26 +456,21 @@ public sealed class RemotePosCheckoutService
 
         if (completion.IsFailure)
         {
+            // No sale committed: safe to map to a conflict/validation/retry code with no memoization.
             return MapFailure(completion.ErrorDetail, request.ClientRequestId);
         }
 
-        // Read back the authoritative persisted sale (host-owned totals + sale id).
+        // ---- The host sale is now COMMITTED. Everything below must be fail-safe. ----------------
+
+        // Read back the authoritative persisted sale (host-owned totals + sale id). A read-back
+        // failure must not undo the committed sale, so a null sale still yields a Completed result.
         Result<SaleDetailReadModel?> saleResult = await _saleReadRepository
             .FindSaleByReceiptNoAsync(receiptNumber, cancellationToken)
             .ConfigureAwait(false);
 
         SaleDetailReadModel? sale = saleResult.IsSuccess ? saleResult.Value : null;
 
-        await WriteAuditAsync(session, receiptNumber, sale?.Id, request.ClientRequestId, "Completed", cancellationToken)
-            .ConfigureAwait(false);
-
-        // Clear the cart after a successful sale.
-        lock (cart.Sync)
-        {
-            cart.Lines.Clear();
-        }
-
-        return new RemotePosCheckoutResultResponse(
+        RemotePosCheckoutResultResponse completed = new(
             RemotePosCheckoutStatus.Completed,
             request.ClientRequestId,
             receiptNumber,
@@ -478,6 +479,25 @@ public sealed class RemotePosCheckoutService
             sale?.Change.Cents,
             Duplicate: false,
             Message: "Remote sale completed on host.");
+
+        // Kirch: why - memoize the committed success IMMEDIATELY, before any best-effort side effect
+        // that could throw (audit, cart clear). A LAN drop + retry after the commit must replay this
+        // exact result via the idempotency map, never re-post the sale or re-decrement inventory.
+        _idempotency[idempotencyKey] = completed;
+
+        // Clear the cart deterministically after the committed success. This is an in-memory list
+        // clear under the cart lock and cannot fail the sale or create retry ambiguity.
+        lock (cart.Sync)
+        {
+            cart.Lines.Clear();
+        }
+
+        // Audit is strictly best-effort AFTER the sale is durable and memoized. WriteAuditAsync
+        // swallows its own failures, so a failed audit can never flip the checkout to failed/unknown.
+        await WriteAuditAsync(session, receiptNumber, sale?.Id, request.ClientRequestId, "Completed", cancellationToken)
+            .ConfigureAwait(false);
+
+        return completed;
     }
 
     private RemotePosCheckoutResultResponse MapFailure(Error error, string clientRequestId)
@@ -531,8 +551,19 @@ public sealed class RemotePosCheckoutService
             Reason = reason,
         };
 
-        // Audit is best-effort and must never fail the sale that already committed.
-        await _auditWriteRepository.AddAsync(auditLog, cancellationToken).ConfigureAwait(false);
+        // Kirch: why - audit runs AFTER the sale committed and the success was memoized. It is
+        // strictly best-effort: any failure (repository error, a raised exception, or a failed
+        // Result) is swallowed here so it can never fail a committed sale, change the checkout
+        // outcome, or create retry ambiguity. No exception detail is surfaced to the remote client.
+        try
+        {
+            Result auditResult = await _auditWriteRepository.AddAsync(auditLog, cancellationToken).ConfigureAwait(false);
+            _ = auditResult; // A failed audit Result is intentionally ignored (best-effort).
+        }
+        catch (Exception)
+        {
+            // Best-effort audit only. Intentionally swallowed; the sale is already durable.
+        }
     }
 
     private RemotePosCartResponse BuildCartResponse(RemotePosOperatorSession session, RemotePosCart cart, string message)

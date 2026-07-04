@@ -15,7 +15,10 @@ public static class RemotePosApiAuthorization
     public static RemotePosTrustContext BuildTrustContext(HttpContext httpContext)
     {
         RemoteReadOnlyBridgeRequestContext bridge = RemoteReadOnlyBridgeRequestContext.FromHttpContext(httpContext);
-        return new RemotePosTrustContext(bridge.TerminalId, bridge.HandshakeSessionId, bridge.OriginAddress);
+
+        // LAN-M16-QA-A: bind/validate on the server-observed origin (bridge.ObservedOrigin), never
+        // the spoofable client-supplied bridge.OriginAddress header.
+        return new RemotePosTrustContext(bridge.TerminalId, bridge.HandshakeSessionId, bridge.ObservedOrigin);
     }
 
     /// <summary>
@@ -125,6 +128,7 @@ public static class RemotePosApiAuthorization
         RemotePosSessionState.SessionRevoked => StatusCodes.Status401Unauthorized,
         RemotePosSessionState.UserInactive => StatusCodes.Status401Unauthorized,
         RemotePosSessionState.IdentityMismatch => StatusCodes.Status403Forbidden,
+        RemotePosSessionState.OriginMismatch => StatusCodes.Status403Forbidden,
         _ => StatusCodes.Status403Forbidden,
     };
 

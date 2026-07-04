@@ -13,6 +13,12 @@ public sealed class RemoteReadOnlyBridgeRequestContext
 
     public string OriginAddress { get; }
 
+    // LAN-M16-QA-A: the server-observed connection origin (canonicalized). Unlike OriginAddress,
+    // this is NEVER derived from the client-supplied X-Salryn-Remote-Origin header, so it cannot be
+    // spoofed by the remote client. It is the trusted origin the remote POS operator session binds
+    // to at login and re-checks on every command.
+    public string ObservedOrigin { get; }
+
     public bool IsRemoteBridgeRequest { get; }
 
     public bool HasTerminalHeader { get; }
@@ -34,6 +40,7 @@ public sealed class RemoteReadOnlyBridgeRequestContext
         Guid terminalId,
         Guid handshakeSessionId,
         string originAddress,
+        string observedOrigin,
         bool isRemoteBridgeRequest,
         bool hasTerminalHeader,
         bool hasHandshakeHeader,
@@ -46,6 +53,7 @@ public sealed class RemoteReadOnlyBridgeRequestContext
         TerminalId = terminalId;
         HandshakeSessionId = handshakeSessionId;
         OriginAddress = originAddress;
+        ObservedOrigin = observedOrigin;
         IsRemoteBridgeRequest = isRemoteBridgeRequest;
         HasTerminalHeader = hasTerminalHeader;
         HasHandshakeHeader = hasHandshakeHeader;
@@ -90,12 +98,14 @@ public sealed class RemoteReadOnlyBridgeRequestContext
         }
 
         string originAddress = ResolveOriginAddress(httpContext, originHeader);
+        string observedOrigin = ResolveObservedOrigin(httpContext);
         bool hasOperatorSessionCookie = httpContext.Request.Cookies.ContainsKey(LocalApiSessionService.SessionCookieName);
 
         return new RemoteReadOnlyBridgeRequestContext(
             terminalId,
             handshakeSessionId,
             originAddress,
+            observedOrigin,
             isRemoteBridgeRequest,
             hasTerminalHeader,
             hasSessionHeader,
@@ -133,4 +143,31 @@ public sealed class RemoteReadOnlyBridgeRequestContext
 
         return httpContext.Connection.RemoteIpAddress?.ToString() ?? string.Empty;
     }
+
+    // LAN-M16-QA-A: resolve the trusted, server-observed connection origin. This deliberately
+    // ignores every client-supplied header (including X-Salryn-Remote-Origin) so a remote client
+    // cannot spoof the origin the remote POS session is bound to. Loopback (IPv4/IPv6 and the
+    // null "in-process" case) canonicalizes to a single stable token so a local operator's session
+    // is never falsely rejected for an origin mismatch, while distinct LAN peers get distinct
+    // observed origins. IPv4-mapped IPv6 addresses are normalized to their IPv4 form for a stable
+    // comparison key.
+    private static string ResolveObservedOrigin(HttpContext httpContext)
+    {
+        IPAddress? remoteIpAddress = httpContext.Connection.RemoteIpAddress;
+
+        if (remoteIpAddress is null || IPAddress.IsLoopback(remoteIpAddress))
+        {
+            return LoopbackObservedOrigin;
+        }
+
+        if (remoteIpAddress.IsIPv4MappedToIPv6)
+        {
+            remoteIpAddress = remoteIpAddress.MapToIPv4();
+        }
+
+        return remoteIpAddress.ToString();
+    }
+
+    // Stable, non-secret canonical token for a local/loopback connection origin.
+    public const string LoopbackObservedOrigin = "loopback";
 }

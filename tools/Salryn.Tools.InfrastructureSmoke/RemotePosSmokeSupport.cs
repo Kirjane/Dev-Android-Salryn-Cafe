@@ -139,6 +139,7 @@ internal static class RemotePosSmokeSupport
             TokenHash = new byte[32],
             TerminalId = Guid.NewGuid(),
             HandshakeSessionId = Guid.NewGuid(),
+            ObservedOrigin = "loopback",
             StoreId = Guid.NewGuid(),
             HostId = Guid.NewGuid(),
             UserId = userId,

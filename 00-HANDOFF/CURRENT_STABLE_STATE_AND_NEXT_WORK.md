@@ -118,6 +118,40 @@ Next step is one Codex verification of the full stacked candidate.
 - LAN-M16 remote POS runtime is disabled by default and resets on host restart.
 - No promotion has occurred.
 
+## LAN-M16-QA-A Hardening and Accurate Current Boundary
+
+LAN-M16-QA-A is a focused hardening sprint on `KIRCH-FREEHAND` responding to the Codex NO-GO. It
+enforces remote origin/session binding, makes post-commit audit truly best-effort, and corrects
+this current-state document. The accurate current boundary is:
+
+- Sandbox remains `e477699dca27a21954a5ad9d388307fdb9ed08fd`.
+- Freehand remains unpromoted.
+- LAN-M14-F through LAN-M14-I remain unpromoted read-only LAN foundation work.
+- LAN-M15-A through LAN-M15-F remain unpromoted read-only LAN hardening work.
+- LAN-M16 remains unpromoted host-owned multi-terminal remote POS runtime.
+- LAN-M16 adds controlled remote POS mutation/checkout through `/api/remote-pos` only.
+- Remote-readonly remains GET-only.
+- Local LAN control remains loopback/operator-only.
+- Host owns SQLite, sales, inventory writes, receipt allocation, and audit.
+- Remote clients never share SQLite.
+- Independent hosts do not sync.
+- No default LAN bind.
+- No wildcard bind.
+- No 0.0.0.0 bind.
+- No discovery/network scan.
+- No QR/mobile/cloud.
+- No remote official/RMO checkout path.
+- No printer/PDF/Crystal/ESC-POS.
+- No certification/accreditation/legal claim.
+- Manager override / void / refund / discount remain NotSupported unless later implemented safely.
+- Remote tender is Cash-only in LAN-M16 unless later expanded.
+- Remote official strict BIR/electronic-journal path remains host-local; do not claim remote RMO compliance.
+- Remote POS commands fail closed unless the current server-observed request origin matches the
+  origin bound to the host-issued remote operator session at login.
+- Post-commit audit failure is best-effort only and never changes a committed checkout result or
+  causes a duplicate sale on retry.
+- Next step is Codex review of LAN-M16-QA-A.
+
 ## Current LAN Boundary
 
 - Hybrid bridge remains implemented but disabled by default.
@@ -133,11 +167,10 @@ Next step is one Codex verification of the full stacked candidate.
 - Remote read-only client resilience surfaces expired/disabled/revoked/stale session states with safe retry guidance and no retry storm.
 - Repeated denied remote reads are soft-throttled in memory with no schema, and oversized/malformed headers are rejected fail-closed.
 - No default LAN bind.
-- No mutation.
-- No checkout.
-- No remote cashier/admin execution.
-- No official journal writes.
-- No official sequence allocation.
+- Remote-readonly (`/api/remote-readonly`) remains GET-only: no mutation, no checkout, and no remote cashier/admin execution on that surface.
+- Remote POS mutation/checkout is available ONLY through the separate host-owned `/api/remote-pos` surface (LAN-M16), never through remote-readonly. It is disabled by default and requires explicit host-operator enablement.
+- No official journal writes over LAN and no official document sequence allocation over LAN; the strict BIR/electronic-journal official path remains host-local and is never invoked remotely.
+- Every remote POS command re-validates terminal identity, handshake proof, host-issued operator session, current server-observed origin binding, and the role/permission matrix, and fails closed on any mismatch.
 - QR, discovery, mobile, cloud, and network scan behavior are not started.
 - RMO, official-output, printer, PDF, Crystal, and ESC/POS work remain deferred.
 - Certification, accreditation, legal-compliance, and production-approval claims remain forbidden.
@@ -188,12 +221,12 @@ Older phase documents, master plans, RMO reconciliation studies, pre-promotion M
 
 - LAN-M14-J or any post-LAN-M14-I expansion under the LAN-M14 name.
 - LAN-M15-G, unless a hard blocker proves LAN-M15-F cannot close the work.
-- Sandbox promotion of LAN-M14-F through LAN-M14-I or LAN-M15-A through LAN-M15-F until maintainer review authorizes it.
+- Sandbox promotion of LAN-M14-F through LAN-M14-I, LAN-M15-A through LAN-M15-F, or LAN-M16 until maintainer review authorizes it.
 - Default LAN bind enablement.
-- LAN mutation.
-- Remote cashier/admin execution.
+- LAN mutation or remote cashier/admin execution on the read-only bridge (`/api/remote-readonly` stays GET-only). Controlled host-owned mutation/checkout exists only on `/api/remote-pos` (LAN-M16), disabled by default.
 - Shared SQLite over LAN.
-- POS checkout implementation over LAN.
+- Remote official/RMO checkout path over LAN (the strict BIR/electronic-journal path stays host-local).
+- Remote manager override / void / refund / discount, and any remote tender beyond Cash, unless later implemented safely.
 - Role editor/custom permission manager.
 - Settings, Backup, Official Output, or Reports implementation.
 - RMO, official-output, printer, PDF, Crystal, or ESC/POS work.

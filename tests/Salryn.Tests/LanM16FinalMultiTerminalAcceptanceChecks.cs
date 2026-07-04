@@ -15,6 +15,8 @@ public static class LanM16FinalMultiTerminalAcceptanceChecks
         LanM16RemotePosCommandAuthorizationChecks.Run();
         LanM16RemoteCheckoutIdempotencyAndHostWriteChecks.Run();
         LanM16HostClientIdentityUxChecks.Run();
+        LanM16OriginBindingChecks.Run();
+        LanM16PostCommitAuditSafetyChecks.Run();
 
         string projectRoot = FindProjectRoot(Directory.GetCurrentDirectory());
         string apiRoot = Path.Combine(projectRoot, "src", "Salryn.Api.Local");
@@ -73,6 +75,21 @@ public static class LanM16FinalMultiTerminalAcceptanceChecks
         AssertContains(currentState, "LAN-M15-F is the LAN completion cap", "Current-state doc must keep LAN-M15-F completion cap statement.");
         AssertNotContains(currentState, "LAN-M14-J is current", "Current-state doc must not mark LAN-M14-J as current work.");
         AssertNotContains(currentState, "LAN-M15-G is current", "Current-state doc must not mark LAN-M15-G as current work.");
+
+        // LAN-M16-QA-A: the current-state doc must no longer globally deny mutation/checkout. The
+        // "no mutation/no checkout/no remote cashier" boundary now applies only to /api/remote-readonly,
+        // while controlled host-owned mutation/checkout is explicitly scoped to /api/remote-pos.
+        AssertContains(currentState, "Remote-readonly (`/api/remote-readonly`) remains GET-only: no mutation, no checkout, and no remote cashier/admin execution on that surface.",
+            "Current-state doc must scope the no-mutation/no-checkout boundary to remote-readonly.");
+        AssertContains(currentState, "LAN-M16 adds controlled remote POS mutation/checkout through `/api/remote-pos` only.",
+            "Current-state doc must state LAN-M16 adds controlled remote POS mutation/checkout through /api/remote-pos only.");
+        AssertContains(currentState, "Next step is Codex review of LAN-M16-QA-A.",
+            "Current-state doc must name Codex review of LAN-M16-QA-A as the next step.");
+        AssertContains(currentState, "Remote official strict BIR/electronic-journal path remains host-local; do not claim remote RMO compliance.",
+            "Current-state doc must keep the official/RMO host-local limitation.");
+        // The old flat global denial bullets must not linger as standalone contradictions.
+        AssertNotContains(currentState, "- No mutation.", "Current-state doc must not keep a flat global 'No mutation.' bullet.");
+        AssertNotContains(currentState, "- No checkout.", "Current-state doc must not keep a flat global 'No checkout.' bullet.");
     }
 
     private static void AssertLanM16Doc(string doc)
@@ -100,6 +117,25 @@ public static class LanM16FinalMultiTerminalAcceptanceChecks
         AssertContains(doc, "None.", "LAN-M16 doc must state schema changes are None.");
         AssertContains(doc, "no wildcard/`0.0.0.0` bind", "LAN-M16 doc forbidden scope must reject wildcard/0.0.0.0 bind.");
         AssertNotContains(doc, "LAN-M15-G is current", "LAN-M16 doc must not mark LAN-M15-G as current.");
+
+        // LAN-M16-QA-A: the doc must carry the explicit promotion-limitations/product boundary and
+        // the hardening notes for origin binding + post-commit audit safety.
+        foreach (string section in new[]
+        {
+            "Promotion limitations / product boundary",
+            "LAN-M16-QA-A Hardening",
+            "Remote origin / session binding",
+            "Post-commit audit safety",
+        })
+        {
+            AssertContains(doc, section, $"LAN-M16 doc must include the '{section}' section/heading.");
+        }
+
+        AssertContains(doc, "is **not** a strict remote official / RMO checkout",
+            "LAN-M16 doc must state the remote sale is not strict remote official/RMO checkout.");
+        AssertContains(doc, "Cash-only", "LAN-M16 doc must state remote tender is Cash-only.");
+        AssertContains(doc, "in-memory and restart-scoped", "LAN-M16 doc must state sessions/carts/idempotency are in-memory and restart-scoped.");
+        AssertContains(doc, "Independent hosts do **not** sync.", "LAN-M16 doc must state independent hosts do not sync.");
     }
 
     private static void AssertGuardsAndSmokesWired(string coreSmoke, string infraSmoke)
@@ -110,6 +146,8 @@ public static class LanM16FinalMultiTerminalAcceptanceChecks
             "LanM16RemotePosCommandAuthorizationChecks.Run();",
             "LanM16RemoteCheckoutIdempotencyAndHostWriteChecks.Run();",
             "LanM16HostClientIdentityUxChecks.Run();",
+            "LanM16OriginBindingChecks.Run();",
+            "LanM16PostCommitAuditSafetyChecks.Run();",
             "LanM16FinalMultiTerminalAcceptanceChecks.Run();",
         })
         {
@@ -125,6 +163,8 @@ public static class LanM16FinalMultiTerminalAcceptanceChecks
             "remote-pos-manager-admin-boundary",
             "remote-pos-host-client-identity",
             "remote-pos-final-acceptance",
+            "remote-pos-origin-binding",
+            "remote-pos-post-commit-audit-safety",
         })
         {
             AssertContains(infraSmoke, command, $"InfrastructureSmoke must wire the {command} command.");
