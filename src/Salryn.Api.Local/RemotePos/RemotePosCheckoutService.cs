@@ -1,0 +1,613 @@
+using System.Collections.Concurrent;
+using Salryn.Core.Common;
+using Salryn.Core.Models;
+using Salryn.Core.ReadModels;
+using Salryn.Core.Repositories;
+using Salryn.Core.Services;
+using Salryn.Core.ValueObjects;
+
+namespace Salryn.Api.Local.RemotePos;
+
+public static class RemotePosCheckoutStatus
+{
+    public const string Completed = "Completed";
+    public const string DuplicateRequest = "DuplicateRequest";
+    public const string StockChanged = "StockChanged";
+    public const string ProductUnavailable = "ProductUnavailable";
+    public const string PriceChanged = "PriceChanged";
+    public const string PaymentInsufficient = "PaymentInsufficient";
+    public const string OpenShiftRequired = "OpenShiftRequired";
+    public const string ValidationFailed = "ValidationFailed";
+    public const string RetryableUnknown = "RetryableUnknown";
+    public const string NotFound = "NotFound";
+}
+
+public sealed record RemotePosCartOperationResult(bool Ok, string Code, string Message, RemotePosCartResponse? Cart);
+
+public sealed record RemotePosShiftOperationResult(bool Ok, string Code, string Message, RemotePosShiftResponse? Shift);
+
+/// <summary>
+/// LAN-M16 remote checkout runtime. Owns cart lifecycle (host-side, in memory, keyed by operator
+/// session), validates products/pricing on the host, and drives a REAL host-owned sale through
+/// the standard <see cref="IPosCheckoutApplicationService"/> path (server-trusted re-pricing,
+/// atomic sale + inventory decrement). Writes are idempotent per client request id so a LAN drop
+/// + retry never double-posts. The receipt/document number is host-allocated; the client never
+/// supplies it.
+/// </summary>
+public sealed class RemotePosCheckoutService
+{
+    private readonly IProductReadRepository _productReadRepository;
+    private readonly IPosCheckoutApplicationService _checkoutApplicationService;
+    private readonly ICashierSessionService _cashierSessionService;
+    private readonly ISaleReadRepository _saleReadRepository;
+    private readonly IAuditWriteRepository _auditWriteRepository;
+    private readonly RemotePosReceiptNumberAllocator _receiptAllocator;
+
+    private readonly ConcurrentDictionary<Guid, RemotePosCart> _carts = new();
+    private readonly ConcurrentDictionary<string, RemotePosCheckoutResultResponse> _idempotency = new();
+    private readonly ConcurrentDictionary<string, object> _idempotencyLocks = new();
+
+    public RemotePosCheckoutService(
+        IProductReadRepository productReadRepository,
+        IPosCheckoutApplicationService checkoutApplicationService,
+        ICashierSessionService cashierSessionService,
+        ISaleReadRepository saleReadRepository,
+        IAuditWriteRepository auditWriteRepository,
+        RemotePosReceiptNumberAllocator receiptAllocator)
+    {
+        _productReadRepository = productReadRepository ?? throw new ArgumentNullException(nameof(productReadRepository));
+        _checkoutApplicationService = checkoutApplicationService ?? throw new ArgumentNullException(nameof(checkoutApplicationService));
+        _cashierSessionService = cashierSessionService ?? throw new ArgumentNullException(nameof(cashierSessionService));
+        _saleReadRepository = saleReadRepository ?? throw new ArgumentNullException(nameof(saleReadRepository));
+        _auditWriteRepository = auditWriteRepository ?? throw new ArgumentNullException(nameof(auditWriteRepository));
+        _receiptAllocator = receiptAllocator ?? throw new ArgumentNullException(nameof(receiptAllocator));
+    }
+
+    // ---- Cart lifecycle -------------------------------------------------------------------
+
+    public RemotePosCartResponse StartCart(RemotePosOperatorSession session)
+    {
+        RemotePosCart cart = new(Guid.NewGuid());
+        _carts[session.SessionId] = cart;
+        return BuildCartResponse(session, cart, "New remote cart started.");
+    }
+
+    public RemotePosCartResponse ViewCart(RemotePosOperatorSession session)
+    {
+        RemotePosCart cart = _carts.GetOrAdd(session.SessionId, _ => new RemotePosCart(Guid.NewGuid()));
+        return BuildCartResponse(session, cart, "Current remote cart.");
+    }
+
+    public async Task<RemotePosCartOperationResult> AddLineAsync(
+        RemotePosOperatorSession session,
+        Guid productId,
+        long quantityX1000,
+        CancellationToken cancellationToken = default)
+    {
+        if (quantityX1000 <= 0)
+        {
+            return Fail(RemotePosCheckoutStatus.ValidationFailed, "RemotePos.Cart.InvalidQuantity",
+                "Cart line quantity must be greater than zero.");
+        }
+
+        Result<ProductLookupReadModel?> productResult =
+            await _productReadRepository.FindByIdAsync(productId, cancellationToken).ConfigureAwait(false);
+
+        if (productResult.IsFailure)
+        {
+            return Fail(RemotePosCheckoutStatus.RetryableUnknown, "RemotePos.Cart.ProductLookupFailed",
+                "Product lookup failed on the host.");
+        }
+
+        ProductLookupReadModel? product = productResult.Value;
+
+        if (product is null || !product.IsActive)
+        {
+            return Fail(RemotePosCheckoutStatus.ProductUnavailable, "RemotePos.Cart.ProductUnavailable",
+                "Product was not found or is inactive on the host.");
+        }
+
+        RemotePosCart cart = _carts.GetOrAdd(session.SessionId, _ => new RemotePosCart(Guid.NewGuid()));
+
+        lock (cart.Sync)
+        {
+            RemotePosCartLine? existing = cart.Lines.FirstOrDefault(line => line.ProductId == product.Id);
+            if (existing is null)
+            {
+                cart.Lines.Add(new RemotePosCartLine(
+                    product.Id, product.Name, product.UnitName, quantityX1000, product.SellingPrice.Cents));
+            }
+            else
+            {
+                existing.QuantityX1000 = checked(existing.QuantityX1000 + quantityX1000);
+                existing.UnitPriceCents = product.SellingPrice.Cents;
+            }
+        }
+
+        return Ok(BuildCartResponse(session, cart, "Cart line added."));
+    }
+
+    public async Task<RemotePosCartOperationResult> UpdateLineAsync(
+        RemotePosOperatorSession session,
+        Guid productId,
+        long quantityX1000,
+        CancellationToken cancellationToken = default)
+    {
+        if (quantityX1000 <= 0)
+        {
+            return Fail(RemotePosCheckoutStatus.ValidationFailed, "RemotePos.Cart.InvalidQuantity",
+                "Cart line quantity must be greater than zero.");
+        }
+
+        Result<ProductLookupReadModel?> productResult =
+            await _productReadRepository.FindByIdAsync(productId, cancellationToken).ConfigureAwait(false);
+
+        if (productResult.IsFailure || productResult.Value is null || !productResult.Value.IsActive)
+        {
+            return Fail(RemotePosCheckoutStatus.ProductUnavailable, "RemotePos.Cart.ProductUnavailable",
+                "Product was not found or is inactive on the host.");
+        }
+
+        if (!_carts.TryGetValue(session.SessionId, out RemotePosCart? cart))
+        {
+            return Fail(RemotePosCheckoutStatus.ValidationFailed, "RemotePos.Cart.NotFound", "No active cart.");
+        }
+
+        bool found;
+        lock (cart.Sync)
+        {
+            RemotePosCartLine? existing = cart.Lines.FirstOrDefault(line => line.ProductId == productId);
+            found = existing is not null;
+            if (existing is not null)
+            {
+                existing.QuantityX1000 = quantityX1000;
+                existing.UnitPriceCents = productResult.Value.SellingPrice.Cents;
+            }
+        }
+
+        if (!found)
+        {
+            return Fail(RemotePosCheckoutStatus.ValidationFailed, "RemotePos.Cart.LineNotFound",
+                "Cart line was not found.");
+        }
+
+        return Ok(BuildCartResponse(session, cart, "Cart line updated."));
+    }
+
+    public RemotePosCartOperationResult RemoveLine(RemotePosOperatorSession session, Guid productId)
+    {
+        if (!_carts.TryGetValue(session.SessionId, out RemotePosCart? cart))
+        {
+            return Fail(RemotePosCheckoutStatus.ValidationFailed, "RemotePos.Cart.NotFound", "No active cart.");
+        }
+
+        lock (cart.Sync)
+        {
+            cart.Lines.RemoveAll(line => line.ProductId == productId);
+        }
+
+        return Ok(BuildCartResponse(session, cart, "Cart line removed."));
+    }
+
+    public RemotePosCartOperationResult ClearCart(RemotePosOperatorSession session)
+    {
+        RemotePosCart cart = _carts.GetOrAdd(session.SessionId, _ => new RemotePosCart(Guid.NewGuid()));
+        lock (cart.Sync)
+        {
+            cart.Lines.Clear();
+        }
+
+        return Ok(BuildCartResponse(session, cart, "Cart cleared."));
+    }
+
+    // ---- Shift (cashier session) ----------------------------------------------------------
+
+    public async Task<RemotePosShiftOperationResult> OpenShiftAsync(
+        RemotePosOperatorSession session,
+        long openingCashCents,
+        CancellationToken cancellationToken = default)
+    {
+        if (openingCashCents < 0)
+        {
+            return new RemotePosShiftOperationResult(false, "RemotePos.Shift.InvalidCash",
+                "Opening cash cannot be negative.", null);
+        }
+
+        Result<CashierSessionReadModel?> openResult = await _cashierSessionService
+            .FindOpenSessionByUserIdAsync(session.UserId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (openResult.IsSuccess && openResult.Value is not null)
+        {
+            return new RemotePosShiftOperationResult(true, "RemotePos.Shift.AlreadyOpen",
+                "A cashier shift is already open.",
+                BuildShiftResponse(openResult.Value));
+        }
+
+        Result<CashierSessionReadModel> opened = await _cashierSessionService
+            .OpenAsync(new OpenCashierSessionRequest(session.UserId, Money.FromCents(openingCashCents), "Remote POS shift"), cancellationToken)
+            .ConfigureAwait(false);
+
+        if (opened.IsFailure)
+        {
+            return new RemotePosShiftOperationResult(false, "RemotePos.Shift.OpenFailed",
+                "Cashier shift could not be opened on the host.", null);
+        }
+
+        return new RemotePosShiftOperationResult(true, "RemotePos.Shift.Opened",
+            "Cashier shift opened.", BuildShiftResponse(opened.Value));
+    }
+
+    public async Task<RemotePosShiftOperationResult> ReadShiftAsync(
+        RemotePosOperatorSession session,
+        CancellationToken cancellationToken = default)
+    {
+        Result<CashierSessionReadModel?> openResult = await _cashierSessionService
+            .FindOpenSessionByUserIdAsync(session.UserId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (openResult.IsFailure)
+        {
+            return new RemotePosShiftOperationResult(false, "RemotePos.Shift.ReadFailed",
+                "Cashier shift could not be read on the host.", null);
+        }
+
+        if (openResult.Value is null)
+        {
+            return new RemotePosShiftOperationResult(true, "RemotePos.Shift.None",
+                "No open cashier shift.",
+                new RemotePosShiftResponse("None", null, null, "No open cashier shift for this operator."));
+        }
+
+        return new RemotePosShiftOperationResult(true, "RemotePos.Shift.Open",
+            "Open cashier shift.", BuildShiftResponse(openResult.Value));
+    }
+
+    public async Task<RemotePosShiftOperationResult> CloseShiftAsync(
+        RemotePosOperatorSession session,
+        CancellationToken cancellationToken = default)
+    {
+        Result<CashierSessionReadModel?> openResult = await _cashierSessionService
+            .FindOpenSessionByUserIdAsync(session.UserId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (openResult.IsFailure || openResult.Value is null)
+        {
+            return new RemotePosShiftOperationResult(false, "RemotePos.Shift.NoneToClose",
+                "No open cashier shift to close.", null);
+        }
+
+        CashierSessionReadModel open = openResult.Value;
+
+        Result<CashierSessionReadModel> closed = await _cashierSessionService
+            .CloseAsync(new CloseCashierSessionRequest(open.Id, session.UserId, open.ExpectedCash, "Remote POS shift close"), cancellationToken)
+            .ConfigureAwait(false);
+
+        if (closed.IsFailure)
+        {
+            return new RemotePosShiftOperationResult(false, "RemotePos.Shift.CloseFailed",
+                "Cashier shift could not be closed on the host.", null);
+        }
+
+        return new RemotePosShiftOperationResult(true, "RemotePos.Shift.Closed",
+            "Cashier shift closed.",
+            new RemotePosShiftResponse("Closed", open.Id.ToString(), null, "Cashier shift closed."));
+    }
+
+    // ---- Checkout submit (idempotent host write) ------------------------------------------
+
+    public RemotePosCheckoutResultResponse? FindCheckoutResult(RemotePosOperatorSession session, string clientRequestId)
+    {
+        string key = BuildIdempotencyKey(session, clientRequestId);
+        return _idempotency.TryGetValue(key, out RemotePosCheckoutResultResponse? result) ? result : null;
+    }
+
+    public async Task<RemotePosCheckoutResultResponse> SubmitAsync(
+        RemotePosOperatorSession session,
+        RemotePosCheckoutSubmitRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (string.IsNullOrWhiteSpace(request.ClientRequestId) || request.ClientRequestId.Length > 128)
+        {
+            return Result(RemotePosCheckoutStatus.ValidationFailed, request.ClientRequestId ?? string.Empty,
+                "A valid client request id (idempotency key) is required.", duplicate: false);
+        }
+
+        string key = BuildIdempotencyKey(session, request.ClientRequestId);
+        object gate = _idempotencyLocks.GetOrAdd(key, _ => new object());
+
+        // Kirch: why - serialize submits sharing an idempotency key so a LAN drop + retry cannot
+        // race two host writes. The DB sales.receipt_no UNIQUE constraint is the final backstop.
+        bool lockTaken = false;
+        try
+        {
+            Monitor.Enter(gate, ref lockTaken);
+
+            if (_idempotency.TryGetValue(key, out RemotePosCheckoutResultResponse? existing))
+            {
+                return existing with { Duplicate = true, Status = RemotePosCheckoutStatus.DuplicateRequest };
+            }
+
+            RemotePosCheckoutResultResponse result =
+                await ExecuteSubmitAsync(session, request, cancellationToken).ConfigureAwait(false);
+
+            // Only durable, completed sales are memoized for idempotent replay.
+            if (result.Status == RemotePosCheckoutStatus.Completed)
+            {
+                _idempotency[key] = result;
+            }
+
+            return result;
+        }
+        catch (Exception)
+        {
+            return Result(RemotePosCheckoutStatus.RetryableUnknown, request.ClientRequestId,
+                "Remote checkout hit an unexpected error. Retry is safe.", duplicate: false);
+        }
+        finally
+        {
+            if (lockTaken)
+            {
+                Monitor.Exit(gate);
+            }
+        }
+    }
+
+    private async Task<RemotePosCheckoutResultResponse> ExecuteSubmitAsync(
+        RemotePosOperatorSession session,
+        RemotePosCheckoutSubmitRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.Payments is null || request.Payments.Count == 0)
+        {
+            return Result(RemotePosCheckoutStatus.ValidationFailed, request.ClientRequestId,
+                "At least one payment is required.", duplicate: false);
+        }
+
+        List<PosCheckoutPaymentInput> payments = new();
+        foreach (RemotePosCheckoutPaymentRequest payment in request.Payments)
+        {
+            if (!string.Equals(payment.Method, "Cash", StringComparison.OrdinalIgnoreCase))
+            {
+                return Result(RemotePosCheckoutStatus.ValidationFailed, request.ClientRequestId,
+                    "Only Cash tender is supported over remote POS in this build.", duplicate: false);
+            }
+
+            if (payment.AmountCents <= 0)
+            {
+                return Result(RemotePosCheckoutStatus.ValidationFailed, request.ClientRequestId,
+                    "Payment amount must be greater than zero.", duplicate: false);
+            }
+
+            payments.Add(new PosCheckoutPaymentInput(PaymentMethod.Cash, payment.AmountCents));
+        }
+
+        if (!_carts.TryGetValue(session.SessionId, out RemotePosCart? cart))
+        {
+            return Result(RemotePosCheckoutStatus.ValidationFailed, request.ClientRequestId,
+                "No active cart to submit.", duplicate: false);
+        }
+
+        List<PosCheckoutLineInput> lines;
+        lock (cart.Sync)
+        {
+            if (cart.Lines.Count == 0)
+            {
+                return Result(RemotePosCheckoutStatus.ValidationFailed, request.ClientRequestId,
+                    "Cart is empty.", duplicate: false);
+            }
+
+            lines = cart.Lines
+                .Select(line => new PosCheckoutLineInput(
+                    line.ProductId,
+                    line.ProductName,
+                    null,
+                    line.UnitName,
+                    line.QuantityX1000,
+                    line.UnitPriceCents,
+                    null,
+                    0,
+                    false))
+                .ToList();
+        }
+
+        // Host revalidates the open cashier shift at submit time (fail closed).
+        Result<CashierSessionReadModel?> openSessionResult = await _cashierSessionService
+            .FindOpenSessionByUserIdAsync(session.UserId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (openSessionResult.IsFailure)
+        {
+            return Result(RemotePosCheckoutStatus.RetryableUnknown, request.ClientRequestId,
+                "Cashier shift could not be validated on the host.", duplicate: false);
+        }
+
+        if (openSessionResult.Value is null)
+        {
+            return Result(RemotePosCheckoutStatus.OpenShiftRequired, request.ClientRequestId,
+                "An open cashier shift is required on the host before checkout.", duplicate: false);
+        }
+
+        // Host owns the document number; the client never supplies it.
+        string receiptNumber = _receiptAllocator.AllocateNext();
+
+        PosCheckoutApplicationRequest applicationRequest = new(
+            session.UserId,
+            openSessionResult.Value.Id,
+            receiptNumber,
+            lines,
+            payments,
+            SaleDiscountCents: 0,
+            TaxCents: 0,
+            ReceiptSnapshot: null);
+
+        // Host executes the write: server-trusted re-pricing, atomic sale + inventory decrement.
+        Result completion = await _checkoutApplicationService
+            .CompleteSaleAsync(applicationRequest, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (completion.IsFailure)
+        {
+            return MapFailure(completion.ErrorDetail, request.ClientRequestId);
+        }
+
+        // Read back the authoritative persisted sale (host-owned totals + sale id).
+        Result<SaleDetailReadModel?> saleResult = await _saleReadRepository
+            .FindSaleByReceiptNoAsync(receiptNumber, cancellationToken)
+            .ConfigureAwait(false);
+
+        SaleDetailReadModel? sale = saleResult.IsSuccess ? saleResult.Value : null;
+
+        await WriteAuditAsync(session, receiptNumber, sale?.Id, request.ClientRequestId, "Completed", cancellationToken)
+            .ConfigureAwait(false);
+
+        // Clear the cart after a successful sale.
+        lock (cart.Sync)
+        {
+            cart.Lines.Clear();
+        }
+
+        return new RemotePosCheckoutResultResponse(
+            RemotePosCheckoutStatus.Completed,
+            request.ClientRequestId,
+            receiptNumber,
+            sale?.Id.ToString(),
+            sale?.Total.Cents,
+            sale?.Change.Cents,
+            Duplicate: false,
+            Message: "Remote sale completed on host.");
+    }
+
+    private RemotePosCheckoutResultResponse MapFailure(Error error, string clientRequestId)
+    {
+        string code = error.Code ?? string.Empty;
+
+        string status = code switch
+        {
+            _ when code.Contains("NegativeStock", StringComparison.OrdinalIgnoreCase) => RemotePosCheckoutStatus.StockChanged,
+            _ when code.Contains("ProductNotFoundOrInactive", StringComparison.OrdinalIgnoreCase) => RemotePosCheckoutStatus.ProductUnavailable,
+            _ when code.Contains("OpenCashierSessionRequired", StringComparison.OrdinalIgnoreCase) => RemotePosCheckoutStatus.OpenShiftRequired,
+            _ when code.Contains("InsufficientPayment", StringComparison.OrdinalIgnoreCase) => RemotePosCheckoutStatus.PaymentInsufficient,
+            _ when code.Contains("ReceiptNumber", StringComparison.OrdinalIgnoreCase) => RemotePosCheckoutStatus.RetryableUnknown,
+            _ when code.StartsWith("CheckoutBoundary.", StringComparison.Ordinal) => RemotePosCheckoutStatus.ValidationFailed,
+            _ when code.StartsWith("Checkout.", StringComparison.Ordinal) => RemotePosCheckoutStatus.ValidationFailed,
+            _ => RemotePosCheckoutStatus.RetryableUnknown,
+        };
+
+        // Kirch: why - never surface raw internal error details to a remote client.
+        string message = status switch
+        {
+            RemotePosCheckoutStatus.StockChanged => "Stock changed on the host; the sale was not completed.",
+            RemotePosCheckoutStatus.ProductUnavailable => "A product became unavailable on the host.",
+            RemotePosCheckoutStatus.OpenShiftRequired => "An open cashier shift is required on the host before checkout.",
+            RemotePosCheckoutStatus.PaymentInsufficient => "Payment is less than the sale total.",
+            RemotePosCheckoutStatus.ValidationFailed => "Checkout request failed host validation.",
+            _ => "Remote checkout could not be completed. Retry is safe.",
+        };
+
+        return Result(status, clientRequestId, message, duplicate: false);
+    }
+
+    private async Task WriteAuditAsync(
+        RemotePosOperatorSession session,
+        string receiptNumber,
+        Guid? saleId,
+        string clientRequestId,
+        string result,
+        CancellationToken cancellationToken)
+    {
+        string reason =
+            $"host={session.HostId};store={session.StoreId};terminal={session.TerminalId};role={session.RoleName};" +
+            $"operation=RemotePos.CheckoutSubmit;result={result};clientRequestId={clientRequestId};receipt={receiptNumber}";
+
+        AuditLog auditLog = new()
+        {
+            UserId = session.UserId,
+            Action = "RemotePos.CheckoutSubmit",
+            EntityType = "RemotePosSale",
+            EntityId = saleId?.ToString() ?? receiptNumber,
+            Reason = reason,
+        };
+
+        // Audit is best-effort and must never fail the sale that already committed.
+        await _auditWriteRepository.AddAsync(auditLog, cancellationToken).ConfigureAwait(false);
+    }
+
+    private RemotePosCartResponse BuildCartResponse(RemotePosOperatorSession session, RemotePosCart cart, string message)
+    {
+        List<RemotePosCartLineResponse> lines;
+        long subtotal = 0;
+
+        lock (cart.Sync)
+        {
+            lines = new List<RemotePosCartLineResponse>(cart.Lines.Count);
+            foreach (RemotePosCartLine line in cart.Lines)
+            {
+                long lineTotal = checked((long)Math.Round(line.UnitPriceCents * (line.QuantityX1000 / 1000m), 0, MidpointRounding.AwayFromZero));
+                subtotal = checked(subtotal + lineTotal);
+                lines.Add(new RemotePosCartLineResponse(
+                    line.ProductId.ToString(),
+                    line.ProductName,
+                    line.UnitName,
+                    line.QuantityX1000,
+                    line.UnitPriceCents,
+                    lineTotal));
+            }
+        }
+
+        return new RemotePosCartResponse(cart.CartId.ToString(), session.SessionId.ToString(), lines, subtotal, message);
+    }
+
+    private static RemotePosShiftResponse BuildShiftResponse(CashierSessionReadModel session) =>
+        new("Open", session.Id.ToString(), session.OpenedAt.ToString("O"), "Open cashier shift.");
+
+    private static string BuildIdempotencyKey(RemotePosOperatorSession session, string clientRequestId) =>
+        $"{session.StoreId:N}:{session.TerminalId:N}:{clientRequestId}";
+
+    private static RemotePosCartOperationResult Ok(RemotePosCartResponse cart) =>
+        new(true, "RemotePos.Cart.Ok", cart.Message, cart);
+
+    private static RemotePosCartOperationResult Fail(string status, string code, string message) =>
+        new(false, code, message, null);
+
+    private static RemotePosCheckoutResultResponse Result(string status, string clientRequestId, string message, bool duplicate) =>
+        new(status, clientRequestId, null, null, null, null, duplicate, message);
+
+    private sealed class RemotePosCart
+    {
+        public RemotePosCart(Guid cartId)
+        {
+            CartId = cartId;
+        }
+
+        public Guid CartId { get; }
+
+        public object Sync { get; } = new();
+
+        public List<RemotePosCartLine> Lines { get; } = new();
+    }
+
+    private sealed class RemotePosCartLine
+    {
+        public RemotePosCartLine(Guid productId, string productName, string unitName, long quantityX1000, long unitPriceCents)
+        {
+            ProductId = productId;
+            ProductName = productName;
+            UnitName = unitName;
+            QuantityX1000 = quantityX1000;
+            UnitPriceCents = unitPriceCents;
+        }
+
+        public Guid ProductId { get; }
+
+        public string ProductName { get; }
+
+        public string UnitName { get; }
+
+        public long QuantityX1000 { get; set; }
+
+        public long UnitPriceCents { get; set; }
+    }
+}
