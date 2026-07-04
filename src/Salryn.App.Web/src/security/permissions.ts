@@ -40,11 +40,13 @@ export type AppPage =
   | "sales"
   | "users"
   | "audit"
-  | "remote-readonly";
+  | "remote-readonly"
+  | "remote-pos";
 
 export const implementedPages: readonly AppPage[] = [
   "dashboard",
   "remote-readonly",
+  "remote-pos",
   "products",
   "inventory",
   "sales",
@@ -52,7 +54,7 @@ export const implementedPages: readonly AppPage[] = [
   "audit",
 ] as const;
 
-const authenticatedOnlyPages = new Set<AppPage>(["dashboard", "remote-readonly"]);
+const authenticatedOnlyPages = new Set<AppPage>(["dashboard", "remote-readonly", "remote-pos"]);
 
 const pagePermissions: Partial<Record<AppPage, readonly Permission[]>> = {
   products: [Permissions.ProductsView],

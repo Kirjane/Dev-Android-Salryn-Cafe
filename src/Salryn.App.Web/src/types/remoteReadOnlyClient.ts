@@ -144,6 +144,7 @@ export type LocalLanControlTerminal = {
 export type LocalLanControlStatus = {
   localOperatorOnly: boolean;
   remoteTransportEnabled: boolean;
+  remotePosRuntimeEnabled: boolean;
   bindMode: string;
   configuredBindAddress: string;
   bindPolicy: RemoteReadOnlyBindPolicy;

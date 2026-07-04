@@ -145,6 +145,16 @@ export async function setLocalLanControlRemoteTransport(
   return readJson<LocalLanControlStatus>(response);
 }
 
+export async function setLocalLanControlRemotePos(enable: boolean): Promise<LocalLanControlStatus> {
+  const response = await fetch("/api/lan-control/remote-pos", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enable }),
+  });
+  return readJson<LocalLanControlStatus>(response);
+}
+
 export async function disableLocalLanControlTerminal(
   terminalId: string,
 ): Promise<LocalLanControlTerminalAction> {

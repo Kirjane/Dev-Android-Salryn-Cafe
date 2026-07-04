@@ -58,6 +58,15 @@ export function DashboardPage({ session, onLogout }: DashboardPageProps) {
           }
         />
 
+        <Alert tone="primary" title="This computer is the POS host">
+          <ul className="list-disc space-y-1 pl-5">
+            <li>The SQLite database, users, roles, terminal trust, and official journal/sequence/inventory writes are local to this host.</li>
+            <li>Remote POS clients (other computers) connect to this host's explicit LAN address; they never open or share this database.</li>
+            <li>Opening this app on another computer's localhost makes THAT computer its own independent host, not a client of this host. Same app installed elsewhere does not mean sync.</li>
+            <li>LAN access stays disabled until an operator explicitly enables it here on the host; there is no default or wildcard bind.</li>
+          </ul>
+        </Alert>
+
         {isLoading ? <LoadingState label="Loading dashboard..." /> : null}
 
         {isError && !sessionExpired ? (

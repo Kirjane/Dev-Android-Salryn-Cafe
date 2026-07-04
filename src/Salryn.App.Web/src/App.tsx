@@ -10,6 +10,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { InventoryPage } from "./pages/InventoryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { ProductsPage } from "./pages/ProductsPage";
+import { RemotePosClientPage } from "./pages/RemotePosClientPage";
 import { RemoteReadOnlyClientPage } from "./pages/RemoteReadOnlyClientPage";
 import { SalesHistoryPage } from "./pages/SalesHistoryPage";
 import { UsersPage } from "./pages/UsersPage";
@@ -46,6 +47,8 @@ function renderPage(page: AppPage, session: SessionState, onLogout: () => void) 
       return <DashboardPage session={session} onLogout={onLogout} />;
     case "remote-readonly":
       return <RemoteReadOnlyClientPage />;
+    case "remote-pos":
+      return <RemotePosClientPage />;
     case "products":
       return <ProductsPage />;
     case "inventory":

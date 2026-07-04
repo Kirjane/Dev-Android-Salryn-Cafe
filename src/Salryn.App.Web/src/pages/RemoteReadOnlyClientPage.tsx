@@ -38,6 +38,7 @@ export function RemoteReadOnlyClientPage() {
   const {
     statusQuery: localControlQuery,
     remoteTransportMutation,
+    remotePosRuntimeMutation,
     disableTerminalMutation,
     revokeTerminalMutation,
   } = useLocalLanControl();
@@ -62,10 +63,12 @@ export function RemoteReadOnlyClientPage() {
   const localControlAvailable = localControlQuery.isSuccess && Boolean(localControl);
   const localControlBusy =
     remoteTransportMutation.isPending ||
+    remotePosRuntimeMutation.isPending ||
     disableTerminalMutation.isPending ||
     revokeTerminalMutation.isPending;
   const localControlActionError =
     (remoteTransportMutation.error as Error | null)?.message ??
+    (remotePosRuntimeMutation.error as Error | null)?.message ??
     (disableTerminalMutation.error as Error | null)?.message ??
     (revokeTerminalMutation.error as Error | null)?.message ??
     null;
@@ -305,6 +308,7 @@ export function RemoteReadOnlyClientPage() {
             <div className="space-y-4 text-sm">
               <dl className="grid gap-3 md:grid-cols-2">
                 <Row label="Remote transport" value={localControl.remoteTransportEnabled ? "Enabled" : "Disabled (default)"} />
+                <Row label="Remote POS runtime" value={localControl.remotePosRuntimeEnabled ? "Enabled" : "Disabled (default)"} />
                 <Row label="Bind mode" value={localControl.bindMode} />
                 <Row label="Configured bind address" value={localControl.configuredBindAddress} />
                 <Row label="Terminal visibility" value={localControl.terminalVisibilityAvailable ? "Available" : "Restricted"} />
@@ -347,6 +351,32 @@ export function RemoteReadOnlyClientPage() {
                     onClick={() => remoteTransportMutation.mutate({ enable: false, bindAddress: null })}
                   >
                     Disable transport
+                  </Button>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+                <p className="mb-2 font-medium text-slate-900">Remote POS runtime (host-owned commands)</p>
+                <p className="mb-3 text-slate-600">
+                  This separately enables the host-owned remote POS command surface (<span className="font-mono text-xs">/api/remote-pos</span>)
+                  so LAN cashier/manager/admin operators can run host-owned checkout. It is off by default, resets on host restart, and still
+                  requires terminal identity, handshake proof, a host-issued operator session, and role permissions. Read-only bridge safety is
+                  unaffected.
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  <Button
+                    variant="secondary"
+                    disabled={localControlBusy || localControl.remotePosRuntimeEnabled}
+                    onClick={() => remotePosRuntimeMutation.mutate({ enable: true })}
+                  >
+                    Enable remote POS runtime
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled={localControlBusy || !localControl.remotePosRuntimeEnabled}
+                    onClick={() => remotePosRuntimeMutation.mutate({ enable: false })}
+                  >
+                    Disable remote POS runtime
                   </Button>
                 </div>
               </div>

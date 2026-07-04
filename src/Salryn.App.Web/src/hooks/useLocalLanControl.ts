@@ -3,6 +3,7 @@ import {
   disableLocalLanControlTerminal,
   fetchLocalLanControlStatus,
   revokeLocalLanControlTerminal,
+  setLocalLanControlRemotePos,
   setLocalLanControlRemoteTransport,
 } from "../api/remoteReadOnlyClient";
 
@@ -27,6 +28,13 @@ export function useLocalLanControl() {
     },
   });
 
+  const remotePosRuntimeMutation = useMutation({
+    mutationFn: ({ enable }: { enable: boolean }) => setLocalLanControlRemotePos(enable),
+    onSuccess: () => {
+      void statusQuery.refetch();
+    },
+  });
+
   const disableTerminalMutation = useMutation({
     mutationFn: (terminalId: string) => disableLocalLanControlTerminal(terminalId),
     onSuccess: () => {
@@ -44,6 +52,7 @@ export function useLocalLanControl() {
   return {
     statusQuery,
     remoteTransportMutation,
+    remotePosRuntimeMutation,
     disableTerminalMutation,
     revokeTerminalMutation,
   };
