@@ -124,11 +124,17 @@ public sealed record LocalLanControlStatusResponse(
     string TerminalVisibilityMessage,
     IReadOnlyList<LocalLanControlTerminalResponse> Terminals,
     IReadOnlyList<string> Warnings,
-    string Message);
+    string Message,
+    // LAN-M16: host-local, process-scoped remote POS write runtime enablement. Disabled by
+    // default and always separate from RemoteTransportEnabled (the read-only bridge toggle).
+    bool RemotePosRuntimeEnabled = false);
 
 public sealed record LocalLanControlRemoteTransportRequest(
     bool Enable,
     string? BindAddress);
+
+// LAN-M16: local-only request to enable/disable the host-owned remote POS command runtime.
+public sealed record LocalLanControlRemotePosRequest(bool Enable);
 
 public sealed record LocalLanControlTerminalActionResponse(
     string TerminalId,

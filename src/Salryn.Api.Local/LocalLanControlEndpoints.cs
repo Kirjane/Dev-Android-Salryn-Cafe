@@ -63,6 +63,30 @@ public static class LocalLanControlEndpoints
             return ToApiResult(result);
         });
 
+        group.MapPost("/remote-pos", async (
+            LocalLanControlRemotePosRequest request,
+            HttpContext httpContext,
+            LocalApiSessionService sessions,
+            LocalLanControlService control,
+            CancellationToken cancellationToken) =>
+        {
+            IResult? rejected = LocalLanControlAuthorization.RequireLocalOperator(
+                httpContext,
+                sessions,
+                LocalApiPermissions.SettingsManage);
+            if (rejected is not null)
+            {
+                return rejected;
+            }
+
+            TerminalRegistryActorContext actor = ResolveActor(httpContext, sessions);
+            Result<LocalLanControlStatusResponse> result = await control
+                .SetRemotePosRuntimeAsync(request.Enable, actor, cancellationToken)
+                .ConfigureAwait(false);
+
+            return ToApiResult(result);
+        });
+
         group.MapPost("/terminals/{terminalId}/disable", async (
             string terminalId,
             HttpContext httpContext,

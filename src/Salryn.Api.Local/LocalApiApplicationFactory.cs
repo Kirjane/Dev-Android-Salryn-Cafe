@@ -2,6 +2,7 @@ using Microsoft.Extensions.FileProviders;
 using Salryn.Api.Local.Auth;
 using Salryn.Api.Local.Composition;
 using Salryn.Api.Local.Contracts;
+using Salryn.Api.Local.RemotePos;
 using Salryn.Api.Local.Services;
 using Salryn.Composition.Local;
 using Salryn.Core.Common;
@@ -51,6 +52,9 @@ public static class LocalApiApplicationFactory
         DashboardSummaryService dashboardSummaryService = new(composition);
         LanRemoteTransportApiServices lanRemoteTransportServices =
             LanRemoteTransportApiComposition.Create(composition);
+        RemotePosRuntimeGate remotePosRuntimeGate = new();
+        RemotePosApiServices remotePosServices =
+            RemotePosApiServices.Create(composition, lanRemoteTransportServices, remotePosRuntimeGate);
         ILocalApiSessionStore sessionStore =
             options.SessionStore ?? new InMemoryLocalApiSessionStore();
         LocalApiSessionService sessionService = new(composition.Authentication, sessionStore);
@@ -69,6 +73,8 @@ public static class LocalApiApplicationFactory
 
         builder.Services.AddSingleton(composition);
         builder.Services.AddSingleton(lanRemoteTransportServices);
+        builder.Services.AddSingleton(remotePosRuntimeGate);
+        builder.Services.AddSingleton(remotePosServices);
         builder.Services.AddSingleton(sessionStore);
         builder.Services.AddSingleton(sessionService);
         builder.Services.AddSingleton(dashboardSummaryService);
@@ -168,6 +174,7 @@ public static class LocalApiApplicationFactory
         app.MapReadOnlyOperatorEndpoints();
         app.MapRemoteReadOnlyEndpoints();
         app.MapLocalLanControlEndpoints();
+        app.MapRemotePosEndpoints();
 
         if (webDistPath is not null)
         {

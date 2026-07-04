@@ -1,5 +1,6 @@
 using Salryn.Api.Local.Composition;
 using Salryn.Api.Local.Contracts;
+using Salryn.Api.Local.RemotePos;
 using Salryn.Core.Common;
 using Salryn.Core.Host;
 using Salryn.Core.Services;
@@ -17,10 +18,14 @@ namespace Salryn.Api.Local.Services;
 public sealed class LocalLanControlService
 {
     private readonly LanRemoteTransportApiServices _lanServices;
+    private readonly RemotePosRuntimeGate _remotePosRuntimeGate;
 
-    public LocalLanControlService(LanRemoteTransportApiServices lanServices)
+    public LocalLanControlService(
+        LanRemoteTransportApiServices lanServices,
+        RemotePosRuntimeGate remotePosRuntimeGate)
     {
         _lanServices = lanServices ?? throw new ArgumentNullException(nameof(lanServices));
+        _remotePosRuntimeGate = remotePosRuntimeGate ?? throw new ArgumentNullException(nameof(remotePosRuntimeGate));
     }
 
     public async Task<LocalLanControlStatusResponse> GetStatusAsync(
@@ -45,7 +50,33 @@ public sealed class LocalLanControlService
             TerminalVisibilityMessage: visibilityMessage,
             Terminals: terminals,
             Warnings: BuildWarnings(),
-            Message: "Local LAN control is operator-only on the POS host. Remote clients remain read-only and cannot change LAN configuration or terminal trust.");
+            Message: "Local LAN control is operator-only on the POS host. Remote clients remain read-only and cannot change LAN configuration or terminal trust.",
+            RemotePosRuntimeEnabled: _remotePosRuntimeGate.IsEnabled);
+    }
+
+    /// <summary>
+    /// LAN-M16: local-only enablement of the host-owned remote POS command runtime. This is
+    /// separate from remote read-only transport: enabling the read-only bridge never enables
+    /// remote POS writes. The toggle is process-scoped and resets to disabled on host restart.
+    /// </summary>
+    public async Task<Result<LocalLanControlStatusResponse>> SetRemotePosRuntimeAsync(
+        bool enable,
+        TerminalRegistryActorContext actor,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+
+        if (enable)
+        {
+            _remotePosRuntimeGate.Enable(actor.ActorUserId);
+        }
+        else
+        {
+            _remotePosRuntimeGate.Disable();
+        }
+
+        return Result<LocalLanControlStatusResponse>.Success(
+            await GetStatusAsync(actor, cancellationToken).ConfigureAwait(false));
     }
 
     public async Task<Result<LocalLanControlStatusResponse>> SetRemoteTransportAsync(
