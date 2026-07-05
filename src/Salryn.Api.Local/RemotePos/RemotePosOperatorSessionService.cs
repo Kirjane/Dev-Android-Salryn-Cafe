@@ -19,6 +19,7 @@ public static class RemotePosSessionState
     public const string RemotePosDisabled = "RemotePosDisabled";
     public const string TrustRejected = "TrustRejected";
     public const string AuthenticationFailed = "AuthenticationFailed";
+    public const string RoleNotAllowed = "RoleNotAllowed";
     public const string SessionInvalid = "SessionInvalid";
     public const string SessionExpired = "SessionExpired";
     public const string SessionRevoked = "SessionRevoked";
@@ -98,6 +99,8 @@ public sealed class RemotePosOperatorSessionService
     // Kirch: why - a short-lived remote operator session limits blast radius if a token leaks. The
     // host owns issuance; sessions live in memory only and are cleared on host restart (fail-safe).
     public static readonly TimeSpan SessionLifetime = TimeSpan.FromMinutes(30);
+
+    private static readonly string[] AllowedRemoteLoginRoles = { "Cashier", "Manager" };
 
     private readonly ConcurrentDictionary<Guid, RemotePosOperatorSession> _sessions = new();
     private readonly LanRemoteTransportApiServices _lanServices;
@@ -215,6 +218,14 @@ public sealed class RemotePosOperatorSessionService
         }
 
         AuthenticatedUserReadModel user = loginResult.Value;
+        if (!IsRemotePosLoginRoleAllowed(user.RoleName))
+        {
+            return new RemotePosLoginOutcome(false, RemotePosSessionState.RoleNotAllowed,
+                "RemotePos.RoleNotAllowed",
+                "Remote POS login is limited to Cashier or Manager accounts. Admin and Owner accounts are host-local only for this build.",
+                null,
+                null);
+        }
 
         (RemotePosOperatorSession session, string token) = IssueSession(trust, trustResult, user);
 
@@ -322,6 +333,10 @@ public sealed class RemotePosOperatorSessionService
             session.RevokedAtUtc ??= DateTimeOffset.UtcNow;
         }
     }
+
+    public static bool IsRemotePosLoginRoleAllowed(string? roleName) =>
+        !string.IsNullOrWhiteSpace(roleName)
+        && AllowedRemoteLoginRoles.Contains(roleName.Trim(), StringComparer.OrdinalIgnoreCase);
 
     private (RemotePosOperatorSession Session, string Token) IssueSession(
         RemotePosTrustContext trust,

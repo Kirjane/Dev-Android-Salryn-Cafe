@@ -215,6 +215,7 @@ public static class Program
         LanM16OriginBindingChecks.Run();
         LanM16PostCommitAuditSafetyChecks.Run();
         LanM16FinalMultiTerminalAcceptanceChecks.Run();
+        LanM16QaBRemotePosPairingGateChecks.Run();
         J21Rmo242023ElectronicJournalPersistenceRuntimeDocumentationSealChecks.Run();
         Console.WriteLine("SALRYN Core smoke checks passed.");
     }

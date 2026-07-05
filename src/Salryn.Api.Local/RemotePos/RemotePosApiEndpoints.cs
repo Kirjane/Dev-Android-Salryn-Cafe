@@ -1,3 +1,5 @@
+using Salryn.Api.Local.Bridge;
+
 namespace Salryn.Api.Local.RemotePos;
 
 /// <summary>
@@ -13,6 +15,35 @@ public static class RemotePosApiEndpoints
     public static WebApplication MapRemotePosEndpoints(this WebApplication app)
     {
         RouteGroupBuilder group = app.MapGroup("/api/remote-pos");
+
+        // ---- Pairing gate -------------------------------------------------------------------
+
+        group.MapGet("/pairing/status", (
+            string? requestId,
+            RemotePosApiServices services) => ToPairingResult(services.PairingGate.GetRemoteStatus(requestId)));
+
+        group.MapPost("/pairing/request", (
+            RemotePosJoinRequest request,
+            HttpContext httpContext,
+            RemotePosApiServices services) =>
+        {
+            RemoteReadOnlyBridgeRequestContext bridge = RemoteReadOnlyBridgeRequestContext.FromHttpContext(httpContext);
+            return ToPairingResult(services.PairingGate.RequestJoin(request, bridge));
+        });
+
+        group.MapPost("/pairing/activate", async (
+            RemotePosPairingActivationRequest request,
+            HttpContext httpContext,
+            RemotePosApiServices services,
+            CancellationToken cancellationToken) =>
+        {
+            RemoteReadOnlyBridgeRequestContext bridge = RemoteReadOnlyBridgeRequestContext.FromHttpContext(httpContext);
+            Result<RemotePosPairingActivationResponse> result = await services.PairingGate
+                .ActivateAsync(request, bridge, cancellationToken)
+                .ConfigureAwait(false);
+
+            return ToPairingResult(result);
+        });
 
         // ---- Session -----------------------------------------------------------------------
 
@@ -290,6 +321,22 @@ public static class RemotePosApiEndpoints
         return Results.Ok(result.Shift);
     }
 
+    private static IResult ToPairingResult<T>(Result<T> result)
+    {
+        if (result.IsSuccess)
+        {
+            return Results.Ok(result.Value);
+        }
+
+        int status = result.ErrorDetail.Code.Contains("NotFound", StringComparison.OrdinalIgnoreCase)
+            ? StatusCodes.Status404NotFound
+            : result.ErrorDetail.Type.ToString().Contains("Forbidden", StringComparison.OrdinalIgnoreCase)
+                ? StatusCodes.Status403Forbidden
+                : StatusCodes.Status400BadRequest;
+
+        return Results.Json(new { error = result.ErrorDetail.Message, code = result.ErrorDetail.Code }, statusCode: status);
+    }
+
     private static RemotePosSessionResponse ToSessionResponse(
         RemotePosApiServices services,
         RemotePosOperatorSession session,
@@ -315,6 +362,7 @@ public static class RemotePosApiEndpoints
         RemotePosSessionState.AuthenticationFailed => StatusCodes.Status401Unauthorized,
         RemotePosSessionState.RemotePosDisabled => StatusCodes.Status403Forbidden,
         RemotePosSessionState.TrustRejected => StatusCodes.Status403Forbidden,
+        RemotePosSessionState.RoleNotAllowed => StatusCodes.Status403Forbidden,
         _ => StatusCodes.Status403Forbidden,
     };
 

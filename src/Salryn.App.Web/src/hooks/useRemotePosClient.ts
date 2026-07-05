@@ -2,27 +2,34 @@ import { useCallback, useMemo, useState } from "react";
 import { ApiError } from "../api/http";
 import {
   fetchRemotePosCapabilities,
+  fetchRemotePosPairingStatus,
+  remotePosActivatePairing,
   remotePosAddLine,
   remotePosClearCart,
   remotePosLogin,
   remotePosLogout,
   remotePosOpenShift,
   remotePosRemoveLine,
+  remotePosRequestPairing,
   remotePosStartCart,
   remotePosSubmitCheckout,
   remotePosUpdateLine,
   type RemotePosAuthedConnection,
   type RemotePosConnection,
+  type RemotePosHostConnection,
 } from "../api/remotePosClient";
 import type {
   RemotePosCapabilities,
   RemotePosCart,
   RemotePosCheckoutResult,
+  RemotePosJoinResponse,
+  RemotePosPairingActivation,
+  RemotePosPairingStatus,
   RemotePosSession,
 } from "../types/remotePosClient";
 
-// LAN-M16: stateful hook for the remote POS client shell. The opaque operator session token is
-// held only in memory (never persisted / never logged) and is cleared on logout or failure.
+// LAN-M16-QA-B: stateful hook for the field-safe Remote POS pairing/login flow.
+// Pairing approves the device first; login approves the person second.
 
 function newClientRequestId(): string {
   const cryptoObj = globalThis.crypto;
@@ -44,6 +51,7 @@ function describeError(error: unknown): string {
 
 export type RemotePosBusyAction =
   | "idle"
+  | "pairing"
   | "login"
   | "logout"
   | "cart"
@@ -52,6 +60,10 @@ export type RemotePosBusyAction =
 
 export function useRemotePosClient() {
   const [hostBaseUrl, setHostBaseUrl] = useState("");
+  const [hostAddressConfirmed, setHostAddressConfirmed] = useState(false);
+  const [pairingRequest, setPairingRequest] = useState<RemotePosJoinResponse | null>(null);
+  const [pairingStatus, setPairingStatus] = useState<RemotePosPairingStatus | null>(null);
+  const [pairingActivation, setPairingActivation] = useState<RemotePosPairingActivation | null>(null);
   const [terminalId, setTerminalId] = useState("");
   const [handshakeSessionId, setHandshakeSessionId] = useState("");
 
@@ -65,6 +77,8 @@ export function useRemotePosClient() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
+  const hostConnection = useMemo<RemotePosHostConnection>(() => ({ hostBaseUrl }), [hostBaseUrl]);
+
   const connection = useMemo<RemotePosConnection>(
     () => ({ hostBaseUrl, terminalId, handshakeSessionId }),
     [hostBaseUrl, terminalId, handshakeSessionId],
@@ -75,6 +89,7 @@ export function useRemotePosClient() {
     [connection, sessionToken],
   );
 
+  const isPaired = terminalId.trim().length > 0 && handshakeSessionId.trim().length > 0;
   const isConnected = session !== null && sessionToken !== null;
 
   const resetSession = useCallback(() => {
@@ -84,6 +99,15 @@ export function useRemotePosClient() {
     setCart(null);
     setLastCheckout(null);
   }, []);
+
+  const resetPairing = useCallback(() => {
+    resetSession();
+    setPairingRequest(null);
+    setPairingStatus(null);
+    setPairingActivation(null);
+    setTerminalId("");
+    setHandshakeSessionId("");
+  }, [resetSession]);
 
   const run = useCallback(
     async <T,>(action: RemotePosBusyAction, work: () => Promise<T>): Promise<T | null> => {
@@ -104,6 +128,66 @@ export function useRemotePosClient() {
       }
     },
     [resetSession],
+  );
+
+  const confirmHostAddress = useCallback(() => {
+    resetPairing();
+    setHostAddressConfirmed(true);
+    setStatusMessage("Use the host LAN address shown on the host. Do not use localhost from another device.");
+  }, [resetPairing]);
+
+  const requestJoin = useCallback(
+    async (joinCode: string, deviceName: string) => {
+      const result = await run("pairing", () => remotePosRequestPairing(hostConnection, { joinCode, deviceName }));
+      if (result) {
+        setPairingRequest(result);
+        setPairingStatus({
+          pairingState: result.pairingState,
+          requestId: result.requestId,
+          deviceName: result.deviceName,
+          message: result.message,
+          pairingCodeRequired: false,
+          paired: false,
+        });
+        setStatusMessage(result.message);
+      }
+    },
+    [hostConnection, run],
+  );
+
+  const refreshPairingStatus = useCallback(async () => {
+    if (!pairingRequest?.requestId) return;
+    const result = await run("pairing", () => fetchRemotePosPairingStatus(hostConnection, pairingRequest.requestId));
+    if (result) {
+      setPairingStatus(result);
+      setStatusMessage(result.message);
+    }
+  }, [hostConnection, pairingRequest?.requestId, run]);
+
+  const activatePairing = useCallback(
+    async (pairingCode: string) => {
+      if (!pairingRequest?.requestId) return;
+      const result = await run("pairing", () =>
+        remotePosActivatePairing(hostConnection, { requestId: pairingRequest.requestId, pairingCode }),
+      );
+      if (result) {
+        setPairingActivation(result);
+        if (result.terminalId && result.handshakeSessionId) {
+          setTerminalId(result.terminalId);
+          setHandshakeSessionId(result.handshakeSessionId);
+          setPairingStatus({
+            pairingState: result.pairingState,
+            requestId: pairingRequest.requestId,
+            deviceName: result.terminalName ?? pairingRequest.deviceName,
+            message: result.message,
+            pairingCodeRequired: false,
+            paired: true,
+          });
+          setStatusMessage(result.message);
+        }
+      }
+    },
+    [hostConnection, pairingRequest, run],
   );
 
   const login = useCallback(
@@ -215,14 +299,15 @@ export function useRemotePosClient() {
   );
 
   return {
-    // connection settings
     hostBaseUrl,
     setHostBaseUrl,
-    terminalId,
-    setTerminalId,
-    handshakeSessionId,
-    setHandshakeSessionId,
-    // state
+    hostAddressConfirmed,
+    confirmHostAddress,
+    pairingRequest,
+    pairingStatus,
+    pairingActivation,
+    isPaired,
+    resetPairing,
     session,
     capabilities,
     cart,
@@ -231,7 +316,9 @@ export function useRemotePosClient() {
     busy,
     errorMessage,
     statusMessage,
-    // actions
+    requestJoin,
+    refreshPairingStatus,
+    activatePairing,
     login,
     logout,
     startCart,

@@ -1,5 +1,6 @@
 using Salryn.Api.Local.Auth;
 using Salryn.Api.Local.Contracts;
+using Salryn.Api.Local.RemotePos;
 using Salryn.Api.Local.Services;
 using Salryn.Core.Common;
 using Salryn.Core.TerminalRegistry;
@@ -87,6 +88,113 @@ public static class LocalLanControlEndpoints
             return ToApiResult(result);
         });
 
+        group.MapGet("/remote-pos/pairing", (
+            HttpContext httpContext,
+            LocalApiSessionService sessions,
+            RemotePosApiServices remotePos) =>
+        {
+            IResult? rejected = LocalLanControlAuthorization.RequireLocalOperator(
+                httpContext,
+                sessions,
+                LocalApiPermissions.StoreTerminalView);
+            if (rejected is not null)
+            {
+                return rejected;
+            }
+
+            return Results.Ok(remotePos.PairingGate.GetHostStatus());
+        });
+
+        group.MapPost("/remote-pos/pairing/join-code/rotate", (
+            HttpContext httpContext,
+            LocalApiSessionService sessions,
+            RemotePosApiServices remotePos) =>
+        {
+            IResult? rejected = LocalLanControlAuthorization.RequireLocalOperator(
+                httpContext,
+                sessions,
+                LocalApiPermissions.StoreTerminalManage);
+            if (rejected is not null)
+            {
+                return rejected;
+            }
+
+            return Results.Ok(remotePos.PairingGate.RotateJoinCode());
+        });
+
+        group.MapGet("/remote-pos/pairing/requests", (
+            HttpContext httpContext,
+            LocalApiSessionService sessions,
+            RemotePosApiServices remotePos) =>
+        {
+            IResult? rejected = LocalLanControlAuthorization.RequireLocalOperator(
+                httpContext,
+                sessions,
+                LocalApiPermissions.StoreTerminalView);
+            if (rejected is not null)
+            {
+                return rejected;
+            }
+
+            return ToApiResult(remotePos.PairingGate.ListRequests());
+        });
+
+        group.MapPost("/remote-pos/pairing/requests/{requestId}/accept", async (
+            string requestId,
+            RemotePosApproveJoinRequest request,
+            HttpContext httpContext,
+            LocalApiSessionService sessions,
+            RemotePosApiServices remotePos,
+            CancellationToken cancellationToken) =>
+        {
+            _ = request;
+            IResult? rejected = LocalLanControlAuthorization.RequireLocalOperator(
+                httpContext,
+                sessions,
+                LocalApiPermissions.StoreTerminalManage);
+            if (rejected is not null)
+            {
+                return rejected;
+            }
+
+            if (!Guid.TryParse(requestId, out Guid parsedRequestId))
+            {
+                return InvalidRequestId();
+            }
+
+            TerminalRegistryActorContext actor = ResolveActor(httpContext, sessions);
+            Result<RemotePosApproveJoinResponse> result = await remotePos.PairingGate
+                .AcceptAsync(parsedRequestId, actor, cancellationToken)
+                .ConfigureAwait(false);
+
+            return ToApiResult(result);
+        });
+
+        group.MapPost("/remote-pos/pairing/requests/{requestId}/reject", (
+            string requestId,
+            RemotePosRejectJoinRequest request,
+            HttpContext httpContext,
+            LocalApiSessionService sessions,
+            RemotePosApiServices remotePos) =>
+        {
+            _ = request;
+            IResult? rejected = LocalLanControlAuthorization.RequireLocalOperator(
+                httpContext,
+                sessions,
+                LocalApiPermissions.StoreTerminalManage);
+            if (rejected is not null)
+            {
+                return rejected;
+            }
+
+            if (!Guid.TryParse(requestId, out Guid parsedRequestId))
+            {
+                return InvalidRequestId();
+            }
+
+            return ToApiResult(remotePos.PairingGate.Reject(parsedRequestId));
+        });
+
         group.MapPost("/terminals/{terminalId}/disable", async (
             string terminalId,
             HttpContext httpContext,
@@ -160,6 +268,17 @@ public static class LocalLanControlEndpoints
         }
 
         return new TerminalRegistryActorContext(session.UserId, session.Permissions.ToArray());
+    }
+
+    private static IResult InvalidRequestId()
+    {
+        return Results.Json(
+            new
+            {
+                error = "A valid pending request id is required.",
+                code = "RemotePosPairing.RequestIdRequired"
+            },
+            statusCode: StatusCodes.Status400BadRequest);
     }
 
     private static IResult InvalidTerminalId()

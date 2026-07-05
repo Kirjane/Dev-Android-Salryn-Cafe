@@ -3,18 +3,17 @@ import type {
   RemotePosCapabilities,
   RemotePosCart,
   RemotePosCheckoutResult,
+  RemotePosJoinResponse,
+  RemotePosPairingActivation,
+  RemotePosPairingStatus,
   RemotePosSession,
   RemotePosShift,
 } from "../types/remotePosClient";
 
 // LAN-M16: client for the host-owned remote POS command surface (/api/remote-pos).
 //
-// This surface is SEPARATE from the read-only bridge. Every request carries terminal identity
-// and handshake proof headers; authenticated commands also carry the opaque operator session
-// token issued by the host at login. Cookies are NOT used for LAN trust here.
-//
-// Host names / addresses are supplied by the operator (the remote client must be pointed at the
-// POS host's explicit LAN address). This module never performs discovery or network scanning.
+// LAN-M16-QA-B: field clients no longer type terminal ids or handshake session ids during the
+// normal path. Pairing approves the device first; login approves the person second.
 
 export const remotePosHeaderNames = {
   terminalId: "X-Salryn-Terminal-Id",
@@ -22,10 +21,11 @@ export const remotePosHeaderNames = {
   operatorSession: "X-Salryn-Remote-Pos-Session",
 } as const;
 
-export type RemotePosConnection = {
-  // Optional explicit base URL for the POS host (e.g. "http://192.168.1.10:5005"). When empty the
-  // client uses same-origin requests, which is only meaningful when this app is served BY the host.
+export type RemotePosHostConnection = {
   hostBaseUrl: string;
+};
+
+export type RemotePosConnection = RemotePosHostConnection & {
   terminalId: string;
   handshakeSessionId: string;
 };
@@ -35,14 +35,17 @@ export type RemotePosAuthedConnection = RemotePosConnection & {
 };
 
 export const remotePosClientWarnings = [
-  "This is a remote POS client. It connects to the POS host's explicit LAN address; it does not open the host database.",
-  "Opening this app on localhost of a second computer makes THAT computer its own local host, not a client of the main POS host.",
-  "Installing the same app on two computers does not synchronize data. Remote clients must connect to the POS host LAN address.",
-  "Terminal identity and handshake proof are required in addition to a host-issued operator session. Cookies are not accepted as LAN trust.",
-  "Host-local LAN control, terminal trust management, backup/recovery, and settings are never available over LAN.",
+  "This device is a Remote POS client.",
+  "The host owns the database and sales.",
+  "Use the host LAN address shown on the host.",
+  "Do not use localhost from another device.",
+  "Ask the host operator for the join code.",
+  "Wait for the host to approve this device.",
+  "After pairing, sign in as Cashier or Manager.",
+  "Admin and Owner accounts are host-local only for this build.",
 ] as const;
 
-function buildUrl(connection: RemotePosConnection, path: string): string {
+function buildUrl(connection: RemotePosHostConnection, path: string): string {
   const base = connection.hostBaseUrl.trim().replace(/\/+$/, "");
   return base.length > 0 ? `${base}${path}` : path;
 }
@@ -61,7 +64,7 @@ function authHeaders(connection: RemotePosAuthedConnection): Record<string, stri
   };
 }
 
-async function getJson<T>(url: string, headers: Record<string, string>): Promise<T> {
+async function getJson<T>(url: string, headers: Record<string, string> = {}): Promise<T> {
   const response = await fetch(url, { method: "GET", headers });
   return readJson<T>(response);
 }
@@ -73,6 +76,30 @@ async function postJson<T>(url: string, headers: Record<string, string>, body?: 
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   return readJson<T>(response);
+}
+
+// ---- Pairing -------------------------------------------------------------------------------
+
+export async function fetchRemotePosPairingStatus(
+  connection: RemotePosHostConnection,
+  requestId?: string | null,
+): Promise<RemotePosPairingStatus> {
+  const query = requestId ? `?requestId=${encodeURIComponent(requestId)}` : "";
+  return getJson<RemotePosPairingStatus>(buildUrl(connection, `/api/remote-pos/pairing/status${query}`));
+}
+
+export async function remotePosRequestPairing(
+  connection: RemotePosHostConnection,
+  request: { joinCode: string; deviceName: string },
+): Promise<RemotePosJoinResponse> {
+  return postJson<RemotePosJoinResponse>(buildUrl(connection, "/api/remote-pos/pairing/request"), {}, request);
+}
+
+export async function remotePosActivatePairing(
+  connection: RemotePosHostConnection,
+  request: { requestId: string; pairingCode: string },
+): Promise<RemotePosPairingActivation> {
+  return postJson<RemotePosPairingActivation>(buildUrl(connection, "/api/remote-pos/pairing/activate"), {}, request);
 }
 
 // ---- Session ------------------------------------------------------------------------------

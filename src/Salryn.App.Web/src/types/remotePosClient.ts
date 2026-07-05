@@ -1,8 +1,36 @@
 // LAN-M16: types for the host-owned remote POS command surface (/api/remote-pos). These mirror
-// the C# contracts in Salryn.Api.Local/RemotePos/RemotePosContracts.cs. Structural only; no
-// runtime validation. Secrets (session token) are only present on the login response.
+// the C# contracts in Salryn.Api.Local/RemotePos. Structural only; no runtime validation.
 
-export type RemotePosRole = "Cashier" | "Manager" | "Admin" | string;
+export type RemotePosRole = "Cashier" | "Manager" | string;
+
+export type RemotePosPairingStatus = {
+  pairingState: string;
+  requestId: string | null;
+  deviceName: string | null;
+  message: string;
+  pairingCodeRequired: boolean;
+  paired: boolean;
+};
+
+export type RemotePosJoinResponse = {
+  requestId: string;
+  deviceName: string;
+  pairingState: string;
+  requestedAtUtc: string;
+  expiresAtUtc: string;
+  message: string;
+};
+
+export type RemotePosPairingActivation = {
+  pairingState: string;
+  terminalId: string | null;
+  handshakeSessionId: string | null;
+  hostId: string | null;
+  storeId: string | null;
+  terminalName: string | null;
+  sessionExpiresAtUtc: string | null;
+  message: string;
+};
 
 export type RemotePosSession = {
   sessionState: string;
@@ -71,7 +99,7 @@ export type RemotePosCheckoutResult = {
   message: string;
 };
 
-// Terminal identity + handshake proof headers required for every remote POS request.
+// Terminal identity + handshake proof headers required for every remote POS request after pairing.
 export type RemotePosTrustHeaders = {
   terminalId: string;
   handshakeSessionId: string;

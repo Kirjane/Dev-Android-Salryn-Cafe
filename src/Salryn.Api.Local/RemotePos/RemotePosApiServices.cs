@@ -18,11 +18,13 @@ public sealed class RemotePosApiServices
         RemotePosRuntimeGate runtimeGate,
         RemotePosOperatorSessionService sessionService,
         RemotePosCheckoutService checkoutService,
+        RemotePosPairingGateService pairingGate,
         LanRemoteTransportApiServices lanServices)
     {
         RuntimeGate = runtimeGate;
         SessionService = sessionService;
         CheckoutService = checkoutService;
+        PairingGate = pairingGate;
         LanServices = lanServices;
     }
 
@@ -31,6 +33,8 @@ public sealed class RemotePosApiServices
     public RemotePosOperatorSessionService SessionService { get; }
 
     public RemotePosCheckoutService CheckoutService { get; }
+
+    public RemotePosPairingGateService PairingGate { get; }
 
     public LanRemoteTransportApiServices LanServices { get; }
 
@@ -73,6 +77,8 @@ public sealed class RemotePosApiServices
             composition.Authentication,
             composition.UserReadRepository);
 
-        return new RemotePosApiServices(runtimeGate, sessionService, checkoutService, lanServices);
+        RemotePosPairingGateService pairingGate = new(lanServices);
+
+        return new RemotePosApiServices(runtimeGate, sessionService, checkoutService, pairingGate, lanServices);
     }
 }
