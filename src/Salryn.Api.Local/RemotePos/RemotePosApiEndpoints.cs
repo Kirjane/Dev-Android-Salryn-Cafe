@@ -1,4 +1,5 @@
 using Salryn.Api.Local.Bridge;
+using Salryn.Api.Local.Services;
 using Salryn.Core.Common;
 
 namespace Salryn.Api.Local.RemotePos;
@@ -290,7 +291,13 @@ public static class RemotePosApiEndpoints
                 ? StatusCodes.Status409Conflict
                 : StatusCodes.Status400BadRequest;
 
-            return Results.Json(new { error = result.Message, code = result.Code }, statusCode: status);
+            return Results.Json(
+                new
+                {
+                    error = RemoteReadOnlyBridgeDiagnostics.SanitizeRemoteClientMessage(result.Message),
+                    code = RemoteReadOnlyBridgeDiagnostics.SanitizePublicText(result.Code) ?? result.Code,
+                },
+                statusCode: status);
         }
 
         return Results.Ok(result.Cart);
@@ -316,7 +323,13 @@ public static class RemotePosApiEndpoints
 
         if (!result.Ok || result.Shift is null)
         {
-            return Results.Json(new { error = result.Message, code = result.Code }, statusCode: StatusCodes.Status400BadRequest);
+            return Results.Json(
+                new
+                {
+                    error = RemoteReadOnlyBridgeDiagnostics.SanitizeRemoteClientMessage(result.Message),
+                    code = RemoteReadOnlyBridgeDiagnostics.SanitizePublicText(result.Code) ?? result.Code,
+                },
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         return Results.Ok(result.Shift);
@@ -335,7 +348,14 @@ public static class RemotePosApiEndpoints
                 ? StatusCodes.Status403Forbidden
                 : StatusCodes.Status400BadRequest;
 
-        return Results.Json(new { error = result.ErrorDetail.Message, code = result.ErrorDetail.Code }, statusCode: status);
+        return Results.Json(
+            new
+            {
+                error = RemoteReadOnlyBridgeDiagnostics.SanitizeRemoteClientMessage(result.ErrorDetail.Message),
+                code = RemoteReadOnlyBridgeDiagnostics.SanitizePublicText(result.ErrorDetail.Code)
+                    ?? result.ErrorDetail.Code,
+            },
+            statusCode: status);
     }
 
     private static RemotePosSessionResponse ToSessionResponse(

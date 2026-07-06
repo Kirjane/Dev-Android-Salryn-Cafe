@@ -284,6 +284,26 @@ public static class RemoteReadOnlyBridgeDiagnostics
         return trimmed.Length <= 256 ? trimmed : trimmed[..256];
     }
 
+    public static string SanitizeRemoteClientMessage(
+        string? value,
+        string fallback = "Remote request could not be completed.")
+    {
+        string? sanitized = SanitizePublicText(value);
+        if (string.IsNullOrWhiteSpace(sanitized))
+        {
+            return fallback;
+        }
+
+        if (sanitized.Contains("handler failed", StringComparison.OrdinalIgnoreCase)
+            || sanitized.Contains("InnerException", StringComparison.OrdinalIgnoreCase)
+            || sanitized.Contains("StackTrace", StringComparison.OrdinalIgnoreCase))
+        {
+            return fallback;
+        }
+
+        return sanitized;
+    }
+
     public static bool ContainsSecretMarker(string value) =>
         value.Contains("cookie", StringComparison.OrdinalIgnoreCase)
         || value.Contains("token", StringComparison.OrdinalIgnoreCase)

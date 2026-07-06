@@ -103,13 +103,36 @@ public static class LocalApiApplicationFactory
             ? ResolveWebDistPath()
             : null;
 
+        WebDistSnapshot webDistSnapshot = WebDistDiagnostics.Inspect(webDistPath);
+        WebDistDiagnostics.WriteStartupLog(webDistSnapshot);
+
         if (webDistPath is not null)
         {
             var distFileProvider = new PhysicalFileProvider(webDistPath);
 
             app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = distFileProvider });
-            app.UseStaticFiles(new StaticFileOptions { FileProvider = distFileProvider });
+            app.UseStaticFiles(new StaticFileOptions
+            {
+                FileProvider = distFileProvider,
+                OnPrepareResponse = context =>
+                {
+                    if (string.Equals(context.File.Name, "index.html", StringComparison.OrdinalIgnoreCase))
+                    {
+                        WebDistDiagnostics.ApplyIndexHtmlNoCacheHeaders(context.Context.Response);
+                    }
+                }
+            });
         }
+
+        app.MapGet("/api/system/web-dist", (HttpContext httpContext) =>
+        {
+            if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult localOnly)
+            {
+                return localOnly;
+            }
+
+            return Results.Ok(WebDistDiagnostics.ToApiResponse(webDistSnapshot));
+        });
 
         app.MapGet("/health", () => Results.Ok(new
         {
@@ -206,6 +229,7 @@ public static class LocalApiApplicationFactory
                     return Results.NotFound();
                 }
 
+                WebDistDiagnostics.ApplyIndexHtmlNoCacheHeaders(httpContext.Response);
                 return Results.File(indexHtmlPath, "text/html");
             });
         }

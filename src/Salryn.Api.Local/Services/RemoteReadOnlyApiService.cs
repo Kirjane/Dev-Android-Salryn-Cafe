@@ -72,8 +72,12 @@ public sealed class RemoteReadOnlyApiService
 
             string? errorCode = bridgeStatus.IsFailure ? bridgeStatus.ErrorDetail.Code : null;
             string errorMessage = bridgeStatus.IsFailure
-                ? bridgeStatus.ErrorDetail.Message
-                : bridgeStatus.Value.ErrorMessage ?? "Remote bridge status read failed.";
+                ? RemoteReadOnlyBridgeDiagnostics.SanitizeRemoteClientMessage(
+                    bridgeStatus.ErrorDetail.Message,
+                    "Remote bridge status read failed.")
+                : RemoteReadOnlyBridgeDiagnostics.SanitizeRemoteClientMessage(
+                    bridgeStatus.Value.ErrorMessage,
+                    "Remote bridge status read failed.");
 
             return new RemoteReadOnlyStatusResponse(
                 ConnectionStatus: "Rejected",
@@ -156,7 +160,12 @@ public sealed class RemoteReadOnlyApiService
                 0,
                 DateTimeOffset.UtcNow,
                 "error",
-                new[] { bridgeResult.ErrorDetail.Message });
+                new[]
+                {
+                    RemoteReadOnlyBridgeDiagnostics.SanitizeRemoteClientMessage(
+                        bridgeResult.ErrorDetail.Message,
+                        "Remote dashboard read failed."),
+                });
         }
 
         RemoteReadOnlyClientResult<RemoteDashboardSummaryHostCommandResponse> result = bridgeResult.Value;
@@ -169,7 +178,12 @@ public sealed class RemoteReadOnlyApiService
                 0,
                 DateTimeOffset.UtcNow,
                 "error",
-                new[] { result.ErrorMessage ?? "Remote dashboard read failed." });
+                new[]
+                {
+                    RemoteReadOnlyBridgeDiagnostics.SanitizeRemoteClientMessage(
+                        result.ErrorMessage,
+                        "Remote dashboard read failed."),
+                });
         }
 
         return new DashboardSummaryResponse(
@@ -294,7 +308,9 @@ public sealed class RemoteReadOnlyApiService
             return new RemoteReadOnlyTerminalStatusResponse(
                 ConnectionStatus: "Rejected",
                 TerminalStatus: "Unknown",
-                Message: bridgeResult.ErrorDetail.Message,
+                Message: RemoteReadOnlyBridgeDiagnostics.SanitizeRemoteClientMessage(
+                    bridgeResult.ErrorDetail.Message,
+                    "Remote terminal status read failed."),
                 TerminalId: bridgeContext.TerminalId.ToString(),
                 TerminalName: null,
                 TerminalRole: "Read-only client",
@@ -310,7 +326,9 @@ public sealed class RemoteReadOnlyApiService
             return new RemoteReadOnlyTerminalStatusResponse(
                 ConnectionStatus: "Rejected",
                 TerminalStatus: "Unknown",
-                Message: result.ErrorMessage ?? "Remote terminal status read failed.",
+                Message: RemoteReadOnlyBridgeDiagnostics.SanitizeRemoteClientMessage(
+                    result.ErrorMessage,
+                    "Remote terminal status read failed."),
                 TerminalId: bridgeContext.TerminalId.ToString(),
                 TerminalName: null,
                 TerminalRole: "Read-only client",
@@ -353,7 +371,9 @@ public sealed class RemoteReadOnlyApiService
         {
             return new RemoteReadOnlyAuditVisibilityResponse(
                 Status: "Error",
-                Message: auditResult.ErrorDetail.Message,
+                Message: RemoteReadOnlyBridgeDiagnostics.SanitizeRemoteClientMessage(
+                    auditResult.ErrorDetail.Message,
+                    "Remote audit visibility read failed."),
                 Page: safePage,
                 PageSize: safePageSize,
                 TotalCount: 0,

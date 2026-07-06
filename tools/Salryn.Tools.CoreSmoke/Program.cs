@@ -86,6 +86,7 @@ public static class Program
         M7CandidateStackPromotionDebtMeterChecks.Run();
         M8MSeriesCompletionLanTransitionGateChecks.Run();
         SecA1LocalApiWebViewSecurityChecks.Run();
+        CleanupA1OperationalHardeningChecks.RunAsync().GetAwaiter().GetResult();
         J20UiWorkflowReadinessChecks.Run();
         PosStabA1StartupLoginReadinessChecks.Run();
         PosStabA2ShiftCloseChecks.Run();
