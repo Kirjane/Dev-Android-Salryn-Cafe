@@ -1,3 +1,5 @@
+using Salryn.Api.Local.RemotePos;
+
 namespace Salryn.Api.Local.Contracts;
 
 public sealed record RemoteReadOnlyBindPolicyResponse(
@@ -127,7 +129,11 @@ public sealed record LocalLanControlStatusResponse(
     string Message,
     // LAN-M16: host-local, process-scoped remote POS write runtime enablement. Disabled by
     // default and always separate from RemoteTransportEnabled (the read-only bridge toggle).
-    bool RemotePosRuntimeEnabled = false);
+    bool RemotePosRuntimeEnabled = false,
+    string HostLocalUrl = "http://127.0.0.1:5299",
+    string HostLanUrl = "Not enabled",
+    string Safety = "Host control is local-only",
+    RemotePosCapacityStatusResponse? RemotePosLimits = null);
 
 public sealed record LocalLanControlRemoteTransportRequest(
     bool Enable,

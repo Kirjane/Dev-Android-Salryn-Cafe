@@ -141,16 +141,30 @@ export type LocalLanControlTerminal = {
   revokedAtUtc?: string | null;
 };
 
+export type RemotePosLimits = {
+  maxPairedTerminals: number;
+  maxActiveSessions: number;
+  hardCap: number;
+  currentPairedCount: number;
+  currentActiveSessions: number;
+  remainingPairingCapacity: number;
+  remainingActiveSessionCapacity: number;
+};
+
 export type LocalLanControlStatus = {
   localOperatorOnly: boolean;
   remoteTransportEnabled: boolean;
   remotePosRuntimeEnabled: boolean;
+  hostLocalUrl: string;
+  hostLanUrl: string;
+  safety: string;
   bindMode: string;
   configuredBindAddress: string;
   bindPolicy: RemoteReadOnlyBindPolicy;
   terminalVisibilityAvailable: boolean;
   terminalVisibilityMessage: string;
   terminals: LocalLanControlTerminal[];
+  remotePosLimits?: RemotePosLimits | null;
   warnings: string[];
   message: string;
 };
@@ -159,5 +173,44 @@ export type LocalLanControlTerminalAction = {
   terminalId: string;
   status: string;
   trustState: string;
+  message: string;
+};
+
+export type RemotePosPendingJoinRequest = {
+  requestId: string;
+  deviceName: string;
+  observedOrigin: string;
+  pairingState: string;
+  requestedAtUtc: string;
+  expiresAtUtc: string;
+  pairingCodeExpiresAtUtc?: string | null;
+};
+
+export type RemotePosPairingHostStatus = {
+  joinCodeIssued: boolean;
+  joinCodeExpiresAtUtc?: string | null;
+  pendingRequestCount: number;
+  pendingRequests: RemotePosPendingJoinRequest[];
+  message: string;
+};
+
+export type RemotePosJoinCodeRotateResponse = {
+  joinCode: string;
+  issuedAtUtc: string;
+  expiresAtUtc: string;
+  message: string;
+};
+
+export type RemotePosApproveJoinResponse = {
+  requestId: string;
+  deviceName: string;
+  pairingCode: string;
+  pairingCodeExpiresAtUtc: string;
+  message: string;
+};
+
+export type RemotePosRejectJoinResponse = {
+  requestId: string;
+  pairingState: string;
   message: string;
 };

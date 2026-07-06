@@ -1,8 +1,12 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
+  acceptRemotePosJoinRequest,
   disableLocalLanControlTerminal,
   fetchLocalLanControlStatus,
+  fetchRemotePosPairingHostStatus,
+  rejectRemotePosJoinRequest,
   revokeLocalLanControlTerminal,
+  rotateRemotePosJoinCode,
   setLocalLanControlRemotePos,
   setLocalLanControlRemoteTransport,
 } from "../api/remoteReadOnlyClient";
@@ -20,11 +24,18 @@ export function useLocalLanControl() {
     retry: false,
   });
 
+  const pairingStatusQuery = useQuery({
+    queryKey: ["local-lan-control-remote-pos-pairing"],
+    queryFn: fetchRemotePosPairingHostStatus,
+    retry: false,
+  });
+
   const remoteTransportMutation = useMutation({
     mutationFn: ({ enable, bindAddress }: { enable: boolean; bindAddress: string | null }) =>
       setLocalLanControlRemoteTransport(enable, bindAddress),
     onSuccess: () => {
       void statusQuery.refetch();
+      void pairingStatusQuery.refetch();
     },
   });
 
@@ -49,11 +60,37 @@ export function useLocalLanControl() {
     },
   });
 
+  const rotateJoinCodeMutation = useMutation({
+    mutationFn: rotateRemotePosJoinCode,
+    onSuccess: () => {
+      void pairingStatusQuery.refetch();
+    },
+  });
+
+  const acceptJoinRequestMutation = useMutation({
+    mutationFn: (requestId: string) => acceptRemotePosJoinRequest(requestId),
+    onSuccess: () => {
+      void statusQuery.refetch();
+      void pairingStatusQuery.refetch();
+    },
+  });
+
+  const rejectJoinRequestMutation = useMutation({
+    mutationFn: (requestId: string) => rejectRemotePosJoinRequest(requestId),
+    onSuccess: () => {
+      void pairingStatusQuery.refetch();
+    },
+  });
+
   return {
     statusQuery,
+    pairingStatusQuery,
     remoteTransportMutation,
     remotePosRuntimeMutation,
     disableTerminalMutation,
     revokeTerminalMutation,
+    rotateJoinCodeMutation,
+    acceptJoinRequestMutation,
+    rejectJoinRequestMutation,
   };
 }

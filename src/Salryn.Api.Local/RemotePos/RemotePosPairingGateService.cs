@@ -19,15 +19,19 @@ public sealed class RemotePosPairingGateService
     private const int DeviceNameMaxLength = 40;
 
     private readonly LanRemoteTransportApiServices _lanServices;
+    private readonly RemotePosCapacityPolicy _capacityPolicy;
     private readonly ConcurrentDictionary<Guid, PairingRequestState> _requests = new();
     private readonly object _joinCodeLock = new();
     private byte[]? _currentJoinCodeHash;
     private DateTimeOffset? _joinCodeIssuedAtUtc;
     private DateTimeOffset? _joinCodeExpiresAtUtc;
 
-    public RemotePosPairingGateService(LanRemoteTransportApiServices lanServices)
+    public RemotePosPairingGateService(
+        LanRemoteTransportApiServices lanServices,
+        RemotePosCapacityPolicy capacityPolicy)
     {
         _lanServices = lanServices ?? throw new ArgumentNullException(nameof(lanServices));
+        _capacityPolicy = capacityPolicy ?? throw new ArgumentNullException(nameof(capacityPolicy));
     }
 
     public RemotePosPairingHostStatusResponse GetHostStatus()
@@ -193,6 +197,24 @@ public sealed class RemotePosPairingGateService
                 "Only pending join requests can be approved."));
         }
 
+        Result<int> reservedOrPairedCount = await CountReservedOrPairedTerminalsAsync(
+            actor,
+            excludingRequestId: state.RequestId,
+            cancellationToken)
+            .ConfigureAwait(false);
+
+        if (reservedOrPairedCount.IsFailure)
+        {
+            return Result<RemotePosApproveJoinResponse>.Fail(reservedOrPairedCount.ErrorDetail);
+        }
+
+        if (reservedOrPairedCount.Value >= _capacityPolicy.MaxPairedTerminals)
+        {
+            return Result<RemotePosApproveJoinResponse>.Fail(Error.Conflict(
+                "RemotePosPairing.PairedTerminalLimitReached",
+                $"Remote POS paired terminal capacity is full ({reservedOrPairedCount.Value}/{_capacityPolicy.MaxPairedTerminals}). Revoke or disable an existing remote POS terminal before approving another device."));
+        }
+
         Result<PairingInviteCreationResult> invite = await _lanServices.TerminalPairingPreparation
             .CreatePairingInviteAsync(
                 state.DeviceName,
@@ -217,6 +239,7 @@ public sealed class RemotePosPairingGateService
         state.PairingCodeExpiresAtUtc = invite.Value.Invite.ExpiresAtUtc;
         state.PairingCodeUsed = false;
         state.ApprovedByUserId = actor.ActorUserId;
+        state.ApprovedActorPermissions = actor.Permissions.ToArray();
 
         return Result<RemotePosApproveJoinResponse>.Success(new RemotePosApproveJoinResponse(
             RequestId: state.RequestId.ToString("D"),
@@ -289,6 +312,25 @@ public sealed class RemotePosPairingGateService
         if (!FixedTimeSecretEquals(state.PairingCodeHash, request.PairingCode))
         {
             return PairingRejected("RemotePosPairing.PairingCodeRejected");
+        }
+
+        Result<int> activePairedCount = await CountActivePairedTerminalsAsync(
+            new TerminalRegistryActorContext(
+                state.ApprovedByUserId ?? Guid.Empty,
+                state.ApprovedActorPermissions ?? Array.Empty<string>()),
+            cancellationToken)
+            .ConfigureAwait(false);
+
+        if (activePairedCount.IsFailure)
+        {
+            return Result<RemotePosPairingActivationResponse>.Fail(activePairedCount.ErrorDetail);
+        }
+
+        if (activePairedCount.Value >= _capacityPolicy.MaxPairedTerminals)
+        {
+            return Result<RemotePosPairingActivationResponse>.Fail(Error.Conflict(
+                "RemotePosPairing.PairedTerminalLimitReached",
+                $"Remote POS paired terminal capacity is full ({activePairedCount.Value}/{_capacityPolicy.MaxPairedTerminals}). Revoke or disable an existing remote POS terminal before pairing another device."));
         }
 
         TerminalPairingActivationRequest activationRequest = new(
@@ -399,6 +441,65 @@ public sealed class RemotePosPairingGateService
             ExpiresAtUtc: request.ExpiresAtUtc.ToString("O"),
             PairingCodeExpiresAtUtc: request.PairingCodeExpiresAtUtc?.ToString("O"));
 
+    public async Task<RemotePosCapacityStatusResponse> GetCapacityStatusAsync(
+        TerminalRegistryActorContext actor,
+        int activeSessionCount,
+        CancellationToken cancellationToken = default)
+    {
+        Result<int> activePaired = await CountActivePairedTerminalsAsync(actor, cancellationToken)
+            .ConfigureAwait(false);
+
+        int currentPairedCount = activePaired.IsSuccess ? activePaired.Value : 0;
+        return new RemotePosCapacityStatusResponse(
+            MaxPairedTerminals: _capacityPolicy.MaxPairedTerminals,
+            MaxActiveSessions: _capacityPolicy.MaxActiveSessions,
+            HardCap: RemotePosCapacityPolicy.HardCap,
+            CurrentPairedCount: currentPairedCount,
+            CurrentActiveSessions: activeSessionCount,
+            RemainingPairingCapacity: Math.Max(0, _capacityPolicy.MaxPairedTerminals - currentPairedCount),
+            RemainingActiveSessionCapacity: Math.Max(0, _capacityPolicy.MaxActiveSessions - activeSessionCount));
+    }
+
+    private async Task<Result<int>> CountReservedOrPairedTerminalsAsync(
+        TerminalRegistryActorContext actor,
+        Guid excludingRequestId,
+        CancellationToken cancellationToken)
+    {
+        Result<int> activePaired = await CountActivePairedTerminalsAsync(actor, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (activePaired.IsFailure)
+        {
+            return activePaired;
+        }
+
+        int reserved = _requests.Values.Count(request =>
+            request.RequestId != excludingRequestId
+            && request.Status == RemotePosPairingRequestStatus.Accepted);
+
+        return Result<int>.Success(activePaired.Value + reserved);
+    }
+
+    private async Task<Result<int>> CountActivePairedTerminalsAsync(
+        TerminalRegistryActorContext actor,
+        CancellationToken cancellationToken)
+    {
+        Result<IReadOnlyList<SalrynTerminalRegistration>> terminals = await _lanServices.TerminalRegistry
+            .ListTerminalsAsync(actor, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (terminals.IsFailure)
+        {
+            return Result<int>.Fail(Error.Forbidden(
+                "RemotePosPairing.CapacityVisibilityRequired",
+                "Remote POS capacity could not be verified. The host operator must have terminal visibility before approving remote POS devices."));
+        }
+
+        return Result<int>.Success(terminals.Value.Count(terminal =>
+            terminal.TerminalRole == TerminalRegistrationRole.CashierClient
+            && terminal.Status != TerminalRegistrationStatus.Revoked));
+    }
+
     private void ExpireRequests()
     {
         DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -465,6 +566,7 @@ public sealed class RemotePosPairingGateService
         public DateTimeOffset? RejectedAtUtc { get; set; }
         public DateTimeOffset? PairedAtUtc { get; set; }
         public Guid? ApprovedByUserId { get; set; }
+        public IReadOnlyCollection<string>? ApprovedActorPermissions { get; set; }
         public Guid? PairingId { get; set; }
         public Guid? StoreId { get; set; }
         public Guid? HostId { get; set; }

@@ -39,7 +39,9 @@ public static class RoleM1OperatorRolePermissionUxCompileChecks
     private static readonly string[] ImplementedPages =
     {
         "dashboard",
+        "host-lan-control",
         "remote-readonly",
+        "remote-pos",
         "products",
         "inventory",
         "sales",

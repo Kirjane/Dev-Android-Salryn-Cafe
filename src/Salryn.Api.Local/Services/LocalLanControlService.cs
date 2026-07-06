@@ -19,13 +19,19 @@ public sealed class LocalLanControlService
 {
     private readonly LanRemoteTransportApiServices _lanServices;
     private readonly RemotePosRuntimeGate _remotePosRuntimeGate;
+    private readonly RemotePosApiServices _remotePosServices;
+    private readonly LocalApiHostControlUrls _hostUrls;
 
     public LocalLanControlService(
         LanRemoteTransportApiServices lanServices,
-        RemotePosRuntimeGate remotePosRuntimeGate)
+        RemotePosRuntimeGate remotePosRuntimeGate,
+        RemotePosApiServices remotePosServices,
+        LocalApiHostControlUrls hostUrls)
     {
         _lanServices = lanServices ?? throw new ArgumentNullException(nameof(lanServices));
         _remotePosRuntimeGate = remotePosRuntimeGate ?? throw new ArgumentNullException(nameof(remotePosRuntimeGate));
+        _remotePosServices = remotePosServices ?? throw new ArgumentNullException(nameof(remotePosServices));
+        _hostUrls = hostUrls ?? throw new ArgumentNullException(nameof(hostUrls));
     }
 
     public async Task<LocalLanControlStatusResponse> GetStatusAsync(
@@ -39,6 +45,9 @@ public sealed class LocalLanControlService
 
         (bool visible, string visibilityMessage, IReadOnlyList<LocalLanControlTerminalResponse> terminals) =
             await ListTerminalsSafeAsync(actor, cancellationToken).ConfigureAwait(false);
+        RemotePosCapacityStatusResponse limits = await _remotePosServices.PairingGate
+            .GetCapacityStatusAsync(actor, _remotePosServices.SessionService.GetActiveSessionCount(), cancellationToken)
+            .ConfigureAwait(false);
 
         return new LocalLanControlStatusResponse(
             LocalOperatorOnly: true,
@@ -50,8 +59,12 @@ public sealed class LocalLanControlService
             TerminalVisibilityMessage: visibilityMessage,
             Terminals: terminals,
             Warnings: BuildWarnings(),
-            Message: "Local LAN control is operator-only on the POS host. Remote clients remain read-only and cannot change LAN configuration or terminal trust.",
-            RemotePosRuntimeEnabled: _remotePosRuntimeGate.IsEnabled);
+            Message: "Local LAN control is operator-only on the POS host. Remote clients cannot change LAN configuration, approvals, or terminal trust.",
+            RemotePosRuntimeEnabled: _remotePosRuntimeGate.IsEnabled,
+            HostLocalUrl: _hostUrls.LocalUrl,
+            HostLanUrl: BuildHostLanUrl(config),
+            Safety: "Host control is local-only",
+            RemotePosLimits: limits);
     }
 
     /// <summary>
@@ -273,10 +286,25 @@ public sealed class LocalLanControlService
         {
             "Remote read-only transport is disabled by default and must be explicitly enabled by the localhost operator.",
             "Only a specific LAN IP may be configured. Wildcard bind is rejected and is never allowed.",
-            "Remote clients remain read-only and cannot enable/disable LAN, configure the bind address, or pair/disable/revoke terminals.",
-            "Remote clients cannot perform checkout, admin, mutation, official writes, or settings changes.",
+            "Remote clients cannot approve join requests, enable/disable LAN, configure the bind address, or disable/revoke terminals.",
+            "Remote read-only clients cannot perform checkout, admin, mutation, official writes, or settings changes.",
+            "Remote POS clients use /api/remote-pos only after host approval, pairing, terminal trust, and Cashier/Manager login.",
             "Localhost operator session cookies are never accepted as remote LAN trust."
         };
+    }
+
+    private string BuildHostLanUrl(LanRemoteTransportConfig config)
+    {
+        if (!config.RemoteTransportEnabled
+            || config.BindMode != LanRemoteTransportBindMode.ExplicitLanAddress)
+        {
+            return "Not enabled";
+        }
+
+        string bind = SafeBindAddress(config);
+        return bind.StartsWith("127.", StringComparison.Ordinal)
+            ? "Not enabled"
+            : _hostUrls.BuildLanUrl(bind);
     }
 
     private static Error SanitizeError(Error error)

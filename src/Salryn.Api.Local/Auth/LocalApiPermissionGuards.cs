@@ -18,6 +18,11 @@ internal static class LocalApiPermissionGuards
         HttpContext httpContext,
         LocalApiSessionService sessions)
     {
+        if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult localOnly)
+        {
+            return localOnly;
+        }
+
         return GetSession(httpContext, sessions) is null
             ? AuthenticationRequired()
             : null;
@@ -28,6 +33,11 @@ internal static class LocalApiPermissionGuards
         LocalApiSessionService sessions,
         string permission)
     {
+        if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult localOnly)
+        {
+            return localOnly;
+        }
+
         LocalApiSession? session = GetSession(httpContext, sessions);
 
         if (session is null)
@@ -45,6 +55,11 @@ internal static class LocalApiPermissionGuards
         LocalApiSessionService sessions,
         IReadOnlyCollection<string> permissions)
     {
+        if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult localOnly)
+        {
+            return localOnly;
+        }
+
         LocalApiSession? session = GetSession(httpContext, sessions);
 
         if (session is null)

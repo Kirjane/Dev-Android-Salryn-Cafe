@@ -7,14 +7,17 @@ import { useAppSession } from "./hooks/useAppSession";
 import { type AppPage } from "./navigation";
 import { AuditPage } from "./pages/AuditPage";
 import { DashboardPage } from "./pages/DashboardPage";
+import { HostLanControlPage } from "./pages/HostLanControlPage";
 import { InventoryPage } from "./pages/InventoryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { ProductsPage } from "./pages/ProductsPage";
+import { RemoteClientLandingPage } from "./pages/RemoteClientLandingPage";
 import { RemotePosClientPage } from "./pages/RemotePosClientPage";
 import { RemoteReadOnlyClientPage } from "./pages/RemoteReadOnlyClientPage";
 import { SalesHistoryPage } from "./pages/SalesHistoryPage";
 import { UsersPage } from "./pages/UsersPage";
 import { canAccessPage, getFirstAllowedPage } from "./security/permissions";
+import { isRemoteClientBrowserLocation } from "./utils/lanEntry";
 
 function FullScreenCenter({ children }: { children: ReactNode }) {
   return <div className="flex min-h-screen items-center justify-center bg-navy-900 px-4">{children}</div>;
@@ -49,6 +52,8 @@ function renderPage(page: AppPage, session: SessionState, onLogout: () => void) 
       return <RemoteReadOnlyClientPage />;
     case "remote-pos":
       return <RemotePosClientPage />;
+    case "host-lan-control":
+      return <HostLanControlPage />;
     case "products":
       return <ProductsPage />;
     case "inventory":
@@ -64,6 +69,32 @@ function renderPage(page: AppPage, session: SessionState, onLogout: () => void) 
       return exhaustiveCheck;
     }
   }
+}
+
+type RemoteClientMode = "landing" | "remote-pos" | "remote-readonly";
+
+function RemoteClientApp() {
+  const [mode, setMode] = useState<RemoteClientMode>("landing");
+
+  if (mode === "landing") {
+    return (
+      <RemoteClientLandingPage
+        onOpenRemotePos={() => setMode("remote-pos")}
+        onOpenReadOnly={() => setMode("remote-readonly")}
+      />
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-100 p-6">
+      <div className="mx-auto max-w-7xl space-y-4">
+        <Button variant="secondary" onClick={() => setMode("landing")}>
+          Back to remote client entry
+        </Button>
+        {mode === "remote-pos" ? <RemotePosClientPage /> : <RemoteReadOnlyClientPage />}
+      </div>
+    </div>
+  );
 }
 
 function ConsoleApp() {
@@ -134,5 +165,9 @@ function ConsoleApp() {
 }
 
 export default function App() {
+  if (isRemoteClientBrowserLocation()) {
+    return <RemoteClientApp />;
+  }
+
   return <ConsoleApp />;
 }

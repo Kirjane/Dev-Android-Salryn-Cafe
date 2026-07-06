@@ -5,6 +5,7 @@ import type { PagedResponse } from "./types";
 import type {
   LocalLanControlStatus,
   LocalLanControlTerminalAction,
+  RemotePosApproveJoinResponse,
   RemoteReadOnlyAuditVisibility,
   RemoteReadOnlyBindPolicy,
   RemoteReadOnlyCapability,
@@ -13,6 +14,9 @@ import type {
   RemoteReadOnlyPreflight,
   RemoteReadOnlyShellState,
   RemoteReadOnlyTerminalStatus,
+  RemotePosJoinCodeRotateResponse,
+  RemotePosPairingHostStatus,
+  RemotePosRejectJoinResponse,
 } from "../types/remoteReadOnlyClient";
 
 const checkout = "Check" + "out";
@@ -173,6 +177,39 @@ export async function revokeLocalLanControlTerminal(
     credentials: "include",
   });
   return readJson<LocalLanControlTerminalAction>(response);
+}
+
+export async function fetchRemotePosPairingHostStatus(): Promise<RemotePosPairingHostStatus> {
+  const response = await fetch("/api/lan-control/remote-pos/pairing", { credentials: "include" });
+  return readJson<RemotePosPairingHostStatus>(response);
+}
+
+export async function rotateRemotePosJoinCode(): Promise<RemotePosJoinCodeRotateResponse> {
+  const response = await fetch("/api/lan-control/remote-pos/pairing/join-code/rotate", {
+    method: "POST",
+    credentials: "include",
+  });
+  return readJson<RemotePosJoinCodeRotateResponse>(response);
+}
+
+export async function acceptRemotePosJoinRequest(requestId: string): Promise<RemotePosApproveJoinResponse> {
+  const response = await fetch(`/api/lan-control/remote-pos/pairing/requests/${encodeURIComponent(requestId)}/accept`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  return readJson<RemotePosApproveJoinResponse>(response);
+}
+
+export async function rejectRemotePosJoinRequest(requestId: string): Promise<RemotePosRejectJoinResponse> {
+  const response = await fetch(`/api/lan-control/remote-pos/pairing/requests/${encodeURIComponent(requestId)}/reject`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  return readJson<RemotePosRejectJoinResponse>(response);
 }
 
 export async function fetchRemoteReadOnlyAuditVisibility(

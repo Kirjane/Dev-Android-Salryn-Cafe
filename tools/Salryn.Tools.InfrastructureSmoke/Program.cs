@@ -270,6 +270,10 @@ try
             RemotePosPostCommitAuditSafetySmokeChecks.Run(projectRoot);
             break;
 
+        case "lan-m16-rc-b-entry-boundary":
+            LanM16RcBEntryBoundarySmokeChecks.Run(projectRoot);
+            break;
+
         case "rmo-engineering-candidate":
             RmoEngineeringCandidateSmokeChecks.Run(projectRoot);
             break;
@@ -321,7 +325,7 @@ try
 
         default:
             Console.WriteLine("Unknown command.");
-            Console.WriteLine("Use: status | init | inspect | reset | repositories | auth-first-run | mvp-business-flow | dev-prelaunch-seed | qa-products-seed | product-write | product-write-edge | inventory-write | inventory-write-edge | sales-write | sales-write-edge | sales-read-write | cashier-session-write | cashier-session-write-edge | cashier-session-read-write | cashier-session-service | cashier-session-service-edge | pos-checkout-session-enforcement | pos-checkout-repository-integration | pos-checkout-application-boundary | pos-checkout-application-repository | pos-store-day-regression | pos-admin-operations-regression | pos-phase-b-regression | app-production-readiness | app-first-run-bootstrap-readiness | app-startup-failure-diagnostics | pos-checkout-draft-transaction-builder | pos-checkout-product-picker-boundary | pos-checkout-product-picker-repository-integration | pos-checkout-ui-presenter-viewmodel | pos-checkout-ui-product-search-presenter-boundary | pos-checkout-ui-product-repository-search-boundary | official-output-text-file | official-output-text-file-dev-candidate | host-command-loopback | terminal-registry-pairing | controlled-remote-transport-gate | pairing-activation-handshake | remote-pos-pairing-gate | safe-remote-readonly-client | remote-pos-operator-session | remote-pos-command-authorization | remote-pos-checkout-idempotency | remote-pos-host-write-boundary | remote-pos-manager-admin-boundary | remote-pos-host-client-identity | remote-pos-final-acceptance | remote-pos-origin-binding | remote-pos-post-commit-audit-safety | rmo-engineering-candidate | full");
+            Console.WriteLine("Use: status | init | inspect | reset | repositories | auth-first-run | mvp-business-flow | dev-prelaunch-seed | qa-products-seed | product-write | product-write-edge | inventory-write | inventory-write-edge | sales-write | sales-write-edge | sales-read-write | cashier-session-write | cashier-session-write-edge | cashier-session-read-write | cashier-session-service | cashier-session-service-edge | pos-checkout-session-enforcement | pos-checkout-repository-integration | pos-checkout-application-boundary | pos-checkout-application-repository | pos-store-day-regression | pos-admin-operations-regression | pos-phase-b-regression | app-production-readiness | app-first-run-bootstrap-readiness | app-startup-failure-diagnostics | pos-checkout-draft-transaction-builder | pos-checkout-product-picker-boundary | pos-checkout-product-picker-repository-integration | pos-checkout-ui-presenter-viewmodel | pos-checkout-ui-product-search-presenter-boundary | pos-checkout-ui-product-repository-search-boundary | official-output-text-file | official-output-text-file-dev-candidate | host-command-loopback | terminal-registry-pairing | controlled-remote-transport-gate | pairing-activation-handshake | remote-pos-pairing-gate | safe-remote-readonly-client | remote-pos-operator-session | remote-pos-command-authorization | remote-pos-checkout-idempotency | remote-pos-host-write-boundary | remote-pos-manager-admin-boundary | remote-pos-host-client-identity | remote-pos-final-acceptance | remote-pos-origin-binding | remote-pos-post-commit-audit-safety | lan-m16-rc-b-entry-boundary | rmo-engineering-candidate | full");
             Environment.ExitCode = 1;
             break;
     }

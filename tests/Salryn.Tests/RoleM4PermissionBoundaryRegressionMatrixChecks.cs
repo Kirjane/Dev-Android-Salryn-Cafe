@@ -279,7 +279,7 @@ public static class RoleM4PermissionBoundaryRegressionMatrixChecks
         string readOnlyEndpoints,
         string remoteReadOnlyEndpoints)
     {
-        AssertContains(frontendPermissions, "const authenticatedOnlyPages = new Set<AppPage>([\"dashboard\", \"remote-readonly\", \"remote-pos\"])", "Dashboard, remote-readonly, and remote-pos pages must remain authenticated-only in ROLE-M1 catalog.");
+        AssertContains(frontendPermissions, "const authenticatedOnlyPages = new Set<AppPage>([\"dashboard\", \"host-lan-control\", \"remote-readonly\", \"remote-pos\"])", "Dashboard, host-lan-control, remote-readonly, and remote-pos pages must remain authenticated-only in ROLE-M1 catalog.");
         AssertPageAndRoutes(frontendPermissions, readOnlyEndpoints, "products", "ProductsView", "Products.View", new[]
         {
             "/api/products",

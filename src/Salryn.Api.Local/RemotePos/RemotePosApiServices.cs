@@ -19,13 +19,15 @@ public sealed class RemotePosApiServices
         RemotePosOperatorSessionService sessionService,
         RemotePosCheckoutService checkoutService,
         RemotePosPairingGateService pairingGate,
-        LanRemoteTransportApiServices lanServices)
+        LanRemoteTransportApiServices lanServices,
+        RemotePosCapacityPolicy capacityPolicy)
     {
         RuntimeGate = runtimeGate;
         SessionService = sessionService;
         CheckoutService = checkoutService;
         PairingGate = pairingGate;
         LanServices = lanServices;
+        CapacityPolicy = capacityPolicy;
     }
 
     public RemotePosRuntimeGate RuntimeGate { get; }
@@ -37,6 +39,8 @@ public sealed class RemotePosApiServices
     public RemotePosPairingGateService PairingGate { get; }
 
     public LanRemoteTransportApiServices LanServices { get; }
+
+    public RemotePosCapacityPolicy CapacityPolicy { get; }
 
     public static RemotePosApiServices Create(
         SalrynLocalComposition composition,
@@ -71,14 +75,17 @@ public sealed class RemotePosApiServices
             repositories.CreateAuditWriteRepository(),
             new RemotePosReceiptNumberAllocator());
 
+        RemotePosCapacityPolicy capacityPolicy = new();
+
         RemotePosOperatorSessionService sessionService = new(
             lanServices,
             runtimeGate,
             composition.Authentication,
-            composition.UserReadRepository);
+            composition.UserReadRepository,
+            capacityPolicy);
 
-        RemotePosPairingGateService pairingGate = new(lanServices);
+        RemotePosPairingGateService pairingGate = new(lanServices, capacityPolicy);
 
-        return new RemotePosApiServices(runtimeGate, sessionService, checkoutService, pairingGate, lanServices);
+        return new RemotePosApiServices(runtimeGate, sessionService, checkoutService, pairingGate, lanServices, capacityPolicy);
     }
 }

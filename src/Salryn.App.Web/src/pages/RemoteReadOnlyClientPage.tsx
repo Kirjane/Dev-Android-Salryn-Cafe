@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   Alert,
   Button,
@@ -14,7 +13,6 @@ import {
 } from "../components/ui";
 import { remoteReadOnlyWarnings } from "../api/remoteReadOnlyClient";
 import { useRemoteReadOnlyClient } from "../hooks/useRemoteReadOnlyClient";
-import { useLocalLanControl } from "../hooks/useLocalLanControl";
 
 export function RemoteReadOnlyClientPage() {
   const {
@@ -35,16 +33,6 @@ export function RemoteReadOnlyClientPage() {
     auditQuery,
   } = useRemoteReadOnlyClient();
 
-  const {
-    statusQuery: localControlQuery,
-    remoteTransportMutation,
-    remotePosRuntimeMutation,
-    disableTerminalMutation,
-    revokeTerminalMutation,
-  } = useLocalLanControl();
-
-  const [bindAddressInput, setBindAddressInput] = useState("");
-
   const bindPolicy = bindPolicyQuery.data ?? shellState.bindPolicy;
   const diagnostics = diagnosticsQuery.data;
   const preflight = preflightQuery.data;
@@ -59,19 +47,6 @@ export function RemoteReadOnlyClientPage() {
   const productPageData = productQuery.data;
   const products = productPageData?.items ?? [];
   const auditVisibility = auditQuery.data;
-  const localControl = localControlQuery.data;
-  const localControlAvailable = localControlQuery.isSuccess && Boolean(localControl);
-  const localControlBusy =
-    remoteTransportMutation.isPending ||
-    remotePosRuntimeMutation.isPending ||
-    disableTerminalMutation.isPending ||
-    revokeTerminalMutation.isPending;
-  const localControlActionError =
-    (remoteTransportMutation.error as Error | null)?.message ??
-    (remotePosRuntimeMutation.error as Error | null)?.message ??
-    (disableTerminalMutation.error as Error | null)?.message ??
-    (revokeTerminalMutation.error as Error | null)?.message ??
-    null;
 
   function refreshAll() {
     void statusQuery.refetch();
@@ -82,7 +57,6 @@ export function RemoteReadOnlyClientPage() {
     void dashboardQuery.refetch();
     void productQuery.refetch();
     void auditQuery.refetch();
-    void localControlQuery.refetch();
   }
 
   return (
@@ -209,31 +183,36 @@ export function RemoteReadOnlyClientPage() {
           <CardTitle>Runtime Diagnostics</CardTitle>
         </CardHeader>
         <CardBody>
-          {diagnosticsQuery.isLoading ? <LoadingState label="Loading safe runtime diagnostics..." /> : null}
-          {diagnosticsQuery.isError ? <ErrorState message={(diagnosticsQuery.error as Error).message} /> : null}
-          {diagnostics ? (
-            <div className="space-y-4 text-sm">
-              <dl className="grid gap-3 md:grid-cols-2">
-                <Row label="Read-only only" value={diagnostics.readOnlyOnly ? "Yes" : "No"} />
-                <Row label="LAN disabled by default" value={diagnostics.lanDisabledByDefault ? "Yes" : "No"} />
-                <Row label="Audit policy" value={diagnostics.auditPolicyAvailable ? "Available" : "Unavailable"} />
-                <Row label="CORS enabled" value={diagnostics.corsEnabled ? "Yes" : "No"} />
-                <Row label="Status refresh" value={statusQuery.isSuccess ? "Last status read succeeded" : statusQuery.isError ? "Last status read failed" : "Not refreshed yet"} />
-              </dl>
-              <p className="text-slate-600">{diagnostics.message}</p>
-              <ul className="grid gap-2 md:grid-cols-2">
-                {diagnostics.items.map((item) => (
-                  <li key={item.code} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    <p className="font-medium text-slate-900">{item.code}</p>
-                    <p className="text-slate-600">{item.message}</p>
-                    <p className="mt-1 text-xs uppercase tracking-wide text-slate-500">{item.category} / {item.severity}</p>
-                  </li>
-                ))}
-              </ul>
+          <details>
+            <summary className="cursor-pointer text-sm font-medium text-slate-900">Show safe runtime diagnostics</summary>
+            <div className="mt-4">
+              {diagnosticsQuery.isLoading ? <LoadingState label="Loading safe runtime diagnostics..." /> : null}
+              {diagnosticsQuery.isError ? <ErrorState message={(diagnosticsQuery.error as Error).message} /> : null}
+              {diagnostics ? (
+                <div className="space-y-4 text-sm">
+                  <dl className="grid gap-3 md:grid-cols-2">
+                    <Row label="Read-only only" value={diagnostics.readOnlyOnly ? "Yes" : "No"} />
+                    <Row label="LAN disabled by default" value={diagnostics.lanDisabledByDefault ? "Yes" : "No"} />
+                    <Row label="Audit policy" value={diagnostics.auditPolicyAvailable ? "Available" : "Unavailable"} />
+                    <Row label="CORS enabled" value={diagnostics.corsEnabled ? "Yes" : "No"} />
+                    <Row label="Status refresh" value={statusQuery.isSuccess ? "Last status read succeeded" : statusQuery.isError ? "Last status read failed" : "Not refreshed yet"} />
+                  </dl>
+                  <p className="text-slate-600">{diagnostics.message}</p>
+                  <ul className="grid gap-2 md:grid-cols-2">
+                    {diagnostics.items.map((item) => (
+                      <li key={item.code} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                        <p className="font-medium text-slate-900">{item.code}</p>
+                        <p className="text-slate-600">{item.message}</p>
+                        <p className="mt-1 text-xs uppercase tracking-wide text-slate-500">{item.category} / {item.severity}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">Safe runtime diagnostics will appear here after refresh.</p>
+              )}
             </div>
-          ) : (
-            <p className="text-sm text-slate-500">Safe runtime diagnostics will appear here after refresh.</p>
-          )}
+          </details>
         </CardBody>
       </Card>
 
@@ -242,186 +221,58 @@ export function RemoteReadOnlyClientPage() {
           <CardTitle>Preflight / Troubleshooting</CardTitle>
         </CardHeader>
         <CardBody>
-          {preflightQuery.isLoading ? <LoadingState label="Loading read-only LAN preflight..." /> : null}
-          {preflightQuery.isError ? <ErrorState message={(preflightQuery.error as Error).message} /> : null}
-          {preflight ? (
-            <div className="space-y-4 text-sm">
-              <dl className="grid gap-3 md:grid-cols-2">
-                <Row label="Overall readiness" value={preflight.overallReadiness} />
-                <Row label="Read-only only" value={preflight.readOnlyOnly ? "Yes" : "No"} />
-                <Row label="Preflight refresh" value={preflightQuery.isSuccess ? "Last preflight read succeeded" : preflightQuery.isError ? "Last preflight read failed" : "Not refreshed yet"} />
-              </dl>
-              <p className="text-slate-600">{preflight.message}</p>
-              {preflight.blockedReasons.length > 0 ? (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
-                  <p className="font-medium">Blocked reasons</p>
-                  <ul className="mt-2 list-disc space-y-1 pl-5">
-                    {preflight.blockedReasons.map((reason) => (
-                      <li key={reason}>{reason}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              <div>
-                <p className="mb-2 font-medium text-slate-900">Preflight checklist</p>
-                <ul className="grid gap-2 md:grid-cols-2">
-                  {preflight.checks.map((check) => (
-                    <li key={check.code} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                      <p className="font-medium text-slate-900">{check.code}</p>
-                      <p className="text-slate-600">{check.message}</p>
-                      <p className="mt-1 text-xs uppercase tracking-wide text-slate-500">{check.category} / {check.status}</p>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <p className="mb-2 font-medium text-slate-900">Safe next steps</p>
-                <ul className="list-disc space-y-1 pl-5 text-slate-700">
-                  {preflight.safeNextSteps.map((step) => (
-                    <li key={step}>{step}</li>
-                  ))}
-                </ul>
-              </div>
-              <Alert tone="warning">
-                LAN remote transport is disabled by default. No checkout, admin, mutation, discovery, or network scan controls are exposed here.
-              </Alert>
-            </div>
-          ) : (
-            <p className="text-sm text-slate-500">Read-only LAN preflight results will appear here after refresh.</p>
-          )}
-        </CardBody>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Local LAN Control (Operator-Only)</CardTitle>
-        </CardHeader>
-        <CardBody>
-          {localControlQuery.isLoading ? <LoadingState label="Checking local operator LAN control access..." /> : null}
-          {!localControlQuery.isLoading && !localControlAvailable ? (
-            <Alert tone="info">
-              Local LAN control is available only to the localhost operator on the POS host. Remote read-only clients cannot
-              enable/disable LAN, configure the bind address, or disable/revoke terminals.
-            </Alert>
-          ) : null}
-          {localControlAvailable && localControl ? (
-            <div className="space-y-4 text-sm">
-              <dl className="grid gap-3 md:grid-cols-2">
-                <Row label="Remote transport" value={localControl.remoteTransportEnabled ? "Enabled" : "Disabled (default)"} />
-                <Row label="Remote POS runtime" value={localControl.remotePosRuntimeEnabled ? "Enabled" : "Disabled (default)"} />
-                <Row label="Bind mode" value={localControl.bindMode} />
-                <Row label="Configured bind address" value={localControl.configuredBindAddress} />
-                <Row label="Terminal visibility" value={localControl.terminalVisibilityAvailable ? "Available" : "Restricted"} />
-              </dl>
-              <p className="text-slate-600">{localControl.message}</p>
-
-              <div className="space-y-2">
-                {localControl.warnings.map((warning) => (
-                  <Alert key={warning} tone="warning">
-                    {warning}
+          <details>
+            <summary className="cursor-pointer text-sm font-medium text-slate-900">Show safe troubleshooting</summary>
+            <div className="mt-4">
+              {preflightQuery.isLoading ? <LoadingState label="Loading read-only LAN preflight..." /> : null}
+              {preflightQuery.isError ? <ErrorState message={(preflightQuery.error as Error).message} /> : null}
+              {preflight ? (
+                <div className="space-y-4 text-sm">
+                  <dl className="grid gap-3 md:grid-cols-2">
+                    <Row label="Overall readiness" value={preflight.overallReadiness} />
+                    <Row label="Read-only only" value={preflight.readOnlyOnly ? "Yes" : "No"} />
+                    <Row label="Preflight refresh" value={preflightQuery.isSuccess ? "Last preflight read succeeded" : preflightQuery.isError ? "Last preflight read failed" : "Not refreshed yet"} />
+                  </dl>
+                  <p className="text-slate-600">{preflight.message}</p>
+                  {preflight.blockedReasons.length > 0 ? (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
+                      <p className="font-medium">Blocked reasons</p>
+                      <ul className="mt-2 list-disc space-y-1 pl-5">
+                        {preflight.blockedReasons.map((reason) => (
+                          <li key={reason}>{reason}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  <div>
+                    <p className="mb-2 font-medium text-slate-900">Preflight checklist</p>
+                    <ul className="grid gap-2 md:grid-cols-2">
+                      {preflight.checks.map((check) => (
+                        <li key={check.code} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <p className="font-medium text-slate-900">{check.code}</p>
+                          <p className="text-slate-600">{check.message}</p>
+                          <p className="mt-1 text-xs uppercase tracking-wide text-slate-500">{check.category} / {check.status}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div>
+                    <p className="mb-2 font-medium text-slate-900">Safe next steps</p>
+                    <ul className="list-disc space-y-1 pl-5 text-slate-700">
+                      {preflight.safeNextSteps.map((step) => (
+                        <li key={step}>{step}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <Alert tone="warning">
+                    LAN remote transport is disabled by default. No checkout, admin, mutation, discovery, or network scan controls are exposed here.
                   </Alert>
-                ))}
-              </div>
-
-              {localControlActionError ? <ErrorState message={localControlActionError} /> : null}
-
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="mb-2 font-medium text-slate-900">Remote read-only transport</p>
-                <p className="mb-3 text-slate-600">
-                  Enabling requires an explicit LAN IP address. Wildcard bind is never allowed. Remote clients always remain read-only.
-                </p>
-                <div className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
-                  <TextInput
-                    id="local-lan-control-bind-address"
-                    value={bindAddressInput}
-                    onChange={(event) => setBindAddressInput(event.target.value)}
-                    placeholder="Explicit LAN IP (e.g. 192.168.1.10)"
-                    disabled={localControlBusy}
-                  />
-                  <Button
-                    variant="secondary"
-                    disabled={localControlBusy || bindAddressInput.trim().length === 0}
-                    onClick={() => remoteTransportMutation.mutate({ enable: true, bindAddress: bindAddressInput.trim() })}
-                  >
-                    Enable on explicit IP
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    disabled={localControlBusy}
-                    onClick={() => remoteTransportMutation.mutate({ enable: false, bindAddress: null })}
-                  >
-                    Disable transport
-                  </Button>
                 </div>
-              </div>
-
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="mb-2 font-medium text-slate-900">Remote POS runtime (host-owned commands)</p>
-                <p className="mb-3 text-slate-600">
-                  This separately enables the host-owned remote POS command surface (<span className="font-mono text-xs">/api/remote-pos</span>)
-                  so LAN cashier/manager/admin operators can run host-owned checkout. It is off by default, resets on host restart, and still
-                  requires terminal identity, handshake proof, a host-issued operator session, and role permissions. Read-only bridge safety is
-                  unaffected.
-                </p>
-                <div className="flex flex-wrap gap-3">
-                  <Button
-                    variant="secondary"
-                    disabled={localControlBusy || localControl.remotePosRuntimeEnabled}
-                    onClick={() => remotePosRuntimeMutation.mutate({ enable: true })}
-                  >
-                    Enable remote POS runtime
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    disabled={localControlBusy || !localControl.remotePosRuntimeEnabled}
-                    onClick={() => remotePosRuntimeMutation.mutate({ enable: false })}
-                  >
-                    Disable remote POS runtime
-                  </Button>
-                </div>
-              </div>
-
-              <div>
-                <p className="mb-2 font-medium text-slate-900">Terminal trust management</p>
-                <p className="mb-3 text-slate-600">{localControl.terminalVisibilityMessage}</p>
-                {localControl.terminals.length > 0 ? (
-                  <ul className="space-y-2">
-                    {localControl.terminals.map((terminal) => (
-                      <li key={terminal.terminalId} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div>
-                            <p className="font-medium text-slate-900">{terminal.terminalName}</p>
-                            <p className="text-slate-600">{terminal.terminalRole} / {terminal.trustState}</p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <StatusPill tone={terminal.trusted ? "success" : "warning"}>{terminal.status}</StatusPill>
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              disabled={localControlBusy}
-                              onClick={() => disableTerminalMutation.mutate(terminal.terminalId)}
-                            >
-                              Disable
-                            </Button>
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              disabled={localControlBusy}
-                              onClick={() => revokeTerminalMutation.mutate(terminal.terminalId)}
-                            >
-                              Revoke
-                            </Button>
-                          </div>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-slate-500">No terminals are registered yet, or terminal visibility is restricted for this operator.</p>
-                )}
-              </div>
+              ) : (
+                <p className="text-sm text-slate-500">Read-only LAN preflight results will appear here after refresh.</p>
+              )}
             </div>
-          ) : null}
+          </details>
         </CardBody>
       </Card>
 

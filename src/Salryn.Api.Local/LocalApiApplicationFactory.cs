@@ -75,6 +75,7 @@ public static class LocalApiApplicationFactory
         builder.Services.AddSingleton(lanRemoteTransportServices);
         builder.Services.AddSingleton(remotePosRuntimeGate);
         builder.Services.AddSingleton(remotePosServices);
+        builder.Services.AddSingleton(new LocalApiHostControlUrls(options.Url));
         builder.Services.AddSingleton(sessionStore);
         builder.Services.AddSingleton(sessionService);
         builder.Services.AddSingleton(dashboardSummaryService);
@@ -121,6 +122,11 @@ public static class LocalApiApplicationFactory
             LocalApiSessionService sessions,
             CancellationToken cancellationToken) =>
         {
+            if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult localOnly)
+            {
+                return localOnly;
+            }
+
             Result<LocalApiSession> loginResult = await sessions.LoginAsync(
                 new LoginRequest(request.Username, request.Password),
                 cancellationToken).ConfigureAwait(false);
@@ -142,6 +148,11 @@ public static class LocalApiApplicationFactory
             HttpContext httpContext,
             LocalApiSessionService sessions) =>
         {
+            if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult localOnly)
+            {
+                return localOnly;
+            }
+
             string? sessionId = httpContext.Request.Cookies[LocalApiSessionService.SessionCookieName];
             sessions.Logout(sessionId);
             httpContext.Response.Cookies.Delete(LocalApiSessionService.SessionCookieName);
@@ -152,6 +163,11 @@ public static class LocalApiApplicationFactory
             HttpContext httpContext,
             LocalApiSessionService sessions) =>
         {
+            if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult localOnly)
+            {
+                return localOnly;
+            }
+
             string? sessionId = httpContext.Request.Cookies[LocalApiSessionService.SessionCookieName];
             return Results.Ok(sessions.GetSession(sessionId));
         });

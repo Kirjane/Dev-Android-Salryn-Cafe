@@ -27,6 +27,7 @@ import type {
   RemotePosPairingStatus,
   RemotePosSession,
 } from "../types/remotePosClient";
+import { currentBrowserOrigin, isRemoteClientBrowserLocation } from "../utils/lanEntry";
 
 // LAN-M16-QA-B: stateful hook for the field-safe Remote POS pairing/login flow.
 // Pairing approves the device first; login approves the person second.
@@ -59,8 +60,9 @@ export type RemotePosBusyAction =
   | "checkout";
 
 export function useRemotePosClient() {
-  const [hostBaseUrl, setHostBaseUrl] = useState("");
-  const [hostAddressConfirmed, setHostAddressConfirmed] = useState(false);
+  const startsFromRemoteEntry = isRemoteClientBrowserLocation();
+  const [hostBaseUrl, setHostBaseUrl] = useState(startsFromRemoteEntry ? currentBrowserOrigin() : "");
+  const [hostAddressConfirmed, setHostAddressConfirmed] = useState(startsFromRemoteEntry);
   const [pairingRequest, setPairingRequest] = useState<RemotePosJoinResponse | null>(null);
   const [pairingStatus, setPairingStatus] = useState<RemotePosPairingStatus | null>(null);
   const [pairingActivation, setPairingActivation] = useState<RemotePosPairingActivation | null>(null);

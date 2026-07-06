@@ -1,6 +1,7 @@
 using Salryn.Api.Local.Composition;
 using Salryn.Api.Local.RemotePos;
 using Salryn.Composition.Local;
+using Salryn.Core.Host;
 
 // LAN-M16 remote-pos-operator-session smoke: proves the host-issued operator session trust chain
 // fails CLOSED. Terminal identity + handshake are required, the remote POS runtime must be
@@ -18,51 +19,92 @@ internal static class RemotePosOperatorSessionSmokeChecks
             projectRoot, out SalrynLocalComposition _, out RemotePosRuntimeGate runtimeGate);
 
         RemotePosOperatorSessionService sessions = services.SessionService;
+        LanRemoteTransportConfig originalConfig = RemotePosSmokeSupport.RequireSuccess(
+            services.LanServices.Config.GetCurrentAsync().GetAwaiter().GetResult(),
+            "RemotePos.ReadLanTransportConfig");
 
-        RemotePosTrustContext trust = new(Guid.NewGuid(), Guid.NewGuid(), "192.168.1.55");
+        try
+        {
+            if (originalConfig.RemoteTransportEnabled)
+            {
+                RemotePosSmokeSupport.RequireSuccess(
+                    services.LanServices.Config.DisableAsync(Guid.Empty).GetAwaiter().GetResult(),
+                    "RemotePos.DisableLanTransportForOperatorSessionSmoke");
+            }
 
-        // 1. Runtime gate disabled by default -> trust fails closed as RemotePosDisabled.
-        RemotePosSmokeSupport.Require(!runtimeGate.IsEnabled, "Remote POS runtime gate must be disabled by default.");
+            RemotePosTrustContext trust = new(Guid.NewGuid(), Guid.NewGuid(), "192.168.1.55");
 
-        RemotePosTrustResult defaultTrust = sessions.ValidateTrustAsync(trust).GetAwaiter().GetResult();
-        RemotePosSmokeSupport.Require(!defaultTrust.Ok, "Default trust must be rejected.");
-        RemotePosSmokeSupport.Require(defaultTrust.State == RemotePosSessionState.RemotePosDisabled,
-            "Default trust rejection must be RemotePosDisabled.");
+            // 1. Runtime gate disabled by default -> trust fails closed as RemotePosDisabled.
+            RemotePosSmokeSupport.Require(!runtimeGate.IsEnabled, "Remote POS runtime gate must be disabled by default.");
 
-        // 2. Login is blocked before authentication when the runtime is disabled (no credential probing).
-        RemotePosLoginOutcome disabledLogin = sessions
-            .LoginAsync(trust, new RemotePosLoginRequest("whoever", "whatever"))
-            .GetAwaiter()
-            .GetResult();
-        RemotePosSmokeSupport.Require(!disabledLogin.Ok, "Login must fail when runtime disabled.");
-        RemotePosSmokeSupport.Require(disabledLogin.State == RemotePosSessionState.RemotePosDisabled,
-            "Login rejection must be RemotePosDisabled before authentication.");
-        RemotePosSmokeSupport.Require(disabledLogin.Session is null && disabledLogin.Token is null,
-            "No session/token may be issued when runtime disabled.");
+            RemotePosTrustResult defaultTrust = sessions.ValidateTrustAsync(trust).GetAwaiter().GetResult();
+            RemotePosSmokeSupport.Require(!defaultTrust.Ok, "Default trust must be rejected.");
+            RemotePosSmokeSupport.Require(defaultTrust.State == RemotePosSessionState.RemotePosDisabled,
+                "Default trust rejection must be RemotePosDisabled.");
 
-        // 3. Missing terminal/handshake -> TrustRejected even if runtime were enabled.
-        runtimeGate.Enable(Guid.NewGuid());
-        RemotePosTrustResult missingTerminal = sessions
-            .ValidateTrustAsync(new RemotePosTrustContext(Guid.Empty, Guid.Empty, "192.168.1.55"))
-            .GetAwaiter()
-            .GetResult();
-        RemotePosSmokeSupport.Require(!missingTerminal.Ok, "Missing terminal/handshake must be rejected.");
-        RemotePosSmokeSupport.Require(missingTerminal.State == RemotePosSessionState.TrustRejected,
-            "Missing terminal/handshake rejection must be TrustRejected.");
+            // 2. Login is blocked before authentication when the runtime is disabled (no credential probing).
+            RemotePosLoginOutcome disabledLogin = sessions
+                .LoginAsync(trust, new RemotePosLoginRequest("whoever", "whatever"))
+                .GetAwaiter()
+                .GetResult();
+            RemotePosSmokeSupport.Require(!disabledLogin.Ok, "Login must fail when runtime disabled.");
+            RemotePosSmokeSupport.Require(disabledLogin.State == RemotePosSessionState.RemotePosDisabled,
+                "Login rejection must be RemotePosDisabled before authentication.");
+            RemotePosSmokeSupport.Require(disabledLogin.Session is null && disabledLogin.Token is null,
+                "No session/token may be issued when runtime disabled.");
 
-        // 4. Runtime enabled but explicit LAN transport still disabled by default -> RemotePosDisabled.
-        RemotePosTrustResult transportDisabled = sessions.ValidateTrustAsync(trust).GetAwaiter().GetResult();
-        RemotePosSmokeSupport.Require(!transportDisabled.Ok, "Trust must fail while LAN transport disabled.");
-        RemotePosSmokeSupport.Require(transportDisabled.State == RemotePosSessionState.RemotePosDisabled,
-            "Runtime-on but transport-off must still report RemotePosDisabled.");
+            // 3. Missing terminal/handshake -> TrustRejected even if runtime were enabled.
+            runtimeGate.Enable(Guid.NewGuid());
+            RemotePosTrustResult missingTerminal = sessions
+                .ValidateTrustAsync(new RemotePosTrustContext(Guid.Empty, Guid.Empty, "192.168.1.55"))
+                .GetAwaiter()
+                .GetResult();
+            RemotePosSmokeSupport.Require(!missingTerminal.Ok, "Missing terminal/handshake must be rejected.");
+            RemotePosSmokeSupport.Require(missingTerminal.State == RemotePosSessionState.TrustRejected,
+                "Missing terminal/handshake rejection must be TrustRejected.");
 
-        // 5. A malformed/empty session token can never validate.
-        RemotePosSessionValidation malformed = sessions.ValidateAsync(trust, null).GetAwaiter().GetResult();
-        RemotePosSmokeSupport.Require(!malformed.Ok, "Null session token must never validate.");
+            // 4. Runtime enabled but explicit LAN transport still disabled by default -> RemotePosDisabled.
+            RemotePosTrustResult transportDisabled = sessions.ValidateTrustAsync(trust).GetAwaiter().GetResult();
+            RemotePosSmokeSupport.Require(!transportDisabled.Ok, "Trust must fail while LAN transport disabled.");
+            RemotePosSmokeSupport.Require(transportDisabled.State == RemotePosSessionState.RemotePosDisabled,
+                "Runtime-on but transport-off must still report RemotePosDisabled.");
 
-        runtimeGate.Disable();
+            // 5. A malformed/empty session token can never validate.
+            RemotePosSessionValidation malformed = sessions.ValidateAsync(trust, null).GetAwaiter().GetResult();
+            RemotePosSmokeSupport.Require(!malformed.Ok, "Null session token must never validate.");
+
+            runtimeGate.Disable();
+        }
+        finally
+        {
+            if (originalConfig.RemoteTransportEnabled)
+            {
+                RestoreConfig(services, originalConfig);
+            }
+        }
 
         Console.WriteLine("LAN-M16 remote POS operator session smoke checks succeeded.");
         Console.WriteLine();
+    }
+
+    private static void RestoreConfig(
+        RemotePosApiServices services,
+        LanRemoteTransportConfig config)
+    {
+        RemotePosSmokeSupport.RequireSuccess(
+            services.LanServices.Config.SaveAsync(new LanRemoteTransportConfigUpdateRequest(
+                    config.RemoteTransportEnabled,
+                    config.BindMode,
+                    config.BindAddress,
+                    config.Port,
+                    config.RequirePairedTerminal,
+                    config.RequireActiveTerminal,
+                    config.RejectUnknownTerminals,
+                    config.AllowOfficialCommandsRemotely,
+                    config.AllowAdminCommandsRemotely,
+                    config.UpdatedByUserId))
+                .GetAwaiter()
+                .GetResult(),
+            "RemotePos.RestoreLanTransportConfig");
     }
 }

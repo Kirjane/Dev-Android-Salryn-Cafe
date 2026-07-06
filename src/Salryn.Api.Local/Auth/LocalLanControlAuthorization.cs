@@ -1,6 +1,3 @@
-using System.Net;
-using Salryn.Api.Local.Bridge;
-
 namespace Salryn.Api.Local.Auth;
 
 /// <summary>
@@ -39,15 +36,7 @@ public static class LocalLanControlAuthorization
 
     public static bool IsLoopbackOperatorRequest(HttpContext httpContext)
     {
-        IPAddress? remoteIp = httpContext.Connection.RemoteIpAddress;
-        bool isLoopback = remoteIp is null || IPAddress.IsLoopback(remoteIp);
-
-        bool carriesRemoteBridgeHeaders =
-            httpContext.Request.Headers.ContainsKey(RemoteReadOnlyBridgeHeaders.TerminalId)
-            || httpContext.Request.Headers.ContainsKey(RemoteReadOnlyBridgeHeaders.HandshakeSessionId)
-            || httpContext.Request.Headers.ContainsKey(RemoteReadOnlyBridgeHeaders.RemoteOrigin);
-
-        return isLoopback && !carriesRemoteBridgeHeaders;
+        return LocalApiLocalAccessGuard.IsLoopbackOperatorRequest(httpContext);
     }
 
     public static LocalApiSession? GetLocalOperatorSession(

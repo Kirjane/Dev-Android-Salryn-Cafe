@@ -88,17 +88,19 @@ public static class LanM15CLocalControlChecks
         string webRoot = Path.Combine(projectRoot, "src", "Salryn.App.Web", "src");
 
         string authorization = ReadRequiredFile(apiRoot, "Auth", "LocalLanControlAuthorization.cs");
+        string localAccessGuard = ReadRequiredFile(apiRoot, "Auth", "LocalApiLocalAccessGuard.cs");
         string service = ReadRequiredFile(apiRoot, "Services", "LocalLanControlService.cs");
         string endpoints = ReadRequiredFile(apiRoot, "LocalLanControlEndpoints.cs");
         string remoteReadOnlyEndpoints = ReadRequiredFile(apiRoot, "RemoteReadOnlyApiEndpoints.cs");
         string factory = ReadRequiredFile(apiRoot, "LocalApiApplicationFactory.cs");
         string page = ReadRequiredFile(webRoot, "pages", "RemoteReadOnlyClientPage.tsx");
+        string hostPage = ReadRequiredFile(webRoot, "pages", "HostLanControlPage.tsx");
         string api = ReadRequiredFile(webRoot, "api", "remoteReadOnlyClient.ts");
         string smoke = ReadRequiredFile(projectRoot, "tools", "Salryn.Tools.InfrastructureSmoke", "LanM15RemoteReadOnlyLanLocalControlSmokeChecks.cs");
 
         AssertContains(authorization, "IsLoopbackOperatorRequest", "Local control authorization must classify loopback operator requests.");
         AssertContains(authorization, "LocalLanControl.LocalOperatorRequired", "Local control authorization must reject non-local callers with a safe code.");
-        AssertContains(authorization, "RemoteReadOnlyBridgeHeaders.TerminalId", "Local control authorization must reject requests carrying remote bridge headers.");
+        AssertContains(localAccessGuard, "RemoteReadOnlyBridgeHeaders.TerminalId", "Local access guard must reject requests carrying remote bridge headers.");
 
         AssertContains(service, "SetRemoteTransportAsync", "Local control service must support enable/disable transport.");
         AssertContains(service, "DisableTerminalAsync", "Local control service must support disable terminal.");
@@ -118,7 +120,9 @@ public static class LanM15CLocalControlChecks
 
         AssertNotContains(remoteReadOnlyEndpoints, ".MapPost(", "Remote-readonly endpoints must remain GET-only; local control lives in a separate module.");
 
-        AssertContains(page, "Local LAN Control (Operator-Only)", "Remote read-only page must expose the operator-only local control card.");
+        AssertContains(hostPage, "Host LAN Control", "Dedicated host LAN control page must exist.");
+        AssertContains(hostPage, "Host control is local-only", "Host LAN control page must show local-only safety.");
+        AssertNotContains(page, "Local LAN Control (Operator-Only)", "Remote read-only page must not expose host LAN controls.");
         AssertContains(page, "No catalog mutation controls are present", "Remote read-only page must keep catalog mutation controls absent.");
         AssertContains(api, "/api/lan-control/status", "Web API client must call the local control status endpoint.");
 

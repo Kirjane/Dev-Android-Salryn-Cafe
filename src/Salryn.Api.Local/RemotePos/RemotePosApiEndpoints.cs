@@ -364,6 +364,7 @@ public static class RemotePosApiEndpoints
         RemotePosSessionState.RemotePosDisabled => StatusCodes.Status403Forbidden,
         RemotePosSessionState.TrustRejected => StatusCodes.Status403Forbidden,
         RemotePosSessionState.RoleNotAllowed => StatusCodes.Status403Forbidden,
+        RemotePosSessionState.CapacityExceeded => StatusCodes.Status429TooManyRequests,
         _ => StatusCodes.Status403Forbidden,
     };
 

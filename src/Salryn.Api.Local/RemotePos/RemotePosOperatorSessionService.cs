@@ -26,6 +26,7 @@ public static class RemotePosSessionState
     public const string UserInactive = "UserInactive";
     public const string IdentityMismatch = "IdentityMismatch";
     public const string OriginMismatch = "OriginMismatch";
+    public const string CapacityExceeded = "CapacityExceeded";
 }
 
 /// <summary>
@@ -107,17 +108,20 @@ public sealed class RemotePosOperatorSessionService
     private readonly RemotePosRuntimeGate _runtimeGate;
     private readonly IAuthenticationService _authentication;
     private readonly IUserReadRepository _userReadRepository;
+    private readonly RemotePosCapacityPolicy _capacityPolicy;
 
     public RemotePosOperatorSessionService(
         LanRemoteTransportApiServices lanServices,
         RemotePosRuntimeGate runtimeGate,
         IAuthenticationService authentication,
-        IUserReadRepository userReadRepository)
+        IUserReadRepository userReadRepository,
+        RemotePosCapacityPolicy capacityPolicy)
     {
         _lanServices = lanServices ?? throw new ArgumentNullException(nameof(lanServices));
         _runtimeGate = runtimeGate ?? throw new ArgumentNullException(nameof(runtimeGate));
         _authentication = authentication ?? throw new ArgumentNullException(nameof(authentication));
         _userReadRepository = userReadRepository ?? throw new ArgumentNullException(nameof(userReadRepository));
+        _capacityPolicy = capacityPolicy ?? throw new ArgumentNullException(nameof(capacityPolicy));
     }
 
     public bool RemotePosRuntimeEnabled => _runtimeGate.IsEnabled;
@@ -227,6 +231,16 @@ public sealed class RemotePosOperatorSessionService
                 null);
         }
 
+        int activeSessions = GetActiveSessionCount();
+        if (activeSessions >= _capacityPolicy.MaxActiveSessions)
+        {
+            return new RemotePosLoginOutcome(false, RemotePosSessionState.CapacityExceeded,
+                "RemotePos.ActiveSessionLimitReached",
+                $"Remote POS active session capacity is full ({activeSessions}/{_capacityPolicy.MaxActiveSessions}). Sign out another remote POS session or raise the host policy within the hard cap.",
+                null,
+                null);
+        }
+
         (RemotePosOperatorSession session, string token) = IssueSession(trust, trustResult, user);
 
         _sessions[session.SessionId] = session;
@@ -332,6 +346,14 @@ public sealed class RemotePosOperatorSessionService
         {
             session.RevokedAtUtc ??= DateTimeOffset.UtcNow;
         }
+    }
+
+    public int GetActiveSessionCount()
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        return _sessions.Values.Count(session =>
+            session.RevokedAtUtc is null
+            && session.ExpiresAtUtc > now);
     }
 
     public static bool IsRemotePosLoginRoleAllowed(string? roleName) =>
