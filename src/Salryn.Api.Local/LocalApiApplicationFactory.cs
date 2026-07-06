@@ -80,6 +80,7 @@ public static class LocalApiApplicationFactory
         builder.Services.AddSingleton(sessionService);
         builder.Services.AddSingleton(dashboardSummaryService);
         builder.Services.AddSingleton<OperatorReadService>();
+        builder.Services.AddSingleton<UserAdminApiService>();
         builder.Services.AddSingleton<RemoteReadOnlyApiService>();
         builder.Services.AddSingleton<LocalLanControlService>();
 
@@ -188,6 +189,7 @@ public static class LocalApiApplicationFactory
         });
 
         app.MapReadOnlyOperatorEndpoints();
+        app.MapLocalUserAdminEndpoints();
         app.MapRemoteReadOnlyEndpoints();
         app.MapLocalLanControlEndpoints();
         app.MapRemotePosEndpoints();

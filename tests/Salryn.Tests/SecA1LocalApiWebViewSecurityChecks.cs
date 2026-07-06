@@ -35,7 +35,7 @@ public static class SecA1LocalApiWebViewSecurityChecks
         string salesApi = ReadRequiredFile(webSrc, "api", "sales.ts");
         string usersApi = ReadRequiredFile(webSrc, "api", "users.ts");
         string auditApi = ReadRequiredFile(webSrc, "api", "audit.ts");
-        string combinedModuleApi = string.Join("\n", productsApi, inventoryApi, salesApi, usersApi, auditApi);
+        string readOnlyModuleApi = string.Join("\n", productsApi, inventoryApi, salesApi, auditApi);
 
         string gitignore = ReadRequiredFile(repoRoot.FullName, ".gitignore");
 
@@ -77,11 +77,16 @@ public static class SecA1LocalApiWebViewSecurityChecks
         // Session client must send cookies.
         RequireContains(sessionApi, "credentials: \"include\"", "Web session client must send cookies.");
 
-        // Read-only module clients remain GET-only.
-        RequireNotContains(combinedModuleApi, "method: \"POST\"", "Module clients must not POST.");
-        RequireNotContains(combinedModuleApi, "method: \"PUT\"", "Module clients must not PUT.");
-        RequireNotContains(combinedModuleApi, "method: \"PATCH\"", "Module clients must not PATCH.");
-        RequireNotContains(combinedModuleApi, "method: \"DELETE\"", "Module clients must not DELETE.");
+        // Read-only module clients remain GET-only. Users may POST only for USER-M1 host-local creation.
+        RequireNotContains(readOnlyModuleApi, "method: \"POST\"", "Read-only module clients must not POST.");
+        RequireNotContains(readOnlyModuleApi, "method: \"PUT\"", "Read-only module clients must not PUT.");
+        RequireNotContains(readOnlyModuleApi, "method: \"PATCH\"", "Read-only module clients must not PATCH.");
+        RequireNotContains(readOnlyModuleApi, "method: \"DELETE\"", "Read-only module clients must not DELETE.");
+        RequireContains(usersApi, "method: \"POST\"", "Users client may POST only for USER-M1 host-local user creation.");
+        RequireContains(usersApi, "/api/users", "USER-M1 user creation must stay under /api/users.");
+        RequireNotContains(usersApi, "method: \"PUT\"", "USER-M1 must not add broad users PUT.");
+        RequireNotContains(usersApi, "method: \"PATCH\"", "USER-M1 must not add broad users PATCH.");
+        RequireNotContains(usersApi, "method: \"DELETE\"", "USER-M1 must not add broad users DELETE.");
 
         // No hardcoded diagnostic passwords in app source.
         foreach (string appRoot in new[]

@@ -54,7 +54,8 @@ public sealed record UserAdminCreateRequest(
     string DisplayName,
     Guid RoleId,
     string PasswordHash,
-    Guid CreatedByUserId);
+    Guid CreatedByUserId,
+    UserStatus Status = UserStatus.Active);
 
 public sealed record UserAdminUpdateRequest(
     Guid UserId,

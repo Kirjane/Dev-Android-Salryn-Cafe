@@ -76,24 +76,30 @@ public static class WebB0ReadOnlyOperatorSurfacesChecks
         RequireContains(navigation, "Audit", "Navigation must enable Audit.");
         RequireContains(appShell, "onNavigate", "AppShell must support page navigation.");
 
-        string combinedModuleSource = string.Join(
+        string usersPage = ReadRequiredFile(webSrc, "pages", "UsersPage.tsx");
+        string readOnlyModuleSource = string.Join(
             "\n",
             productsApi,
             inventoryApi,
             salesApi,
-            usersApi,
             auditApi,
             ReadRequiredFile(webSrc, "pages", "ProductsPage.tsx"),
             ReadRequiredFile(webSrc, "pages", "InventoryPage.tsx"),
             ReadRequiredFile(webSrc, "pages", "SalesHistoryPage.tsx"),
-            ReadRequiredFile(webSrc, "pages", "UsersPage.tsx"),
             ReadRequiredFile(webSrc, "pages", "AuditPage.tsx"));
+        string usersModuleSource = usersApi + "\n" + usersPage;
 
-        RequireNotContains(combinedModuleSource, "method: \"POST\"", "Module clients must not POST.");
-        RequireNotContains(combinedModuleSource, "method: 'POST'", "Module clients must not POST.");
-        RequireNotContains(combinedModuleSource, "method: \"PUT\"", "Module clients must not PUT.");
-        RequireNotContains(combinedModuleSource, "method: \"PATCH\"", "Module clients must not PATCH.");
-        RequireNotContains(combinedModuleSource, "method: \"DELETE\"", "Module clients must not DELETE.");
+        RequireNotContains(readOnlyModuleSource, "method: \"POST\"", "Read-only module clients must not POST.");
+        RequireNotContains(readOnlyModuleSource, "method: 'POST'", "Read-only module clients must not POST.");
+        RequireNotContains(readOnlyModuleSource, "method: \"PUT\"", "Read-only module clients must not PUT.");
+        RequireNotContains(readOnlyModuleSource, "method: \"PATCH\"", "Read-only module clients must not PATCH.");
+        RequireNotContains(readOnlyModuleSource, "method: \"DELETE\"", "Read-only module clients must not DELETE.");
+        RequireContains(usersApi, "method: \"POST\"", "Users client may POST only for USER-M1 host-local user creation.");
+        RequireContains(usersApi, "/api/users", "Users create client must stay under /api/users.");
+        RequireContains(usersPage, "Create user", "USER-M1 Users page must expose the host-local create form.");
+        RequireNotContains(usersModuleSource, "method: \"PUT\"", "USER-M1 must not add broad users PUT.");
+        RequireNotContains(usersModuleSource, "method: \"PATCH\"", "USER-M1 must not add broad users PATCH.");
+        RequireNotContains(usersModuleSource, "method: \"DELETE\"", "USER-M1 must not add broad users DELETE.");
 
         string[] forbiddenMutations =
         {
@@ -102,7 +108,6 @@ public static class WebB0ReadOnlyOperatorSurfacesChecks
             "Adjust Stock",
             "Add Product",
             "Deactivate Product",
-            "Create User",
             "Reset Password",
             "checkout",
             "handoff",
@@ -117,7 +122,7 @@ public static class WebB0ReadOnlyOperatorSurfacesChecks
 
         foreach (string token in forbiddenMutations)
         {
-            RequireNoForbiddenToken(combinedModuleSource, token, $"WEB-B0 must not add forbidden mutation: {token}");
+            RequireNoForbiddenToken(readOnlyModuleSource, token, $"WEB-B0 must not add forbidden mutation: {token}");
         }
 
         // No forbidden module pages beyond read-only set.

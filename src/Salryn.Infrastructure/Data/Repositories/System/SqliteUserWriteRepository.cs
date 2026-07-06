@@ -66,7 +66,7 @@ public sealed class SqliteUserWriteRepository :
                 command.Parameters.AddWithValue("$displayName", request.DisplayName.Trim());
                 command.Parameters.AddWithValue("$passwordHash", request.PasswordHash);
                 command.Parameters.AddWithValue("$roleId", request.RoleId.ToString("D"));
-                command.Parameters.AddWithValue("$status", (int)UserStatus.Active);
+                command.Parameters.AddWithValue("$status", (int)request.Status);
                 command.Parameters.AddWithValue("$createdAt", now);
 
                 command.ExecuteNonQuery();
