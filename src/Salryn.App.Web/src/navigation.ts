@@ -21,8 +21,6 @@ export const navItems: NavItemConfig[] = [
   { id: "dashboard", label: "Dashboard", enabled: true },
   { id: "host-lan-control", label: "Host LAN Control", enabled: true },
   { id: "disabled", label: "POS Checkout", enabled: false },
-  { id: "remote-readonly", label: "Remote Read-Only Client", enabled: true },
-  { id: "remote-pos", label: "Remote POS Client", enabled: true },
   { id: "products", label: "Products", enabled: true },
   { id: "inventory", label: "Inventory", enabled: true },
   { id: "sales", label: "Sales History", enabled: true },

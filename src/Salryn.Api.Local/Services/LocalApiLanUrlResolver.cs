@@ -11,6 +11,11 @@ public static class LocalApiLanUrlResolver
 
         List<string> urls = [defaultUrl];
 
+        if (UsesEphemeralPort(defaultUrl))
+        {
+            return urls;
+        }
+
         if (!config.RemoteTransportEnabled
             || config.BindMode != LanRemoteTransportBindMode.ExplicitLanAddress)
         {
@@ -38,5 +43,12 @@ public static class LocalApiLanUrlResolver
         }
 
         return uri.Port > 0 ? uri.Port : null;
+    }
+
+    private static bool UsesEphemeralPort(string url)
+    {
+        return Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)
+            && uri.IsDefaultPort is false
+            && uri.Port == 0;
     }
 }

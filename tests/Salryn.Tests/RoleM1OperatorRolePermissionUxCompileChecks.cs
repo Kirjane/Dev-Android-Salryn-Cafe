@@ -40,8 +40,6 @@ public static class RoleM1OperatorRolePermissionUxCompileChecks
     {
         "dashboard",
         "host-lan-control",
-        "remote-readonly",
-        "remote-pos",
         "products",
         "inventory",
         "sales",
@@ -77,10 +75,18 @@ public static class RoleM1OperatorRolePermissionUxCompileChecks
         AssertNotContains(permissionsFile, "roleName", "Permission helpers must not authorize by role name.");
         AssertContains(navigationFile, "canAccessPage(session, item.id)", "Navigation must filter enabled pages through canAccessPage.");
         AssertNotContains(navigationFile, "roleName", "Navigation must not branch by role name.");
+        AssertNotContains(navigationFile, "Remote POS Client", "Host navigation must not expose the Remote POS Client page.");
+        AssertNotContains(navigationFile, "Remote Read-Only Client", "Host navigation must not expose the Remote Read-Only Client page.");
+        AssertNotContains(navigationFile, "remote-pos", "Host navigation must not route to remote-pos.");
+        AssertNotContains(navigationFile, "remote-readonly", "Host navigation must not route to remote-readonly.");
         AssertContains(appShellFile, "getNavItems(session)", "AppShell must render permission-aware navigation.");
         AssertContains(appFile, "canAccessPage(session, currentPage)", "App.tsx must centrally guard the current page.");
         AssertContains(appFile, "AccessDenied", "App.tsx must expose an access denied state.");
         AssertNotContains(appFile, "roleName ===", "App.tsx must not authorize by role-name comparison.");
+        AssertNotContains(permissionsFile, "\"remote-pos\"", "Remote POS Client must not be a host AppPage.");
+        AssertNotContains(permissionsFile, "\"remote-readonly\"", "Remote Read-Only Client must not be a host AppPage.");
+        AssertContains(permissionsFile, "\"host-lan-control\": [", "Host LAN Control must be permission-gated.");
+        AssertContains(permissionsFile, "const authenticatedOnlyPages = new Set<AppPage>([\"dashboard\"])", "Only Dashboard may remain authenticated-only in the host shell.");
 
         foreach (string permissionName in SeedPermissionNames)
         {

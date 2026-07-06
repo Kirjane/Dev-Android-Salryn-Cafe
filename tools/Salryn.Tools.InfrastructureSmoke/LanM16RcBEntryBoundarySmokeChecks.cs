@@ -18,6 +18,7 @@ internal static class LanM16RcBEntryBoundarySmokeChecks
         string remotePosHook = Read(webRoot, "hooks", "useRemotePosClient.ts");
         string appShell = Read(webRoot, "components", "AppShell.tsx");
         string navigation = Read(webRoot, "navigation.ts");
+        string permissions = Read(webRoot, "security", "permissions.ts");
         string localAccessGuard = Read(apiRoot, "Auth", "LocalApiLocalAccessGuard.cs");
         string permissionGuards = Read(apiRoot, "Auth", "LocalApiPermissionGuards.cs");
         string appFactory = Read(apiRoot, "LocalApiApplicationFactory.cs");
@@ -30,6 +31,16 @@ internal static class LanM16RcBEntryBoundarySmokeChecks
         Require(app.Contains("isRemoteClientBrowserLocation()", StringComparison.Ordinal), "App must classify LAN/non-loopback browser entry.");
         Require(app.Contains("return <RemoteClientApp />;", StringComparison.Ordinal), "LAN/non-loopback root must render remote-client entry first.");
         Require(app.Contains("return <ConsoleApp />;", StringComparison.Ordinal), "Loopback root must keep local console path.");
+        Require(app.Contains("type RemoteClientMode = \"landing\" | \"remote-pos\" | \"remote-readonly\"", StringComparison.Ordinal), "Remote client modes must stay separate from host pages.");
+        Require(app.Contains("mode === \"remote-pos\" ? <RemotePosClientPage /> : <RemoteReadOnlyClientPage />", StringComparison.Ordinal), "RemoteClientApp must render remote POS and read-only pages.");
+        string consoleApp = ExtractBlock(app, "function ConsoleApp()", "export default function App()");
+        string remoteClientApp = ExtractBlock(app, "function RemoteClientApp()", "function ConsoleApp()");
+        Require(!consoleApp.Contains("RemotePosClientPage", StringComparison.Ordinal), "ConsoleApp must not render Remote POS Client.");
+        Require(!consoleApp.Contains("RemoteReadOnlyClientPage", StringComparison.Ordinal), "ConsoleApp must not render Remote Read-Only Client.");
+        Require(!app.Contains("case \"remote-pos\"", StringComparison.Ordinal), "Host page switch must not contain Remote POS Client route.");
+        Require(!app.Contains("case \"remote-readonly\"", StringComparison.Ordinal), "Host page switch must not contain Remote Read-Only Client route.");
+        Require(remoteClientApp.Contains("RemotePosClientPage", StringComparison.Ordinal), "Remote POS Client must remain inside RemoteClientApp.");
+        Require(remoteClientApp.Contains("RemoteReadOnlyClientPage", StringComparison.Ordinal), "Remote Read-Only Client must remain inside RemoteClientApp.");
         Require(app.Contains("useState<AppPage>(\"host-lan-control\")", StringComparison.Ordinal), "Host authenticated default must be Host LAN Control.");
         Require(!app.Contains("useState<AppPage>(\"remote-readonly\")", StringComparison.Ordinal), "Host authenticated default must not be Remote Read-Only Client.");
         Require(login.Contains("Sign in to Salryn Ledger Console", StringComparison.Ordinal), "Loopback login must remain available.");
@@ -56,6 +67,17 @@ internal static class LanM16RcBEntryBoundarySmokeChecks
 
         Require(navigation.Contains("{ id: \"host-lan-control\", label: \"Host LAN Control\", enabled: true }", StringComparison.Ordinal), "Host LAN Control must be an enabled sidebar item.");
         Require(!navigation.Contains("label: \"Host LAN Control\", enabled: false", StringComparison.Ordinal), "Host LAN Control must not be marked Later.");
+        Require(!navigation.Contains("Remote POS Client", StringComparison.Ordinal), "Host navigation must not show Remote POS Client.");
+        Require(!navigation.Contains("Remote Read-Only Client", StringComparison.Ordinal), "Host navigation must not show Remote Read-Only Client.");
+        Require(!navigation.Contains("remote-pos", StringComparison.Ordinal), "Host navigation must not route to Remote POS Client.");
+        Require(!navigation.Contains("remote-readonly", StringComparison.Ordinal), "Host navigation must not route to Remote Read-Only Client.");
+        Require(permissions.Contains("\"host-lan-control\": [", StringComparison.Ordinal), "Host LAN Control must have a page permission rule.");
+        Require(permissions.Contains("Permissions.StoreTerminalView", StringComparison.Ordinal), "Host LAN Control must allow terminal view permission.");
+        Require(permissions.Contains("Permissions.StoreTerminalManage", StringComparison.Ordinal), "Host LAN Control must allow terminal manage permission.");
+        Require(permissions.Contains("Permissions.StoreDeploymentManage", StringComparison.Ordinal), "Host LAN Control must allow deployment permission.");
+        Require(permissions.Contains("const authenticatedOnlyPages = new Set<AppPage>([\"dashboard\"])", StringComparison.Ordinal), "Host LAN Control must not be authenticated-only.");
+        Require(!permissions.Contains("\"remote-pos\"", StringComparison.Ordinal), "Remote POS Client must not be a host AppPage.");
+        Require(!permissions.Contains("\"remote-readonly\"", StringComparison.Ordinal), "Remote Read-Only Client must not be a host AppPage.");
         Require(appShell.Contains("Device wants to join", StringComparison.Ordinal), "Host shell must show pending join notification.");
         Require(appShell.Contains("onNavigate(\"host-lan-control\")", StringComparison.Ordinal), "Pending join notification must open Host LAN Control.");
         Require(appShell.Contains("Permissions.StoreTerminalView", StringComparison.Ordinal), "Pending join polling must be permission-gated.");
@@ -128,5 +150,16 @@ internal static class LanM16RcBEntryBoundarySmokeChecks
         {
             throw new InvalidOperationException(message);
         }
+    }
+
+    private static string ExtractBlock(string source, string startMarker, string endMarker)
+    {
+        int start = source.IndexOf(startMarker, StringComparison.Ordinal);
+        Require(start >= 0, "Expected block start missing: " + startMarker);
+
+        int end = source.IndexOf(endMarker, start + startMarker.Length, StringComparison.Ordinal);
+        Require(end >= 0, "Expected block end missing: " + endMarker);
+
+        return source[start..end];
     }
 }

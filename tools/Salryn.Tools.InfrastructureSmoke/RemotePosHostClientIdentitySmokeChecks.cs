@@ -44,10 +44,15 @@ internal static class RemotePosHostClientIdentitySmokeChecks
         RequireNotContains(remotePosClient, "/api/lan-control", "Remote POS client must never call /api/lan-control.");
         RequireNotContains(remotePosPage, "/api/lan-control", "Remote POS page must never call /api/lan-control.");
 
-        // Registration wiring.
-        RequireContains(navigation, "remote-pos", "Navigation must register the remote POS client page.");
-        RequireContains(permissions, "remote-pos", "Permissions must register the remote POS page.");
-        RequireContains(app, "RemotePosClientPage", "App must route to the remote POS client page.");
+        // Remote-client routing must stay outside the authenticated host shell.
+        string consoleApp = ExtractBlock(app, "function ConsoleApp()", "export default function App()");
+        string remoteClientApp = ExtractBlock(app, "function RemoteClientApp()", "function ConsoleApp()");
+        RequireNotContains(navigation, "Remote POS Client", "Host navigation must not expose the Remote POS Client page.");
+        RequireNotContains(navigation, "remote-pos", "Host navigation must not route to remote-pos.");
+        RequireNotContains(permissions, "\"remote-pos\"", "Remote POS Client must not be a host AppPage.");
+        RequireNotContains(consoleApp, "RemotePosClientPage", "ConsoleApp must not render Remote POS Client.");
+        RequireContains(remoteClientApp, "RemotePosClientPage", "RemoteClientApp must render the Remote POS Client page.");
+        RequireContains(app, "isRemoteClientBrowserLocation()", "Non-loopback browser routing must select the remote client app.");
 
         Console.WriteLine("LAN-M16 remote POS host/client identity smoke checks succeeded.");
         Console.WriteLine();
@@ -78,5 +83,22 @@ internal static class RemotePosHostClientIdentitySmokeChecks
         {
             throw new InvalidOperationException(message);
         }
+    }
+
+    private static string ExtractBlock(string source, string startMarker, string endMarker)
+    {
+        int start = source.IndexOf(startMarker, StringComparison.Ordinal);
+        if (start < 0)
+        {
+            throw new InvalidOperationException("Expected block start missing: " + startMarker);
+        }
+
+        int end = source.IndexOf(endMarker, start + startMarker.Length, StringComparison.Ordinal);
+        if (end < 0)
+        {
+            throw new InvalidOperationException("Expected block end missing: " + endMarker);
+        }
+
+        return source[start..end];
     }
 }

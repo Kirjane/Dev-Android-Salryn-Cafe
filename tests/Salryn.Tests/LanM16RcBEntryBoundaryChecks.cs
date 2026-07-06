@@ -68,6 +68,9 @@ public static class LanM16RcBEntryBoundaryChecks
         }
 
         AssertNotContains(landing, "Sign in to Salryn Ledger Console", "LAN landing must not show the local Ledger Console login.");
+        AssertContains(app, "type RemoteClientMode = \"landing\" | \"remote-pos\" | \"remote-readonly\"", "Remote client modes must stay separate from host pages.");
+        AssertContains(app, "function RemoteClientApp()", "Remote client app must own LAN client rendering.");
+        AssertContains(app, "mode === \"remote-pos\" ? <RemotePosClientPage /> : <RemoteReadOnlyClientPage />", "Remote client app must still offer Remote POS and Remote Read-Only pages.");
         AssertContains(remotePosHook, "startsFromRemoteEntry ? currentBrowserOrigin() : \"\"", "Remote POS must use current LAN host origin from remote entry.");
         AssertContains(remotePosHook, "useState(startsFromRemoteEntry)", "Remote POS must skip the extra host-address state when launched from LAN root.");
     }
@@ -127,6 +130,14 @@ public static class LanM16RcBEntryBoundaryChecks
         AssertContains(readOnlyPage, "<details>", "Remote Read-Only Client diagnostics/troubleshooting must be collapsed by default.");
         AssertContains(remotePosPage, "Cashier / Manager login only", "Remote POS page must keep Cashier/Manager login copy.");
         AssertNotContains(remotePosPage, "Admin credentials", "Remote POS page must not say admin credentials.");
+        string consoleApp = ExtractBlock(app, "function ConsoleApp()", "export default function App()");
+        string remoteClientApp = ExtractBlock(app, "function RemoteClientApp()", "function ConsoleApp()");
+        AssertNotContains(consoleApp, "RemotePosClientPage", "ConsoleApp must not render Remote POS Client.");
+        AssertNotContains(consoleApp, "RemoteReadOnlyClientPage", "ConsoleApp must not render Remote Read-Only Client.");
+        AssertNotContains(app, "case \"remote-pos\"", "Host page switch must not contain Remote POS Client route.");
+        AssertNotContains(app, "case \"remote-readonly\"", "Host page switch must not contain Remote Read-Only Client route.");
+        AssertContains(remoteClientApp, "RemotePosClientPage", "Remote POS Client must remain available inside RemoteClientApp.");
+        AssertContains(remoteClientApp, "RemoteReadOnlyClientPage", "Remote Read-Only Client must remain available inside RemoteClientApp.");
         AssertContains(app, "useState<AppPage>(\"host-lan-control\")", "Authenticated host default page must be Host LAN Control, not Remote Read-Only Client.");
         AssertNotContains(app, "useState<AppPage>(\"remote-readonly\")", "Authenticated host default page must not be Remote Read-Only Client.");
         AssertContains(appShell, "Device wants to join", "Host shell must surface lightweight pending join notification.");
@@ -136,10 +147,22 @@ public static class LanM16RcBEntryBoundaryChecks
         AssertContains(appShell, "Salryn host operator console", "Host shell footer must not present as a read-only client console.");
         AssertNotContains(appShell, "Salryn read-only operator console", "Host shell must remove stale read-only operator label.");
         AssertContains(dashboardPage, "Open Host LAN Control", "Dashboard must provide an obvious handoff to Host LAN Control.");
+        AssertContains(dashboardPage, "canOpenHostLanControl", "Dashboard must hide Host LAN Control card from unqualified users.");
         AssertContains(navigation, "Host LAN Control", "Navigation must expose dedicated Host LAN Control page to local operators.");
         AssertContains(navigation, "{ id: \"host-lan-control\", label: \"Host LAN Control\", enabled: true }", "Host LAN Control must be an enabled sidebar item, not marked Later.");
         AssertNotContains(navigation, "label: \"Host LAN Control\", enabled: false", "Host LAN Control must not be disabled in navigation.");
+        AssertNotContains(navigation, "Remote POS Client", "Host navigation must not show Remote POS Client.");
+        AssertNotContains(navigation, "Remote Read-Only Client", "Host navigation must not show Remote Read-Only Client.");
+        AssertNotContains(navigation, "remote-pos", "Host navigation must not route to Remote POS Client.");
+        AssertNotContains(navigation, "remote-readonly", "Host navigation must not route to Remote Read-Only Client.");
         AssertContains(permissions, "\"host-lan-control\"", "Permission catalog must register Host LAN Control page.");
+        AssertContains(permissions, "\"host-lan-control\": [", "Host LAN Control must use a permission rule, not authenticated-only access.");
+        AssertContains(permissions, "Permissions.StoreTerminalView", "Host LAN Control view must allow terminal view permission.");
+        AssertContains(permissions, "Permissions.StoreTerminalManage", "Host LAN Control view must allow terminal manage permission.");
+        AssertContains(permissions, "Permissions.StoreDeploymentManage", "Host LAN Control view must allow deployment permission.");
+        AssertContains(permissions, "const authenticatedOnlyPages = new Set<AppPage>([\"dashboard\"])", "Host LAN Control must not be authenticated-only.");
+        AssertNotContains(permissions, "\"remote-pos\"", "Remote POS Client must not be a host AppPage.");
+        AssertNotContains(permissions, "\"remote-readonly\"", "Remote Read-Only Client must not be a host AppPage.");
     }
 
     private static void AssertBackendBoundary(
@@ -232,5 +255,22 @@ public static class LanM16RcBEntryBoundaryChecks
         {
             throw new InvalidOperationException(message);
         }
+    }
+
+    private static string ExtractBlock(string source, string startMarker, string endMarker)
+    {
+        int start = source.IndexOf(startMarker, StringComparison.Ordinal);
+        if (start < 0)
+        {
+            throw new InvalidOperationException("Expected block start missing: " + startMarker);
+        }
+
+        int end = source.IndexOf(endMarker, start + startMarker.Length, StringComparison.Ordinal);
+        if (end < 0)
+        {
+            throw new InvalidOperationException("Expected block end missing: " + endMarker);
+        }
+
+        return source[start..end];
     }
 }

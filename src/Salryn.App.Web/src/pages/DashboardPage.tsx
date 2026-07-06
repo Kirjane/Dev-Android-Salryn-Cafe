@@ -21,10 +21,16 @@ import { formatMoney } from "../utils/format";
 type DashboardPageProps = {
   session: SessionState;
   onLogout: () => void;
+  canOpenHostLanControl: boolean;
   onOpenHostLanControl: () => void;
 };
 
-export function DashboardPage({ session, onLogout, onOpenHostLanControl }: DashboardPageProps) {
+export function DashboardPage({
+  session,
+  onLogout,
+  canOpenHostLanControl,
+  onOpenHostLanControl,
+}: DashboardPageProps) {
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ["dashboard-summary"],
     queryFn: fetchDashboardSummary,
@@ -68,23 +74,25 @@ export function DashboardPage({ session, onLogout, onOpenHostLanControl }: Dashb
           </ul>
         </Alert>
 
-        <Card>
-          <CardHeader>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <CardTitle>Host LAN Control</CardTitle>
-              <StatusPill tone="info">Local-only</StatusPill>
-            </div>
-          </CardHeader>
-          <CardBody className="flex flex-wrap items-center justify-between gap-4">
-            <p className="max-w-3xl text-sm text-slate-600">
-              Use Host LAN Control to show or rotate the join code, approve pending Remote POS devices,
-              and see paired-terminal capacity before sending the client LAN URL to another device.
-            </p>
-            <Button onClick={onOpenHostLanControl}>
-              Open Host LAN Control
-            </Button>
-          </CardBody>
-        </Card>
+        {canOpenHostLanControl ? (
+          <Card>
+            <CardHeader>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <CardTitle>Manage LAN clients</CardTitle>
+                <StatusPill tone="info">Local-only</StatusPill>
+              </div>
+            </CardHeader>
+            <CardBody className="flex flex-wrap items-center justify-between gap-4">
+              <p className="max-w-3xl text-sm text-slate-600">
+                Use Host LAN Control to show or rotate the join code, approve pending Remote POS devices,
+                and see paired-terminal capacity before sending the client LAN URL to another device.
+              </p>
+              <Button onClick={onOpenHostLanControl}>
+                Open Host LAN Control
+              </Button>
+            </CardBody>
+          </Card>
+        ) : null}
 
         {isLoading ? <LoadingState label="Loading dashboard..." /> : null}
 

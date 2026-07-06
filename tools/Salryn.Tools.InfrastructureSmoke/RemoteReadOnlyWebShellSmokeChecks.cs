@@ -11,6 +11,7 @@ internal static class RemoteReadOnlyWebShellSmokeChecks
         string packageJson = Read(webRoot, "package.json");
         string app = Read(webRoot, "src", "App.tsx");
         string nav = Read(webRoot, "src", "navigation.ts");
+        string landing = Read(webRoot, "src", "pages", "RemoteClientLandingPage.tsx");
         string page = Read(webRoot, "src", "pages", "RemoteReadOnlyClientPage.tsx");
         string source = Read(webRoot, "src", "api", "remoteReadOnlyClient.ts");
         string localApiProgram = Read(apiRoot, "Program.cs")
@@ -19,7 +20,10 @@ internal static class RemoteReadOnlyWebShellSmokeChecks
 
         Require(packageJson.Contains("react", StringComparison.OrdinalIgnoreCase), "React package marker missing.");
         Require(packageJson.Contains("vite", StringComparison.OrdinalIgnoreCase), "Vite package marker missing.");
-        Require(nav.Contains("Remote Read-Only Client", StringComparison.Ordinal), "Navigation entry missing.");
+        Require(!nav.Contains("Remote Read-Only Client", StringComparison.Ordinal), "Host navigation must not include Remote Read-Only Client.");
+        Require(!nav.Contains("remote-readonly", StringComparison.Ordinal), "Host navigation must not route to remote-readonly.");
+        Require(landing.Contains("Remote Read-Only Client", StringComparison.Ordinal), "Remote client landing must include Remote Read-Only Client.");
+        Require(app.Contains("type RemoteClientMode = \"landing\" | \"remote-pos\" | \"remote-readonly\"", StringComparison.Ordinal), "Remote read-only must be a remote client mode.");
         Require(app.Contains("RemoteReadOnlyClientPage", StringComparison.Ordinal), "App page render missing.");
         Require(page.Contains("Remote Read-Only Client", StringComparison.Ordinal), "Page header missing.");
         Require(page.Contains("Connection / Session Status", StringComparison.Ordinal) || page.Contains("Pairing / Session State", StringComparison.Ordinal), "Session status card missing.");

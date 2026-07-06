@@ -3,7 +3,8 @@ namespace Salryn.Tests;
 // LAN-M16 guard: the host / client identity UX in App.Web. It proves the host dashboard identifies
 // itself as the POS host (DB local, second-computer-localhost is its own independent host, no sync),
 // the remote POS client page carries the mandatory trust warnings and headers, and the remote POS
-// client never calls host-local LAN control. Registration wiring (nav/permissions/router) is checked.
+// client never calls host-local LAN control. Remote-client routing is checked separately from
+// authenticated host navigation.
 public static class LanM16HostClientIdentityUxChecks
 {
     public static void Run()
@@ -25,7 +26,7 @@ public static class LanM16HostClientIdentityUxChecks
         AssertRemoteClientIdentity(remotePosPage);
         AssertRemoteClientWarningsAndHeaders(remotePosClient);
         AssertNoRemoteLanControl(remotePosClient, remotePosPage);
-        AssertRegistrationWiring(navigation, permissions, app);
+        AssertRemoteClientRouting(navigation, permissions, app);
         AssertWiring(doc, coreSmoke, infraSmoke);
     }
 
@@ -69,11 +70,17 @@ public static class LanM16HostClientIdentityUxChecks
         AssertNotContains(remotePosPage, "/api/lan-control", "Remote POS page must never call /api/lan-control.");
     }
 
-    private static void AssertRegistrationWiring(string navigation, string permissions, string app)
+    private static void AssertRemoteClientRouting(string navigation, string permissions, string app)
     {
-        AssertContains(navigation, "remote-pos", "Navigation must register the remote POS client page.");
-        AssertContains(permissions, "remote-pos", "Permissions must register the remote POS page.");
-        AssertContains(app, "RemotePosClientPage", "App must route to the remote POS client page.");
+        string consoleApp = ExtractBlock(app, "function ConsoleApp()", "export default function App()");
+        string remoteClientApp = ExtractBlock(app, "function RemoteClientApp()", "function ConsoleApp()");
+
+        AssertNotContains(navigation, "Remote POS Client", "Host navigation must not expose the Remote POS Client page.");
+        AssertNotContains(navigation, "remote-pos", "Host navigation must not route to remote-pos.");
+        AssertNotContains(permissions, "\"remote-pos\"", "Remote POS Client must not be a host AppPage.");
+        AssertNotContains(consoleApp, "RemotePosClientPage", "ConsoleApp must not render Remote POS Client.");
+        AssertContains(remoteClientApp, "RemotePosClientPage", "RemoteClientApp must render the Remote POS Client page.");
+        AssertContains(app, "isRemoteClientBrowserLocation()", "Non-loopback browser routing must select the remote client app.");
     }
 
     private static void AssertWiring(string doc, string coreSmoke, string infraSmoke)
@@ -125,5 +132,22 @@ public static class LanM16HostClientIdentityUxChecks
         {
             throw new InvalidOperationException(message);
         }
+    }
+
+    private static string ExtractBlock(string source, string startMarker, string endMarker)
+    {
+        int start = source.IndexOf(startMarker, StringComparison.Ordinal);
+        if (start < 0)
+        {
+            throw new InvalidOperationException("Expected block start missing: " + startMarker);
+        }
+
+        int end = source.IndexOf(endMarker, start + startMarker.Length, StringComparison.Ordinal);
+        if (end < 0)
+        {
+            throw new InvalidOperationException("Expected block end missing: " + endMarker);
+        }
+
+        return source[start..end];
     }
 }

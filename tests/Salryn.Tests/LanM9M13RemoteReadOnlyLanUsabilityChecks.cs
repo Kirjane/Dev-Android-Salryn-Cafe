@@ -11,6 +11,7 @@ public static class LanM9M13RemoteReadOnlyLanUsabilityChecks
         string packageJson = Read(webRoot, "package.json");
         string app = Read(webRoot, "src", "App.tsx");
         string nav = Read(webRoot, "src", "navigation.ts");
+        string landing = Read(webRoot, "src", "pages", "RemoteClientLandingPage.tsx");
         string page = Read(webRoot, "src", "pages", "RemoteReadOnlyClientPage.tsx");
         string webApi = Read(webRoot, "src", "api", "remoteReadOnlyClient.ts");
         string hook = Read(webRoot, "src", "hooks", "useRemoteReadOnlyClient.ts");
@@ -23,7 +24,10 @@ public static class LanM9M13RemoteReadOnlyLanUsabilityChecks
 
         Require(packageJson.Contains("react", StringComparison.OrdinalIgnoreCase), "React/WebView must remain the operator target.");
         Require(packageJson.Contains("vite", StringComparison.OrdinalIgnoreCase), "Vite frontend marker missing.");
-        Require(nav.Contains("Remote Read-Only Client", StringComparison.Ordinal), "Remote read-only navigation missing.");
+        Require(!nav.Contains("Remote Read-Only Client", StringComparison.Ordinal), "Host navigation must not include Remote Read-Only Client.");
+        Require(!nav.Contains("remote-readonly", StringComparison.Ordinal), "Host navigation must not route to remote-readonly.");
+        Require(landing.Contains("Remote Read-Only Client", StringComparison.Ordinal), "Remote client landing must include Remote Read-Only Client.");
+        Require(app.Contains("type RemoteClientMode = \"landing\" | \"remote-pos\" | \"remote-readonly\"", StringComparison.Ordinal), "Remote read-only must be a remote client mode.");
         Require(app.Contains("RemoteReadOnlyClientPage", StringComparison.Ordinal), "Remote read-only page not rendered.");
         Require(File.Exists(Path.Combine(webRoot, "src", "pages", "RemoteReadOnlyClientPage.tsx")), "Remote page must live under App.Web.");
         Require(!Directory.Exists(Path.Combine(root.FullName, "src", "Salryn.App.WinForms", "Features", "RemoteClient")), "WinForms RemoteClient feature path must not exist.");

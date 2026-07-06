@@ -9,6 +9,7 @@ public static class LanM8ReactRemoteReadOnlyShellChecks
         string packageJson = Read(root, "src", "Salryn.App.Web", "package.json");
         string app = Read(root, "src", "Salryn.App.Web", "src", "App.tsx");
         string nav = Read(root, "src", "Salryn.App.Web", "src", "navigation.ts");
+        string landing = Read(root, "src", "Salryn.App.Web", "src", "pages", "RemoteClientLandingPage.tsx");
         string page = Read(root, "src", "Salryn.App.Web", "src", "pages", "RemoteReadOnlyClientPage.tsx");
         string api = Read(root, "src", "Salryn.App.Web", "src", "api", "remoteReadOnlyClient.ts");
         string hook = Read(root, "src", "Salryn.App.Web", "src", "hooks", "useRemoteReadOnlyClient.ts");
@@ -22,9 +23,11 @@ public static class LanM8ReactRemoteReadOnlyShellChecks
         Require(packageJson.Contains("tailwindcss", StringComparison.OrdinalIgnoreCase), "App.Web must keep Tailwind stack.");
         Require(packageJson.Contains("@tanstack/react-query", StringComparison.OrdinalIgnoreCase), "App.Web must keep TanStack Query stack.");
         Require(page.Contains("Remote Read-Only Client", StringComparison.Ordinal), "React page must label itself read-only.");
-        Require(nav.Contains("Remote Read-Only Client", StringComparison.Ordinal), "React navigation must include the page.");
-        Require(nav.Contains("remote-readonly", StringComparison.Ordinal), "React route id must exist.");
-        Require(app.Contains("RemoteReadOnlyClientPage", StringComparison.Ordinal), "App.tsx must render the page.");
+        Require(!nav.Contains("Remote Read-Only Client", StringComparison.Ordinal), "Host navigation must not include the Remote Read-Only Client page.");
+        Require(!nav.Contains("remote-readonly", StringComparison.Ordinal), "Host navigation must not route to remote-readonly.");
+        Require(landing.Contains("Remote Read-Only Client", StringComparison.Ordinal), "Remote client landing must include the read-only client option.");
+        Require(app.Contains("type RemoteClientMode = \"landing\" | \"remote-pos\" | \"remote-readonly\"", StringComparison.Ordinal), "Remote read-only must be a remote client mode.");
+        Require(app.Contains("RemoteReadOnlyClientPage", StringComparison.Ordinal), "App.tsx must keep the remote read-only page for RemoteClientApp.");
         Require(hook.Contains("useRemoteReadOnlyClient", StringComparison.Ordinal), "React hook must exist.");
 
         Require(api.Contains("Remote read-only client only. Remote cashier/admin execution is not enabled.", StringComparison.Ordinal), "Read-only warning must exist.");
@@ -41,7 +44,7 @@ public static class LanM8ReactRemoteReadOnlyShellChecks
         Require(api.Contains("Admin" + " mutation disabled", StringComparison.Ordinal), "Admin disabled text must exist.");
         Require(api.Contains("Backup" + " mutation disabled", StringComparison.Ordinal), "Backup disabled text must exist.");
 
-        Require(page.Contains("Product Lookup / Read-Only Area", StringComparison.Ordinal), "Product lookup surface must exist.");
+        Require(page.Contains("Product Lookup / Read-Only Area", StringComparison.Ordinal) || page.Contains("Product Browse / Read-Only Surface", StringComparison.Ordinal), "Product lookup surface must exist.");
         Require(page.Contains("Dashboard / Status Area", StringComparison.Ordinal), "Dashboard/status surface must exist.");
         Require(page.Contains("Terminal Status Area", StringComparison.Ordinal), "Terminal status surface must exist.");
         Require(page.Contains("No catalog mutation controls are present", StringComparison.Ordinal), "Catalog mutation controls must remain absent.");

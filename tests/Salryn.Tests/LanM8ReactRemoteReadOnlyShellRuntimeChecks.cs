@@ -11,6 +11,7 @@ public static class LanM8ReactRemoteReadOnlyShellRuntimeChecks
         string packageJson = File.ReadAllText(Path.Combine(webRoot, "package.json"));
         string app = File.ReadAllText(Path.Combine(webRoot, "src", "App.tsx"));
         string nav = File.ReadAllText(Path.Combine(webRoot, "src", "navigation.ts"));
+        string landing = File.ReadAllText(Path.Combine(webRoot, "src", "pages", "RemoteClientLandingPage.tsx"));
         string page = File.ReadAllText(Path.Combine(webRoot, "src", "pages", "RemoteReadOnlyClientPage.tsx"));
         string readOnlySource = File.ReadAllText(Path.Combine(webRoot, "src", "api", "remoteReadOnlyClient.ts"));
         string localApiProgram = File.ReadAllText(Path.Combine(apiRoot, "Program.cs"))
@@ -21,7 +22,10 @@ public static class LanM8ReactRemoteReadOnlyShellRuntimeChecks
         Require(packageJson.Contains("react", StringComparison.OrdinalIgnoreCase), "React stack missing.");
         Require(packageJson.Contains("vite", StringComparison.OrdinalIgnoreCase), "Vite stack missing.");
         Require(packageJson.Contains("@tanstack/react-query", StringComparison.OrdinalIgnoreCase), "TanStack Query stack missing.");
-        Require(nav.Contains("Remote Read-Only Client", StringComparison.Ordinal), "Navigation entry missing.");
+        Require(!nav.Contains("Remote Read-Only Client", StringComparison.Ordinal), "Host navigation must not include Remote Read-Only Client.");
+        Require(!nav.Contains("remote-readonly", StringComparison.Ordinal), "Host navigation must not route to remote-readonly.");
+        Require(landing.Contains("Remote Read-Only Client", StringComparison.Ordinal), "Remote client landing must include Remote Read-Only Client.");
+        Require(app.Contains("type RemoteClientMode = \"landing\" | \"remote-pos\" | \"remote-readonly\"", StringComparison.Ordinal), "Remote read-only must be a remote client mode.");
         Require(app.Contains("RemoteReadOnlyClientPage", StringComparison.Ordinal), "App render entry missing.");
         Require(page.Contains("Remote Read-Only Client", StringComparison.Ordinal), "Page title missing.");
         Require(page.Contains("Connection / Session Status", StringComparison.Ordinal) || page.Contains("Pairing / Session State", StringComparison.Ordinal), "Connection/session card missing.");

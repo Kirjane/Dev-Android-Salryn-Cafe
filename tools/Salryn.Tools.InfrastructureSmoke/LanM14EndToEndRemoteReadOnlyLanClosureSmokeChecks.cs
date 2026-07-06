@@ -78,6 +78,12 @@ internal static class LanM14EndToEndRemoteReadOnlyLanClosureSmokeChecks
             Require(enabledUrls.Count == 2, "LocalApiLanUrlResolver must add explicit LAN URL when enabled.");
             Require(enabledUrls.Contains("http://192.168.1.10:5299", StringComparer.OrdinalIgnoreCase), "LocalApiLanUrlResolver must include explicit LAN listen URL.");
 
+            IReadOnlyList<string> ephemeralHarnessUrls = LocalApiLanUrlResolver.ResolveListenUrls(
+                "http://127.0.0.1:0",
+                enabled.Value);
+            Require(ephemeralHarnessUrls.Count == 1, "Ephemeral loopback test harness URLs must not add a persisted LAN listener.");
+            Require(ephemeralHarnessUrls[0] == "http://127.0.0.1:0", "Ephemeral loopback test harness URL must be preserved.");
+
             Guid activeTerminalId = Guid.Parse("77777777-0000-0000-0000-000000000001");
             UpsertTerminal(terminalRegistry, identity, activeTerminalId, TerminalRegistrationStatus.Active);
 

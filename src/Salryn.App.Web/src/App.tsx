@@ -47,11 +47,14 @@ function AccessDenied({ currentPage, onGoHome }: { currentPage: AppPage; onGoHom
 function renderPage(page: AppPage, session: SessionState, onLogout: () => void, onNavigate: (page: AppPage) => void) {
   switch (page) {
     case "dashboard":
-      return <DashboardPage session={session} onLogout={onLogout} onOpenHostLanControl={() => onNavigate("host-lan-control")} />;
-    case "remote-readonly":
-      return <RemoteReadOnlyClientPage />;
-    case "remote-pos":
-      return <RemotePosClientPage />;
+      return (
+        <DashboardPage
+          session={session}
+          onLogout={onLogout}
+          canOpenHostLanControl={canAccessPage(session, "host-lan-control")}
+          onOpenHostLanControl={() => onNavigate("host-lan-control")}
+        />
+      );
     case "host-lan-control":
       return <HostLanControlPage />;
     case "products":
