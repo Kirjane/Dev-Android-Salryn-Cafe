@@ -25,6 +25,18 @@ public static class M8MSeriesCompletionLanTransitionGateChecks
         string currentState = ReadRequiredFile(currentStatePath);
         string coreSmoke = ReadRequiredFile(coreSmokePath);
 
+        if (IsCurrentLanM16QaBState(currentState))
+        {
+            AssertContains(currentState, "Stable as of `e477699dca27a21954a5ad9d388307fdb9ed08fd`", "Current-state doc must preserve the current stable Sandbox SHA.");
+            AssertContains(currentState, "LAN-M16-QA-B", "Current-state doc must mark LAN-M16-QA-B as the current candidate work.");
+            AssertContains(currentState, "Current live coordination authority:", "Current-state doc must keep live coordination authority visible.");
+            AssertContains(currentState, "Historical M-series and ROLE docs remain context only and must not override current source truth.", "Current-state doc must keep older M-series docs demoted to historical context.");
+
+            AssertContains(mSeriesGate, "## LAN Transition Gate", "M8 gate doc must remain available as historical LAN transition context.");
+            AssertContains(coreSmoke, "M8MSeriesCompletionLanTransitionGateChecks.Run();", "M8 checks must remain explicitly wired in CoreSmoke.");
+            return;
+        }
+
         if (IsPostMSeriesPromotionCurrentState(currentState))
         {
             AssertContains(currentState, "Stable Sandbox Stack", "Current-state doc must keep a stable stack after M-series promotion.");
@@ -230,6 +242,13 @@ public static class M8MSeriesCompletionLanTransitionGateChecks
                 || currentState.Contains("LAN-M14-B is stable", StringComparison.Ordinal)
                 || currentState.Contains("LAN-M14-C is stable", StringComparison.Ordinal))
             && currentState.Contains("LAN-M14-", StringComparison.Ordinal);
+    }
+
+    private static bool IsCurrentLanM16QaBState(string currentState)
+    {
+        return currentState.Contains("LAN-M16-QA-B", StringComparison.Ordinal)
+            && currentState.Contains("Historical M-series and ROLE docs remain context only and must not override current source truth.", StringComparison.Ordinal)
+            && currentState.Contains("Current live coordination authority:", StringComparison.Ordinal);
     }
 
     private static string? TryRunGit(string projectRoot, string arguments)

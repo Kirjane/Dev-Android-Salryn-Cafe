@@ -1,4 +1,5 @@
 using Salryn.Api.Local.Bridge;
+using Salryn.Core.Common;
 
 namespace Salryn.Api.Local.RemotePos;
 

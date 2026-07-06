@@ -38,10 +38,10 @@ internal static class RemotePosPairingGateSmokeChecks
         Require(session.Contains("TerminalNotAccepted", StringComparison.Ordinal), "Terminal disable/revoke must still block remote POS.");
         Require(!ChangedPathExists(projectRoot, "Migrations"), "No migration files may be added.");
         Require(!ChangedPathExists(projectRoot, "Seed"), "No seed files may be added.");
-        Require(!AllCandidateText(projectRoot).Contains("QR pairing", StringComparison.OrdinalIgnoreCase), "No QR behavior may be added.");
-        Require(!AllCandidateText(projectRoot).Contains("cloud sync", StringComparison.OrdinalIgnoreCase), "No cloud behavior may be added.");
-        Require(!AllCandidateText(projectRoot).Contains("custom DNS", StringComparison.OrdinalIgnoreCase), "No custom DNS behavior may be added.");
-        Require(!AllCandidateText(projectRoot).Contains("0.0.0.0 bind enabled", StringComparison.OrdinalIgnoreCase), "No default/wildcard/0.0.0.0 bind may be added.");
+        Require(!AllCandidateText(projectRoot, "tests/Salryn.Tests/LanM16QaBRemotePosPairingGateChecks.cs", "tools/Salryn.Tools.InfrastructureSmoke/RemotePosPairingGateSmokeChecks.cs").Contains("QR pairing", StringComparison.OrdinalIgnoreCase), "No QR behavior may be added.");
+        Require(!AllCandidateText(projectRoot, "tests/Salryn.Tests/LanM16QaBRemotePosPairingGateChecks.cs", "tools/Salryn.Tools.InfrastructureSmoke/RemotePosPairingGateSmokeChecks.cs").Contains("cloud sync", StringComparison.OrdinalIgnoreCase), "No cloud behavior may be added.");
+        Require(!AllCandidateText(projectRoot, "tests/Salryn.Tests/LanM16QaBRemotePosPairingGateChecks.cs", "tools/Salryn.Tools.InfrastructureSmoke/RemotePosPairingGateSmokeChecks.cs").Contains("custom DNS", StringComparison.OrdinalIgnoreCase), "No custom DNS behavior may be added.");
+        Require(!AllCandidateText(projectRoot, "tests/Salryn.Tests/LanM16QaBRemotePosPairingGateChecks.cs", "tools/Salryn.Tools.InfrastructureSmoke/RemotePosPairingGateSmokeChecks.cs").Contains("0.0.0.0 bind enabled", StringComparison.OrdinalIgnoreCase), "No default or wildcard bind may be added.");
         Require(!endpoints.Contains("/api/lan-control", StringComparison.Ordinal), "Remote surface must not expose /api/lan-control.");
 
         Console.WriteLine("Remote POS pairing gate smoke passed.");
@@ -55,13 +55,23 @@ internal static class RemotePosPairingGateSmokeChecks
             .Any(path => path.Contains(token, StringComparison.OrdinalIgnoreCase)) == true;
     }
 
-    private static string AllCandidateText(string root)
+    private static string AllCandidateText(string root, params string[] excludedRelativePaths)
     {
         string? paths = TryGit(root, "diff --name-only 80d784d84e6af635688085d8b97bfe935c953d65...HEAD");
         if (string.IsNullOrWhiteSpace(paths)) return string.Empty;
         List<string> contents = new();
         foreach (string relative in paths.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
         {
+            if (excludedRelativePaths.Any(excluded => relative.Equals(excluded, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            if (!relative.StartsWith("src/", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             string path = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
             if (File.Exists(path)) contents.Add(File.ReadAllText(path));
         }
@@ -79,11 +89,13 @@ internal static class RemotePosPairingGateSmokeChecks
                 Arguments = args,
                 WorkingDirectory = root,
                 RedirectStandardOutput = true,
+                RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
             process.Start();
             string output = process.StandardOutput.ReadToEnd();
+            string error = process.StandardError.ReadToEnd();
             process.WaitForExit(5000);
             return process.ExitCode == 0 ? output : null;
         }

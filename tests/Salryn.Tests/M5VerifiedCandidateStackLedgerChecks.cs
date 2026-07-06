@@ -20,6 +20,20 @@ public static class M5VerifiedCandidateStackLedgerChecks
         string currentState = ReadRequiredFile(currentStatePath);
         string coreSmoke = ReadRequiredFile(coreSmokePath);
 
+        if (IsCurrentLanM16QaBState(currentState))
+        {
+            AssertContains(currentState, "Stable as of `e477699dca27a21954a5ad9d388307fdb9ed08fd`", "Current-state doc must preserve the current stable Sandbox SHA.");
+            AssertContains(currentState, "LAN-M16-QA-B", "Current-state doc must mark LAN-M16-QA-B as the current candidate work.");
+            AssertContains(currentState, "Current live coordination authority:", "Current-state doc must keep live coordination authority visible.");
+            AssertContains(currentState, "Historical M-series and ROLE docs remain context only and must not override current source truth.", "Current-state doc must keep older M-series docs demoted to historical context.");
+
+            AssertContains(ledger, "## Candidate Stack File Manifest", "Ledger must remain available as historical candidate-stack context.");
+            AssertContains(ledger, "Promotion status: parked", "Ledger must keep promotion parked during the M16-era coordination flow.");
+            AssertContains(ledger, "Do not follow stale reports without checking GitHub compare", "Ledger must warn against stale reports.");
+            AssertContains(coreSmoke, "M5VerifiedCandidateStackLedgerChecks.Run();", "M5 must remain explicitly wired into CoreSmoke.");
+            return;
+        }
+
         if (IsPostMSeriesPromotionCurrentState(currentState))
         {
             AssertContains(currentState, "Stable Sandbox Stack", "Current-state doc must keep a stable stack after M-series promotion.");
@@ -284,6 +298,13 @@ public static class M5VerifiedCandidateStackLedgerChecks
                 || currentState.Contains("LAN-M14-B is stable", StringComparison.Ordinal)
                 || currentState.Contains("LAN-M14-C is stable", StringComparison.Ordinal))
             && currentState.Contains("LAN-M14-", StringComparison.Ordinal);
+    }
+
+    private static bool IsCurrentLanM16QaBState(string currentState)
+    {
+        return currentState.Contains("LAN-M16-QA-B", StringComparison.Ordinal)
+            && currentState.Contains("Historical M-series and ROLE docs remain context only and must not override current source truth.", StringComparison.Ordinal)
+            && currentState.Contains("Current live coordination authority:", StringComparison.Ordinal);
     }
 
     private static string? TryRunGit(string projectRoot, string arguments)

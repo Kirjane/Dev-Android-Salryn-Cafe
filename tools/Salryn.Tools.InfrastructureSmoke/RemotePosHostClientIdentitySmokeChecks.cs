@@ -23,13 +23,19 @@ internal static class RemotePosHostClientIdentitySmokeChecks
 
         // Remote client identity + warnings.
         RequireContains(remotePosPage, "Remote POS client", "Remote POS page must identify the remote client role.");
-        RequireContains(remotePosPage, "Remote client identity", "Remote POS page must show remote client identity.");
-        RequireContains(remotePosPage, "Role capabilities", "Remote POS page must show role capabilities.");
-        RequireContains(remotePosPage, "Submit sale to host", "Remote POS page must offer host-owned checkout.");
+        RequireContains(remotePosPage, "This device is a Remote POS client", "Remote POS page must show the client warning banner.");
+        RequireContains(remotePosPage, "Connect to the POS host over its explicit LAN address.", "Remote POS page must explain host connection topology.");
+        RequireContains(remotePosPage, "Cashier / Manager login only", "Remote POS page must state the remote login role boundary.");
+        RequireContains(remotePosPage, "Submit checkout", "Remote POS page must offer host-owned checkout.");
 
-        RequireContains(remotePosClient, "does not open the host database", "Client warnings must state it never opens the host DB.");
-        RequireContains(remotePosClient, "does not synchronize", "Client warnings must state installs do not sync.");
-        RequireContains(remotePosClient, "its own local host", "Client warnings must clarify localhost-on-another-computer semantics.");
+        RequireContains(remotePosClient, "This device is a Remote POS client.", "Client warnings must identify the device as a client.");
+        RequireContains(remotePosClient, "The host owns the database and sales.", "Client warnings must state host-owned data authority.");
+        RequireContains(remotePosClient, "Use the host LAN address shown on the host.", "Client warnings must explain host LAN address usage.");
+        RequireContains(remotePosClient, "Do not use localhost from another device.", "Client warnings must clarify localhost-on-another-computer semantics.");
+        RequireContains(remotePosClient, "Ask the host operator for the join code.", "Client warnings must mention the join code boundary.");
+        RequireContains(remotePosClient, "Wait for the host to approve this device.", "Client warnings must state approval remains host-owned.");
+        RequireContains(remotePosClient, "After pairing, sign in as Cashier or Manager.", "Client warnings must state the allowed remote login roles.");
+        RequireContains(remotePosClient, "Admin and Owner accounts are host-local only for this build.", "Client warnings must state the host-local Admin/Owner boundary.");
         RequireContains(remotePosClient, "X-Salryn-Remote-Pos-Session", "Client must send the operator session header.");
         RequireContains(remotePosClient, "X-Salryn-Terminal-Id", "Client must send terminal identity header.");
         RequireContains(remotePosClient, "X-Salryn-Handshake-Session-Id", "Client must send handshake proof header.");

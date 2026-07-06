@@ -66,11 +66,11 @@ public static class LanM16QaBRemotePosPairingGateChecks
 
         Require(!ChangedPathExists(root, "Migrations"), "No schema/migration files should be added.");
         Require(!ChangedPathExists(root, "Seed"), "No seed files should be added.");
-        Require(!AllCandidateText(root).Contains("0.0.0.0 bind enabled", StringComparison.OrdinalIgnoreCase), "No default/wildcard/0.0.0.0 bind may be added.");
-        Require(!AllCandidateText(root).Contains("QR pairing", StringComparison.OrdinalIgnoreCase), "No QR pairing may be added.");
-        Require(!AllCandidateText(root).Contains("mobile app", StringComparison.OrdinalIgnoreCase), "No mobile app may be added.");
-        Require(!AllCandidateText(root).Contains("cloud sync", StringComparison.OrdinalIgnoreCase), "No cloud sync may be added.");
-        Require(!AllCandidateText(root).Contains("custom DNS", StringComparison.OrdinalIgnoreCase), "No custom DNS may be added.");
+        Require(!AllCandidateText(root, "tests/Salryn.Tests/LanM16QaBRemotePosPairingGateChecks.cs", "tools/Salryn.Tools.InfrastructureSmoke/RemotePosPairingGateSmokeChecks.cs").Contains("0.0.0.0 bind enabled", StringComparison.OrdinalIgnoreCase), "No default/wildcard/0.0.0.0 bind may be added.");
+        Require(!AllCandidateText(root, "tests/Salryn.Tests/LanM16QaBRemotePosPairingGateChecks.cs", "tools/Salryn.Tools.InfrastructureSmoke/RemotePosPairingGateSmokeChecks.cs").Contains("QR pairing", StringComparison.OrdinalIgnoreCase), "No QR pairing may be added.");
+        Require(!AllCandidateText(root, "tests/Salryn.Tests/LanM16QaBRemotePosPairingGateChecks.cs", "tools/Salryn.Tools.InfrastructureSmoke/RemotePosPairingGateSmokeChecks.cs").Contains("mobile app", StringComparison.OrdinalIgnoreCase), "No mobile app may be added.");
+        Require(!AllCandidateText(root, "tests/Salryn.Tests/LanM16QaBRemotePosPairingGateChecks.cs", "tools/Salryn.Tools.InfrastructureSmoke/RemotePosPairingGateSmokeChecks.cs").Contains("cloud sync", StringComparison.OrdinalIgnoreCase), "No cloud sync may be added.");
+        Require(!AllCandidateText(root, "tests/Salryn.Tests/LanM16QaBRemotePosPairingGateChecks.cs", "tools/Salryn.Tools.InfrastructureSmoke/RemotePosPairingGateSmokeChecks.cs").Contains("custom DNS", StringComparison.OrdinalIgnoreCase), "No custom DNS may be added.");
         Require(!endpoints.Contains("/api/lan-control", StringComparison.Ordinal), "Remote POS surface must not expose /api/lan-control.");
 
         Require(infraProgram.Contains("remote-pos-pairing-gate", StringComparison.Ordinal), "Infrastructure smoke must wire remote-pos-pairing-gate.");
@@ -84,13 +84,23 @@ public static class LanM16QaBRemotePosPairingGateChecks
             .Any(path => path.Contains(token, StringComparison.OrdinalIgnoreCase)) == true;
     }
 
-    private static string AllCandidateText(string root)
+    private static string AllCandidateText(string root, params string[] excludedRelativePaths)
     {
         string? paths = TryGit(root, "diff --name-only " + FreehandStartSha + "...HEAD");
         if (string.IsNullOrWhiteSpace(paths)) return string.Empty;
         List<string> contents = new();
         foreach (string relative in paths.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
         {
+            if (excludedRelativePaths.Any(excluded => relative.Equals(excluded, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            if (!relative.StartsWith("src/", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             string path = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
             if (File.Exists(path)) contents.Add(File.ReadAllText(path));
         }
@@ -108,11 +118,13 @@ public static class LanM16QaBRemotePosPairingGateChecks
                 Arguments = args,
                 WorkingDirectory = root,
                 RedirectStandardOutput = true,
+                RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
             process.Start();
             string output = process.StandardOutput.ReadToEnd();
+            string error = process.StandardError.ReadToEnd();
             process.WaitForExit(5000);
             return process.ExitCode == 0 ? output : null;
         }

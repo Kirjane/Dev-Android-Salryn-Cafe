@@ -38,20 +38,26 @@ public static class LanM16HostClientIdentityUxChecks
 
     private static void AssertRemoteClientIdentity(string remotePosPage)
     {
-        AssertContains(remotePosPage, "This is a remote POS client, not the POS host", "Remote POS page must identify the remote client role.");
-        AssertContains(remotePosPage, "Remote client identity", "Remote POS page must show remote client identity.");
+        AssertContains(remotePosPage, "Remote POS client", "Remote POS page must identify the remote client role.");
+        AssertContains(remotePosPage, "This device is a Remote POS client", "Remote POS page must show the remote client warning banner.");
+        AssertContains(remotePosPage, "Connect to the POS host over its explicit LAN address.", "Remote POS page must guide the operator to the host LAN address.");
+        AssertContains(remotePosPage, "Pair this device first, then sign in as Cashier or Manager.", "Remote POS page must show the pairing-then-login flow.");
+        AssertContains(remotePosPage, "Cashier / Manager login only", "Remote POS page must limit the login stage to Cashier/Manager.");
         AssertContains(remotePosPage, "Session expires", "Remote POS page must show session expiry.");
         AssertContains(remotePosPage, "Host LAN address", "Remote POS page must show the host LAN address.");
-        AssertContains(remotePosPage, "Role capabilities", "Remote POS page must show the role capability matrix.");
-        AssertContains(remotePosPage, "Submit sale to host", "Remote POS page must offer host-owned checkout.");
+        AssertContains(remotePosPage, "Submit checkout", "Remote POS page must offer host-owned checkout.");
     }
 
     private static void AssertRemoteClientWarningsAndHeaders(string remotePosClient)
     {
-        AssertContains(remotePosClient, "does not open the host database", "Client warnings must state it never opens the host DB.");
-        AssertContains(remotePosClient, "does not synchronize", "Client warnings must state installs do not sync.");
-        AssertContains(remotePosClient, "its own local host", "Client warnings must clarify localhost-on-another-computer semantics.");
-        AssertContains(remotePosClient, "never performs discovery or network scanning", "Client must document no discovery/scan.");
+        AssertContains(remotePosClient, "This device is a Remote POS client.", "Client warnings must identify the remote POS client role.");
+        AssertContains(remotePosClient, "The host owns the database and sales.", "Client warnings must state the host owns data and sales.");
+        AssertContains(remotePosClient, "Use the host LAN address shown on the host.", "Client warnings must direct the operator to the host LAN address.");
+        AssertContains(remotePosClient, "Do not use localhost from another device.", "Client warnings must clarify localhost-on-another-computer semantics.");
+        AssertContains(remotePosClient, "Ask the host operator for the join code.", "Client warnings must document the host-controlled join step.");
+        AssertContains(remotePosClient, "Wait for the host to approve this device.", "Client warnings must document the host approval step.");
+        AssertContains(remotePosClient, "After pairing, sign in as Cashier or Manager.", "Client warnings must document the login step.");
+        AssertContains(remotePosClient, "Admin and Owner accounts are host-local only for this build.", "Client warnings must preserve the host-local Admin/Owner boundary.");
         AssertContains(remotePosClient, "X-Salryn-Terminal-Id", "Client must send the terminal identity header.");
         AssertContains(remotePosClient, "X-Salryn-Handshake-Session-Id", "Client must send the handshake proof header.");
         AssertContains(remotePosClient, "X-Salryn-Remote-Pos-Session", "Client must send the operator session header.");

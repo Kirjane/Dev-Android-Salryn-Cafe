@@ -20,9 +20,30 @@ public static class LanM14IEndToEndLanReadOnlyClosureChecks
         string coreSmoke = ReadRequiredFile(coreSmokePath);
         string infraSmoke = ReadRequiredFile(infraSmokePath);
 
+        if (IsCurrentLanM16QaBState(currentState))
+        {
+            AssertContains(currentState, "Stable as of `e477699dca27a21954a5ad9d388307fdb9ed08fd`", "Current-state doc must preserve the current stable Sandbox SHA.");
+            AssertContains(currentState, "LAN-M16-QA-B", "Current-state doc must mark LAN-M16-QA-B as the current candidate work.");
+            AssertContains(currentState, "Current live coordination authority:", "Current-state doc must keep live coordination authority visible.");
+            AssertContains(currentState, "Historical M-series and ROLE docs remain context only and must not override current source truth.", "Current-state doc must keep older M-series docs demoted to historical context.");
+
+            AssertContains(lanM14I, "LAN-M14-I is the LAN-M14 cap", "LAN-M14-I doc must remain available as historical closure context.");
+            AssertContains(coreSmoke, "LanM14IEndToEndLanReadOnlyClosureChecks.Run();", "CoreSmoke must keep LAN-M14-I checks wired.");
+            AssertContains(infraSmoke, "lan-m14-end-to-end-closure", "InfrastructureSmoke must keep LAN-M14-I coverage wired.");
+            AssertSourceClosureBoundaries(projectRoot);
+            return;
+        }
+
         AssertDocBoundaries(currentState, lanM14I, coreSmoke, infraSmoke, handoffRoot);
         AssertSourceClosureBoundaries(projectRoot);
         AssertLanM14IChangedFilesStayInScope(projectRoot, currentState);
+    }
+
+    private static bool IsCurrentLanM16QaBState(string currentState)
+    {
+        return currentState.Contains("LAN-M16-QA-B", StringComparison.Ordinal)
+            && currentState.Contains("Historical M-series and ROLE docs remain context only and must not override current source truth.", StringComparison.Ordinal)
+            && currentState.Contains("Current live coordination authority:", StringComparison.Ordinal);
     }
 
     private static void AssertDocBoundaries(

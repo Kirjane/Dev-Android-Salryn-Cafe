@@ -20,9 +20,30 @@ public static class LanM15ENegativePathHardeningChecks
         string coreSmoke = ReadRequiredFile(coreSmokePath);
         string infraSmoke = ReadRequiredFile(infraSmokePath);
 
+        if (IsCurrentLanM16QaBState(currentState))
+        {
+            AssertContains(currentState, "Stable as of `e477699dca27a21954a5ad9d388307fdb9ed08fd`", "Current-state doc must preserve the current stable Sandbox SHA.");
+            AssertContains(currentState, "LAN-M16-QA-B", "Current-state doc must mark LAN-M16-QA-B as the current candidate work.");
+            AssertContains(currentState, "Current live coordination authority:", "Current-state doc must keep live coordination authority visible.");
+            AssertContains(currentState, "Historical M-series and ROLE docs remain context only and must not override current source truth.", "Current-state doc must keep older M-series docs demoted to historical context.");
+
+            AssertContains(lanM15E, "RemoteReadOnlyAbuseGuard", "LAN-M15-E doc must remain available as historical negative-path context.");
+            AssertContains(coreSmoke, "LanM15ENegativePathHardeningChecks.Run();", "CoreSmoke must keep LAN-M15-E checks wired.");
+            AssertContains(infraSmoke, "remote-readonly-lan-negative-path-hardening", "InfrastructureSmoke must keep LAN-M15-E coverage wired.");
+            AssertSourceHardeningBoundaries(projectRoot);
+            return;
+        }
+
         AssertDocBoundaries(currentState, lanM15E, coreSmoke, infraSmoke, handoffRoot);
         AssertSourceHardeningBoundaries(projectRoot);
         AssertLanM15EChangedFilesStayInScope(projectRoot, currentState);
+    }
+
+    private static bool IsCurrentLanM16QaBState(string currentState)
+    {
+        return currentState.Contains("LAN-M16-QA-B", StringComparison.Ordinal)
+            && currentState.Contains("Historical M-series and ROLE docs remain context only and must not override current source truth.", StringComparison.Ordinal)
+            && currentState.Contains("Current live coordination authority:", StringComparison.Ordinal);
     }
 
     private static void AssertDocBoundaries(

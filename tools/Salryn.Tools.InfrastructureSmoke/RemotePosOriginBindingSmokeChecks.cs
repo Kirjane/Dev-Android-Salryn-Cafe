@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using Microsoft.AspNetCore.Http;
 using Salryn.Api.Local.Bridge;
@@ -6,8 +7,11 @@ using Salryn.Api.Local.RemotePos;
 using Salryn.Composition.Local;
 using Salryn.Core.Deployment;
 using Salryn.Core.Host;
+using Salryn.Core.ReadModels;
+using Salryn.Core.Repositories;
 using Salryn.Core.Security;
 using Salryn.Core.TerminalRegistry;
+using Salryn.Infrastructure.Data.Repositories;
 
 // LAN-M16-QA-A remote-pos-origin-binding smoke. Proves the remote POS runtime binds a session to
 // the SERVER-OBSERVED connection origin at login and fails closed on every command whose observed
@@ -135,6 +139,11 @@ internal static class RemotePosOriginBindingSmokeChecks
                     .GetAwaiter().GetResult(),
                 "OriginBinding.CreateFirstAdmin");
 
+            SqliteRepositoryFactory repositories = new(composition.ConnectionFactory);
+            IUserReadRepository userReadRepository = repositories.CreateUserReadRepository();
+            IUserWriteRepository userWriteRepository = repositories.CreateUserWriteRepository();
+            (string remoteUser, string remotePass) = CreateRemoteLoginOperator(userReadRepository, userWriteRepository, admin.UserId);
+
             LanRemoteTransportApiServices lan = LanRemoteTransportApiComposition.Create(composition);
 
             DeploymentIdentitySnapshot identity = lan.DeploymentIdentity.GetCurrentAsync().GetAwaiter().GetResult().Value
@@ -168,7 +177,7 @@ internal static class RemotePosOriginBindingSmokeChecks
             // 1. Login observed at loopback binds the loopback origin to the session.
             RemotePosOperatorSession loopbackSession = RequireLogin(
                 sessions, terminalId, handshakeSessionId, RemoteReadOnlyBridgeRequestContext.LoopbackObservedOrigin,
-                adminUser, adminPass, out string loopbackToken);
+                remoteUser, remotePass, out string loopbackToken);
             RemotePosSmokeSupport.Require(
                 loopbackSession.ObservedOrigin == RemoteReadOnlyBridgeRequestContext.LoopbackObservedOrigin,
                 "Login must bind the session to the observed loopback origin.");
@@ -200,7 +209,7 @@ internal static class RemotePosOriginBindingSmokeChecks
 
             // 4. A login observed at a LAN origin binds THAT origin; a loopback command is then rejected.
             RemotePosOperatorSession lanSession = RequireLogin(
-                sessions, terminalId, handshakeSessionId, "192.168.1.50", adminUser, adminPass, out string lanToken);
+                sessions, terminalId, handshakeSessionId, "192.168.1.50", remoteUser, remotePass, out string lanToken);
             RemotePosSmokeSupport.Require(
                 lanSession.ObservedOrigin == "192.168.1.50",
                 "Login must bind the session to the observed LAN origin.");
@@ -286,6 +295,43 @@ internal static class RemotePosOriginBindingSmokeChecks
             "Handshake with the active terminal credential must succeed.");
 
         return (terminalId, handshake.HandshakeSessionId.GetValueOrDefault());
+    }
+
+    private static (string Username, string Password) CreateRemoteLoginOperator(
+        IUserReadRepository userReadRepository,
+        IUserWriteRepository userWriteRepository,
+        Guid createdByUserId)
+    {
+        IReadOnlyList<UserRoleReadModel> roles = RemotePosSmokeSupport.RequireSuccess(
+            userReadRepository.GetRolesAsync().GetAwaiter().GetResult(),
+            "OriginBinding.GetRoles");
+
+        UserRoleReadModel? role = roles.FirstOrDefault(x =>
+                x.IsActive &&
+                string.Equals(x.RoleName, "Cashier", StringComparison.OrdinalIgnoreCase))
+            ?? roles.FirstOrDefault(x =>
+                x.IsActive &&
+                string.Equals(x.RoleName, "Manager", StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException("Remote POS origin-binding smoke expected an active Cashier or Manager role.");
+
+        string suffix = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
+        string username = "remote-pos-origin-" + suffix;
+        string password = "OriginSmokePass123!" + suffix;
+
+        string passwordHash = RemotePosSmokeSupport.RequireSuccess(
+            SalrynPasswordHasher.HashPassword(password),
+            "OriginBinding.RemoteLoginPasswordHash");
+
+        RemotePosSmokeSupport.RequireSuccess(
+            userWriteRepository.CreateAsync(new UserAdminCreateRequest(
+                username,
+                "Remote POS Origin Smoke Operator",
+                role.RoleId,
+                passwordHash,
+                createdByUserId)).GetAwaiter().GetResult(),
+            "OriginBinding.RemoteLoginUserCreate");
+
+        return (username, password);
     }
 
     private static RemotePosOperatorSession RequireLogin(

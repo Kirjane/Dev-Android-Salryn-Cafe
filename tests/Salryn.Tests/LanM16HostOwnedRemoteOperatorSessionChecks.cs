@@ -127,9 +127,27 @@ public static class LanM16HostOwnedRemoteOperatorSessionChecks
     {
         AssertContains(doc, BaselineSha, "LAN-M16 doc must carry the stable Sandbox source stamp.");
         AssertContains(doc, "Remote Operator Session Model", "LAN-M16 doc must document the operator session model.");
-        AssertContains(currentState, "LAN-M16 is current host-owned multi-terminal role runtime candidate.", "Current-state doc must name LAN-M16 as current candidate.");
+        if (IsCurrentLanM16QaBState(currentState))
+        {
+            AssertContains(currentState, "Stable as of `e477699dca27a21954a5ad9d388307fdb9ed08fd`", "Current-state doc must preserve the current stable Sandbox SHA.");
+            AssertContains(currentState, "LAN-M16-QA-B", "Current-state doc must mark LAN-M16-QA-B as the current candidate work.");
+            AssertContains(currentState, "LAN-M16-QA-B adds a host-approved Remote POS pairing gate and remote role login boundary.", "Current-state doc must describe the LAN-M16-QA-B pairing gate boundary.");
+            AssertContains(currentState, "Current live coordination authority:", "Current-state doc must keep live coordination authority visible.");
+            AssertContains(currentState, "Historical M-series and ROLE docs remain context only and must not override current source truth.", "Current-state doc must keep older M-series docs demoted to historical context.");
+        }
+        else
+        {
+            AssertContains(currentState, "LAN-M16 is current host-owned multi-terminal role runtime candidate.", "Current-state doc must name LAN-M16 as current candidate.");
+        }
         AssertContains(coreSmoke, "LanM16HostOwnedRemoteOperatorSessionChecks.Run();", "CoreSmoke must wire the LAN-M16 operator session guard.");
         AssertContains(infraSmoke, "remote-pos-operator-session", "InfrastructureSmoke must wire the remote-pos-operator-session command.");
+    }
+
+    private static bool IsCurrentLanM16QaBState(string currentState)
+    {
+        return currentState.Contains("LAN-M16-QA-B", StringComparison.Ordinal)
+            && currentState.Contains("Historical M-series and ROLE docs remain context only and must not override current source truth.", StringComparison.Ordinal)
+            && currentState.Contains("Current live coordination authority:", StringComparison.Ordinal);
     }
 
     private static string ReadRequiredFile(params string[] pathParts)

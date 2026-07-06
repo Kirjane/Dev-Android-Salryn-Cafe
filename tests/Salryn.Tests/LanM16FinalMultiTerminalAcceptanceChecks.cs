@@ -64,32 +64,64 @@ public static class LanM16FinalMultiTerminalAcceptanceChecks
     private static void AssertCurrentStateDoc(string currentState)
     {
         AssertContains(currentState, BaselineSha, "Current-state doc must carry the stable Sandbox SHA.");
-        AssertContains(currentState, "LAN-M16 is current host-owned multi-terminal role runtime candidate.", "Current-state doc must name LAN-M16 as current candidate.");
-        AssertContains(currentState, "LAN-M16 adds actual remote cashier/manager/admin POS operation against host DB.", "Current-state doc must state LAN-M16 adds remote POS operation against the host DB.");
-        AssertContains(currentState, "LAN-M16 does not use shared SQLite.", "Current-state doc must state LAN-M16 does not use shared SQLite.");
-        AssertContains(currentState, "LAN-M16 does not imply sync between two independent hosts.", "Current-state doc must state LAN-M16 does not imply sync.");
-        AssertContains(currentState, "LAN-M16 keeps LAN bind explicit and host-controlled.", "Current-state doc must state LAN bind stays explicit/host-controlled.");
-        AssertContains(currentState, "LAN_M16_HOST_OWNED_MULTI_TERMINAL_ROLE_RUNTIME.md", "Current-state doc must list the LAN-M16 doc as live authority.");
+        if (IsCurrentLanM16QaBState(currentState))
+        {
+            AssertContains(currentState, "LAN-M16-QA-B", "Current-state doc must name LAN-M16-QA-B as the current candidate.");
+            AssertContains(currentState, "LAN-M16-QA-B adds a host-approved Remote POS pairing gate and remote role login boundary.", "Current-state doc must state LAN-M16-QA-B adds the remote POS pairing/login boundary.");
+            AssertContains(currentState, "Cashier/Manager only for Remote POS login.", "Current-state doc must state Remote POS login is limited to Cashier/Manager.");
+            AssertContains(currentState, "Admin/Owner remain host-local for this build.", "Current-state doc must keep Admin/Owner host-local.");
+            AssertContains(currentState, "Remote-readonly remains GET-only under `/api/remote-readonly`.", "Current-state doc must keep remote-readonly GET-only.");
+            AssertContains(currentState, "Local LAN control remains loopback/operator-only under `/api/lan-control`.", "Current-state doc must keep local LAN control loopback-only.");
+            AssertContains(currentState, "Host owns SQLite, sales, inventory writes, receipt allocation, and audit.", "Current-state doc must keep host-owned storage/writes.");
+            AssertContains(currentState, "Remote clients never share SQLite.", "Current-state doc must keep the no-shared-SQLite boundary.");
+            AssertContains(currentState, "Independent hosts do not sync.", "Current-state doc must keep the no-sync boundary.");
+            AssertContains(currentState, "Remote POS runtime is disabled by default and resets on host restart.", "Current-state doc must keep remote POS disabled by default.");
+            AssertContains(currentState, "Remote POS commands remain bound to terminal identity, handshake proof, host-issued operator session, host/store identity, and server-observed origin.", "Current-state doc must keep the remote POS trust binding.");
+            AssertContains(currentState, "Terminal disable/revoke still blocks remote POS through existing terminal trust checks.", "Current-state doc must keep terminal disable/revoke blocking remote POS.");
+            AssertContains(currentState, "Historical M-series and ROLE docs remain context only and must not override current source truth.", "Current-state doc must keep older M-series docs demoted to historical context.");
+        }
+        else
+        {
+            AssertContains(currentState, "LAN-M16 is current host-owned multi-terminal role runtime candidate.", "Current-state doc must name LAN-M16 as current candidate.");
+            AssertContains(currentState, "LAN-M16 adds actual remote cashier/manager/admin POS operation against host DB.", "Current-state doc must state LAN-M16 adds remote POS operation against the host DB.");
+            AssertContains(currentState, "LAN-M16 does not use shared SQLite.", "Current-state doc must state LAN-M16 does not use shared SQLite.");
+            AssertContains(currentState, "LAN-M16 does not imply sync between two independent hosts.", "Current-state doc must state LAN-M16 does not imply sync.");
+            AssertContains(currentState, "LAN-M16 keeps LAN bind explicit and host-controlled.", "Current-state doc must state LAN bind stays explicit/host-controlled.");
+            AssertContains(currentState, "LAN_M16_HOST_OWNED_MULTI_TERMINAL_ROLE_RUNTIME.md", "Current-state doc must list the LAN-M16 doc as live authority.");
+        }
 
-        // The read-only completion cap statement (required by LAN-M15-F guards) must still be present.
-        AssertContains(currentState, "LAN-M15-F is the LAN completion cap", "Current-state doc must keep LAN-M15-F completion cap statement.");
+        // The read-only completion cap statement remains required only on the pre-QA-B branch shape.
+        if (!IsCurrentLanM16QaBState(currentState))
+        {
+            AssertContains(currentState, "LAN-M15-F is the LAN completion cap", "Current-state doc must keep LAN-M15-F completion cap statement.");
+        }
         AssertNotContains(currentState, "LAN-M14-J is current", "Current-state doc must not mark LAN-M14-J as current work.");
         AssertNotContains(currentState, "LAN-M15-G is current", "Current-state doc must not mark LAN-M15-G as current work.");
 
-        // LAN-M16-QA-A: the current-state doc must no longer globally deny mutation/checkout. The
-        // "no mutation/no checkout/no remote cashier" boundary now applies only to /api/remote-readonly,
-        // while controlled host-owned mutation/checkout is explicitly scoped to /api/remote-pos.
-        AssertContains(currentState, "Remote-readonly (`/api/remote-readonly`) remains GET-only: no mutation, no checkout, and no remote cashier/admin execution on that surface.",
-            "Current-state doc must scope the no-mutation/no-checkout boundary to remote-readonly.");
-        AssertContains(currentState, "LAN-M16 adds controlled remote POS mutation/checkout through `/api/remote-pos` only.",
-            "Current-state doc must state LAN-M16 adds controlled remote POS mutation/checkout through /api/remote-pos only.");
-        AssertContains(currentState, "Next step is Codex review of LAN-M16-QA-A.",
-            "Current-state doc must name Codex review of LAN-M16-QA-A as the next step.");
-        AssertContains(currentState, "Remote official strict BIR/electronic-journal path remains host-local; do not claim remote RMO compliance.",
-            "Current-state doc must keep the official/RMO host-local limitation.");
-        // The old flat global denial bullets must not linger as standalone contradictions.
-        AssertNotContains(currentState, "- No mutation.", "Current-state doc must not keep a flat global 'No mutation.' bullet.");
-        AssertNotContains(currentState, "- No checkout.", "Current-state doc must not keep a flat global 'No checkout.' bullet.");
+        if (!IsCurrentLanM16QaBState(currentState))
+        {
+            // LAN-M16-QA-A: the current-state doc must no longer globally deny mutation/checkout. The
+            // "no mutation/no checkout/no remote cashier" boundary now applies only to /api/remote-readonly,
+            // while controlled host-owned mutation/checkout is explicitly scoped to /api/remote-pos.
+            AssertContains(currentState, "Remote-readonly (`/api/remote-readonly`) remains GET-only: no mutation, no checkout, and no remote cashier/admin execution on that surface.",
+                "Current-state doc must scope the no-mutation/no-checkout boundary to remote-readonly.");
+            AssertContains(currentState, "LAN-M16 adds controlled remote POS mutation/checkout through `/api/remote-pos` only.",
+                "Current-state doc must state LAN-M16 adds controlled remote POS mutation/checkout through /api/remote-pos only.");
+            AssertContains(currentState, "Next step is Codex review of LAN-M16-QA-A.",
+                "Current-state doc must name Codex review of LAN-M16-QA-A as the next step.");
+            AssertContains(currentState, "Remote official strict BIR/electronic-journal path remains host-local; do not claim remote RMO compliance.",
+                "Current-state doc must keep the official/RMO host-local limitation.");
+            // The old flat global denial bullets must not linger as standalone contradictions.
+            AssertNotContains(currentState, "- No mutation.", "Current-state doc must not keep a flat global 'No mutation.' bullet.");
+            AssertNotContains(currentState, "- No checkout.", "Current-state doc must not keep a flat global 'No checkout.' bullet.");
+        }
+    }
+
+    private static bool IsCurrentLanM16QaBState(string currentState)
+    {
+        return currentState.Contains("LAN-M16-QA-B", StringComparison.Ordinal)
+            && currentState.Contains("Historical M-series and ROLE docs remain context only and must not override current source truth.", StringComparison.Ordinal)
+            && currentState.Contains("Current live coordination authority:", StringComparison.Ordinal);
     }
 
     private static void AssertLanM16Doc(string doc)

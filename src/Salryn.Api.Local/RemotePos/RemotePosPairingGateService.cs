@@ -344,7 +344,7 @@ public sealed class RemotePosPairingGateService
             HostId: state.HostId.Value.ToString("D"),
             StoreId: state.StoreId.Value.ToString("D"),
             TerminalName: state.DeviceName,
-            SessionExpiresAtUtc: handshake.Value.ExpiresAtUtc?.ToString("O"),
+            SessionExpiresAtUtc: handshake.Value.SessionExpiresAtUtc?.ToString("O"),
             Message: "Device paired. After pairing, sign in as Cashier or Manager."));
     }
 

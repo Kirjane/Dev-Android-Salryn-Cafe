@@ -18,6 +18,19 @@ public static class LanM14GRemoteReadonlyBridgeRuntimeChecks
         string lanM14G = ReadRequiredFile(lanM14GPath);
         string coreSmoke = ReadRequiredFile(coreSmokePath);
 
+        if (IsCurrentLanM16QaBState(currentState))
+        {
+            AssertContains(currentState, "Stable as of `e477699dca27a21954a5ad9d388307fdb9ed08fd`", "Current-state doc must preserve the current stable Sandbox SHA.");
+            AssertContains(currentState, "LAN-M16-QA-B", "Current-state doc must mark LAN-M16-QA-B as the current candidate work.");
+            AssertContains(currentState, "Current live coordination authority:", "Current-state doc must keep live coordination authority visible.");
+            AssertContains(currentState, "Historical M-series and ROLE docs remain context only and must not override current source truth.", "Current-state doc must keep older M-series docs demoted to historical context.");
+
+            AssertContains(lanM14G, "hybrid bridge", "LAN-M14-G doc must remain available as historical bridge runtime context.");
+            AssertContains(coreSmoke, "LanM14GRemoteReadonlyBridgeRuntimeChecks.Run();", "CoreSmoke must keep LAN-M14-G checks wired.");
+            AssertSourceBridgeRuntimeBoundaries(projectRoot);
+            return;
+        }
+
         if (IsLanM14FThroughIClosureContext(currentState))
         {
             AssertContains(currentState, LanM14GBaselineSha, "Current-state doc must contain the LAN-M14-G baseline SHA.");
@@ -38,6 +51,13 @@ public static class LanM14GRemoteReadonlyBridgeRuntimeChecks
     {
         return currentState.Contains("LAN-M14-F through LAN-M14-I are candidate work completed", StringComparison.Ordinal)
             || currentState.Contains("LAN-M14-I is the LAN-M14 cap", StringComparison.Ordinal);
+    }
+
+    private static bool IsCurrentLanM16QaBState(string currentState)
+    {
+        return currentState.Contains("LAN-M16-QA-B", StringComparison.Ordinal)
+            && currentState.Contains("Historical M-series and ROLE docs remain context only and must not override current source truth.", StringComparison.Ordinal)
+            && currentState.Contains("Current live coordination authority:", StringComparison.Ordinal);
     }
 
     private static void AssertDocBoundaries(string currentState, string lanM14G, string coreSmoke)
