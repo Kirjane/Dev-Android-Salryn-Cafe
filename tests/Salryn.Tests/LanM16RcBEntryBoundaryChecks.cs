@@ -14,7 +14,9 @@ public static class LanM16RcBEntryBoundaryChecks
         string hostPage = ReadRequiredFile(webRoot, "pages", "HostLanControlPage.tsx");
         string readOnlyPage = ReadRequiredFile(webRoot, "pages", "RemoteReadOnlyClientPage.tsx");
         string remotePosPage = ReadRequiredFile(webRoot, "pages", "RemotePosClientPage.tsx");
+        string dashboardPage = ReadRequiredFile(webRoot, "pages", "DashboardPage.tsx");
         string remotePosHook = ReadRequiredFile(webRoot, "hooks", "useRemotePosClient.ts");
+        string appShell = ReadRequiredFile(webRoot, "components", "AppShell.tsx");
         string navigation = ReadRequiredFile(webRoot, "navigation.ts");
         string permissions = ReadRequiredFile(webRoot, "security", "permissions.ts");
 
@@ -33,7 +35,7 @@ public static class LanM16RcBEntryBoundaryChecks
         string infraSmoke = ReadRequiredFile(projectRoot, "tools", "Salryn.Tools.InfrastructureSmoke", "Program.cs");
 
         AssertRemoteEntry(app, landing, login, remotePosHook);
-        AssertHostControlPage(hostPage, readOnlyPage, remotePosPage, navigation, permissions);
+        AssertHostControlPage(app, appShell, hostPage, readOnlyPage, remotePosPage, dashboardPage, navigation, permissions);
         AssertBackendBoundary(appFactory, localAccessGuard, permissionGuards, lanControlAuthorization, lanControlEndpoints);
         AssertCapacity(capacityPolicy, pairingGate, sessionService, apiEndpoints, lanControlService, contracts, hostPage);
         AssertWiring(coreSmoke, infraSmoke);
@@ -71,9 +73,12 @@ public static class LanM16RcBEntryBoundaryChecks
     }
 
     private static void AssertHostControlPage(
+        string app,
+        string appShell,
         string hostPage,
         string readOnlyPage,
         string remotePosPage,
+        string dashboardPage,
         string navigation,
         string permissions)
     {
@@ -86,13 +91,21 @@ public static class LanM16RcBEntryBoundaryChecks
             "Remote POS runtime",
             "Remote Read-Only",
             "Host control is local-only",
-            "Save/apply LAN bind",
+            "Capacity",
+            "Set explicit bind address",
+            "Enable LAN transport",
+            "Save/apply LAN settings",
             "Rotate/show host join code",
             "Copy client URL",
             "Client devices use the host LAN IP, not localhost.",
             "Pairing Control",
+            "Pending device requests are the approval mechanism",
+            "Device wants to join",
             "Observed origin/IP",
+            "Accept",
+            "Reject",
             "One-time pairing code",
+            "Give this code to the client device.",
             "Terminal Control",
             "Max paired Remote POS terminals",
             "Max active Remote POS sessions",
@@ -108,13 +121,24 @@ public static class LanM16RcBEntryBoundaryChecks
         AssertNotContains(hostPage, "Product Browse / Read-Only Surface", "Host LAN Control page must not show product browse.");
         AssertNotContains(hostPage, "Preflight checklist", "Host LAN Control page must not show the giant read-only preflight dump.");
         AssertNotContains(readOnlyPage, "Local LAN Control (Operator-Only)", "Remote Read-Only Client page must not expose host controls.");
-        AssertNotContains(readOnlyPage, "Save/apply LAN bind", "Remote Read-Only Client page must not expose LAN bind controls.");
+        AssertNotContains(readOnlyPage, "Save/apply LAN settings", "Remote Read-Only Client page must not expose LAN bind controls.");
         AssertNotContains(readOnlyPage, "Rotate/show host join code", "Remote Read-Only Client page must not expose join-code controls.");
         AssertContains(readOnlyPage, "Runtime Diagnostics", "Remote Read-Only Client page must keep safe diagnostics.");
         AssertContains(readOnlyPage, "<details>", "Remote Read-Only Client diagnostics/troubleshooting must be collapsed by default.");
         AssertContains(remotePosPage, "Cashier / Manager login only", "Remote POS page must keep Cashier/Manager login copy.");
         AssertNotContains(remotePosPage, "Admin credentials", "Remote POS page must not say admin credentials.");
+        AssertContains(app, "useState<AppPage>(\"host-lan-control\")", "Authenticated host default page must be Host LAN Control, not Remote Read-Only Client.");
+        AssertNotContains(app, "useState<AppPage>(\"remote-readonly\")", "Authenticated host default page must not be Remote Read-Only Client.");
+        AssertContains(appShell, "Device wants to join", "Host shell must surface lightweight pending join notification.");
+        AssertContains(appShell, "onNavigate(\"host-lan-control\")", "Host shell pending notification must open Host LAN Control.");
+        AssertContains(appShell, "fetchRemotePosPairingHostStatus", "Host shell must poll pending Remote POS join requests.");
+        AssertContains(appShell, "Permissions.StoreTerminalView", "Host shell pending join polling must be permission-gated.");
+        AssertContains(appShell, "Salryn host operator console", "Host shell footer must not present as a read-only client console.");
+        AssertNotContains(appShell, "Salryn read-only operator console", "Host shell must remove stale read-only operator label.");
+        AssertContains(dashboardPage, "Open Host LAN Control", "Dashboard must provide an obvious handoff to Host LAN Control.");
         AssertContains(navigation, "Host LAN Control", "Navigation must expose dedicated Host LAN Control page to local operators.");
+        AssertContains(navigation, "{ id: \"host-lan-control\", label: \"Host LAN Control\", enabled: true }", "Host LAN Control must be an enabled sidebar item, not marked Later.");
+        AssertNotContains(navigation, "label: \"Host LAN Control\", enabled: false", "Host LAN Control must not be disabled in navigation.");
         AssertContains(permissions, "\"host-lan-control\"", "Permission catalog must register Host LAN Control page.");
     }
 

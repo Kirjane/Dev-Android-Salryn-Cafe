@@ -1,6 +1,9 @@
 import { useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { fetchRemotePosPairingHostStatus } from "../api/remoteReadOnlyClient";
 import type { SessionState } from "../api/session";
 import { getNavItems, type AppPage } from "../navigation";
+import { hasPermission, Permissions } from "../security/permissions";
 import { ConfirmDialog, StatusPill } from "./ui";
 
 type AppShellProps = {
@@ -20,6 +23,15 @@ export function AppShell({
 }: AppShellProps) {
   const [confirmLogout, setConfirmLogout] = useState(false);
   const visibleNavItems = getNavItems(session);
+  const canViewPendingJoinRequests = hasPermission(session, Permissions.StoreTerminalView);
+  const pendingJoinRequestsQuery = useQuery({
+    queryKey: ["host-lan-control-pending-join-requests"],
+    queryFn: fetchRemotePosPairingHostStatus,
+    enabled: canViewPendingJoinRequests,
+    retry: false,
+    refetchInterval: 5000,
+  });
+  const pendingJoinRequestCount = pendingJoinRequestsQuery.data?.pendingRequestCount ?? 0;
 
   return (
     <div className="flex h-screen flex-col bg-slate-100">
@@ -53,6 +65,8 @@ export function AppShell({
           <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
             {visibleNavItems.map((item) => {
               const isActive = item.enabled && item.id === currentPage;
+              const showPendingJoinBadge =
+                item.enabled && item.id === "host-lan-control" && pendingJoinRequestCount > 0;
 
               if (!item.enabled) {
                 return (
@@ -81,6 +95,11 @@ export function AppShell({
                   }`}
                 >
                   <span>{item.label}</span>
+                  {showPendingJoinBadge ? (
+                    <span className="rounded-full bg-amber-300 px-2 py-0.5 text-[0.65rem] font-semibold text-amber-950">
+                      {pendingJoinRequestCount}
+                    </span>
+                  ) : null}
                 </button>
               );
             })}
@@ -91,13 +110,30 @@ export function AppShell({
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <main className="flex-1 overflow-y-auto p-6">{children}</main>
+          <main className="flex-1 overflow-y-auto p-6">
+            {pendingJoinRequestCount > 0 ? (
+              <button
+                type="button"
+                onClick={() => onNavigate("host-lan-control")}
+                className="mb-4 flex w-full flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-left text-sm text-amber-950 shadow-sm hover:bg-amber-100"
+              >
+                <span>
+                  <span className="font-semibold">Device wants to join</span>
+                  <span className="ml-2 text-amber-900">
+                    Open Host LAN Control to accept or reject the pending request.
+                  </span>
+                </span>
+                <StatusPill tone="warning">{pendingJoinRequestCount} pending</StatusPill>
+              </button>
+            ) : null}
+            {children}
+          </main>
           <footer className="flex items-center justify-between border-t border-slate-200 bg-white px-6 py-2 text-xs text-slate-500">
             <span className="flex items-center gap-2">
               <StatusPill tone="success">System Ready</StatusPill>
-              Salryn read-only operator console
+              Salryn host operator console
             </span>
-            <span>WEB-B0 read-only surfaces</span>
+            <span>Host-local API surfaces</span>
           </footer>
         </div>
       </div>

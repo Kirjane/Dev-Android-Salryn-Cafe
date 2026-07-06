@@ -28,6 +28,7 @@ export function useLocalLanControl() {
     queryKey: ["local-lan-control-remote-pos-pairing"],
     queryFn: fetchRemotePosPairingHostStatus,
     retry: false,
+    refetchInterval: 5000,
   });
 
   const remoteTransportMutation = useMutation({

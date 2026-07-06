@@ -44,6 +44,9 @@ export function HostLanControlPage() {
   const status = statusQuery.data;
   const pairing = pairingStatusQuery.data;
   const limits = status?.remotePosLimits ?? null;
+  const pendingRequests = pairing?.pendingRequests ?? [];
+  const pendingRequestCount = pairing?.pendingRequestCount ?? pendingRequests.length;
+  const capacitySummary = `${limits?.currentPairedCount ?? 0} / ${limits?.maxPairedTerminals ?? 5} paired, ${limits?.currentActiveSessions ?? 0} / ${limits?.maxActiveSessions ?? 3} active`;
   const clientUrl = status?.hostLanUrl && status.hostLanUrl !== "Not enabled" ? status.hostLanUrl : "";
   const busy =
     remoteTransportMutation.isPending ||
@@ -113,6 +116,7 @@ export function HostLanControlPage() {
                   <Row label="Host LAN URL" value={status.hostLanUrl} />
                   <Row label="Remote POS runtime" value={enabledLabel(status.remotePosRuntimeEnabled)} />
                   <Row label="Remote Read-Only" value={enabledLabel(status.remoteTransportEnabled)} />
+                  <Row label="Capacity" value={capacitySummary} />
                   <Row label="Safety" value={status.safety} />
                 </dl>
               </CardBody>
@@ -153,31 +157,100 @@ export function HostLanControlPage() {
 
           <Card>
             <CardHeader>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <CardTitle>Pairing Control</CardTitle>
+                {pendingRequestCount > 0 ? (
+                  <StatusPill tone="warning">{pendingRequestCount} pending</StatusPill>
+                ) : (
+                  <StatusPill tone="success">No pending requests</StatusPill>
+                )}
+              </div>
+            </CardHeader>
+            <CardBody>
+              {pendingRequestCount > 0 ? (
+                <Alert tone="warning" title="Device wants to join">
+                  Review the pending device request here, then accept or reject it from this host PC.
+                </Alert>
+              ) : null}
+              {pairingStatusQuery.isLoading ? <LoadingState label="Loading pending device requests..." /> : null}
+              {pairingStatusQuery.isError ? <ErrorState message={(pairingStatusQuery.error as Error).message} /> : null}
+              <p className="my-4 text-sm text-slate-600">
+                Pending device requests are the approval mechanism. Rotate a join code, have the client submit
+                its device name, then accept or reject the request here.
+              </p>
+              {pendingRequests.length ? (
+                <div className="space-y-3">
+                  {pendingRequests.map((request) => (
+                    <div key={request.requestId} className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-slate-900">{request.deviceName}</p>
+                          <p className="text-slate-600">Observed origin/IP: {request.observedOrigin || "Unavailable"}</p>
+                          <p className="text-slate-600">Requested: {formatDate(request.requestedAtUtc)}</p>
+                        </div>
+                        <StatusPill tone={request.pairingState === "Pending" ? "warning" : "info"}>{request.pairingState}</StatusPill>
+                      </div>
+                      {acceptedCodes[request.requestId] ? (
+                        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-950">
+                          <p className="font-medium">One-time pairing code</p>
+                          <p className="font-mono text-lg">{acceptedCodes[request.requestId]}</p>
+                          <p className="mt-1">Give this code to the client device.</p>
+                        </div>
+                      ) : null}
+                      {request.pairingState === "Pending" ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Button size="sm" disabled={busy} onClick={() => acceptRequest(request.requestId)}>
+                            Accept
+                          </Button>
+                          <Button size="sm" variant="secondary" disabled={busy} onClick={() => rejectJoinRequestMutation.mutate(request.requestId)}>
+                            Reject
+                          </Button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">No pending device requests.</p>
+              )}
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle>Main Controls</CardTitle>
             </CardHeader>
             <CardBody className="space-y-5">
-              <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto]">
-                <TextInput
-                  id="host-lan-control-bind-address"
-                  value={bindAddressInput}
-                  onChange={(event) => setBindAddressInput(event.target.value)}
-                  placeholder="Explicit LAN IP address"
-                  disabled={busy}
-                />
-                <Button
-                  variant="secondary"
-                  disabled={busy || bindAddressInput.trim().length === 0}
-                  onClick={() => remoteTransportMutation.mutate({ enable: true, bindAddress: bindAddressInput.trim() })}
-                >
-                  Save/apply LAN bind
-                </Button>
-                <Button
-                  variant="secondary"
-                  disabled={busy}
-                  onClick={() => remoteTransportMutation.mutate({ enable: false, bindAddress: null })}
-                >
-                  Disable LAN transport
-                </Button>
+              <div className="space-y-2">
+                <label htmlFor="host-lan-control-bind-address" className="block text-sm font-medium text-slate-700">
+                  Set explicit bind address
+                </label>
+                <p className="text-xs text-slate-500">
+                  Enable LAN transport with this host LAN IP, or disable LAN transport when clients should not connect.
+                </p>
+                <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto]">
+                  <TextInput
+                    id="host-lan-control-bind-address"
+                    value={bindAddressInput}
+                    onChange={(event) => setBindAddressInput(event.target.value)}
+                    placeholder="Explicit LAN IP address"
+                    disabled={busy}
+                  />
+                  <Button
+                    variant="secondary"
+                    disabled={busy || bindAddressInput.trim().length === 0}
+                    onClick={() => remoteTransportMutation.mutate({ enable: true, bindAddress: bindAddressInput.trim() })}
+                  >
+                    Save/apply LAN settings
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() => remoteTransportMutation.mutate({ enable: false, bindAddress: null })}
+                  >
+                    Disable LAN transport
+                  </Button>
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-3">
@@ -212,55 +285,13 @@ export function HostLanControlPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Pairing Control</CardTitle>
-            </CardHeader>
-            <CardBody>
-              {pairingStatusQuery.isLoading ? <LoadingState label="Loading pending device requests..." /> : null}
-              {pairingStatusQuery.isError ? <ErrorState message={(pairingStatusQuery.error as Error).message} /> : null}
-              <p className="mb-4 text-sm text-slate-600">{pairing?.message ?? "Rotate a join code, then approve or reject pending device requests here."}</p>
-              {pairing?.pendingRequests.length ? (
-                <div className="space-y-3">
-                  {pairing.pendingRequests.map((request) => (
-                    <div key={request.requestId} className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="font-medium text-slate-900">{request.deviceName}</p>
-                          <p className="text-slate-600">Observed origin/IP: {request.observedOrigin || "Unavailable"}</p>
-                          <p className="text-slate-600">Requested: {formatDate(request.requestedAtUtc)}</p>
-                        </div>
-                        <StatusPill tone={request.pairingState === "Pending" ? "warning" : "info"}>{request.pairingState}</StatusPill>
-                      </div>
-                      {acceptedCodes[request.requestId] ? (
-                        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-950">
-                          <p className="font-medium">One-time pairing code</p>
-                          <p className="font-mono text-lg">{acceptedCodes[request.requestId]}</p>
-                        </div>
-                      ) : null}
-                      {request.pairingState === "Pending" ? (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <Button size="sm" disabled={busy} onClick={() => acceptRequest(request.requestId)}>
-                            Accept
-                          </Button>
-                          <Button size="sm" variant="secondary" disabled={busy} onClick={() => rejectJoinRequestMutation.mutate(request.requestId)}>
-                            Reject
-                          </Button>
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-slate-500">No pending device requests.</p>
-              )}
-            </CardBody>
-          </Card>
-
-          <Card>
-            <CardHeader>
               <CardTitle>Terminal Control</CardTitle>
             </CardHeader>
             <CardBody>
               <p className="mb-4 text-sm text-slate-600">{status.terminalVisibilityMessage}</p>
+              <p className="mb-4 text-sm font-medium text-slate-700">
+                Remaining capacity: {limits?.remainingPairingCapacity ?? 0} terminals / {limits?.remainingActiveSessionCapacity ?? 0} sessions.
+              </p>
               {status.terminals.length > 0 ? (
                 <div className="space-y-3">
                   {status.terminals.map((terminal) => (

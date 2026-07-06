@@ -44,10 +44,10 @@ function AccessDenied({ currentPage, onGoHome }: { currentPage: AppPage; onGoHom
   );
 }
 
-function renderPage(page: AppPage, session: SessionState, onLogout: () => void) {
+function renderPage(page: AppPage, session: SessionState, onLogout: () => void, onNavigate: (page: AppPage) => void) {
   switch (page) {
     case "dashboard":
-      return <DashboardPage session={session} onLogout={onLogout} />;
+      return <DashboardPage session={session} onLogout={onLogout} onOpenHostLanControl={() => onNavigate("host-lan-control")} />;
     case "remote-readonly":
       return <RemoteReadOnlyClientPage />;
     case "remote-pos":
@@ -100,7 +100,7 @@ function RemoteClientApp() {
 function ConsoleApp() {
   const queryClient = useQueryClient();
   const sessionQuery = useAppSession();
-  const [currentPage, setCurrentPage] = useState<AppPage>("dashboard");
+  const [currentPage, setCurrentPage] = useState<AppPage>("host-lan-control");
 
   useEffect(() => {
     const session = sessionQuery.data;
@@ -152,7 +152,7 @@ function ConsoleApp() {
   const session = sessionQuery.data;
   const firstAllowedPage = getFirstAllowedPage(session);
   const pageContent = canAccessPage(session, currentPage) ? (
-    renderPage(currentPage, session, () => void handleLogout())
+    renderPage(currentPage, session, () => void handleLogout(), setCurrentPage)
   ) : (
     <AccessDenied currentPage={currentPage} onGoHome={() => firstAllowedPage && setCurrentPage(firstAllowedPage)} />
   );
