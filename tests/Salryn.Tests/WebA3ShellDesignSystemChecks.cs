@@ -38,10 +38,10 @@ public static class WebA3ShellDesignSystemChecks
         // Guard wired into CoreSmoke.
         RequireContains(coreSmokeText, "WebA3ShellDesignSystemChecks.Run();", "CoreSmoke must run WEB-A3 checks.");
 
-        // Scoped: no real checkout/native-handoff wiring in API clients or pages.
+        // Scoped: dashboard/login/session clients remain checkout-free; host checkout lives in CheckoutPage.
         foreach (string scoped in new[] { sessionApiText, dashboardApiText, dashboardPageText, loginPageText })
         {
-            RequireNotContains(scoped, "checkout", "WEB-A3 must not add checkout logic to API clients or pages.");
+            RequireNotContains(scoped, "checkout", "WEB-A3 must not add checkout logic to dashboard/session clients.");
             RequireNotContains(scoped, "handoff", "WEB-A3 must not reintroduce session handoff.");
             RequireNotContains(scoped, "NativeHandoff", "WEB-A3 must not reintroduce native handoff.");
         }
@@ -49,7 +49,7 @@ public static class WebA3ShellDesignSystemChecks
         // Read-only module pages are allowed after WEB-B0.
         string[] forbiddenPagePrefixes =
         {
-            "Checkout", "Backup", "Settings", "OfficialOutput",
+            "Backup", "Settings", "OfficialOutput",
         };
         string pagesDir = Path.Combine(webSrc, "pages");
         foreach (string pageFile in Directory.GetFiles(pagesDir, "*.tsx", SearchOption.AllDirectories))
@@ -61,7 +61,8 @@ public static class WebA3ShellDesignSystemChecks
                 name.Equals("InventoryPage.tsx", StringComparison.Ordinal) ||
                 name.Equals("SalesHistoryPage.tsx", StringComparison.Ordinal) ||
                 name.Equals("UsersPage.tsx", StringComparison.Ordinal) ||
-                name.Equals("AuditPage.tsx", StringComparison.Ordinal))
+                name.Equals("AuditPage.tsx", StringComparison.Ordinal) ||
+                name.Equals("CheckoutPage.tsx", StringComparison.Ordinal))
             {
                 continue;
             }

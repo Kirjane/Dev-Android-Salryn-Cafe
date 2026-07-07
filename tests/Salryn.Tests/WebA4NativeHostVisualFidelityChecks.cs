@@ -69,7 +69,7 @@ public static class WebA4NativeHostVisualFidelityChecks
         // --- Scoped: no real module/checkout/handoff wiring in API clients or pages ---
         foreach (string scoped in new[] { sessionApiText, dashboardApiText, dashboardPageText, loginPageText })
         {
-            RequireNotContains(scoped, "checkout", "WEB-A4 must not add checkout logic to API clients or pages.");
+            RequireNotContains(scoped, "checkout", "WEB-A4 must not add checkout logic to dashboard/session clients.");
             RequireNotContains(scoped, "handoff", "WEB-A4 must not reintroduce session handoff.");
             RequireNotContains(scoped, "NativeHandoff", "WEB-A4 must not reintroduce native handoff.");
         }
@@ -77,7 +77,7 @@ public static class WebA4NativeHostVisualFidelityChecks
         // Read-only module pages are allowed after WEB-B0.
         string[] forbiddenPagePrefixes =
         {
-            "Checkout", "Backup", "Settings", "OfficialOutput", "Rmo",
+            "Backup", "Settings", "OfficialOutput", "Rmo",
         };
         string pagesDir = Path.Combine(webSrc, "pages");
         foreach (string pageFile in Directory.GetFiles(pagesDir, "*.tsx", SearchOption.AllDirectories))
@@ -89,7 +89,8 @@ public static class WebA4NativeHostVisualFidelityChecks
                 name.Equals("InventoryPage.tsx", StringComparison.Ordinal) ||
                 name.Equals("SalesHistoryPage.tsx", StringComparison.Ordinal) ||
                 name.Equals("UsersPage.tsx", StringComparison.Ordinal) ||
-                name.Equals("AuditPage.tsx", StringComparison.Ordinal))
+                name.Equals("AuditPage.tsx", StringComparison.Ordinal) ||
+                name.Equals("CheckoutPage.tsx", StringComparison.Ordinal))
             {
                 continue;
             }

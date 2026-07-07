@@ -89,6 +89,7 @@ public static class Program
         RoleM3HttpApiPermissionRuntimeChecks.RunAsync().GetAwaiter().GetResult();
         RoleM4PermissionBoundaryRegressionMatrixChecks.RunAsync().GetAwaiter().GetResult();
         V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();
+        V2ReactCheckoutSourceChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
         M5VerifiedCandidateStackLedgerChecks.Run();
         M6CandidateStackPromotionDryRunChecks.Run();
@@ -242,6 +243,9 @@ public static class Program
                 return;
             case "v2-host-checkout":
                 V2HostOperatorCheckoutApiChecks.RunAsync().GetAwaiter().GetResult();
+                return;
+            case "v2-react-checkout":
+                V2ReactCheckoutSourceChecks.Run();
                 return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);

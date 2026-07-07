@@ -128,7 +128,7 @@ public static class WebB0ReadOnlyOperatorSurfacesChecks
         // No forbidden module pages beyond read-only set.
         string[] forbiddenPagePrefixes =
         {
-            "Checkout", "Backup", "Settings", "OfficialOutput", "Rmo",
+            "Backup", "Settings", "OfficialOutput", "Rmo",
         };
         string pagesDir = Path.Combine(webSrc, "pages");
         foreach (string pageFile in Directory.GetFiles(pagesDir, "*.tsx", SearchOption.AllDirectories))
@@ -140,7 +140,8 @@ public static class WebB0ReadOnlyOperatorSurfacesChecks
                 name.Equals("InventoryPage.tsx", StringComparison.Ordinal) ||
                 name.Equals("SalesHistoryPage.tsx", StringComparison.Ordinal) ||
                 name.Equals("UsersPage.tsx", StringComparison.Ordinal) ||
-                name.Equals("AuditPage.tsx", StringComparison.Ordinal))
+                name.Equals("AuditPage.tsx", StringComparison.Ordinal) ||
+                name.Equals("CheckoutPage.tsx", StringComparison.Ordinal))
             {
                 continue;
             }

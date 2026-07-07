@@ -12,6 +12,15 @@ public static class WebA2LocalApiAuthSessionChecks
         string apiProgramText = ReadRequiredFile(repoRoot, "src", "Salryn.Api.Local", "Program.cs")
             + "\n"
             + ReadRequiredFile(repoRoot, "src", "Salryn.Api.Local", "LocalApiApplicationFactory.cs");
+        string hostCheckoutEndpointsText = ReadRequiredFile(repoRoot, "src", "Salryn.Api.Local", "LocalHostCheckoutEndpoints.cs");
+        string hostCheckoutServiceText = ReadRequiredFile(repoRoot, "src", "Salryn.Api.Local", "Services", "HostOperatorCheckoutApiService.cs");
+        string remoteReadOnlyEndpointsText = ReadRequiredFile(repoRoot, "src", "Salryn.Api.Local", "RemoteReadOnlyApiEndpoints.cs");
+        string hostBootstrapText = ReadRequiredFile(
+            repoRoot,
+            "src",
+            "Salryn.Host.Local",
+            "Bootstrap",
+            "LocalHostHandlerBootstrapModels.cs");
         string sessionServiceText = ReadRequiredFile(repoRoot, "src", "Salryn.Api.Local", "Auth", "LocalApiSessionService.cs");
         string sessionContractsText = ReadRequiredFile(repoRoot, "src", "Salryn.Api.Local", "Contracts", "AuthSessionContracts.cs");
         string webSessionApiText = ReadRequiredFile(repoRoot, "src", "Salryn.App.Web", "src", "api", "session.ts");
@@ -48,7 +57,13 @@ public static class WebA2LocalApiAuthSessionChecks
         RequireNotContains(apiProgramText, "/api/session/handoff/register", "API must not expose handoff register endpoint.");
         RequireNotContains(apiProgramText, "/api/session/handoff/complete", "API must not expose handoff complete endpoint.");
         RequireNotContains(apiProgramText, "NativeHandoff", "API must not include native handoff types.");
-        RequireNotContains(apiProgramText, "checkout", "API must not include checkout mutation endpoints.");
+        RequireContains(apiProgramText, "MapLocalHostCheckoutEndpoints", "API must map host-local checkout endpoints.");
+        RequireContains(hostCheckoutEndpointsText, "/api/checkout", "Host-local POST /api/checkout must exist.");
+        RequireContains(hostCheckoutEndpointsText, "LocalApiPermissions.SalesCreate", "Host checkout must require Sales.Create.");
+        RequireContains(hostCheckoutServiceText, "IPosCheckoutApplicationService", "Host checkout must use authoritative sale completion service.");
+        RequireNotContains(hostCheckoutServiceText, "LocalHostBootstrapNotImplementedHandler", "Host checkout must not use placeholder Local Host handlers.");
+        RequireContains(hostBootstrapText, "LocalHostBootstrapNotImplementedHandler", "Placeholder Local Host handlers remain quarantined.");
+        RequireNotContains(remoteReadOnlyEndpointsText, "MapPost(\"/api/checkout\"", "Remote read-only API must not expose host checkout mutation.");
 
         RequireContains(sessionServiceText, "IAuthenticationService", "Session service must use existing authentication service.");
         RequireContains(sessionServiceText, "_authentication.LoginAsync", "Session service must call IAuthenticationService.LoginAsync.");

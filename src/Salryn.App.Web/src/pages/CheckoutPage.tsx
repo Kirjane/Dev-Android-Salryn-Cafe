@@ -60,7 +60,7 @@ function fromCents(value: number | null | undefined): string {
   return formatMoney((value ?? 0) / 100);
 }
 
-function describeBackendError(error: unknown): string {
+export function describeCheckoutBackendError(error: unknown): string {
   if (error instanceof ApiError) {
     const code = error.code ?? "";
     const checkoutStatus = error.checkoutStatus ?? "";
@@ -116,6 +116,7 @@ export function CheckoutPage() {
   const [backendMessage, setBackendMessage] = useState<string | null>(null);
   const [checkoutResult, setCheckoutResult] = useState<CheckoutEnvelope | null>(null);
   const [attemptState, setAttemptState] = useState<CheckoutAttemptState>(initialAttemptState);
+  const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
   const [isOpeningShift, setIsOpeningShift] = useState(false);
   const [isClosingShift, setIsClosingShift] = useState(false);
   const [isSubmittingCheckout, setIsSubmittingCheckout] = useState(false);
@@ -139,7 +140,7 @@ export function CheckoutPage() {
         search: search.trim() || undefined,
         isActive: true,
         page: 1,
-        pageSize: 10,
+        pageSize: 25,
       }),
     retry: false,
   });
@@ -150,9 +151,12 @@ export function CheckoutPage() {
   );
   const cashCents = toCents(cashAmount);
   const subtotalCents = Math.round(subtotal * 100);
-  const balanceCents = Math.max(0, subtotalCents - cashCents);
+  const estimatedChangeCents = cashCents >= subtotalCents ? cashCents - subtotalCents : 0;
   const shift = shiftQuery.data?.shift;
   const shiftOpen = isOpenShift(shift?.shiftState);
+  const operatorLabel =
+    sessionQuery.data?.user?.displayName ?? sessionQuery.data?.user?.username ?? "Not signed in";
+
   const cartValidationMessage = useMemo(() => {
     if (cartLines.length === 0) {
       return "Add at least one product before checkout.";
@@ -172,6 +176,7 @@ export function CheckoutPage() {
 
     return null;
   }, [cartLines.length, cashCents, shiftOpen, subtotalCents]);
+
   const canSubmitCheckout =
     cartValidationMessage === null && cartLines.length > 0 && !isSubmittingCheckout;
 
@@ -201,7 +206,8 @@ export function CheckoutPage() {
 
   async function refreshShiftAndProducts() {
     setBackendMessage(null);
-    await Promise.all([shiftQuery.refetch(), productsQuery.refetch()]);
+    await Promise.all([sessionQuery.refetch(), shiftQuery.refetch(), productsQuery.refetch()]);
+    setLastRefreshAt(new Date().toISOString());
   }
 
   async function handleOpenShift() {
@@ -211,8 +217,9 @@ export function CheckoutPage() {
       const result = await openHostShift({ openingCashCents: toCents(openingCash) });
       setBackendMessage(result.message);
       await shiftQuery.refetch();
+      setLastRefreshAt(new Date().toISOString());
     } catch (error) {
-      setBackendMessage(describeBackendError(error));
+      setBackendMessage(describeCheckoutBackendError(error));
     } finally {
       setIsOpeningShift(false);
     }
@@ -225,8 +232,9 @@ export function CheckoutPage() {
       const result = await closeHostShift();
       setBackendMessage(result.message);
       await shiftQuery.refetch();
+      setLastRefreshAt(new Date().toISOString());
     } catch (error) {
-      setBackendMessage(describeBackendError(error));
+      setBackendMessage(describeCheckoutBackendError(error));
     } finally {
       setIsClosingShift(false);
     }
@@ -266,6 +274,7 @@ export function CheckoutPage() {
         saleId: result.checkout.saleId,
       });
       await shiftQuery.refetch();
+      setLastRefreshAt(new Date().toISOString());
     } catch (error) {
       if (error instanceof ApiError) {
         setAttemptState({
@@ -277,7 +286,7 @@ export function CheckoutPage() {
         });
       }
 
-      setBackendMessage(describeBackendError(error));
+      setBackendMessage(describeCheckoutBackendError(error));
     } finally {
       setIsSubmittingCheckout(false);
     }
@@ -286,29 +295,34 @@ export function CheckoutPage() {
   return (
     <div className="space-y-6">
       <CommandBar
-        title="POS Checkout"
-        subtitle="Host-local checkout wired to the approved backend endpoints."
+        title="Host Checkout Workstation"
+        subtitle="Local host console checkout using real shift, product, and sale completion APIs."
         status={
-          shift ? (
-            <StatusPill tone={shiftOpen ? "success" : "warning"}>
-              Shift {shift.shiftState}
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusPill tone={sessionQuery.data?.isAuthenticated ? "success" : "warning"}>
+              {operatorLabel}
             </StatusPill>
-          ) : null
+            {shift ? (
+              <StatusPill tone={shiftOpen ? "success" : "warning"}>Shift {shift.shiftState}</StatusPill>
+            ) : null}
+          </div>
         }
         actions={
           <Button
             variant="secondary"
             onClick={() => void refreshShiftAndProducts()}
-            disabled={shiftQuery.isFetching || productsQuery.isFetching}
+            disabled={shiftQuery.isFetching || productsQuery.isFetching || sessionQuery.isFetching}
           >
-            {shiftQuery.isFetching || productsQuery.isFetching ? "Refreshing..." : "Refresh Shift/Products"}
+            {shiftQuery.isFetching || productsQuery.isFetching || sessionQuery.isFetching
+              ? "Refreshing..."
+              : "Refresh Shift/Products"}
           </Button>
         }
       />
 
-      <Alert tone="primary" title="Real backend path only">
-        This page calls GET /api/shift, POST /api/shift/open, POST /api/shift/close, and POST /api/checkout.
-        It does not create local success states and does not handle official output, printing, PDF, or product mutation work.
+      <Alert tone="primary" title="Host-local checkout only">
+        Uses GET /api/shift, POST /api/shift/open, POST /api/shift/close, and POST /api/checkout.
+        Stock shown in search is catalog state; stock is verified again at checkout. No official output or product mutation.
       </Alert>
 
       {backendMessage ? <Alert tone={checkoutResult ? "success" : "warning"}>{backendMessage}</Alert> : null}
@@ -317,218 +331,189 @@ export function CheckoutPage() {
       ) : null}
 
       {shiftQuery.isLoading ? <LoadingState label="Reading host shift..." /> : null}
-      {shiftQuery.isError ? <ErrorState message={describeBackendError(shiftQuery.error)} /> : null}
+      {shiftQuery.isError ? <ErrorState message={describeCheckoutBackendError(shiftQuery.error)} /> : null}
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_22rem]">
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Checkout readiness</CardTitle>
-            </CardHeader>
-            <CardBody className="space-y-2 text-sm text-slate-600">
-              <p>
-                Session:{" "}
-                {sessionQuery.isLoading
-                  ? "Loading..."
-                  : sessionQuery.data?.isAuthenticated
-                    ? `Authenticated as ${sessionQuery.data.user?.displayName ?? sessionQuery.data.user?.username ?? "operator"}`
-                    : "Not authenticated"}
-              </p>
-              <p>Shift status: {shift?.shiftState ?? "Unknown"}</p>
-              <p>Checkout permission required: Sales.Create</p>
-              <p>Product source: real backend products API</p>
-              <p>Cart line count: {cartLines.length}</p>
-              <p>Cart total: {formatMoney(subtotal)}</p>
-              <p>Cash tendered: {fromCents(cashCents)}</p>
-              <p>Last checkout HTTP status: {attemptState.httpStatus ?? "—"}</p>
-              <p>Last backend error code: {attemptState.backendCode ?? "—"}</p>
-              <p>Last checkout status: {attemptState.checkoutStatus ?? "—"}</p>
-              <p>Last receipt number: {attemptState.receiptNumber ?? "—"}</p>
-              <p>Last sale id: {attemptState.saleId ?? "—"}</p>
-            </CardBody>
-          </Card>
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <CardTitle>Shift controls</CardTitle>
+            {shift ? <StatusPill tone={shiftOpen ? "success" : "warning"}>{shift.shiftState}</StatusPill> : null}
+          </div>
+        </CardHeader>
+        <CardBody className="space-y-4">
+          <div className="grid gap-3 text-sm text-slate-600 md:grid-cols-4">
+            <p>Operator: {operatorLabel}</p>
+            <p>Shift ID: {shift?.shiftId ?? "—"}</p>
+            <p>Opened: {shift?.openedAtUtc ? formatDateTime(shift.openedAtUtc) : "—"}</p>
+            <p>Opening cash: {fromCents(shift?.openingCashCents)}</p>
+          </div>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="w-48">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Opening cash
+              </label>
+              <TextInput value={openingCash} onChange={(event) => setOpeningCash(event.target.value)} />
+            </div>
+            <Button onClick={() => void handleOpenShift()} disabled={isOpeningShift || shiftOpen}>
+              {isOpeningShift ? "Opening..." : "Open Shift"}
+            </Button>
+            <Button variant="danger" onClick={() => void handleCloseShift()} disabled={isClosingShift || !shiftOpen}>
+              {isClosingShift ? "Closing..." : "Close Shift"}
+            </Button>
+          </div>
+        </CardBody>
+      </Card>
 
-          <Card>
-            <CardHeader>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <CardTitle>Host shift</CardTitle>
-                {shift ? <StatusPill tone={shiftOpen ? "success" : "warning"}>{shift.shiftState}</StatusPill> : null}
-              </div>
-            </CardHeader>
-            <CardBody className="space-y-4">
-              {shift ? (
-                <div className="grid gap-3 text-sm text-slate-600 md:grid-cols-3">
-                  <p>Shift ID: {shift.shiftId ?? "—"}</p>
-                  <p>Opened: {shift.openedAtUtc ? formatDateTime(shift.openedAtUtc) : "—"}</p>
-                  <p>Opening cash: {fromCents(shift.openingCashCents)}</p>
-                </div>
-              ) : null}
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_22rem]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Product picker</CardTitle>
+          </CardHeader>
+          <CardBody className="space-y-4">
+            <TextInput
+              placeholder="Search SKU, barcode, or product name..."
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+            <p className="text-xs text-slate-500">
+              Products come from the real backend API. Stock is shown for operator context and verified again at checkout.
+            </p>
 
-              <div className="flex flex-wrap items-end gap-3">
-                <div className="w-48">
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Opening cash
-                  </label>
-                  <TextInput value={openingCash} onChange={(event) => setOpeningCash(event.target.value)} />
-                </div>
-                <Button onClick={() => void handleOpenShift()} disabled={isOpeningShift || shiftOpen}>
-                  {isOpeningShift ? "Opening..." : "Open Shift"}
-                </Button>
-                <Button variant="danger" onClick={() => void handleCloseShift()} disabled={isClosingShift || !shiftOpen}>
-                  {isClosingShift ? "Closing..." : "Close Shift"}
-                </Button>
-              </div>
-            </CardBody>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Product search</CardTitle>
-            </CardHeader>
-            <CardBody className="space-y-4">
-              <TextInput
-                placeholder="Search SKU, barcode, or product name..."
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-
-              {productsQuery.isLoading ? <LoadingState label="Loading products..." /> : null}
-              {productsQuery.isError ? <ErrorState message={describeBackendError(productsQuery.error)} /> : null}
-              {productsQuery.data ? (
-                <DataTable
-                  columns={[
-                    { key: "sku", header: "SKU", render: (row: ProductListItem) => row.sku ?? "—" },
-                    { key: "name", header: "Product", render: (row: ProductListItem) => row.name },
-                    {
-                      key: "price",
-                      header: "Price",
-                      align: "right",
-                      render: (row: ProductListItem) => formatMoney(row.sellingPrice),
-                    },
-                    {
-                      key: "stock",
-                      header: "Stock",
-                      align: "right",
-                      render: (row: ProductListItem) => formatQuantity(row.stockOnHand),
-                    },
-                    {
-                      key: "action",
-                      header: "Action",
-                      align: "right",
-                      render: (row: ProductListItem) => (
-                        <Button size="sm" variant="secondary" onClick={() => addProduct(row)}>
-                          Add
-                        </Button>
-                      ),
-                    },
-                  ]}
-                  rows={productsQuery.data.items}
-                  getRowKey={(row) => row.id}
-                  emptyTitle="No active products found"
-                  emptyDescription="Search results come from the real product API."
-                />
-              ) : null}
-            </CardBody>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between gap-3">
-                <CardTitle>Cart</CardTitle>
-                <Button variant="secondary" size="sm" onClick={() => setCartLines([])} disabled={cartLines.length === 0}>
-                  Clear
-                </Button>
-              </div>
-            </CardHeader>
-            <CardBody>
+            {productsQuery.isLoading ? <LoadingState label="Loading products..." /> : null}
+            {productsQuery.isError ? <ErrorState message={describeCheckoutBackendError(productsQuery.error)} /> : null}
+            {productsQuery.data ? (
               <DataTable
                 columns={[
-                  { key: "product", header: "Product", render: (row: CartLine) => row.product.name },
+                  { key: "sku", header: "SKU", render: (row: ProductListItem) => row.sku ?? "—" },
+                  { key: "barcode", header: "Barcode", render: (row: ProductListItem) => row.barcode ?? "—" },
+                  { key: "name", header: "Product", render: (row: ProductListItem) => row.name },
                   {
                     key: "price",
-                    header: "Unit Price",
+                    header: "Price",
                     align: "right",
-                    render: (row: CartLine) => formatMoney(row.product.sellingPrice),
+                    render: (row: ProductListItem) => formatMoney(row.sellingPrice),
                   },
                   {
-                    key: "qty",
-                    header: "Qty",
-                    align: "center",
-                    render: (row: CartLine) => (
-                      <div className="inline-flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => updateQuantity(row.product.id, row.quantity - 1)}
-                        >
-                          -
-                        </Button>
-                        <span className="w-10 text-center">{formatQuantity(row.quantity)}</span>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => updateQuantity(row.product.id, row.quantity + 1)}
-                        >
-                          +
-                        </Button>
-                      </div>
-                    ),
+                    key: "stock",
+                    header: "Stock",
+                    align: "right",
+                    render: (row: ProductListItem) =>
+                      row.trackStock ? formatQuantity(row.stockOnHand) : "Not tracked",
                   },
                   {
-                    key: "lineTotal",
-                    header: "Amount",
+                    key: "action",
+                    header: "Add",
                     align: "right",
-                    render: (row: CartLine) => formatMoney(row.product.sellingPrice * row.quantity),
-                  },
-                  {
-                    key: "remove",
-                    header: "Remove",
-                    align: "right",
-                    render: (row: CartLine) => (
-                      <Button size="sm" variant="ghost" onClick={() => updateQuantity(row.product.id, 0)}>
-                        Remove
+                    render: (row: ProductListItem) => (
+                      <Button size="sm" variant="secondary" onClick={() => addProduct(row)}>
+                        Add
                       </Button>
                     ),
                   },
                 ]}
-                rows={cartLines}
-                getRowKey={(row) => row.product.id}
-                emptyTitle="Cart is empty"
-                emptyDescription="Add active products from the backend product search."
+                rows={productsQuery.data.items}
+                getRowKey={(row) => row.id}
+                emptyTitle="No active products found"
+                emptyDescription="Search results come from the real product API."
               />
-            </CardBody>
-          </Card>
-        </div>
+            ) : null}
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle>Cart</CardTitle>
+              <Button variant="secondary" size="sm" onClick={() => setCartLines([])} disabled={cartLines.length === 0}>
+                Clear cart
+              </Button>
+            </div>
+          </CardHeader>
+          <CardBody>
+            <DataTable
+              columns={[
+                { key: "product", header: "Product", render: (row: CartLine) => row.product.name },
+                { key: "sku", header: "SKU", render: (row: CartLine) => row.product.sku ?? "—" },
+                {
+                  key: "price",
+                  header: "Unit Price",
+                  align: "right",
+                  render: (row: CartLine) => formatMoney(row.product.sellingPrice),
+                },
+                {
+                  key: "qty",
+                  header: "Qty",
+                  align: "center",
+                  render: (row: CartLine) => (
+                    <div className="inline-flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => updateQuantity(row.product.id, Math.max(0, row.quantity - 1))}
+                      >
+                        -
+                      </Button>
+                      <span className="w-10 text-center">{formatQuantity(row.quantity)}</span>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => updateQuantity(row.product.id, row.quantity + 1)}
+                      >
+                        +
+                      </Button>
+                    </div>
+                  ),
+                },
+                {
+                  key: "lineTotal",
+                  header: "Line Total",
+                  align: "right",
+                  render: (row: CartLine) => formatMoney(row.product.sellingPrice * row.quantity),
+                },
+                {
+                  key: "remove",
+                  header: "Remove",
+                  align: "right",
+                  render: (row: CartLine) => (
+                    <Button size="sm" variant="ghost" onClick={() => updateQuantity(row.product.id, 0)}>
+                      Remove
+                    </Button>
+                  ),
+                },
+              ]}
+              rows={cartLines}
+              getRowKey={(row) => row.product.id}
+              emptyTitle="Cart is empty"
+              emptyDescription="Add active products from the backend product picker."
+            />
+          </CardBody>
+        </Card>
 
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Totals</CardTitle>
+              <CardTitle>Cash tender</CardTitle>
             </CardHeader>
             <CardBody className="space-y-4 text-sm">
               <div className="flex justify-between">
-                <span className="text-slate-500">Subtotal</span>
+                <span className="text-slate-500">Cart subtotal</span>
                 <span className="font-semibold text-slate-900">{formatMoney(subtotal)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Cash payment</span>
-                <span className="font-semibold text-slate-900">{fromCents(cashCents)}</span>
-              </div>
-              <div className="flex justify-between border-t border-slate-200 pt-3">
-                <span className="text-slate-500">Balance before backend validation</span>
-                <span className="font-semibold text-slate-900">{fromCents(balanceCents)}</span>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Cash amount
+                  Cash tendered
                 </label>
                 <TextInput value={cashAmount} onChange={(event) => setCashAmount(event.target.value)} />
               </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Estimated change (local)</span>
+                <span className="font-semibold text-slate-900">{fromCents(estimatedChangeCents)}</span>
+              </div>
               <Button className="w-full" onClick={() => void handleSubmitCheckout()} disabled={!canSubmitCheckout}>
-                {isSubmittingCheckout ? "Submitting to backend..." : "Submit Checkout"}
+                {isSubmittingCheckout ? "Submitting to backend..." : "Complete Checkout"}
               </Button>
               <p className="text-xs text-slate-500">
-                The backend remains the source of truth for shift, product, stock, payment, and final completion validation.
+                Backend validates shift, stock, payment, and writes the sale. Change amount is final only after backend success.
               </p>
             </CardBody>
           </Card>
@@ -536,11 +521,11 @@ export function CheckoutPage() {
           {checkoutResult ? (
             <Card>
               <CardHeader>
-                <CardTitle>Backend checkout result</CardTitle>
+                <CardTitle>Checkout result</CardTitle>
               </CardHeader>
               <CardBody className="space-y-2 text-sm text-slate-600">
                 <p>Status: {checkoutResult.checkout.status}</p>
-                <p>Sale reference: {checkoutResult.checkout.receiptNumber ?? "—"}</p>
+                <p>Checkout receipt number: {checkoutResult.checkout.receiptNumber ?? "—"}</p>
                 <p>Sale ID: {checkoutResult.checkout.saleId ?? "—"}</p>
                 <p>Total: {fromCents(checkoutResult.checkout.totalCents)}</p>
                 <p>Change: {fromCents(checkoutResult.checkout.changeCents)}</p>
@@ -550,6 +535,36 @@ export function CheckoutPage() {
           ) : null}
         </div>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Checkout readiness</CardTitle>
+        </CardHeader>
+        <CardBody className="grid gap-2 text-sm text-slate-600 md:grid-cols-2 xl:grid-cols-4">
+          <p>
+            Session:{" "}
+            {sessionQuery.isLoading
+              ? "Loading..."
+              : sessionQuery.data?.isAuthenticated
+                ? `Authenticated as ${operatorLabel}`
+                : "Not authenticated"}
+          </p>
+          <p>Shift status: {shift?.shiftState ?? "Unknown"}</p>
+          <p>Permission required: Sales.Create</p>
+          <p>Product source: real backend products API</p>
+          <p>Cart line count: {cartLines.length}</p>
+          <p>Cart total: {formatMoney(subtotal)}</p>
+          <p>Cash tendered: {fromCents(cashCents)}</p>
+          <p>Local validation: {cartValidationMessage ?? "Ready for backend submit"}</p>
+          <p>Submit lock: {isSubmittingCheckout ? "Locked (submit in progress)" : "Unlocked"}</p>
+          <p>Last checkout HTTP status: {attemptState.httpStatus ?? "—"}</p>
+          <p>Last backend error code: {attemptState.backendCode ?? "—"}</p>
+          <p>Last checkout status: {attemptState.checkoutStatus ?? "—"}</p>
+          <p>Last checkout receipt number: {attemptState.receiptNumber ?? "—"}</p>
+          <p>Last sale id: {attemptState.saleId ?? "—"}</p>
+          <p>Last refresh: {lastRefreshAt ? formatDateTime(lastRefreshAt) : "—"}</p>
+        </CardBody>
+      </Card>
     </div>
   );
 }
