@@ -215,6 +215,7 @@ public static class LocalApiApplicationFactory
 
         app.MapReadOnlyOperatorEndpoints();
         app.MapLocalHostShiftEndpoints();
+        app.MapLocalHostCheckoutEndpoints();
         app.MapLocalUserAdminEndpoints();
         app.MapRemoteReadOnlyEndpoints();
         app.MapLocalLanControlEndpoints();

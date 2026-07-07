@@ -240,6 +240,9 @@ public static class Program
             case "v2-host-shift":
                 V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();
                 return;
+            case "v2-host-checkout":
+                V2HostOperatorCheckoutApiChecks.RunAsync().GetAwaiter().GetResult();
+                return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);
         }

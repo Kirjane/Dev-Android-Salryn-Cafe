@@ -8,15 +8,19 @@ public sealed class HostOperatorApiServices
 {
     private HostOperatorApiServices(
         ICashierSessionService cashierSessionService,
-        HostOperatorShiftApiService shiftService)
+        HostOperatorShiftApiService shiftService,
+        HostOperatorCheckoutApiService checkoutService)
     {
         CashierSessionService = cashierSessionService;
         ShiftService = shiftService;
+        CheckoutService = checkoutService;
     }
 
     public ICashierSessionService CashierSessionService { get; }
 
     public HostOperatorShiftApiService ShiftService { get; }
+
+    public HostOperatorCheckoutApiService CheckoutService { get; }
 
     public static HostOperatorApiServices Create(SalrynLocalComposition composition)
     {
@@ -28,8 +32,23 @@ public sealed class HostOperatorApiServices
             repositories.CreateCashierSessionWriteRepository(),
             repositories.CreateCashierSessionReadRepository());
 
+        PosCheckoutService posCheckoutService = new(
+            repositories.CreateSaleWriteRepository(),
+            cashierSessionService);
+
+        PosCheckoutApplicationService checkoutApplicationService = new(
+            posCheckoutService,
+            composition.ProductReadRepository);
+
         HostOperatorShiftApiService shiftService = new(cashierSessionService);
 
-        return new HostOperatorApiServices(cashierSessionService, shiftService);
+        HostOperatorCheckoutApiService checkoutService = new(
+            composition.ProductReadRepository,
+            checkoutApplicationService,
+            cashierSessionService,
+            composition.SaleReadRepository,
+            new HostOperatorReceiptNumberAllocator());
+
+        return new HostOperatorApiServices(cashierSessionService, shiftService, checkoutService);
     }
 }
