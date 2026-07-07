@@ -72,12 +72,13 @@ export function AppShell({
                 return (
                   <div
                     key={item.label}
-                    aria-disabled
-                    className="flex cursor-not-allowed items-center justify-between rounded-md border-l-2 border-transparent px-3 py-2 text-sm text-slate-400"
+                    aria-disabled="true"
+                    title={item.reason}
+                    className="flex cursor-not-allowed items-center justify-between gap-2 rounded-md border-l-2 border-transparent px-3 py-2 text-sm text-slate-400"
                   >
-                    <span>{item.label}</span>
-                    <span className="text-[0.6rem] uppercase tracking-wide text-slate-500">
-                      Later
+                    <span className="truncate">{item.label}</span>
+                    <span className="shrink-0 rounded-full border border-slate-600 px-2 py-0.5 text-[0.55rem] uppercase tracking-wide text-slate-400">
+                      Unsupported
                     </span>
                   </div>
                 );
