@@ -20,6 +20,10 @@ namespace Salryn.Tests;
 public static class V2HostOperatorCheckoutApiChecks
 {
     private const string SessionCookieName = LocalApiSessionService.SessionCookieName;
+    private const string SmokeCheckoutProductName = "SALRYN-SMOKE-CHECKOUT-V2";
+    private const string SmokeDepletedProductName = "SALRYN-SMOKE-CHECKOUT-DEPLETED";
+    private const long CheckoutLineQuantityX1000 = 1000;
+    private const long SmokeTargetStockX1000 = 50_000;
 
     public static async Task RunAsync()
     {
@@ -69,7 +73,7 @@ public static class V2HostOperatorCheckoutApiChecks
         AssertContains(permissions, "SalesCreate = \"Sales.Create\"", "Api permission catalog must include Sales.Create.");
         AssertContains(seedFile, "Permissions.SalesCreate", "Sales.Create must remain seeded.");
         AssertContains(navigation, "POS Checkout", "Navigation must still list checkout.");
-        AssertContains(navigation, "enabled: false", "React checkout nav must remain disabled.");
+        AssertContains(navigation, "id: \"checkout\", label: \"POS Checkout\", enabled: true", "React checkout nav must remain enabled after backend verification.");
     }
 
     private static async Task RunRuntimeChecksAsync(string projectRoot)
@@ -79,7 +83,12 @@ public static class V2HostOperatorCheckoutApiChecks
 
         AuthenticatedUserReadModel operatorUser = await EnsureCheckoutOperatorAsync(composition)
             .ConfigureAwait(false);
-        ProductLookupReadModel product = await EnsureCheckoutProductAsync(composition).ConfigureAwait(false);
+        ProductLookupReadModel product = await EnsureCheckoutProductAsync(composition, operatorUser.UserId)
+            .ConfigureAwait(false);
+        ProductLookupReadModel depletedProduct = await EnsureDepletedCheckoutProductAsync(
+                composition,
+                operatorUser.UserId)
+            .ConfigureAwait(false);
 
         InMemoryLocalApiSessionStore sessionStore = new();
 
@@ -132,7 +141,7 @@ public static class V2HostOperatorCheckoutApiChecks
             await EnsureNoOpenShiftAsync(operatorClient).ConfigureAwait(false);
 
             HostOperatorCheckoutRequest noShiftRequest = BuildCheckoutRequest(
-                new[] { new HostOperatorCheckoutLineRequest(product.Id, 1000) },
+                new[] { new HostOperatorCheckoutLineRequest(product.Id, CheckoutLineQuantityX1000) },
                 BuildCashPayment(product.SellingPrice.Cents + 100));
 
             await AssertCheckoutStatusAsync(
@@ -161,7 +170,7 @@ public static class V2HostOperatorCheckoutApiChecks
 
             long lineTotal = product.SellingPrice.Cents;
             HostOperatorCheckoutRequest insufficientPaymentRequest = BuildCheckoutRequest(
-                new[] { new HostOperatorCheckoutLineRequest(product.Id, 1000) },
+                new[] { new HostOperatorCheckoutLineRequest(product.Id, CheckoutLineQuantityX1000) },
                 BuildCashPayment(Math.Max(1, lineTotal - 1)));
 
             await AssertCheckoutStatusAsync(
@@ -170,11 +179,25 @@ public static class V2HostOperatorCheckoutApiChecks
                 HttpStatusCode.BadRequest,
                 "Checkout with insufficient payment must return 400.").ConfigureAwait(false);
 
+            HostOperatorCheckoutRequest negativeStockRequest = BuildCheckoutRequest(
+                new[] { new HostOperatorCheckoutLineRequest(depletedProduct.Id, CheckoutLineQuantityX1000) },
+                BuildCashPayment(depletedProduct.SellingPrice.Cents + 100));
+
+            await AssertCheckoutConflictAsync(
+                operatorClient,
+                negativeStockRequest,
+                "Sales.NegativeStockNotAllowed",
+                "StockChanged",
+                "Checkout with insufficient stock must return 409 StockChanged.").ConfigureAwait(false);
+
             HostOperatorCheckoutRequest validRequest = BuildCheckoutRequest(
-                new[] { new HostOperatorCheckoutLineRequest(product.Id, 1000) },
+                new[] { new HostOperatorCheckoutLineRequest(product.Id, CheckoutLineQuantityX1000) },
                 BuildCashPayment(lineTotal + 500));
 
-            JsonDocument completed = await PostCheckoutAsync(operatorClient, validRequest).ConfigureAwait(false);
+            JsonDocument completed = await PostCheckoutAsync(
+                operatorClient,
+                validRequest,
+                product).ConfigureAwait(false);
             string? status = completed.RootElement.GetProperty("checkout").GetProperty("status").GetString();
             string? receiptNumber = completed.RootElement.GetProperty("checkout").GetProperty("receiptNumber").GetString();
             string? saleIdText = completed.RootElement.GetProperty("checkout").GetProperty("saleId").GetString();
@@ -277,33 +300,236 @@ public static class V2HostOperatorCheckoutApiChecks
     }
 
     private static async Task<ProductLookupReadModel> EnsureCheckoutProductAsync(
-        SalrynLocalComposition composition)
+        SalrynLocalComposition composition,
+        Guid operatorUserId)
+    {
+        ProductLookupReadModel? existing = await FindSmokeProductByNameAsync(
+                composition,
+                SmokeCheckoutProductName)
+            .ConfigureAwait(false);
+
+        if (existing is not null)
+        {
+            return await ReplenishSmokeProductStockAsync(
+                    composition,
+                    existing,
+                    operatorUserId,
+                    SmokeTargetStockX1000)
+                .ConfigureAwait(false);
+        }
+
+        return await CreateSmokeCheckoutProductAsync(
+                composition,
+                operatorUserId,
+                SmokeCheckoutProductName,
+                SmokeTargetStockX1000,
+                "Dedicated V2 host checkout smoke product with guaranteed stock.")
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<ProductLookupReadModel> EnsureDepletedCheckoutProductAsync(
+        SalrynLocalComposition composition,
+        Guid operatorUserId)
+    {
+        ProductLookupReadModel? existing = await FindSmokeProductByNameAsync(
+                composition,
+                SmokeDepletedProductName)
+            .ConfigureAwait(false);
+
+        if (existing is not null)
+        {
+            if (existing.StockOnHand.ValueX1000 >= CheckoutLineQuantityX1000)
+            {
+                await DrainProductStockAsync(composition, existing, operatorUserId).ConfigureAwait(false);
+                existing = RequireSuccess(
+                    await composition.ProductReadRepository
+                        .FindByIdAsync(existing.Id, CancellationToken.None)
+                        .ConfigureAwait(false),
+                    "V2Checkout.ReadDepletedProduct");
+            }
+
+            if (existing is null)
+            {
+                throw new InvalidOperationException("V2 checkout runtime could not read depleted smoke product.");
+            }
+
+            return existing;
+        }
+
+        return await CreateSmokeCheckoutProductAsync(
+                composition,
+                operatorUserId,
+                SmokeDepletedProductName,
+                initialStockX1000: 0,
+                "Dedicated depleted product for negative-stock checkout smoke.")
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<ProductLookupReadModel?> FindSmokeProductByNameAsync(
+        SalrynLocalComposition composition,
+        string productName)
     {
         Result<PagedResult<ProductListItemReadModel>> searchResult = await composition.ProductReadRepository
             .SearchAsync(
                 new ProductSearchFilter(
-                    null,
+                    productName,
                     null,
                     null,
                     true,
                     IncludeInactive: false,
-                    new PageRequest(1, 1)),
+                    new PageRequest(1, 20)),
                 CancellationToken.None)
             .ConfigureAwait(false);
 
-        if (searchResult.IsSuccess && searchResult.Value.Items.Count > 0)
+        if (searchResult.IsFailure || searchResult.Value.Items.Count == 0)
         {
-            Guid productId = searchResult.Value.Items[0].Id;
-            Result<ProductLookupReadModel?> existing = await composition.ProductReadRepository
-                .FindByIdAsync(productId, CancellationToken.None)
+            return null;
+        }
+
+        foreach (ProductListItemReadModel item in searchResult.Value.Items)
+        {
+            if (!string.Equals(item.Name, productName, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            Result<ProductLookupReadModel?> lookup = await composition.ProductReadRepository
+                .FindByIdAsync(item.Id, CancellationToken.None)
                 .ConfigureAwait(false);
 
-            if (existing.IsSuccess && existing.Value is not null)
+            if (lookup.IsSuccess && lookup.Value is not null)
             {
-                return existing.Value;
+                return lookup.Value;
             }
         }
 
+        return null;
+    }
+
+    private static async Task<ProductLookupReadModel> ReplenishSmokeProductStockAsync(
+        SalrynLocalComposition composition,
+        ProductLookupReadModel product,
+        Guid operatorUserId,
+        long targetStockX1000)
+    {
+        long currentStockX1000 = product.StockOnHand.ValueX1000;
+        if (currentStockX1000 >= targetStockX1000)
+        {
+            return product;
+        }
+
+        long replenishAmountX1000 = targetStockX1000 - currentStockX1000;
+        await AddStockInMovementAsync(
+                composition,
+                product.Id,
+                operatorUserId,
+                replenishAmountX1000,
+                "V2 host checkout smoke stock replenishment")
+            .ConfigureAwait(false);
+
+        ProductLookupReadModel? refreshed = RequireSuccess(
+            await composition.ProductReadRepository
+                .FindByIdAsync(product.Id, CancellationToken.None)
+                .ConfigureAwait(false),
+            "V2Checkout.ReadReplenishedProduct");
+
+        if (refreshed is null)
+        {
+            throw new InvalidOperationException("V2 checkout runtime could not read replenished smoke product.");
+        }
+
+        if (refreshed.StockOnHand.ValueX1000 < CheckoutLineQuantityX1000)
+        {
+            throw new InvalidOperationException(
+                $"V2 checkout smoke replenishment failed. Product {refreshed.Id} ({refreshed.Name}) stockX1000={refreshed.StockOnHand.ValueX1000}, required>={CheckoutLineQuantityX1000}.");
+        }
+
+        return refreshed;
+    }
+
+    private static async Task DrainProductStockAsync(
+        SalrynLocalComposition composition,
+        ProductLookupReadModel product,
+        Guid operatorUserId)
+    {
+        long currentStockX1000 = product.StockOnHand.ValueX1000;
+        if (currentStockX1000 <= 0)
+        {
+            return;
+        }
+
+        SqliteRepositoryFactory repositories = new(composition.ConnectionFactory);
+        IInventoryWriteRepository inventoryWriteRepository = repositories.CreateInventoryWriteRepository();
+        Result<Quantity> quantity = Quantity.FromX1000(currentStockX1000);
+        if (quantity.IsFailure)
+        {
+            throw new InvalidOperationException("V2 checkout runtime could not create drain quantity.");
+        }
+
+        StockMovement adjustmentRemove = new()
+        {
+            Id = Guid.NewGuid(),
+            ProductId = product.Id,
+            MovementType = StockMovementType.AdjustmentRemove,
+            QuantityChange = quantity.Value,
+            CostPrice = product.CostPrice ?? Money.FromCents(1000),
+            ReferenceType = "V2-HOST-CHECKOUT-SMOKE",
+            ReferenceId = Guid.NewGuid(),
+            Reason = "V2 host checkout depleted-product reset",
+            UserId = operatorUserId,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+
+        RequireSuccess(
+            await inventoryWriteRepository
+                .AddStockMovementAsync(adjustmentRemove, CancellationToken.None)
+                .ConfigureAwait(false),
+            "V2Checkout.DrainDepletedProduct");
+    }
+
+    private static async Task AddStockInMovementAsync(
+        SalrynLocalComposition composition,
+        Guid productId,
+        Guid operatorUserId,
+        long quantityX1000,
+        string reason)
+    {
+        SqliteRepositoryFactory repositories = new(composition.ConnectionFactory);
+        IInventoryWriteRepository inventoryWriteRepository = repositories.CreateInventoryWriteRepository();
+        Result<Quantity> quantity = Quantity.FromX1000(quantityX1000);
+        if (quantity.IsFailure)
+        {
+            throw new InvalidOperationException("V2 checkout runtime could not create stock-in quantity.");
+        }
+
+        StockMovement stockIn = new()
+        {
+            Id = Guid.NewGuid(),
+            ProductId = productId,
+            MovementType = StockMovementType.StockIn,
+            QuantityChange = quantity.Value,
+            CostPrice = Money.FromCents(1000),
+            ReferenceType = "V2-HOST-CHECKOUT-SMOKE",
+            ReferenceId = Guid.NewGuid(),
+            Reason = reason,
+            UserId = operatorUserId,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+
+        RequireSuccess(
+            await inventoryWriteRepository
+                .AddStockMovementAsync(stockIn, CancellationToken.None)
+                .ConfigureAwait(false),
+            "V2Checkout.StockIn");
+    }
+
+    private static async Task<ProductLookupReadModel> CreateSmokeCheckoutProductAsync(
+        SalrynLocalComposition composition,
+        Guid operatorUserId,
+        string productName,
+        long initialStockX1000,
+        string description)
+    {
         SqliteRepositoryFactory repositories = new(composition.ConnectionFactory);
         IProductWriteRepository productWriteRepository = repositories.CreateProductWriteRepository();
         ICatalogReadRepository catalogRepository = composition.CatalogReadRepository;
@@ -329,7 +555,7 @@ public static class V2HostOperatorCheckoutApiChecks
             throw new InvalidOperationException("V2 checkout runtime could not create barcode.");
         }
 
-        Result<Quantity> stock = Quantity.FromX1000(5000);
+        Result<Quantity> stock = Quantity.FromX1000(initialStockX1000);
         if (stock.IsFailure)
         {
             throw new InvalidOperationException("V2 checkout runtime could not create stock quantity.");
@@ -340,8 +566,8 @@ public static class V2HostOperatorCheckoutApiChecks
             Id = Guid.NewGuid(),
             Sku = "V2CHK-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             Barcode = barcode.Value,
-            Name = "V2 Host Checkout Smoke Product",
-            Description = "Temporary V2 host checkout runtime product.",
+            Name = productName,
+            Description = description,
             CategoryId = categories[0].Id,
             BrandId = brands[0].Id,
             UnitId = units[0].Id,
@@ -363,16 +589,39 @@ public static class V2HostOperatorCheckoutApiChecks
             await productWriteRepository.AddAsync(product, CancellationToken.None).ConfigureAwait(false),
             "V2Checkout.AddProduct");
 
-        ProductLookupReadModel? created = RequireSuccess(
-            await composition.ProductReadRepository.FindByIdAsync(product.Id, CancellationToken.None).ConfigureAwait(false),
-            "V2Checkout.ReadCreatedProduct");
-
-        if (created is null)
+        if (initialStockX1000 == 0)
         {
-            throw new InvalidOperationException("V2 checkout runtime could not read created product.");
+            ProductLookupReadModel? created = RequireSuccess(
+                await composition.ProductReadRepository
+                    .FindByIdAsync(product.Id, CancellationToken.None)
+                    .ConfigureAwait(false),
+                "V2Checkout.ReadCreatedProduct");
+
+            if (created is null)
+            {
+                throw new InvalidOperationException("V2 checkout runtime could not read created depleted product.");
+            }
+
+            return created;
         }
 
-        return created;
+        ProductLookupReadModel? createdWithStock = RequireSuccess(
+            await composition.ProductReadRepository
+                .FindByIdAsync(product.Id, CancellationToken.None)
+                .ConfigureAwait(false),
+            "V2Checkout.ReadCreatedProduct");
+
+        if (createdWithStock is null)
+        {
+            throw new InvalidOperationException("V2 checkout runtime could not read created smoke product.");
+        }
+
+        return await ReplenishSmokeProductStockAsync(
+                composition,
+                createdWithStock,
+                operatorUserId,
+                Math.Max(initialStockX1000, SmokeTargetStockX1000))
+            .ConfigureAwait(false);
     }
 
     private static HostOperatorCheckoutRequest BuildCheckoutRequest(
@@ -422,7 +671,8 @@ public static class V2HostOperatorCheckoutApiChecks
 
     private static async Task<JsonDocument> PostCheckoutAsync(
         HttpClient client,
-        HostOperatorCheckoutRequest request)
+        HostOperatorCheckoutRequest request,
+        ProductLookupReadModel? diagnosticProduct = null)
     {
         using HttpResponseMessage response = await client
             .PostAsJsonAsync("/api/checkout", request)
@@ -431,11 +681,84 @@ public static class V2HostOperatorCheckoutApiChecks
         if (response.StatusCode != HttpStatusCode.OK)
         {
             string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            string diagnostics = BuildCheckoutDiagnostics(diagnosticProduct, request, body);
             throw new InvalidOperationException(
-                $"Expected POST /api/checkout to return 200, got {(int)response.StatusCode}. Body: {body}");
+                $"Expected POST /api/checkout to return 200, got {(int)response.StatusCode}. {diagnostics}");
         }
 
         return JsonDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+    }
+
+    private static string BuildCheckoutDiagnostics(
+        ProductLookupReadModel? product,
+        HostOperatorCheckoutRequest request,
+        string body)
+    {
+        string productPart = product is null
+            ? "product=unknown"
+            : $"productId={product.Id:D} productName={product.Name} stockX1000={product.StockOnHand.ValueX1000}";
+
+        long requestedQtyX1000 = request.Lines.Count > 0 ? request.Lines[0].QuantityX1000 : 0;
+        string code = "unknown";
+        string checkoutStatus = "unknown";
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(body);
+            if (document.RootElement.TryGetProperty("code", out JsonElement codeElement))
+            {
+                code = codeElement.GetString() ?? code;
+            }
+
+            if (document.RootElement.TryGetProperty("checkout", out JsonElement checkoutElement) &&
+                checkoutElement.TryGetProperty("status", out JsonElement statusElement))
+            {
+                checkoutStatus = statusElement.GetString() ?? checkoutStatus;
+            }
+        }
+        catch (JsonException)
+        {
+            // Keep default diagnostic values when the body is not JSON.
+        }
+
+        return
+            $"Body: {body} Diagnostics: {productPart} requestedQtyX1000={requestedQtyX1000} backendCode={code} checkoutStatus={checkoutStatus}";
+    }
+
+    private static async Task AssertCheckoutConflictAsync(
+        HttpClient client,
+        HostOperatorCheckoutRequest request,
+        string expectedCode,
+        string expectedCheckoutStatus,
+        string message)
+    {
+        using HttpResponseMessage response = await client
+            .PostAsJsonAsync("/api/checkout", request)
+            .ConfigureAwait(false);
+
+        if (response.StatusCode != HttpStatusCode.Conflict)
+        {
+            string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            throw new InvalidOperationException(
+                $"{message} Expected {(int)HttpStatusCode.Conflict}, got {(int)response.StatusCode}. Body: {body}");
+        }
+
+        string conflictBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        using JsonDocument document = JsonDocument.Parse(conflictBody);
+        string? code = document.RootElement.TryGetProperty("code", out JsonElement codeElement)
+            ? codeElement.GetString()
+            : null;
+        string? checkoutStatus = document.RootElement.TryGetProperty("checkout", out JsonElement checkoutElement) &&
+                                 checkoutElement.TryGetProperty("status", out JsonElement statusElement)
+            ? statusElement.GetString()
+            : null;
+
+        if (!string.Equals(code, expectedCode, StringComparison.Ordinal) ||
+            !string.Equals(checkoutStatus, expectedCheckoutStatus, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"{message} Expected code={expectedCode} checkout.status={expectedCheckoutStatus}, got code={code} checkout.status={checkoutStatus}. Body: {conflictBody}");
+        }
     }
 
     private static async Task AssertCheckoutStatusAsync(

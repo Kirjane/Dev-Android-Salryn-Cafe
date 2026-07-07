@@ -9,6 +9,7 @@ import {
 } from "../api/checkout";
 import { ApiError } from "../api/http";
 import { fetchProducts, type ProductListItem } from "../api/products";
+import { fetchSession } from "../api/session";
 import {
   Alert,
   Button,
@@ -30,6 +31,22 @@ type CartLine = {
   quantity: number;
 };
 
+type CheckoutAttemptState = {
+  httpStatus: number | null;
+  backendCode: string | null;
+  checkoutStatus: string | null;
+  receiptNumber: string | null;
+  saleId: string | null;
+};
+
+const initialAttemptState: CheckoutAttemptState = {
+  httpStatus: null,
+  backendCode: null,
+  checkoutStatus: null,
+  receiptNumber: null,
+  saleId: null,
+};
+
 function toCents(value: string): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
@@ -45,22 +62,39 @@ function fromCents(value: number | null | undefined): string {
 
 function describeBackendError(error: unknown): string {
   if (error instanceof ApiError) {
-    const codeSuffix = error.code ? ` Backend code: ${error.code}.` : "";
+    const code = error.code ?? "";
+    const checkoutStatus = error.checkoutStatus ?? "";
 
-    switch (error.status) {
-      case 401:
-        return `401 authentication required or session expired. Sign in again before using host checkout.${codeSuffix}`;
-      case 403:
-        return `403 missing operator permission for this host checkout or shift action.${codeSuffix}`;
-      case 409:
-        return `409 backend conflict. This usually means an open shift is required or stock changed before checkout.${codeSuffix}`;
-      case 400:
-        return `400 backend validation failed. Check cart lines, quantities, and cash payment amount.${codeSuffix}`;
-      case 404:
-        return `404 backend rejected a product because it was missing or inactive.${codeSuffix}`;
-      default:
-        return `${error.status} backend error: ${error.message}.${codeSuffix}`;
+    if (error.status === 401) {
+      return "Session expired or login required.";
     }
+
+    if (error.status === 403) {
+      return "Your role cannot perform checkout.";
+    }
+
+    if (error.status === 409) {
+      if (code.includes("OpenShiftRequired") || checkoutStatus === "OpenShiftRequired") {
+        return "Open a shift before checkout.";
+      }
+
+      if (code === "Sales.NegativeStockNotAllowed" || checkoutStatus === "StockChanged") {
+        return "Stock changed or is insufficient. Refresh products before retrying.";
+      }
+
+      return error.checkoutMessage || error.message || "Checkout conflict. Review shift and stock state.";
+    }
+
+    if (error.status === 400) {
+      return error.checkoutMessage || error.message || "Invalid cart or payment. Check quantities and cash tender.";
+    }
+
+    if (error.status === 404) {
+      return "A cart product is missing or inactive. Refresh products before retrying.";
+    }
+
+    const codeSuffix = error.code ? ` Backend code: ${error.code}.` : "";
+    return `${error.message}.${codeSuffix}`;
   }
 
   return error instanceof Error ? error.message : "Unexpected checkout error.";
@@ -81,9 +115,16 @@ export function CheckoutPage() {
   const [openingCash, setOpeningCash] = useState("0.00");
   const [backendMessage, setBackendMessage] = useState<string | null>(null);
   const [checkoutResult, setCheckoutResult] = useState<CheckoutEnvelope | null>(null);
+  const [attemptState, setAttemptState] = useState<CheckoutAttemptState>(initialAttemptState);
   const [isOpeningShift, setIsOpeningShift] = useState(false);
   const [isClosingShift, setIsClosingShift] = useState(false);
   const [isSubmittingCheckout, setIsSubmittingCheckout] = useState(false);
+
+  const sessionQuery = useQuery({
+    queryKey: ["host-checkout-session"],
+    queryFn: fetchSession,
+    retry: false,
+  });
 
   const shiftQuery = useQuery({
     queryKey: ["host-checkout-shift"],
@@ -112,7 +153,27 @@ export function CheckoutPage() {
   const balanceCents = Math.max(0, subtotalCents - cashCents);
   const shift = shiftQuery.data?.shift;
   const shiftOpen = isOpenShift(shift?.shiftState);
-  const canSubmitCheckout = cartLines.length > 0 && cashCents > 0 && !isSubmittingCheckout;
+  const cartValidationMessage = useMemo(() => {
+    if (cartLines.length === 0) {
+      return "Add at least one product before checkout.";
+    }
+
+    if (!shiftOpen) {
+      return "Open a shift before checkout.";
+    }
+
+    if (cashCents <= 0) {
+      return "Enter a cash payment amount.";
+    }
+
+    if (cashCents < subtotalCents) {
+      return "Cash payment is below the cart subtotal.";
+    }
+
+    return null;
+  }, [cartLines.length, cashCents, shiftOpen, subtotalCents]);
+  const canSubmitCheckout =
+    cartValidationMessage === null && cartLines.length > 0 && !isSubmittingCheckout;
 
   function addProduct(product: ProductListItem) {
     setCheckoutResult(null);
@@ -136,6 +197,11 @@ export function CheckoutPage() {
         .map((line) => (line.product.id === productId ? { ...line, quantity } : line))
         .filter((line) => line.quantity > 0),
     );
+  }
+
+  async function refreshShiftAndProducts() {
+    setBackendMessage(null);
+    await Promise.all([shiftQuery.refetch(), productsQuery.refetch()]);
   }
 
   async function handleOpenShift() {
@@ -167,8 +233,13 @@ export function CheckoutPage() {
   }
 
   async function handleSubmitCheckout() {
+    if (!canSubmitCheckout || isSubmittingCheckout) {
+      return;
+    }
+
     setBackendMessage(null);
     setCheckoutResult(null);
+    setAttemptState(initialAttemptState);
     setIsSubmittingCheckout(true);
 
     try {
@@ -187,8 +258,25 @@ export function CheckoutPage() {
 
       setCheckoutResult(result);
       setBackendMessage(result.message);
+      setAttemptState({
+        httpStatus: 200,
+        backendCode: result.code,
+        checkoutStatus: result.checkout.status,
+        receiptNumber: result.checkout.receiptNumber,
+        saleId: result.checkout.saleId,
+      });
       await shiftQuery.refetch();
     } catch (error) {
+      if (error instanceof ApiError) {
+        setAttemptState({
+          httpStatus: error.status,
+          backendCode: error.code ?? null,
+          checkoutStatus: error.checkoutStatus ?? null,
+          receiptNumber: null,
+          saleId: null,
+        });
+      }
+
       setBackendMessage(describeBackendError(error));
     } finally {
       setIsSubmittingCheckout(false);
@@ -208,8 +296,12 @@ export function CheckoutPage() {
           ) : null
         }
         actions={
-          <Button variant="secondary" onClick={() => void shiftQuery.refetch()} disabled={shiftQuery.isFetching}>
-            {shiftQuery.isFetching ? "Refreshing..." : "Refresh Shift"}
+          <Button
+            variant="secondary"
+            onClick={() => void refreshShiftAndProducts()}
+            disabled={shiftQuery.isFetching || productsQuery.isFetching}
+          >
+            {shiftQuery.isFetching || productsQuery.isFetching ? "Refreshing..." : "Refresh Shift/Products"}
           </Button>
         }
       />
@@ -220,12 +312,42 @@ export function CheckoutPage() {
       </Alert>
 
       {backendMessage ? <Alert tone={checkoutResult ? "success" : "warning"}>{backendMessage}</Alert> : null}
+      {cartValidationMessage && !checkoutResult ? (
+        <Alert tone="warning">{cartValidationMessage}</Alert>
+      ) : null}
 
       {shiftQuery.isLoading ? <LoadingState label="Reading host shift..." /> : null}
       {shiftQuery.isError ? <ErrorState message={describeBackendError(shiftQuery.error)} /> : null}
 
       <div className="grid gap-6 xl:grid-cols-[1fr_22rem]">
         <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Checkout readiness</CardTitle>
+            </CardHeader>
+            <CardBody className="space-y-2 text-sm text-slate-600">
+              <p>
+                Session:{" "}
+                {sessionQuery.isLoading
+                  ? "Loading..."
+                  : sessionQuery.data?.isAuthenticated
+                    ? `Authenticated as ${sessionQuery.data.user?.displayName ?? sessionQuery.data.user?.username ?? "operator"}`
+                    : "Not authenticated"}
+              </p>
+              <p>Shift status: {shift?.shiftState ?? "Unknown"}</p>
+              <p>Checkout permission required: Sales.Create</p>
+              <p>Product source: real backend products API</p>
+              <p>Cart line count: {cartLines.length}</p>
+              <p>Cart total: {formatMoney(subtotal)}</p>
+              <p>Cash tendered: {fromCents(cashCents)}</p>
+              <p>Last checkout HTTP status: {attemptState.httpStatus ?? "—"}</p>
+              <p>Last backend error code: {attemptState.backendCode ?? "—"}</p>
+              <p>Last checkout status: {attemptState.checkoutStatus ?? "—"}</p>
+              <p>Last receipt number: {attemptState.receiptNumber ?? "—"}</p>
+              <p>Last sale id: {attemptState.saleId ?? "—"}</p>
+            </CardBody>
+          </Card>
+
           <Card>
             <CardHeader>
               <div className="flex flex-wrap items-center justify-between gap-3">
