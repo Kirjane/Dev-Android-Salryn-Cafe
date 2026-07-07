@@ -26,6 +26,13 @@ public static class PosStabB2BackupUiChecks
             "Salryn.App.WinForms",
             "Composition",
             "SalrynAppServices.cs");
+        string recoveryServiceText = ReadRequiredFile(
+            repoRoot,
+            "src",
+            "Salryn.Infrastructure",
+            "Data",
+            "Services",
+            "SqliteBackupRecoveryService.cs");
         string coreSmokeText = ReadRequiredFile(
             repoRoot,
             "tools",
@@ -88,24 +95,20 @@ public static class PosStabB2BackupUiChecks
             "B2-A AppServices must expose the controlled backup creation boundary.");
         RequireContains(
             appServicesText,
-            "DbPaths.DatabasePath",
-            "B2-A AppServices backup boundary must use the composed app database path.");
+            "CreateBackupRecoveryService(this).CreateBackup()",
+            "B2-A AppServices backup boundary must delegate to the recovery service.");
         RequireContains(
-            appServicesText,
-            "DbPaths.BackupPath",
-            "B2-A AppServices backup boundary must default to the composed app backup path.");
-        RequireContains(
-            appServicesText,
+            recoveryServiceText,
             "salryn-backup-",
-            "B2-A AppServices backup boundary must create operator-readable backup file names.");
+            "B2-A recovery service must create operator-readable backup file names.");
         RequireContains(
-            appServicesText,
-            "File.Copy(sourcePath, destinationPath, overwrite: false)",
-            "B2-A AppServices backup boundary must not silently overwrite existing backups.");
+            recoveryServiceText,
+            "SqliteDatabaseBackupUtility.CreateOnlineBackup",
+            "B2-A recovery service must use WAL-safe online backup.");
         RequireContains(
-            appServicesText,
-            "SqliteConnectionFactory.ClearAllPools();",
-            "B2-A AppServices backup boundary must clear SQLite pools before copying the database file.");
+            recoveryServiceText,
+            "Backup.DestinationExists",
+            "B2-A recovery service must not silently overwrite existing backups.");
 
         RequireContains(
             coreSmokeText,

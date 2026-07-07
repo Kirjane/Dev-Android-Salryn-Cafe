@@ -1,5 +1,6 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Salryn.Core.Common;
+using Salryn.Core.Models;
 using Salryn.Core.Services;
 using Salryn.Infrastructure.Paths;
 
@@ -9,20 +10,79 @@ public sealed class SqliteBackupRecoveryService : IBackupRecoveryService
 {
     public const string RestoreConfirmationText = "RESTORE SALRYN BACKUP";
 
-    private static readonly string[] CoreTables =
-    {
-        "roles",
-        "users",
-        "store_settings",
-        "products",
-        "sales"
-    };
-
     private readonly DbPaths _dbPaths;
+    private readonly SqliteConnectionFactory _connectionFactory;
 
     public SqliteBackupRecoveryService(DbPaths dbPaths)
     {
         _dbPaths = dbPaths ?? throw new ArgumentNullException(nameof(dbPaths));
+        _connectionFactory = new SqliteConnectionFactory(dbPaths);
+    }
+
+    public Result<string> CreateBackup()
+    {
+        try
+        {
+            string sourcePath = _dbPaths.DatabasePath;
+            string backupFolder = _dbPaths.BackupPath;
+
+            if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
+            {
+                return Result<string>.Fail(Error.Failure(
+                    "Backup.DatabaseNotFound",
+                    "Live database file was not found."));
+            }
+
+            Directory.CreateDirectory(backupFolder);
+
+            string fileName = "salryn-backup-" +
+                DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss") +
+                ".db";
+            string destinationPath = Path.Combine(backupFolder, fileName);
+
+            if (File.Exists(destinationPath))
+            {
+                return Result<string>.Fail(Error.Conflict(
+                    "Backup.DestinationExists",
+                    "Backup destination already exists. Wait a moment and try again."));
+            }
+
+            SqliteDatabaseBackupUtility.CreateOnlineBackup(sourcePath, destinationPath);
+
+            FileInfo backupFile = new(destinationPath);
+            SqliteBackupLogWriter.TryWrite(
+                _connectionFactory,
+                new BackupLog
+                {
+                    FilePath = backupFile.FullName,
+                    Status = JobStatus.Completed,
+                    FileSizeBytes = backupFile.Length,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                });
+
+            return Result<string>.Success(backupFile.FullName);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            WriteFailedBackupLog(ex.Message);
+            return Result<string>.Fail(Error.Failure(
+                "Backup.AccessDenied",
+                "Backup access failed: " + ex.Message));
+        }
+        catch (IOException ex)
+        {
+            WriteFailedBackupLog(ex.Message);
+            return Result<string>.Fail(Error.Failure(
+                "Backup.CopyFailed",
+                "Backup failed: " + ex.Message));
+        }
+        catch (SqliteException ex)
+        {
+            WriteFailedBackupLog(ex.Message);
+            return Result<string>.Fail(Error.Failure(
+                "Backup.SqliteFailed",
+                "Backup failed: " + ex.Message));
+        }
     }
 
     public Result<IReadOnlyList<BackupFileSummary>> ListBackups()
@@ -76,21 +136,32 @@ public sealed class SqliteBackupRecoveryService : IBackupRecoveryService
             connection.Open();
 
             HashSet<string> tableNames = ReadTableNames(connection);
+            int? backupMigrationVersion = ReadMaxMigrationVersion(connection);
+            int supportedMigrationVersion = SalrynDatabaseMigrationCatalog.SupportedMigrationVersion;
+            int effectiveMigrationVersion = backupMigrationVersion ?? 0;
 
-            bool coreTablesExist = CoreTables.All(tableNames.Contains);
-            bool appMetadataExists = tableNames.Contains("app_metadata");
-            bool migrationMetadataExists = tableNames.Contains("schema_migrations");
+            bool legacyCoreTablesExist = SalrynDatabaseMigrationCatalog.LegacyCoreTablesExist(tableNames);
+            IReadOnlyList<string> missingCriticalTables =
+                SalrynDatabaseMigrationCatalog.GetMissingCriticalTables(effectiveMigrationVersion, tableNames);
+            bool criticalTablesExist = effectiveMigrationVersion > 0 && missingCriticalTables.Count == 0;
+            bool migrationVersionCompatible = effectiveMigrationVersion > 0
+                && effectiveMigrationVersion <= supportedMigrationVersion;
 
             BackupVerificationSummary summary = new(
                 backupFile.FullName,
                 backupFile.Length,
                 new DateTimeOffset(backupFile.LastWriteTimeUtc, TimeSpan.Zero).ToLocalTime(),
-                coreTablesExist,
-                appMetadataExists,
-                migrationMetadataExists,
+                legacyCoreTablesExist,
+                tableNames.Contains("app_metadata"),
+                tableNames.Contains("schema_migrations"),
                 TryCountRows(connection, tableNames, "users"),
                 TryCountRows(connection, tableNames, "products"),
-                TryCountRows(connection, tableNames, "sales"));
+                TryCountRows(connection, tableNames, "sales"),
+                backupMigrationVersion,
+                supportedMigrationVersion,
+                criticalTablesExist,
+                migrationVersionCompatible,
+                missingCriticalTables);
 
             return Result<BackupVerificationSummary>.Success(summary);
         }
@@ -115,9 +186,13 @@ public sealed class SqliteBackupRecoveryService : IBackupRecoveryService
 
         if (!verifiedBackup.IsRestorable)
         {
+            string message = verifiedBackup.HasFutureMigrationVersion
+                ? "Selected backup was created by a newer app version and cannot be restored safely."
+                : "Selected backup did not pass SALRYN database shape and migration verification.";
+
             return Result<BackupRestoreResult>.Fail(Error.Validation(
                 "Backup.NotRestorable",
-                "Selected backup did not pass minimum SALRYN database shape verification."));
+                message));
         }
 
         if (!string.Equals(confirmationText?.Trim(), RestoreConfirmationText, StringComparison.Ordinal))
@@ -138,7 +213,7 @@ public sealed class SqliteBackupRecoveryService : IBackupRecoveryService
         {
             return Result<BackupRestoreResult>.Fail(Error.Validation(
                 "Backup.NotRestorable",
-                "Selected backup no longer passes minimum SALRYN database shape verification."));
+                "Selected backup no longer passes SALRYN database shape and migration verification."));
         }
 
         try
@@ -156,29 +231,74 @@ public sealed class SqliteBackupRecoveryService : IBackupRecoveryService
             string safetyBackupPath = CreateSafetyBackupPath();
 
             SqliteConnectionFactory.ClearAllPools();
-            File.Copy(liveDatabasePath, safetyBackupPath, overwrite: false);
+            SqliteDatabaseBackupUtility.CreateOnlineBackup(liveDatabasePath, safetyBackupPath);
 
             if (!CanOpenLiveDatabaseExclusively(liveDatabasePath))
             {
+                SqliteBackupLogWriter.TryWrite(
+                    _connectionFactory,
+                    new BackupLog
+                    {
+                        FilePath = verifiedBackup.FilePath,
+                        Status = JobStatus.Failed,
+                        CreatedAt = DateTimeOffset.UtcNow,
+                        ErrorMessage = "Restore blocked because live database could not be opened exclusively.",
+                    });
+
                 return Result<BackupRestoreResult>.Fail(Error.Failure(
                     "Backup.RestoreRequiresRestart",
                     "Safety backup was created, but the live database could not be opened exclusively. " +
                     "Restore requires app restart or a manual operator step. Safety backup: " + safetyBackupPath));
             }
 
+            SqliteDatabaseBackupUtility.RemoveWalShmSidecars(liveDatabasePath);
             File.Copy(freshVerification.Value.FilePath, liveDatabasePath, overwrite: true);
+            SqliteDatabaseBackupUtility.RemoveWalShmSidecars(liveDatabasePath);
+
+            SqliteBackupLogWriter.TryWrite(
+                _connectionFactory,
+                new BackupLog
+                {
+                    FilePath = freshVerification.Value.FilePath,
+                    Status = JobStatus.Completed,
+                    FileSizeBytes = freshVerification.Value.SizeBytes,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                });
 
             return Result<BackupRestoreResult>.Success(new BackupRestoreResult(
                 freshVerification.Value.FilePath,
                 safetyBackupPath,
                 DateTimeOffset.UtcNow));
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or SqliteException)
         {
+            SqliteBackupLogWriter.TryWrite(
+                _connectionFactory,
+                new BackupLog
+                {
+                    FilePath = verifiedBackup.FilePath,
+                    Status = JobStatus.Failed,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    ErrorMessage = ex.Message,
+                });
+
             return Result<BackupRestoreResult>.Fail(Error.Failure(
                 "Backup.RestoreFailed",
                 "Restore failed before replacing the live database safely: " + ex.Message));
         }
+    }
+
+    private void WriteFailedBackupLog(string message)
+    {
+        SqliteBackupLogWriter.TryWrite(
+            _connectionFactory,
+            new BackupLog
+            {
+                FilePath = _dbPaths.BackupPath,
+                Status = JobStatus.Failed,
+                CreatedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = message,
+            });
     }
 
     private static SqliteConnection CreateReadOnlyConnection(string databasePath)
@@ -187,7 +307,7 @@ public sealed class SqliteBackupRecoveryService : IBackupRecoveryService
         {
             DataSource = databasePath,
             Mode = SqliteOpenMode.ReadOnly,
-            Cache = SqliteCacheMode.Private
+            Cache = SqliteCacheMode.Private,
         };
 
         return new SqliteConnection(builder.ToString());
@@ -211,6 +331,37 @@ public sealed class SqliteBackupRecoveryService : IBackupRecoveryService
         }
 
         return tableNames;
+    }
+
+    private static int? ReadMaxMigrationVersion(SqliteConnection connection)
+    {
+        using SqliteCommand existsCommand = connection.CreateCommand();
+        existsCommand.CommandText = """
+            SELECT 1
+            FROM sqlite_master
+            WHERE type = 'table' AND name = 'schema_migrations'
+            LIMIT 1;
+            """;
+
+        if (existsCommand.ExecuteScalar() is null)
+        {
+            return null;
+        }
+
+        using SqliteCommand versionCommand = connection.CreateCommand();
+        versionCommand.CommandText = """
+            SELECT MAX(version)
+            FROM schema_migrations;
+            """;
+
+        object? scalar = versionCommand.ExecuteScalar();
+
+        if (scalar is null or DBNull)
+        {
+            return null;
+        }
+
+        return Convert.ToInt32(scalar);
     }
 
     private static long? TryCountRows(

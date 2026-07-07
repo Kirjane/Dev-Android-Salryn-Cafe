@@ -4,6 +4,8 @@ namespace Salryn.Core.Services;
 
 public interface IBackupRecoveryService
 {
+    Result<string> CreateBackup();
+
     Result<IReadOnlyList<BackupFileSummary>> ListBackups();
 
     Result<BackupVerificationSummary> VerifyBackup(string backupFilePath);
@@ -27,9 +29,23 @@ public sealed record BackupVerificationSummary(
     bool MigrationMetadataExists,
     long? UserCount,
     long? ProductCount,
-    long? SaleCount)
+    long? SaleCount,
+    int? BackupMigrationVersion = null,
+    int SupportedMigrationVersion = 0,
+    bool CriticalTablesExist = false,
+    bool MigrationVersionCompatible = false,
+    IReadOnlyList<string>? MissingCriticalTables = null)
 {
-    public bool IsRestorable => CoreTablesExist;
+    public bool HasFutureMigrationVersion =>
+        BackupMigrationVersion.HasValue
+        && SupportedMigrationVersion > 0
+        && BackupMigrationVersion.Value > SupportedMigrationVersion;
+
+    public bool IsRestorable =>
+        CoreTablesExist
+        && CriticalTablesExist
+        && MigrationVersionCompatible
+        && !HasFutureMigrationVersion;
 }
 
 public sealed record BackupRestoreResult(

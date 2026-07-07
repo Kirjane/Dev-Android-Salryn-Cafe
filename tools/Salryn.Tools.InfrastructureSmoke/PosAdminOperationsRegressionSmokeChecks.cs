@@ -577,14 +577,9 @@ internal static class PosAdminOperationsRegressionSmokeChecks
         }
 
         Directory.CreateDirectory(paths.BackupPath);
-        string backupPath = Path.Combine(
-            paths.BackupPath,
-            "salryn-admin-ops-" +
-            DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss-fffffff", CultureInfo.InvariantCulture) +
-            ".db");
-
-        SqliteConnectionFactory.ClearAllPools();
-        File.Copy(paths.DatabasePath, backupPath, overwrite: false);
+        string backupPath = RequireSuccess(
+            backupRecoveryService.CreateBackup(),
+            "PosAdminOps.BackupCreate");
 
         if (!File.Exists(backupPath))
         {
@@ -605,6 +600,8 @@ internal static class PosAdminOperationsRegressionSmokeChecks
             "PosAdminOps.BackupVerify");
 
         if (!verification.CoreTablesExist ||
+            !verification.CriticalTablesExist ||
+            !verification.MigrationVersionCompatible ||
             verification.SizeBytes <= 0 ||
             verification.ProductCount is null ||
             verification.UserCount is null ||

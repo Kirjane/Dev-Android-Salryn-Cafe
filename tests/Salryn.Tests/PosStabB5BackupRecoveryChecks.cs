@@ -66,7 +66,8 @@ public static class PosStabB5BackupRecoveryChecks
         RequireContains(recoveryServiceText, "ListBackups", "B5 recovery boundary must list backup files.");
         RequireContains(recoveryServiceText, "VerifyBackup", "B5 recovery boundary must verify selected backups.");
         RequireContains(recoveryServiceText, "SqliteOpenMode.ReadOnly", "B5 backup verification must open backup databases read-only.");
-        RequireContains(recoveryServiceText, "CoreTables", "B5 recovery verification must check minimum SALRYN DB shape.");
+        RequireContains(recoveryServiceText, "SalrynDatabaseMigrationCatalog", "B5 recovery verification must use migration-aware critical table catalog.");
+        RequireContains(recoveryServiceText, "criticalTablesExist", "B5 recovery verification must report critical table coverage.");
         RequireContains(recoveryServiceText, "app_metadata", "B5 recovery summary must report app metadata availability.");
         RequireContains(recoveryServiceText, "schema_migrations", "B5 recovery summary must report migration metadata availability.");
         RequireContains(recoveryServiceText, "TryCountRows(connection, tableNames, \"users\")", "B5 recovery summary must safely read user count.");
@@ -75,11 +76,13 @@ public static class PosStabB5BackupRecoveryChecks
         RequireContains(recoveryServiceText, "RestoreConfirmationText", "B5 restore must require typed confirmation.");
         RequireContains(recoveryServiceText, "VerifiedBackupRequired", "B5 restore must require verified backup state.");
         RequireContains(recoveryServiceText, "CreateSafetyBackupPath", "B5 restore must create a current DB safety backup first.");
-        RequireContains(recoveryServiceText, "File.Copy(liveDatabasePath, safetyBackupPath, overwrite: false)", "B5 restore must create a non-overwriting safety backup before replacement.");
+        RequireContains(recoveryServiceText, "SqliteDatabaseBackupUtility.CreateOnlineBackup(liveDatabasePath, safetyBackupPath)", "B5 restore must create a WAL-safe safety backup before replacement.");
         RequireContains(recoveryServiceText, "CanOpenLiveDatabaseExclusively", "B5 restore must refuse unsafe live DB replacement.");
         RequireContains(recoveryServiceText, "RestoreRequiresRestart", "B5 restore must report app restart/manual step when live DB cannot be safely replaced.");
+        RequireContains(recoveryServiceText, "SqliteDatabaseBackupUtility.RemoveWalShmSidecars(liveDatabasePath)", "B5 restore must clear stale WAL/SHM sidecars before live DB replacement.");
         RequireContains(recoveryServiceText, "File.Copy(freshVerification.Value.FilePath, liveDatabasePath, overwrite: true)", "B5 live DB overwrite must only occur inside guarded restore boundary.");
-        RequireDoesNotContain(recoveryServiceText, "File.Delete", "B5 recovery must not destructively delete database files.");
+        RequireContains(recoveryServiceText, "SqliteBackupLogWriter.TryWrite", "B5 recovery must persist backup_logs rows.");
+        RequireDoesNotContain(recoveryServiceText, "File.Delete", "B5 recovery service must not delete files directly; sidecar cleanup stays in backup utility.");
         RequireDoesNotContain(recoveryServiceText, "DROP TABLE", "B5 recovery must not change schema.");
         RequireDoesNotContain(recoveryServiceText, "CREATE TABLE", "B5 recovery service must not add schema migration behavior.");
         RequireNoForbiddenMarkers(recoveryServiceText, "Backup recovery service");

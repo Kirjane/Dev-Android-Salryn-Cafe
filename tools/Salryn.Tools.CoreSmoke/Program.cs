@@ -87,6 +87,7 @@ public static class Program
         M8MSeriesCompletionLanTransitionGateChecks.Run();
         SecA1LocalApiWebViewSecurityChecks.Run();
         CleanupA1OperationalHardeningChecks.RunAsync().GetAwaiter().GetResult();
+        DbA2DatabaseSafetyChecks.Run();
         J20UiWorkflowReadinessChecks.Run();
         PosStabA1StartupLoginReadinessChecks.Run();
         PosStabA2ShiftCloseChecks.Run();

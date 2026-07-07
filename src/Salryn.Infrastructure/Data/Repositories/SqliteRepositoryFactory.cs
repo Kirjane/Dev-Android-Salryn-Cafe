@@ -105,6 +105,11 @@ public sealed class SqliteRepositoryFactory
         return new SqliteErrorLogReadRepository(_connectionFactory);
     }
 
+    public IErrorLogWriteRepository CreateErrorLogWriteRepository()
+    {
+        return new SqliteErrorLogWriteRepository(_connectionFactory);
+    }
+
     public SqliteDeploymentIdentityRepository CreateDeploymentIdentityRepository()
     {
         return new SqliteDeploymentIdentityRepository(_connectionFactory);

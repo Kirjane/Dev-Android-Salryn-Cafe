@@ -362,8 +362,13 @@ public sealed class BackupForm : Form
             "Size: " + summary.SizeBytes + " bytes",
             "Last modified: " + summary.LastModifiedAt,
             "Core tables exist: " + YesNo(summary.CoreTablesExist),
+            "Critical tables exist: " + YesNo(summary.CriticalTablesExist),
             "App metadata exists: " + YesNo(summary.AppMetadataExists),
             "Migration metadata exists: " + YesNo(summary.MigrationMetadataExists),
+            "Backup migration version: " + CountOrUnknown(summary.BackupMigrationVersion),
+            "Supported migration version: " + (summary.SupportedMigrationVersion > 0 ? summary.SupportedMigrationVersion.ToString() : "Unknown"),
+            "Migration compatible: " + YesNo(summary.MigrationVersionCompatible),
+            "Missing critical tables: " + FormatMissingTables(summary.MissingCriticalTables),
             "User count: " + CountOrUnknown(summary.UserCount),
             "Product count: " + CountOrUnknown(summary.ProductCount),
             "Sale count: " + CountOrUnknown(summary.SaleCount));
@@ -372,6 +377,18 @@ public sealed class BackupForm : Form
     private static string CountOrUnknown(long? value)
     {
         return value.HasValue ? value.Value.ToString() : "Unknown";
+    }
+
+    private static string CountOrUnknown(int? value)
+    {
+        return value.HasValue ? value.Value.ToString() : "Unknown";
+    }
+
+    private static string FormatMissingTables(IReadOnlyList<string>? missingTables)
+    {
+        return missingTables is null || missingTables.Count == 0
+            ? "None"
+            : string.Join(", ", missingTables);
     }
 
     private static string YesNo(bool value)
