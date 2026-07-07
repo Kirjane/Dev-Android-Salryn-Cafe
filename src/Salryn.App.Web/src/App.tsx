@@ -103,7 +103,7 @@ function RemoteClientApp() {
 function ConsoleApp() {
   const queryClient = useQueryClient();
   const sessionQuery = useAppSession();
-  const [currentPage, setCurrentPage] = useState<AppPage>("host-lan-control");
+  const [currentPage, setCurrentPage] = useState<AppPage>("dashboard");
 
   useEffect(() => {
     const session = sessionQuery.data;
