@@ -80,6 +80,7 @@ public static class Program
         RoleM2BackendPermissionEnforcementChecks.Run();
         RoleM3HttpApiPermissionRuntimeChecks.RunAsync().GetAwaiter().GetResult();
         RoleM4PermissionBoundaryRegressionMatrixChecks.RunAsync().GetAwaiter().GetResult();
+        V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
         M5VerifiedCandidateStackLedgerChecks.Run();
         M6CandidateStackPromotionDryRunChecks.Run();

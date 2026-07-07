@@ -83,6 +83,8 @@ public static class LocalApiApplicationFactory
         builder.Services.AddSingleton<UserAdminApiService>();
         builder.Services.AddSingleton<RemoteReadOnlyApiService>();
         builder.Services.AddSingleton<LocalLanControlService>();
+        HostOperatorApiServices hostOperatorServices = HostOperatorApiServices.Create(composition);
+        builder.Services.AddSingleton(hostOperatorServices);
 
         builder.Services.AddCors(corsOptions =>
         {
@@ -212,6 +214,7 @@ public static class LocalApiApplicationFactory
         });
 
         app.MapReadOnlyOperatorEndpoints();
+        app.MapLocalHostShiftEndpoints();
         app.MapLocalUserAdminEndpoints();
         app.MapRemoteReadOnlyEndpoints();
         app.MapLocalLanControlEndpoints();
