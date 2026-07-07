@@ -10,6 +10,8 @@ internal static class LocalApiPermissions
     public const string StoreTerminalView = "StoreTerminal.View";
     public const string StoreTerminalManage = "StoreTerminal.Manage";
     public const string SettingsManage = "Settings.Manage";
+    public const string ShiftOpenClose = "Shift.OpenClose";
+    public const string SalesCreate = "Sales.Create";
 }
 
 internal static class LocalApiPermissionGuards

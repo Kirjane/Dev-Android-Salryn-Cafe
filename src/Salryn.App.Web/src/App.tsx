@@ -6,6 +6,7 @@ import { Button, Card, CardBody, CommandBar } from "./components/ui";
 import { useAppSession } from "./hooks/useAppSession";
 import { type AppPage } from "./navigation";
 import { AuditPage } from "./pages/AuditPage";
+import { CheckoutPage } from "./pages/CheckoutPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { HostLanControlPage } from "./pages/HostLanControlPage";
 import { InventoryPage } from "./pages/InventoryPage";
@@ -55,6 +56,8 @@ function renderPage(page: AppPage, session: SessionState, onLogout: () => void, 
           onOpenHostLanControl={() => onNavigate("host-lan-control")}
         />
       );
+    case "checkout":
+      return <CheckoutPage />;
     case "host-lan-control":
       return <HostLanControlPage />;
     case "products":

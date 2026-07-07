@@ -35,6 +35,7 @@ export type Permission = (typeof Permissions)[keyof typeof Permissions];
 
 export type HostPage =
   | "dashboard"
+  | "checkout"
   | "products"
   | "inventory"
   | "sales"
@@ -45,13 +46,14 @@ export type HostPage =
 export type AppPage = HostPage;
 
 export const implementedPages: readonly AppPage[] = [
-  "host-lan-control",
   "dashboard",
+  "checkout",
   "products",
   "inventory",
   "sales",
   "users",
   "audit",
+  "host-lan-control",
 ] as const;
 
 const authenticatedOnlyPages = new Set<AppPage>(["dashboard"]);
@@ -62,6 +64,7 @@ const pagePermissions: Partial<Record<AppPage, readonly Permission[]>> = {
     Permissions.StoreTerminalManage,
     Permissions.StoreDeploymentManage,
   ],
+  checkout: [Permissions.SalesCreate],
   products: [Permissions.ProductsView],
   inventory: [Permissions.InventoryView],
   sales: [Permissions.SalesViewHistory],

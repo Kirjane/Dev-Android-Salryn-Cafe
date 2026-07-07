@@ -6,8 +6,16 @@ namespace Salryn.Tools.CoreSmoke;
 public static class Program
 {
     // Kirch: Executes the Host/client boundary smoke checks that dotnet test only compiles today.
-    public static void Main()
+    public static void Main(string[] args)
     {
+        if (args.Length == 2 &&
+            string.Equals(args[0], "--only", StringComparison.OrdinalIgnoreCase))
+        {
+            RunOnly(args[1]);
+            Console.WriteLine("SALRYN Core smoke checks passed.");
+            return;
+        }
+
         Phase61BStoreDeploymentCompileChecks.Run();
         Phase61CHostClientContractsCompileChecks.Run();
         Phase61DBackupMobileReadinessCompileChecks.Run();
@@ -80,6 +88,7 @@ public static class Program
         RoleM2BackendPermissionEnforcementChecks.Run();
         RoleM3HttpApiPermissionRuntimeChecks.RunAsync().GetAwaiter().GetResult();
         RoleM4PermissionBoundaryRegressionMatrixChecks.RunAsync().GetAwaiter().GetResult();
+        V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
         M5VerifiedCandidateStackLedgerChecks.Run();
         M6CandidateStackPromotionDryRunChecks.Run();
@@ -222,5 +231,20 @@ public static class Program
         LanM16RcBEntryBoundaryChecks.Run();
         J21Rmo242023ElectronicJournalPersistenceRuntimeDocumentationSealChecks.Run();
         Console.WriteLine("SALRYN Core smoke checks passed.");
+    }
+
+    private static void RunOnly(string checkName)
+    {
+        switch (checkName.ToLowerInvariant())
+        {
+            case "v2-host-shift":
+                V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();
+                return;
+            case "v2-host-checkout":
+                V2HostOperatorCheckoutApiChecks.RunAsync().GetAwaiter().GetResult();
+                return;
+            default:
+                throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);
+        }
     }
 }

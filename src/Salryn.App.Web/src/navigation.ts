@@ -20,13 +20,7 @@ export type NavItemConfig = EnabledNavItem | DisabledNavItem;
 
 export const navItems: NavItemConfig[] = [
   { id: "dashboard", label: "Dashboard", enabled: true },
-  { id: "host-lan-control", label: "Host LAN Control", enabled: true },
-  {
-    id: "disabled",
-    label: "POS Checkout",
-    enabled: false,
-    reason: "Disabled until the V2 checkout backend contract is explicitly approved and wired.",
-  },
+  { id: "checkout", label: "POS Checkout", enabled: true },
   { id: "products", label: "Products", enabled: true },
   { id: "inventory", label: "Inventory", enabled: true },
   { id: "sales", label: "Sales History", enabled: true },
@@ -50,6 +44,7 @@ export const navItems: NavItemConfig[] = [
     reason: "Disabled because the React shell has no approved backup API contract yet.",
   },
   { id: "audit", label: "Audit", enabled: true },
+  { id: "host-lan-control", label: "Host LAN Control", enabled: true },
 ];
 
 export function getNavItems(session: SessionState): NavItemConfig[] {
