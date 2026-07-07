@@ -13,6 +13,7 @@ export type DisabledNavItem = {
   id: "disabled";
   label: string;
   enabled: false;
+  reason: string;
 };
 
 export type NavItemConfig = EnabledNavItem | DisabledNavItem;
@@ -20,14 +21,34 @@ export type NavItemConfig = EnabledNavItem | DisabledNavItem;
 export const navItems: NavItemConfig[] = [
   { id: "dashboard", label: "Dashboard", enabled: true },
   { id: "host-lan-control", label: "Host LAN Control", enabled: true },
-  { id: "disabled", label: "POS Checkout", enabled: false },
+  {
+    id: "disabled",
+    label: "POS Checkout",
+    enabled: false,
+    reason: "Disabled until the V2 checkout backend contract is explicitly approved and wired.",
+  },
   { id: "products", label: "Products", enabled: true },
   { id: "inventory", label: "Inventory", enabled: true },
   { id: "sales", label: "Sales History", enabled: true },
-  { id: "disabled", label: "Official Output Text File", enabled: false },
-  { id: "disabled", label: "Settings", enabled: false },
+  {
+    id: "disabled",
+    label: "Official Output Text File",
+    enabled: false,
+    reason: "Disabled because the React shell has no approved Official Output Text File API contract yet.",
+  },
+  {
+    id: "disabled",
+    label: "Settings",
+    enabled: false,
+    reason: "Disabled because the React shell has no approved settings API contract yet.",
+  },
   { id: "users", label: "Users", enabled: true },
-  { id: "disabled", label: "Backup", enabled: false },
+  {
+    id: "disabled",
+    label: "Backup",
+    enabled: false,
+    reason: "Disabled because the React shell has no approved backup API contract yet.",
+  },
   { id: "audit", label: "Audit", enabled: true },
 ];
 
