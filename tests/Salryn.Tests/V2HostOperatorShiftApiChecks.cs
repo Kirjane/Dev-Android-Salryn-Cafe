@@ -6,7 +6,9 @@ using Salryn.Api.Local;
 using Salryn.Api.Local.Auth;
 using Salryn.Api.Local.Contracts;
 using Salryn.Composition.Local;
+using Salryn.Core.Common;
 using Salryn.Core.Models;
+using Salryn.Core.ReadModels;
 using Salryn.Core.Security;
 using Salryn.Infrastructure.Data.Seeding;
 
@@ -58,13 +60,8 @@ public static class V2HostOperatorShiftApiChecks
         await composition.InitializeDatabaseAsync().ConfigureAwait(false);
 
         InMemoryLocalApiSessionStore sessionStore = new();
-        AuthenticatedUserReadModel cashier = new(
-            Guid.NewGuid(),
-            "v2-shift-cashier",
-            "V2 Shift Cashier",
-            "Cashier",
-            UserStatus.Active,
-            DefaultSeedData.CashierPermissions);
+        AuthenticatedUserReadModel cashier = await EnsureShiftOperatorAsync(composition)
+            .ConfigureAwait(false);
 
         await using WebApplication app = await LocalApiApplicationFactory
             .CreateAsync(
@@ -135,6 +132,69 @@ public static class V2HostOperatorShiftApiChecks
         {
             await app.StopAsync().ConfigureAwait(false);
         }
+    }
+
+    private static async Task<AuthenticatedUserReadModel> EnsureShiftOperatorAsync(
+        SalrynLocalComposition composition)
+    {
+        Result<IReadOnlyList<UserReadModel>> usersResult =
+            await composition.UserReadRepository.GetAllAsync().ConfigureAwait(false);
+
+        if (usersResult.IsFailure)
+        {
+            throw new InvalidOperationException(
+                "V2 shift runtime could not read users: " + usersResult.ErrorDetail.Message);
+        }
+
+        foreach (UserReadModel user in usersResult.Value.Where(user => user.Status == UserStatus.Active))
+        {
+            Result<UserPermissionReadModel?> permissionsResult =
+                await composition.UserPermissionReadRepository.FindByUserIdAsync(user.Id).ConfigureAwait(false);
+
+            if (permissionsResult.IsFailure)
+            {
+                throw new InvalidOperationException(
+                    "V2 shift runtime could not read permissions: " + permissionsResult.ErrorDetail.Message);
+            }
+
+            UserPermissionReadModel? permissions = permissionsResult.Value;
+            if (permissions is not null &&
+                permissions.Permissions.Contains(DefaultSeedData.Permissions.ShiftOpenClose, StringComparer.Ordinal))
+            {
+                return new AuthenticatedUserReadModel(
+                    permissions.UserId,
+                    permissions.Username,
+                    permissions.DisplayName,
+                    permissions.RoleName,
+                    permissions.Status,
+                    permissions.Permissions)
+                {
+                    RoleId = permissions.RoleId
+                };
+            }
+        }
+
+        if (usersResult.Value.Any(user => user.Status == UserStatus.Active))
+        {
+            throw new InvalidOperationException(
+                "V2 shift runtime requires an active local operator with Shift.OpenClose.");
+        }
+
+        Result<AuthenticatedUserReadModel> firstAdmin = await composition.Authentication
+            .CreateFirstAdminAsync(new FirstRunAdminSetupRequest(
+                "v2-shift-admin",
+                "V2 Shift Admin",
+                "V2ShiftAdmin!123",
+                "V2ShiftAdmin!123"))
+            .ConfigureAwait(false);
+
+        if (firstAdmin.IsFailure)
+        {
+            throw new InvalidOperationException(
+                "V2 shift runtime could not create first admin: " + firstAdmin.ErrorDetail.Message);
+        }
+
+        return firstAdmin.Value;
     }
 
     private static async Task<JsonDocument> GetShiftAsync(HttpClient client)
