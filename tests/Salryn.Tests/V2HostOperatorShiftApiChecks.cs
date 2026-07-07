@@ -109,8 +109,10 @@ public static class V2HostOperatorShiftApiChecks
 
             using HttpClient cashierClient = CreateClient(baseAddress, sessionStore.Create(cashier));
 
+            await EnsureNoOpenShiftAsync(cashierClient).ConfigureAwait(false);
+
             JsonDocument noneShift = await GetShiftAsync(cashierClient).ConfigureAwait(false);
-            AssertShiftState(noneShift, "None", "Fresh cashier should have no open shift.");
+            AssertShiftState(noneShift, "None", "Cashier should have no open shift after cleanup.");
 
             JsonDocument openedShift = await PostShiftOpenAsync(cashierClient, 5000).ConfigureAwait(false);
             AssertShiftState(openedShift, "Open", "Shift open must return an open shift.");
@@ -195,6 +197,17 @@ public static class V2HostOperatorShiftApiChecks
         }
 
         return firstAdmin.Value;
+    }
+
+    private static async Task EnsureNoOpenShiftAsync(HttpClient client)
+    {
+        JsonDocument current = await GetShiftAsync(client).ConfigureAwait(false);
+        string? state = current.RootElement.GetProperty("shift").GetProperty("shiftState").GetString();
+
+        if (string.Equals(state, "Open", StringComparison.Ordinal))
+        {
+            await PostShiftCloseAsync(client).ConfigureAwait(false);
+        }
     }
 
     private static async Task<JsonDocument> GetShiftAsync(HttpClient client)
