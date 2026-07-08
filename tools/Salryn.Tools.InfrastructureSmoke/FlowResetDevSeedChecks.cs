@@ -42,9 +42,9 @@ internal static class FlowResetDevSeedChecks
             "FlowReset.CreateAdmin");
 
         IUserWriteRepository userWrites = services.Repositories.CreateUserWriteRepository();
-        CreateDevUser(userWrites, admin.UserId, DevManagerUsername, "DEV Manager", DefaultSeedData.ManagerRoleId, DevManagerPassword);
-        CreateDevUser(userWrites, admin.UserId, DevCashierUsername, "DEV Cashier", DefaultSeedData.CashierRoleId, DevCashierPassword);
-        CreateDevUser(userWrites, admin.UserId, DevAuditUsername, "DEV Audit", DefaultSeedData.ManagerRoleId, DevAuditPassword);
+        CreateDevUser(userWrites, admin.UserId, DevManagerUsername, "DEV Manager", Guid.Parse(DefaultSeedData.ManagerRoleId), DevManagerPassword);
+        CreateDevUser(userWrites, admin.UserId, DevCashierUsername, "DEV Cashier", Guid.Parse(DefaultSeedData.CashierRoleId), DevCashierPassword);
+        CreateDevUser(userWrites, admin.UserId, DevAuditUsername, "DEV Audit", Guid.Parse(DefaultSeedData.ManagerRoleId), DevAuditPassword);
 
         RequireSuccess(
             services.Authentication.LoginAsync(new LoginRequest(DevCashierUsername, DevCashierPassword)).GetAwaiter().GetResult(),
@@ -114,7 +114,7 @@ internal static class FlowResetDevSeedChecks
         Guid actorUserId,
         string username,
         string displayName,
-        string roleId,
+        Guid roleId,
         string password)
     {
         Result<string> hash = SalrynPasswordHasher.HashPassword(password);
