@@ -58,6 +58,16 @@ public static class V2LanClientPairingPersistenceChecks
         AssertContains(hook, "clearPairing", "Remote POS hook must expose clear pairing action.");
         AssertContains(hook, "terminalIdSuffix", "Remote POS hook must expose terminal id suffix.");
         AssertContains(hook, "Pairing revoked or expired. Re-pair this device.", "Restore must clear revoked pairing and show re-pair message.");
+        AssertContains(hook, "shouldProbeTerminalTrust", "Remote POS hook must gate terminal trust probe on stored terminal material.");
+        AssertContains(hook, "resolveRestoreFlowState", "Remote POS hook must expose pure restore flow resolution.");
+        AssertContains(hook, "S1_UNPAIRED", "Remote POS hook must route no-storage restore to unpaired state.");
+        AssertContains(hook, "lastPairingNotice", "Remote POS hook must expose pairing notice for stale or revoked states.");
+        AssertContains(hook, "hasStoredPairing", "Remote POS hook must expose hasStoredPairing diagnostic.");
+        AssertContains(hook, "hasTerminalId", "Remote POS hook must expose hasTerminalId diagnostic.");
+        AssertContains(hook, "startOver", "Remote POS hook must expose start-over action.");
+        AssertContains(hook, "Pairing expired or reset. Request access again.", "Stale pairing after DB reset must show reset notice.");
+        AssertContains(hook, "Pairing revoked by host. Request access again.", "Explicit revoked trust must show revoked notice.");
+        AssertNotContains(hook, "void resolveTrustStatus(stored)", "Hook must not probe terminal trust when stored pairing is null.");
         AssertNotContains(hook, "localStorage.setItem", "Hook must route storage through lanClientStorage helper.");
 
         AssertContains(page, "Paired terminal restored", "Remote POS page must show restored pairing banner.");
@@ -70,6 +80,10 @@ public static class V2LanClientPairingPersistenceChecks
         AssertContains(page, "S3_HOST_APPROVED_NEEDS_ACTIVATION", "Remote POS page must show approved-awaiting-activation state.");
         AssertContains(page, "trustProbeResult", "Remote POS page must show trust probe diagnostics.");
         AssertContains(page, "storageRestored", "Remote POS page must show storage restore diagnostics.");
+        AssertContains(page, "hasStoredPairing", "Remote POS page must show hasStoredPairing diagnostic.");
+        AssertContains(page, "hasTerminalId", "Remote POS page must show hasTerminalId diagnostic.");
+        AssertContains(page, "Start over / request access again", "Remote POS page must expose start-over path.");
+        AssertContains(page, "lastPairingNotice", "Remote POS page must render pairing notice on unpaired restore.");
         AssertNotContains(page, "\"/api/checkout\"", "Remote POS page must not call host /api/checkout.");
 
         AssertContains(remotePosClient, "/api/remote-pos/terminal/trust", "Remote POS client must call terminal trust probe.");

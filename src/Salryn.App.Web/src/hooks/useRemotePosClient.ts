@@ -102,6 +102,55 @@ function isRevokedTrustStatus(status: string): boolean {
   return status === "Revoked" || status === "Disabled";
 }
 
+export type RemotePosPairingNotice =
+  | "Pairing expired or reset. Request access again."
+  | "Pairing revoked by host. Request access again.";
+
+export function shouldProbeTerminalTrust(stored: LanClientPairingRecord | null): boolean {
+  return hasPairedTerminalMaterial(stored);
+}
+
+export function initialTrustProbeLabel(stored: LanClientPairingRecord | null): string {
+  if (!stored) {
+    return "none";
+  }
+  if (hasPairedTerminalMaterial(stored)) {
+    return "pending";
+  }
+  if (stored.requestId?.trim()) {
+    return "pending-request";
+  }
+  return "none";
+}
+
+export function resolveRestoreFlowState(
+  stored: LanClientPairingRecord | null,
+  trustStatus: string | null,
+): RemotePosFlowState {
+  if (!stored) {
+    return "S1_UNPAIRED";
+  }
+  if (!shouldProbeTerminalTrust(stored)) {
+    return stored.requestId?.trim() ? "S2_REQUEST_PENDING" : "S1_UNPAIRED";
+  }
+  if (trustStatus === "Trusted" || trustStatus === "HandshakeExpired") {
+    return "S4_TERMINAL_TRUSTED";
+  }
+  if (trustStatus === "Approved") {
+    return "S3_HOST_APPROVED_NEEDS_ACTIVATION";
+  }
+  if (trustStatus === "Pending") {
+    return "S2_REQUEST_PENDING";
+  }
+  if (isRevokedTrustStatus(trustStatus ?? "")) {
+    return "S_REVOKED";
+  }
+  if (trustStatus === "Unknown") {
+    return "S1_UNPAIRED";
+  }
+  return "S1_UNPAIRED";
+}
+
 export function useRemotePosClient() {
   const startsFromRemoteEntry = isRemoteClientBrowserLocation();
   const [hostBaseUrl, setHostBaseUrl] = useState(startsFromRemoteEntry ? currentBrowserOrigin() : "");
@@ -125,6 +174,7 @@ export function useRemotePosClient() {
   const [pairingRestored, setPairingRestored] = useState(false);
   const [trustProbeResult, setTrustProbeResult] = useState<string | null>(null);
   const [storageRestored, setStorageRestored] = useState(false);
+  const [lastPairingNotice, setLastPairingNotice] = useState<RemotePosPairingNotice | null>(null);
   const restoreAttemptedRef = useRef(false);
 
   const hostConnection = useMemo<RemotePosHostConnection>(() => ({ hostBaseUrl }), [hostBaseUrl]);
@@ -142,6 +192,8 @@ export function useRemotePosClient() {
   const isPaired = terminalId.trim().length > 0 && handshakeSessionId.trim().length > 0;
   const isConnected = session !== null && sessionToken !== null;
   const terminalIdSuffix = useMemo(() => formatTerminalIdSuffix(terminalId), [terminalId]);
+  const hasTerminalId = terminalId.trim().length > 0;
+  const hasStoredPairing = storageRestored;
 
   const resetSession = useCallback(() => {
     setSession(null);
@@ -186,12 +238,17 @@ export function useRemotePosClient() {
     setHandshakeSessionId("");
     setPairingRestored(false);
     setStorageRestored(false);
-    setTrustProbeResult(null);
+    setTrustProbeResult("none");
+    setLastPairingNotice(null);
     setFlowState("S1_UNPAIRED");
     setErrorMessage(null);
     setStatusMessage("Device pairing cleared. Request access to this host when ready.");
     restoreAttemptedRef.current = false;
   }, [resetSession]);
+
+  const startOver = useCallback(() => {
+    clearPairing();
+  }, [clearPairing]);
 
   const resetPairing = clearPairing;
 
@@ -279,7 +336,210 @@ export function useRemotePosClient() {
     [hostConnection.hostBaseUrl],
   );
 
-  const resolveTrustStatus = useCallback(
+  const restorePendingRequest = useCallback(
+    async (stored: LanClientPairingRecord, normalizedHost: string) => {
+      const requestId = stored.requestId?.trim() ?? "";
+      if (!requestId) {
+        setTrustProbeResult("none");
+        setFlowState("S1_UNPAIRED");
+        return;
+      }
+
+      setTrustProbeResult("pending-request");
+      const status = await fetchRemotePosPairingStatus({ hostBaseUrl: normalizedHost }, requestId);
+      setPairingRequest({
+        requestId,
+        deviceName: status.deviceName ?? stored.displayName ?? "Pending device",
+        pairingState: status.pairingState,
+        requestedAtUtc: "",
+        expiresAtUtc: "",
+        message: status.message,
+      });
+      setPairingStatus(status);
+
+      if (status.pairingCodeRequired) {
+        persistLanRecord({
+          requestId,
+          displayName: status.deviceName ?? stored.displayName,
+          lastKnownState: "S3_HOST_APPROVED_NEEDS_ACTIVATION",
+        });
+        setFlowState("S3_HOST_APPROVED_NEEDS_ACTIVATION");
+        setStatusMessage("Host approved this device. Enter the one-time pairing code.");
+        return;
+      }
+
+      if (status.paired) {
+        setFlowState("S4_TERMINAL_TRUSTED");
+        setStatusMessage(status.message);
+        return;
+      }
+
+      const pairingState = status.pairingState.toLowerCase();
+      if (pairingState === "rejected" || pairingState === "expired") {
+        clearLanClientPairing();
+        setStorageRestored(false);
+        setPairingRequest(null);
+        setPairingStatus(null);
+        setLastPairingNotice("Pairing expired or reset. Request access again.");
+        setFlowState("S1_UNPAIRED");
+        setStatusMessage("Pairing expired or reset. Request access again.");
+        return;
+      }
+
+      persistLanRecord({
+        requestId,
+        displayName: status.deviceName ?? stored.displayName,
+        lastKnownState: "S2_REQUEST_PENDING",
+      });
+      setFlowState("S2_REQUEST_PENDING");
+      setStatusMessage(status.message || "Waiting for host approval.");
+    },
+    [persistLanRecord],
+  );
+
+  const resolveTerminalTrust = useCallback(
+    async (stored: LanClientPairingRecord, normalizedHost: string) => {
+      setTrustProbeResult("pending");
+      const operatorToken = readRemotePosOperatorSessionToken(normalizedHost);
+      const trustConnection = {
+        hostBaseUrl: normalizedHost,
+        terminalId: stored.terminalId!,
+        handshakeSessionId: stored.handshakeSessionId!,
+      };
+
+      let trust = await fetchRemotePosTerminalTrust(trustConnection, stored.requestId ?? null, operatorToken);
+      setTrustProbeResult(trust.status);
+
+      if (trust.status === "HandshakeExpired" && trust.terminalId) {
+        const refreshed = await remotePosRefreshTerminalHandshake({
+          hostBaseUrl: normalizedHost,
+          terminalId: trust.terminalId,
+        });
+        trust = await fetchRemotePosTerminalTrust(
+          {
+            hostBaseUrl: normalizedHost,
+            terminalId: refreshed.terminalId,
+            handshakeSessionId: refreshed.handshakeSessionId,
+          },
+          stored.requestId ?? null,
+          operatorToken,
+        );
+        setTrustProbeResult(`${trust.status} (handshake refreshed)`);
+      }
+
+      if (trust.status === "Trusted") {
+        const trustedTerminalId = trust.terminalId ?? stored.terminalId ?? "";
+        const trustedHandshakeSessionId = trust.handshakeSessionId ?? stored.handshakeSessionId ?? "";
+        if (!trustedTerminalId || !trustedHandshakeSessionId) {
+          setFlowState("S1_UNPAIRED");
+          return;
+        }
+
+        applyTrustedTerminal(
+          trustedTerminalId,
+          trustedHandshakeSessionId,
+          trust.displayName ?? stored.displayName ?? "Paired terminal",
+          trust.requestId ?? stored.requestId ?? null,
+          true,
+          trust.operatorSessionValid,
+        );
+
+        if (trust.operatorSessionValid) {
+          const restoredSession = await restoreOperatorSession(trustedTerminalId, trustedHandshakeSessionId);
+          if (!restoredSession) {
+            setFlowState("S5_REMOTE_POS_OPERATOR_AUTH");
+          }
+        } else {
+          setFlowState("S5_REMOTE_POS_OPERATOR_AUTH");
+        }
+        return;
+      }
+
+      if (trust.status === "Approved") {
+        const requestId = trust.requestId ?? stored.requestId ?? "";
+        setPairingRequest({
+          requestId,
+          deviceName: trust.displayName ?? stored.displayName ?? "Pending device",
+          pairingState: "Accepted",
+          requestedAtUtc: "",
+          expiresAtUtc: "",
+          message: trust.message,
+        });
+        setPairingStatus({
+          pairingState: "Accepted",
+          requestId,
+          deviceName: trust.displayName ?? stored.displayName ?? "Pending device",
+          message: trust.message,
+          pairingCodeRequired: true,
+          paired: false,
+        });
+        persistLanRecord({
+          requestId,
+          displayName: trust.displayName ?? stored.displayName,
+          lastKnownState: "S3_HOST_APPROVED_NEEDS_ACTIVATION",
+        });
+        setFlowState("S3_HOST_APPROVED_NEEDS_ACTIVATION");
+        setStatusMessage("Host approved this device. Enter the one-time pairing code.");
+        return;
+      }
+
+      if (trust.status === "Pending") {
+        const requestId = trust.requestId ?? stored.requestId ?? "";
+        setPairingRequest({
+          requestId,
+          deviceName: trust.displayName ?? stored.displayName ?? "Pending device",
+          pairingState: "Pending",
+          requestedAtUtc: "",
+          expiresAtUtc: "",
+          message: trust.message,
+        });
+        setPairingStatus({
+          pairingState: "Pending",
+          requestId,
+          deviceName: trust.displayName ?? stored.displayName ?? "Pending device",
+          message: trust.message,
+          pairingCodeRequired: false,
+          paired: false,
+        });
+        persistLanRecord({
+          requestId,
+          displayName: trust.displayName ?? stored.displayName,
+          lastKnownState: "S2_REQUEST_PENDING",
+        });
+        setFlowState("S2_REQUEST_PENDING");
+        setStatusMessage("Waiting for host approval.");
+        return;
+      }
+
+      if (isRevokedTrustStatus(trust.status)) {
+        clearLanClientPairing();
+        setStorageRestored(false);
+        setPairingRequest(null);
+        setPairingStatus(null);
+        setTerminalId("");
+        setHandshakeSessionId("");
+        setLastPairingNotice("Pairing revoked by host. Request access again.");
+        setFlowState("S_REVOKED");
+        setStatusMessage("Pairing revoked or expired. Re-pair this device.");
+        return;
+      }
+
+      if (trust.status === "Unknown") {
+        clearLanClientPairing();
+        setStorageRestored(false);
+        setPairingRequest(null);
+        setPairingStatus(null);
+        setTerminalId("");
+        setHandshakeSessionId("");
+        setLastPairingNotice("Pairing expired or reset. Request access again.");
+        setFlowState("S1_UNPAIRED");
+        setStatusMessage("Pairing expired or reset. Request access again.");
+      }
+    },
+    [applyTrustedTerminal, persistLanRecord, restoreOperatorSession],
+  );
+
+  const restorePairingState = useCallback(
     async (stored: LanClientPairingRecord | null) => {
       const normalizedHost = normalizeHostBaseUrl(hostBaseUrl);
       if (!normalizedHost) {
@@ -289,142 +549,31 @@ export function useRemotePosClient() {
 
       setFlowState("S_RESTORING");
       setErrorMessage(null);
+      setLastPairingNotice(null);
+      setTrustProbeResult(initialTrustProbeLabel(stored));
 
-      const operatorToken = readRemotePosOperatorSessionToken(normalizedHost);
-      const trustConnection = {
-        hostBaseUrl: normalizedHost,
-        terminalId: stored?.terminalId ?? "",
-        handshakeSessionId: stored?.handshakeSessionId ?? "",
-      };
+      if (!stored) {
+        setTrustProbeResult("none");
+        setFlowState("S1_UNPAIRED");
+        return;
+      }
 
       try {
-        let trust = await fetchRemotePosTerminalTrust(
-          trustConnection,
-          stored?.requestId ?? null,
-          operatorToken,
-        );
-        setTrustProbeResult(trust.status);
-
-        if (trust.status === "HandshakeExpired" && trust.terminalId) {
-          const refreshed = await remotePosRefreshTerminalHandshake({
-            hostBaseUrl: normalizedHost,
-            terminalId: trust.terminalId,
-          });
-          trust = await fetchRemotePosTerminalTrust(
-            {
-              hostBaseUrl: normalizedHost,
-              terminalId: refreshed.terminalId,
-              handshakeSessionId: refreshed.handshakeSessionId,
-            },
-            stored?.requestId ?? null,
-            operatorToken,
-          );
-          setTrustProbeResult(`${trust.status} (handshake refreshed)`);
-        }
-
-        if (trust.status === "Trusted") {
-          const trustedTerminalId = trust.terminalId ?? stored?.terminalId ?? "";
-          const trustedHandshakeSessionId = trust.handshakeSessionId ?? stored?.handshakeSessionId ?? "";
-          if (!trustedTerminalId || !trustedHandshakeSessionId) {
-            setFlowState("S1_UNPAIRED");
-            return;
-          }
-
-          applyTrustedTerminal(
-            trustedTerminalId,
-            trustedHandshakeSessionId,
-            trust.displayName ?? stored?.displayName ?? "Paired terminal",
-            trust.requestId ?? stored?.requestId ?? null,
-            true,
-            trust.operatorSessionValid,
-          );
-
-          if (trust.operatorSessionValid) {
-            const restoredSession = await restoreOperatorSession(trustedTerminalId, trustedHandshakeSessionId);
-            if (!restoredSession) {
-              setFlowState("S5_REMOTE_POS_OPERATOR_AUTH");
-            }
-          } else {
-            setFlowState("S5_REMOTE_POS_OPERATOR_AUTH");
-          }
+        if (shouldProbeTerminalTrust(stored)) {
+          await resolveTerminalTrust(stored, normalizedHost);
           return;
         }
 
-        if (trust.status === "Approved") {
-          const requestId = trust.requestId ?? stored?.requestId ?? "";
-          setPairingRequest({
-            requestId,
-            deviceName: trust.displayName ?? stored?.displayName ?? "Pending device",
-            pairingState: "Accepted",
-            requestedAtUtc: "",
-            expiresAtUtc: "",
-            message: trust.message,
-          });
-          setPairingStatus({
-            pairingState: "Accepted",
-            requestId,
-            deviceName: trust.displayName ?? stored?.displayName ?? "Pending device",
-            message: trust.message,
-            pairingCodeRequired: true,
-            paired: false,
-          });
-          persistLanRecord({
-            requestId,
-            displayName: trust.displayName ?? stored?.displayName,
-            lastKnownState: "S3_HOST_APPROVED_NEEDS_ACTIVATION",
-          });
-          setFlowState("S3_HOST_APPROVED_NEEDS_ACTIVATION");
-          setStatusMessage("Host approved this device. Enter the one-time pairing code.");
+        if (stored.requestId?.trim()) {
+          await restorePendingRequest(stored, normalizedHost);
           return;
         }
 
-        if (trust.status === "Pending") {
-          const requestId = trust.requestId ?? stored?.requestId ?? "";
-          setPairingRequest({
-            requestId,
-            deviceName: trust.displayName ?? stored?.displayName ?? "Pending device",
-            pairingState: "Pending",
-            requestedAtUtc: "",
-            expiresAtUtc: "",
-            message: trust.message,
-          });
-          setPairingStatus({
-            pairingState: "Pending",
-            requestId,
-            deviceName: trust.displayName ?? stored?.displayName ?? "Pending device",
-            message: trust.message,
-            pairingCodeRequired: false,
-            paired: false,
-          });
-          persistLanRecord({
-            requestId,
-            displayName: trust.displayName ?? stored?.displayName,
-            lastKnownState: "S2_REQUEST_PENDING",
-          });
-          setFlowState("S2_REQUEST_PENDING");
-          setStatusMessage("Waiting for host approval.");
-          return;
-        }
-
-        if (isRevokedTrustStatus(trust.status) || trust.status === "Unknown") {
-          if (stored) {
-            clearLanClientPairing();
-          }
-          setPairingRequest(null);
-          setPairingStatus(null);
-          setTerminalId("");
-          setHandshakeSessionId("");
-          setFlowState(trust.status === "Unknown" ? "S1_UNPAIRED" : "S_REVOKED");
-          setStatusMessage(
-            trust.status === "Unknown"
-              ? "Previous pairing request is no longer active on the host. Request access again."
-              : "Pairing revoked or expired. Re-pair this device.",
-          );
-          return;
-        }
+        setTrustProbeResult("none");
+        setFlowState("S1_UNPAIRED");
       } catch (error) {
         if (isNetworkFailure(error)) {
-          if (stored && hasPairedTerminalMaterial(stored)) {
+          if (hasPairedTerminalMaterial(stored)) {
             setTerminalId(stored.terminalId);
             setHandshakeSessionId(stored.handshakeSessionId);
             setFlowState("S_OFFLINE");
@@ -433,7 +582,7 @@ export function useRemotePosClient() {
             return;
           }
 
-          if (stored?.requestId) {
+          if (stored.requestId?.trim()) {
             setFlowState("S_OFFLINE");
             setTrustProbeResult("offline");
             setErrorMessage("Host unavailable. Pending join request kept.");
@@ -441,14 +590,51 @@ export function useRemotePosClient() {
           }
         }
 
-        if (stored) {
-          clearLanClientPairing();
+        if (hasPairedTerminalMaterial(stored)) {
+          if (error instanceof ApiError && (error.status === 403 || error.code?.includes("Handshake"))) {
+            clearLanClientPairing();
+            setStorageRestored(false);
+            setPairingRequest(null);
+            setPairingStatus(null);
+            setTerminalId("");
+            setHandshakeSessionId("");
+            setLastPairingNotice("Pairing expired or reset. Request access again.");
+            setFlowState("S1_UNPAIRED");
+            setStatusMessage("Pairing expired or reset. Request access again.");
+            return;
+          }
+
+          if (isRevokedTrustStatus(error instanceof ApiError ? (error.code ?? "") : "")) {
+            clearLanClientPairing();
+            setStorageRestored(false);
+            setPairingRequest(null);
+            setPairingStatus(null);
+            setTerminalId("");
+            setHandshakeSessionId("");
+            setLastPairingNotice("Pairing revoked by host. Request access again.");
+            setFlowState("S_REVOKED");
+            setStatusMessage("Pairing revoked or expired. Re-pair this device.");
+            return;
+          }
         }
-        setFlowState("S_REVOKED");
-        setStatusMessage("Pairing revoked or expired. Re-pair this device.");
+
+        if (stored.requestId?.trim()) {
+          clearLanClientPairing();
+          setStorageRestored(false);
+          setPairingRequest(null);
+          setPairingStatus(null);
+          setLastPairingNotice("Pairing expired or reset. Request access again.");
+          setFlowState("S1_UNPAIRED");
+          setStatusMessage("Pairing expired or reset. Request access again.");
+          return;
+        }
+
+        setTrustProbeResult("none");
+        setFlowState("S1_UNPAIRED");
+        setErrorMessage(describeError(error));
       }
     },
-    [applyTrustedTerminal, hostBaseUrl, persistLanRecord, restoreOperatorSession],
+    [hostBaseUrl, resolveTerminalTrust, restorePendingRequest],
   );
 
   useEffect(() => {
@@ -465,8 +651,8 @@ export function useRemotePosClient() {
     restoreAttemptedRef.current = true;
     const stored = readLanClientPairing("remote-pos", normalizedHost);
     setStorageRestored(Boolean(stored));
-    void resolveTrustStatus(stored);
-  }, [hostAddressConfirmed, hostBaseUrl, resolveTrustStatus]);
+    void restorePairingState(stored);
+  }, [hostAddressConfirmed, hostBaseUrl, restorePairingState]);
 
   const run = useCallback(
     async <T,>(action: RemotePosBusyAction, work: () => Promise<T>): Promise<T | null> => {
@@ -705,8 +891,12 @@ export function useRemotePosClient() {
     terminalIdSuffix,
     trustProbeResult,
     storageRestored,
+    hasStoredPairing,
+    hasTerminalId,
+    lastPairingNotice,
     resetPairing,
     clearPairing,
+    startOver,
     session,
     capabilities,
     cart,

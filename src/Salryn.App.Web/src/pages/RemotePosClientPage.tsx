@@ -154,7 +154,11 @@ export function RemotePosClientPage() {
               {" · "}
               Storage restored: <span className="font-mono text-slate-700">{client.storageRestored ? "yes" : "no"}</span>
               {" · "}
-              Trust probe: <span className="font-mono text-slate-700">{client.trustProbeResult ?? "pending"}</span>
+              Has stored pairing: <span className="font-mono text-slate-700">{client.hasStoredPairing ? "yes" : "no"}</span>
+              {" · "}
+              Has terminal id: <span className="font-mono text-slate-700">{client.hasTerminalId ? "yes" : "no"}</span>
+              {" · "}
+              Trust probe: <span className="font-mono text-slate-700">{client.trustProbeResult ?? "none"}</span>
               {client.terminalIdSuffix ? (
                 <>
                   {" · "}
@@ -170,7 +174,12 @@ export function RemotePosClientPage() {
 
       {client.flowState === "S_REVOKED" ? (
         <Alert tone="warning" title="Pairing revoked or expired">
-          Pairing revoked or expired. Re-pair this device.
+          {client.lastPairingNotice ?? "Pairing revoked or expired. Re-pair this device."}
+          <div className="mt-3">
+            <Button variant="secondary" onClick={client.startOver} disabled={client.busy !== "idle"}>
+              Start over / request access again
+            </Button>
+          </div>
         </Alert>
       ) : null}
 
@@ -215,6 +224,11 @@ export function RemotePosClientPage() {
             <CardTitle>Request access to this host</CardTitle>
           </CardHeader>
           <CardBody className="space-y-4">
+            {client.lastPairingNotice ? (
+              <Alert tone="warning" title="Previous pairing is no longer active">
+                {client.lastPairingNotice}
+              </Alert>
+            ) : null}
             <p className="text-sm text-slate-500">
               Ask the host operator for the join code. This only opens a pending request; it does not pair or log in this device.
             </p>
