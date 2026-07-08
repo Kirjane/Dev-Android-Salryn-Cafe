@@ -247,6 +247,9 @@ public static class Program
             case "v2-react-checkout":
                 V2ReactCheckoutSourceChecks.Run();
                 return;
+            case "v2-lan-client-pairing":
+                V2LanClientPairingPersistenceChecks.Run();
+                return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);
         }

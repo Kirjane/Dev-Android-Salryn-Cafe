@@ -145,6 +145,18 @@ export function RemotePosClientPage() {
 
       {client.statusMessage ? <Alert tone="info">{client.statusMessage}</Alert> : null}
 
+      {client.restoreState === "revoked" ? (
+        <Alert tone="warning" title="Pairing revoked or expired">
+          Pairing revoked or expired. Re-pair this device.
+        </Alert>
+      ) : null}
+
+      {client.restoreState === "offline" ? (
+        <Alert tone="warning" title="Host unreachable">
+          The host is unreachable. Stored pairing was kept on this device. Retry when the host is available or clear pairing to start over.
+        </Alert>
+      ) : null}
+
       {!client.hostAddressConfirmed ? (
         <Card>
           <CardHeader>
@@ -170,7 +182,7 @@ export function RemotePosClientPage() {
         </Card>
       ) : null}
 
-      {client.hostAddressConfirmed && !client.pairingRequest ? (
+      {client.hostAddressConfirmed && !client.pairingRequest && !client.isPaired ? (
         <Card>
           <CardHeader>
             <CardTitle>State B — Join Salryn Host</CardTitle>
@@ -237,6 +249,20 @@ export function RemotePosClientPage() {
             <CardTitle>State E — Cashier / Manager login only</CardTitle>
           </CardHeader>
           <CardBody className="space-y-4">
+            {client.pairingRestored ? (
+              <Alert tone="success" title="Paired terminal restored">
+                This device restored its approved terminal pairing from local storage. Sign in as Cashier or Manager to continue.
+              </Alert>
+            ) : null}
+            <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+              <StatusPill tone="success">Paired terminal</StatusPill>
+              {client.pairingStatus?.deviceName ? (
+                <StatusPill tone="info">{client.pairingStatus.deviceName}</StatusPill>
+              ) : null}
+              {client.terminalIdSuffix ? (
+                <span className="font-mono text-xs text-slate-500">Terminal …{client.terminalIdSuffix}</span>
+              ) : null}
+            </div>
             <Alert tone="info">
               After pairing, sign in as Cashier or Manager. Admin and Owner accounts are host-local only for this build.
             </Alert>
@@ -248,9 +274,14 @@ export function RemotePosClientPage() {
                 <PasswordInput id="rpos-pass" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="off" />
               </FormField>
             </div>
-            <Button onClick={handleLogin} disabled={client.busy === "login" || !username.trim()}>
-              {client.busy === "login" ? "Signing in..." : "Sign in to host"}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={handleLogin} disabled={client.busy === "login" || !username.trim()}>
+                {client.busy === "login" ? "Signing in..." : "Sign in to host"}
+              </Button>
+              <Button variant="ghost" onClick={client.clearPairing} disabled={client.busy !== "idle"}>
+                Clear this device pairing
+              </Button>
+            </div>
           </CardBody>
         </Card>
       ) : null}

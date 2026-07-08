@@ -34,6 +34,15 @@ export type RemotePosAuthedConnection = RemotePosConnection & {
   sessionToken: string;
 };
 
+export type RemotePosTerminalTrust = {
+  ok: boolean;
+  state: string;
+  code: string;
+  message: string;
+  hostId: string | null;
+  storeId: string | null;
+};
+
 export const remotePosClientWarnings = [
   "This device is a Remote POS client.",
   "The host owns the database and sales.",
@@ -100,6 +109,12 @@ export async function remotePosActivatePairing(
   request: { requestId: string; pairingCode: string },
 ): Promise<RemotePosPairingActivation> {
   return postJson<RemotePosPairingActivation>(buildUrl(connection, "/api/remote-pos/pairing/activate"), {}, request);
+}
+
+export async function fetchRemotePosTerminalTrust(
+  connection: RemotePosConnection,
+): Promise<RemotePosTerminalTrust> {
+  return getJson<RemotePosTerminalTrust>(buildUrl(connection, "/api/remote-pos/terminal/trust"), trustHeaders(connection));
 }
 
 // ---- Session ------------------------------------------------------------------------------

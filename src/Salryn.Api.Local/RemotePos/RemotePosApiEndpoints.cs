@@ -47,6 +47,39 @@ public static class RemotePosApiEndpoints
             return ToPairingResult(result);
         });
 
+        group.MapGet("/terminal/trust", async (
+            HttpContext httpContext,
+            RemotePosApiServices services,
+            CancellationToken cancellationToken) =>
+        {
+            if (RemotePosApiAuthorization.RequireRemoteBridge(httpContext) is IResult rejected)
+            {
+                return rejected;
+            }
+
+            RemotePosTrustContext trust = RemotePosApiAuthorization.BuildTrustContext(httpContext);
+            RemotePosTrustResult trustResult = await services.SessionService
+                .ValidateTrustAsync(trust, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!trustResult.Ok)
+            {
+                return RemotePosApiAuthorization.Rejected(
+                    trustResult.Code,
+                    trustResult.Message,
+                    StatusForLogin(trustResult.State),
+                    trustResult.State);
+            }
+
+            return Results.Ok(new RemotePosTerminalTrustResponse(
+                Ok: true,
+                State: trustResult.State,
+                Code: trustResult.Code,
+                Message: trustResult.Message,
+                HostId: trustResult.HostId.ToString("D"),
+                StoreId: trustResult.StoreId.ToString("D")));
+        });
+
         // ---- Session -----------------------------------------------------------------------
 
         group.MapPost("/session/login", async (

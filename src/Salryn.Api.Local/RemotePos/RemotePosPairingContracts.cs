@@ -67,3 +67,11 @@ public sealed record RemotePosPairingActivationResponse(
     string? TerminalName,
     string? SessionExpiresAtUtc,
     string Message);
+
+public sealed record RemotePosTerminalTrustResponse(
+    bool Ok,
+    string State,
+    string Code,
+    string Message,
+    string? HostId,
+    string? StoreId);
