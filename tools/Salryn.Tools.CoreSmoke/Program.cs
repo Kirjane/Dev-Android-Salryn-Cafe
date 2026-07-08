@@ -250,6 +250,9 @@ public static class Program
             case "v2-lan-client-pairing":
                 V2LanClientPairingPersistenceChecks.Run();
                 return;
+            case "v2-lan-bind-truth":
+                V2LanBindTruthChecks.Run();
+                return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);
         }

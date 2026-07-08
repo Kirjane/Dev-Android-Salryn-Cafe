@@ -40,6 +40,25 @@ public static class LocalLanControlEndpoints
             return Results.Ok(status);
         });
 
+        group.MapGet("/runtime-status", async (
+            HttpContext httpContext,
+            LocalApiSessionService sessions,
+            LocalLanControlService control,
+            CancellationToken cancellationToken) =>
+        {
+            IResult? rejected = LocalLanControlAuthorization.RequireLocalOperatorSession(httpContext, sessions);
+            if (rejected is not null)
+            {
+                return rejected;
+            }
+
+            LocalLanControlRuntimeStatusResponse status = await control
+                .GetRuntimeStatusAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            return Results.Ok(status);
+        });
+
         group.MapPost("/remote-transport", async (
             LocalLanControlRemoteTransportRequest request,
             HttpContext httpContext,

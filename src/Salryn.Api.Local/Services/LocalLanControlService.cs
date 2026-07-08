@@ -21,17 +21,27 @@ public sealed class LocalLanControlService
     private readonly RemotePosRuntimeGate _remotePosRuntimeGate;
     private readonly RemotePosApiServices _remotePosServices;
     private readonly LocalApiHostControlUrls _hostUrls;
+    private readonly LocalApiLanRuntimeStatusService _runtimeStatus;
 
     public LocalLanControlService(
         LanRemoteTransportApiServices lanServices,
         RemotePosRuntimeGate remotePosRuntimeGate,
         RemotePosApiServices remotePosServices,
-        LocalApiHostControlUrls hostUrls)
+        LocalApiHostControlUrls hostUrls,
+        LocalApiLanRuntimeStatusService runtimeStatus)
     {
         _lanServices = lanServices ?? throw new ArgumentNullException(nameof(lanServices));
         _remotePosRuntimeGate = remotePosRuntimeGate ?? throw new ArgumentNullException(nameof(remotePosRuntimeGate));
         _remotePosServices = remotePosServices ?? throw new ArgumentNullException(nameof(remotePosServices));
         _hostUrls = hostUrls ?? throw new ArgumentNullException(nameof(hostUrls));
+        _runtimeStatus = runtimeStatus ?? throw new ArgumentNullException(nameof(runtimeStatus));
+    }
+
+    public async Task<LocalLanControlRuntimeStatusResponse> GetRuntimeStatusAsync(
+        CancellationToken cancellationToken = default)
+    {
+        LanRemoteTransportConfig config = await GetConfigAsync(cancellationToken).ConfigureAwait(false);
+        return _runtimeStatus.Build(config);
     }
 
     public async Task<LocalLanControlStatusResponse> GetStatusAsync(
@@ -49,6 +59,19 @@ public sealed class LocalLanControlService
             .GetCapacityStatusAsync(actor, _remotePosServices.SessionService.GetActiveSessionCount(), cancellationToken)
             .ConfigureAwait(false);
 
+        LocalLanControlRuntimeStatusResponse runtimeStatus = _runtimeStatus.Build(config);
+        List<string> warnings = BuildWarnings().ToList();
+        if (runtimeStatus.RestartRequired)
+        {
+            warnings.Add(
+                "LAN bind is configured but the API is not listening on that address yet. Restart Salryn with the explicit LAN bind command shown in runtime status.");
+        }
+
+        if (!runtimeStatus.ClientUrlReady && runtimeStatus.LanTransportEnabled)
+        {
+            warnings.Add("Do not copy a LAN client URL until runtime status reports Ready.");
+        }
+
         return new LocalLanControlStatusResponse(
             LocalOperatorOnly: true,
             RemoteTransportEnabled: config.RemoteTransportEnabled,
@@ -58,7 +81,7 @@ public sealed class LocalLanControlService
             TerminalVisibilityAvailable: visible,
             TerminalVisibilityMessage: visibilityMessage,
             Terminals: terminals,
-            Warnings: BuildWarnings(),
+            Warnings: warnings,
             Message: "Local LAN control is operator-only on the POS host. Remote clients cannot change LAN configuration, approvals, or terminal trust.",
             RemotePosRuntimeEnabled: _remotePosRuntimeGate.IsEnabled,
             HostLocalUrl: _hostUrls.LocalUrl,

@@ -135,6 +135,21 @@ public sealed record LocalLanControlStatusResponse(
     string Safety = "Host control is local-only",
     RemotePosCapacityStatusResponse? RemotePosLimits = null);
 
+public sealed record LocalLanControlRuntimeStatusResponse(
+    string? ConfiguredBindAddress,
+    int Port,
+    IReadOnlyList<string> ActualListenUrls,
+    bool LanTransportEnabled,
+    string? ClientUrl,
+    bool ClientUrlReady,
+    string ReadinessState,
+    bool RestartRequired,
+    bool BindIpOnHost,
+    string? Problem,
+    string? Remediation,
+    string HostLocalUrl,
+    string FirewallGuidance);
+
 public sealed record LocalLanControlRemoteTransportRequest(
     bool Enable,
     string? BindAddress);

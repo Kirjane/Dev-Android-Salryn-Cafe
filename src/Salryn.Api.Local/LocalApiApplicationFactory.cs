@@ -33,6 +33,10 @@ public static class LocalApiApplicationFactory
         LocalApiApplicationOptions? options = null)
     {
         options ??= new LocalApiApplicationOptions();
+        LocalApiLanBindStartupOptions startupBind = LocalApiLanBindStartupOptions.Parse(args);
+        string localUrl = startupBind.Port is > 0
+            ? LocalApiLanBindStartupOptions.BuildLocalUrl(startupBind.Port)
+            : options.Url;
 
         SalrynLocalComposition composition =
             options.Composition ?? SalrynLocalLaunchModeResolver.CreateComposition(args);
@@ -65,7 +69,41 @@ public static class LocalApiApplicationFactory
         LanRemoteTransportConfig lanConfig = lanConfigResult.IsSuccess
             ? lanConfigResult.Value
             : LanRemoteTransportConfig.CreateDefault();
-        IReadOnlyList<string> listenUrls = LocalApiLanUrlResolver.ResolveListenUrls(options.Url, lanConfig);
+
+        if (startupBind.HasLanBind)
+        {
+            Result bindValidation = LocalApiNetworkInterfaceValidator.ValidateExplicitLanBind(startupBind.LanBindIp);
+            if (bindValidation.IsFailure)
+            {
+                throw new InvalidOperationException(bindValidation.Error);
+            }
+
+            LanRemoteTransportConfigUpdateRequest startupRequest = new(
+                RemoteTransportEnabled: true,
+                BindMode: LanRemoteTransportBindMode.ExplicitLanAddress,
+                BindAddress: startupBind.LanBindIp!,
+                Port: startupBind.Port ?? lanConfig.Port,
+                RequirePairedTerminal: lanConfig.RequirePairedTerminal,
+                RequireActiveTerminal: lanConfig.RequireActiveTerminal,
+                RejectUnknownTerminals: lanConfig.RejectUnknownTerminals,
+                AllowOfficialCommandsRemotely: lanConfig.AllowOfficialCommandsRemotely,
+                AllowAdminCommandsRemotely: lanConfig.AllowAdminCommandsRemotely,
+                UpdatedByUserId: null);
+
+            Result<LanRemoteTransportConfig> savedStartup = await lanRemoteTransportServices.Config
+                .SaveAsync(startupRequest)
+                .ConfigureAwait(false);
+            if (savedStartup.IsFailure)
+            {
+                throw new InvalidOperationException(savedStartup.Error);
+            }
+
+            lanConfig = savedStartup.Value;
+            Console.WriteLine(
+                $"[Salryn LAN] Explicit startup bind applied: {startupBind.LanBindIp}:{ExtractListenPort(localUrl)}");
+        }
+
+        IReadOnlyList<string> listenUrls = LocalApiLanUrlResolver.ResolveListenUrls(localUrl, lanConfig);
 
         WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
@@ -75,13 +113,14 @@ public static class LocalApiApplicationFactory
         builder.Services.AddSingleton(lanRemoteTransportServices);
         builder.Services.AddSingleton(remotePosRuntimeGate);
         builder.Services.AddSingleton(remotePosServices);
-        builder.Services.AddSingleton(new LocalApiHostControlUrls(options.Url));
+        builder.Services.AddSingleton(new LocalApiHostControlUrls(localUrl));
         builder.Services.AddSingleton(sessionStore);
         builder.Services.AddSingleton(sessionService);
         builder.Services.AddSingleton(dashboardSummaryService);
         builder.Services.AddSingleton<OperatorReadService>();
         builder.Services.AddSingleton<UserAdminApiService>();
         builder.Services.AddSingleton<RemoteReadOnlyApiService>();
+        builder.Services.AddSingleton<LocalApiLanRuntimeStatusService>();
         builder.Services.AddSingleton<LocalLanControlService>();
         HostOperatorApiServices hostOperatorServices = HostOperatorApiServices.Create(composition);
         builder.Services.AddSingleton(hostOperatorServices);
@@ -238,7 +277,17 @@ public static class LocalApiApplicationFactory
             });
         }
 
+        foreach (string listenUrl in listenUrls)
+        {
+            Console.WriteLine($"[Salryn LAN] Listening on: {listenUrl}");
+        }
+
         return app;
+    }
+
+    private static int ExtractListenPort(string localUrl)
+    {
+        return Uri.TryCreate(localUrl, UriKind.Absolute, out Uri? uri) && uri.Port > 0 ? uri.Port : 5299;
     }
 
     private static void AppendSessionCookie(HttpContext httpContext, string sessionId)

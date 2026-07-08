@@ -24,9 +24,24 @@ function enabledLabel(value: boolean): string {
   return value ? "Enabled" : "Disabled";
 }
 
+function readinessTone(state: string): "success" | "warning" | "danger" | "info" {
+  switch (state) {
+    case "Ready":
+      return "success";
+    case "LoopbackOnly":
+    case "BindIpNotOnHost":
+      return "danger";
+    case "Disabled":
+      return "warning";
+    default:
+      return "info";
+  }
+}
+
 export function HostLanControlPage() {
   const {
     statusQuery,
+    runtimeStatusQuery,
     pairingStatusQuery,
     remoteTransportMutation,
     remotePosRuntimeMutation,
@@ -42,12 +57,13 @@ export function HostLanControlPage() {
   const [acceptedCodes, setAcceptedCodes] = useState<Record<string, string>>({});
 
   const status = statusQuery.data;
+  const runtime = runtimeStatusQuery.data;
   const pairing = pairingStatusQuery.data;
   const limits = status?.remotePosLimits ?? null;
   const pendingRequests = pairing?.pendingRequests ?? [];
   const pendingRequestCount = pairing?.pendingRequestCount ?? pendingRequests.length;
   const capacitySummary = `${limits?.currentPairedCount ?? 0} / ${limits?.maxPairedTerminals ?? 5} paired, ${limits?.currentActiveSessions ?? 0} / ${limits?.maxActiveSessions ?? 3} active`;
-  const clientUrl = status?.hostLanUrl && status.hostLanUrl !== "Not enabled" ? status.hostLanUrl : "";
+  const clientUrl = runtime?.clientUrlReady && runtime.clientUrl ? runtime.clientUrl : "";
   const busy =
     remoteTransportMutation.isPending ||
     remotePosRuntimeMutation.isPending ||
@@ -68,6 +84,7 @@ export function HostLanControlPage() {
 
   function refreshAll() {
     void statusQuery.refetch();
+    void runtimeStatusQuery.refetch();
     void pairingStatusQuery.refetch();
   }
 
@@ -144,13 +161,26 @@ export function HostLanControlPage() {
               </CardHeader>
               <CardBody className="space-y-3">
                 <Alert tone="warning">Client devices use the host LAN IP, not localhost.</Alert>
+                {runtime ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusPill tone={readinessTone(runtime.readinessState)}>
+                      LAN readiness: {runtime.readinessState}
+                    </StatusPill>
+                    {runtime.restartRequired ? <StatusPill tone="warning">Restart required</StatusPill> : null}
+                  </div>
+                ) : null}
                 <p className="break-all rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-700">
-                  {clientUrl || "Enable LAN transport with an explicit bind address first."}
+                  {clientUrl || "LAN client URL unavailable until the API is actually listening on the configured LAN IP."}
                 </p>
                 <Button variant="secondary" disabled={!clientUrl} onClick={copyClientUrl}>
                   Copy client URL
                 </Button>
                 {copied ? <p className="text-xs text-slate-500">Client URL copied.</p> : null}
+                {runtime?.remediation ? (
+                  <Alert tone={runtime.clientUrlReady ? "info" : "danger"} title={runtime.problem ?? "LAN bind status"}>
+                    {runtime.remediation}
+                  </Alert>
+                ) : null}
               </CardBody>
             </Card>
           </div>
@@ -335,6 +365,39 @@ export function HostLanControlPage() {
               ) : (
                 <p className="text-sm text-slate-500">No paired terminals are visible to this operator.</p>
               )}
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>LAN server truth</CardTitle>
+            </CardHeader>
+            <CardBody className="space-y-4 text-sm">
+              {runtimeStatusQuery.isLoading ? <LoadingState label="Loading LAN runtime status..." /> : null}
+              {runtimeStatusQuery.isError ? (
+                <ErrorState message={(runtimeStatusQuery.error as Error).message} />
+              ) : null}
+              {runtime ? (
+                <>
+                  <p className="text-slate-600">
+                    LAN server is actually listening on:{" "}
+                    <span className="font-mono text-slate-900">
+                      {runtime.actualListenUrls.length > 0 ? runtime.actualListenUrls.join(", ") : "unknown"}
+                    </span>
+                  </p>
+                  <dl className="grid gap-3 md:grid-cols-2">
+                    <Row label="Configured bind IP" value={runtime.configuredBindAddress ?? "Not configured"} />
+                    <Row label="Listen port" value={String(runtime.port)} />
+                    <Row label="Bind IP on this host" value={runtime.bindIpOnHost ? "Yes" : "No"} />
+                    <Row label="Client URL ready" value={runtime.clientUrlReady ? "Yes" : "No"} />
+                  </dl>
+                  {runtime.firewallGuidance ? (
+                    <Alert tone="info" title="Firewall guidance (manual only)">
+                      {runtime.firewallGuidance}
+                    </Alert>
+                  ) : null}
+                </>
+              ) : null}
             </CardBody>
           </Card>
 

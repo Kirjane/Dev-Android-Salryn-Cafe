@@ -3,6 +3,7 @@ import type { DashboardSummary } from "./dashboard";
 import type { ProductListItem } from "./products";
 import type { PagedResponse } from "./types";
 import type {
+  LocalLanControlRuntimeStatus,
   LocalLanControlStatus,
   LocalLanControlTerminalAction,
   RemotePosApproveJoinResponse,
@@ -134,6 +135,11 @@ export async function fetchRemoteReadOnlyPreflight(): Promise<RemoteReadOnlyPref
 export async function fetchLocalLanControlStatus(): Promise<LocalLanControlStatus> {
   const response = await fetch("/api/lan-control/status", { credentials: "include" });
   return readJson<LocalLanControlStatus>(response);
+}
+
+export async function fetchLocalLanControlRuntimeStatus(): Promise<LocalLanControlRuntimeStatus> {
+  const response = await fetch("/api/lan-control/runtime-status", { credentials: "include" });
+  return readJson<LocalLanControlRuntimeStatus>(response);
 }
 
 export async function setLocalLanControlRemoteTransport(

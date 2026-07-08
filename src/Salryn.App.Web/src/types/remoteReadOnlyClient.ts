@@ -151,6 +151,22 @@ export type RemotePosLimits = {
   remainingActiveSessionCapacity: number;
 };
 
+export type LocalLanControlRuntimeStatus = {
+  configuredBindAddress: string | null;
+  port: number;
+  actualListenUrls: string[];
+  lanTransportEnabled: boolean;
+  clientUrl: string | null;
+  clientUrlReady: boolean;
+  readinessState: string;
+  restartRequired: boolean;
+  bindIpOnHost: boolean;
+  problem: string | null;
+  remediation: string | null;
+  hostLocalUrl: string;
+  firewallGuidance: string;
+};
+
 export type LocalLanControlStatus = {
   localOperatorOnly: boolean;
   remoteTransportEnabled: boolean;

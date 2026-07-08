@@ -16,6 +16,8 @@ public sealed class LocalApiHostControlUrls
 
     public string BuildLanUrl(string bindAddress) => $"http://{bindAddress.Trim()}:{Port}";
 
+    public string BuildClientUrl(string bindAddress) => $"{BuildLanUrl(bindAddress)}/remote-client";
+
     private static int? ExtractPort(string url)
     {
         return Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) && uri.Port > 0

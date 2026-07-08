@@ -2,6 +2,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   acceptRemotePosJoinRequest,
   disableLocalLanControlTerminal,
+  fetchLocalLanControlRuntimeStatus,
   fetchLocalLanControlStatus,
   fetchRemotePosPairingHostStatus,
   rejectRemotePosJoinRequest,
@@ -24,6 +25,13 @@ export function useLocalLanControl() {
     retry: false,
   });
 
+  const runtimeStatusQuery = useQuery({
+    queryKey: ["local-lan-control-runtime-status"],
+    queryFn: fetchLocalLanControlRuntimeStatus,
+    retry: false,
+    refetchInterval: 5000,
+  });
+
   const pairingStatusQuery = useQuery({
     queryKey: ["local-lan-control-remote-pos-pairing"],
     queryFn: fetchRemotePosPairingHostStatus,
@@ -36,6 +44,7 @@ export function useLocalLanControl() {
       setLocalLanControlRemoteTransport(enable, bindAddress),
     onSuccess: () => {
       void statusQuery.refetch();
+      void runtimeStatusQuery.refetch();
       void pairingStatusQuery.refetch();
     },
   });
@@ -85,6 +94,7 @@ export function useLocalLanControl() {
 
   return {
     statusQuery,
+    runtimeStatusQuery,
     pairingStatusQuery,
     remoteTransportMutation,
     remotePosRuntimeMutation,
