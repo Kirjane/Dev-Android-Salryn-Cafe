@@ -185,5 +185,16 @@ public sealed class SalrynHostCommandRemoteTransport
                 "RemoteHandshake.ServiceNotConfigured",
                 "Remote handshake service is required before safe remote commands can run.")));
         }
+
+        public Task<Result<RemoteClientHandshakeResult>> RefreshTrustedTerminalHandshakeAsync(
+            Guid terminalId,
+            string originAddress,
+            string? clientMachineName,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(Result<RemoteClientHandshakeResult>.Fail(Error.Forbidden(
+                "RemoteHandshake.ServiceNotConfigured",
+                "Remote handshake service is not configured for this transport instance.")));
+        }
     }
 }

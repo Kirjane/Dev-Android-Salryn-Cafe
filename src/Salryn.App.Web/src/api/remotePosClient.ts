@@ -34,13 +34,35 @@ export type RemotePosAuthedConnection = RemotePosConnection & {
   sessionToken: string;
 };
 
+export type RemotePosTerminalTrustStatus =
+  | "Unknown"
+  | "Pending"
+  | "Approved"
+  | "Trusted"
+  | "Revoked"
+  | "Disabled"
+  | "HandshakeExpired";
+
 export type RemotePosTerminalTrust = {
-  ok: boolean;
-  state: string;
-  code: string;
+  terminalId: string | null;
+  status: RemotePosTerminalTrustStatus | string;
+  mode: string;
+  displayName: string | null;
+  requiresPairingCode: boolean;
+  operatorSessionValid: boolean;
   message: string;
+  handshakeSessionId: string | null;
+  handshakeExpiresAtUtc: string | null;
+  requestId: string | null;
   hostId: string | null;
   storeId: string | null;
+};
+
+export type RemotePosTerminalHandshakeRefresh = {
+  terminalId: string;
+  handshakeSessionId: string;
+  handshakeExpiresAtUtc: string | null;
+  message: string;
 };
 
 export const remotePosClientWarnings = [
@@ -112,9 +134,33 @@ export async function remotePosActivatePairing(
 }
 
 export async function fetchRemotePosTerminalTrust(
-  connection: RemotePosConnection,
+  connection: Partial<RemotePosConnection> & RemotePosHostConnection,
+  requestId?: string | null,
+  operatorSessionToken?: string | null,
 ): Promise<RemotePosTerminalTrust> {
-  return getJson<RemotePosTerminalTrust>(buildUrl(connection, "/api/remote-pos/terminal/trust"), trustHeaders(connection));
+  const query = requestId ? `?requestId=${encodeURIComponent(requestId)}` : "";
+  const headers: Record<string, string> = {};
+  if (connection.terminalId?.trim()) {
+    headers[remotePosHeaderNames.terminalId] = connection.terminalId.trim();
+  }
+  if (connection.handshakeSessionId?.trim()) {
+    headers[remotePosHeaderNames.handshakeSessionId] = connection.handshakeSessionId.trim();
+  }
+  if (operatorSessionToken?.trim()) {
+    headers[remotePosHeaderNames.operatorSession] = operatorSessionToken.trim();
+  }
+  return getJson<RemotePosTerminalTrust>(buildUrl(connection, `/api/remote-pos/terminal/trust${query}`), headers);
+}
+
+export async function remotePosRefreshTerminalHandshake(
+  connection: Pick<RemotePosConnection, "hostBaseUrl" | "terminalId">,
+): Promise<RemotePosTerminalHandshakeRefresh> {
+  return postJson<RemotePosTerminalHandshakeRefresh>(
+    buildUrl(connection, "/api/remote-pos/terminal/refresh-handshake"),
+    {
+      [remotePosHeaderNames.terminalId]: connection.terminalId.trim(),
+    },
+  );
 }
 
 // ---- Session ------------------------------------------------------------------------------

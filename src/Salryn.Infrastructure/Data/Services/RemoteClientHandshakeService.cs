@@ -9,6 +9,7 @@ namespace Salryn.Infrastructure.Data.Services;
 public sealed class RemoteClientHandshakeService : IRemoteClientHandshakeService
 {
     private static readonly TimeSpan DefaultSessionLifetime = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan PairedTerminalRefreshLifetime = TimeSpan.FromDays(7);
     private static readonly RemoteClientAllowedCategory[] SafeRemoteCategories =
     {
         RemoteClientAllowedCategory.StatusRead,
@@ -186,6 +187,99 @@ public sealed class RemoteClientHandshakeService : IRemoteClientHandshakeService
         }
 
         return Result.Success();
+    }
+
+    public async Task<Result<RemoteClientHandshakeResult>> RefreshTrustedTerminalHandshakeAsync(
+        Guid terminalId,
+        string originAddress,
+        string? clientMachineName,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (terminalId == Guid.Empty)
+        {
+            return Result<RemoteClientHandshakeResult>.Fail(Error.Validation(
+                "RemoteHandshake.TerminalRequired",
+                "Terminal id is required to refresh a trusted remote handshake."));
+        }
+
+        if (string.IsNullOrWhiteSpace(originAddress))
+        {
+            return Result<RemoteClientHandshakeResult>.Fail(Error.Validation(
+                "RemoteHandshake.OriginRequired",
+                "Remote handshake origin address is required."));
+        }
+
+        Result remoteConfigValidation = await RequireRemoteHandshakeEnabledAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (remoteConfigValidation.IsFailure)
+        {
+            return HandshakeFailure(terminalId, null, remoteConfigValidation.ErrorDetail);
+        }
+
+        Result<SalrynTerminalRegistration?> terminalResult = await _terminalRegistry
+            .GetByIdAsync(terminalId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (terminalResult.IsFailure)
+        {
+            return HandshakeFailure(terminalId, null, terminalResult.ErrorDetail);
+        }
+
+        SalrynTerminalRegistration? terminal = terminalResult.Value;
+        if (terminal is null)
+        {
+            return HandshakeFailure(terminalId, null, Error.NotFound(
+                "RemoteHandshake.TerminalUnknown",
+                "Remote terminal is not registered."));
+        }
+
+        if (terminal.Status != TerminalRegistrationStatus.Active)
+        {
+            string code = terminal.Status switch
+            {
+                TerminalRegistrationStatus.Revoked => "RemoteHandshake.RevokedTerminalRejected",
+                TerminalRegistrationStatus.Disabled => "RemoteHandshake.DisabledTerminalRejected",
+                _ => "RemoteHandshake.TerminalNotActive"
+            };
+
+            return HandshakeFailure(terminalId, terminal.Status, Error.Forbidden(
+                code,
+                "Trusted terminal handshake refresh requires an active terminal."));
+        }
+
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        RemoteClientHandshakeSession session = new(
+            HandshakeId: Guid.NewGuid(),
+            TerminalId: terminal.TerminalId,
+            StoreId: terminal.StoreId,
+            HostId: terminal.HostId,
+            OriginAddress: originAddress.Trim(),
+            ClientMachineName: TrimOrNull(clientMachineName),
+            ClientFingerprint: null,
+            CreatedAtUtc: now,
+            ExpiresAtUtc: now.Add(PairedTerminalRefreshLifetime),
+            Status: RemoteClientHandshakeStatus.Succeeded);
+
+        Result insertHandshake = await _credentials
+            .InsertHandshakeSessionAsync(session, cancellationToken)
+            .ConfigureAwait(false);
+        if (insertHandshake.IsFailure)
+        {
+            return HandshakeFailure(terminalId, terminal.Status, insertHandshake.ErrorDetail);
+        }
+
+        SalrynTerminalRegistration seen = terminal with { LastSeenAtUtc = now };
+        await _terminalRegistry.UpsertAsync(seen, cancellationToken).ConfigureAwait(false);
+
+        return Result<RemoteClientHandshakeResult>.Success(
+            RemoteClientHandshakeResult.Success(
+                terminal.TerminalId,
+                terminal.Status,
+                session.HandshakeId,
+                session.ExpiresAtUtc,
+                SafeRemoteCategories));
     }
 
     private async Task<Result> RequireRemoteHandshakeEnabledAsync(CancellationToken cancellationToken)

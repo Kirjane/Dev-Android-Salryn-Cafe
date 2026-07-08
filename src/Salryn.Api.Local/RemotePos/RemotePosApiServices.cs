@@ -17,6 +17,7 @@ public sealed class RemotePosApiServices
     private RemotePosApiServices(
         RemotePosRuntimeGate runtimeGate,
         RemotePosOperatorSessionService sessionService,
+        RemotePosTerminalTrustService terminalTrustService,
         RemotePosCheckoutService checkoutService,
         RemotePosPairingGateService pairingGate,
         LanRemoteTransportApiServices lanServices,
@@ -24,6 +25,7 @@ public sealed class RemotePosApiServices
     {
         RuntimeGate = runtimeGate;
         SessionService = sessionService;
+        TerminalTrustService = terminalTrustService;
         CheckoutService = checkoutService;
         PairingGate = pairingGate;
         LanServices = lanServices;
@@ -33,6 +35,8 @@ public sealed class RemotePosApiServices
     public RemotePosRuntimeGate RuntimeGate { get; }
 
     public RemotePosOperatorSessionService SessionService { get; }
+
+    public RemotePosTerminalTrustService TerminalTrustService { get; }
 
     public RemotePosCheckoutService CheckoutService { get; }
 
@@ -85,7 +89,15 @@ public sealed class RemotePosApiServices
             capacityPolicy);
 
         RemotePosPairingGateService pairingGate = new(lanServices, capacityPolicy);
+        RemotePosTerminalTrustService terminalTrustService = new(sessionService, pairingGate, lanServices);
 
-        return new RemotePosApiServices(runtimeGate, sessionService, checkoutService, pairingGate, lanServices, capacityPolicy);
+        return new RemotePosApiServices(
+            runtimeGate,
+            sessionService,
+            terminalTrustService,
+            checkoutService,
+            pairingGate,
+            lanServices,
+            capacityPolicy);
     }
 }

@@ -69,9 +69,21 @@ public sealed record RemotePosPairingActivationResponse(
     string Message);
 
 public sealed record RemotePosTerminalTrustResponse(
-    bool Ok,
-    string State,
-    string Code,
+    string? TerminalId,
+    string Status,
+    string Mode,
+    string? DisplayName,
+    bool RequiresPairingCode,
+    bool OperatorSessionValid,
     string Message,
+    string? HandshakeSessionId,
+    string? HandshakeExpiresAtUtc,
+    string? RequestId,
     string? HostId,
     string? StoreId);
+
+public sealed record RemotePosTerminalHandshakeRefreshResponse(
+    string TerminalId,
+    string HandshakeSessionId,
+    string? HandshakeExpiresAtUtc,
+    string Message);

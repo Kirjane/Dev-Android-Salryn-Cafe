@@ -145,16 +145,42 @@ export function RemotePosClientPage() {
 
       {client.statusMessage ? <Alert tone="info">{client.statusMessage}</Alert> : null}
 
-      {client.restoreState === "revoked" ? (
+      {client.hostAddressConfirmed ? (
+        <Card>
+          <CardBody className="text-xs text-slate-500">
+            <p>
+              Flow: <span className="font-mono text-slate-700">{client.flowState}</span>
+              {" · "}
+              Storage restored: <span className="font-mono text-slate-700">{client.storageRestored ? "yes" : "no"}</span>
+              {" · "}
+              Trust probe: <span className="font-mono text-slate-700">{client.trustProbeResult ?? "pending"}</span>
+              {client.terminalIdSuffix ? (
+                <>
+                  {" · "}
+                  Terminal: <span className="font-mono text-slate-700">…{client.terminalIdSuffix}</span>
+                </>
+              ) : null}
+              {" · "}
+              Host: <span className="font-mono text-slate-700">{client.hostBaseUrl.trim() || "-"}</span>
+            </p>
+          </CardBody>
+        </Card>
+      ) : null}
+
+      {client.flowState === "S_REVOKED" ? (
         <Alert tone="warning" title="Pairing revoked or expired">
           Pairing revoked or expired. Re-pair this device.
         </Alert>
       ) : null}
 
-      {client.restoreState === "offline" ? (
-        <Alert tone="warning" title="Host unreachable">
-          The host is unreachable. Stored pairing was kept on this device. Retry when the host is available or clear pairing to start over.
+      {client.flowState === "S_OFFLINE" ? (
+        <Alert tone="warning" title="Host unavailable">
+          Host unavailable. Saved pairing kept.
         </Alert>
+      ) : null}
+
+      {client.flowState === "S_RESTORING" ? (
+        <Alert tone="info">Restoring saved terminal state from this device...</Alert>
       ) : null}
 
       {!client.hostAddressConfirmed ? (
@@ -182,14 +208,14 @@ export function RemotePosClientPage() {
         </Card>
       ) : null}
 
-      {client.hostAddressConfirmed && !client.pairingRequest && !client.isPaired ? (
+      {client.hostAddressConfirmed && client.flowState === "S1_UNPAIRED" ? (
         <Card>
           <CardHeader>
-            <CardTitle>State B — Join Salryn Host</CardTitle>
+            <CardTitle>Request access to this host</CardTitle>
           </CardHeader>
           <CardBody className="space-y-4">
             <p className="text-sm text-slate-500">
-              Ask the host operator for the join code. The join code only opens a pending request; it does not pair or log in this device.
+              Ask the host operator for the join code. This only opens a pending request; it does not pair or log in this device.
             </p>
             <div className="grid gap-4 sm:grid-cols-2">
               <FormField label="Host join code" htmlFor="rpos-join-code">
@@ -200,16 +226,16 @@ export function RemotePosClientPage() {
               </FormField>
             </div>
             <Button onClick={handleJoinRequest} disabled={client.busy === "pairing" || !joinCode.trim() || !deviceName.trim()}>
-              {client.busy === "pairing" ? "Requesting..." : "Request to join"}
+              {client.busy === "pairing" ? "Requesting..." : "Request access to this host"}
             </Button>
           </CardBody>
         </Card>
       ) : null}
 
-      {client.pairingRequest && !client.isPaired ? (
+      {client.flowState === "S2_REQUEST_PENDING" ? (
         <Card>
           <CardHeader>
-            <CardTitle>{client.pairingStatus?.pairingCodeRequired ? "State D — Pairing code" : "State C — Waiting for host"}</CardTitle>
+            <CardTitle>Waiting for host approval</CardTitle>
           </CardHeader>
           <CardBody className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -225,37 +251,55 @@ export function RemotePosClientPage() {
               <Button variant="secondary" onClick={() => void client.refreshPairingStatus()} disabled={client.busy === "pairing"}>
                 Refresh approval status
               </Button>
-              <Button variant="ghost" onClick={client.resetPairing}>
-                Start over
+              <Button variant="ghost" onClick={client.clearPairing}>
+                Cancel / reset
               </Button>
             </div>
-            {client.pairingStatus?.pairingCodeRequired ? (
-              <div className="space-y-3 border-t border-slate-200 pt-4">
-                <FormField label="Pairing code" htmlFor="rpos-pairing-code" hint="One-time code shown by the host after approval">
-                  <TextInput id="rpos-pairing-code" value={pairingCode} onChange={(event) => setPairingCode(event.target.value)} autoComplete="off" />
-                </FormField>
-                <Button onClick={handleActivatePairing} disabled={client.busy === "pairing" || !pairingCode.trim()}>
-                  {client.busy === "pairing" ? "Activating..." : "Activate pairing"}
-                </Button>
-              </div>
-            ) : null}
           </CardBody>
         </Card>
       ) : null}
 
-      {client.isPaired && !client.isConnected ? (
+      {client.flowState === "S3_HOST_APPROVED_NEEDS_ACTIVATION" ? (
         <Card>
           <CardHeader>
-            <CardTitle>State E — Cashier / Manager login only</CardTitle>
+            <CardTitle>Host approved this device</CardTitle>
+          </CardHeader>
+          <CardBody className="space-y-4">
+            <p className="text-sm text-slate-500">
+              Enter the one-time pairing code from the host. After activation, this device stays paired across refresh.
+            </p>
+            <FormField label="Pairing code" htmlFor="rpos-pairing-code" hint="One-time code shown by the host after approval">
+              <TextInput id="rpos-pairing-code" value={pairingCode} onChange={(event) => setPairingCode(event.target.value)} autoComplete="off" />
+            </FormField>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={handleActivatePairing} disabled={client.busy === "pairing" || !pairingCode.trim()}>
+                {client.busy === "pairing" ? "Activating..." : "Activate pairing"}
+              </Button>
+              <Button variant="ghost" onClick={client.clearPairing}>
+                Cancel / reset
+              </Button>
+            </div>
+          </CardBody>
+        </Card>
+      ) : null}
+
+      {(client.flowState === "S4_TERMINAL_TRUSTED" || client.flowState === "S5_REMOTE_POS_OPERATOR_AUTH") && !client.isConnected ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>This terminal is paired — Cashier / Manager login</CardTitle>
           </CardHeader>
           <CardBody className="space-y-4">
             {client.pairingRestored ? (
               <Alert tone="success" title="Paired terminal restored">
-                This device restored its approved terminal pairing from local storage. Sign in as Cashier or Manager to continue.
+                This device restored its trusted terminal pairing. Sign in as Cashier or Manager to continue.
               </Alert>
-            ) : null}
+            ) : (
+              <Alert tone="success" title="This terminal is paired">
+                Pairing is complete for this device. Sign in as Cashier or Manager to use Remote POS.
+              </Alert>
+            )}
             <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
-              <StatusPill tone="success">Paired terminal</StatusPill>
+              <StatusPill tone="success">Trusted terminal</StatusPill>
               {client.pairingStatus?.deviceName ? (
                 <StatusPill tone="info">{client.pairingStatus.deviceName}</StatusPill>
               ) : null}

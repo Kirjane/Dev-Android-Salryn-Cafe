@@ -175,8 +175,9 @@ export function HostLanControlPage() {
               {pairingStatusQuery.isLoading ? <LoadingState label="Loading pending device requests..." /> : null}
               {pairingStatusQuery.isError ? <ErrorState message={(pairingStatusQuery.error as Error).message} /> : null}
               <p className="my-4 text-sm text-slate-600">
-                Pending device requests are the approval mechanism. Rotate a join code, have the client submit
-                its device name, then accept or reject the request here.
+                Pairing sequence: (1) rotate join code, (2) client requests access, (3) accept here, (4) client
+                enters one-time pairing code once, (5) terminal stays trusted across refresh. Revoke only when a
+                device must re-pair.
               </p>
               {pendingRequests.length ? (
                 <div className="space-y-3">
@@ -188,7 +189,13 @@ export function HostLanControlPage() {
                           <p className="text-slate-600">Observed origin/IP: {request.observedOrigin || "Unavailable"}</p>
                           <p className="text-slate-600">Requested: {formatDate(request.requestedAtUtc)}</p>
                         </div>
-                        <StatusPill tone={request.pairingState === "Pending" ? "warning" : "info"}>{request.pairingState}</StatusPill>
+                        <StatusPill tone={request.pairingState === "Pending" ? "warning" : request.pairingState === "Accepted" ? "success" : "info"}>
+                          {request.pairingState === "Pending"
+                            ? "Pending approval"
+                            : request.pairingState === "Accepted"
+                              ? "Accepted — awaiting client activation"
+                              : request.pairingState}
+                        </StatusPill>
                       </div>
                       {acceptedCodes[request.requestId] ? (
                         <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-950">

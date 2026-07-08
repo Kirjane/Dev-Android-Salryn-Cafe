@@ -20,4 +20,10 @@ public interface IRemoteClientHandshakeService
         Guid terminalId,
         Guid handshakeSessionId,
         CancellationToken cancellationToken = default);
+
+    Task<Result<RemoteClientHandshakeResult>> RefreshTrustedTerminalHandshakeAsync(
+        Guid terminalId,
+        string originAddress,
+        string? clientMachineName,
+        CancellationToken cancellationToken = default);
 }

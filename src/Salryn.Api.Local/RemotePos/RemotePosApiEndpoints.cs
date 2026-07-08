@@ -1,6 +1,8 @@
 using Salryn.Api.Local.Bridge;
 using Salryn.Api.Local.Services;
 using Salryn.Core.Common;
+using Salryn.Core.Services;
+using Salryn.Core.TerminalRegistry;
 
 namespace Salryn.Api.Local.RemotePos;
 
@@ -48,6 +50,7 @@ public static class RemotePosApiEndpoints
         });
 
         group.MapGet("/terminal/trust", async (
+            string? requestId,
             HttpContext httpContext,
             RemotePosApiServices services,
             CancellationToken cancellationToken) =>
@@ -58,26 +61,61 @@ public static class RemotePosApiEndpoints
             }
 
             RemotePosTrustContext trust = RemotePosApiAuthorization.BuildTrustContext(httpContext);
-            RemotePosTrustResult trustResult = await services.SessionService
-                .ValidateTrustAsync(trust, cancellationToken)
+            string? operatorSessionToken = httpContext.Request.Headers[RemotePosHeaders.OperatorSession].FirstOrDefault();
+
+            RemotePosTerminalTrustResponse response = await services.TerminalTrustService
+                .ResolveAsync(trust, requestId, operatorSessionToken, cancellationToken)
                 .ConfigureAwait(false);
 
-            if (!trustResult.Ok)
+            return Results.Ok(response);
+        });
+
+        group.MapPost("/terminal/refresh-handshake", async (
+            HttpContext httpContext,
+            RemotePosApiServices services,
+            CancellationToken cancellationToken) =>
+        {
+            if (RemotePosApiAuthorization.RequireRemoteBridge(httpContext) is IResult rejected)
             {
-                return RemotePosApiAuthorization.Rejected(
-                    trustResult.Code,
-                    trustResult.Message,
-                    StatusForLogin(trustResult.State),
-                    trustResult.State);
+                return rejected;
             }
 
-            return Results.Ok(new RemotePosTerminalTrustResponse(
-                Ok: true,
-                State: trustResult.State,
-                Code: trustResult.Code,
-                Message: trustResult.Message,
-                HostId: trustResult.HostId.ToString("D"),
-                StoreId: trustResult.StoreId.ToString("D")));
+            RemotePosTrustContext trust = RemotePosApiAuthorization.BuildTrustContext(httpContext);
+            if (trust.TerminalId == Guid.Empty)
+            {
+                return RemotePosApiAuthorization.Rejected(
+                    "RemotePos.TerminalRequired",
+                    "Terminal id is required to refresh handshake.",
+                    StatusCodes.Status400BadRequest,
+                    RemotePosSessionState.TrustRejected);
+            }
+
+            Result<RemoteClientHandshakeResult> refresh = await services.LanServices.Handshake
+                .RefreshTrustedTerminalHandshakeAsync(
+                    trust.TerminalId,
+                    trust.ObservedOrigin,
+                    null,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (refresh.IsFailure || !refresh.Value.Succeeded || !refresh.Value.HandshakeSessionId.HasValue)
+            {
+                Error error = refresh.IsFailure
+                    ? refresh.ErrorDetail
+                    : Error.Forbidden("RemotePos.HandshakeRefreshRejected", "Trusted terminal handshake refresh was rejected.");
+
+                return RemotePosApiAuthorization.Rejected(
+                    error.Code,
+                    error.Message,
+                    StatusCodes.Status403Forbidden,
+                    RemotePosSessionState.TrustRejected);
+            }
+
+            return Results.Ok(new RemotePosTerminalHandshakeRefreshResponse(
+                TerminalId: trust.TerminalId.ToString("D"),
+                HandshakeSessionId: refresh.Value.HandshakeSessionId.Value.ToString("D"),
+                HandshakeExpiresAtUtc: refresh.Value.SessionExpiresAtUtc?.ToString("O"),
+                Message: "Terminal handshake refreshed. Sign in as Cashier or Manager if needed."));
         });
 
         // ---- Session -----------------------------------------------------------------------

@@ -45,6 +45,10 @@ try
             DevelopmentPreLaunchSeedChecks.Run(projectRoot);
             break;
 
+        case "flow-reset-dev-seed":
+            FlowResetDevSeedChecks.Run(projectRoot);
+            break;
+
         case "qa-products-seed":
             QaProductsSeedChecks.Run(projectRoot);
             break;
