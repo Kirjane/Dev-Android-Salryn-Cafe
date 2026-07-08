@@ -59,6 +59,7 @@ function checkoutTone(status: string): "success" | "warning" | "danger" | "info"
 
 export function RemotePosClientPage() {
   const client = useRemotePosClient();
+  const activePairingRequest = client.pairingStatus ?? client.pairingRequest;
 
   const [joinCode, setJoinCode] = useState("");
   const [deviceName, setDeviceName] = useState("");
@@ -240,9 +241,9 @@ export function RemotePosClientPage() {
           <CardBody className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
               <StatusPill tone={client.pairingStatus?.pairingCodeRequired ? "success" : "warning"}>
-                {client.pairingStatus?.pairingState ?? client.pairingRequest.pairingState}
+                {activePairingRequest?.pairingState ?? "Pending"}
               </StatusPill>
-              <StatusPill tone="info">{client.pairingStatus?.deviceName ?? client.pairingRequest.deviceName}</StatusPill>
+              <StatusPill tone="info">{activePairingRequest?.deviceName ?? "Remote POS client"}</StatusPill>
             </div>
             <p className="text-sm text-slate-500">
               {client.pairingStatus?.message ?? "Waiting for host approval. Ask the host operator to accept this device."}

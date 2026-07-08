@@ -20,7 +20,6 @@ import {
   type RemotePosAuthedConnection,
   type RemotePosConnection,
   type RemotePosHostConnection,
-  type RemotePosTerminalTrust,
 } from "../api/remotePosClient";
 import type {
   RemotePosCapabilities,
@@ -579,10 +578,17 @@ export function useRemotePosClient() {
       });
 
       if (result) {
+        const issuedSessionToken = result.issued.sessionToken;
+        if (!issuedSessionToken) {
+          clearRemotePosOperatorSessionToken();
+          setErrorMessage("Remote POS login did not return a session token. Please try signing in again.");
+          return;
+        }
+
         setSession(result.issued);
-        setSessionToken(result.issued.sessionToken);
+        setSessionToken(issuedSessionToken);
         setCapabilities(result.caps);
-        writeRemotePosOperatorSessionToken(hostConnection.hostBaseUrl, result.issued.sessionToken);
+        writeRemotePosOperatorSessionToken(hostConnection.hostBaseUrl, issuedSessionToken);
         setFlowState("S6_REMOTE_POS_READY");
         setStatusMessage(`Signed in as ${result.issued.displayName ?? result.issued.username ?? "operator"}.`);
       }
