@@ -109,7 +109,8 @@ public sealed class LocalApiLanRuntimeStatusService
         else if (configuredBindMalformed)
         {
             // Repairable: we can normalize to a real NIC IP, but stored value is still garbage for humans.
-            readinessState = bindIpOnHost && listensOnConfiguredLan ? "Misconfigured" : "Misconfigured";
+            // ClientUrlReady stays false until a bare IP is persisted — even if Kestrel already listens.
+            readinessState = "Misconfigured";
             problem = "ConfiguredBindMalformed";
             remediation =
                 $"Configured LAN address is malformed. Repair to {configuredBindAddress}."
@@ -117,15 +118,8 @@ public sealed class LocalApiLanRuntimeStatusService
                     ? " The API is already listening on that IP; repair will fix host display and future restarts."
                     : " After repair, restart Salryn with the explicit LAN bind if clients still cannot connect.");
             repairSuggestion = configuredBindAddress;
-            // Do not expose client URL while configured value is still a malformed URL in storage,
-            // even if the process happens to listen correctly after --lan-bind startup.
             clientUrlReady = false;
             clientUrl = null;
-            if (listensOnConfiguredLan)
-            {
-                // Soft readiness: operator can still copy suggested URL after acknowledging repair.
-                // Keep ClientUrlReady false until repair persists bare IP.
-            }
         }
         else if (!bindIpOnHost)
         {

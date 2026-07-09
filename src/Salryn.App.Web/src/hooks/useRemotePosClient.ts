@@ -37,6 +37,7 @@ import {
   clearRemotePosOperatorSessionToken,
   describeRemotePosOperatorSessionStorage,
   hasPairedTerminalMaterial,
+  normalizeLanHostBaseUrl,
   readLanClientPairing,
   readRemotePosOperatorSessionToken,
   writeLanClientPairing,
@@ -84,10 +85,6 @@ export type RemotePosFlowState =
   | "S_REVOKED"
   | "S_OFFLINE"
   | "S_RESTORING";
-
-function normalizeHostBaseUrl(hostBaseUrl: string): string {
-  return hostBaseUrl.trim().replace(/\/+$/, "");
-}
 
 function formatTerminalIdSuffix(terminalId: string): string {
   const trimmed = terminalId.trim();
@@ -208,7 +205,7 @@ export function useRemotePosClient() {
     setCapabilities(null);
     setCart(null);
     setLastCheckout(null);
-    const normalizedHost = normalizeHostBaseUrl(hostConnection.hostBaseUrl);
+    const normalizedHost = normalizeLanHostBaseUrl(hostConnection.hostBaseUrl);
     clearRemotePosOperatorSessionToken(normalizedHost || undefined);
     setOperatorSessionRestored(false);
     setHasOperatorSessionToken(false);
@@ -218,7 +215,7 @@ export function useRemotePosClient() {
 
   const persistLanRecord = useCallback(
     (partial: Partial<LanClientPairingRecord> & { lastKnownState: LanClientLastKnownState }) => {
-      const normalizedHost = normalizeHostBaseUrl(hostConnection.hostBaseUrl);
+      const normalizedHost = normalizeLanHostBaseUrl(hostConnection.hostBaseUrl);
       if (!normalizedHost) {
         return;
       }
@@ -572,7 +569,7 @@ export function useRemotePosClient() {
 
   const restorePairingState = useCallback(
     async (stored: LanClientPairingRecord | null) => {
-      const normalizedHost = normalizeHostBaseUrl(hostBaseUrl);
+      const normalizedHost = normalizeLanHostBaseUrl(hostBaseUrl);
       if (!normalizedHost) {
         setFlowState("S0_NO_HOST");
         return;
@@ -678,7 +675,7 @@ export function useRemotePosClient() {
       return;
     }
 
-    const normalizedHost = normalizeHostBaseUrl(hostBaseUrl);
+    const normalizedHost = normalizeLanHostBaseUrl(hostBaseUrl);
     if (!normalizedHost) {
       setFlowState("S0_NO_HOST");
       return;
@@ -801,7 +798,7 @@ export function useRemotePosClient() {
 
       if (result) {
         const issuedSessionToken = result.issued.sessionToken;
-        const normalizedHost = normalizeHostBaseUrl(hostConnection.hostBaseUrl);
+        const normalizedHost = normalizeLanHostBaseUrl(hostConnection.hostBaseUrl);
         if (!issuedSessionToken) {
           clearRemotePosOperatorSessionToken(normalizedHost || undefined);
           setErrorMessage("Remote POS login did not return a session token. Please try signing in again.");
