@@ -57,7 +57,7 @@ public static class V2LanClientPairingPersistenceChecks
         AssertContains(hook, "storageRestored", "Remote POS hook must expose storage restored flag.");
         AssertContains(hook, "clearPairing", "Remote POS hook must expose clear pairing action.");
         AssertContains(hook, "terminalIdSuffix", "Remote POS hook must expose terminal id suffix.");
-        AssertContains(hook, "Pairing revoked or expired. Re-pair this device.", "Restore must clear revoked pairing and show re-pair message.");
+        AssertContains(hook, "Previous pairing was revoked. Request access again.", "Restore must clear revoked pairing and show re-pair message.");
         AssertContains(hook, "shouldProbeTerminalTrust", "Remote POS hook must gate terminal trust probe on stored terminal material.");
         AssertContains(hook, "resolveRestoreFlowState", "Remote POS hook must expose pure restore flow resolution.");
         AssertContains(hook, "S1_UNPAIRED", "Remote POS hook must route no-storage restore to unpaired state.");
@@ -66,7 +66,7 @@ public static class V2LanClientPairingPersistenceChecks
         AssertContains(hook, "hasTerminalId", "Remote POS hook must expose hasTerminalId diagnostic.");
         AssertContains(hook, "startOver", "Remote POS hook must expose start-over action.");
         AssertContains(hook, "Pairing expired or reset. Request access again.", "Stale pairing after DB reset must show reset notice.");
-        AssertContains(hook, "Pairing revoked by host. Request access again.", "Explicit revoked trust must show revoked notice.");
+        AssertContains(hook, "Previous pairing was revoked. Request access again.", "Explicit revoked trust must show revoked notice.");
         AssertNotContains(hook, "void resolveTrustStatus(stored)", "Hook must not probe terminal trust when stored pairing is null.");
         AssertNotContains(hook, "localStorage.setItem", "Hook must route storage through lanClientStorage helper.");
         AssertContains(storage, "normalizeLanHostBaseUrl", "LAN client storage must normalize host URLs consistently.");

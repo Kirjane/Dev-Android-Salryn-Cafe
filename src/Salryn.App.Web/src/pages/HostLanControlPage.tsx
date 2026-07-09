@@ -13,6 +13,16 @@ import {
   TextInput,
 } from "../components/ui";
 import { useLocalLanControl } from "../hooks/useLocalLanControl";
+import type { LocalLanControlTerminal } from "../types/remoteReadOnlyClient";
+import {
+  canDisableTerminal,
+  canRevokeTerminal,
+  formatTerminalRoleLabel,
+  formatTerminalStatusLabel,
+  isRevokedTerminalReadOnly,
+  terminalLifecycleExplanation,
+  terminalStatusTone,
+} from "../utils/terminalLifecycleUx";
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return "-";
@@ -332,34 +342,13 @@ export function HostLanControlPage() {
               {status.terminals.length > 0 ? (
                 <div className="space-y-3">
                   {status.terminals.map((terminal) => (
-                    <div key={terminal.terminalId} className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <p className="font-medium text-slate-900">{terminal.terminalName}</p>
-                          <p className="text-slate-600">{terminal.terminalRole} / {terminal.trustState}</p>
-                          <p className="text-slate-600">Last seen: {formatDate(terminal.lastSeenAtUtc)}</p>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <StatusPill tone={terminal.trusted ? "success" : "warning"}>{terminal.status}</StatusPill>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            disabled={busy}
-                            onClick={() => disableTerminalMutation.mutate(terminal.terminalId)}
-                          >
-                            Disable
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            disabled={busy}
-                            onClick={() => revokeTerminalMutation.mutate(terminal.terminalId)}
-                          >
-                            Revoke
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
+                    <TerminalControlRow
+                      key={terminal.terminalId}
+                      terminal={terminal}
+                      busy={busy}
+                      onDisable={() => disableTerminalMutation.mutate(terminal.terminalId)}
+                      onRevoke={() => revokeTerminalMutation.mutate(terminal.terminalId)}
+                    />
                   ))}
                 </div>
               ) : (
@@ -423,6 +412,60 @@ export function HostLanControlPage() {
             </div>
           </details>
         </>
+      ) : null}
+    </div>
+  );
+}
+
+function TerminalControlRow({
+  terminal,
+  busy,
+  onDisable,
+  onRevoke,
+}: {
+  terminal: LocalLanControlTerminal;
+  busy: boolean;
+  onDisable: () => void;
+  onRevoke: () => void;
+}) {
+  const explanation = terminalLifecycleExplanation(terminal.status);
+  const showDisable = canDisableTerminal(terminal.status, terminal.terminalRole);
+  const showRevoke = canRevokeTerminal(terminal.status, terminal.terminalRole);
+  const readOnlyRevoked = isRevokedTerminalReadOnly(terminal.status);
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <p className="font-medium text-slate-900">{terminal.terminalName}</p>
+          <p className="text-slate-600">{formatTerminalRoleLabel(terminal.terminalRole)}</p>
+          <p className="text-slate-600">{formatTerminalStatusLabel(terminal.status)}</p>
+          <p className="text-slate-500">Last seen: {formatDate(terminal.lastSeenAtUtc)}</p>
+          {terminal.revokedAtUtc ? (
+            <p className="text-slate-500">Revoked: {formatDate(terminal.revokedAtUtc)}</p>
+          ) : null}
+          {terminal.disabledAtUtc ? (
+            <p className="text-slate-500">Disabled: {formatDate(terminal.disabledAtUtc)}</p>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusPill tone={terminalStatusTone(terminal.status)}>{formatTerminalStatusLabel(terminal.status)}</StatusPill>
+          {showDisable ? (
+            <Button size="sm" variant="secondary" disabled={busy} onClick={onDisable}>
+              Disable
+            </Button>
+          ) : null}
+          {showRevoke ? (
+            <Button size="sm" variant="secondary" disabled={busy} onClick={onRevoke}>
+              Revoke
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      {explanation ? (
+        <Alert tone={readOnlyRevoked ? "warning" : "info"} className="mt-3">
+          {explanation}
+        </Alert>
       ) : null}
     </div>
   );

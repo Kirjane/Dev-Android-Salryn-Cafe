@@ -253,6 +253,9 @@ public static class Program
             case "v2-lan-bind-truth":
                 V2LanBindTruthChecks.Run();
                 return;
+            case "v2-terminal-lifecycle":
+                V2TerminalLifecycleUxChecks.Run();
+                return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);
         }

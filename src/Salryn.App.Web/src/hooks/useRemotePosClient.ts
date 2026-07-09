@@ -104,7 +104,7 @@ function isRevokedTrustStatus(status: string): boolean {
 
 export type RemotePosPairingNotice =
   | "Pairing expired or reset. Request access again."
-  | "Pairing revoked by host. Request access again.";
+  | "Previous pairing was revoked. Request access again.";
 
 export function shouldProbeTerminalTrust(stored: LanClientPairingRecord | null): boolean {
   return hasPairedTerminalMaterial(stored);
@@ -525,14 +525,21 @@ export function useRemotePosClient() {
 
       if (isRevokedTrustStatus(trust.status)) {
         clearLanClientPairing();
+        clearRemotePosOperatorSessionToken();
         setStorageRestored(false);
         setPairingRequest(null);
         setPairingStatus(null);
         setTerminalId("");
         setHandshakeSessionId("");
-        setLastPairingNotice("Pairing revoked by host. Request access again.");
-        setFlowState("S_REVOKED");
-        setStatusMessage("Pairing revoked or expired. Re-pair this device.");
+        setSession(null);
+        setSessionToken(null);
+        setCapabilities(null);
+        setHasOperatorSessionToken(false);
+        setOperatorSessionValid("no");
+        setOperatorSessionRestored(false);
+        setLastPairingNotice("Previous pairing was revoked. Request access again.");
+        setFlowState("S1_UNPAIRED");
+        setStatusMessage("Previous pairing was revoked. Request access again.");
         return;
       }
 
@@ -618,14 +625,19 @@ export function useRemotePosClient() {
 
           if (isRevokedTrustStatus(error instanceof ApiError ? (error.code ?? "") : "")) {
             clearLanClientPairing();
+            clearRemotePosOperatorSessionToken();
             setStorageRestored(false);
             setPairingRequest(null);
             setPairingStatus(null);
             setTerminalId("");
             setHandshakeSessionId("");
-            setLastPairingNotice("Pairing revoked by host. Request access again.");
-            setFlowState("S_REVOKED");
-            setStatusMessage("Pairing revoked or expired. Re-pair this device.");
+            setSession(null);
+            setSessionToken(null);
+            setHasOperatorSessionToken(false);
+            setOperatorSessionValid("no");
+            setLastPairingNotice("Previous pairing was revoked. Request access again.");
+            setFlowState("S1_UNPAIRED");
+            setStatusMessage("Previous pairing was revoked. Request access again.");
             return;
           }
         }
