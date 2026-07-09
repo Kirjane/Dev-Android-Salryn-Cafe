@@ -33,6 +33,13 @@ export function RemoteClientLandingPage({
   }, [hasPairingMaterial]);
 
   function clearThisDeviceState() {
+    if (
+      !window.confirm(
+        "Clear this device pairing and saved cashier session? This device will need to request access from the host again.",
+      )
+    ) {
+      return;
+    }
     clearAllLanClientDeviceState();
     setHasPairingMaterial(false);
     setClearedNotice(true);

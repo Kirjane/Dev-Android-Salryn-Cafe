@@ -22,6 +22,12 @@ import { clearAllLanClientDeviceState } from "../utils/lanClientStorage";
 // LAN-M16-QA-B: Remote POS field UX. Pairing approves the device; login approves the person.
 // The normal path never asks the operator to type terminal identity or handshake proof manually.
 
+const REMOTE_POS_SIGN_OUT_CONFIRM =
+  "Sign out of this Remote POS session? This keeps the terminal paired, but the cashier must sign in again.";
+
+const REMOTE_POS_CLEAR_PAIRING_CONFIRM =
+  "Clear this device pairing and saved cashier session? This device will need to request access from the host again.";
+
 function formatCents(cents: number | null | undefined): string {
   if (cents === null || cents === undefined) return "-";
   return (cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -125,6 +131,21 @@ export function RemotePosClientPage() {
     void client.submitCheckout(payments);
   }
 
+  function confirmSignOut() {
+    if (!window.confirm(REMOTE_POS_SIGN_OUT_CONFIRM)) {
+      return;
+    }
+    void client.logout();
+  }
+
+  function confirmClearPairingOrState() {
+    if (!window.confirm(REMOTE_POS_CLEAR_PAIRING_CONFIRM)) {
+      return;
+    }
+    clearAllLanClientDeviceState();
+    client.clearPairing();
+  }
+
   return (
     <div className="space-y-6">
       <CommandBar
@@ -184,7 +205,7 @@ export function RemotePosClientPage() {
         <Alert tone="warning" title="Pairing revoked or expired">
           {client.lastPairingNotice ?? "Pairing revoked or expired. Re-pair this device."}
           <div className="mt-3">
-            <Button variant="secondary" onClick={client.startOver} disabled={client.busy !== "idle"}>
+            <Button variant="secondary" onClick={confirmClearPairingOrState} disabled={client.busy !== "idle"}>
               Start over / request access again
             </Button>
           </div>
@@ -274,7 +295,7 @@ export function RemotePosClientPage() {
               <Button variant="secondary" onClick={() => void client.refreshPairingStatus()} disabled={client.busy === "pairing"}>
                 Refresh approval status
               </Button>
-              <Button variant="ghost" onClick={client.clearPairing}>
+              <Button variant="ghost" onClick={confirmClearPairingOrState}>
                 Cancel / reset
               </Button>
             </div>
@@ -298,7 +319,7 @@ export function RemotePosClientPage() {
               <Button onClick={handleActivatePairing} disabled={client.busy === "pairing" || !pairingCode.trim()}>
                 {client.busy === "pairing" ? "Activating..." : "Activate pairing"}
               </Button>
-              <Button variant="ghost" onClick={client.clearPairing}>
+              <Button variant="ghost" onClick={confirmClearPairingOrState}>
                 Cancel / reset
               </Button>
             </div>
@@ -362,17 +383,10 @@ export function RemotePosClientPage() {
               <Button onClick={handleLogin} disabled={client.busy === "login" || !username.trim()}>
                 {client.busy === "login" ? "Signing in..." : "Sign in to host"}
               </Button>
-              <Button variant="ghost" onClick={client.clearPairing} disabled={client.busy !== "idle"}>
+              <Button variant="ghost" onClick={confirmClearPairingOrState} disabled={client.busy !== "idle"}>
                 Clear this device pairing and saved cashier session
               </Button>
-              <Button
-                variant="ghost"
-                disabled={client.busy !== "idle"}
-                onClick={() => {
-                  clearAllLanClientDeviceState();
-                  client.clearPairing();
-                }}
-              >
+              <Button variant="ghost" disabled={client.busy !== "idle"} onClick={confirmClearPairingOrState}>
                 Clear this device state
               </Button>
             </div>
@@ -417,7 +431,7 @@ export function RemotePosClientPage() {
                   <dd className="text-slate-800">{client.hostBaseUrl.trim()}</dd>
                 </div>
               </dl>
-              <Button variant="secondary" size="sm" onClick={() => void client.logout()} disabled={client.busy === "logout"}>
+              <Button variant="secondary" size="sm" onClick={confirmSignOut} disabled={client.busy === "logout"}>
                 {client.busy === "logout" ? "Signing out..." : "Sign out"}
               </Button>
             </CardBody>

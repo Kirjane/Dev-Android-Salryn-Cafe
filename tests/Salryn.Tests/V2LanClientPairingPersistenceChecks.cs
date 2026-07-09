@@ -123,6 +123,13 @@ public static class V2LanClientPairingPersistenceChecks
         AssertContains(page, "Clear this device state", "Remote POS page must expose clear device state action.");
         AssertContains(page, "Passwords are never stored", "Remote POS page must keep password non-storage truth.");
         AssertContains(page, "Admin and Owner accounts are host-local only", "Remote POS page must keep Admin/Owner host-local.");
+        AssertContains(page, "Sign out of this Remote POS session? This keeps the terminal paired", "Remote POS sign out must confirm and state pairing is kept.");
+        AssertContains(page, "Clear this device pairing and saved cashier session? This device will need to request access from the host again.", "Clear pairing/state must confirm and require host re-access.");
+        AssertContains(page, "window.confirm", "Remote POS destructive actions must use confirmation.");
+        AssertContains(page, "confirmSignOut", "Remote POS sign out must go through confirmed handler.");
+        AssertContains(page, "confirmClearPairingOrState", "Remote POS clear pairing/state must go through confirmed handler.");
+        AssertContains(landingPage, "window.confirm", "Landing clear-device-state must use confirmation.");
+        AssertContains(landingPage, "This device will need to request access from the host again.", "Landing clear-state confirm must require host re-access.");
 
         AssertContains(remotePosClient, "/api/remote-pos/terminal/trust", "Remote POS client must call terminal trust probe.");
         AssertContains(remotePosClient, "/api/remote-pos/terminal/refresh-handshake", "Remote POS client must call handshake refresh endpoint.");
