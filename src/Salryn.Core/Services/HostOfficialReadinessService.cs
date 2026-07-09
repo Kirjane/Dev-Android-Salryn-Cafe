@@ -291,6 +291,12 @@ public sealed class HostOfficialReadinessService : IHostOfficialReadinessService
         warnings.Add(new HostOfficialReadinessItem(
             "HostOfficialReadiness.ReportDataContractsDefinedNoEngine",
             "Report data handoff contracts are defined; no report engine is selected and no official output is generated."));
+        warnings.Add(new HostOfficialReadinessItem(
+            "HostOfficialReadiness.InternalDryRunPackageAvailable",
+            "Internal dry-run package persistence and watermarked report previews are available for engineering only."));
+        warnings.Add(new HostOfficialReadinessItem(
+            "HostOfficialReadiness.SourceSaleReadOnlyDeferred",
+            "Operational sale read-only dry-run source mode is deferred; packages remain synthetic."));
     }
 
     private static HostOfficialReadinessStatus ResolveStatus(

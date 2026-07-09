@@ -2,16 +2,21 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   buildOfficialDryRunPostingPlan,
+  buildOfficialReportPreview,
+  createOfficialDryRunPackage,
   fetchOfficialIntegrityStatus,
   fetchOfficialNumberingPreview,
   fetchOfficialReadiness,
   fetchOfficialSetup,
   fetchOfficialSpineStatus,
+  listOfficialDryRunPackages,
   saveOfficialBusiness,
   saveOfficialMachine,
   saveOfficialReceipt,
   saveOfficialSeries,
   validateOfficialNumbering,
+  type OfficialDryRunPackage,
+  type OfficialDryRunPackageSummary,
   type OfficialDryRunPostingPlan,
 } from "../api/officialSetup";
 import {
@@ -48,6 +53,20 @@ export function OfficialSetupPage() {
     queryFn: fetchOfficialSpineStatus,
   });
   const [dryRunPlan, setDryRunPlan] = useState<OfficialDryRunPostingPlan | null>(null);
+  const [dryRunPackage, setDryRunPackage] = useState<OfficialDryRunPackage | null>(null);
+  const [reportPreview, setReportPreview] = useState<{
+    watermark: string;
+    summary: string;
+    receipt: { plainTextPreview: string };
+    xReading: { plainTextPreview: string };
+    zReading: { plainTextPreview: string };
+    journalExport: { plainTextPreview: string };
+    voidRefund: { plainTextPreview: string };
+  } | null>(null);
+  const packagesQuery = useQuery({
+    queryKey: ["official-dry-run-packages"],
+    queryFn: listOfficialDryRunPackages,
+  });
 
   const [business, setBusiness] = useState({
     registeredTaxpayerName: "",
@@ -233,6 +252,28 @@ export function OfficialSetupPage() {
       setError(null);
       setDryRunPlan(data);
       setMessage("Dry-run plan built. Internal dry-run only. No official receipt is issued.");
+    },
+    onError: onFail,
+  });
+
+  const packageMutation = useMutation({
+    mutationFn: () => createOfficialDryRunPackage(),
+    onSuccess: (data) => {
+      setError(null);
+      setDryRunPackage(data);
+      setMessage("Internal dry-run package saved. Not an official receipt or invoice.");
+      void queryClient.invalidateQueries({ queryKey: ["official-dry-run-packages"] });
+      void queryClient.invalidateQueries({ queryKey: ["official-spine-status"] });
+    },
+    onError: onFail,
+  });
+
+  const previewMutation = useMutation({
+    mutationFn: () => buildOfficialReportPreview(),
+    onSuccess: (data) => {
+      setError(null);
+      setReportPreview(data);
+      setMessage("Internal report preview built. Not an official receipt or invoice.");
     },
     onError: onFail,
   });
@@ -610,6 +651,75 @@ export function OfficialSetupPage() {
               <p>Void/refund: {dryRunPlan.voidRefund.summary}</p>
               <p>Reports: {dryRunPlan.reportPackage.summary}</p>
             </>
+          ) : null}
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Internal official package</CardTitle>
+          <StatusPill tone="neutral">Internal dry-run only</StatusPill>
+        </CardHeader>
+        <CardBody className="space-y-3 text-sm text-slate-700">
+          <Alert tone="warning" title="Internal dry-run only">
+            Not an official receipt or invoice. No official number is issued. Checkout is not connected. No compliance
+            claim is made.
+          </Alert>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => packageMutation.mutate()} disabled={packageMutation.isPending}>
+              Build internal dry-run package
+            </Button>
+            <Button onClick={() => previewMutation.mutate()} disabled={previewMutation.isPending}>
+              Build report preview
+            </Button>
+          </div>
+          {dryRunPackage ? (
+            <div className="space-y-1">
+              <p className="font-medium">Latest package: {dryRunPackage.publicId}</p>
+              <p>{dryRunPackage.summary}</p>
+              <p>
+                Official receipt issued: <strong>{dryRunPackage.officialReceiptIssued ? "yes" : "no"}</strong> ·
+                Sequence mutates: <strong>{dryRunPackage.sequenceWillMutate ? "yes" : "no"}</strong>
+              </p>
+            </div>
+          ) : null}
+          <div>
+            <p className="font-medium">Recent packages</p>
+            {packagesQuery.isLoading ? <p>Loading packages…</p> : null}
+            <ul className="list-disc pl-5">
+              {(packagesQuery.data?.packages ?? []).slice(0, 5).map((p: OfficialDryRunPackageSummary) => (
+                <li key={p.id}>
+                  {p.publicId} — {p.status} — {p.summary ?? ""}
+                </li>
+              ))}
+            </ul>
+          </div>
+          {reportPreview ? (
+            <div className="space-y-2">
+              <p className="font-medium">Report preview package</p>
+              <p>{reportPreview.watermark}</p>
+              <p>{reportPreview.summary}</p>
+              <details>
+                <summary>Receipt / invoice preview</summary>
+                <pre className="mt-1 whitespace-pre-wrap text-xs">{reportPreview.receipt.plainTextPreview}</pre>
+              </details>
+              <details>
+                <summary>X reading preview</summary>
+                <pre className="mt-1 whitespace-pre-wrap text-xs">{reportPreview.xReading.plainTextPreview}</pre>
+              </details>
+              <details>
+                <summary>Z reading preview</summary>
+                <pre className="mt-1 whitespace-pre-wrap text-xs">{reportPreview.zReading.plainTextPreview}</pre>
+              </details>
+              <details>
+                <summary>Journal export preview</summary>
+                <pre className="mt-1 whitespace-pre-wrap text-xs">{reportPreview.journalExport.plainTextPreview}</pre>
+              </details>
+              <details>
+                <summary>Void / refund preview</summary>
+                <pre className="mt-1 whitespace-pre-wrap text-xs">{reportPreview.voidRefund.plainTextPreview}</pre>
+              </details>
+            </div>
           ) : null}
         </CardBody>
       </Card>

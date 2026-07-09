@@ -100,6 +100,7 @@ public static class Program
         RmoBirM5OfficialNumberingChecks.Run();
         RmoBirM6OfficialIntegrityChecks.Run();
         RmoBirM7OfficialSpineSprintChecks.Run();
+        RmoBirM8EndgameChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
         M5VerifiedCandidateStackLedgerChecks.Run();
         M6CandidateStackPromotionDryRunChecks.Run();
@@ -283,6 +284,9 @@ public static class Program
                 return;
             case "rmo-bir-official-spine":
                 RmoBirM7OfficialSpineSprintChecks.Run();
+                return;
+            case "rmo-bir-endgame":
+                RmoBirM8EndgameChecks.Run();
                 return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);

@@ -12,9 +12,12 @@ public enum OfficialSpineComponentName
     ElectronicJournalSkeleton = 5,
     VoidRefundSkeleton = 6,
     DryRunPlanner = 7,
-    ReportDataContract = 8,
-    OfficialOutputEngine = 9,
-    LiveCheckoutBinding = 10
+    DryRunPersistence = 8,
+    ReportPreviewPackage = 9,
+    ReportDataContract = 10,
+    OfficialOutputEngine = 11,
+    LiveCheckoutBinding = 12,
+    LegalSourceClosure = 13
 }
 
 public enum OfficialSpineReadinessLevel

@@ -37,6 +37,7 @@ public static class DefaultDatabaseInitializationFactory
         // Version 11 adds LAN-M5 controlled remote transport gate configuration.
         // Version 12 adds LAN-M6 hash-only terminal credential and remote handshake state.
         // Version 13 adds official receipt profile setup text (RMO-BIR-M4); no checkout/sales mutation.
+        // Version 14 adds internal official dry-run package storage (RMO-BIR-M8); no live issuance.
         IDatabaseMigration[] migrations =
         {
             new InitialSchemaMigration(),
@@ -51,7 +52,8 @@ public static class DefaultDatabaseInitializationFactory
             new TerminalRegistrySchemaMigration(),
             new LanRemoteTransportSchemaMigration(),
             new TerminalCredentialHandshakeSchemaMigration(),
-            new OfficialReceiptProfileSchemaMigration()
+            new OfficialReceiptProfileSchemaMigration(),
+            new OfficialDryRunPackageSchemaMigration()
         };
 
         MigrationRunner migrationRunner = new(connectionFactory, migrations);

@@ -273,3 +273,73 @@ export async function buildOfficialDryRunPostingPlan(body?: Record<string, unkno
   });
   return readJson<OfficialDryRunPostingPlan>(response);
 }
+
+export type OfficialDryRunPackageSummary = {
+  id: string;
+  publicId: string;
+  createdAtUtc: string;
+  sourceMode: string;
+  status: string;
+  summary: string | null;
+};
+
+export type OfficialDryRunPackage = {
+  id: string;
+  publicId: string;
+  summary: string;
+  dryRunOnly: boolean;
+  officialReceiptIssued: boolean;
+  liveOfficialPostingAllowed: boolean;
+  sequenceWillMutate: boolean;
+  salesWillMutate: boolean;
+  ejWillAppendLive: boolean;
+  outputWillGenerate: boolean;
+  complianceClaimed: boolean;
+  reportPreview: {
+    watermark: string;
+    receiptPlainText: string;
+    xReadingPlainText: string;
+    zReadingPlainText: string;
+    journalPlainText: string;
+    voidRefundPlainText: string;
+    summary: string;
+  } | null;
+};
+
+export async function listOfficialDryRunPackages(): Promise<{ packages: OfficialDryRunPackageSummary[] }> {
+  const response = await fetch("/api/official/dry-run/packages", { credentials: "include" });
+  return readJson<{ packages: OfficialDryRunPackageSummary[] }>(response);
+}
+
+export async function createOfficialDryRunPackage(): Promise<OfficialDryRunPackage> {
+  const response = await fetch("/api/official/dry-run/packages", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ postingRequest: null }),
+  });
+  return readJson<OfficialDryRunPackage>(response);
+}
+
+export async function buildOfficialReportPreview(): Promise<{
+  watermark: string;
+  summary: string;
+  officialReceiptIssued: boolean;
+  receipt: { plainTextPreview: string };
+  xReading: { plainTextPreview: string };
+  zReading: { plainTextPreview: string };
+  journalExport: { plainTextPreview: string };
+  voidRefund: { plainTextPreview: string };
+}> {
+  const response = await fetch("/api/official/dry-run/report-preview", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      documentKind: "OFFICIAL_INVOICE",
+      lines: [],
+      totals: null,
+    }),
+  });
+  return readJson(response);
+}

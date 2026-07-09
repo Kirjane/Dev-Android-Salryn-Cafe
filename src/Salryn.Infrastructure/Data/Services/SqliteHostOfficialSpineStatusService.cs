@@ -111,6 +111,20 @@ public sealed class SqliteHostOfficialSpineStatusService : IHostOfficialSpineSta
                 "Official sale dry-run planner is available; not live-bound and does not post."));
 
             components.Add(Component(
+                OfficialSpineComponentName.DryRunPersistence,
+                OfficialSpineReadinessLevel.DryRunReady,
+                present: true,
+                liveBound: false,
+                "Internal dry-run package persistence is available (engineering only)."));
+
+            components.Add(Component(
+                OfficialSpineComponentName.ReportPreviewPackage,
+                OfficialSpineReadinessLevel.PreviewReady,
+                present: true,
+                liveBound: false,
+                "Internal report preview package is available; watermarked; not legal output."));
+
+            components.Add(Component(
                 OfficialSpineComponentName.ReportDataContract,
                 OfficialSpineReadinessLevel.SkeletonPresent,
                 present: true,
@@ -131,6 +145,13 @@ public sealed class SqliteHostOfficialSpineStatusService : IHostOfficialSpineSta
                 liveBound: false,
                 "Live host checkout does not post official documents."));
 
+            components.Add(Component(
+                OfficialSpineComponentName.LegalSourceClosure,
+                OfficialSpineReadinessLevel.Missing,
+                present: false,
+                liveBound: false,
+                "Annex F, retention, and eSales legal source closure remains incomplete."));
+
             blockers.Add(new OfficialSpineBlocker(
                 "HostOfficialSpine.LiveOfficialCheckoutNotImplemented",
                 "Live official checkout is not implemented."));
@@ -146,6 +167,9 @@ public sealed class SqliteHostOfficialSpineStatusService : IHostOfficialSpineSta
             blockers.Add(new OfficialSpineBlocker(
                 "HostOfficialSpine.AnnexFUnresolved",
                 "Annex F / retention / eSales remain unresolved."));
+            blockers.Add(new OfficialSpineBlocker(
+                "HostOfficialSpine.LegalSourceClosureIncomplete",
+                "Legal source closure is incomplete; live official issuance remains blocked."));
 
             warnings.Add(new OfficialSpineWarning(
                 "HostOfficialSpine.InternalDryRunOnly",
