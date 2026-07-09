@@ -259,10 +259,10 @@ public sealed class HostOfficialReadinessService : IHostOfficialReadinessService
             "No official receipt/invoice output engine (text/PDF/print/Crystal) is implemented."));
         blockers.Add(new HostOfficialReadinessItem(
             "HostOfficialReadiness.LiveElectronicJournalBindingMissing",
-            "Electronic journal append is not bound to live official sale posting."));
+            "Electronic journal skeleton may be present, but append is not live-bound to official sale posting."));
         blockers.Add(new HostOfficialReadinessItem(
             "HostOfficialReadiness.VoidRefundIntegrityPathIncomplete",
-            "Official void/refund/cancel integrity path is not productized."));
+            "Void/refund integrity skeleton may be present, but live official void/refund integration is incomplete."));
         blockers.Add(new HostOfficialReadinessItem(
             "HostOfficialReadiness.UnresolvedAnnexFRetentionESales",
             "Annex F push/seal details, retention years, and eSales transmission remain unresolved."));
@@ -282,6 +282,9 @@ public sealed class HostOfficialReadinessService : IHostOfficialReadinessService
         warnings.Add(new HostOfficialReadinessItem(
             "HostOfficialReadiness.NumberingPreviewOnly",
             "Official numbering preview/validate exists for setup visibility only; checkout does not allocate official numbers."));
+        warnings.Add(new HostOfficialReadinessItem(
+            "HostOfficialReadiness.IntegritySkeletonStatusOnly",
+            "Official integrity status reports EJ and void/refund skeleton state only; not live-bound and not compliance-ready."));
     }
 
     private static HostOfficialReadinessStatus ResolveStatus(

@@ -263,6 +263,7 @@ public static class LocalApiApplicationFactory
         app.MapLocalOfficialReadinessEndpoints(composition.ConnectionFactory);
         app.MapLocalOfficialSetupEndpoints(composition.ConnectionFactory);
         app.MapLocalOfficialNumberingEndpoints(composition.ConnectionFactory);
+        app.MapLocalOfficialIntegrityEndpoints(composition.ConnectionFactory);
 
         if (webDistPath is not null)
         {

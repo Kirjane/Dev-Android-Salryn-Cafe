@@ -168,3 +168,38 @@ export async function validateOfficialNumbering(): Promise<OfficialNumberingVali
   });
   return readJson<OfficialNumberingValidation>(response);
 }
+
+export type OfficialIntegrityStatus = {
+  contractVersion: number;
+  liveOfficialPostingAllowed: boolean;
+  checkoutIntegrated: boolean;
+  remotePosOfficialAllowed: boolean;
+  officialOutputImplemented: boolean;
+  complianceClaimed: boolean;
+  officialCheckoutAllocationEnabled: boolean;
+  checkoutUsesAllocator: boolean;
+  summary: string;
+  warnings: string[];
+  journal: {
+    skeletonPresent: boolean;
+    schemaPresent: boolean;
+    liveBound: boolean;
+    liveAppendEnabled: boolean;
+    checkoutIntegrated: boolean;
+    summary: string;
+    blockers: { code: string; message: string }[];
+  };
+  voidRefund: {
+    skeletonPresent: boolean;
+    liveIntegrated: boolean;
+    checkoutIntegrated: boolean;
+    summary: string;
+    blockers: { code: string; message: string }[];
+    placeholderReasons: { reasonCode: string; displayLabel: string; isPlaceholder: boolean }[];
+  };
+};
+
+export async function fetchOfficialIntegrityStatus(): Promise<OfficialIntegrityStatus> {
+  const response = await fetch("/api/official/integrity/status", { credentials: "include" });
+  return readJson<OfficialIntegrityStatus>(response);
+}

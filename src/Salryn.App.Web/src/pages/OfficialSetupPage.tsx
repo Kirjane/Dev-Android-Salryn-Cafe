@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  fetchOfficialIntegrityStatus,
   fetchOfficialNumberingPreview,
   fetchOfficialReadiness,
   fetchOfficialSetup,
@@ -34,6 +35,10 @@ export function OfficialSetupPage() {
   const numberingQuery = useQuery({
     queryKey: ["official-numbering-preview"],
     queryFn: fetchOfficialNumberingPreview,
+  });
+  const integrityQuery = useQuery({
+    queryKey: ["official-integrity-status"],
+    queryFn: fetchOfficialIntegrityStatus,
   });
 
   const [business, setBusiness] = useState({
@@ -220,6 +225,7 @@ export function OfficialSetupPage() {
 
   const readiness = readinessQuery.data;
   const numbering = numberingQuery.data;
+  const integrity = integrityQuery.data;
 
   return (
     <div className="space-y-6">
@@ -480,6 +486,46 @@ export function OfficialSetupPage() {
               Validate series (no allocate)
             </Button>
           </div>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Official integrity status</CardTitle>
+          <StatusPill tone="neutral">Not live-bound</StatusPill>
+        </CardHeader>
+        <CardBody className="space-y-3 text-sm text-slate-700">
+          <Alert tone="warning" title="No official posting">
+            Integrity status is engineering visibility only. Electronic journal and void/refund are not live-bound to
+            checkout. Official output is not implemented.
+          </Alert>
+          {integrityQuery.isLoading ? <p>Loading integrity status…</p> : null}
+          {integrity ? (
+            <>
+              <p>{integrity.summary}</p>
+              <p>
+                Live official posting: <strong>{integrity.liveOfficialPostingAllowed ? "yes" : "no"}</strong> ·
+                Checkout integrated: <strong>{integrity.checkoutIntegrated ? "yes" : "no"}</strong> ·
+                Compliance claimed: <strong>{integrity.complianceClaimed ? "yes" : "no"}</strong>
+              </p>
+              <div>
+                <p className="font-medium">Electronic journal</p>
+                <p>
+                  Skeleton: <strong>{integrity.journal.skeletonPresent ? "present" : "missing"}</strong> · Live-bound:{" "}
+                  <strong>{integrity.journal.liveBound ? "yes" : "no"}</strong>
+                </p>
+                <p>{integrity.journal.summary}</p>
+              </div>
+              <div>
+                <p className="font-medium">Void / refund integrity</p>
+                <p>
+                  Skeleton: <strong>{integrity.voidRefund.skeletonPresent ? "present" : "missing"}</strong> ·
+                  Live integrated: <strong>{integrity.voidRefund.liveIntegrated ? "yes" : "no"}</strong>
+                </p>
+                <p>{integrity.voidRefund.summary}</p>
+              </div>
+            </>
+          ) : null}
         </CardBody>
       </Card>
     </div>
