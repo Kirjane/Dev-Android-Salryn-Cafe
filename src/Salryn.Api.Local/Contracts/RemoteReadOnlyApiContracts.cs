@@ -148,11 +148,19 @@ public sealed record LocalLanControlRuntimeStatusResponse(
     string? Problem,
     string? Remediation,
     string HostLocalUrl,
-    string FirewallGuidance);
+    string FirewallGuidance,
+    // HOST-LAN-CONTROL-M4: expose raw vs normalized bind and repair guidance for operators.
+    string? ConfiguredBindAddressRaw = null,
+    string? ConfiguredBindAddressNormalized = null,
+    string? ConfiguredBindAddressRepairSuggestion = null,
+    IReadOnlyList<string>? DetectedLanListenIps = null,
+    bool ConfiguredBindMalformed = false);
 
 public sealed record LocalLanControlRemoteTransportRequest(
     bool Enable,
     string? BindAddress);
+
+public sealed record LocalLanControlBindRepairRequest(string? BindIp);
 
 // LAN-M16: local-only request to enable/disable the host-owned remote POS command runtime.
 public sealed record LocalLanControlRemotePosRequest(bool Enable);

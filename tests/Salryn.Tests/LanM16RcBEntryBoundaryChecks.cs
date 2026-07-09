@@ -85,22 +85,20 @@ public static class LanM16RcBEntryBoundaryChecks
         string navigation,
         string permissions)
     {
+        // HOST-LAN-CONTROL-M4: page is a human LAN Connection wizard; assert meaning, not obsolete dump labels.
         foreach (string required in new[]
         {
             "Host LAN Control",
-            "LAN transport",
             "Host local URL",
             "Host LAN URL",
             "Remote POS runtime",
-            "Remote Read-Only",
             "Host control is local-only",
             "Capacity",
-            "Set explicit bind address",
-            "Enable LAN transport",
-            "Save/apply LAN settings",
+            "LAN Connection",
+            "Activate LAN connection",
+            "Disable LAN connection",
             "Rotate/show host join code",
             "Copy client URL",
-            "Client devices use the host LAN IP, not localhost.",
             "Pairing Control",
             "Review the pending device request here",
             "Device wants to join",
@@ -109,12 +107,9 @@ public static class LanM16RcBEntryBoundaryChecks
             "Reject",
             "One-time pairing code",
             "Give this code to the client device.",
-            "Terminal Control",
-            "Max paired Remote POS terminals",
-            "Max active Remote POS sessions",
-            "Current paired count",
-            "Current active sessions",
+            "Terminal connections",
             "Remaining capacity",
+            "Client troubleshooting guide",
             "Advanced diagnostics"
         })
         {

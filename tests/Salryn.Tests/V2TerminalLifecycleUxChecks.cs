@@ -23,13 +23,28 @@ public static class V2TerminalLifecycleUxChecks
         AssertContains(lifecycleUx, "Revoked", "Terminal lifecycle UX must model revoked status.");
         AssertContains(lifecycleUx, "must request access again", "Revoked explanation must tell operator client must request access again.");
         AssertContains(lifecycleUx, "Re-enable is not supported", "Disabled explanation must state re-enable is unsupported.");
+        AssertContains(lifecycleUx, "canRestoreDisabledTerminal", "Lifecycle UX must model restore availability.");
+        AssertContains(lifecycleUx, "return false", "Restore must remain false while backend lacks EnableTerminal.");
+        AssertContains(lifecycleUx, "canHideTerminalFromList", "Lifecycle UX must allow hide only for non-active rows.");
+        AssertContains(lifecycleUx, "isHostLocalTerminalRole", "Lifecycle UX must classify host-local admin rows.");
+        AssertContains(lifecycleUx, "terminalConnectionGroup", "Lifecycle UX must group terminal connections.");
 
         AssertContains(hostPage, "terminalLifecycleUx", "Host LAN Control must use terminal lifecycle helpers.");
         AssertContains(hostPage, "TerminalControlRow", "Host LAN Control must render status-aware terminal rows.");
         AssertContains(hostPage, "canDisableTerminal", "Host LAN Control must conditionally show disable.");
         AssertContains(hostPage, "canRevokeTerminal", "Host LAN Control must conditionally show revoke.");
         AssertContains(hostPage, "formatTerminalRoleLabel", "Host LAN Control must show clear terminal role labels.");
+        AssertContains(hostPage, "terminalGroupTitle", "Host LAN Control must render grouped terminal section titles.");
+        AssertContains(lifecycleUx, "Active terminals", "Lifecycle UX must define active terminal group title.");
+        AssertContains(lifecycleUx, "Blocked terminals", "Lifecycle UX must define blocked terminal group title.");
+        AssertContains(lifecycleUx, "Retired / revoked terminals", "Lifecycle UX must define retired terminal group title.");
+        AssertContains(lifecycleUx, "Local host / admin clients", "Lifecycle UX must define host-local group title.");
+        AssertContains(hostPage, "Hide from list", "Host LAN Control must allow hide for retired/blocked rows.");
+        AssertContains(hostPage, "Clear operator sessions", "Host LAN Control must offer clear sessions when supported.");
+        AssertContains(hostPage, "Re-enable is not supported", "Host LAN Control must stay honest about missing restore.");
+        AssertContains(hostPage, "Host-local admin/console row is read-only", "Host-local admin row must be read-only.");
         AssertNotContains(hostPage, "onClick={() => disableTerminalMutation.mutate(terminal.terminalId)}", "Host LAN Control must not unconditionally show disable on every terminal row.");
+        AssertNotContains(hostPage, "EnableTerminal", "Host UI must not claim a fake enable endpoint.");
 
         AssertContains(hook, "Previous pairing was revoked. Request access again.", "Remote POS client must show revoked-specific re-pair notice.");
         AssertContains(hook, "clearRemotePosOperatorSessionToken", "Revoked/stale restore must clear operator session token.");

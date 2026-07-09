@@ -1,7 +1,11 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Button, Card, CardBody, CardHeader, CardTitle, StatusPill } from "../components/ui";
 import { currentBrowserOrigin } from "../utils/lanEntry";
-import { hasPairedTerminalMaterial, readLanClientPairing } from "../utils/lanClientStorage";
+import {
+  clearAllLanClientDeviceState,
+  hasPairedTerminalMaterial,
+  readLanClientPairing,
+} from "../utils/lanClientStorage";
 
 type RemoteClientLandingPageProps = {
   onOpenRemotePos: () => void;
@@ -12,7 +16,13 @@ export function RemoteClientLandingPage({
   onOpenRemotePos,
   onOpenReadOnly,
 }: RemoteClientLandingPageProps) {
+  const [clearedNotice, setClearedNotice] = useState(false);
+  const [hasPairingMaterial, setHasPairingMaterial] = useState(true);
+
   const storedRemotePosPairing = useMemo(() => {
+    if (!hasPairingMaterial) {
+      return null;
+    }
     const hostOrigin = currentBrowserOrigin();
     if (!hostOrigin) {
       return null;
@@ -20,7 +30,13 @@ export function RemoteClientLandingPage({
 
     const stored = readLanClientPairing("remote-pos", hostOrigin);
     return hasPairedTerminalMaterial(stored) ? stored : null;
-  }, []);
+  }, [hasPairingMaterial]);
+
+  function clearThisDeviceState() {
+    clearAllLanClientDeviceState();
+    setHasPairingMaterial(false);
+    setClearedNotice(true);
+  }
 
   return (
     <div className="min-h-screen bg-slate-100">
@@ -108,10 +124,23 @@ export function RemoteClientLandingPage({
               </button>
             </div>
 
-            <div className="flex justify-end">
-              <Button variant="secondary" onClick={() => window.location.reload()}>
-                Reload
-              </Button>
+            <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              <p className="font-medium text-slate-900">Stuck after a new build or host DB reset?</p>
+              <p>
+                Clear this device state removes saved terminal pairing and any cashier session token. Passwords are never
+                stored. Then request access again.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="secondary" onClick={clearThisDeviceState}>
+                  Clear this device state
+                </Button>
+                <Button variant="secondary" onClick={() => window.location.reload()}>
+                  Reload
+                </Button>
+              </div>
+              {clearedNotice ? (
+                <p className="text-emerald-700">Device state cleared. Open Remote POS to request access again.</p>
+              ) : null}
             </div>
           </CardBody>
         </Card>

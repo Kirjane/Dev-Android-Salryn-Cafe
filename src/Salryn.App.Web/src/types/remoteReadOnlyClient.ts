@@ -165,6 +165,11 @@ export type LocalLanControlRuntimeStatus = {
   remediation: string | null;
   hostLocalUrl: string;
   firewallGuidance: string;
+  configuredBindAddressRaw?: string | null;
+  configuredBindAddressNormalized?: string | null;
+  configuredBindAddressRepairSuggestion?: string | null;
+  detectedLanListenIps?: string[] | null;
+  configuredBindMalformed?: boolean;
 };
 
 export type LocalLanControlStatus = {

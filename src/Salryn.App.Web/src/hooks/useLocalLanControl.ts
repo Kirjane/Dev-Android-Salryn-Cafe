@@ -1,11 +1,13 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   acceptRemotePosJoinRequest,
+  clearLocalLanControlTerminalSessions,
   disableLocalLanControlTerminal,
   fetchLocalLanControlRuntimeStatus,
   fetchLocalLanControlStatus,
   fetchRemotePosPairingHostStatus,
   rejectRemotePosJoinRequest,
+  repairLocalLanControlBind,
   revokeLocalLanControlTerminal,
   rotateRemotePosJoinCode,
   setLocalLanControlRemotePos,
@@ -49,6 +51,14 @@ export function useLocalLanControl() {
     },
   });
 
+  const repairBindMutation = useMutation({
+    mutationFn: (bindIp: string | null) => repairLocalLanControlBind(bindIp),
+    onSuccess: () => {
+      void statusQuery.refetch();
+      void runtimeStatusQuery.refetch();
+    },
+  });
+
   const remotePosRuntimeMutation = useMutation({
     mutationFn: ({ enable }: { enable: boolean }) => setLocalLanControlRemotePos(enable),
     onSuccess: () => {
@@ -65,6 +75,13 @@ export function useLocalLanControl() {
 
   const revokeTerminalMutation = useMutation({
     mutationFn: (terminalId: string) => revokeLocalLanControlTerminal(terminalId),
+    onSuccess: () => {
+      void statusQuery.refetch();
+    },
+  });
+
+  const clearTerminalSessionsMutation = useMutation({
+    mutationFn: (terminalId: string) => clearLocalLanControlTerminalSessions(terminalId),
     onSuccess: () => {
       void statusQuery.refetch();
     },
@@ -97,9 +114,11 @@ export function useLocalLanControl() {
     runtimeStatusQuery,
     pairingStatusQuery,
     remoteTransportMutation,
+    repairBindMutation,
     remotePosRuntimeMutation,
     disableTerminalMutation,
     revokeTerminalMutation,
+    clearTerminalSessionsMutation,
     rotateJoinCodeMutation,
     acceptJoinRequestMutation,
     rejectJoinRequestMutation,

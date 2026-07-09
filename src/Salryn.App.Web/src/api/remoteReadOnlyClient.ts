@@ -155,6 +155,16 @@ export async function setLocalLanControlRemoteTransport(
   return readJson<LocalLanControlStatus>(response);
 }
 
+export async function repairLocalLanControlBind(bindIp: string | null): Promise<LocalLanControlStatus> {
+  const response = await fetch("/api/lan-control/bind/repair", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ bindIp }),
+  });
+  return readJson<LocalLanControlStatus>(response);
+}
+
 export async function setLocalLanControlRemotePos(enable: boolean): Promise<LocalLanControlStatus> {
   const response = await fetch("/api/lan-control/remote-pos", {
     method: "POST",
@@ -182,6 +192,19 @@ export async function revokeLocalLanControlTerminal(
     method: "POST",
     credentials: "include",
   });
+  return readJson<LocalLanControlTerminalAction>(response);
+}
+
+export async function clearLocalLanControlTerminalSessions(
+  terminalId: string,
+): Promise<LocalLanControlTerminalAction> {
+  const response = await fetch(
+    `/api/lan-control/terminals/${encodeURIComponent(terminalId)}/clear-sessions`,
+    {
+      method: "POST",
+      credentials: "include",
+    },
+  );
   return readJson<LocalLanControlTerminalAction>(response);
 }
 

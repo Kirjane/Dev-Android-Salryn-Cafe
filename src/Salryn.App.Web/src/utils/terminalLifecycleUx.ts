@@ -73,3 +73,57 @@ export function canRevokeTerminal(status: TerminalLifecycleStatus, role: string)
 export function isRevokedTerminalReadOnly(status: TerminalLifecycleStatus): boolean {
   return status === "Revoked";
 }
+
+export function isHostLocalTerminalRole(role: string): boolean {
+  return role === "HostConsole" || role === "AllInOneLocalTerminal" || role === "AdminClient";
+}
+
+export function canRestoreDisabledTerminal(_status: TerminalLifecycleStatus, _role: string): boolean {
+  // Backend has no EnableTerminalAsync in this build — never offer a fake restore.
+  return false;
+}
+
+export function canClearTerminalOperatorSessions(status: TerminalLifecycleStatus, role: string): boolean {
+  return isManagedRemoteLanTerminal(role) && (status === "Active" || status === "Disabled");
+}
+
+export function canHideTerminalFromList(status: TerminalLifecycleStatus, role: string): boolean {
+  // Soft hide only — no hard delete/archive schema. Active terminals stay visible.
+  if (isHostLocalTerminalRole(role)) {
+    return status === "Revoked" || status === "Disabled";
+  }
+  return isManagedRemoteLanTerminal(role) && (status === "Revoked" || status === "Disabled");
+}
+
+export type TerminalConnectionGroup = "active" | "blocked" | "retired" | "host-local";
+
+export function terminalConnectionGroup(
+  status: TerminalLifecycleStatus,
+  role: string,
+): TerminalConnectionGroup {
+  if (isHostLocalTerminalRole(role)) {
+    return "host-local";
+  }
+  if (status === "Active" || status === "PendingPairing") {
+    return "active";
+  }
+  if (status === "Disabled") {
+    return "blocked";
+  }
+  return "retired";
+}
+
+export function terminalGroupTitle(group: TerminalConnectionGroup): string {
+  switch (group) {
+    case "active":
+      return "Active terminals";
+    case "blocked":
+      return "Blocked terminals";
+    case "retired":
+      return "Retired / revoked terminals";
+    case "host-local":
+      return "Local host / admin clients";
+    default:
+      return "Terminals";
+  }
+}

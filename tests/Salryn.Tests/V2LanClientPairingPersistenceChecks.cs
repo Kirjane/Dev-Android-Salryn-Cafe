@@ -116,6 +116,13 @@ public static class V2LanClientPairingPersistenceChecks
         AssertContains(landingPage, "readLanClientPairing", "Remote client landing must read stored pairing.");
         AssertContains(landingPage, "hasPairedTerminalMaterial", "Remote client landing must gate resume on paired terminal material.");
         AssertContains(landingPage, "Resume Remote POS terminal", "Remote client landing must expose resume path for paired terminals.");
+        AssertContains(landingPage, "Clear this device state", "Remote client landing must expose clear-device-state action.");
+        AssertContains(landingPage, "clearAllLanClientDeviceState", "Remote client landing must clear pairing and operator token storage.");
+        AssertContains(storage, "clearAllLanClientDeviceState", "Storage helper must expose full device clear.");
+        AssertContains(page, "Clear this device pairing and saved cashier session", "Remote POS page must expose clear pairing + session action.");
+        AssertContains(page, "Clear this device state", "Remote POS page must expose clear device state action.");
+        AssertContains(page, "Passwords are never stored", "Remote POS page must keep password non-storage truth.");
+        AssertContains(page, "Admin and Owner accounts are host-local only", "Remote POS page must keep Admin/Owner host-local.");
 
         AssertContains(remotePosClient, "/api/remote-pos/terminal/trust", "Remote POS client must call terminal trust probe.");
         AssertContains(remotePosClient, "/api/remote-pos/terminal/refresh-handshake", "Remote POS client must call handshake refresh endpoint.");

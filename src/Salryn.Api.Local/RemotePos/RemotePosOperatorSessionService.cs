@@ -348,6 +348,33 @@ public sealed class RemotePosOperatorSessionService
         }
     }
 
+    /// <summary>
+    /// HOST-LAN-CONTROL-M4: invalidate in-memory remote POS operator sessions for one terminal.
+    /// Does not change terminal registry trust; pairing remains until disable/revoke.
+    /// </summary>
+    public int RevokeSessionsForTerminal(Guid terminalId)
+    {
+        if (terminalId == Guid.Empty)
+        {
+            return 0;
+        }
+
+        int count = 0;
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        foreach (RemotePosOperatorSession session in _sessions.Values)
+        {
+            if (session.TerminalId != terminalId || session.RevokedAtUtc is not null)
+            {
+                continue;
+            }
+
+            session.RevokedAtUtc = now;
+            count++;
+        }
+
+        return count;
+    }
+
     public int GetActiveSessionCount()
     {
         DateTimeOffset now = DateTimeOffset.UtcNow;

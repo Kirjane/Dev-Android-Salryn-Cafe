@@ -32,6 +32,7 @@ import type {
 } from "../types/remotePosClient";
 import { currentBrowserOrigin, isRemoteClientBrowserLocation } from "../utils/lanEntry";
 import {
+  clearAllLanClientDeviceState,
   clearLanClientPairing,
   clearRemotePosOperatorSessionToken,
   describeRemotePosOperatorSessionStorage,
@@ -240,6 +241,8 @@ export function useRemotePosClient() {
   );
 
   const clearPairing = useCallback(() => {
+    // Clear pairing + operator token storage (including sessionStorage token scope).
+    clearAllLanClientDeviceState();
     clearLanClientPairing();
     resetSession();
     setPairingRequest(null);
@@ -253,7 +256,7 @@ export function useRemotePosClient() {
     setLastPairingNotice(null);
     setFlowState("S1_UNPAIRED");
     setErrorMessage(null);
-    setStatusMessage("Device pairing cleared. Request access to this host when ready.");
+    setStatusMessage("Device pairing and saved cashier session cleared. Request access to this host when ready.");
     restoreAttemptedRef.current = false;
   }, [resetSession]);
 

@@ -94,6 +94,7 @@ public static class Program
         V2LanBindTruthChecks.Run();
         V2LanClientPairingPersistenceChecks.Run();
         V2TerminalLifecycleUxChecks.Run();
+        V2HostLanControlUxChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
         M5VerifiedCandidateStackLedgerChecks.Run();
         M6CandidateStackPromotionDryRunChecks.Run();
@@ -259,6 +260,9 @@ public static class Program
                 return;
             case "v2-terminal-lifecycle":
                 V2TerminalLifecycleUxChecks.Run();
+                return;
+            case "v2-host-lan-control-ux":
+                V2HostLanControlUxChecks.Run();
                 return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);

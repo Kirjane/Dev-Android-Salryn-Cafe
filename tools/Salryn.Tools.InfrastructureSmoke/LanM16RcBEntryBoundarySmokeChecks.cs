@@ -86,9 +86,9 @@ internal static class LanM16RcBEntryBoundarySmokeChecks
         Require(dashboardPage.Contains("Open Host LAN Control", StringComparison.Ordinal), "Dashboard must link to Host LAN Control.");
         Require(hostPage.Contains("Host LAN Control", StringComparison.Ordinal), "Dedicated Host LAN Control page missing.");
         Require(hostPage.Contains("Host control is local-only", StringComparison.Ordinal), "Host LAN Control must show local-only safety.");
-        Require(hostPage.Contains("Set explicit bind address", StringComparison.Ordinal), "Host LAN Control must label the explicit bind address field.");
-        Require(hostPage.Contains("Enable LAN transport", StringComparison.Ordinal), "Host LAN Control must expose enable LAN transport action.");
-        Require(hostPage.Contains("Save/apply LAN settings", StringComparison.Ordinal), "Host LAN Control must apply explicit LAN settings.");
+        Require(hostPage.Contains("LAN Connection", StringComparison.Ordinal), "Host LAN Control must lead with LAN Connection section.");
+        Require(hostPage.Contains("Activate LAN connection", StringComparison.Ordinal), "Host LAN Control must expose activate LAN action.");
+        Require(hostPage.Contains("Disable LAN connection", StringComparison.Ordinal), "Host LAN Control must expose disable LAN action.");
         Require(hostPage.Contains("Rotate/show host join code", StringComparison.Ordinal), "Host LAN Control must rotate/show join code.");
         Require(hostPage.Contains("Review the pending device request here", StringComparison.Ordinal), "Host LAN Control must put pending requests in the main approval flow.");
         Require(hostPage.Contains("Device wants to join", StringComparison.Ordinal), "Host LAN Control must show a pending request alert.");
@@ -96,13 +96,12 @@ internal static class LanM16RcBEntryBoundarySmokeChecks
         Require(hostPage.Contains("Reject", StringComparison.Ordinal), "Host LAN Control must include reject action.");
         Require(hostPage.Contains("One-time pairing code", StringComparison.Ordinal), "Host LAN Control must show pairing code only after accept.");
         Require(hostPage.Contains("Give this code to the client device.", StringComparison.Ordinal), "Host LAN Control must explain one-time pairing code handoff.");
-        Require(hostPage.Contains("Max paired Remote POS terminals", StringComparison.Ordinal), "Host LAN Control must display paired terminal cap.");
-        Require(hostPage.Contains("Max active Remote POS sessions", StringComparison.Ordinal), "Host LAN Control must display active session cap.");
         Require(hostPage.Contains("Remaining capacity", StringComparison.Ordinal), "Host LAN Control must display terminal/session capacity.");
+        Require(hostPage.Contains("Terminal connections", StringComparison.Ordinal), "Host LAN Control must group terminal connections.");
         Require(!hostPage.Contains("Product Browse / Read-Only Surface", StringComparison.Ordinal), "Host LAN Control must not show product browse.");
         Require(!hostPage.Contains("Preflight checklist", StringComparison.Ordinal), "Host LAN Control must not show giant read-only preflight.");
         Require(!readOnlyPage.Contains("Local LAN Control (Operator-Only)", StringComparison.Ordinal), "Remote Read-Only page must not expose host controls.");
-        Require(!readOnlyPage.Contains("Save/apply LAN settings", StringComparison.Ordinal), "Remote Read-Only page must not expose LAN bind controls.");
+        Require(!readOnlyPage.Contains("Activate LAN connection", StringComparison.Ordinal), "Remote Read-Only page must not expose LAN bind controls.");
 
         Require(localAccessGuard.Contains("LocalApi.LocalOperatorRequired", StringComparison.Ordinal), "Local API guard must reject non-local console access.");
         Require(localAccessGuard.Contains("RemoteReadOnlyBridgeHeaders.TerminalId", StringComparison.Ordinal), "Local API guard must reject bridge headers.");

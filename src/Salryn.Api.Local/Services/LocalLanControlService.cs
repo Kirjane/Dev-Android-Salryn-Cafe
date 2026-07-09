@@ -140,19 +140,27 @@ public sealed class LocalLanControlService
                 await GetStatusAsync(actor, cancellationToken).ConfigureAwait(false));
         }
 
-        string trimmedBind = bindAddress?.Trim() ?? string.Empty;
+        LocalApiLanBindNormalizer.NormalizeResult normalized =
+            LocalApiLanBindNormalizer.NormalizeConfiguredLanBindInput(bindAddress);
 
-        if (string.IsNullOrWhiteSpace(trimmedBind))
+        if (!normalized.Ok || string.IsNullOrWhiteSpace(normalized.Ip))
         {
             return Result<LocalLanControlStatusResponse>.Fail(Error.Validation(
-                "LocalLanControl.BindAddressRequired",
-                "An explicit LAN IP address is required to enable remote read-only transport. Wildcard bind is never allowed."));
+                normalized.ErrorCode ?? "LocalLanControl.BindAddressRequired",
+                normalized.ErrorMessage
+                    ?? "An explicit LAN IP address is required to enable remote read-only transport. Wildcard bind is never allowed."));
+        }
+
+        Result nicValidation = LocalApiNetworkInterfaceValidator.ValidateExplicitLanBind(normalized.Ip);
+        if (nicValidation.IsFailure)
+        {
+            return Result<LocalLanControlStatusResponse>.Fail(SanitizeError(nicValidation.ErrorDetail));
         }
 
         LanRemoteTransportConfigUpdateRequest request = new(
             RemoteTransportEnabled: true,
             BindMode: LanRemoteTransportBindMode.ExplicitLanAddress,
-            BindAddress: trimmedBind,
+            BindAddress: normalized.Ip,
             Port: current.Port,
             RequirePairedTerminal: true,
             RequireActiveTerminal: true,
@@ -172,6 +180,68 @@ public sealed class LocalLanControlService
 
         return Result<LocalLanControlStatusResponse>.Success(
             await GetStatusAsync(actor, cancellationToken).ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// HOST-LAN-CONTROL-M4: persist a bare IPv4 bind after operators paste a full URL or
+    /// other repairable garbage into configuration. Does not claim the process is already
+    /// listening — runtime status still reports restart when needed.
+    /// </summary>
+    public async Task<Result<LocalLanControlStatusResponse>> RepairConfiguredBindAsync(
+        string? bindIp,
+        TerminalRegistryActorContext actor,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+
+        LocalApiLanBindNormalizer.NormalizeResult normalized =
+            LocalApiLanBindNormalizer.NormalizeConfiguredLanBindInput(bindIp);
+
+        if (!normalized.Ok || string.IsNullOrWhiteSpace(normalized.Ip))
+        {
+            // Fall back to detected LAN listener when operator omitted a target IP.
+            LocalLanControlRuntimeStatusResponse runtime =
+                await GetRuntimeStatusAsync(cancellationToken).ConfigureAwait(false);
+            string? suggestion = runtime.ConfiguredBindAddressRepairSuggestion
+                ?? runtime.DetectedLanListenIps?.FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(suggestion))
+            {
+                return Result<LocalLanControlStatusResponse>.Fail(Error.Validation(
+                    normalized.ErrorCode ?? "LocalLanControl.BindRepairFailed",
+                    normalized.ErrorMessage ?? "Could not repair LAN bind address."));
+            }
+
+            return await SetRemoteTransportAsync(enable: true, suggestion, actor, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return await SetRemoteTransportAsync(enable: true, normalized.Ip, actor, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public Task<Result<LocalLanControlTerminalActionResponse>> ClearTerminalOperatorSessionsAsync(
+        Guid terminalId,
+        TerminalRegistryActorContext actor,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (terminalId == Guid.Empty)
+        {
+            return Task.FromResult(Result<LocalLanControlTerminalActionResponse>.Fail(Error.Validation(
+                "LocalLanControl.TerminalIdRequired",
+                "A valid terminal id is required.")));
+        }
+
+        int revoked = _remotePosServices.SessionService.RevokeSessionsForTerminal(terminalId);
+        return Task.FromResult(Result<LocalLanControlTerminalActionResponse>.Success(new LocalLanControlTerminalActionResponse(
+            TerminalId: terminalId.ToString("D"),
+            Status: "SessionsCleared",
+            TrustState: "Operator sessions revoked for this terminal",
+            Message: revoked == 0
+                ? "No active remote POS operator sessions were found for this terminal."
+                : $"Revoked {revoked} remote POS operator session(s) for this terminal. Terminal pairing is unchanged.")));
     }
 
     public async Task<Result<LocalLanControlTerminalActionResponse>> DisableTerminalAsync(
@@ -299,8 +369,20 @@ public sealed class LocalLanControlService
             return "127.0.0.1 (loopback only)";
         }
 
-        string bind = config.BindAddress.Trim();
-        return RemoteReadOnlyBridgeDiagnostics.SanitizePublicText(bind) ?? "127.0.0.1 (loopback only)";
+        string? normalized = LocalApiLanBindNormalizer.TryNormalizeOrNull(config.BindAddress);
+        if (normalized is not null)
+        {
+            return normalized;
+        }
+
+        string raw = config.BindAddress.Trim();
+        // Never present a raw URL-looking bind as if it were a safe IP.
+        if (raw.Contains("://", StringComparison.Ordinal) || raw.Contains('/', StringComparison.Ordinal))
+        {
+            return "Malformed (needs repair)";
+        }
+
+        return RemoteReadOnlyBridgeDiagnostics.SanitizePublicText(raw) ?? "127.0.0.1 (loopback only)";
     }
 
     private static IReadOnlyList<string> BuildWarnings()
@@ -324,10 +406,13 @@ public sealed class LocalLanControlService
             return "Not enabled";
         }
 
-        string bind = SafeBindAddress(config);
-        return bind.StartsWith("127.", StringComparison.Ordinal)
-            ? "Not enabled"
-            : _hostUrls.BuildLanUrl(bind);
+        string? ip = LocalApiLanBindNormalizer.TryNormalizeOrNull(config.BindAddress);
+        if (ip is null || ip.StartsWith("127.", StringComparison.Ordinal))
+        {
+            return "Not enabled (configured bind needs repair)";
+        }
+
+        return _hostUrls.BuildLanUrl(ip);
     }
 
     private static Error SanitizeError(Error error)

@@ -14,10 +14,13 @@ public static class V2LanBindTruthChecks
         string networkValidator = ReadRequiredFile(Path.Combine(apiRoot, "Services", "LocalApiNetworkInterfaceValidator.cs"));
         string runtimeStatus = ReadRequiredFile(Path.Combine(apiRoot, "Services", "LocalApiLanRuntimeStatusService.cs"));
         string hostUrls = ReadRequiredFile(Path.Combine(apiRoot, "Services", "LocalApiHostControlUrls.cs"));
+        string normalizer = ReadRequiredFile(Path.Combine(apiRoot, "Services", "LocalApiLanBindNormalizer.cs"));
+        string lanControlService = ReadRequiredFile(Path.Combine(apiRoot, "Services", "LocalLanControlService.cs"));
         string endpoints = ReadRequiredFile(Path.Combine(apiRoot, "LocalLanControlEndpoints.cs"));
         string contracts = ReadRequiredFile(Path.Combine(apiRoot, "Contracts", "RemoteReadOnlyApiContracts.cs"));
         string remotePosEndpoints = ReadRequiredFile(Path.Combine(apiRoot, "RemotePos", "RemotePosApiEndpoints.cs"));
         string page = ReadRequiredFile(Path.Combine(webRoot, "pages", "HostLanControlPage.tsx"));
+        string bindNormalize = ReadRequiredFile(Path.Combine(webRoot, "utils", "lanBindNormalize.ts"));
         string api = ReadRequiredFile(Path.Combine(webRoot, "api", "remoteReadOnlyClient.ts"));
         string hook = ReadRequiredFile(Path.Combine(webRoot, "hooks", "useLocalLanControl.ts"));
         string app = ReadRequiredFile(Path.Combine(webRoot, "App.tsx"));
@@ -41,20 +44,45 @@ public static class V2LanBindTruthChecks
         AssertContains(runtimeStatus, "ApiLoopbackOnly", "Runtime status must classify loopback-only API state.");
         AssertContains(runtimeStatus, "ClientUrlReady", "Runtime status must expose client URL readiness.");
         AssertContains(runtimeStatus, "BuildClientUrl", "Runtime status must build client URL through host URL helper.");
+        AssertContains(runtimeStatus, "ConfiguredBindMalformed", "Runtime status must detect malformed configured bind.");
+        AssertContains(runtimeStatus, "ConfiguredBindAddressRepairSuggestion", "Runtime status must expose repair suggestion.");
+        AssertContains(runtimeStatus, "DetectedLanListenIps", "Runtime status must expose detected LAN listener IPs.");
         AssertContains(hostUrls, "BuildClientUrl", "Host control URLs must build remote client URL.");
         AssertContains(hostUrls, "/remote-client", "Client URL must target remote client entry.");
+        AssertContains(hostUrls, "LocalApiLanBindNormalizer", "Host URL helper must refuse double-scheme URL construction.");
+        AssertNotContains(hostUrls, "http://{bindAddress.Trim()}:{Port}", "Host URL helper must not blindly prefix raw bind text.");
+
+        AssertContains(normalizer, "NormalizeConfiguredLanBindInput", "Bind normalizer must exist.");
+        AssertContains(normalizer, "WasRepaired", "Bind normalizer must report repairable URL inputs.");
+        AssertContains(normalizer, "WildcardForbidden", "Bind normalizer must reject wildcards.");
+        AssertContains(lanControlService, "RepairConfiguredBindAsync", "LAN control service must repair malformed bind.");
+        AssertContains(lanControlService, "LocalApiLanBindNormalizer.NormalizeConfiguredLanBindInput", "LAN control save path must normalize bind input.");
+        AssertContains(lanControlService, "Malformed (needs repair)", "Status display must not present raw URL bind as a safe IP.");
 
         AssertContains(endpoints, "/runtime-status", "LAN control must expose runtime status endpoint.");
+        AssertContains(endpoints, "/bind/repair", "LAN control must expose bind repair endpoint.");
         AssertContains(contracts, "LocalLanControlRuntimeStatusResponse", "Contracts must include runtime status response.");
+        AssertContains(contracts, "ConfiguredBindAddressRepairSuggestion", "Contracts must include bind repair suggestion.");
+        AssertContains(contracts, "LocalLanControlBindRepairRequest", "Contracts must include bind repair request.");
 
         AssertContains(page, "LAN server is actually listening on", "Host LAN Control must show actual listen URLs.");
         AssertContains(page, "clientUrlReady", "Host LAN Control must gate copy on runtime clientUrlReady.");
         AssertContains(page, "LoopbackOnly", "Host LAN Control must show loopback-only readiness state.");
         AssertContains(page, "runtimeStatusQuery", "Host LAN Control must query runtime status.");
+        AssertContains(page, "Repair LAN address", "Host LAN Control must offer repair action for malformed bind.");
+        AssertContains(page, "Activate LAN connection", "Host LAN Control must offer activate action.");
+        AssertContains(page, "canCopyClientUrl", "Host LAN Control must disable copy unless client URL is ready.");
+        AssertContains(page, "LAN Connection", "Host LAN Control must present a LAN Connection wizard section.");
         AssertNotContains(page, "0.0.0.0", "Host LAN Control must not show wildcard bind.");
+        AssertNotContains(page, "http://http://", "Host LAN Control must not construct double-scheme URLs.");
+
+        AssertContains(bindNormalize, "normalizeConfiguredLanBindInput", "Frontend must normalize bind input.");
+        AssertContains(bindNormalize, "0.0.0.0", "Frontend normalizer must reject 0.0.0.0.");
 
         AssertContains(api, "/api/lan-control/runtime-status", "Web client must call runtime status endpoint.");
+        AssertContains(api, "/api/lan-control/bind/repair", "Web client must call bind repair endpoint.");
         AssertContains(hook, "fetchLocalLanControlRuntimeStatus", "LAN control hook must fetch runtime status.");
+        AssertContains(hook, "repairBindMutation", "LAN control hook must expose bind repair mutation.");
 
         AssertContains(startScript, "0.0.0.0", "Dev start script must reject 0.0.0.0.");
         AssertContains(startScript, "--lan-bind", "Dev start script must pass --lan-bind.");
@@ -64,6 +92,7 @@ public static class V2LanBindTruthChecks
         AssertRemoteClientDoesNotExposeHostCheckout(app);
 
         AssertContains(coreSmoke, "v2-lan-bind-truth", "CoreSmoke must expose v2-lan-bind-truth runner.");
+        AssertContains(coreSmoke, "v2-host-lan-control-ux", "CoreSmoke must expose v2-host-lan-control-ux runner.");
     }
 
     private static void AssertRemoteClientDoesNotExposeHostCheckout(string appSource)

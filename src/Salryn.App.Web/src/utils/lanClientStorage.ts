@@ -272,3 +272,17 @@ export function clearRemotePosOperatorSessionToken(hostBaseUrl?: string): void {
   removeRemotePosOperatorSessionRecordFromStorage(window.localStorage, hostBaseUrl);
   removeRemotePosOperatorSessionRecordFromStorage(window.sessionStorage, hostBaseUrl);
 }
+
+/**
+ * HOST-LAN-CONTROL-M4: wipe LAN client pairing + operator session material on this device.
+ * Used after a bad build, DB reset, or when the operator wants a clean re-pair.
+ */
+export function clearAllLanClientDeviceState(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.removeItem(LAN_CLIENT_STORAGE_KEY);
+  window.localStorage.removeItem(REMOTE_POS_SESSION_TOKEN_KEY);
+  window.sessionStorage.removeItem(REMOTE_POS_SESSION_TOKEN_KEY);
+}

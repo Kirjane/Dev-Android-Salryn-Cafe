@@ -17,6 +17,7 @@ import {
 import { remotePosClientWarnings } from "../api/remotePosClient";
 import { useRemotePosClient } from "../hooks/useRemotePosClient";
 import type { RemotePosCartLine } from "../types/remotePosClient";
+import { clearAllLanClientDeviceState } from "../utils/lanClientStorage";
 
 // LAN-M16-QA-B: Remote POS field UX. Pairing approves the device; login approves the person.
 // The normal path never asks the operator to type terminal identity or handshake proof manually.
@@ -362,7 +363,17 @@ export function RemotePosClientPage() {
                 {client.busy === "login" ? "Signing in..." : "Sign in to host"}
               </Button>
               <Button variant="ghost" onClick={client.clearPairing} disabled={client.busy !== "idle"}>
-                Clear this device pairing
+                Clear this device pairing and saved cashier session
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={client.busy !== "idle"}
+                onClick={() => {
+                  clearAllLanClientDeviceState();
+                  client.clearPairing();
+                }}
+              >
+                Clear this device state
               </Button>
             </div>
           </CardBody>
