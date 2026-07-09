@@ -1,15 +1,18 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  buildOfficialDryRunPostingPlan,
   fetchOfficialIntegrityStatus,
   fetchOfficialNumberingPreview,
   fetchOfficialReadiness,
   fetchOfficialSetup,
+  fetchOfficialSpineStatus,
   saveOfficialBusiness,
   saveOfficialMachine,
   saveOfficialReceipt,
   saveOfficialSeries,
   validateOfficialNumbering,
+  type OfficialDryRunPostingPlan,
 } from "../api/officialSetup";
 import {
   Alert,
@@ -40,6 +43,11 @@ export function OfficialSetupPage() {
     queryKey: ["official-integrity-status"],
     queryFn: fetchOfficialIntegrityStatus,
   });
+  const spineQuery = useQuery({
+    queryKey: ["official-spine-status"],
+    queryFn: fetchOfficialSpineStatus,
+  });
+  const [dryRunPlan, setDryRunPlan] = useState<OfficialDryRunPostingPlan | null>(null);
 
   const [business, setBusiness] = useState({
     registeredTaxpayerName: "",
@@ -219,6 +227,16 @@ export function OfficialSetupPage() {
     onError: onFail,
   });
 
+  const dryRunMutation = useMutation({
+    mutationFn: () => buildOfficialDryRunPostingPlan(),
+    onSuccess: (data) => {
+      setError(null);
+      setDryRunPlan(data);
+      setMessage("Dry-run plan built. Internal dry-run only. No official receipt is issued.");
+    },
+    onError: onFail,
+  });
+
   if (setupQuery.isLoading || readinessQuery.isLoading) {
     return <LoadingState label="Loading official setup…" />;
   }
@@ -226,6 +244,7 @@ export function OfficialSetupPage() {
   const readiness = readinessQuery.data;
   const numbering = numberingQuery.data;
   const integrity = integrityQuery.data;
+  const spine = spineQuery.data;
 
   return (
     <div className="space-y-6">
@@ -524,6 +543,72 @@ export function OfficialSetupPage() {
                 </p>
                 <p>{integrity.voidRefund.summary}</p>
               </div>
+            </>
+          ) : null}
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Official spine status</CardTitle>
+          <StatusPill tone="neutral">Internal dry-run only</StatusPill>
+        </CardHeader>
+        <CardBody className="space-y-2 text-sm text-slate-700">
+          <Alert tone="warning" title="Internal dry-run only">
+            No official receipt is issued. Checkout is not connected to official numbering. No compliance claim is made.
+          </Alert>
+          {spineQuery.isLoading ? <p>Loading spine status…</p> : null}
+          {spine ? (
+            <>
+              <p>{spine.summary}</p>
+              <p>
+                Live posting: <strong>{spine.liveOfficialPostingAllowed ? "yes" : "no"}</strong> · Output implemented:{" "}
+                <strong>{spine.officialOutputImplemented ? "yes" : "no"}</strong> · Compliance claimed:{" "}
+                <strong>{spine.complianceClaimed ? "yes" : "no"}</strong>
+              </p>
+              <ul className="list-disc pl-5">
+                {(spine.components ?? []).slice(0, 10).map((c) => (
+                  <li key={c.component}>
+                    {c.component}: {c.level}
+                    {c.liveBound ? " (live)" : " (not live-bound)"}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Official dry-run planner</CardTitle>
+          <StatusPill tone="neutral">No official receipt is issued</StatusPill>
+        </CardHeader>
+        <CardBody className="space-y-2 text-sm text-slate-700">
+          <Alert tone="warning" title="Internal dry-run only">
+            Build dry-run plan only. Checkout is not connected to official numbering. No compliance claim is made.
+          </Alert>
+          <div>
+            <Button onClick={() => dryRunMutation.mutate()} disabled={dryRunMutation.isPending}>
+              Build dry-run plan
+            </Button>
+          </div>
+          {dryRunPlan ? (
+            <>
+              <p>{dryRunPlan.summary}</p>
+              <p>
+                Status: <strong>{dryRunPlan.status}</strong> · Kind: <strong>{dryRunPlan.documentKind}</strong>
+              </p>
+              <p>
+                Sequence mutates: <strong>{dryRunPlan.sequenceWillMutate ? "yes" : "no"}</strong> · Sales mutates:{" "}
+                <strong>{dryRunPlan.salesWillMutate ? "yes" : "no"}</strong> · EJ live append:{" "}
+                <strong>{dryRunPlan.ejWillAppendLive ? "yes" : "no"}</strong> · Output generates:{" "}
+                <strong>{dryRunPlan.outputWillGenerate ? "yes" : "no"}</strong>
+              </p>
+              <p>Numbering: {dryRunPlan.numbering.formattedPreviewNumber ?? "(preview blocked)"} — {dryRunPlan.numbering.summary}</p>
+              <p>Journal: {dryRunPlan.journal.summary}</p>
+              <p>Void/refund: {dryRunPlan.voidRefund.summary}</p>
+              <p>Reports: {dryRunPlan.reportPackage.summary}</p>
             </>
           ) : null}
         </CardBody>

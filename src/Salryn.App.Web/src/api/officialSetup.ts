@@ -203,3 +203,73 @@ export async function fetchOfficialIntegrityStatus(): Promise<OfficialIntegrityS
   const response = await fetch("/api/official/integrity/status", { credentials: "include" });
   return readJson<OfficialIntegrityStatus>(response);
 }
+
+export type OfficialSpineStatus = {
+  contractVersion: number;
+  dryRunOnly: boolean;
+  nonOfficial: boolean;
+  liveOfficialPostingAllowed: boolean;
+  officialCheckoutAllocationEnabled: boolean;
+  checkoutUsesAllocator: boolean;
+  officialOutputImplemented: boolean;
+  complianceClaimed: boolean;
+  summary: string;
+  components: { component: string; level: string; present: boolean; liveBound: boolean; summary: string }[];
+  blockers: { code: string; message: string }[];
+  warnings: { code: string; message: string }[];
+};
+
+export type OfficialDryRunPostingPlan = {
+  contractVersion: number;
+  status: string;
+  dryRunOnly: boolean;
+  nonOfficial: boolean;
+  liveOfficialPostingAllowed: boolean;
+  officialCheckoutAllocationEnabled: boolean;
+  checkoutUsesAllocator: boolean;
+  sequenceWillMutate: boolean;
+  salesWillMutate: boolean;
+  ejWillAppendLive: boolean;
+  outputWillGenerate: boolean;
+  complianceClaimed: boolean;
+  documentKind: string;
+  summary: string;
+  numbering: {
+    previewOnly: boolean;
+    sequenceWillMutate: boolean;
+    formattedPreviewNumber: string | null;
+    summary: string;
+  };
+  journal: { liveBound: boolean; ejWillAppendLive: boolean; skeletonPresent: boolean; summary: string };
+  voidRefund: { liveIntegrated: boolean; skeletonPresent: boolean; summary: string };
+  reportPackage: {
+    reportEngineSelected: boolean;
+    outputWillGenerate: boolean;
+    summary: string;
+  };
+  blockers: { code: string; message: string }[];
+  warnings: { code: string; message: string }[];
+};
+
+export async function fetchOfficialSpineStatus(): Promise<OfficialSpineStatus> {
+  const response = await fetch("/api/official/spine/status", { credentials: "include" });
+  return readJson<OfficialSpineStatus>(response);
+}
+
+export async function buildOfficialDryRunPostingPlan(body?: Record<string, unknown>): Promise<OfficialDryRunPostingPlan> {
+  const response = await fetch("/api/official/dry-run/posting-plan", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(
+      body ?? {
+        documentKind: "OFFICIAL_INVOICE",
+        operationalPosNumberHint: null,
+        taxpayerNameHint: null,
+        lines: [],
+        totals: null,
+      },
+    ),
+  });
+  return readJson<OfficialDryRunPostingPlan>(response);
+}

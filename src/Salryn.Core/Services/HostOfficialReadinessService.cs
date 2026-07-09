@@ -285,6 +285,12 @@ public sealed class HostOfficialReadinessService : IHostOfficialReadinessService
         warnings.Add(new HostOfficialReadinessItem(
             "HostOfficialReadiness.IntegritySkeletonStatusOnly",
             "Official integrity status reports EJ and void/refund skeleton state only; not live-bound and not compliance-ready."));
+        warnings.Add(new HostOfficialReadinessItem(
+            "HostOfficialReadiness.DryRunPlannerAvailableNotLiveBound",
+            "Official sale dry-run planner is available for engineering package shape only; not live-bound and does not post."));
+        warnings.Add(new HostOfficialReadinessItem(
+            "HostOfficialReadiness.ReportDataContractsDefinedNoEngine",
+            "Report data handoff contracts are defined; no report engine is selected and no official output is generated."));
     }
 
     private static HostOfficialReadinessStatus ResolveStatus(
