@@ -159,6 +159,10 @@ export function RemotePosClientPage() {
               Has terminal id: <span className="font-mono text-slate-700">{client.hasTerminalId ? "yes" : "no"}</span>
               {" · "}
               Trust probe: <span className="font-mono text-slate-700">{client.trustProbeResult ?? "none"}</span>
+              {" · "}
+              Has operator token: <span className="font-mono text-slate-700">{client.hasOperatorSessionToken ? "yes" : "no"}</span>
+              {" · "}
+              Operator session valid: <span className="font-mono text-slate-700">{client.operatorSessionValid ?? "unknown"}</span>
               {client.terminalIdSuffix ? (
                 <>
                   {" · "}
@@ -352,6 +356,11 @@ export function RemotePosClientPage() {
               <CardTitle>State F — Remote POS</CardTitle>
             </CardHeader>
             <CardBody className="space-y-3">
+              {client.operatorSessionRestored ? (
+                <Alert tone="success" title="Operator session restored">
+                  Operator session restored. Signed in as {client.session?.displayName ?? client.session?.username ?? "operator"}.
+                </Alert>
+              ) : null}
               <div className="flex flex-wrap items-center gap-2">
                 <StatusPill tone="primary">Remote POS client</StatusPill>
                 <StatusPill tone="info">Role: {client.session?.roleName ?? "-"}</StatusPill>

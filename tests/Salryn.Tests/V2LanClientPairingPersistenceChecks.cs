@@ -69,6 +69,18 @@ public static class V2LanClientPairingPersistenceChecks
         AssertContains(hook, "Pairing revoked by host. Request access again.", "Explicit revoked trust must show revoked notice.");
         AssertNotContains(hook, "void resolveTrustStatus(stored)", "Hook must not probe terminal trust when stored pairing is null.");
         AssertNotContains(hook, "localStorage.setItem", "Hook must route storage through lanClientStorage helper.");
+        AssertContains(storage, "normalizeLanHostBaseUrl", "LAN client storage must normalize host URLs consistently.");
+        AssertContains(hook, "readRemotePosOperatorSessionToken", "Remote POS hook must read operator session token on restore.");
+        AssertContains(hook, "writeRemotePosOperatorSessionToken", "Remote POS hook must write operator session token after login.");
+        AssertContains(hook, "fetchRemotePosSession", "Remote POS hook must validate operator session via backend session endpoint.");
+        AssertContains(hook, "restoreOperatorSession", "Remote POS hook must restore operator session after trusted terminal restore.");
+        AssertContains(hook, "Operator session restored", "Remote POS hook must surface operator session restore success.");
+        AssertContains(hook, "Operator session expired. Sign in again.", "Invalid operator session must keep terminal pairing and prompt re-login.");
+        AssertContains(hook, "hasOperatorSessionToken", "Remote POS hook must expose operator session token diagnostic.");
+        AssertContains(hook, "operatorSessionValid", "Remote POS hook must expose operator session validity diagnostic.");
+        AssertContains(hook, "operatorSessionRestored", "Remote POS hook must expose operator session restored flag.");
+        AssertContains(hook, "S6_REMOTE_POS_READY", "Valid operator session restore must route to S6_REMOTE_POS_READY.");
+        AssertNotContains(hook, "sessionResult?.sessionToken", "Operator session restore must not require session token in GET /session response.");
 
         AssertContains(page, "Paired terminal restored", "Remote POS page must show restored pairing banner.");
         AssertContains(page, "Clear this device pairing", "Remote POS page must expose clear pairing action.");
@@ -84,6 +96,9 @@ public static class V2LanClientPairingPersistenceChecks
         AssertContains(page, "hasTerminalId", "Remote POS page must show hasTerminalId diagnostic.");
         AssertContains(page, "Start over / request access again", "Remote POS page must expose start-over path.");
         AssertContains(page, "lastPairingNotice", "Remote POS page must render pairing notice on unpaired restore.");
+        AssertContains(page, "hasOperatorSessionToken", "Remote POS page must show operator session token diagnostic.");
+        AssertContains(page, "operatorSessionValid", "Remote POS page must show operator session validity diagnostic.");
+        AssertContains(page, "Operator session restored", "Remote POS page must show operator session restored banner.");
         AssertNotContains(page, "\"/api/checkout\"", "Remote POS page must not call host /api/checkout.");
 
         AssertContains(remotePosClient, "/api/remote-pos/terminal/trust", "Remote POS client must call terminal trust probe.");

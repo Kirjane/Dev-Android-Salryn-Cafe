@@ -175,6 +175,9 @@ export function useRemotePosClient() {
   const [trustProbeResult, setTrustProbeResult] = useState<string | null>(null);
   const [storageRestored, setStorageRestored] = useState(false);
   const [lastPairingNotice, setLastPairingNotice] = useState<RemotePosPairingNotice | null>(null);
+  const [operatorSessionRestored, setOperatorSessionRestored] = useState(false);
+  const [hasOperatorSessionToken, setHasOperatorSessionToken] = useState(false);
+  const [operatorSessionValid, setOperatorSessionValid] = useState<"yes" | "no" | "unknown" | null>(null);
   const restoreAttemptedRef = useRef(false);
 
   const hostConnection = useMemo<RemotePosHostConnection>(() => ({ hostBaseUrl }), [hostBaseUrl]);
@@ -202,6 +205,9 @@ export function useRemotePosClient() {
     setCart(null);
     setLastCheckout(null);
     clearRemotePosOperatorSessionToken();
+    setOperatorSessionRestored(false);
+    setHasOperatorSessionToken(false);
+    setOperatorSessionValid(null);
   }, []);
 
   const persistLanRecord = useCallback(
@@ -288,52 +294,54 @@ export function useRemotePosClient() {
   );
 
   const restoreOperatorSession = useCallback(
-    async (trustedTerminalId: string, trustedHandshakeSessionId: string) => {
-      const storedToken = readRemotePosOperatorSessionToken(hostConnection.hostBaseUrl);
+    async (trustedTerminalId: string, trustedHandshakeSessionId: string, normalizedHost: string) => {
+      const storedToken = readRemotePosOperatorSessionToken(normalizedHost);
+      setHasOperatorSessionToken(Boolean(storedToken));
+
       if (!storedToken) {
+        setOperatorSessionValid("no");
         return false;
       }
 
-      const trust = await fetchRemotePosTerminalTrust(
-        {
-          hostBaseUrl: hostConnection.hostBaseUrl,
-          terminalId: trustedTerminalId,
-          handshakeSessionId: trustedHandshakeSessionId,
-        },
-        null,
-        storedToken,
-      );
-
-      if (!trust.operatorSessionValid) {
-        clearRemotePosOperatorSessionToken();
-        return false;
-      }
-
+      setOperatorSessionValid("unknown");
       const authed: RemotePosAuthedConnection = {
-        hostBaseUrl: hostConnection.hostBaseUrl,
+        hostBaseUrl: normalizedHost,
         terminalId: trustedTerminalId,
         handshakeSessionId: trustedHandshakeSessionId,
         sessionToken: storedToken,
       };
 
-      const [sessionResult, caps] = await Promise.all([
-        fetchRemotePosSession(authed).catch(() => null),
-        fetchRemotePosCapabilities(authed).catch(() => null),
-      ]);
+      try {
+        const [sessionResult, caps] = await Promise.all([
+          fetchRemotePosSession(authed),
+          fetchRemotePosCapabilities(authed).catch(() => null),
+        ]);
 
-      if (!sessionResult?.sessionToken) {
+        if (!sessionResult.sessionId?.trim()) {
+          clearRemotePosOperatorSessionToken();
+          setHasOperatorSessionToken(false);
+          setOperatorSessionValid("no");
+          return false;
+        }
+
+        setSession({ ...sessionResult, sessionToken: storedToken });
+        setSessionToken(storedToken);
+        setCapabilities(caps);
+        setOperatorSessionRestored(true);
+        setOperatorSessionValid("yes");
+        setFlowState("S6_REMOTE_POS_READY");
+        setStatusMessage(
+          `Operator session restored. Signed in as ${sessionResult.displayName ?? sessionResult.username ?? "operator"}.`,
+        );
+        return true;
+      } catch {
         clearRemotePosOperatorSessionToken();
+        setHasOperatorSessionToken(false);
+        setOperatorSessionValid("no");
         return false;
       }
-
-      setSession(sessionResult);
-      setSessionToken(storedToken);
-      setCapabilities(caps);
-      setFlowState("S6_REMOTE_POS_READY");
-      setStatusMessage(`Signed in as ${sessionResult.displayName ?? sessionResult.username ?? "operator"}.`);
-      return true;
     },
-    [hostConnection.hostBaseUrl],
+    [],
   );
 
   const restorePendingRequest = useCallback(
@@ -441,16 +449,20 @@ export function useRemotePosClient() {
           trust.displayName ?? stored.displayName ?? "Paired terminal",
           trust.requestId ?? stored.requestId ?? null,
           true,
-          trust.operatorSessionValid,
+          false,
         );
 
-        if (trust.operatorSessionValid) {
-          const restoredSession = await restoreOperatorSession(trustedTerminalId, trustedHandshakeSessionId);
-          if (!restoredSession) {
-            setFlowState("S5_REMOTE_POS_OPERATOR_AUTH");
-          }
-        } else {
+        const restoredSession = await restoreOperatorSession(
+          trustedTerminalId,
+          trustedHandshakeSessionId,
+          normalizedHost,
+        );
+        if (!restoredSession) {
+          setOperatorSessionRestored(false);
           setFlowState("S5_REMOTE_POS_OPERATOR_AUTH");
+          if (operatorToken) {
+            setStatusMessage("Operator session expired. Sign in again.");
+          }
         }
         return;
       }
@@ -774,7 +786,10 @@ export function useRemotePosClient() {
         setSession(result.issued);
         setSessionToken(issuedSessionToken);
         setCapabilities(result.caps);
-        writeRemotePosOperatorSessionToken(hostConnection.hostBaseUrl, issuedSessionToken);
+        writeRemotePosOperatorSessionToken(normalizeHostBaseUrl(hostConnection.hostBaseUrl), issuedSessionToken);
+        setOperatorSessionRestored(false);
+        setHasOperatorSessionToken(true);
+        setOperatorSessionValid("yes");
         setFlowState("S6_REMOTE_POS_READY");
         setStatusMessage(`Signed in as ${result.issued.displayName ?? result.issued.username ?? "operator"}.`);
       }
@@ -893,6 +908,9 @@ export function useRemotePosClient() {
     storageRestored,
     hasStoredPairing,
     hasTerminalId,
+    hasOperatorSessionToken,
+    operatorSessionValid,
+    operatorSessionRestored,
     lastPairingNotice,
     resetPairing,
     clearPairing,

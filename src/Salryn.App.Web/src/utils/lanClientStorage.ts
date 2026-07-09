@@ -25,6 +25,10 @@ export type LanClientPairingRecord = {
 
 const REMOTE_POS_SESSION_TOKEN_KEY = "salryn.remotePos.operatorSession.v1";
 
+export function normalizeLanHostBaseUrl(hostBaseUrl: string): string {
+  return hostBaseUrl.trim().replace(/\/+$/, "");
+}
+
 function isRecord(value: unknown): value is LanClientPairingRecord {
   if (!value || typeof value !== "object") {
     return false;
@@ -55,8 +59,8 @@ export function readLanClientPairing(mode: LanClientMode, hostBaseUrl: string): 
       return null;
     }
 
-    const normalizedHost = hostBaseUrl.trim().replace(/\/+$/, "");
-    const storedHost = parsed.hostBaseUrl.trim().replace(/\/+$/, "");
+    const normalizedHost = normalizeLanHostBaseUrl(hostBaseUrl);
+    const storedHost = normalizeLanHostBaseUrl(parsed.hostBaseUrl);
 
     if (parsed.mode !== mode || storedHost !== normalizedHost) {
       return null;
@@ -117,8 +121,8 @@ export function readRemotePosOperatorSessionToken(hostBaseUrl: string): string |
     }
 
     const parsed = JSON.parse(raw) as { hostBaseUrl?: string; sessionToken?: string };
-    const normalizedHost = hostBaseUrl.trim().replace(/\/+$/, "");
-    const storedHost = parsed.hostBaseUrl?.trim().replace(/\/+$/, "");
+    const normalizedHost = normalizeLanHostBaseUrl(hostBaseUrl);
+    const storedHost = normalizeLanHostBaseUrl(parsed.hostBaseUrl ?? "");
     if (!parsed.sessionToken?.trim() || storedHost !== normalizedHost) {
       return null;
     }
@@ -137,7 +141,7 @@ export function writeRemotePosOperatorSessionToken(hostBaseUrl: string, sessionT
   window.sessionStorage.setItem(
     REMOTE_POS_SESSION_TOKEN_KEY,
     JSON.stringify({
-      hostBaseUrl: hostBaseUrl.trim().replace(/\/+$/, ""),
+      hostBaseUrl: normalizeLanHostBaseUrl(hostBaseUrl),
       sessionToken,
     }),
   );
