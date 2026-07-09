@@ -262,6 +262,7 @@ public static class LocalApiApplicationFactory
         // RMO-BIR-M3/M4: host-local official readiness + setup (no live official posting).
         app.MapLocalOfficialReadinessEndpoints(composition.ConnectionFactory);
         app.MapLocalOfficialSetupEndpoints(composition.ConnectionFactory);
+        app.MapLocalOfficialNumberingEndpoints(composition.ConnectionFactory);
 
         if (webDistPath is not null)
         {

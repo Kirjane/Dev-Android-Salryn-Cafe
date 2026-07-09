@@ -70,6 +70,42 @@ export type OfficialReadinessSnapshot = {
   notes: string[];
 };
 
+export type OfficialNumberingPreview = {
+  contractVersion: number;
+  documentType: string;
+  prefix: string;
+  currentNumber: number;
+  nextNumber: number;
+  formattedNextNumber: string;
+  rangeStart: number | null;
+  rangeEnd: number | null;
+  dryRunOnly: boolean;
+  liveOfficialPostingAllowed: boolean;
+  officialCheckoutAllocationEnabled: boolean;
+  checkoutUsesAllocator: boolean;
+  previewMutatesSequence: boolean;
+  allocationAllowed: boolean;
+  mode: string;
+  blockers: { code: string; message: string }[];
+  warnings: string[];
+  summary: string;
+  blockedReason: string | null;
+};
+
+export type OfficialNumberingValidation = {
+  contractVersion: number;
+  isValidForPreview: boolean;
+  liveAllocationAllowed: boolean;
+  officialCheckoutAllocationEnabled: boolean;
+  checkoutUsesAllocator: boolean;
+  liveOfficialPostingAllowed: boolean;
+  previewNextNumber: number | null;
+  formattedNextNumber: string | null;
+  blockers: { code: string; message: string }[];
+  warnings: string[];
+  summary: string;
+};
+
 export async function fetchOfficialSetup(): Promise<OfficialSetupSnapshot> {
   const response = await fetch("/api/official/setup", { credentials: "include" });
   return readJson<OfficialSetupSnapshot>(response);
@@ -118,4 +154,17 @@ export async function saveOfficialSeries(body: Record<string, unknown>): Promise
     body: JSON.stringify(body),
   });
   return readJson<OfficialSetupSnapshot>(response);
+}
+
+export async function fetchOfficialNumberingPreview(): Promise<OfficialNumberingPreview> {
+  const response = await fetch("/api/official/numbering/preview", { credentials: "include" });
+  return readJson<OfficialNumberingPreview>(response);
+}
+
+export async function validateOfficialNumbering(): Promise<OfficialNumberingValidation> {
+  const response = await fetch("/api/official/numbering/validate", {
+    method: "POST",
+    credentials: "include",
+  });
+  return readJson<OfficialNumberingValidation>(response);
 }

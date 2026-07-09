@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  fetchOfficialNumberingPreview,
   fetchOfficialReadiness,
   fetchOfficialSetup,
   saveOfficialBusiness,
   saveOfficialMachine,
   saveOfficialReceipt,
   saveOfficialSeries,
+  validateOfficialNumbering,
 } from "../api/officialSetup";
 import {
   Alert,
@@ -29,6 +31,10 @@ export function OfficialSetupPage() {
 
   const setupQuery = useQuery({ queryKey: ["official-setup"], queryFn: fetchOfficialSetup });
   const readinessQuery = useQuery({ queryKey: ["official-readiness"], queryFn: fetchOfficialReadiness });
+  const numberingQuery = useQuery({
+    queryKey: ["official-numbering-preview"],
+    queryFn: fetchOfficialNumberingPreview,
+  });
 
   const [business, setBusiness] = useState({
     registeredTaxpayerName: "",
@@ -128,6 +134,7 @@ export function OfficialSetupPage() {
     setMessage(`${label} saved. Official output is still not implemented.`);
     void queryClient.invalidateQueries({ queryKey: ["official-setup"] });
     void queryClient.invalidateQueries({ queryKey: ["official-readiness"] });
+    void queryClient.invalidateQueries({ queryKey: ["official-numbering-preview"] });
   }
 
   function onFail(err: unknown) {
@@ -197,11 +204,22 @@ export function OfficialSetupPage() {
     onError: onFail,
   });
 
+  const validateMutation = useMutation({
+    mutationFn: validateOfficialNumbering,
+    onSuccess: (data) => {
+      setError(null);
+      setMessage(data.summary);
+      void queryClient.invalidateQueries({ queryKey: ["official-numbering-preview"] });
+    },
+    onError: onFail,
+  });
+
   if (setupQuery.isLoading || readinessQuery.isLoading) {
     return <LoadingState label="Loading official setup…" />;
   }
 
   const readiness = readinessQuery.data;
+  const numbering = numberingQuery.data;
 
   return (
     <div className="space-y-6">
@@ -414,6 +432,52 @@ export function OfficialSetupPage() {
           <div className="md:col-span-2">
             <Button onClick={() => seriesMutation.mutate()} disabled={seriesMutation.isPending}>
               Save document series
+            </Button>
+          </div>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Official numbering preview</CardTitle>
+          {numbering ? (
+            <StatusPill tone={numbering.allocationAllowed ? "success" : "neutral"}>
+              {numbering.mode}
+            </StatusPill>
+          ) : null}
+        </CardHeader>
+        <CardBody className="space-y-2 text-sm text-slate-700">
+          <Alert tone="warning" title="Preview only">
+            This preview does not issue an official number. Checkout is not connected to official numbering.
+          </Alert>
+          {numberingQuery.isLoading ? <p>Loading numbering preview…</p> : null}
+          {numbering ? (
+            <>
+              <p>{numbering.summary}</p>
+              <p>
+                Current: <strong>{numbering.currentNumber}</strong> · Next:{" "}
+                <strong>{numbering.formattedNextNumber || "(blocked)"}</strong>
+              </p>
+              <p>
+                Live official posting: <strong>{numbering.liveOfficialPostingAllowed ? "yes" : "no"}</strong> ·
+                Checkout uses allocator: <strong>{numbering.checkoutUsesAllocator ? "yes" : "no"}</strong> ·
+                Sequence mutated by preview: <strong>{numbering.previewMutatesSequence ? "yes" : "no"}</strong>
+              </p>
+              {(numbering.blockers ?? []).length > 0 ? (
+                <div>
+                  <p className="font-medium">Preview blockers</p>
+                  <ul className="list-disc pl-5">
+                    {numbering.blockers.map((b) => (
+                      <li key={b.code}>{b.message}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+          <div>
+            <Button onClick={() => validateMutation.mutate()} disabled={validateMutation.isPending}>
+              Validate series (no allocate)
             </Button>
           </div>
         </CardBody>

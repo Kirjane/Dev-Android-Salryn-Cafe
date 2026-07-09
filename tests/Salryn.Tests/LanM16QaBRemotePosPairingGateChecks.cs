@@ -4,6 +4,9 @@ public static class LanM16QaBRemotePosPairingGateChecks
 {
     private const string SandboxSha = "e477699dca27a21954a5ad9d388307fdb9ed08fd";
     private const string FreehandStartSha = "80d784d84e6af635688085d8b97bfe935c953d65";
+    // Freehand pairing gate is closed; freeze migration/seed ban to stable Sandbox tip so later
+    // product lanes (e.g. RMO BIR setup schema) are not false-failed by FreehandStart...HEAD.
+    private const string FreehandBoundarySha = "1f74cd8bcaca1a5df487aa61677ee9829dd7fedb";
 
     public static void Run()
     {
@@ -64,10 +67,11 @@ public static class LanM16QaBRemotePosPairingGateChecks
         Require(sessionService.Contains("SessionLifetime = TimeSpan.FromMinutes(30)", StringComparison.Ordinal), "Remote POS session must remain 30-minute short-lived.");
         Require(sessionService.Contains("OriginMismatch", StringComparison.Ordinal), "Existing origin binding must remain.");
 
-        // Pairing freehand must not ship schema/seed product data. Use path segments that match
-        // production trees only — avoid matching later tool names like FlowResetDevSeedChecks.cs.
-        Require(!ChangedPathExists(root, "Migrations/"), "No schema/migration files should be added.");
-        Require(!ChangedPathExists(root, "Data/Seeding"), "No production seed data files should be added.");
+        // Pairing freehand must not ship schema/seed product data. Scope is freehand→sandbox only
+        // (not all future HEAD). Path segments match production trees only — avoid tool names
+        // like FlowResetDevSeedChecks.cs.
+        Require(!ChangedPathExists(root, "Migrations/", FreehandBoundarySha), "No schema/migration files should be added in freehand pairing window.");
+        Require(!ChangedPathExists(root, "Data/Seeding", FreehandBoundarySha), "No production seed data files should be added in freehand pairing window.");
         Require(!AllCandidateText(root, "tests/Salryn.Tests/LanM16QaBRemotePosPairingGateChecks.cs", "tools/Salryn.Tools.InfrastructureSmoke/RemotePosPairingGateSmokeChecks.cs").Contains("0.0.0.0 bind enabled", StringComparison.OrdinalIgnoreCase), "No default/wildcard/0.0.0.0 bind may be added.");
         Require(!AllCandidateText(root, "tests/Salryn.Tests/LanM16QaBRemotePosPairingGateChecks.cs", "tools/Salryn.Tools.InfrastructureSmoke/RemotePosPairingGateSmokeChecks.cs").Contains("QR pairing", StringComparison.OrdinalIgnoreCase), "No QR pairing may be added.");
         Require(!AllCandidateText(root, "tests/Salryn.Tests/LanM16QaBRemotePosPairingGateChecks.cs", "tools/Salryn.Tools.InfrastructureSmoke/RemotePosPairingGateSmokeChecks.cs").Contains("mobile app", StringComparison.OrdinalIgnoreCase), "No mobile app may be added.");
@@ -79,9 +83,9 @@ public static class LanM16QaBRemotePosPairingGateChecks
         Require(coreSmoke.Contains("LanM16QaBRemotePosPairingGateChecks.Run();", StringComparison.Ordinal), "CoreSmoke must wire LAN-M16-QA-B guard.");
     }
 
-    private static bool ChangedPathExists(string root, string token)
+    private static bool ChangedPathExists(string root, string token, string endSha)
     {
-        string? output = TryGit(root, "diff --name-only " + FreehandStartSha + "...HEAD");
+        string? output = TryGit(root, "diff --name-only " + FreehandStartSha + "..." + endSha);
         return output?.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
             .Any(path => path.Contains(token, StringComparison.OrdinalIgnoreCase)) == true;
     }

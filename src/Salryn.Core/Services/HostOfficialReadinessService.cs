@@ -202,7 +202,9 @@ public sealed class HostOfficialReadinessService : IHostOfficialReadinessService
         bool seriesOk = setup.Series is not null
             && !string.IsNullOrWhiteSpace(setup.Series.Prefix)
             && setup.Series.StartNumber > 0
-            && setup.Series.PaddingDigits >= 6;
+            && setup.Series.PaddingDigits >= 6
+            && setup.Series.IsActive
+            && !setup.Series.IsExhausted;
 
         if (!businessOk)
         {
@@ -220,9 +222,14 @@ public sealed class HostOfficialReadinessService : IHostOfficialReadinessService
 
         if (!seriesOk)
         {
+            string seriesMessage = setup.Series is null
+                ? "Document series setup is incomplete (prefix, start, padding >= 6)."
+                : setup.Series.IsExhausted
+                    ? "Document series is exhausted or inactive; configure a valid series for internal dry-run setup."
+                    : "Document series setup is incomplete (prefix, start, padding >= 6, active, not exhausted).";
             blockers.Add(new HostOfficialReadinessItem(
                 "HostOfficialReadiness.SeriesSetupIncomplete",
-                "Document series setup is incomplete (prefix, start, padding >= 6)."));
+                seriesMessage));
         }
 
         if (setup.Receipt is null)
@@ -272,6 +279,9 @@ public sealed class HostOfficialReadinessService : IHostOfficialReadinessService
         warnings.Add(new HostOfficialReadinessItem(
             "HostOfficialReadiness.OperationalNumbersRemainNonOfficial",
             "Host operational POS numbers remain non-official and are distinct from official document numbers."));
+        warnings.Add(new HostOfficialReadinessItem(
+            "HostOfficialReadiness.NumberingPreviewOnly",
+            "Official numbering preview/validate exists for setup visibility only; checkout does not allocate official numbers."));
     }
 
     private static HostOfficialReadinessStatus ResolveStatus(
