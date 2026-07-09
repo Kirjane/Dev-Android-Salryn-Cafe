@@ -89,6 +89,7 @@ public static class Program
         RoleM3HttpApiPermissionRuntimeChecks.RunAsync().GetAwaiter().GetResult();
         RoleM4PermissionBoundaryRegressionMatrixChecks.RunAsync().GetAwaiter().GetResult();
         V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();
+        V2HostOperatorCheckoutApiChecks.RunAsync().GetAwaiter().GetResult();
         V2ReactCheckoutSourceChecks.Run();
         V2LanBindTruthChecks.Run();
         V2LanClientPairingPersistenceChecks.Run();
