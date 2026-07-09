@@ -178,3 +178,14 @@ InfrastructureSmoke copies of the same brittle string exist; fix for consistency
 5. Remove local `.lan-bind-test-*.txt` artifacts if present (no-op-safe cleanup).
 
 **Out of scope (not implementing):** schema rewrite, auth redesign, features, printers/PDF/RMO, remote Admin/Owner, wildcard bind, Sandbox, promotion.
+
+---
+
+## Implementation result (post-GO)
+
+**Commit:** `6cc89281` — *Harden Remote POS LAN client readiness*  
+**Pushed:** `origin/KIRCH-V2-REACT-SHELL`  
+**Full CoreSmoke:** passed after stale-guard updates  
+**npm run build:** passed  
+**Manual phone check:** not run in this session (operator session persistence remains source/logic verified; phone re-accept recommended before promotion)
+
