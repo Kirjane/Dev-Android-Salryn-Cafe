@@ -72,7 +72,8 @@ export function RemoteClientLandingPage({
                   This device already has a trusted terminal pairing for{" "}
                   <span className="font-mono text-slate-700">{storedRemotePosPairing.hostBaseUrl}</span>
                   {storedRemotePosPairing.displayName ? ` (${storedRemotePosPairing.displayName})` : ""}. Open Remote POS to
-                  restore the terminal and sign in again if needed.
+                  restore this paired terminal. If the saved cashier session is still valid, it will resume automatically
+                  after the host validates it; otherwise sign in again without re-pairing.
                 </p>
               </button>
             ) : null}

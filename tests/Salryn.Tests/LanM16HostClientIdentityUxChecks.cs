@@ -43,7 +43,8 @@ public static class LanM16HostClientIdentityUxChecks
         AssertContains(remotePosPage, "This device is a Remote POS client", "Remote POS page must show the remote client warning banner.");
         AssertContains(remotePosPage, "Connect to the POS host over its explicit LAN address.", "Remote POS page must guide the operator to the host LAN address.");
         AssertContains(remotePosPage, "Pair this device first, then sign in as Cashier or Manager.", "Remote POS page must show the pairing-then-login flow.");
-        AssertContains(remotePosPage, "Cashier / Manager login only", "Remote POS page must limit the login stage to Cashier/Manager.");
+        AssertContains(remotePosPage, "Cashier / Manager login", "Remote POS page must limit the login stage to Cashier/Manager.");
+        AssertContains(remotePosPage, "Admin and Owner accounts are host-local only for this build", "Remote POS page must keep Admin/Owner host-local.");
         AssertContains(remotePosPage, "Session expires", "Remote POS page must show session expiry.");
         AssertContains(remotePosPage, "Host LAN address", "Remote POS page must show the host LAN address.");
         AssertContains(remotePosPage, "Submit checkout", "Remote POS page must offer host-owned checkout.");

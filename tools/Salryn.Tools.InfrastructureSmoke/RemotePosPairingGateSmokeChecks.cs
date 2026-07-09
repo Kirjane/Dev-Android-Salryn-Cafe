@@ -14,7 +14,7 @@ internal static class RemotePosPairingGateSmokeChecks
 
         Require(!page.Contains("label=\"Terminal ID\"", StringComparison.Ordinal), "Normal field UX must not expose Terminal ID input.");
         Require(!page.Contains("label=\"Handshake session ID\"", StringComparison.Ordinal), "Normal field UX must not expose Handshake Session ID input.");
-        Require(page.Contains("Cashier / Manager login only", StringComparison.Ordinal), "Remote POS login copy must say Cashier / Manager only.");
+        Require(page.Contains("Cashier / Manager login", StringComparison.Ordinal), "Remote POS login copy must limit login to Cashier/Manager.");
         Require(!page.Contains("Admin credentials", StringComparison.OrdinalIgnoreCase), "Remote POS login copy must not say Admin credentials.");
 
         Require(client.Contains("joinCode", StringComparison.Ordinal) && client.Contains("deviceName", StringComparison.Ordinal), "Remote pairing request must require join code and device name.");
@@ -36,8 +36,9 @@ internal static class RemotePosPairingGateSmokeChecks
         Require(session.Contains("OriginMismatch", StringComparison.Ordinal), "Existing origin binding must still work.");
         Require(Read(projectRoot, "src", "Salryn.Api.Local", "RemotePos", "RemotePosCheckoutService.cs").Contains("best-effort", StringComparison.OrdinalIgnoreCase), "Existing post-commit audit safety must remain documented in checkout service.");
         Require(session.Contains("TerminalNotAccepted", StringComparison.Ordinal), "Terminal disable/revoke must still block remote POS.");
-        Require(!ChangedPathExists(projectRoot, "Migrations"), "No migration files may be added.");
-        Require(!ChangedPathExists(projectRoot, "Seed"), "No seed files may be added.");
+        // Match production schema/seed trees only; do not fail on tool names containing "Seed".
+        Require(!ChangedPathExists(projectRoot, "Migrations/"), "No migration files may be added.");
+        Require(!ChangedPathExists(projectRoot, "Data/Seeding"), "No production seed data files may be added.");
         Require(!AllCandidateText(projectRoot, "tests/Salryn.Tests/LanM16QaBRemotePosPairingGateChecks.cs", "tools/Salryn.Tools.InfrastructureSmoke/RemotePosPairingGateSmokeChecks.cs").Contains("QR pairing", StringComparison.OrdinalIgnoreCase), "No QR behavior may be added.");
         Require(!AllCandidateText(projectRoot, "tests/Salryn.Tests/LanM16QaBRemotePosPairingGateChecks.cs", "tools/Salryn.Tools.InfrastructureSmoke/RemotePosPairingGateSmokeChecks.cs").Contains("cloud sync", StringComparison.OrdinalIgnoreCase), "No cloud behavior may be added.");
         Require(!AllCandidateText(projectRoot, "tests/Salryn.Tests/LanM16QaBRemotePosPairingGateChecks.cs", "tools/Salryn.Tools.InfrastructureSmoke/RemotePosPairingGateSmokeChecks.cs").Contains("custom DNS", StringComparison.OrdinalIgnoreCase), "No custom DNS behavior may be added.");

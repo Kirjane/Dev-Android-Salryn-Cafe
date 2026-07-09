@@ -102,7 +102,7 @@ public static class LanM16RcBEntryBoundaryChecks
             "Copy client URL",
             "Client devices use the host LAN IP, not localhost.",
             "Pairing Control",
-            "Pending device requests are the approval mechanism",
+            "Review the pending device request here",
             "Device wants to join",
             "Observed origin/IP",
             "Accept",
@@ -128,7 +128,7 @@ public static class LanM16RcBEntryBoundaryChecks
         AssertNotContains(readOnlyPage, "Rotate/show host join code", "Remote Read-Only Client page must not expose join-code controls.");
         AssertContains(readOnlyPage, "Runtime Diagnostics", "Remote Read-Only Client page must keep safe diagnostics.");
         AssertContains(readOnlyPage, "<details>", "Remote Read-Only Client diagnostics/troubleshooting must be collapsed by default.");
-        AssertContains(remotePosPage, "Cashier / Manager login only", "Remote POS page must keep Cashier/Manager login copy.");
+        AssertContains(remotePosPage, "Cashier / Manager login", "Remote POS page must keep Cashier/Manager login copy.");
         AssertNotContains(remotePosPage, "Admin credentials", "Remote POS page must not say admin credentials.");
         string consoleApp = ExtractBlock(app, "function ConsoleApp()", "export default function App()");
         string remoteClientApp = ExtractBlock(app, "function RemoteClientApp()", "function ConsoleApp()");

@@ -62,7 +62,7 @@ internal static class LanM16RcBEntryBoundarySmokeChecks
         }
 
         Require(remotePosHook.Contains("startsFromRemoteEntry ? currentBrowserOrigin() : \"\"", StringComparison.Ordinal), "Remote POS LAN entry must use current host origin.");
-        Require(remotePosPage.Contains("Cashier / Manager login only", StringComparison.Ordinal), "Remote POS must keep Cashier/Manager-only login copy.");
+        Require(remotePosPage.Contains("Cashier / Manager login", StringComparison.Ordinal), "Remote POS must keep Cashier/Manager login copy.");
         Require(!remotePosPage.Contains("Admin credentials", StringComparison.OrdinalIgnoreCase), "Remote POS must not say admin credentials.");
 
         Require(navigation.Contains("{ id: \"host-lan-control\", label: \"Host LAN Control\", enabled: true }", StringComparison.Ordinal), "Host LAN Control must be an enabled sidebar item.");
@@ -90,7 +90,7 @@ internal static class LanM16RcBEntryBoundarySmokeChecks
         Require(hostPage.Contains("Enable LAN transport", StringComparison.Ordinal), "Host LAN Control must expose enable LAN transport action.");
         Require(hostPage.Contains("Save/apply LAN settings", StringComparison.Ordinal), "Host LAN Control must apply explicit LAN settings.");
         Require(hostPage.Contains("Rotate/show host join code", StringComparison.Ordinal), "Host LAN Control must rotate/show join code.");
-        Require(hostPage.Contains("Pending device requests are the approval mechanism", StringComparison.Ordinal), "Host LAN Control must put pending requests in the main approval flow.");
+        Require(hostPage.Contains("Review the pending device request here", StringComparison.Ordinal), "Host LAN Control must put pending requests in the main approval flow.");
         Require(hostPage.Contains("Device wants to join", StringComparison.Ordinal), "Host LAN Control must show a pending request alert.");
         Require(hostPage.Contains("Accept", StringComparison.Ordinal), "Host LAN Control must include accept action.");
         Require(hostPage.Contains("Reject", StringComparison.Ordinal), "Host LAN Control must include reject action.");

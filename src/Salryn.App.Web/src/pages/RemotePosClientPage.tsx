@@ -313,7 +313,8 @@ export function RemotePosClientPage() {
           <CardBody className="space-y-4">
             {client.pairingRestored ? (
               <Alert tone="success" title="Paired terminal restored">
-                This device restored its trusted terminal pairing. Sign in as Cashier or Manager to continue.
+                This device restored its trusted terminal pairing. Operator sign-in is required only if no valid saved
+                cashier session remains on the host.
               </Alert>
             ) : (
               <Alert tone="success" title="This terminal is paired">
@@ -331,6 +332,7 @@ export function RemotePosClientPage() {
             </div>
             <Alert tone="info">
               After pairing, sign in as Cashier or Manager. Admin and Owner accounts are host-local only for this build.
+              Cashier / Manager login only — passwords are never stored on this device.
             </Alert>
             <div className="grid gap-4 sm:grid-cols-2">
               <FormField label="Username" htmlFor="rpos-user">
@@ -353,6 +355,7 @@ export function RemotePosClientPage() {
             </label>
             <p className="text-xs text-slate-500">
               Passwords are never stored on this device. Only the host-issued session token is saved when this option is enabled.
+              A saved token is restored only after the host validates it.
             </p>
             <div className="flex flex-wrap gap-2">
               <Button onClick={handleLogin} disabled={client.busy === "login" || !username.trim()}>

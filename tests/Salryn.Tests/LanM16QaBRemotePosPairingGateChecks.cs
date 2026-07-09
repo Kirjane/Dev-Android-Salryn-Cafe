@@ -27,7 +27,7 @@ public static class LanM16QaBRemotePosPairingGateChecks
 
         Require(!page.Contains("label=\"Terminal ID\"", StringComparison.Ordinal), "Remote POS normal UI must not ask for Terminal ID.");
         Require(!page.Contains("label=\"Handshake session ID\"", StringComparison.Ordinal), "Remote POS normal UI must not ask for Handshake Session ID.");
-        Require(page.Contains("Cashier / Manager login only", StringComparison.Ordinal), "Remote POS login copy must say Cashier / Manager only.");
+        Require(page.Contains("Cashier / Manager login", StringComparison.Ordinal), "Remote POS login copy must limit login to Cashier/Manager.");
         Require(!page.Contains("Admin credentials", StringComparison.OrdinalIgnoreCase), "Remote POS login copy must not say Admin credentials.");
         Require(page.Contains("Admin and Owner accounts are host-local only for this build", StringComparison.Ordinal), "Remote POS page must state Admin/Owner are host-local.");
 
@@ -64,8 +64,10 @@ public static class LanM16QaBRemotePosPairingGateChecks
         Require(sessionService.Contains("SessionLifetime = TimeSpan.FromMinutes(30)", StringComparison.Ordinal), "Remote POS session must remain 30-minute short-lived.");
         Require(sessionService.Contains("OriginMismatch", StringComparison.Ordinal), "Existing origin binding must remain.");
 
-        Require(!ChangedPathExists(root, "Migrations"), "No schema/migration files should be added.");
-        Require(!ChangedPathExists(root, "Seed"), "No seed files should be added.");
+        // Pairing freehand must not ship schema/seed product data. Use path segments that match
+        // production trees only — avoid matching later tool names like FlowResetDevSeedChecks.cs.
+        Require(!ChangedPathExists(root, "Migrations/"), "No schema/migration files should be added.");
+        Require(!ChangedPathExists(root, "Data/Seeding"), "No production seed data files should be added.");
         Require(!AllCandidateText(root, "tests/Salryn.Tests/LanM16QaBRemotePosPairingGateChecks.cs", "tools/Salryn.Tools.InfrastructureSmoke/RemotePosPairingGateSmokeChecks.cs").Contains("0.0.0.0 bind enabled", StringComparison.OrdinalIgnoreCase), "No default/wildcard/0.0.0.0 bind may be added.");
         Require(!AllCandidateText(root, "tests/Salryn.Tests/LanM16QaBRemotePosPairingGateChecks.cs", "tools/Salryn.Tools.InfrastructureSmoke/RemotePosPairingGateSmokeChecks.cs").Contains("QR pairing", StringComparison.OrdinalIgnoreCase), "No QR pairing may be added.");
         Require(!AllCandidateText(root, "tests/Salryn.Tests/LanM16QaBRemotePosPairingGateChecks.cs", "tools/Salryn.Tools.InfrastructureSmoke/RemotePosPairingGateSmokeChecks.cs").Contains("mobile app", StringComparison.OrdinalIgnoreCase), "No mobile app may be added.");

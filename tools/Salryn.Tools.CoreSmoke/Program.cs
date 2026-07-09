@@ -90,6 +90,9 @@ public static class Program
         RoleM4PermissionBoundaryRegressionMatrixChecks.RunAsync().GetAwaiter().GetResult();
         V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();
         V2ReactCheckoutSourceChecks.Run();
+        V2LanBindTruthChecks.Run();
+        V2LanClientPairingPersistenceChecks.Run();
+        V2TerminalLifecycleUxChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
         M5VerifiedCandidateStackLedgerChecks.Run();
         M6CandidateStackPromotionDryRunChecks.Run();

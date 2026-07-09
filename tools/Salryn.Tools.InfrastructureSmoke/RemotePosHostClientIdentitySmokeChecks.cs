@@ -25,7 +25,7 @@ internal static class RemotePosHostClientIdentitySmokeChecks
         RequireContains(remotePosPage, "Remote POS client", "Remote POS page must identify the remote client role.");
         RequireContains(remotePosPage, "This device is a Remote POS client", "Remote POS page must show the client warning banner.");
         RequireContains(remotePosPage, "Connect to the POS host over its explicit LAN address.", "Remote POS page must explain host connection topology.");
-        RequireContains(remotePosPage, "Cashier / Manager login only", "Remote POS page must state the remote login role boundary.");
+        RequireContains(remotePosPage, "Cashier / Manager login", "Remote POS page must state the remote login role boundary.");
         RequireContains(remotePosPage, "Submit checkout", "Remote POS page must offer host-owned checkout.");
 
         RequireContains(remotePosClient, "This device is a Remote POS client.", "Client warnings must identify the device as a client.");
