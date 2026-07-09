@@ -259,6 +259,8 @@ public static class LocalApiApplicationFactory
         app.MapRemoteReadOnlyEndpoints();
         app.MapLocalLanControlEndpoints();
         app.MapRemotePosEndpoints();
+        // RMO-BIR-M3: host-local read-only official readiness (no mutation / no allocation).
+        app.MapLocalOfficialReadinessEndpoints(composition.ConnectionFactory);
 
         if (webDistPath is not null)
         {
