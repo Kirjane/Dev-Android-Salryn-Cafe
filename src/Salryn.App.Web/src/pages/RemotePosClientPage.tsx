@@ -66,6 +66,7 @@ export function RemotePosClientPage() {
   const [pairingCode, setPairingCode] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberOperatorSession, setRememberOperatorSession] = useState(true);
   const [openingCash, setOpeningCash] = useState("0.00");
   const [productId, setProductId] = useState("");
   const [quantity, setQuantity] = useState("1");
@@ -99,7 +100,7 @@ export function RemotePosClientPage() {
   }
 
   function handleLogin() {
-    void client.login(username.trim(), password);
+    void client.login(username.trim(), password, rememberOperatorSession);
   }
 
   function handleAddLine() {
@@ -163,6 +164,8 @@ export function RemotePosClientPage() {
               Has operator token: <span className="font-mono text-slate-700">{client.hasOperatorSessionToken ? "yes" : "no"}</span>
               {" · "}
               Operator session valid: <span className="font-mono text-slate-700">{client.operatorSessionValid ?? "unknown"}</span>
+              {" · "}
+              Operator session storage: <span className="font-mono text-slate-700">{client.operatorSessionStorage}</span>
               {client.terminalIdSuffix ? (
                 <>
                   {" · "}
@@ -337,6 +340,20 @@ export function RemotePosClientPage() {
                 <PasswordInput id="rpos-pass" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="off" />
               </FormField>
             </div>
+            <label className="flex items-start gap-3 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={rememberOperatorSession}
+                onChange={(event) => setRememberOperatorSession(event.target.checked)}
+              />
+              <span>
+                Keep this cashier signed in on this paired terminal until the session expires
+              </span>
+            </label>
+            <p className="text-xs text-slate-500">
+              Passwords are never stored on this device. Only the host-issued session token is saved when this option is enabled.
+            </p>
             <div className="flex flex-wrap gap-2">
               <Button onClick={handleLogin} disabled={client.busy === "login" || !username.trim()}>
                 {client.busy === "login" ? "Signing in..." : "Sign in to host"}

@@ -34,6 +34,7 @@ import { currentBrowserOrigin, isRemoteClientBrowserLocation } from "../utils/la
 import {
   clearLanClientPairing,
   clearRemotePosOperatorSessionToken,
+  describeRemotePosOperatorSessionStorage,
   hasPairedTerminalMaterial,
   readLanClientPairing,
   readRemotePosOperatorSessionToken,
@@ -41,6 +42,7 @@ import {
   writeRemotePosOperatorSessionToken,
   type LanClientLastKnownState,
   type LanClientPairingRecord,
+  type RemotePosOperatorSessionPersistence,
 } from "../utils/lanClientStorage";
 
 function newClientRequestId(): string {
@@ -178,6 +180,7 @@ export function useRemotePosClient() {
   const [operatorSessionRestored, setOperatorSessionRestored] = useState(false);
   const [hasOperatorSessionToken, setHasOperatorSessionToken] = useState(false);
   const [operatorSessionValid, setOperatorSessionValid] = useState<"yes" | "no" | "unknown" | null>(null);
+  const [operatorSessionStorage, setOperatorSessionStorage] = useState<RemotePosOperatorSessionPersistence | "none">("none");
   const restoreAttemptedRef = useRef(false);
 
   const hostConnection = useMemo<RemotePosHostConnection>(() => ({ hostBaseUrl }), [hostBaseUrl]);
@@ -204,11 +207,13 @@ export function useRemotePosClient() {
     setCapabilities(null);
     setCart(null);
     setLastCheckout(null);
-    clearRemotePosOperatorSessionToken();
+    const normalizedHost = normalizeHostBaseUrl(hostConnection.hostBaseUrl);
+    clearRemotePosOperatorSessionToken(normalizedHost || undefined);
     setOperatorSessionRestored(false);
     setHasOperatorSessionToken(false);
     setOperatorSessionValid(null);
-  }, []);
+    setOperatorSessionStorage("none");
+  }, [hostConnection.hostBaseUrl]);
 
   const persistLanRecord = useCallback(
     (partial: Partial<LanClientPairingRecord> & { lastKnownState: LanClientLastKnownState }) => {
@@ -295,6 +300,8 @@ export function useRemotePosClient() {
 
   const restoreOperatorSession = useCallback(
     async (trustedTerminalId: string, trustedHandshakeSessionId: string, normalizedHost: string) => {
+      const storageScope = describeRemotePosOperatorSessionStorage(normalizedHost);
+      setOperatorSessionStorage(storageScope);
       const storedToken = readRemotePosOperatorSessionToken(normalizedHost);
       setHasOperatorSessionToken(Boolean(storedToken));
 
@@ -318,9 +325,10 @@ export function useRemotePosClient() {
         ]);
 
         if (!sessionResult.sessionId?.trim()) {
-          clearRemotePosOperatorSessionToken();
+          clearRemotePosOperatorSessionToken(normalizedHost);
           setHasOperatorSessionToken(false);
           setOperatorSessionValid("no");
+          setOperatorSessionStorage("none");
           return false;
         }
 
@@ -335,9 +343,10 @@ export function useRemotePosClient() {
         );
         return true;
       } catch {
-        clearRemotePosOperatorSessionToken();
+        clearRemotePosOperatorSessionToken(normalizedHost);
         setHasOperatorSessionToken(false);
         setOperatorSessionValid("no");
+        setOperatorSessionStorage("none");
         return false;
       }
     },
@@ -776,7 +785,7 @@ export function useRemotePosClient() {
   );
 
   const login = useCallback(
-    async (username: string, password: string) => {
+    async (username: string, password: string, rememberSession = true) => {
       const result = await run("login", async () => {
         const issued = await remotePosLogin(connection, { username, password });
         if (!issued.sessionToken) {
@@ -789,8 +798,9 @@ export function useRemotePosClient() {
 
       if (result) {
         const issuedSessionToken = result.issued.sessionToken;
+        const normalizedHost = normalizeHostBaseUrl(hostConnection.hostBaseUrl);
         if (!issuedSessionToken) {
-          clearRemotePosOperatorSessionToken();
+          clearRemotePosOperatorSessionToken(normalizedHost || undefined);
           setErrorMessage("Remote POS login did not return a session token. Please try signing in again.");
           return;
         }
@@ -798,10 +808,15 @@ export function useRemotePosClient() {
         setSession(result.issued);
         setSessionToken(issuedSessionToken);
         setCapabilities(result.caps);
-        writeRemotePosOperatorSessionToken(normalizeHostBaseUrl(hostConnection.hostBaseUrl), issuedSessionToken);
+        const persistence: RemotePosOperatorSessionPersistence = rememberSession ? "local" : "session";
+        writeRemotePosOperatorSessionToken(normalizedHost, issuedSessionToken, {
+          persistence,
+          expiresAtUtc: result.issued.expiresAtUtc,
+        });
         setOperatorSessionRestored(false);
         setHasOperatorSessionToken(true);
         setOperatorSessionValid("yes");
+        setOperatorSessionStorage(persistence);
         setFlowState("S6_REMOTE_POS_READY");
         setStatusMessage(`Signed in as ${result.issued.displayName ?? result.issued.username ?? "operator"}.`);
       }
@@ -923,6 +938,7 @@ export function useRemotePosClient() {
     hasOperatorSessionToken,
     operatorSessionValid,
     operatorSessionRestored,
+    operatorSessionStorage,
     lastPairingNotice,
     resetPairing,
     clearPairing,

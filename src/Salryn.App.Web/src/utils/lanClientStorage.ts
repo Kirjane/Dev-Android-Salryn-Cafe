@@ -25,6 +25,97 @@ export type LanClientPairingRecord = {
 
 const REMOTE_POS_SESSION_TOKEN_KEY = "salryn.remotePos.operatorSession.v1";
 
+export type RemotePosOperatorSessionPersistence = "local" | "session";
+
+export type RemotePosOperatorSessionRecord = {
+  version: 1;
+  hostBaseUrl: string;
+  sessionToken: string;
+  storedAt: string;
+  expiresAtUtc?: string;
+  persistence: RemotePosOperatorSessionPersistence;
+};
+
+type LegacyRemotePosOperatorSessionRecord = {
+  hostBaseUrl?: string;
+  sessionToken?: string;
+};
+
+function parseRemotePosOperatorSessionRecord(raw: string): RemotePosOperatorSessionRecord | null {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+
+    const record = parsed as Partial<RemotePosOperatorSessionRecord & LegacyRemotePosOperatorSessionRecord>;
+    if (!record.sessionToken?.trim() || typeof record.hostBaseUrl !== "string") {
+      return null;
+    }
+
+    if (record.version === 1 && (record.persistence === "local" || record.persistence === "session")) {
+      return {
+        version: 1,
+        hostBaseUrl: normalizeLanHostBaseUrl(record.hostBaseUrl),
+        sessionToken: record.sessionToken,
+        storedAt: typeof record.storedAt === "string" ? record.storedAt : new Date().toISOString(),
+        expiresAtUtc: typeof record.expiresAtUtc === "string" ? record.expiresAtUtc : undefined,
+        persistence: record.persistence,
+      };
+    }
+
+    return {
+      version: 1,
+      hostBaseUrl: normalizeLanHostBaseUrl(record.hostBaseUrl),
+      sessionToken: record.sessionToken,
+      storedAt: new Date().toISOString(),
+      persistence: "session",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function readRemotePosOperatorSessionRecordFromStorage(
+  storage: Storage,
+  hostBaseUrl: string,
+): RemotePosOperatorSessionRecord | null {
+  const raw = storage.getItem(REMOTE_POS_SESSION_TOKEN_KEY);
+  if (!raw) {
+    return null;
+  }
+
+  const record = parseRemotePosOperatorSessionRecord(raw);
+  if (!record) {
+    return null;
+  }
+
+  const normalizedHost = normalizeLanHostBaseUrl(hostBaseUrl);
+  if (record.hostBaseUrl !== normalizedHost) {
+    return null;
+  }
+
+  return record;
+}
+
+function removeRemotePosOperatorSessionRecordFromStorage(storage: Storage, hostBaseUrl?: string): void {
+  if (!hostBaseUrl?.trim()) {
+    storage.removeItem(REMOTE_POS_SESSION_TOKEN_KEY);
+    return;
+  }
+
+  const raw = storage.getItem(REMOTE_POS_SESSION_TOKEN_KEY);
+  if (!raw) {
+    return;
+  }
+
+  const record = parseRemotePosOperatorSessionRecord(raw);
+  const normalizedHost = normalizeLanHostBaseUrl(hostBaseUrl);
+  if (!record || record.hostBaseUrl === normalizedHost) {
+    storage.removeItem(REMOTE_POS_SESSION_TOKEN_KEY);
+  }
+}
+
 export function normalizeLanHostBaseUrl(hostBaseUrl: string): string {
   return hostBaseUrl.trim().replace(/\/+$/, "");
 }
@@ -114,43 +205,70 @@ export function readRemotePosOperatorSessionToken(hostBaseUrl: string): string |
     return null;
   }
 
-  try {
-    const raw = window.sessionStorage.getItem(REMOTE_POS_SESSION_TOKEN_KEY);
-    if (!raw) {
-      return null;
-    }
-
-    const parsed = JSON.parse(raw) as { hostBaseUrl?: string; sessionToken?: string };
-    const normalizedHost = normalizeLanHostBaseUrl(hostBaseUrl);
-    const storedHost = normalizeLanHostBaseUrl(parsed.hostBaseUrl ?? "");
-    if (!parsed.sessionToken?.trim() || storedHost !== normalizedHost) {
-      return null;
-    }
-
-    return parsed.sessionToken;
-  } catch {
-    return null;
+  const localRecord = readRemotePosOperatorSessionRecordFromStorage(window.localStorage, hostBaseUrl);
+  if (localRecord) {
+    return localRecord.sessionToken;
   }
+
+  const sessionRecord = readRemotePosOperatorSessionRecordFromStorage(window.sessionStorage, hostBaseUrl);
+  return sessionRecord?.sessionToken ?? null;
 }
 
-export function writeRemotePosOperatorSessionToken(hostBaseUrl: string, sessionToken: string): void {
+export function hasRemotePosOperatorSessionToken(hostBaseUrl: string): boolean {
+  return readRemotePosOperatorSessionToken(hostBaseUrl) !== null;
+}
+
+export function describeRemotePosOperatorSessionStorage(hostBaseUrl: string): RemotePosOperatorSessionPersistence | "none" {
+  if (typeof window === "undefined") {
+    return "none";
+  }
+
+  if (readRemotePosOperatorSessionRecordFromStorage(window.localStorage, hostBaseUrl)) {
+    return "local";
+  }
+
+  if (readRemotePosOperatorSessionRecordFromStorage(window.sessionStorage, hostBaseUrl)) {
+    return "session";
+  }
+
+  return "none";
+}
+
+export function writeRemotePosOperatorSessionToken(
+  hostBaseUrl: string,
+  sessionToken: string,
+  options?: {
+    persistence?: RemotePosOperatorSessionPersistence;
+    expiresAtUtc?: string | null;
+  },
+): void {
   if (typeof window === "undefined") {
     return;
   }
 
-  window.sessionStorage.setItem(
-    REMOTE_POS_SESSION_TOKEN_KEY,
-    JSON.stringify({
-      hostBaseUrl: normalizeLanHostBaseUrl(hostBaseUrl),
-      sessionToken,
-    }),
-  );
+  const persistence = options?.persistence ?? "local";
+  const normalizedHost = normalizeLanHostBaseUrl(hostBaseUrl);
+  const record: RemotePosOperatorSessionRecord = {
+    version: 1,
+    hostBaseUrl: normalizedHost,
+    sessionToken,
+    storedAt: new Date().toISOString(),
+    persistence,
+    ...(options?.expiresAtUtc?.trim() ? { expiresAtUtc: options.expiresAtUtc.trim() } : {}),
+  };
+
+  removeRemotePosOperatorSessionRecordFromStorage(window.localStorage, normalizedHost);
+  removeRemotePosOperatorSessionRecordFromStorage(window.sessionStorage, normalizedHost);
+
+  const targetStorage = persistence === "local" ? window.localStorage : window.sessionStorage;
+  targetStorage.setItem(REMOTE_POS_SESSION_TOKEN_KEY, JSON.stringify(record));
 }
 
-export function clearRemotePosOperatorSessionToken(): void {
+export function clearRemotePosOperatorSessionToken(hostBaseUrl?: string): void {
   if (typeof window === "undefined") {
     return;
   }
 
-  window.sessionStorage.removeItem(REMOTE_POS_SESSION_TOKEN_KEY);
+  removeRemotePosOperatorSessionRecordFromStorage(window.localStorage, hostBaseUrl);
+  removeRemotePosOperatorSessionRecordFromStorage(window.sessionStorage, hostBaseUrl);
 }

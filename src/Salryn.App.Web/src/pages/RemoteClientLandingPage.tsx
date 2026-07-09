@@ -1,4 +1,7 @@
+import { useMemo } from "react";
 import { Button, Card, CardBody, CardHeader, CardTitle, StatusPill } from "../components/ui";
+import { currentBrowserOrigin } from "../utils/lanEntry";
+import { hasPairedTerminalMaterial, readLanClientPairing } from "../utils/lanClientStorage";
 
 type RemoteClientLandingPageProps = {
   onOpenRemotePos: () => void;
@@ -9,6 +12,16 @@ export function RemoteClientLandingPage({
   onOpenRemotePos,
   onOpenReadOnly,
 }: RemoteClientLandingPageProps) {
+  const storedRemotePosPairing = useMemo(() => {
+    const hostOrigin = currentBrowserOrigin();
+    if (!hostOrigin) {
+      return null;
+    }
+
+    const stored = readLanClientPairing("remote-pos", hostOrigin);
+    return hasPairedTerminalMaterial(stored) ? stored : null;
+  }, []);
+
   return (
     <div className="min-h-screen bg-slate-100">
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center px-4 py-8">
@@ -45,6 +58,25 @@ export function RemoteClientLandingPage({
               </p>
             </div>
 
+            {storedRemotePosPairing ? (
+              <button
+                type="button"
+                onClick={onOpenRemotePos}
+                className="w-full rounded-lg border border-emerald-200 bg-emerald-50 px-5 py-4 text-left shadow-sm hover:border-emerald-300 hover:bg-emerald-100"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-base font-semibold text-slate-950">Resume Remote POS terminal</span>
+                  <StatusPill tone="success">Paired device</StatusPill>
+                </div>
+                <p className="mt-2 text-sm text-slate-600">
+                  This device already has a trusted terminal pairing for{" "}
+                  <span className="font-mono text-slate-700">{storedRemotePosPairing.hostBaseUrl}</span>
+                  {storedRemotePosPairing.displayName ? ` (${storedRemotePosPairing.displayName})` : ""}. Open Remote POS to
+                  restore the terminal and sign in again if needed.
+                </p>
+              </button>
+            ) : null}
+
             <div className="grid gap-4 md:grid-cols-2">
               <button
                 type="button"
@@ -53,7 +85,7 @@ export function RemoteClientLandingPage({
               >
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-base font-semibold text-slate-950">Remote POS Client</span>
-                  <StatusPill tone="primary">Pair first</StatusPill>
+                  <StatusPill tone="primary">{storedRemotePosPairing ? "Open paired terminal" : "Pair first"}</StatusPill>
                 </div>
                 <p className="mt-2 text-sm text-slate-600">
                   Request approval with the host join code and device name, enter the one-time pairing code, then sign in.

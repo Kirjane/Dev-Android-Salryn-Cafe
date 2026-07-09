@@ -12,6 +12,7 @@ public static class V2LanClientPairingPersistenceChecks
         string storage = ReadRequiredFile(Path.Combine(webRoot, "utils", "lanClientStorage.ts"));
         string hook = ReadRequiredFile(Path.Combine(webRoot, "hooks", "useRemotePosClient.ts"));
         string page = ReadRequiredFile(Path.Combine(webRoot, "pages", "RemotePosClientPage.tsx"));
+        string landingPage = ReadRequiredFile(Path.Combine(webRoot, "pages", "RemoteClientLandingPage.tsx"));
         string remotePosClient = ReadRequiredFile(Path.Combine(webRoot, "api", "remotePosClient.ts"));
         string app = ReadRequiredFile(Path.Combine(webRoot, "App.tsx"));
         string endpoints = ReadRequiredFile(Path.Combine(apiRoot, "RemotePos", "RemotePosApiEndpoints.cs"));
@@ -33,10 +34,15 @@ public static class V2LanClientPairingPersistenceChecks
         AssertContains(storage, "S2_REQUEST_PENDING", "LAN client storage must track pending request state.");
         AssertContains(storage, "S3_HOST_APPROVED_NEEDS_ACTIVATION", "LAN client storage must track approved-awaiting-activation state.");
         AssertContains(storage, "S4_TERMINAL_TRUSTED", "LAN client storage must track trusted terminal state.");
-        AssertContains(storage, "sessionStorage", "Operator session token must use session-scoped storage.");
+        AssertContains(storage, "localStorage", "Operator session token must support durable local browser storage.");
+        AssertContains(storage, "sessionStorage", "Operator session token must support session-scoped storage.");
         AssertContains(storage, "readRemotePosOperatorSessionToken", "LAN client storage must read operator session token.");
         AssertContains(storage, "writeRemotePosOperatorSessionToken", "LAN client storage must write operator session token.");
         AssertContains(storage, "clearRemotePosOperatorSessionToken", "LAN client storage must clear operator session token.");
+        AssertContains(storage, "hasRemotePosOperatorSessionToken", "LAN client storage must expose operator session token presence.");
+        AssertContains(storage, "describeRemotePosOperatorSessionStorage", "LAN client storage must describe operator session storage scope.");
+        AssertContains(storage, "persistence", "Operator session record must track persistence scope.");
+        AssertContains(storage, "storedAt", "Operator session record must track when token was stored.");
         AssertNotContains(storage, "password", "Storage shape must not include operator password.");
         AssertPairingRecordExcludesSessionToken(storage);
 
@@ -79,6 +85,9 @@ public static class V2LanClientPairingPersistenceChecks
         AssertContains(hook, "hasOperatorSessionToken", "Remote POS hook must expose operator session token diagnostic.");
         AssertContains(hook, "operatorSessionValid", "Remote POS hook must expose operator session validity diagnostic.");
         AssertContains(hook, "operatorSessionRestored", "Remote POS hook must expose operator session restored flag.");
+        AssertContains(hook, "operatorSessionStorage", "Remote POS hook must expose operator session storage scope.");
+        AssertContains(hook, "describeRemotePosOperatorSessionStorage", "Remote POS hook must describe operator session storage on restore.");
+        AssertContains(hook, "rememberSession", "Remote POS hook must honor remember-session preference on login.");
         AssertContains(hook, "S6_REMOTE_POS_READY", "Valid operator session restore must route to S6_REMOTE_POS_READY.");
         AssertNotContains(hook, "sessionResult?.sessionToken", "Operator session restore must not require session token in GET /session response.");
 
@@ -99,7 +108,14 @@ public static class V2LanClientPairingPersistenceChecks
         AssertContains(page, "hasOperatorSessionToken", "Remote POS page must show operator session token diagnostic.");
         AssertContains(page, "operatorSessionValid", "Remote POS page must show operator session validity diagnostic.");
         AssertContains(page, "Operator session restored", "Remote POS page must show operator session restored banner.");
+        AssertContains(page, "operatorSessionStorage", "Remote POS page must show operator session storage diagnostic.");
+        AssertContains(page, "Keep this cashier signed in on this paired terminal until the session expires", "Remote POS page must expose remember-session checkbox.");
+        AssertContains(page, "Passwords are never stored on this device", "Remote POS page must clarify password is not stored.");
         AssertNotContains(page, "\"/api/checkout\"", "Remote POS page must not call host /api/checkout.");
+
+        AssertContains(landingPage, "readLanClientPairing", "Remote client landing must read stored pairing.");
+        AssertContains(landingPage, "hasPairedTerminalMaterial", "Remote client landing must gate resume on paired terminal material.");
+        AssertContains(landingPage, "Resume Remote POS terminal", "Remote client landing must expose resume path for paired terminals.");
 
         AssertContains(remotePosClient, "/api/remote-pos/terminal/trust", "Remote POS client must call terminal trust probe.");
         AssertContains(remotePosClient, "/api/remote-pos/terminal/refresh-handshake", "Remote POS client must call handshake refresh endpoint.");
