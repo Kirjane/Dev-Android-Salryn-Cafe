@@ -45,6 +45,7 @@ export const navItems: NavItemConfig[] = [
   },
   { id: "audit", label: "Audit", enabled: true },
   { id: "host-lan-control", label: "Host LAN Control", enabled: true },
+  { id: "official-setup", label: "Official Setup", enabled: true },
 ];
 
 export function getNavItems(session: SessionState): NavItemConfig[] {

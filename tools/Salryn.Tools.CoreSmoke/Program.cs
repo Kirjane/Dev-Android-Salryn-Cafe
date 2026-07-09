@@ -96,6 +96,7 @@ public static class Program
         V2TerminalLifecycleUxChecks.Run();
         V2HostLanControlUxChecks.Run();
         RmoBirM3OfficialReadinessChecks.Run();
+        RmoBirM4OfficialSetupChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
         M5VerifiedCandidateStackLedgerChecks.Run();
         M6CandidateStackPromotionDryRunChecks.Run();
@@ -267,6 +268,9 @@ public static class Program
                 return;
             case "rmo-bir-official-readiness":
                 RmoBirM3OfficialReadinessChecks.Run();
+                return;
+            case "rmo-bir-official-setup":
+                RmoBirM4OfficialSetupChecks.Run();
                 return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);

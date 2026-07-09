@@ -34,8 +34,10 @@ public static class LocalOfficialReadinessEndpoints
 
             IOfficialCheckoutReadinessService configReadiness =
                 new SqliteOfficialCheckoutReadinessService(connectionFactory);
+            IHostOfficialSetupService setupService =
+                new SqliteHostOfficialSetupService(connectionFactory);
             IHostOfficialReadinessService readinessService =
-                new HostOfficialReadinessService(configReadiness);
+                new HostOfficialReadinessService(configReadiness, setupService);
 
             Result<HostOfficialReadinessSnapshot> result =
                 await readinessService.GetReadinessAsync(cancellationToken).ConfigureAwait(false);

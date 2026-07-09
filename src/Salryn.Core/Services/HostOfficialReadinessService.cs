@@ -4,7 +4,7 @@ using Salryn.Core.Official;
 namespace Salryn.Core.Services;
 
 /// <summary>
-/// Host-local official readiness evaluator (RMO-BIR-M3).
+/// Host-local official readiness evaluator (RMO-BIR-M3/M4).
 /// Does not advance document series, post sales, or claim accreditation.
 /// </summary>
 public interface IHostOfficialReadinessService
@@ -16,10 +16,14 @@ public interface IHostOfficialReadinessService
 public sealed class HostOfficialReadinessService : IHostOfficialReadinessService
 {
     private readonly IOfficialCheckoutReadinessService? _configReadiness;
+    private readonly IHostOfficialSetupService? _setupService;
 
-    public HostOfficialReadinessService(IOfficialCheckoutReadinessService? configReadiness = null)
+    public HostOfficialReadinessService(
+        IOfficialCheckoutReadinessService? configReadiness = null,
+        IHostOfficialSetupService? setupService = null)
     {
         _configReadiness = configReadiness;
+        _setupService = setupService;
     }
 
     public async Task<Result<HostOfficialReadinessSnapshot>> GetReadinessAsync(
@@ -30,7 +34,6 @@ public sealed class HostOfficialReadinessService : IHostOfficialReadinessService
         List<HostOfficialReadinessItem> blockers = new();
         List<HostOfficialReadinessItem> warnings = new();
 
-        // Product spine always incomplete in M3 — never allow live official posting.
         AddProductSpineBlockers(blockers);
         AddProductSpineWarnings(warnings);
 
@@ -39,16 +42,83 @@ public sealed class HostOfficialReadinessService : IHostOfficialReadinessService
         OfficialDocumentSeriesContract? seriesHint = null;
         string complianceMode = "Unknown";
         bool officialOutputEnabledInConfig = false;
-        bool configReadyForDryRun = false;
+        bool setupConfiguredForDryRun = false;
+        bool setupPresent = false;
 
-        if (_configReadiness is null)
+        if (_setupService is not null)
         {
-            blockers.Add(new HostOfficialReadinessItem(
-                "HostOfficialReadiness.ConfigServiceUnavailable",
-                "Official configuration readiness service is not wired."));
+            Result<OfficialSetupSnapshotContract> setupResult =
+                await _setupService.GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
+            if (setupResult.IsSuccess)
+            {
+                OfficialSetupSnapshotContract setup = setupResult.Value;
+                setupPresent = setup.Business is not null || setup.Machine is not null;
+                EvaluateSetupCompleteness(setup, blockers, out setupConfiguredForDryRun);
+
+                if (setup.Business is not null)
+                {
+                    business = new OfficialBusinessProfileSnapshot(
+                        setup.Business.RegisteredTaxpayerName,
+                        setup.Business.BusinessName,
+                        setup.Business.RegisteredAddress,
+                        setup.Business.BranchAddress,
+                        setup.Business.TaxpayerIdentificationNumber,
+                        setup.Business.BranchCode,
+                        setup.Business.VatRegistrationMode);
+                }
+
+                if (setup.Machine is not null)
+                {
+                    complianceMode = setup.Machine.ComplianceMode;
+                    officialOutputEnabledInConfig = setup.Machine.OfficialOutputEnabledInConfig;
+                    machine = new OfficialMachineProfileSnapshot(
+                        setup.Machine.ProfileId,
+                        setup.Machine.MachineIdentificationNumber,
+                        setup.Machine.MachineSerialNumber,
+                        setup.Machine.PosTerminalNumber,
+                        setup.Machine.AccreditationNumber,
+                        setup.Machine.PermitToUseNumber,
+                        "Salryn",
+                        setup.Machine.SoftwareVersion ?? "UNSET",
+                        setup.Machine.SoftwareBuild,
+                        setup.Machine.ComplianceMode,
+                        setup.Machine.OfficialOutputEnabledInConfig,
+                        setup.Machine.IsActive);
+                }
+
+                if (setup.Series is not null)
+                {
+                    seriesHint = new OfficialDocumentSeriesContract(
+                        ContractVersion: OfficialContractVersions.M3,
+                        SequenceId: setup.Series.SeriesId,
+                        BirMachineProfileId: setup.Series.BirMachineProfileId,
+                        DocumentKind: string.Equals(
+                            setup.Series.DocumentKind,
+                            "OFFICIAL_RECEIPT",
+                            StringComparison.OrdinalIgnoreCase)
+                            ? OfficialDocumentKind.OfficialReceipt
+                            : OfficialDocumentKind.OfficialInvoice,
+                        SequenceScopeCode: "LOCAL_SINGLE_STORE",
+                        Prefix: setup.Series.Prefix,
+                        Year: setup.Series.Year,
+                        StartNumber: setup.Series.StartNumber,
+                        CurrentNumber: setup.Series.CurrentNumber,
+                        EndNumber: setup.Series.EndNumber,
+                        PaddingDigits: setup.Series.PaddingDigits,
+                        IsActive: setup.Series.IsActive,
+                        IsExhausted: setup.Series.IsExhausted);
+                }
+            }
+            else
+            {
+                blockers.Add(new HostOfficialReadinessItem(
+                    "HostOfficialReadiness.SetupLoadFailed",
+                    setupResult.ErrorDetail.Message));
+            }
         }
-        else
+        else if (_configReadiness is not null)
         {
+            // M3 fallback path when setup service not wired.
             Result<OfficialCheckoutReadinessResult> configResult = await _configReadiness
                 .CheckActiveScopeAsync(
                     new OfficialCheckoutActiveScopeReadinessRequest(
@@ -59,104 +129,26 @@ public sealed class HostOfficialReadinessService : IHostOfficialReadinessService
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            if (configResult.IsFailure)
+            if (configResult.IsSuccess)
             {
-                blockers.Add(new HostOfficialReadinessItem(
-                    "HostOfficialReadiness.ConfigCheckFailed",
-                    configResult.ErrorDetail.Message));
-            }
-            else
-            {
-                OfficialCheckoutReadinessResult config = configResult.Value;
-                foreach (OfficialCheckoutReadinessBlock block in config.Blocks)
+                foreach (OfficialCheckoutReadinessBlock block in configResult.Value.Blocks)
                 {
                     blockers.Add(new HostOfficialReadinessItem(block.Code, block.Message));
                 }
 
-                bool hasNotAccredited = config.Blocks.Any(b =>
-                    b.Code.Contains("NotAccredited", StringComparison.OrdinalIgnoreCase));
-                bool hasOutputDisabled = config.Blocks.Any(b =>
-                    b.Code.Contains("OfficialOutputDisabled", StringComparison.OrdinalIgnoreCase));
-                bool hasProfileMissing = config.Blocks.Any(b =>
-                    b.Code.Contains("MachineProfileMissing", StringComparison.OrdinalIgnoreCase) ||
-                    b.Code.Contains("ActiveMachineProfileMissing", StringComparison.OrdinalIgnoreCase));
-
-                if (hasNotAccredited)
-                {
-                    complianceMode = "NOT_ACCREDITED";
-                }
-                else if (config.MachineProfile is not null && !hasProfileMissing)
-                {
-                    // Config service only returns ACCREDITED path when blocks empty of not-accredited.
-                    complianceMode = hasOutputDisabled ? "ACCREDITED" : "ACCREDITED";
-                }
-
-                officialOutputEnabledInConfig = config.MachineProfile is not null &&
-                    !hasOutputDisabled &&
-                    !hasProfileMissing &&
-                    !hasNotAccredited;
-
-                if (config.MachineProfile is not null)
-                {
-                    OfficialDocumentSnapshotDraftMachineProfileInput mp = config.MachineProfile;
-                    business = new OfficialBusinessProfileSnapshot(
-                        RegisteredTaxpayerName: mp.RegisteredTaxpayerName,
-                        BusinessName: mp.BusinessName,
-                        RegisteredAddress: mp.RegisteredBusinessAddress,
-                        BranchAddress: null,
-                        TaxpayerIdentificationNumber: mp.TaxpayerIdentificationNumber,
-                        BranchCode: mp.BranchCode,
-                        VatRegistrationPhrase: null);
-                    machine = new OfficialMachineProfileSnapshot(
-                        BirMachineProfileId: config.BirMachineProfileId == Guid.Empty
-                            ? null
-                            : config.BirMachineProfileId,
-                        MachineIdentificationNumber: mp.MachineIdentificationNumber,
-                        MachineSerialNumber: mp.MachineSerialNumber ?? string.Empty,
-                        PosTerminalNumber: null,
-                        AccreditationNumber: mp.AccreditationNumber,
-                        PermitToUseNumber: mp.PermitToUseNumber,
-                        SoftwareName: "Salryn",
-                        SoftwareVersion: "UNSET",
-                        SoftwareBuild: null,
-                        ComplianceMode: complianceMode,
-                        OfficialOutputEnabledInConfig: officialOutputEnabledInConfig,
-                        IsActive: !hasProfileMissing);
-                }
-
-                if (config.ActiveSequenceId is Guid sequenceId)
-                {
-                    seriesHint = new OfficialDocumentSeriesContract(
-                        ContractVersion: OfficialContractVersions.M3,
-                        SequenceId: sequenceId,
-                        BirMachineProfileId: config.BirMachineProfileId == Guid.Empty
-                            ? null
-                            : config.BirMachineProfileId,
-                        DocumentKind: OfficialDocumentKind.OfficialInvoice,
-                        SequenceScopeCode: config.SequenceScopeCode,
-                        Prefix: "(active sequence)",
-                        Year: config.Year,
-                        StartNumber: 0,
-                        CurrentNumber: 0,
-                        EndNumber: null,
-                        PaddingDigits: 6,
-                        IsActive: true,
-                        IsExhausted: false);
-                }
-
-                // Config dry-run: profile+sequence ok per OfficialCheckoutReadinessService (IsReady).
-                // Product spine blockers remain; live posting still forbidden.
-                configReadyForDryRun = config.IsReady;
-                if (config.IsReady)
-                {
-                    complianceMode = "ACCREDITED";
-                    officialOutputEnabledInConfig = true;
-                }
+                setupConfiguredForDryRun = configResult.Value.IsReady;
             }
+        }
+        else
+        {
+            blockers.Add(new HostOfficialReadinessItem(
+                "HostOfficialReadiness.ConfigServiceUnavailable",
+                "Official setup/readiness services are not fully wired."));
         }
 
         HostOfficialReadinessStatus status = ResolveStatus(
-            configReadyForDryRun,
+            setupConfiguredForDryRun,
+            setupPresent,
             officialOutputEnabledInConfig,
             complianceMode);
 
@@ -164,8 +156,11 @@ public sealed class HostOfficialReadinessService : IHostOfficialReadinessService
         {
             HostOfficialReadinessStatus.Disabled =>
                 "Official output is disabled or not configured. View readiness only. No official posting.",
-            HostOfficialReadinessStatus.ReadyForInternalDryRun =>
-                "Configuration appears complete for internal engineering dry-run only. Live official posting is not implemented and is not allowed.",
+            HostOfficialReadinessStatus.ConfiguredForInternalDryRun or
+                HostOfficialReadinessStatus.ReadyForInternalDryRun =>
+                "Setup appears complete for internal engineering dry-run only. Live official posting is not implemented and is not allowed.",
+            HostOfficialReadinessStatus.SetupIncomplete =>
+                "Official setup is incomplete. See blockers. No official posting.",
             HostOfficialReadinessStatus.NotReady =>
                 "Official output is not ready. See blockers. No official posting.",
             _ =>
@@ -180,7 +175,7 @@ public sealed class HostOfficialReadinessService : IHostOfficialReadinessService
             ComplianceMode: complianceMode,
             Blockers: blockers,
             Warnings: warnings,
-            AllowedActions: new[] { "ViewReadiness" },
+            AllowedActions: new[] { "ViewReadiness", "EditOfficialSetup" },
             BusinessProfile: business,
             MachineProfile: machine,
             ActiveSeriesHint: seriesHint,
@@ -188,6 +183,64 @@ public sealed class HostOfficialReadinessService : IHostOfficialReadinessService
 
         return Result<HostOfficialReadinessSnapshot>.Success(snapshot);
     }
+
+    private static void EvaluateSetupCompleteness(
+        OfficialSetupSnapshotContract setup,
+        List<HostOfficialReadinessItem> blockers,
+        out bool configuredForDryRun)
+    {
+        configuredForDryRun = false;
+        bool businessOk = setup.Business is not null
+            && !IsUnset(setup.Business.RegisteredTaxpayerName)
+            && !IsUnset(setup.Business.RegisteredAddress)
+            && !IsUnset(setup.Business.TaxpayerIdentificationNumber)
+            && !IsUnset(setup.Business.BranchCode);
+
+        bool machineOk = setup.Machine is not null
+            && !IsUnset(setup.Machine.MachineSerialNumber);
+
+        bool seriesOk = setup.Series is not null
+            && !string.IsNullOrWhiteSpace(setup.Series.Prefix)
+            && setup.Series.StartNumber > 0
+            && setup.Series.PaddingDigits >= 6;
+
+        if (!businessOk)
+        {
+            blockers.Add(new HostOfficialReadinessItem(
+                "HostOfficialReadiness.BusinessSetupIncomplete",
+                "Business/taxpayer setup is incomplete (name, address, TIN, branch required)."));
+        }
+
+        if (!machineOk)
+        {
+            blockers.Add(new HostOfficialReadinessItem(
+                "HostOfficialReadiness.MachineSetupIncomplete",
+                "Machine/POS setup is incomplete (serial required)."));
+        }
+
+        if (!seriesOk)
+        {
+            blockers.Add(new HostOfficialReadinessItem(
+                "HostOfficialReadiness.SeriesSetupIncomplete",
+                "Document series setup is incomplete (prefix, start, padding >= 6)."));
+        }
+
+        if (setup.Receipt is null)
+        {
+            blockers.Add(new HostOfficialReadinessItem(
+                "HostOfficialReadiness.ReceiptProfileMissing",
+                "Receipt profile setup is missing (title/legal markers for dry-run)."));
+        }
+
+        configuredForDryRun = businessOk && machineOk && seriesOk && setup.Receipt is not null
+            && setup.Machine is not null
+            && !setup.Machine.OfficialOutputEnabledInConfig
+            && string.Equals(setup.Machine.ComplianceMode, "NOT_ACCREDITED", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsUnset(string? value) =>
+        string.IsNullOrWhiteSpace(value) ||
+        string.Equals(value.Trim(), "UNSET", StringComparison.OrdinalIgnoreCase);
 
     private static void AddProductSpineBlockers(List<HostOfficialReadinessItem> blockers)
     {
@@ -222,13 +275,19 @@ public sealed class HostOfficialReadinessService : IHostOfficialReadinessService
     }
 
     private static HostOfficialReadinessStatus ResolveStatus(
-        bool configReadyForDryRun,
+        bool setupConfiguredForDryRun,
+        bool setupPresent,
         bool officialOutputEnabledInConfig,
         string complianceMode)
     {
-        if (configReadyForDryRun)
+        if (setupConfiguredForDryRun)
         {
-            return HostOfficialReadinessStatus.ReadyForInternalDryRun;
+            return HostOfficialReadinessStatus.ConfiguredForInternalDryRun;
+        }
+
+        if (setupPresent)
+        {
+            return HostOfficialReadinessStatus.SetupIncomplete;
         }
 
         if (!officialOutputEnabledInConfig ||

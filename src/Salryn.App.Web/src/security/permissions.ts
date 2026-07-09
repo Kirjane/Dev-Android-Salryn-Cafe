@@ -41,7 +41,8 @@ export type HostPage =
   | "sales"
   | "users"
   | "audit"
-  | "host-lan-control";
+  | "host-lan-control"
+  | "official-setup";
 
 export type AppPage = HostPage;
 
@@ -54,6 +55,7 @@ export const implementedPages: readonly AppPage[] = [
   "users",
   "audit",
   "host-lan-control",
+  "official-setup",
 ] as const;
 
 const authenticatedOnlyPages = new Set<AppPage>(["dashboard"]);
@@ -70,6 +72,8 @@ const pagePermissions: Partial<Record<AppPage, readonly Permission[]>> = {
   sales: [Permissions.SalesViewHistory],
   users: [Permissions.UsersManage],
   audit: [Permissions.AuditView],
+  // Host-local setup only; Settings.Manage operators (Admin/Owner style).
+  "official-setup": [Permissions.SettingsManage],
 };
 
 export function hasPermission(session: SessionState | null | undefined, permission: Permission): boolean {

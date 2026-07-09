@@ -16,6 +16,7 @@ import { RemoteClientLandingPage } from "./pages/RemoteClientLandingPage";
 import { RemotePosClientPage } from "./pages/RemotePosClientPage";
 import { RemoteReadOnlyClientPage } from "./pages/RemoteReadOnlyClientPage";
 import { SalesHistoryPage } from "./pages/SalesHistoryPage";
+import { OfficialSetupPage } from "./pages/OfficialSetupPage";
 import { UsersPage } from "./pages/UsersPage";
 import { canAccessPage, getFirstAllowedPage } from "./security/permissions";
 import { isRemoteClientBrowserLocation } from "./utils/lanEntry";
@@ -70,6 +71,8 @@ function renderPage(page: AppPage, session: SessionState, onLogout: () => void, 
       return <UsersPage />;
     case "audit":
       return <AuditPage />;
+    case "official-setup":
+      return <OfficialSetupPage />;
     default: {
       const exhaustiveCheck: never = page;
       return exhaustiveCheck;

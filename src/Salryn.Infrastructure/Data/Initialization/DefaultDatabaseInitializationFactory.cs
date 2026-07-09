@@ -36,6 +36,7 @@ public static class DefaultDatabaseInitializationFactory
         // Version 10 adds LAN-M4 terminal registry and pairing preparation.
         // Version 11 adds LAN-M5 controlled remote transport gate configuration.
         // Version 12 adds LAN-M6 hash-only terminal credential and remote handshake state.
+        // Version 13 adds official receipt profile setup text (RMO-BIR-M4); no checkout/sales mutation.
         IDatabaseMigration[] migrations =
         {
             new InitialSchemaMigration(),
@@ -49,7 +50,8 @@ public static class DefaultDatabaseInitializationFactory
             new DeploymentIdentitySchemaMigration(),
             new TerminalRegistrySchemaMigration(),
             new LanRemoteTransportSchemaMigration(),
-            new TerminalCredentialHandshakeSchemaMigration()
+            new TerminalCredentialHandshakeSchemaMigration(),
+            new OfficialReceiptProfileSchemaMigration()
         };
 
         MigrationRunner migrationRunner = new(connectionFactory, migrations);

@@ -88,7 +88,8 @@ public static class DbA2DatabaseSafetyChecks
 
             string futureBackupPath = Path.Combine(dbPaths.BackupPath, "db-a2-check-future.db");
             File.Copy(backupPath, futureBackupPath, overwrite: true);
-            const int futureVersion = 13;
+            // Must exceed SalrynDatabaseMigrationCatalog.SupportedMigrationVersion (currently 13).
+            const int futureVersion = 14;
             using (SqliteConnection connection = OpenReadWrite(futureBackupPath))
             {
                 using SqliteCommand command = connection.CreateCommand();

@@ -14,7 +14,13 @@ public enum HostOfficialReadinessStatus
     /// Config looks complete enough for internal engineering dry-run of readiness/contracts.
     /// Does <b>not</b> mean live official posting is allowed.
     /// </summary>
-    ReadyForInternalDryRun = 3
+    ReadyForInternalDryRun = 3,
+
+    /// <summary>Required setup fields incomplete. Not live-ready.</summary>
+    SetupIncomplete = 4,
+
+    /// <summary>Required setup filled for internal dry-run only. Not live-ready / not compliant.</summary>
+    ConfiguredForInternalDryRun = 5
 }
 
 public sealed record HostOfficialReadinessItem(
