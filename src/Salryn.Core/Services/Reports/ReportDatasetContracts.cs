@@ -1,5 +1,13 @@
 namespace Salryn.Core.Services.Reports;
 
+public static class ProductionReportDatasetLimits
+{
+    public const int MaxRangeDays = 31;
+    public const int MaxRows = 5000;
+
+    public static TimeSpan MaxRange => TimeSpan.FromDays(MaxRangeDays);
+}
+
 public sealed record ProductionReportDatasetRequest(
     string ReportKind,
     DateTimeOffset RangeStart,
@@ -57,6 +65,7 @@ public sealed record ProductionReportDatasetEnvelope(
     IReadOnlyList<ProductionReportRow> Rows,
     IReadOnlyList<ProductionReportSourceHash> SourceHashes,
     ProductionReportSafetyFlags SafetyFlags,
+    string ContentSha256,
     string DatasetSha256,
     string Summary);
 
