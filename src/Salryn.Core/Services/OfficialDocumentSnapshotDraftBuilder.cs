@@ -26,7 +26,10 @@ public sealed record OfficialDocumentSnapshotDraftBuildRequest(
     string TaxModeCode,
     string? TaxModeNotes,
     IReadOnlyList<OfficialDocumentLineTaxClassification>? LineTaxClassifications = null,
-    OfficialDocumentTaxBucketDraftTaxpayerMode? TaxpayerMode = null);
+    OfficialDocumentTaxBucketDraftTaxpayerMode? TaxpayerMode = null,
+    // TRAD-M3-RC2: optional buyer/statutory evidence supplied at atomic post time (frozen into EJ snapshot).
+    OfficialDocumentSnapshotDraftBuyer? Buyer = null,
+    OfficialDocumentSnapshotDraftStatutory? Statutory = null);
 
 // Kirch strict dev guide:
 // J21-4B owns in-memory draft building only.
@@ -180,9 +183,52 @@ public sealed class OfficialDocumentSnapshotDraftBuilder
             payments,
             taxMode,
             deferredNotes,
-            taxBuckets);
+            taxBuckets,
+            Buyer: NormalizeBuyer(request.Buyer),
+            Statutory: NormalizeStatutory(request.Statutory));
 
         return Result<OfficialDocumentSnapshotDraft>.Success(draft);
+    }
+
+    private static OfficialDocumentSnapshotDraftBuyer? NormalizeBuyer(OfficialDocumentSnapshotDraftBuyer? buyer)
+    {
+        if (buyer is null)
+        {
+            return null;
+        }
+
+        string? name = NormalizeOptional(buyer.RegisteredName);
+        string? tin = NormalizeOptional(buyer.Tin);
+        string? address = NormalizeOptional(buyer.RegisteredAddress);
+        if (name is null && tin is null && address is null)
+        {
+            return null;
+        }
+
+        return new OfficialDocumentSnapshotDraftBuyer(name, tin, address);
+    }
+
+    private static OfficialDocumentSnapshotDraftStatutory? NormalizeStatutory(
+        OfficialDocumentSnapshotDraftStatutory? statutory)
+    {
+        if (statutory is null)
+        {
+            return null;
+        }
+
+        string? category = NormalizeOptional(statutory.DiscountCategory);
+        string? govId = NormalizeOptional(statutory.GovernmentIdNumber);
+        string? signature = NormalizeOptional(statutory.SignatureReference);
+        if (category is null && govId is null && signature is null && !statutory.WithholdingTaxCents.HasValue)
+        {
+            return null;
+        }
+
+        return new OfficialDocumentSnapshotDraftStatutory(
+            category,
+            govId,
+            signature,
+            statutory.WithholdingTaxCents);
     }
 
     private static Result ValidateRequest(OfficialDocumentSnapshotDraftBuildRequest request)

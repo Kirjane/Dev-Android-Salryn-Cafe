@@ -49,8 +49,18 @@ public static class OfficialInvoiceSnapshotParser
             using JsonDocument document = JsonDocument.Parse(identity.SnapshotPayloadJson);
             JsonElement root = document.RootElement;
 
-            if (!root.TryGetProperty("schema", out JsonElement schemaEl) ||
-                !string.Equals(schemaEl.GetString(), InvoiceOutputConstants.SnapshotSchema, StringComparison.Ordinal))
+            if (!root.TryGetProperty("schema", out JsonElement schemaEl))
+            {
+                return Result<ParsedOfficialInvoiceSnapshot>.Fail(Error.Validation(
+                    "InvoiceSnapshot.UnsupportedSchema",
+                    "Snapshot schema is missing or unsupported for invoice output."));
+            }
+
+            string? schema = schemaEl.GetString();
+            bool schemaOk =
+                string.Equals(schema, InvoiceOutputConstants.SnapshotSchema, StringComparison.Ordinal)
+                || string.Equals(schema, InvoiceOutputConstants.SnapshotSchemaV2, StringComparison.Ordinal);
+            if (!schemaOk)
             {
                 return Result<ParsedOfficialInvoiceSnapshot>.Fail(Error.Validation(
                     "InvoiceSnapshot.UnsupportedSchema",

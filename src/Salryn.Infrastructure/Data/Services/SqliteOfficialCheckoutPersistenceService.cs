@@ -15,7 +15,9 @@ public sealed record SqliteOfficialCheckoutPersistenceRequest(
     string TaxModeCode,
     string? TaxModeNotes,
     IReadOnlyList<OfficialDocumentLineTaxClassification>? LineTaxClassifications = null,
-    OfficialDocumentTaxBucketDraftTaxpayerMode? TaxpayerMode = null);
+    OfficialDocumentTaxBucketDraftTaxpayerMode? TaxpayerMode = null,
+    OfficialDocumentSnapshotDraftBuyer? Buyer = null,
+    OfficialDocumentSnapshotDraftStatutory? Statutory = null);
 
 public sealed record SqliteOfficialCheckoutPersistenceResult(
     Guid SaleId,
@@ -153,7 +155,10 @@ public sealed class SqliteOfficialCheckoutPersistenceService
                 request.TaxModeCode,
                 request.TaxModeNotes,
                 request.LineTaxClassifications,
-                request.TaxpayerMode));
+                request.TaxpayerMode,
+                // TRAD-M3-RC2: freeze buyer/statutory supplied at atomic post into the EJ snapshot (never invent).
+                request.Buyer,
+                request.Statutory));
 
         if (snapshotResult.IsFailure)
         {

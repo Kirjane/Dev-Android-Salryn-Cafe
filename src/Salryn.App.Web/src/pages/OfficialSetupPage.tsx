@@ -980,7 +980,8 @@ export function OfficialSetupPage() {
         </CardHeader>
         <CardBody className="space-y-3 text-sm text-slate-700">
           <Alert tone="warning" title="Internal preview only">
-            Watermarked text previews only. No device output. No official output. Live posting blocked.
+            Watermarked internal previews and host-local invoice projection downloads are available. Device spool and
+            production legal issuance remain disabled. Live posting blocked.
           </Alert>
           <div>
             <Button
@@ -1008,8 +1009,9 @@ export function OfficialSetupPage() {
             for planning only. Live official posting remains blocked. Internal dry-run only.
           </Alert>
           <p>
-            Output engine decision: internal JSON/text/HTML previews only for this branch. Official layout engines are
-            not selected. No official output generation.
+            Output engine: internal deterministic HTML/thermal invoice projection is available for host-local
+            engineering use. External layout engines are not selected. Production unwatermarked legal issuance is not
+            enabled.
           </p>
           <p>
             Checkout is not connected to official numbering. No official number is issued. Internal preview only.

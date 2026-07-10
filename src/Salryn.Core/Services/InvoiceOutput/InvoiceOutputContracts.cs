@@ -153,5 +153,6 @@ public static class InvoiceOutputConstants
     public const string NoComplianceClaimNote =
         "Engineering invoice projection only. Not BIR accreditation, CoA, PTU, or legal issuance.";
     public const string SnapshotSchema = "SALRYN_OFFICIAL_DOCUMENT_SNAPSHOT_V1";
+    public const string SnapshotSchemaV2 = "SALRYN_OFFICIAL_DOCUMENT_SNAPSHOT_V2";
     public const int ThermalWidth = 42;
 }

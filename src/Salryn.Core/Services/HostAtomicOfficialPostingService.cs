@@ -14,7 +14,9 @@ public sealed record HostAtomicOfficialPostingRequest(
     string CashierIdentifier,
     string? TerminalIdentifier,
     TaxpayerRegistrationMode RegistrationMode,
-    IReadOnlyList<OfficialDocumentLineTaxClassification> LineTaxClassifications);
+    IReadOnlyList<OfficialDocumentLineTaxClassification> LineTaxClassifications,
+    OfficialDocumentSnapshotDraftBuyer? Buyer = null,
+    OfficialDocumentSnapshotDraftStatutory? Statutory = null);
 
 public sealed record HostAtomicOfficialPostingResult(
     Guid SaleId,

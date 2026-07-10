@@ -165,8 +165,15 @@ public sealed class OfficialDocumentSnapshotEvidenceBuilder
         using MemoryStream stream = new();
         using Utf8JsonWriter writer = new(stream, new JsonWriterOptions { Indented = false });
 
+        // V1: no buyer/statutory members (historical hash-stable rows).
+        // V2: buyer and/or statutory present at post time — explicit version, not silent V1 extension.
+        bool hasOptionalParties = draft.Buyer is not null || draft.Statutory is not null;
+        string schema = hasOptionalParties
+            ? "SALRYN_OFFICIAL_DOCUMENT_SNAPSHOT_V2"
+            : "SALRYN_OFFICIAL_DOCUMENT_SNAPSHOT_V1";
+
         writer.WriteStartObject();
-        writer.WriteString("schema", "SALRYN_OFFICIAL_DOCUMENT_SNAPSHOT_V1");
+        writer.WriteString("schema", schema);
         writer.WriteString("documentKind", draft.DocumentKind.ToString());
 
         WriteHeader(writer, draft.Header);
