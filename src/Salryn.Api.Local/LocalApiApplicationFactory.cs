@@ -269,6 +269,8 @@ public static class LocalApiApplicationFactory
         app.MapLocalOfficialLivePostingCandidateEndpoints(composition.ConnectionFactory);
         // TRAD-M3: host-local invoice output projection (immutable snapshot read; no live posting).
         app.MapLocalOfficialInvoiceOutputEndpoints(composition.ConnectionFactory);
+        // TRAD-M4: host-local document lifecycle (reprint/void/refund append-only events).
+        app.MapLocalOfficialDocumentLifecycleEndpoints(composition.ConnectionFactory);
 
         if (webDistPath is not null)
         {
