@@ -46,25 +46,41 @@ public sealed class PreCrystalReportDatasetService
                 "Report kind is not allow-listed."));
         }
 
-        if (request.RangeEnd <= request.RangeStart)
+        if (ValidateRange(request) is Error rangeError)
         {
-            return Result<ProductionReportDatasetEnvelope>.Fail(Error.Validation(
-                "Reports.InvalidRange",
-                "Range end must be after range start."));
+            return Result<ProductionReportDatasetEnvelope>.Fail(rangeError);
         }
+
+        if (!TryNormalizeDocumentKind(
+            request.DocumentKind,
+            out string normalizedDocumentKind,
+            out ElectronicJournalDocumentKind documentKind,
+            out Error? documentKindError))
+        {
+            return Result<ProductionReportDatasetEnvelope>.Fail(documentKindError!);
+        }
+
+        ProductionReportDatasetRequest normalizedRequest = request with
+        {
+            ReportKind = catalogItem.Kind,
+            RegistrationScopeCode = string.IsNullOrWhiteSpace(request.RegistrationScopeCode)
+                ? "LOCAL_SINGLE_STORE"
+                : request.RegistrationScopeCode.Trim(),
+            DocumentKind = normalizedDocumentKind,
+            TerminalId = string.IsNullOrWhiteSpace(request.TerminalId) ? null : request.TerminalId.Trim()
+        };
 
         if (!catalogItem.DatasetAvailable)
         {
             return Result<ProductionReportDatasetEnvelope>.Success(
-                Seal(BuildUnavailableDataset(request, catalogItem)));
+                Seal(BuildUnavailableDataset(normalizedRequest, catalogItem)));
         }
 
-        ElectronicJournalDocumentKind documentKind = ParseDocumentKind(request.DocumentKind);
         OfficialReportingProjectionRequest projectionRequest = new(
-            request.RangeStart,
-            request.RangeEnd,
-            request.BirMachineProfileId,
-            string.IsNullOrWhiteSpace(request.RegistrationScopeCode) ? "LOCAL_SINGLE_STORE" : request.RegistrationScopeCode.Trim(),
+            normalizedRequest.RangeStart,
+            normalizedRequest.RangeEnd,
+            normalizedRequest.BirMachineProfileId,
+            normalizedRequest.RegistrationScopeCode,
             documentKind);
 
         Result<OfficialReportingProjection> projected = await _projection
@@ -76,12 +92,56 @@ public sealed class PreCrystalReportDatasetService
             return Result<ProductionReportDatasetEnvelope>.Fail(projected.ErrorDetail);
         }
 
+        if (ValidateProjectionSize(catalogItem.Kind, projected.Value) is Error rowLimitError)
+        {
+            return Result<ProductionReportDatasetEnvelope>.Fail(rowLimitError);
+        }
+
         ProductionReportDatasetEnvelope dataset = BuildFromProjection(
-            request,
+            normalizedRequest,
             catalogItem,
             projected.Value);
 
         return Result<ProductionReportDatasetEnvelope>.Success(Seal(dataset));
+    }
+
+    private static Error? ValidateRange(ProductionReportDatasetRequest request)
+    {
+        if (request.RangeEnd <= request.RangeStart)
+        {
+            return Error.Validation(
+                "Reports.InvalidRange",
+                "Range end must be after range start.");
+        }
+
+        if (request.RangeEnd - request.RangeStart > ProductionReportDatasetLimits.MaxRange)
+        {
+            return Error.Validation(
+                "Reports.RangeTooLarge",
+                $"Report range exceeds the PRE-CRYSTAL cap of {ProductionReportDatasetLimits.MaxRangeDays} days.");
+        }
+
+        return null;
+    }
+
+    private static Error? ValidateProjectionSize(string reportKind, OfficialReportingProjection projection)
+    {
+        int rowCount = reportKind switch
+        {
+            ProductionReportKinds.EjExport => checked(projection.Documents.Count + projection.Events.Count),
+            ProductionReportKinds.SalesRefundVoidSummary => 1,
+            ProductionReportKinds.TaxBucketSummary => 1,
+            _ => projection.Documents.Count
+        };
+
+        if (rowCount > ProductionReportDatasetLimits.MaxRows)
+        {
+            return Error.Validation(
+                "Reports.RowLimitExceeded",
+                $"Report dataset would contain {rowCount} rows, exceeding the PRE-CRYSTAL cap of {ProductionReportDatasetLimits.MaxRows} rows.");
+        }
+
+        return null;
     }
 
     private ProductionReportDatasetEnvelope BuildFromProjection(
@@ -201,16 +261,18 @@ public sealed class PreCrystalReportDatasetService
                 {
                     ["officialDocumentNumber"] = doc.OfficialDocumentNumber,
                     ["postedAtUtc"] = doc.PostedAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
+                    ["lifecycleState"] = doc.LifecycleState,
                     ["grossCents"] = doc.GrossTotalCents.ToString(CultureInfo.InvariantCulture),
                     ["refundedCents"] = doc.RefundedTotalCents.ToString(CultureInfo.InvariantCulture),
-                    ["netCents"] = doc.NetTotalCents.ToString(CultureInfo.InvariantCulture),
-                    ["vatableBaseCents"] = Math.Max(0, doc.VatableBaseCents - doc.RefundedVatableBaseCents).ToString(CultureInfo.InvariantCulture),
-                    ["vatAmountCents"] = Math.Max(0, doc.VatAmountCents - doc.RefundedVatAmountCents).ToString(CultureInfo.InvariantCulture),
-                    ["vatExemptCents"] = Math.Max(0, doc.VatExemptCents - doc.RefundedVatExemptCents).ToString(CultureInfo.InvariantCulture),
-                    ["zeroRatedCents"] = Math.Max(0, doc.ZeroRatedCents - doc.RefundedZeroRatedCents).ToString(CultureInfo.InvariantCulture),
-                    ["ssptCents"] = Math.Max(0, doc.SsptCents - doc.RefundedSsptCents).ToString(CultureInfo.InvariantCulture),
-                    ["nonVatExemptCents"] = Math.Max(0, doc.NonVatExemptCents - doc.RefundedNonVatExemptCents).ToString(CultureInfo.InvariantCulture),
-                    ["isVoided"] = doc.IsVoided ? "true" : "false"
+                    ["presentationOnlyNetCents"] = doc.NetTotalCents.ToString(CultureInfo.InvariantCulture),
+                    ["snapshotVatableBaseCents"] = doc.VatableBaseCents.ToString(CultureInfo.InvariantCulture),
+                    ["snapshotVatAmountCents"] = doc.VatAmountCents.ToString(CultureInfo.InvariantCulture),
+                    ["snapshotVatExemptCents"] = doc.VatExemptCents.ToString(CultureInfo.InvariantCulture),
+                    ["snapshotZeroRatedCents"] = doc.ZeroRatedCents.ToString(CultureInfo.InvariantCulture),
+                    ["snapshotSsptCents"] = doc.SsptCents.ToString(CultureInfo.InvariantCulture),
+                    ["snapshotNonVatExemptCents"] = doc.NonVatExemptCents.ToString(CultureInfo.InvariantCulture),
+                    ["isVoided"] = doc.IsVoided ? "true" : "false",
+                    ["presentationBoundary"] = "Per-document rows are presentation-only. Official totals come from M5 canonical projection control totals."
                 })));
         }
 
@@ -220,7 +282,7 @@ public sealed class PreCrystalReportDatasetService
             projection,
             ControlTotals(projection),
             rows,
-            "Internal eSales draft dataset only. Authoritative BIR schema unconfirmed; transmission disabled.");
+            "Internal eSales draft dataset only. Authoritative BIR schema unconfirmed; transmission disabled. Official totals are projection control totals.");
     }
 
     private ProductionReportDatasetEnvelope SalesRefundVoidSummary(
@@ -316,6 +378,7 @@ public sealed class PreCrystalReportDatasetService
             Array.Empty<ProductionReportSourceHash>(),
             flags,
             string.Empty,
+            string.Empty,
             flags.BoundaryNote);
     }
 
@@ -356,15 +419,33 @@ public sealed class PreCrystalReportDatasetService
             },
             flags,
             string.Empty,
+            string.Empty,
             summary);
     }
 
     private ProductionReportDatasetEnvelope Seal(ProductionReportDatasetEnvelope envelope)
     {
-        ProductionReportDatasetEnvelope blank = envelope with { DatasetSha256 = string.Empty };
-        string json = JsonSerializer.Serialize(blank, StableJson);
-        string hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))).ToLowerInvariant();
-        return envelope with { DatasetSha256 = hash };
+        var contentPayload = new
+        {
+            envelope.SchemaCode,
+            envelope.SchemaVersion,
+            envelope.ReportKind,
+            envelope.ReportTitle,
+            envelope.Scope,
+            envelope.ControlTotals,
+            envelope.Rows,
+            envelope.SourceHashes,
+            envelope.SafetyFlags,
+            envelope.Summary
+        };
+        string contentHash = Sha256(JsonSerializer.Serialize(contentPayload, StableJson));
+        ProductionReportDatasetEnvelope withContentHash = envelope with
+        {
+            ContentSha256 = contentHash,
+            DatasetSha256 = string.Empty
+        };
+        string envelopeHash = Sha256(JsonSerializer.Serialize(withContentHash, StableJson));
+        return withContentHash with { DatasetSha256 = envelopeHash };
     }
 
     private static IReadOnlyList<ProductionReportControlTotal> ControlTotals(OfficialReportingProjection p) => new[]
@@ -391,14 +472,46 @@ public sealed class PreCrystalReportDatasetService
         request.RangeEnd,
         request.BirMachineProfileId,
         string.IsNullOrWhiteSpace(request.RegistrationScopeCode) ? "LOCAL_SINGLE_STORE" : request.RegistrationScopeCode.Trim(),
-        string.IsNullOrWhiteSpace(request.DocumentKind) ? "OFFICIAL_INVOICE" : request.DocumentKind.Trim(),
+        string.IsNullOrWhiteSpace(request.DocumentKind) ? "OFFICIAL_INVOICE" : request.DocumentKind.Trim().ToUpperInvariant(),
         request.ActorUserId,
         request.TerminalId);
 
-    private static ElectronicJournalDocumentKind ParseDocumentKind(string? value) =>
-        string.Equals(value, "OFFICIAL_RECEIPT", StringComparison.OrdinalIgnoreCase)
-            ? ElectronicJournalDocumentKind.OfficialReceipt
-            : ElectronicJournalDocumentKind.OfficialInvoice;
+    private static bool TryNormalizeDocumentKind(
+        string? value,
+        out string normalized,
+        out ElectronicJournalDocumentKind kind,
+        out Error? error)
+    {
+        normalized = "OFFICIAL_INVOICE";
+        kind = ElectronicJournalDocumentKind.OfficialInvoice;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        string candidate = value.Trim().ToUpperInvariant();
+        if (string.Equals(candidate, "OFFICIAL_INVOICE", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (string.Equals(candidate, "OFFICIAL_RECEIPT", StringComparison.Ordinal))
+        {
+            normalized = "OFFICIAL_RECEIPT";
+            kind = ElectronicJournalDocumentKind.OfficialReceipt;
+            return true;
+        }
+
+        error = Error.Validation(
+            "Reports.InvalidDocumentKind",
+            "DocumentKind must be OFFICIAL_INVOICE or OFFICIAL_RECEIPT.");
+        return false;
+    }
+
+    private static string Sha256(string text) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
 
     private static IReadOnlyDictionary<string, string> Ordered(Dictionary<string, string> values) =>
         values.OrderBy(x => x.Key, StringComparer.Ordinal)
