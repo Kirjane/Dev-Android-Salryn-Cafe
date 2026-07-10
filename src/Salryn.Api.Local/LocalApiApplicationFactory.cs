@@ -267,6 +267,8 @@ public static class LocalApiApplicationFactory
         app.MapLocalOfficialSpineEndpoints(composition.ConnectionFactory);
         app.MapLocalOfficialDryRunPackageEndpoints(composition.ConnectionFactory);
         app.MapLocalOfficialLivePostingCandidateEndpoints(composition.ConnectionFactory);
+        // TRAD-M3: host-local invoice output projection (immutable snapshot read; no live posting).
+        app.MapLocalOfficialInvoiceOutputEndpoints(composition.ConnectionFactory);
 
         if (webDistPath is not null)
         {

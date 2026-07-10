@@ -405,3 +405,52 @@ export async function buildOfficialReportPreview(): Promise<{
   });
   return readJson(response);
 }
+
+/** TRAD-M3: immutable-snapshot invoice projection. Internal demo watermark by default. Not legal issuance. */
+export type OfficialInvoiceOutputPackage = {
+  packageId: string;
+  saleId: string;
+  journalEntryId: string;
+  officialDocumentNumber: string;
+  taxRegistrationMode: string;
+  invoiceVariant: string;
+  outputMode: string;
+  internalWatermarkApplied: boolean;
+  productionActivationEnabled: boolean;
+  liveOfficialPostingAllowed: boolean;
+  complianceClaimed: boolean;
+  canonicalContentSha256: string;
+  missingOptionalFields: string[];
+  validationNotes: string[];
+  noComplianceClaimNote: string;
+  documentTitle: string;
+  registrationPhrase: string;
+  nonVatDisclaimer: string | null;
+  artifacts: {
+    format: string;
+    contentType: string;
+    fileNameHint: string;
+    contentSha256: string;
+    utf8Text: string;
+  }[];
+};
+
+export async function generateOfficialInvoiceOutput(body: {
+  saleId?: string | null;
+  officialDocumentNumber?: string | null;
+  mode?: "InternalDemo" | "ProductionCapable";
+}): Promise<OfficialInvoiceOutputPackage> {
+  const response = await fetch("/api/official/invoice-output/generate", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      saleId: body.saleId ?? null,
+      officialDocumentNumber: body.officialDocumentNumber ?? null,
+      mode: body.mode ?? "InternalDemo",
+      includeHtml: true,
+      includeThermalText: true,
+    }),
+  });
+  return readJson<OfficialInvoiceOutputPackage>(response);
+}

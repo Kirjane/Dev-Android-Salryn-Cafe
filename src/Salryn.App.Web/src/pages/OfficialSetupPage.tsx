@@ -13,6 +13,7 @@ import {
   fetchOfficialLivePostingCandidateStatus,
   fetchOfficialSourceSaleDryRunReadonly,
   fetchOfficialSpineStatus,
+  generateOfficialInvoiceOutput,
   listOfficialDryRunPackages,
   saveOfficialBusiness,
   saveOfficialMachine,
@@ -22,6 +23,7 @@ import {
   type OfficialDryRunPackage,
   type OfficialDryRunPackageSummary,
   type OfficialDryRunPostingPlan,
+  type OfficialInvoiceOutputPackage,
 } from "../api/officialSetup";
 import {
   Alert,
@@ -70,6 +72,8 @@ export function OfficialSetupPage() {
   const [sourceSaleId, setSourceSaleId] = useState("");
   const [sourceSaleNote, setSourceSaleNote] = useState<string | null>(null);
   const [internalReportsNote, setInternalReportsNote] = useState<string | null>(null);
+  const [invoiceSaleId, setInvoiceSaleId] = useState("");
+  const [invoiceOutput, setInvoiceOutput] = useState<OfficialInvoiceOutputPackage | null>(null);
   const packagesQuery = useQuery({
     queryKey: ["official-dry-run-packages"],
     queryFn: listOfficialDryRunPackages,
@@ -315,6 +319,22 @@ export function OfficialSetupPage() {
         `${data.summary} Sales mutates: ${data.salesWillMutate ? "yes" : "no"}. Sequence mutates: ${
           data.sequenceWillMutate ? "yes" : "no"
         }.`,
+      );
+    },
+    onError: onFail,
+  });
+
+  const invoiceOutputMutation = useMutation({
+    mutationFn: () =>
+      generateOfficialInvoiceOutput({
+        saleId: invoiceSaleId.trim() || null,
+        mode: "InternalDemo",
+      }),
+    onSuccess: (data) => {
+      setError(null);
+      setInvoiceOutput(data);
+      setMessage(
+        "Invoice projection built from committed journal snapshot. INTERNAL TEST — NOT AN OFFICIAL INVOICE. No number allocated.",
       );
     },
     onError: onFail,
@@ -703,6 +723,57 @@ export function OfficialSetupPage() {
                 ))}
               </ul>
             </>
+          ) : null}
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>VAT / Non-VAT invoice projection (TRAD-M3)</CardTitle>
+          <StatusPill tone="neutral">Internal test only</StatusPill>
+        </CardHeader>
+        <CardBody className="space-y-3 text-sm text-slate-700">
+          <Alert tone="warning" title="INTERNAL TEST — NOT AN OFFICIAL INVOICE">
+            Renders from a committed electronic-journal snapshot only. Does not allocate numbers, mutate sales, enable
+            production activation, or claim BIR compliance. Requires a prior atomic official post with tax buckets.
+          </Alert>
+          <FormField label="Source sale ID (committed official sale)">
+            <TextInput
+              value={invoiceSaleId}
+              onChange={(e) => setInvoiceSaleId(e.target.value)}
+              placeholder="GUID of sale with EJ snapshot"
+            />
+          </FormField>
+          <div>
+            <Button onClick={() => invoiceOutputMutation.mutate()} disabled={invoiceOutputMutation.isPending}>
+              Generate internal invoice projection
+            </Button>
+          </div>
+          {invoiceOutput ? (
+            <div className="space-y-2">
+              <p>
+                <strong>{invoiceOutput.documentTitle}</strong> · {invoiceOutput.officialDocumentNumber} ·{" "}
+                {invoiceOutput.invoiceVariant}
+              </p>
+              <p>
+                Watermark: <strong>{invoiceOutput.internalWatermarkApplied ? "yes" : "no"}</strong> · Activation:{" "}
+                <strong>{invoiceOutput.productionActivationEnabled ? "ON" : "OFF"}</strong> · Live posting allowed:{" "}
+                <strong>{invoiceOutput.liveOfficialPostingAllowed ? "yes" : "no"}</strong> · Compliance claimed:{" "}
+                <strong>{invoiceOutput.complianceClaimed ? "yes" : "no"}</strong>
+              </p>
+              <p className="font-mono text-xs break-all">SHA-256: {invoiceOutput.canonicalContentSha256}</p>
+              <p className="text-xs">{invoiceOutput.noComplianceClaimNote}</p>
+              {invoiceOutput.artifacts
+                .filter((a) => a.format === "ThermalText")
+                .map((a) => (
+                  <pre
+                    key={a.contentSha256}
+                    className="max-h-64 overflow-auto rounded border border-slate-200 bg-slate-50 p-2 text-xs whitespace-pre-wrap"
+                  >
+                    {a.utf8Text}
+                  </pre>
+                ))}
+            </div>
           ) : null}
         </CardBody>
       </Card>

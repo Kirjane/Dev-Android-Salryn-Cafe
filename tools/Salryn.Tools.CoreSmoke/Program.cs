@@ -107,6 +107,7 @@ public static class Program
         RmoBirQa1RealMachineDatabaseChecks.Run();
         RmoBirTradM1TaxInvoicePolicyChecks.Run();
         RmoBirTradM2AtomicOfficialPostingChecks.Run();
+        RmoBirTradM3InvoiceOutputChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
         M5VerifiedCandidateStackLedgerChecks.Run();
         M6CandidateStackPromotionDryRunChecks.Run();
@@ -311,6 +312,9 @@ public static class Program
                 return;
             case "rmo-bir-trad-atomic-posting":
                 RmoBirTradM2AtomicOfficialPostingChecks.Run();
+                return;
+            case "rmo-bir-trad-invoice-output":
+                RmoBirTradM3InvoiceOutputChecks.Run();
                 return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);
