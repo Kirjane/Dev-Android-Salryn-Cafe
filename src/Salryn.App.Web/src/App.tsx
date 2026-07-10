@@ -12,6 +12,7 @@ import { HostLanControlPage } from "./pages/HostLanControlPage";
 import { InventoryPage } from "./pages/InventoryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { ProductsPage } from "./pages/ProductsPage";
+import { ProductionReportsPage } from "./pages/ProductionReportsPage";
 import { RemoteClientLandingPage } from "./pages/RemoteClientLandingPage";
 import { RemotePosClientPage } from "./pages/RemotePosClientPage";
 import { RemoteReadOnlyClientPage } from "./pages/RemoteReadOnlyClientPage";
@@ -76,6 +77,8 @@ function renderPage(page: AppPage, session: SessionState, onLogout: () => void, 
       return <OfficialSetupPage />;
     case "traditional-reporting":
       return <TraditionalReportingPage />;
+    case "production-reports":
+      return <ProductionReportsPage />;
     default: {
       const exhaustiveCheck: never = page;
       return exhaustiveCheck;
