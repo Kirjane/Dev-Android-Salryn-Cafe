@@ -9,7 +9,7 @@ using Salryn.Infrastructure.Reports;
 namespace Salryn.Api.Local;
 
 /// <summary>
-/// PRE-CRYSTAL M0 host-only production reporting spine.
+/// PRE-CRYSTAL M0 / Crystal-M1 host-only production reporting spine.
 /// Dataset generation only. Crystal renderer is unavailable and fails closed.
 /// </summary>
 public static class LocalProductionReportEndpoints
@@ -39,7 +39,15 @@ public static class LocalProductionReportEndpoints
                 return denied;
             }
 
-            return Results.Json(new UnavailableCrystalReportRenderer().GetStatus());
+            UnavailableCrystalReportRenderer renderer = new();
+            return Results.Json(new
+            {
+                status = renderer.GetStatus(),
+                capability = renderer.GetCapability(),
+                workerProtocol = CrystalWorkerProtocol.CurrentProtocolVersion,
+                deploymentMode = CrystalWorkerProtocol.RequiredDeploymentMode,
+                allowedOutputKinds = ProductionReportOutputKinds.All
+            });
         });
 
         app.MapPost("/api/production-reports/dataset", async (
@@ -66,6 +74,13 @@ public static class LocalProductionReportEndpoints
             LocalApiSessionService sessions,
             CancellationToken cancellationToken) =>
         {
+            if (!ProductionReportOutputKinds.TryNormalize(body.RequestedOutputKind, out string requestedOutputKind, out Error? outputKindError))
+            {
+                return Results.Json(
+                    new { code = outputKindError!.Code, message = outputKindError.Message },
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
             ProductionReportDatasetApiRequest datasetBody = new(
                 body.ReportKind,
                 body.RangeStart,
@@ -93,7 +108,7 @@ public static class LocalProductionReportEndpoints
             Result<ProductionReportRenderResult> result = await renderer.RenderAsync(
                 new ProductionReportRenderRequest(
                     dataset.Value,
-                    string.IsNullOrWhiteSpace(body.RequestedOutputKind) ? "pdf" : body.RequestedOutputKind.Trim(),
+                    requestedOutputKind,
                     body.TimeoutMilliseconds <= 0 ? 30000 : Math.Min(body.TimeoutMilliseconds, 120000),
                     cancellationToken),
                 cancellationToken).ConfigureAwait(false);
