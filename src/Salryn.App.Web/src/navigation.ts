@@ -47,6 +47,7 @@ export const navItems: NavItemConfig[] = [
   { id: "host-lan-control", label: "Host LAN Control", enabled: true },
   { id: "official-setup", label: "Official Setup", enabled: true },
   { id: "traditional-reporting", label: "Traditional Reporting", enabled: true },
+  { id: "production-reports", label: "Production Reports", enabled: true },
 ];
 
 export function getNavItems(session: SessionState): NavItemConfig[] {
