@@ -48,44 +48,10 @@ public static class LocalProductionReportEndpoints
             LocalApiSessionService sessions,
             CancellationToken cancellationToken) =>
         {
-            if (!PreCrystalReportCatalog.TryGet(body.ReportKind, out ProductionReportCatalogItem catalogItem))
+            if (!TryBuildDatasetRequest(body, httpContext, sessions, out ProductionReportDatasetRequest request, out ProductionReportCatalogItem catalogItem, out IResult? bad))
             {
-                return Results.Json(
-                    new { code = "Reports.UnknownReportKind", message = "Report kind is not allow-listed." },
-                    statusCode: StatusCodes.Status400BadRequest);
+                return bad!;
             }
-
-            if (Guard(httpContext, sessions, catalogItem.RequiredPermission) is IResult denied)
-            {
-                return denied;
-            }
-
-            LocalApiSession? session = GetSession(httpContext, sessions);
-            if (session is null)
-            {
-                return Results.Json(
-                    new { code = "Session.Required", message = "Authenticated session required." },
-                    statusCode: StatusCodes.Status401Unauthorized);
-            }
-
-            if (!TryParseRange(body, out DateTimeOffset start, out DateTimeOffset end, out IResult? badRange))
-            {
-                return badRange!;
-            }
-
-            Guid? machineId = Guid.TryParse(body.BirMachineProfileId, out Guid parsedMachineId)
-                ? parsedMachineId
-                : null;
-
-            ProductionReportDatasetRequest request = new(
-                body.ReportKind ?? string.Empty,
-                start,
-                end,
-                machineId,
-                body.RegistrationScopeCode,
-                body.DocumentKind,
-                session.UserId,
-                body.TerminalId);
 
             Result<ProductionReportDatasetEnvelope> result = await ComposeDatasetService(connectionFactory)
                 .BuildDatasetAsync(request, cancellationToken)
@@ -100,22 +66,33 @@ public static class LocalProductionReportEndpoints
             LocalApiSessionService sessions,
             CancellationToken cancellationToken) =>
         {
-            if (!PreCrystalReportCatalog.TryGet(body.Dataset.ReportKind, out ProductionReportCatalogItem catalogItem))
+            ProductionReportDatasetApiRequest datasetBody = new(
+                body.ReportKind,
+                body.RangeStart,
+                body.RangeEnd,
+                body.BirMachineProfileId,
+                body.RegistrationScopeCode,
+                body.DocumentKind,
+                body.TerminalId);
+
+            if (!TryBuildDatasetRequest(datasetBody, httpContext, sessions, out ProductionReportDatasetRequest request, out ProductionReportCatalogItem catalogItem, out IResult? bad))
             {
-                return Results.Json(
-                    new { code = "Reports.UnknownReportKind", message = "Report kind is not allow-listed." },
-                    statusCode: StatusCodes.Status400BadRequest);
+                return bad!;
             }
 
-            if (Guard(httpContext, sessions, catalogItem.RequiredPermission) is IResult denied)
+            Result<ProductionReportDatasetEnvelope> dataset = await ComposeDatasetService(connectionFactory)
+                .BuildDatasetAsync(request, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (dataset.IsFailure)
             {
-                return denied;
+                return ToJson(dataset);
             }
 
             UnavailableCrystalReportRenderer renderer = new();
             Result<ProductionReportRenderResult> result = await renderer.RenderAsync(
                 new ProductionReportRenderRequest(
-                    body.Dataset,
+                    dataset.Value,
                     string.IsNullOrWhiteSpace(body.RequestedOutputKind) ? "pdf" : body.RequestedOutputKind.Trim(),
                     body.TimeoutMilliseconds <= 0 ? 30000 : Math.Min(body.TimeoutMilliseconds, 120000),
                     cancellationToken),
@@ -127,6 +104,71 @@ public static class LocalProductionReportEndpoints
 
     private static PreCrystalReportDatasetService ComposeDatasetService(SqliteConnectionFactory connectionFactory) =>
         new(new SqliteOfficialReportingProjectionService(connectionFactory));
+
+    private static bool TryBuildDatasetRequest(
+        ProductionReportDatasetApiRequest body,
+        HttpContext httpContext,
+        LocalApiSessionService sessions,
+        out ProductionReportDatasetRequest request,
+        out ProductionReportCatalogItem catalogItem,
+        out IResult? error)
+    {
+        request = default!;
+        catalogItem = default!;
+        error = null;
+
+        if (!PreCrystalReportCatalog.TryGet(body.ReportKind, out catalogItem))
+        {
+            error = Results.Json(
+                new { code = "Reports.UnknownReportKind", message = "Report kind is not allow-listed." },
+                statusCode: StatusCodes.Status400BadRequest);
+            return false;
+        }
+
+        if (Guard(httpContext, sessions, catalogItem.RequiredPermission) is IResult denied)
+        {
+            error = denied;
+            return false;
+        }
+
+        LocalApiSession? session = GetSession(httpContext, sessions);
+        if (session is null)
+        {
+            error = Results.Json(
+                new { code = "Session.Required", message = "Authenticated session required." },
+                statusCode: StatusCodes.Status401Unauthorized);
+            return false;
+        }
+
+        if (!TryParseRange(body, out DateTimeOffset start, out DateTimeOffset end, out IResult? badRange))
+        {
+            error = badRange;
+            return false;
+        }
+
+        if (!TryParseMachineId(body.BirMachineProfileId, out Guid? machineId, out IResult? badMachine))
+        {
+            error = badMachine;
+            return false;
+        }
+
+        if (!TryNormalizeDocumentKind(body.DocumentKind, out string normalizedDocumentKind, out IResult? badKind))
+        {
+            error = badKind;
+            return false;
+        }
+
+        request = new ProductionReportDatasetRequest(
+            catalogItem.Kind,
+            start,
+            end,
+            machineId,
+            string.IsNullOrWhiteSpace(body.RegistrationScopeCode) ? "LOCAL_SINGLE_STORE" : body.RegistrationScopeCode.Trim(),
+            normalizedDocumentKind,
+            session.UserId,
+            string.IsNullOrWhiteSpace(body.TerminalId) ? null : body.TerminalId.Trim());
+        return true;
+    }
 
     private static IResult? Guard(
         HttpContext httpContext,
@@ -184,7 +226,59 @@ public static class LocalProductionReportEndpoints
             return false;
         }
 
+        if (end - start > ProductionReportDatasetLimits.MaxRange)
+        {
+            error = Results.Json(
+                new { code = "Reports.RangeTooLarge", message = $"Report range exceeds the cap of {ProductionReportDatasetLimits.MaxRangeDays} days." },
+                statusCode: StatusCodes.Status400BadRequest);
+            return false;
+        }
+
         return true;
+    }
+
+    private static bool TryParseMachineId(string? value, out Guid? machineId, out IResult? error)
+    {
+        machineId = null;
+        error = null;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        if (!Guid.TryParse(value.Trim(), out Guid parsed) || parsed == Guid.Empty)
+        {
+            error = Results.Json(
+                new { code = "Reports.InvalidMachineProfileId", message = "BirMachineProfileId must be a valid non-empty GUID when supplied." },
+                statusCode: StatusCodes.Status400BadRequest);
+            return false;
+        }
+
+        machineId = parsed;
+        return true;
+    }
+
+    private static bool TryNormalizeDocumentKind(string? value, out string normalized, out IResult? error)
+    {
+        normalized = "OFFICIAL_INVOICE";
+        error = null;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        string candidate = value.Trim().ToUpperInvariant();
+        if (string.Equals(candidate, "OFFICIAL_INVOICE", StringComparison.Ordinal) ||
+            string.Equals(candidate, "OFFICIAL_RECEIPT", StringComparison.Ordinal))
+        {
+            normalized = candidate;
+            return true;
+        }
+
+        error = Results.Json(
+            new { code = "Reports.InvalidDocumentKind", message = "DocumentKind must be OFFICIAL_INVOICE or OFFICIAL_RECEIPT." },
+            statusCode: StatusCodes.Status400BadRequest);
+        return false;
     }
 
     private static IResult ToJson<T>(Result<T> result)
@@ -218,7 +312,13 @@ public static class LocalProductionReportEndpoints
         string? TerminalId);
 
     public sealed record ProductionReportRenderApiRequest(
-        ProductionReportDatasetEnvelope Dataset,
+        string? ReportKind,
+        string? RangeStart,
+        string? RangeEnd,
+        string? BirMachineProfileId,
+        string? RegistrationScopeCode,
+        string? DocumentKind,
+        string? TerminalId,
         string? RequestedOutputKind,
         int TimeoutMilliseconds);
 }
