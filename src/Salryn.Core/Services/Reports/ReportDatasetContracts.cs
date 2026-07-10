@@ -79,6 +79,49 @@ public sealed record ProductionReportArtifactMetadata(
     string RendererVersion,
     string SourceDatasetSha256);
 
+public static class CrystalWorkerProtocol
+{
+    public const string CurrentProtocolVersion = "SALRYN_CRYSTAL_WORKER_PROTOCOL_V1";
+    public const string RequiredDeploymentMode = "isolated-windows-worker";
+}
+
+public sealed record CrystalWorkerDatasetPackage(
+    string ProtocolVersion,
+    string ReportKind,
+    string ReportTitle,
+    string DatasetJson,
+    string DatasetContentSha256,
+    string DatasetEnvelopeSha256,
+    IReadOnlyList<ProductionReportSourceHash> SourceHashes,
+    DateTimeOffset PackagedAt);
+
+public sealed record CrystalWorkerArtifactPolicy(
+    string OutputKind,
+    string ControlledOutputRootPolicy,
+    bool AllowCallerSuppliedOutputPath,
+    bool AllowTemplateUpload,
+    bool AllowArbitrarySql,
+    long MaxArtifactBytes);
+
+public sealed record CrystalWorkerLaunchPolicy(
+    string DeploymentMode,
+    string RequiredOSFamily,
+    string RequiredFrameworkFamily,
+    int TimeoutMilliseconds,
+    bool KillWorkerOnTimeout,
+    bool RequireRuntimeDiscovery,
+    bool RequireTemplateAllowList);
+
+public sealed record CrystalWorkerRuntimeReadiness(
+    bool RuntimeInstalled,
+    bool RuntimeLicensed,
+    bool TemplateAllowListConfigured,
+    bool CanRenderPdf,
+    string RendererName,
+    string RendererVersion,
+    string StatusCode,
+    string Message);
+
 public sealed record CrystalWorkerReportRequest(
     string ProtocolVersion,
     string ReportKind,
