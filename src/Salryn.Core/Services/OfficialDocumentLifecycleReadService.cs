@@ -208,12 +208,7 @@ public static class OfficialDocumentLifecycleReadService
                 "Official document lifecycle has more than one CANCEL event."));
         }
 
-        if (refundCount > 1)
-        {
-            issues.Add(new OfficialDocumentLifecycleIssue(
-                "OfficialDocumentLifecycle.DuplicateRefundEvents",
-                "Official document lifecycle has more than one REFUND event."));
-        }
+        // Multiple REFUND events are valid for partial line returns (M4-RC2). Do not mark Invalid.
 
         if (voidCount > 0 && cancelCount > 0)
         {
@@ -243,11 +238,11 @@ public static class OfficialDocumentLifecycleReadService
 
         OfficialDocumentLifecycleState state = issues.Count > 0
             ? OfficialDocumentLifecycleState.Invalid
-            : voidCount == 1
+            : voidCount >= 1
                 ? OfficialDocumentLifecycleState.Voided
-                : cancelCount == 1
+                : cancelCount >= 1
                     ? OfficialDocumentLifecycleState.Cancelled
-                    : refundCount == 1
+                    : refundCount >= 1
                         ? OfficialDocumentLifecycleState.Refunded
                         : OfficialDocumentLifecycleState.Active;
 

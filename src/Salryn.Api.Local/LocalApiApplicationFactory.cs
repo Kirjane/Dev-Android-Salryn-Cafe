@@ -271,6 +271,8 @@ public static class LocalApiApplicationFactory
         app.MapLocalOfficialInvoiceOutputEndpoints(composition.ConnectionFactory);
         // TRAD-M4: host-local document lifecycle (reprint/void/refund append-only events).
         app.MapLocalOfficialDocumentLifecycleEndpoints(composition.ConnectionFactory);
+        // TRAD-M5-RC2: lifecycle-aware traditional reporting (X/Z/EJ/eSales draft). BIR schema unconfirmed.
+        app.MapLocalOfficialTraditionalReportingEndpoints(composition.ConnectionFactory);
 
         if (webDistPath is not null)
         {

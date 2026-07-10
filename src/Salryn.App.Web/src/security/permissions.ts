@@ -42,7 +42,8 @@ export type HostPage =
   | "users"
   | "audit"
   | "host-lan-control"
-  | "official-setup";
+  | "official-setup"
+  | "traditional-reporting";
 
 export type AppPage = HostPage;
 
@@ -56,6 +57,7 @@ export const implementedPages: readonly AppPage[] = [
   "audit",
   "host-lan-control",
   "official-setup",
+  "traditional-reporting",
 ] as const;
 
 const authenticatedOnlyPages = new Set<AppPage>(["dashboard"]);
@@ -74,6 +76,8 @@ const pagePermissions: Partial<Record<AppPage, readonly Permission[]>> = {
   audit: [Permissions.AuditView],
   // Host-local setup only; Settings.Manage operators (Admin/Owner style).
   "official-setup": [Permissions.SettingsManage],
+  // Host-only traditional reporting; report/view operators.
+  "traditional-reporting": [Permissions.ReportsView, Permissions.OfficialReadingView, Permissions.OfficialEvidenceExport],
 };
 
 export function hasPermission(session: SessionState | null | undefined, permission: Permission): boolean {

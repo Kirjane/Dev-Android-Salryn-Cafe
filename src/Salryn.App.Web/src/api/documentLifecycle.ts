@@ -1,4 +1,4 @@
-import { apiFetch } from "./http";
+import { readJson } from "./http";
 
 export type LifecycleRefundLine = {
   saleItemId: string;
@@ -46,12 +46,16 @@ export type LifecycleActionResponse = {
 export async function postLifecycleAction(
   body: LifecycleActionRequest,
 ): Promise<LifecycleActionResponse> {
-  return apiFetch<LifecycleActionResponse>("/api/official/document-lifecycle/action", {
+  const response = await fetch("/api/official/document-lifecycle/action", {
     method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+  return readJson<LifecycleActionResponse>(response);
 }
 
 export async function fetchLifecycleStatus(): Promise<Record<string, unknown>> {
-  return apiFetch<Record<string, unknown>>("/api/official/document-lifecycle/status");
+  const response = await fetch("/api/official/document-lifecycle/status", { credentials: "include" });
+  return readJson<Record<string, unknown>>(response);
 }
