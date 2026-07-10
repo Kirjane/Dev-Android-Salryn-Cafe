@@ -137,7 +137,7 @@ export function ProductionReportsPage() {
           </CardHeader>
           <CardBody className="space-y-3">
             {selected ? (
-              <Alert tone={selected.datasetAvailable ? "info" : "warning"} title={selected.title}>
+              <Alert tone={selected.datasetAvailable ? "success" : "warning"} title={selected.title}>
                 {selected.datasetAvailable
                   ? "This dataset is generated through the PRE-CRYSTAL spine. Official/tax totals use canonical M5 projection where applicable."
                   : selected.unavailableReason ?? "Dataset unavailable."}
