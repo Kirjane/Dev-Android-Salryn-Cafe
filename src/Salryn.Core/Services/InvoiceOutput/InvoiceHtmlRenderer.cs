@@ -28,6 +28,8 @@ public sealed class InvoiceHtmlRenderer
         sb.Append("th,td{border-bottom:1px solid #ccc;padding:4px;text-align:left;vertical-align:top;}");
         sb.Append("th.num,td.num{text-align:right;white-space:nowrap;}");
         sb.Append(".meta{margin:2px 0;}.tot{font-weight:700;}.disc{font-size:11px;color:#333;margin-top:10px;}");
+        sb.Append("@page{size:A4;margin:12mm;}");
+        sb.Append("@media print{body{margin:0;}.wm{border-width:1.5px;}}");
         sb.Append("</style></head><body>");
 
         if (model.RequiresInternalWatermark)
@@ -77,9 +79,29 @@ public sealed class InvoiceHtmlRenderer
             sb.Append("<div class=\"meta\">Terminal: ").Append(E(model.TerminalIdentifier)).Append("</div>");
         }
 
-        sb.Append("<div class=\"meta\">Buyer Name: ____________________</div>");
-        sb.Append("<div class=\"meta\">Buyer TIN: ____________________</div>");
-        sb.Append("<div class=\"meta\">Buyer Address: ____________________</div>");
+        sb.Append("<div class=\"meta\">Buyer Name: ")
+            .Append(E(string.IsNullOrWhiteSpace(model.BuyerNameSpace) ? "____________________" : model.BuyerNameSpace))
+            .Append("</div>");
+        sb.Append("<div class=\"meta\">Buyer TIN: ")
+            .Append(E(string.IsNullOrWhiteSpace(model.BuyerTinSpace) ? "____________________" : model.BuyerTinSpace))
+            .Append("</div>");
+        sb.Append("<div class=\"meta\">Buyer Address: ")
+            .Append(E(string.IsNullOrWhiteSpace(model.BuyerAddressSpace) ? "____________________" : model.BuyerAddressSpace))
+            .Append("</div>");
+        if (!string.IsNullOrWhiteSpace(model.StatutoryDiscountCategory))
+        {
+            sb.Append("<div class=\"meta\">Statutory discount: ").Append(E(model.StatutoryDiscountCategory)).Append("</div>");
+        }
+
+        if (!string.IsNullOrWhiteSpace(model.StatutoryGovernmentIdNumber))
+        {
+            sb.Append("<div class=\"meta\">Gov't ID: ").Append(E(model.StatutoryGovernmentIdNumber)).Append("</div>");
+        }
+
+        if (model.WithholdingTaxCents is long wh && wh > 0)
+        {
+            sb.Append("<div class=\"meta\">Withholding tax: ").Append(E(FormatMoney(wh))).Append("</div>");
+        }
 
         sb.Append("<table><thead><tr><th>Description</th><th class=\"num\">Qty</th><th class=\"num\">Unit</th><th class=\"num\">Amount</th></tr></thead><tbody>");
         foreach (InvoiceRenderLine line in model.Lines)

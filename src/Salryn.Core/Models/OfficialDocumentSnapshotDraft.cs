@@ -13,7 +13,23 @@ public sealed record OfficialDocumentSnapshotDraft(
     IReadOnlyList<OfficialDocumentSnapshotDraftPayment> Payments,
     OfficialDocumentSnapshotDraftTaxMode TaxMode,
     IReadOnlyList<string> DeferredComplianceNotes,
-    OfficialDocumentTaxBucketDraft? TaxBuckets = null);
+    OfficialDocumentTaxBucketDraft? TaxBuckets = null,
+    // TRAD-M3-RC1: optional buyer/statutory evidence frozen at post time (omit for historical V1 rows).
+    OfficialDocumentSnapshotDraftBuyer? Buyer = null,
+    OfficialDocumentSnapshotDraftStatutory? Statutory = null);
+
+/// <summary>Optional buyer identity captured at official post. Never invented at render time.</summary>
+public sealed record OfficialDocumentSnapshotDraftBuyer(
+    string? RegisteredName,
+    string? Tin,
+    string? RegisteredAddress);
+
+/// <summary>Optional statutory discount / withholding evidence when supplied at post.</summary>
+public sealed record OfficialDocumentSnapshotDraftStatutory(
+    string? DiscountCategory,
+    string? GovernmentIdNumber,
+    string? SignatureReference,
+    long? WithholdingTaxCents);
 
 // Kirch strict dev guide:
 // Keep receipt/invoice distinction explicit in the draft contract.

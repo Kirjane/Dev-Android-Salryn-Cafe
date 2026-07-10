@@ -148,6 +148,33 @@ public static class OfficialInvoiceSnapshotParser
                 taxBuckets = new ParsedTaxBuckets(taxpayerMode, nonVatStatement, buckets);
             }
 
+            ParsedBuyer? buyer = null;
+            if (root.TryGetProperty("buyer", out JsonElement buyerEl) && buyerEl.ValueKind == JsonValueKind.Object)
+            {
+                buyer = new ParsedBuyer(
+                    RegisteredName: ReadString(buyerEl, "registeredName"),
+                    Tin: ReadString(buyerEl, "tin"),
+                    RegisteredAddress: ReadString(buyerEl, "registeredAddress"));
+            }
+
+            ParsedStatutory? statutory = null;
+            if (root.TryGetProperty("statutory", out JsonElement statutoryEl) &&
+                statutoryEl.ValueKind == JsonValueKind.Object)
+            {
+                long? withholding = null;
+                if (statutoryEl.TryGetProperty("withholdingTaxCents", out JsonElement whEl) &&
+                    whEl.ValueKind == JsonValueKind.Number)
+                {
+                    withholding = whEl.GetInt64();
+                }
+
+                statutory = new ParsedStatutory(
+                    DiscountCategory: ReadString(statutoryEl, "discountCategory"),
+                    GovernmentIdNumber: ReadString(statutoryEl, "governmentIdNumber"),
+                    SignatureReference: ReadString(statutoryEl, "signatureReference"),
+                    WithholdingTaxCents: withholding);
+            }
+
             return Result<ParsedOfficialInvoiceSnapshot>.Success(new ParsedOfficialInvoiceSnapshot(
                 Identity: identity with { HashVerified = true },
                 DocumentKind: documentKind,
@@ -155,7 +182,9 @@ public static class OfficialInvoiceSnapshotParser
                 Lines: lines,
                 Amounts: amounts,
                 Payments: payments,
-                TaxBuckets: taxBuckets));
+                TaxBuckets: taxBuckets,
+                Buyer: buyer,
+                Statutory: statutory));
         }
         catch (Exception ex) when (ex is JsonException or FormatException or InvalidOperationException or KeyNotFoundException)
         {
@@ -214,7 +243,9 @@ public sealed record ParsedOfficialInvoiceSnapshot(
     IReadOnlyList<ParsedLine> Lines,
     ParsedAmounts Amounts,
     IReadOnlyList<ParsedPayment> Payments,
-    ParsedTaxBuckets? TaxBuckets);
+    ParsedTaxBuckets? TaxBuckets,
+    ParsedBuyer? Buyer = null,
+    ParsedStatutory? Statutory = null);
 
 public sealed record ParsedHeader(
     string RegisteredTaxpayerName,
@@ -255,3 +286,14 @@ public sealed record ParsedTaxBuckets(
     string TaxpayerMode,
     string? NonVatStatement,
     IReadOnlyList<ParsedBucket> Buckets);
+
+public sealed record ParsedBuyer(
+    string? RegisteredName,
+    string? Tin,
+    string? RegisteredAddress);
+
+public sealed record ParsedStatutory(
+    string? DiscountCategory,
+    string? GovernmentIdNumber,
+    string? SignatureReference,
+    long? WithholdingTaxCents);

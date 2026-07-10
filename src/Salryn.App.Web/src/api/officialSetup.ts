@@ -438,8 +438,8 @@ export type OfficialInvoiceOutputPackage = {
 export async function generateOfficialInvoiceOutput(body: {
   saleId?: string | null;
   officialDocumentNumber?: string | null;
-  mode?: "InternalDemo" | "ProductionCapable";
 }): Promise<OfficialInvoiceOutputPackage> {
+  // Trust mode is server-owned (InternalDemo only). Client must not select legal/output trust mode.
   const response = await fetch("/api/official/invoice-output/generate", {
     method: "POST",
     credentials: "include",
@@ -447,7 +447,6 @@ export async function generateOfficialInvoiceOutput(body: {
     body: JSON.stringify({
       saleId: body.saleId ?? null,
       officialDocumentNumber: body.officialDocumentNumber ?? null,
-      mode: body.mode ?? "InternalDemo",
       includeHtml: true,
       includeThermalText: true,
     }),

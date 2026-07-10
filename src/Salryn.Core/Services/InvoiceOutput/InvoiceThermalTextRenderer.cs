@@ -39,8 +39,22 @@ public sealed class InvoiceThermalTextRenderer
         Line(sb, "No: " + model.OfficialDocumentNumber);
         Line(sb, "DT: " + model.TransactionDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture));
         Line(sb, "Cashier: " + model.CashierIdentifier);
-        Line(sb, "Buyer: ____________________");
-        Line(sb, "Buyer TIN: ________________");
+        Line(sb, Wrap(
+            "Buyer: " + (string.IsNullOrWhiteSpace(model.BuyerNameSpace) ? "____________________" : model.BuyerNameSpace!),
+            w));
+        Line(sb, Wrap(
+            "Buyer TIN: " + (string.IsNullOrWhiteSpace(model.BuyerTinSpace) ? "________________" : model.BuyerTinSpace!),
+            w));
+        if (!string.IsNullOrWhiteSpace(model.BuyerAddressSpace))
+        {
+            Line(sb, Wrap("Buyer Addr: " + model.BuyerAddressSpace, w));
+        }
+
+        if (!string.IsNullOrWhiteSpace(model.StatutoryDiscountCategory))
+        {
+            Line(sb, Wrap("Stat disc: " + model.StatutoryDiscountCategory, w));
+        }
+
         Line(sb, Repeat('-', w));
 
         foreach (InvoiceRenderLine line in model.Lines)

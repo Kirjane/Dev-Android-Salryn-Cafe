@@ -175,12 +175,54 @@ public sealed class OfficialDocumentSnapshotEvidenceBuilder
         WritePayments(writer, draft.Payments);
         WriteTaxMode(writer, draft.TaxMode);
         WriteTaxBuckets(writer, draft.TaxBuckets);
+        WriteBuyer(writer, draft.Buyer);
+        WriteStatutory(writer, draft.Statutory);
         WriteDeferredComplianceNotes(writer, draft.DeferredComplianceNotes);
 
         writer.WriteEndObject();
         writer.Flush();
 
         return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static void WriteBuyer(Utf8JsonWriter writer, OfficialDocumentSnapshotDraftBuyer? buyer)
+    {
+        if (buyer is null)
+        {
+            return;
+        }
+
+        // Omitted entirely when null so historical V1 hashes remain unchanged for rows without buyer.
+        writer.WritePropertyName("buyer");
+        writer.WriteStartObject();
+        writer.WriteString("registeredName", buyer.RegisteredName);
+        writer.WriteString("tin", buyer.Tin);
+        writer.WriteString("registeredAddress", buyer.RegisteredAddress);
+        writer.WriteEndObject();
+    }
+
+    private static void WriteStatutory(Utf8JsonWriter writer, OfficialDocumentSnapshotDraftStatutory? statutory)
+    {
+        if (statutory is null)
+        {
+            return;
+        }
+
+        writer.WritePropertyName("statutory");
+        writer.WriteStartObject();
+        writer.WriteString("discountCategory", statutory.DiscountCategory);
+        writer.WriteString("governmentIdNumber", statutory.GovernmentIdNumber);
+        writer.WriteString("signatureReference", statutory.SignatureReference);
+        if (statutory.WithholdingTaxCents.HasValue)
+        {
+            writer.WriteNumber("withholdingTaxCents", statutory.WithholdingTaxCents.Value);
+        }
+        else
+        {
+            writer.WriteNull("withholdingTaxCents");
+        }
+
+        writer.WriteEndObject();
     }
 
     private static void WriteHeader(

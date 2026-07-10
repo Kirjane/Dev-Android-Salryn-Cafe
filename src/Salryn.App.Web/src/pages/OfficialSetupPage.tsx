@@ -180,7 +180,10 @@ export function OfficialSetupPage() {
 
   function onSaved(label: string) {
     setError(null);
-    setMessage(`${label} saved. Official output is still not implemented.`);
+    setMessage(
+      `${label} saved. Internal invoice projection/preview is available under Official Setup. ` +
+        `Production official issuance and unwatermarked printing remain disabled (activation OFF).`,
+    );
     void queryClient.invalidateQueries({ queryKey: ["official-setup"] });
     void queryClient.invalidateQueries({ queryKey: ["official-readiness"] });
     void queryClient.invalidateQueries({ queryKey: ["official-numbering-preview"] });
@@ -328,7 +331,6 @@ export function OfficialSetupPage() {
     mutationFn: () =>
       generateOfficialInvoiceOutput({
         saleId: invoiceSaleId.trim() || null,
-        mode: "InternalDemo",
       }),
     onSuccess: (data) => {
       setError(null);
@@ -744,9 +746,63 @@ export function OfficialSetupPage() {
               placeholder="GUID of sale with EJ snapshot"
             />
           </FormField>
-          <div>
+          <div className="flex flex-wrap gap-2">
             <Button onClick={() => invoiceOutputMutation.mutate()} disabled={invoiceOutputMutation.isPending}>
               Generate internal invoice projection
+            </Button>
+            <Button
+              onClick={() => {
+                const id = invoiceSaleId.trim();
+                if (!id) {
+                  setError("Enter a committed sale ID first.");
+                  return;
+                }
+                window.open(
+                  `/api/official/invoice-output/html?saleId=${encodeURIComponent(id)}`,
+                  "_blank",
+                  "noopener,noreferrer",
+                );
+              }}
+            >
+              Download HTML
+            </Button>
+            <Button
+              onClick={() => {
+                const id = invoiceSaleId.trim();
+                if (!id) {
+                  setError("Enter a committed sale ID first.");
+                  return;
+                }
+                window.open(
+                  `/api/official/invoice-output/thermal?saleId=${encodeURIComponent(id)}`,
+                  "_blank",
+                  "noopener,noreferrer",
+                );
+              }}
+            >
+              Download thermal text
+            </Button>
+            <Button
+              onClick={() => {
+                const id = invoiceSaleId.trim();
+                if (!id) {
+                  setError("Enter a committed sale ID first.");
+                  return;
+                }
+                // Browser-host print: open server HTML print-view; user starts print dialog.
+                const w = window.open(
+                  `/api/official/invoice-output/print-view?saleId=${encodeURIComponent(id)}`,
+                  "_blank",
+                  "noopener,noreferrer",
+                );
+                if (w) {
+                  // Best-effort: after load, operator uses browser print (Ctrl+P). Auto-print is not forced
+                  // (some browsers block); focus the window for the operator gesture.
+                  w.focus();
+                }
+              }}
+            >
+              Open print preview
             </Button>
           </div>
           {invoiceOutput ? (
@@ -763,6 +819,10 @@ export function OfficialSetupPage() {
               </p>
               <p className="font-mono text-xs break-all">SHA-256: {invoiceOutput.canonicalContentSha256}</p>
               <p className="text-xs">{invoiceOutput.noComplianceClaimNote}</p>
+              <p className="text-xs text-slate-500">
+                Delivery: host-local HTML/thermal download and browser print-view. Does not allocate numbers. Production
+                issuance remains OFF.
+              </p>
               {invoiceOutput.artifacts
                 .filter((a) => a.format === "ThermalText")
                 .map((a) => (

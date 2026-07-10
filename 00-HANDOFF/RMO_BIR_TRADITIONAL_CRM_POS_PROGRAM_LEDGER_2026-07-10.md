@@ -37,7 +37,7 @@ Verified at program start (after fetch):
 | 0.5 | QA1 manual Official Setup UI acceptance | **PENDING HUMAN (Kirch)** — automated QA1 green |
 | 1 | TRAD-M1 taxpayer mode + invoice policy spine | **DONE (engineering)** — see implementation report |
 | 2 | TRAD-M2 atomic official posting | **DONE (engineering)** — harden existing shared-tx path + activation OFF facade |
-| 3 | TRAD-M3 VAT/Non-VAT Invoice output | **DONE (engineering)** — immutable EJ snapshot → HTML/thermal projection; manual acceptance pending |
+| 3 | TRAD-M3 VAT/Non-VAT Invoice output | **DONE (engineering)** + **RC1 delivery closeout** — downloads/print-view/server-owned mode; manual print still pending |
 | 4 | TRAD-M4 reprint/void/refund/adjustment lifecycle | Pending |
 | 5 | TRAD-M5 X/Z, EJ export, traditional eSales | Pending |
 | 6 | TRAD-M6 installer/demo candidate validation | Pending |
@@ -60,7 +60,8 @@ Manual Official Setup checklist remains **NOT EXECUTED** by CLI (requires Kirch 
 2. `KIRCH-RMO-BIR-QA1-REAL-MACHINE-DB-UPGRADE-BACKUP-RESTORE` @ `ef36a3f0…`
 3. `KIRCH-RMO-BIR-TRAD-M1-TAXPAYER-MODE-AND-INVOICE-POLICY-SPINE` @ `121b7838…`
 4. `KIRCH-RMO-BIR-TRAD-M2-ATOMIC-OFFICIAL-POSTING` @ `fa90549d…`
-5. `KIRCH-RMO-BIR-TRAD-M3-VAT-NONVAT-INVOICE-OUTPUT` @ *(tip after push)*
+5. `KIRCH-RMO-BIR-TRAD-M3-VAT-NONVAT-INVOICE-OUTPUT` @ `e465770d…`
+6. `KIRCH-RMO-BIR-TRAD-M3-RC1-INVOICE-OUTPUT-DELIVERY-CLOSEOUT` @ *(tip after push)*
 
 ---
 
@@ -76,5 +77,5 @@ Manual Official Setup checklist remains **NOT EXECUTED** by CLI (requires Kirch 
 
 ## 6. Next action
 
-TRAD-M4 document lifecycle (reprint/void/refund/adjustment) on a new branch from TRAD-M3 tip.  
-Kirch still owes QA1 manual Official Setup UI PASS/FAIL and optional M3 visual/printer acceptance.
+After Kirch manual print/download acceptance for RC1 (optional before M4): TRAD-M4 document lifecycle from RC1 tip.  
+Kirch still owes QA1 manual Official Setup UI PASS/FAIL.

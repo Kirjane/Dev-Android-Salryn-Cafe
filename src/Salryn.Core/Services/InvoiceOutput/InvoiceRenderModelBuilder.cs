@@ -19,10 +19,23 @@ public sealed class InvoiceRenderModelBuilder
         List<string> missingOptional = new();
         List<string> validationNotes = new();
 
-        // Buyer fields are not in V1 snapshot — blank spaces only.
-        missingOptional.Add("BuyerName");
-        missingOptional.Add("BuyerTin");
-        missingOptional.Add("BuyerAddress");
+        string? buyerName = snapshot.Buyer?.RegisteredName;
+        string? buyerTin = snapshot.Buyer?.Tin;
+        string? buyerAddress = snapshot.Buyer?.RegisteredAddress;
+        if (string.IsNullOrWhiteSpace(buyerName))
+        {
+            missingOptional.Add("BuyerName");
+        }
+
+        if (string.IsNullOrWhiteSpace(buyerTin))
+        {
+            missingOptional.Add("BuyerTin");
+        }
+
+        if (string.IsNullOrWhiteSpace(buyerAddress))
+        {
+            missingOptional.Add("BuyerAddress");
+        }
 
         if (string.IsNullOrWhiteSpace(snapshot.Header.AccreditationNumber))
         {
@@ -154,9 +167,13 @@ public sealed class InvoiceRenderModelBuilder
             PermitToUseNumber: snapshot.Header.PermitToUseNumber,
             CashierIdentifier: snapshot.Header.CashierIdentifier,
             TerminalIdentifier: snapshot.Header.TerminalIdentifier,
-            BuyerNameSpace: null,
-            BuyerTinSpace: null,
-            BuyerAddressSpace: null,
+            BuyerNameSpace: string.IsNullOrWhiteSpace(buyerName) ? null : buyerName.Trim(),
+            BuyerTinSpace: string.IsNullOrWhiteSpace(buyerTin) ? null : buyerTin.Trim(),
+            BuyerAddressSpace: string.IsNullOrWhiteSpace(buyerAddress) ? null : buyerAddress.Trim(),
+            StatutoryDiscountCategory: snapshot.Statutory?.DiscountCategory,
+            StatutoryGovernmentIdNumber: snapshot.Statutory?.GovernmentIdNumber,
+            StatutorySignatureReference: snapshot.Statutory?.SignatureReference,
+            WithholdingTaxCents: snapshot.Statutory?.WithholdingTaxCents,
             Lines: lines,
             SubtotalCents: snapshot.Amounts.SubtotalCents,
             DiscountCents: snapshot.Amounts.DiscountCents,
