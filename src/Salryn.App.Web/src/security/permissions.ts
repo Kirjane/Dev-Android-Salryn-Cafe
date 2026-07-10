@@ -80,7 +80,7 @@ const pagePermissions: Partial<Record<AppPage, readonly Permission[]>> = {
   "official-setup": [Permissions.SettingsManage],
   // Host-only traditional reporting; report/view operators.
   "traditional-reporting": [Permissions.ReportsView, Permissions.OfficialReadingView, Permissions.OfficialEvidenceExport],
-  // Host-only PRE-CRYSTAL report dataset spine; no remote POS client access.
+  // Host-only report dataset spine; no remote POS client access.
   "production-reports": [Permissions.ReportsView, Permissions.OfficialReadingView],
 };
 

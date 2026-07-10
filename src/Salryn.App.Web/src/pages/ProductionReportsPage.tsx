@@ -1,9 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  attemptUnavailableCrystalRender,
   fetchProductionReportCatalog,
-  fetchProductionReportRendererStatus,
   generateProductionReportDataset,
   type ProductionReportCatalogItem,
   type ProductionReportDatasetEnvelope,
@@ -31,11 +29,6 @@ export function ProductionReportsPage() {
   const [dataset, setDataset] = useState<ProductionReportDatasetEnvelope | null>(null);
 
   const catalogQuery = useQuery({ queryKey: ["production-report-catalog"], queryFn: fetchProductionReportCatalog });
-  const rendererQuery = useQuery({
-    queryKey: ["production-report-renderer-status"],
-    queryFn: fetchProductionReportRendererStatus,
-  });
-
   const selected: ProductionReportCatalogItem | undefined = catalogQuery.data?.find((item) => item.kind === selectedKind);
 
   async function generateDataset() {
@@ -60,46 +53,16 @@ export function ProductionReportsPage() {
     }
   }
 
-  async function attemptRender() {
-    if (!dataset) {
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    setMessage(null);
-    try {
-      await attemptUnavailableCrystalRender(dataset);
-      setMessage("Unexpected renderer success.");
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <div className="space-y-6">
       <CommandBar
         title="Production Reports"
-        subtitle="PRE-CRYSTAL report dataset spine. Crystal runtime is unavailable until separately verified and wired."
+        subtitle="Internal report dataset generation for host operators."
       />
 
-      <Alert tone="warning" title="Crystal unavailable">
-        This page generates internal report datasets only. No SAP packages, .rpt files, PDF rendering, printer logic, or BIR
-        approval claims are present in this milestone.
+      <Alert tone="warning" title="Dataset generation only">
+        External rendering and output-device integration are unavailable in this milestone.
       </Alert>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Renderer status</CardTitle>
-        </CardHeader>
-        <CardBody className="space-y-2 text-sm text-slate-700">
-          {rendererQuery.isLoading ? <p>Loading renderer status…</p> : null}
-          {rendererQuery.data ? (
-            <pre className="overflow-auto rounded bg-slate-50 p-3 text-xs">{JSON.stringify(rendererQuery.data, null, 2)}</pre>
-          ) : null}
-        </CardBody>
-      </Card>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,520px)]">
         <Card>
@@ -139,20 +102,15 @@ export function ProductionReportsPage() {
             {selected ? (
               <Alert tone={selected.datasetAvailable ? "success" : "warning"} title={selected.title}>
                 {selected.datasetAvailable
-                  ? "This dataset is generated through the PRE-CRYSTAL spine. Official/tax totals use canonical M5 projection where applicable."
+                  ? "This dataset uses canonical M5 projection totals where applicable."
                   : selected.unavailableReason ?? "Dataset unavailable."}
               </Alert>
             ) : null}
             <TextInput value={rangeStart} onChange={(e) => setRangeStart(e.target.value)} placeholder="Range start ISO" />
             <TextInput value={rangeEnd} onChange={(e) => setRangeEnd(e.target.value)} placeholder="Range end ISO" />
-            <div className="flex flex-wrap gap-2">
-              <Button disabled={busy} onClick={() => void generateDataset()}>
-                Generate dataset
-              </Button>
-              <Button disabled={busy || !dataset} variant="secondary" onClick={() => void attemptRender()}>
-                Attempt Crystal render safely
-              </Button>
-            </div>
+            <Button disabled={busy} onClick={() => void generateDataset()}>
+              Generate dataset
+            </Button>
             {message ? <Alert tone="success">{message}</Alert> : null}
             {error ? <Alert tone="danger">{error}</Alert> : null}
             {dataset ? (

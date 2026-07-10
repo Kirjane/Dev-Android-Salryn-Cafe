@@ -23,18 +23,6 @@ export type ProductionReportDatasetRequest = {
   terminalId?: string;
 };
 
-export type ProductionReportRendererStatus = {
-  rendererName: string;
-  rendererVersion: string;
-  available: boolean;
-  canRenderPdf: boolean;
-  canPreview: boolean;
-  canPrint: boolean;
-  requiresExternalRuntime: boolean;
-  statusCode: string;
-  message: string;
-};
-
 export type ProductionReportDatasetEnvelope = Record<string, unknown> & {
   reportKind: string;
   reportTitle: string;
@@ -47,11 +35,6 @@ export async function fetchProductionReportCatalog(): Promise<ProductionReportCa
   return readJson<ProductionReportCatalogItem[]>(response);
 }
 
-export async function fetchProductionReportRendererStatus(): Promise<ProductionReportRendererStatus> {
-  const response = await fetch("/api/production-reports/renderer/status", { credentials: "include" });
-  return readJson<ProductionReportRendererStatus>(response);
-}
-
 export async function generateProductionReportDataset(
   body: ProductionReportDatasetRequest,
 ): Promise<ProductionReportDatasetEnvelope> {
@@ -62,14 +45,4 @@ export async function generateProductionReportDataset(
     body: JSON.stringify(body),
   });
   return readJson<ProductionReportDatasetEnvelope>(response);
-}
-
-export async function attemptUnavailableCrystalRender(dataset: ProductionReportDatasetEnvelope): Promise<Record<string, unknown>> {
-  const response = await fetch("/api/production-reports/render", {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dataset, requestedOutputKind: "pdf", timeoutMilliseconds: 30000 }),
-  });
-  return readJson<Record<string, unknown>>(response);
 }

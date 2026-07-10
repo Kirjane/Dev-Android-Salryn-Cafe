@@ -156,12 +156,13 @@ public static class Program
         J21Rmo242023ElectronicJournalSchemaHardeningChecks.Run();
         J21Rmo242023ElectronicJournalAppendContractPlanningChecks.Run();
         J21Rmo242023ElectronicJournalAppendServiceBoundaryChecks.Run();
-        J21Rmo242023ElectronicJournalAppendAtomicBoundaryChecks.RunAsync().GetAwaiter().GetResult();
+        J21Rmo242023ElectronicJournalAppendAtomicBoundaryChecks.Run();
         J21Rmo242023ElectronicJournalAppendPersistencePortChecks.RunAsync().GetAwaiter().GetResult();
         J21Rmo242023ElectronicJournalAppendOrchestrationShellChecks.RunAsync().GetAwaiter().GetResult();
         J21Rmo242023ElectronicJournalAppendRegistrationBoundaryChecks.RunAsync().GetAwaiter().GetResult();
         J21Rmo242023ElectronicJournalAppendBoundaryDocumentationSealChecks.Run();
         J21Rmo242023SharedSqliteTransactionBoundaryContractChecks.Run();
+        J21Rmo242023SharedSqliteTransactionBoundaryImplementationChecks.Run();
         J21Rmo242023SharedTransactionOfficialSequenceAllocationParticipantChecks.Run();
         J21Rmo242023OfficialSequenceAllocationServiceSharedBoundaryReuseChecks.Run();
         J21Rmo242023SqliteElectronicJournalAppendParticipantSkeletonChecks.Run();
