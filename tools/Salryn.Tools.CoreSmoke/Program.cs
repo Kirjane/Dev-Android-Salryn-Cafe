@@ -101,6 +101,10 @@ public static class Program
         RmoBirM6OfficialIntegrityChecks.Run();
         RmoBirM7OfficialSpineSprintChecks.Run();
         RmoBirM8EndgameChecks.Run();
+        RmoBirM9FullClosureChecks.Run();
+        RmoBirM10OfficialSourceAcquisitionChecks.Run();
+        RmoBirM11GuardedLivePostingCandidateChecks.Run();
+        RmoBirQa1RealMachineDatabaseChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
         M5VerifiedCandidateStackLedgerChecks.Run();
         M6CandidateStackPromotionDryRunChecks.Run();
@@ -296,6 +300,9 @@ public static class Program
                 return;
             case "rmo-bir-live-posting-candidate":
                 RmoBirM11GuardedLivePostingCandidateChecks.Run();
+                return;
+            case "rmo-bir-qa1-real-db":
+                RmoBirQa1RealMachineDatabaseChecks.Run();
                 return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);

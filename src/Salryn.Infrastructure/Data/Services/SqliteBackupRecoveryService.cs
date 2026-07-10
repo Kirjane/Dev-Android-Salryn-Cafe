@@ -233,6 +233,12 @@ public sealed class SqliteBackupRecoveryService : IBackupRecoveryService
             SqliteConnectionFactory.ClearAllPools();
             SqliteDatabaseBackupUtility.CreateOnlineBackup(liveDatabasePath, safetyBackupPath);
 
+            // After online backup, release pooled handles and checkpoint WAL so exclusive
+            // replacement can proceed in-process on isolated hosts (QA1 / single-process restore).
+            SqliteConnectionFactory.ClearAllPools();
+            CheckpointLiveDatabase(liveDatabasePath);
+            SqliteConnectionFactory.ClearAllPools();
+
             if (!CanOpenLiveDatabaseExclusively(liveDatabasePath))
             {
                 SqliteBackupLogWriter.TryWrite(
@@ -393,6 +399,32 @@ public sealed class SqliteBackupRecoveryService : IBackupRecoveryService
             ".db";
 
         return Path.Combine(_dbPaths.BackupPath, fileName);
+    }
+
+    private static void CheckpointLiveDatabase(string liveDatabasePath)
+    {
+        try
+        {
+            SqliteConnectionStringBuilder builder = new()
+            {
+                DataSource = liveDatabasePath,
+                Mode = SqliteOpenMode.ReadWrite,
+                Cache = SqliteCacheMode.Private,
+            };
+
+            using SqliteConnection connection = new(builder.ToString());
+            connection.Open();
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+            command.ExecuteNonQuery();
+        }
+        catch (SqliteException)
+        {
+            // Best-effort; exclusive open still decides restore safety.
+        }
+        catch (IOException)
+        {
+        }
     }
 
     private static bool CanOpenLiveDatabaseExclusively(string liveDatabasePath)
