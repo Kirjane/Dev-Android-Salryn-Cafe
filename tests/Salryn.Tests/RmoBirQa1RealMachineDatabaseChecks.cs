@@ -331,6 +331,7 @@ public static class RmoBirQa1RealMachineDatabaseChecks
         SqliteConnectionFactory.ClearAllPools();
         SentinelState restored = ReadSentinelState(paths.DatabasePath, before);
         AssertSentinelUnchanged(before, restored);
+        AssertOfficialSetupSurvivedRestore(paths.DatabasePath, before);
         RequireTrue(ReadSaleTotal(paths.DatabasePath, before.SaleId) == before.SaleTotalCents, "Restored sale total must match pre-backup.");
         RequireTrue(CountRows(paths.DatabasePath, "official_dry_run_packages") >= 2, "Dry-run packages must survive restore.");
         RequireIntegrityOk(paths.DatabasePath);
@@ -339,7 +340,9 @@ public static class RmoBirQa1RealMachineDatabaseChecks
         Console.WriteLine(
             "[QA1] E/F evidence: backup ok restore ok safety=" + Path.GetFileName(restore.Value.SafetyBackupPath) +
             " dryRunPackages=" + CountRows(paths.DatabasePath, "official_dry_run_packages") +
-            " seq=" + restored.SequenceCurrentNumber);
+            " seq=" + restored.SequenceCurrentNumber +
+            " receiptTitle=" + restored.ReceiptTitle +
+            " receiptKind=" + restored.ReceiptDocumentKind);
     }
 
     // --- fixture helpers ---
@@ -411,6 +414,7 @@ public static class RmoBirQa1RealMachineDatabaseChecks
         int? SessionStatus,
         string? ReceiptProfileId,
         string? ReceiptTitle,
+        string? ReceiptDocumentKind,
         string MachineProfileId);
 
     private static SentinelState InsertSentinelState(DbPaths paths, bool includeReceiptProfile, string label)
@@ -580,10 +584,12 @@ public static class RmoBirQa1RealMachineDatabaseChecks
 
         string? receiptId = null;
         string? receiptTitle = null;
+        string? receiptKind = null;
         if (includeReceiptProfile && TableExists(paths.DatabasePath, "official_receipt_profiles"))
         {
             receiptId = Guid.NewGuid().ToString("D");
             receiptTitle = "QA1 Invoice " + label;
+            receiptKind = "OFFICIAL_INVOICE";
             Exec(connection, """
                 INSERT INTO official_receipt_profiles (
                     id, bir_machine_profile_id, document_title, document_kind, footer_legal_text,
@@ -591,7 +597,7 @@ public static class RmoBirQa1RealMachineDatabaseChecks
                     void_refund_marker_text, invoice_or_transition_mode, sc_pwd_placeholder_enabled,
                     dry_run_only, created_at, updated_at, updated_by_user_id)
                 VALUES (
-                    $id, $machineId, $title, 'OFFICIAL_INVOICE', 'QA1 footer',
+                    $id, $machineId, $title, $kind, 'QA1 footer',
                     NULL, 'REPRINT', 'TRAINING - NOT OFFICIAL',
                     NULL, NULL, 0,
                     1, $now, NULL, NULL);
@@ -599,6 +605,7 @@ public static class RmoBirQa1RealMachineDatabaseChecks
                 ("$id", receiptId),
                 ("$machineId", machineId),
                 ("$title", receiptTitle),
+                ("$kind", receiptKind),
                 ("$now", now));
         }
 
@@ -608,7 +615,7 @@ public static class RmoBirQa1RealMachineDatabaseChecks
         return new SentinelState(
             userId, productId, saleId, saleTotal, 2,
             sequenceId, sequenceCurrent, ejCount, stockCount,
-            sessionId, 1, receiptId, receiptTitle, machineId);
+            sessionId, 1, receiptId, receiptTitle, receiptKind, machineId);
     }
 
     private static SentinelState ReadSentinelState(string databasePath, SentinelState template)
@@ -629,6 +636,55 @@ public static class RmoBirQa1RealMachineDatabaseChecks
             }
         }
 
+        // Reread official setup rows from disk (do not carry template receipt/machine fields blindly).
+        string? receiptId = null;
+        string? receiptTitle = null;
+        string? receiptKind = null;
+        string? receiptMachineId = null;
+        if (template.ReceiptProfileId is not null && TableExists(databasePath, "official_receipt_profiles"))
+        {
+            using SqliteCommand cmd = connection.CreateCommand();
+            cmd.CommandText = """
+                SELECT id, document_title, document_kind, bir_machine_profile_id
+                FROM official_receipt_profiles
+                WHERE id = $id
+                LIMIT 1;
+                """;
+            cmd.Parameters.AddWithValue("$id", template.ReceiptProfileId);
+            using SqliteDataReader reader = cmd.ExecuteReader();
+            if (reader.Read())
+            {
+                receiptId = reader.GetString(0);
+                receiptTitle = reader.GetString(1);
+                receiptKind = reader.GetString(2);
+                receiptMachineId = reader.GetString(3);
+            }
+        }
+
+        string? machineId = null;
+        if (TableExists(databasePath, "bir_machine_profiles"))
+        {
+            object? m = Scalar(connection, "SELECT id FROM bir_machine_profiles WHERE id = $id;", ("$id", template.MachineProfileId));
+            machineId = m?.ToString();
+        }
+
+        string? sequenceMachineId = Scalar(
+            connection,
+            "SELECT bir_machine_profile_id FROM bir_official_document_sequences WHERE id = $id;",
+            ("$id", template.SequenceId))?.ToString();
+
+        // Stash linkage checks on unused template fields via require after return in caller;
+        // store machine id only when present.
+        RequireTrue(machineId is not null, "Machine profile must be reread from database.");
+        if (template.ReceiptProfileId is not null)
+        {
+            RequireTrue(receiptId is not null, "Receipt profile must be reread from database.");
+            RequireTrue(receiptMachineId == template.MachineProfileId,
+                "Receipt profile must still reference expected machine profile.");
+            RequireTrue(sequenceMachineId == template.MachineProfileId,
+                "Sequence must still reference expected machine profile.");
+        }
+
         return template with
         {
             SaleTotalCents = saleTotal,
@@ -636,7 +692,11 @@ public static class RmoBirQa1RealMachineDatabaseChecks
             SequenceCurrentNumber = seq,
             EjCount = ej,
             StockMovementCount = stock,
-            SessionStatus = sessionStatus
+            SessionStatus = sessionStatus,
+            ReceiptProfileId = receiptId,
+            ReceiptTitle = receiptTitle,
+            ReceiptDocumentKind = receiptKind,
+            MachineProfileId = machineId ?? template.MachineProfileId
         };
     }
 
@@ -650,6 +710,57 @@ public static class RmoBirQa1RealMachineDatabaseChecks
         RequireTrue(before.EjCount == after.EjCount, "EJ count must not change. before=" + before.EjCount + " after=" + after.EjCount);
         RequireTrue(before.StockMovementCount == after.StockMovementCount, "Stock movement count must not change.");
         RequireTrue(before.SessionStatus == after.SessionStatus, "Session status must not change.");
+        RequireTrue(before.MachineProfileId == after.MachineProfileId, "Machine profile id must survive.");
+        if (before.ReceiptProfileId is not null)
+        {
+            RequireTrue(before.ReceiptProfileId == after.ReceiptProfileId, "Receipt profile id must survive.");
+            RequireTrue(before.ReceiptTitle == after.ReceiptTitle, "Receipt document title must survive.");
+            RequireTrue(before.ReceiptDocumentKind == after.ReceiptDocumentKind, "Receipt document kind must survive.");
+        }
+    }
+
+    private static void AssertOfficialSetupSurvivedRestore(string databasePath, SentinelState before)
+    {
+        RequireTrue(before.ReceiptProfileId is not null, "Backup/restore fixture must include receipt profile.");
+        using SqliteConnection connection = OpenRo(databasePath);
+
+        using (SqliteCommand cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = """
+                SELECT id, document_title, document_kind, bir_machine_profile_id
+                FROM official_receipt_profiles
+                WHERE id = $id
+                LIMIT 1;
+                """;
+            cmd.Parameters.AddWithValue("$id", before.ReceiptProfileId!);
+            using SqliteDataReader reader = cmd.ExecuteReader();
+            RequireTrue(reader.Read(), "Post-restore: receipt profile row must exist.");
+            string id = reader.GetString(0);
+            string title = reader.GetString(1);
+            string kind = reader.GetString(2);
+            string machineFromReceipt = reader.GetString(3);
+            RequireTrue(id == before.ReceiptProfileId, "Post-restore receipt profile id must match.");
+            RequireTrue(title == before.ReceiptTitle, "Post-restore receipt title must match. got=" + title);
+            RequireTrue(kind == before.ReceiptDocumentKind, "Post-restore document kind must match. got=" + kind);
+            RequireTrue(machineFromReceipt == before.MachineProfileId, "Post-restore receipt machine FK must match.");
+            Console.WriteLine("[QA1] Post-restore receipt: id=" + id + " title=" + title + " kind=" + kind);
+        }
+
+        object? machine = Scalar(connection, "SELECT id FROM bir_machine_profiles WHERE id = $id;", ("$id", before.MachineProfileId));
+        RequireTrue(machine is not null, "Post-restore: machine profile must exist.");
+
+        object? seqMachine = Scalar(
+            connection,
+            "SELECT bir_machine_profile_id FROM bir_official_document_sequences WHERE id = $id;",
+            ("$id", before.SequenceId));
+        RequireTrue(seqMachine?.ToString() == before.MachineProfileId, "Post-restore: sequence must reference machine profile.");
+
+        int seq = Convert.ToInt32(Scalar(
+            connection,
+            "SELECT current_number FROM bir_official_document_sequences WHERE id = $id;",
+            ("$id", before.SequenceId)) ?? -1);
+        RequireTrue(seq == before.SequenceCurrentNumber, "Post-restore sequence current_number must match.");
+        Console.WriteLine("[QA1] Post-restore machine=" + before.MachineProfileId + " seq=" + seq);
     }
 
     // --- SQL helpers ---
