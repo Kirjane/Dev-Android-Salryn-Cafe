@@ -12,8 +12,8 @@
 |------|--------|
 | Base M2 SHA | `fa90549d008721751e2812bc90193f8dacdcd070` |
 | M3 branch | `KIRCH-RMO-BIR-TRAD-M3-VAT-NONVAT-INVOICE-OUTPUT` |
-| Final M3 SHA | *(branch tip after push — see `git rev-parse HEAD`)* |
-| M2 → M3 | `0 behind / N ahead` (attributable M3 commits only) |
+| Final M3 SHA | `6f6c7a113e05c930ee4461ce9de608b9b6821dcf` |
+| M2 → M3 | `0 behind / 1 ahead` |
 | Sandbox | `1f74cd8bcaca1a5df487aa61677ee9829dd7fedb` (untouched) |
 | Installer | `6b9c46676390b8a86a989eca600cb02e406ce865` (untouched) |
 | Worktree after push | clean expected |
