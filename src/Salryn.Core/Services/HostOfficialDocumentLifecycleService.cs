@@ -83,12 +83,13 @@ public sealed class HostOfficialDocumentLifecycleService : IHostOfficialDocument
             ReprintImplemented: _reprintService is not null,
             VoidRefundEventsImplemented: _mutation is not null,
             AdjustmentSeriesAllocationImplemented: false,
-            Summary: "Host official-document lifecycle facade (engineering). Reprint/void/refund are append-only. Production activation remains OFF.",
+            Summary: "Host official-document lifecycle facade (engineering). M4-RC1 completion path applies operational sale/stock effects + append-only EJ. Production activation remains OFF.",
             Notes: new[]
             {
                 "Original official documents remain immutable.",
                 "Reprint does not allocate a new official sales number.",
-                "Void/refund append lifecycle events; adjustment series allocation is not productized in M4.",
+                "Void/refund apply sale/stock effects and append lifecycle events; adjustment series allocation is not productized in M4-RC1.",
+                "Actor must come from authenticated host session; client-supplied actor is rejected.",
                 OfficialSafetyConstants.NoOfficialNumberIssued,
                 ProductionOfficialPostingActivation.NotAComplianceClaimNote
             }));

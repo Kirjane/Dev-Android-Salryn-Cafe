@@ -1,14 +1,15 @@
 using Salryn.Api.Local.Auth;
 using Salryn.Core.Common;
+using Salryn.Core.Official;
 using Salryn.Core.Services;
-using Salryn.Core.Services.InvoiceOutput;
 using Salryn.Infrastructure.Data;
 using Salryn.Infrastructure.Data.Services;
 
 namespace Salryn.Api.Local;
 
 /// <summary>
-/// Host-local official document lifecycle (reprint/void/refund events). Engineering only.
+/// Host-local official document lifecycle (reprint/void/refund).
+/// M4-RC1: operational completion service (sale/stock/EJ/state/idempotency). Engineering only.
 /// </summary>
 public static class LocalOfficialDocumentLifecycleEndpoints
 {
@@ -30,8 +31,7 @@ public static class LocalOfficialDocumentLifecycleEndpoints
                 return unauthorized;
             }
 
-            IHostOfficialDocumentLifecycleService service = Compose(connectionFactory);
-            Result<OfficialDocumentLifecycleStatus> status = service.GetStatus();
+            Result<OfficialDocumentLifecycleStatus> status = BuildStatus();
             return Results.Json(status.Value);
         });
 
@@ -51,6 +51,7 @@ public static class LocalOfficialDocumentLifecycleEndpoints
                 return unauthorized;
             }
 
+            // Actor identity is always taken from the authenticated session — never from the body.
             string? userId = sessions.GetRequiredSession(
                 httpContext.Request.Cookies[LocalApiSessionService.SessionCookieName])?.UserId.ToString("D");
             if (!Guid.TryParse(userId, out Guid actorId))
@@ -67,19 +68,30 @@ public static class LocalOfficialDocumentLifecycleEndpoints
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
+            if (string.IsNullOrWhiteSpace(body.IdempotencyKey))
+            {
+                return Results.Json(
+                    new { code = "DocumentLifecycle.IdempotencyKeyRequired", message = "Idempotency key is required." },
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
             Guid? journalId = Guid.TryParse(body.JournalEntryId, out Guid j) ? j : null;
             Guid? saleId = Guid.TryParse(body.SaleId, out Guid s) ? s : null;
 
-            IHostOfficialDocumentLifecycleService service = Compose(connectionFactory);
-            Result<OfficialDocumentLifecycleActionResult> result = await service.ExecuteAsync(
-                new OfficialDocumentLifecycleActionRequest(
+            SqliteOfficialDocumentLifecycleCompletionService completion =
+                new(connectionFactory);
+
+            Result<OfficialDocumentLifecycleActionResult> result = await completion.ExecuteAsync(
+                new OfficialDocumentLifecycleRuntimeRequest(
                     action,
                     journalId,
                     body.OfficialDocumentNumber,
                     saleId,
-                    body.Reason ?? string.Empty,
+                    body.Reason,
                     actorId,
-                    body.TerminalId),
+                    body.TerminalId,
+                    body.IdempotencyKey.Trim(),
+                    body.RefundAmountCents),
                 cancellationToken).ConfigureAwait(false);
 
             if (result.IsFailure)
@@ -115,14 +127,29 @@ public static class LocalOfficialDocumentLifecycleEndpoints
         });
     }
 
-    private static IHostOfficialDocumentLifecycleService Compose(SqliteConnectionFactory factory)
+    private static Result<OfficialDocumentLifecycleStatus> BuildStatus()
     {
-        SqliteOfficialDocumentLifecycleReadService lifecycleRead = new(factory);
-        SqliteOfficialDocumentReprintService reprintPersistence = new(factory);
-        OfficialDocumentReprintService reprint = new(lifecycleRead, reprintPersistence);
-        SqliteOfficialDocumentLifecycleMutationService mutation = new(factory);
-        InvoiceOutputService invoiceOutput = new(new SqliteOfficialInvoiceSnapshotReadService(factory));
-        return new HostOfficialDocumentLifecycleService(reprint, mutation, invoiceOutput);
+        return Result<OfficialDocumentLifecycleStatus>.Success(new OfficialDocumentLifecycleStatus(
+            ProductionActivationEnabled: ProductionOfficialPostingActivation.IsEnabled,
+            LiveOfficialPostingAllowed: false,
+            ReprintImplemented: true,
+            VoidRefundEventsImplemented: true,
+            AdjustmentSeriesAllocationImplemented: false,
+            Summary:
+            "M4-RC1 host official-document lifecycle completion (engineering). " +
+            "Reprint/void/refund apply operational effects + append-only EJ events. " +
+            "Production activation remains OFF.",
+            Notes: new[]
+            {
+                "Original official documents remain immutable.",
+                "Reprint renders REPRINT marker; does not allocate a new official sales number.",
+                "Void/refund apply sale/stock effects and append lifecycle events in one transaction.",
+                "Actor is taken from authenticated session only.",
+                "Idempotency key is required for every lifecycle action.",
+                "Adjustment series allocation is not productized in M4-RC1.",
+                OfficialSafetyConstants.NoOfficialNumberIssued,
+                ProductionOfficialPostingActivation.NotAComplianceClaimNote
+            }));
     }
 
     public sealed record LifecycleActionApiRequest(
@@ -131,5 +158,7 @@ public static class LocalOfficialDocumentLifecycleEndpoints
         string? OfficialDocumentNumber,
         string? SaleId,
         string? Reason,
-        string? TerminalId);
+        string? TerminalId,
+        string? IdempotencyKey,
+        long? RefundAmountCents);
 }

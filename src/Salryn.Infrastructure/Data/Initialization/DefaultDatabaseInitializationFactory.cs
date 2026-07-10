@@ -55,7 +55,8 @@ public static class DefaultDatabaseInitializationFactory
             new TerminalCredentialHandshakeSchemaMigration(),
             new OfficialReceiptProfileSchemaMigration(),
             new OfficialDryRunPackageSchemaMigration(),
-            new VatRegistrationModeSchemaMigration()
+            new VatRegistrationModeSchemaMigration(),
+            new OfficialDocumentLifecycleCompletionSchemaMigration()
         };
 
         MigrationRunner migrationRunner = new(connectionFactory, migrations);

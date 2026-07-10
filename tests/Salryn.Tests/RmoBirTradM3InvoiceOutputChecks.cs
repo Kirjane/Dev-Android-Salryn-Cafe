@@ -67,7 +67,7 @@ public static class RmoBirTradM3InvoiceOutputChecks
         RequireContains(api, "/api/official/invoice-output/generate", "Web API client required.");
         RequireContains(coreSmoke, "rmo-bir-trad-invoice-output", "CoreSmoke gate required.");
         RequireContains(coreSmoke, "RmoBirTradM3InvoiceOutputChecks.Run()", "CoreSmoke must run M3 checks.");
-        RequireContains(catalog, "SupportedMigrationVersion = 15", "M3 must not require migration bump without study.");
+        RequireContains(catalog, "SupportedMigrationVersion = 16", "Catalog version after M4-RC1 lifecycle migration.");
         RequireFalse(html.Contains("is accredited", StringComparison.OrdinalIgnoreCase), "No accreditation claim.");
         RequireFalse(setupPage.Contains("BIR compliant", StringComparison.OrdinalIgnoreCase), "UI no compliance claim.");
     }
