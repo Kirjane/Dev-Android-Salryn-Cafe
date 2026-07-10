@@ -15,7 +15,7 @@
 | Starting branch | `KIRCH-RMO-BIR-M11-GUARDED-LIVE-POSTING-CANDIDATE-HARDENING` |
 | Starting SHA | `6d113697c6ae308cc423c0bd35c59381dd74089b` |
 | Final branch | `KIRCH-RMO-BIR-QA1-REAL-MACHINE-DB-UPGRADE-BACKUP-RESTORE` |
-| Final SHA | *(filled after commit)* |
+| Final SHA | `7dfe23fd55b719e207003cb67fafb517e04e87af` |
 | origin/M11 | `6d113697c6ae308cc423c0bd35c59381dd74089b` |
 | origin/Sandbox | `1f74cd8bcaca1a5df487aa61677ee9829dd7fedb` |
 | origin/Installer | `6b9c46676390b8a86a989eca600cb02e406ce865` |
