@@ -273,6 +273,8 @@ public static class LocalApiApplicationFactory
         app.MapLocalOfficialDocumentLifecycleEndpoints(composition.ConnectionFactory);
         // TRAD-M5-RC2: lifecycle-aware traditional reporting (X/Z/EJ/eSales draft). BIR schema unconfirmed.
         app.MapLocalOfficialTraditionalReportingEndpoints(composition.ConnectionFactory);
+        // PRE-CRYSTAL M0: host-only production report dataset spine. Crystal renderer unavailable.
+        app.MapLocalProductionReportEndpoints(composition.ConnectionFactory);
 
         if (webDistPath is not null)
         {
