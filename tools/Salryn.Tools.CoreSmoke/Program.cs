@@ -294,6 +294,9 @@ public static class Program
             case "rmo-bir-source-acquisition":
                 RmoBirM10OfficialSourceAcquisitionChecks.Run();
                 return;
+            case "rmo-bir-live-posting-candidate":
+                RmoBirM11GuardedLivePostingCandidateChecks.Run();
+                return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);
         }

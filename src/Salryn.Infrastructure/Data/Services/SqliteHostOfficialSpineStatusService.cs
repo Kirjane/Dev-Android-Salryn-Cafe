@@ -143,7 +143,7 @@ public sealed class SqliteHostOfficialSpineStatusService : IHostOfficialSpineSta
                 OfficialSpineReadinessLevel.Missing,
                 present: false,
                 liveBound: false,
-                "Live host checkout does not post official documents."));
+                "Live host checkout does not post official documents. Guarded candidate exists but is not checkout-bound."));
 
             components.Add(Component(
                 OfficialSpineComponentName.LegalSourceClosure,
@@ -170,6 +170,9 @@ public sealed class SqliteHostOfficialSpineStatusService : IHostOfficialSpineSta
             blockers.Add(new OfficialSpineBlocker(
                 "HostOfficialSpine.LegalSourceClosureIncomplete",
                 "Legal source process text improved; live official issuance remains blocked (product + EIS schema + accreditation)."));
+            blockers.Add(new OfficialSpineBlocker(
+                "HostOfficialSpine.LivePostingCandidateBlockedBeforeMutation",
+                "Guarded live-posting candidate is present but blocked before mutation; dual-track modeled; no production activation."));
 
             warnings.Add(new OfficialSpineWarning(
                 "HostOfficialSpine.InternalDryRunOnly",
@@ -179,7 +182,10 @@ public sealed class SqliteHostOfficialSpineStatusService : IHostOfficialSpineSta
                 "No BIR/RMO compliance is claimed."));
             warnings.Add(new OfficialSpineWarning(
                 "HostOfficialSpine.CheckoutDisconnected",
-                "Checkout is not connected to official numbering, journal, or dry-run planner."));
+                "Checkout is not connected to official numbering, journal, dry-run planner, or live-posting candidate."));
+            warnings.Add(new OfficialSpineWarning(
+                "HostOfficialSpine.LivePostingCandidatePresentBlocked",
+                "Guarded live-posting candidate service is present; traditional and EIS tracks modeled; always blocked."));
 
             return Result<OfficialSpineStatusContract>.Success(new OfficialSpineStatusContract(
                 ContractVersion: OfficialContractVersions.M3,
@@ -194,7 +200,7 @@ public sealed class SqliteHostOfficialSpineStatusService : IHostOfficialSpineSta
                 Blockers: blockers,
                 Warnings: warnings,
                 Summary:
-                    "RMO pre-live spine status: setup/numbering/integrity/dry-run planner/report contracts available for engineering only. " +
+                    "RMO pre-live spine status: setup/numbering/integrity/dry-run planner/report contracts and blocked live-posting candidate available for engineering only. " +
                     "Live official checkout and official output remain not implemented."));
         }
         catch (Exception ex)

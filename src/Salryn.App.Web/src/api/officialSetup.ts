@@ -366,6 +366,23 @@ export async function fetchOfficialInternalReports(packageId: string): Promise<{
   return readJson(response);
 }
 
+export type OfficialLivePostingCandidateStatus = {
+  blocked: boolean;
+  liveOfficialPostingAllowed: boolean;
+  checkoutBound: boolean;
+  eisJsonSchemaResolved: boolean;
+  defaultTrack: string;
+  summary: string;
+  note: string;
+};
+
+export async function fetchOfficialLivePostingCandidateStatus(): Promise<OfficialLivePostingCandidateStatus> {
+  const response = await fetch("/api/official/live-posting-candidate/status", {
+    credentials: "include",
+  });
+  return readJson(response);
+}
+
 export async function buildOfficialReportPreview(): Promise<{
   watermark: string;
   summary: string;

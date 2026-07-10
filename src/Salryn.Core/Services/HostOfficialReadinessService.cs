@@ -300,6 +300,9 @@ public sealed class HostOfficialReadinessService : IHostOfficialReadinessService
         warnings.Add(new HostOfficialReadinessItem(
             "HostOfficialReadiness.OfficialSourceAcquisitionM10",
             "Official source acquisition improved seal/push/eSales process definitions; live official issuance and EIS push remain not implemented."));
+        warnings.Add(new HostOfficialReadinessItem(
+            "HostOfficialReadiness.LivePostingCandidateBlocked",
+            "Guarded live-posting candidate service is present; dual-track modeled; always blocked before mutation; checkout is not bound."));
     }
 
     private static HostOfficialReadinessStatus ResolveStatus(

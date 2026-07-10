@@ -266,6 +266,7 @@ public static class LocalApiApplicationFactory
         app.MapLocalOfficialIntegrityEndpoints(composition.ConnectionFactory);
         app.MapLocalOfficialSpineEndpoints(composition.ConnectionFactory);
         app.MapLocalOfficialDryRunPackageEndpoints(composition.ConnectionFactory);
+        app.MapLocalOfficialLivePostingCandidateEndpoints(composition.ConnectionFactory);
 
         if (webDistPath is not null)
         {

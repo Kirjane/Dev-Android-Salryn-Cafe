@@ -10,6 +10,7 @@ import {
   fetchOfficialNumberingPreview,
   fetchOfficialReadiness,
   fetchOfficialSetup,
+  fetchOfficialLivePostingCandidateStatus,
   fetchOfficialSourceSaleDryRunReadonly,
   fetchOfficialSpineStatus,
   listOfficialDryRunPackages,
@@ -72,6 +73,10 @@ export function OfficialSetupPage() {
   const packagesQuery = useQuery({
     queryKey: ["official-dry-run-packages"],
     queryFn: listOfficialDryRunPackages,
+  });
+  const candidateStatusQuery = useQuery({
+    queryKey: ["official-live-posting-candidate-status"],
+    queryFn: fetchOfficialLivePostingCandidateStatus,
   });
 
   const [business, setBusiness] = useState({
@@ -857,6 +862,33 @@ export function OfficialSetupPage() {
           <p>
             Checkout is not connected to official numbering. No official number is issued. Internal preview only.
           </p>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Live posting candidate</CardTitle>
+          <StatusPill tone="warning">Live posting candidate: blocked</StatusPill>
+        </CardHeader>
+        <CardBody className="space-y-2 text-sm text-slate-700">
+          <Alert tone="warning" title="Internal candidate plan only">
+            Live posting candidate: blocked. Internal candidate plan only. No official number is consumed. No receipt or
+            invoice is issued. Checkout is not connected. EIS JSON schema unresolved.
+          </Alert>
+          {candidateStatusQuery.isLoading ? <p>Loading candidate status…</p> : null}
+          {candidateStatusQuery.data ? (
+            <>
+              <p>{candidateStatusQuery.data.summary}</p>
+              <p>
+                Live official posting allowed:{" "}
+                <strong>{candidateStatusQuery.data.liveOfficialPostingAllowed ? "yes" : "no"}</strong> · Checkout
+                bound: <strong>{candidateStatusQuery.data.checkoutBound ? "yes" : "no"}</strong> · EIS schema resolved:{" "}
+                <strong>{candidateStatusQuery.data.eisJsonSchemaResolved ? "yes" : "no"}</strong>
+              </p>
+              <p>Default track: {candidateStatusQuery.data.defaultTrack}</p>
+              <p className="text-xs text-slate-500">{candidateStatusQuery.data.note}</p>
+            </>
+          ) : null}
         </CardBody>
       </Card>
     </div>
