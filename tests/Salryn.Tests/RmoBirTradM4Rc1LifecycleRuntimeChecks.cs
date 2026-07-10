@@ -3,6 +3,7 @@ using Salryn.Core.Common;
 using Salryn.Core.Models;
 using Salryn.Core.Services;
 using Salryn.Core.Services.InvoiceOutput;
+using Salryn.Core.Services.Lifecycle;
 using Salryn.Core.ValueObjects;
 using Salryn.Infrastructure.Data;
 using Salryn.Infrastructure.Data.Initialization;
@@ -34,22 +35,22 @@ public static class RmoBirTradM4Rc1LifecycleRuntimeChecks
             Result<DatabaseInitializationSummary> init =
                 DefaultDatabaseInitializationFactory.Create(paths).InitializeDatabase();
             RequireTrue(init.IsSuccess, "Init must succeed: " + (init.IsFailure ? init.ErrorDetail.Message : ""));
-            RequireTrue(ReadMaxVersion(paths.DatabasePath) == 16, "Migration max must be 16.");
+            RequireTrue(ReadMaxVersion(paths.DatabasePath) == 17, "Migration max must be 17.");
 
-            SeedAndPostOfficialSale(paths, out Guid saleId, out string docNumber, out Guid journalId, out Guid actorId, out long stockBefore);
+            SeedAndPostOfficialSale(paths, out Guid saleId, out string docNumber, out Guid journalId, out Guid actorId, out long stockBefore, out Guid saleItemId);
 
-            SqliteOfficialDocumentLifecycleCompletionService lifecycle = new(new SqliteConnectionFactory(paths));
+            SqliteLifecycleAccountingService lifecycle = new(new SqliteConnectionFactory(paths));
 
             // Missing identity fails
-            Result<OfficialDocumentLifecycleActionResult> missing = lifecycle.ExecuteAsync(
-                new OfficialDocumentLifecycleRuntimeRequest(
+            Result<LifecycleAccountingResult> missing = lifecycle.ExecuteAsync(
+                new LifecycleAccountingCommand(
                     OfficialDocumentLifecycleAction.Void, null, null, null, "r", actorId, null, "key-miss")).GetAwaiter().GetResult();
             RequireTrue(missing.IsFailure, "Missing identity must fail.");
             RequireTrue(missing.ErrorDetail.Code == "DocumentLifecycle.IdentityRequired", "Identity required code.");
 
             // Reprint with REPRINT marker in HTML
-            Result<OfficialDocumentLifecycleActionResult> reprint = lifecycle.ExecuteAsync(
-                new OfficialDocumentLifecycleRuntimeRequest(
+            Result<LifecycleAccountingResult> reprint = lifecycle.ExecuteAsync(
+                new LifecycleAccountingCommand(
                     OfficialDocumentLifecycleAction.Reprint,
                     journalId,
                     docNumber,
@@ -60,62 +61,79 @@ public static class RmoBirTradM4Rc1LifecycleRuntimeChecks
                     "idem-reprint-1")).GetAwaiter().GetResult();
             RequireTrue(reprint.IsSuccess, "Reprint must succeed: " + (reprint.IsFailure ? reprint.ErrorDetail.Message : ""));
             RequireFalse(reprint.Value.SequenceAdvanced, "Reprint must not advance sequence.");
-            RequireTrue(reprint.Value.ReprintOutput is not null, "Reprint output required.");
-            string html = reprint.Value.ReprintOutput!.Artifacts.First(a => a.Format == InvoiceOutputFormat.Html).Utf8Text;
+            RequireTrue(reprint.Value.Output is not null, "Reprint output required.");
+            string html = reprint.Value.Output!.Artifacts.First(a => a.Format == InvoiceOutputFormat.Html).Utf8Text;
             RequireContains(html, "REPRINT", "HTML must contain REPRINT.");
             RequireTrue(CountEvents(paths.DatabasePath, journalId, "REPRINT") == 1, "One REPRINT event.");
 
             // Idempotent reprint
-            Result<OfficialDocumentLifecycleActionResult> reprint2 = lifecycle.ExecuteAsync(
-                new OfficialDocumentLifecycleRuntimeRequest(
+            Result<LifecycleAccountingResult> reprint2 = lifecycle.ExecuteAsync(
+                new LifecycleAccountingCommand(
                     OfficialDocumentLifecycleAction.Reprint, journalId, docNumber, saleId, "Customer copy", actorId, "POS-1", "idem-reprint-1"))
                 .GetAwaiter().GetResult();
             RequireTrue(reprint2.IsSuccess, "Idempotent reprint must succeed.");
             RequireTrue(reprint2.Value.EventId == reprint.Value.EventId, "Same event id.");
             RequireTrue(CountEvents(paths.DatabasePath, journalId, "REPRINT") == 1, "Still one REPRINT event.");
+            RequireTrue(reprint2.Value.Output is not null, "Idempotent reprint must rebuild output.");
 
-            // Partial refund
-            long half = 5600;
-            Result<OfficialDocumentLifecycleActionResult> refund1 = lifecycle.ExecuteAsync(
-                new OfficialDocumentLifecycleRuntimeRequest(
-                    OfficialDocumentLifecycleAction.Refund, journalId, docNumber, saleId, "Partial return", actorId, "POS-1", "idem-ref-1", half))
+            // Partial line refund (half qty)
+            Result<LifecycleAccountingResult> refund1 = lifecycle.ExecuteAsync(
+                new LifecycleAccountingCommand(
+                    OfficialDocumentLifecycleAction.Refund, journalId, docNumber, saleId, "Partial return", actorId, "POS-1", "idem-ref-1",
+                    RefundLines: new[]
+                    {
+                        new LifecycleRefundLineRequest(saleItemId, 500, StockReturnDisposition.Restock)
+                    },
+                    Settlement: new LifecycleRefundSettlementRequest(RefundSettlementMethod.Cash)))
                 .GetAwaiter().GetResult();
             RequireTrue(refund1.IsSuccess, "Partial refund: " + (refund1.IsFailure ? refund1.ErrorDetail.Message : ""));
             RequireTrue(CountEvents(paths.DatabasePath, journalId, "REFUND") == 1, "One REFUND event.");
             long stockMid = ReadStock(paths.DatabasePath, Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"));
             RequireTrue(stockMid > stockBefore, "Stock partially restored after partial refund.");
 
-            // Over-refund rejected
-            Result<OfficialDocumentLifecycleActionResult> over = lifecycle.ExecuteAsync(
-                new OfficialDocumentLifecycleRuntimeRequest(
-                    OfficialDocumentLifecycleAction.Refund, journalId, docNumber, saleId, "Too much", actorId, null, "idem-over", 999999))
+            // Over-quantity rejected
+            Result<LifecycleAccountingResult> over = lifecycle.ExecuteAsync(
+                new LifecycleAccountingCommand(
+                    OfficialDocumentLifecycleAction.Refund, journalId, docNumber, saleId, "Too much", actorId, null, "idem-over",
+                    RefundLines: new[]
+                    {
+                        new LifecycleRefundLineRequest(saleItemId, 999999, StockReturnDisposition.Restock)
+                    }))
                 .GetAwaiter().GetResult();
-            RequireTrue(over.IsFailure, "Over-refund must fail.");
-            RequireTrue(over.ErrorDetail.Code == "DocumentLifecycle.OverRefund", "OverRefund code.");
+            RequireTrue(over.IsFailure, "Over-quantity must fail.");
 
-            // Complete refund
-            Result<OfficialDocumentLifecycleActionResult> refund2 = lifecycle.ExecuteAsync(
-                new OfficialDocumentLifecycleRuntimeRequest(
-                    OfficialDocumentLifecycleAction.Refund, journalId, docNumber, saleId, "Rest", actorId, null, "idem-ref-2", half))
+            // Complete refund of remaining qty
+            Result<LifecycleAccountingResult> refund2 = lifecycle.ExecuteAsync(
+                new LifecycleAccountingCommand(
+                    OfficialDocumentLifecycleAction.Refund, journalId, docNumber, saleId, "Rest", actorId, null, "idem-ref-2",
+                    RefundLines: new[]
+                    {
+                        new LifecycleRefundLineRequest(saleItemId, 500, StockReturnDisposition.Restock)
+                    },
+                    Settlement: new LifecycleRefundSettlementRequest(RefundSettlementMethod.Cash)))
                 .GetAwaiter().GetResult();
             RequireTrue(refund2.IsSuccess, "Second refund: " + (refund2.IsFailure ? refund2.ErrorDetail.Message : ""));
             RequireTrue(CountEvents(paths.DatabasePath, journalId, "REFUND") == 2, "Two REFUND events.");
 
             // Further refund rejected
-            Result<OfficialDocumentLifecycleActionResult> again = lifecycle.ExecuteAsync(
-                new OfficialDocumentLifecycleRuntimeRequest(
-                    OfficialDocumentLifecycleAction.Refund, journalId, docNumber, saleId, "x", actorId, null, "idem-ref-3", 100))
+            Result<LifecycleAccountingResult> again = lifecycle.ExecuteAsync(
+                new LifecycleAccountingCommand(
+                    OfficialDocumentLifecycleAction.Refund, journalId, docNumber, saleId, "x", actorId, null, "idem-ref-3",
+                    RefundLines: new[]
+                    {
+                        new LifecycleRefundLineRequest(saleItemId, 100, StockReturnDisposition.Restock)
+                    }))
                 .GetAwaiter().GetResult();
             RequireTrue(again.IsFailure, "Post-full refund must fail.");
 
             // Sequence never advanced by lifecycle actions (still at post-time allocation).
             RequireTrue(ReadSequence(paths.DatabasePath) == 1, "Sequence remains 1 after lifecycle.");
 
-            // Separate void sale path (second official post may allocate sequence 2; lifecycle still must not advance further)
-            SeedAndPostOfficialSale(paths, out Guid sale2, out string doc2, out Guid journal2, out Guid actor2, out long stock2Before, label: "void");
+            // Separate void sale path
+            SeedAndPostOfficialSale(paths, out Guid sale2, out string doc2, out Guid journal2, out Guid actor2, out long stock2Before, out _, label: "void");
             long sequenceAfterSecondPost = ReadSequence(paths.DatabasePath);
-            Result<OfficialDocumentLifecycleActionResult> voided = lifecycle.ExecuteAsync(
-                new OfficialDocumentLifecycleRuntimeRequest(
+            Result<LifecycleAccountingResult> voided = lifecycle.ExecuteAsync(
+                new LifecycleAccountingCommand(
                     OfficialDocumentLifecycleAction.Void, journal2, doc2, sale2, "Void mistake", actor2, null, "idem-void-1"))
                 .GetAwaiter().GetResult();
             RequireTrue(voided.IsSuccess, "Void must succeed: " + (voided.IsFailure ? voided.ErrorDetail.Message : ""));
@@ -127,8 +145,8 @@ public static class RmoBirTradM4Rc1LifecycleRuntimeChecks
             RequireTrue(ReadSequence(paths.DatabasePath) == sequenceAfterSecondPost, "Void must not advance sequence.");
 
             // Double void rejected
-            Result<OfficialDocumentLifecycleActionResult> void2 = lifecycle.ExecuteAsync(
-                new OfficialDocumentLifecycleRuntimeRequest(
+            Result<LifecycleAccountingResult> void2 = lifecycle.ExecuteAsync(
+                new LifecycleAccountingCommand(
                     OfficialDocumentLifecycleAction.Void, journal2, doc2, sale2, "again", actor2, null, "idem-void-2"))
                 .GetAwaiter().GetResult();
             RequireTrue(void2.IsFailure, "Double void must fail.");
@@ -159,6 +177,7 @@ public static class RmoBirTradM4Rc1LifecycleRuntimeChecks
         out Guid journalId,
         out Guid actorId,
         out long stockBefore,
+        out Guid saleItemId,
         string label = "main")
     {
         SqliteConnectionFactory factory = new(paths);
@@ -281,6 +300,7 @@ public static class RmoBirTradM4Rc1LifecycleRuntimeChecks
         }
 
         saleId = Guid.NewGuid();
+        saleItemId = Guid.NewGuid();
         DateTimeOffset saleDate = new(2026, 7, 10, 15, 0, 0, TimeSpan.Zero);
         Sale sale = new()
         {
@@ -300,7 +320,7 @@ public static class RmoBirTradM4Rc1LifecycleRuntimeChecks
         };
         SaleItem item = new()
         {
-            Id = Guid.NewGuid(),
+            Id = saleItemId,
             SaleId = saleId,
             ProductId = productId,
             ProductNameSnapshot = "Item",

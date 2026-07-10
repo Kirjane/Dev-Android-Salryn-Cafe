@@ -74,20 +74,6 @@ public sealed class OfficialDocumentSnapshotDraftBuilder
         // Kirch strict dev guide:
         // Lines mirror persisted sale item evidence fields only.
         // No display formatting or official receipt wording belongs here.
-        List<OfficialDocumentSnapshotDraftLine> lines = new();
-
-        foreach (SaleItem item in request.Items)
-        {
-            lines.Add(new OfficialDocumentSnapshotDraftLine(
-                Description: item.ProductNameSnapshot.Trim(),
-                Barcode: NormalizeOptional(item.BarcodeSnapshot),
-                UnitName: item.UnitNameSnapshot.Trim(),
-                QuantityX1000: item.Quantity.ValueX1000,
-                UnitPriceCents: item.UnitPrice.Cents,
-                DiscountCents: item.Discount.Cents,
-                LineTotalCents: item.LineTotal.Cents));
-        }
-
         OfficialDocumentSnapshotDraftAmounts amounts = new(
             SubtotalCents: sale.Subtotal.Cents,
             DiscountCents: sale.Discount.Cents,
@@ -113,6 +99,7 @@ public sealed class OfficialDocumentSnapshotDraftBuilder
         bool vatBucketEngineDeferred = true;
         string taxModeCode = request.TaxModeCode.Trim().ToUpperInvariant();
         string? taxModeNotes = NormalizeOptional(request.TaxModeNotes);
+        bool emitLineTaxEvidence = false;
 
         if (request.LineTaxClassifications is not null &&
             request.TaxpayerMode.HasValue)
@@ -151,6 +138,50 @@ public sealed class OfficialDocumentSnapshotDraftBuilder
             vatBucketEngineDeferred = false;
             taxModeCode = SalrynOfficialTaxBucketPolicy.EngineTaxModeCode;
             taxModeNotes = SalrynOfficialTaxBucketPolicy.EngineBoundaryNote;
+            emitLineTaxEvidence = true;
+        }
+
+        // Lines mirror sale item evidence. When tax engine ran, freeze V3 line-tax components.
+        List<OfficialDocumentSnapshotDraftLine> lines = new();
+        for (int index = 0; index < request.Items.Count; index++)
+        {
+            SaleItem item = request.Items[index];
+            if (emitLineTaxEvidence && request.LineTaxClassifications is not null)
+            {
+                OfficialDocumentLineTaxClassification classification = request.LineTaxClassifications[index];
+                (long vatable, long vat, long exempt, long zero, long sspt, long nv) =
+                    FreezeLineTaxComponents(item.LineTotal.Cents, classification);
+                lines.Add(new OfficialDocumentSnapshotDraftLine(
+                    Description: item.ProductNameSnapshot.Trim(),
+                    Barcode: NormalizeOptional(item.BarcodeSnapshot),
+                    UnitName: item.UnitNameSnapshot.Trim(),
+                    QuantityX1000: item.Quantity.ValueX1000,
+                    UnitPriceCents: item.UnitPrice.Cents,
+                    DiscountCents: item.Discount.Cents,
+                    LineTotalCents: item.LineTotal.Cents,
+                    LineIndex: index,
+                    SaleItemId: item.Id,
+                    ProductId: item.ProductId,
+                    TaxClassification: classification,
+                    VatableBaseCents: vatable,
+                    VatAmountCents: vat,
+                    VatExemptCents: exempt,
+                    ZeroRatedCents: zero,
+                    SsptCents: sspt,
+                    NonVatExemptCents: nv,
+                    StockTracked: true));
+            }
+            else
+            {
+                lines.Add(new OfficialDocumentSnapshotDraftLine(
+                    Description: item.ProductNameSnapshot.Trim(),
+                    Barcode: NormalizeOptional(item.BarcodeSnapshot),
+                    UnitName: item.UnitNameSnapshot.Trim(),
+                    QuantityX1000: item.Quantity.ValueX1000,
+                    UnitPriceCents: item.UnitPrice.Cents,
+                    DiscountCents: item.Discount.Cents,
+                    LineTotalCents: item.LineTotal.Cents));
+            }
         }
 
         OfficialDocumentSnapshotDraftTaxMode taxMode = new(
@@ -188,6 +219,27 @@ public sealed class OfficialDocumentSnapshotDraftBuilder
             Statutory: NormalizeStatutory(request.Statutory));
 
         return Result<OfficialDocumentSnapshotDraft>.Success(draft);
+    }
+
+    /// <summary>
+    /// Freeze per-line tax components for Snapshot V3. Matches TaxBucketEngine inclusive VAT split.
+    /// </summary>
+    private static (long Vatable, long Vat, long Exempt, long Zero, long Sspt, long NonVatExempt)
+        FreezeLineTaxComponents(long lineTotalCents, OfficialDocumentLineTaxClassification classification)
+    {
+        return classification switch
+        {
+            OfficialDocumentLineTaxClassification.Vatable =>
+            (
+                lineTotalCents - OfficialDocumentTaxBucketEngine.ComputeInclusiveVatAmountCents(lineTotalCents),
+                OfficialDocumentTaxBucketEngine.ComputeInclusiveVatAmountCents(lineTotalCents),
+                0, 0, 0, 0),
+            OfficialDocumentLineTaxClassification.VatExempt => (0, 0, lineTotalCents, 0, 0, 0),
+            OfficialDocumentLineTaxClassification.ZeroRated => (0, 0, 0, lineTotalCents, 0, 0),
+            OfficialDocumentLineTaxClassification.NonVat => (0, 0, 0, 0, lineTotalCents, 0),
+            OfficialDocumentLineTaxClassification.NonVatExempt => (0, 0, 0, 0, 0, lineTotalCents),
+            _ => (0, 0, 0, 0, 0, 0)
+        };
     }
 
     private static OfficialDocumentSnapshotDraftBuyer? NormalizeBuyer(OfficialDocumentSnapshotDraftBuyer? buyer)

@@ -67,8 +67,8 @@ public static class RmoBirQa1RealMachineDatabaseChecks
         RequireTrue(File.Exists(study), "QA1 study document must exist.");
     }
 
-    private const int CurrentSupportedMigrationVersion = 16;
-    private const int FutureProbeMigrationVersion = 17;
+    private const int CurrentSupportedMigrationVersion = 17;
+    private const int FutureProbeMigrationVersion = 18;
 
     private static void RunCleanCurrent(string qaRoot)
     {
@@ -407,7 +407,8 @@ public static class RmoBirQa1RealMachineDatabaseChecks
             new OfficialReceiptProfileSchemaMigration(),
             new OfficialDryRunPackageSchemaMigration(),
             new VatRegistrationModeSchemaMigration(),
-            new OfficialDocumentLifecycleCompletionSchemaMigration()
+            new OfficialDocumentLifecycleCompletionSchemaMigration(),
+            new OfficialDocumentLifecycleAccountingSchemaMigration()
         };
 
     private static void RunMigrationsThrough(DbPaths paths, int maxVersion)

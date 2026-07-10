@@ -37,6 +37,7 @@ public static class RmoBirTradM3Rc2SnapshotCaptureChecks
         RequireContains(host, "Buyer = null", "Host atomic request must carry buyer.");
         RequireContains(evidence, "SALRYN_OFFICIAL_DOCUMENT_SNAPSHOT_V2", "Evidence must write V2 when optional parties present.");
         RequireContains(evidence, "SALRYN_OFFICIAL_DOCUMENT_SNAPSHOT_V1", "Evidence must keep V1 when optional parties absent.");
+        RequireContains(evidence, "SALRYN_OFFICIAL_DOCUMENT_SNAPSHOT_V3", "Evidence must write V3 when line-tax evidence present.");
         RequireFalse(setup.Contains("No device output. No official output.", StringComparison.Ordinal),
             "Stale no-output wording must be removed.");
         RequireFalse(setup.Contains("No official output generation.", StringComparison.Ordinal),
@@ -76,7 +77,11 @@ public static class RmoBirTradM3Rc2SnapshotCaptureChecks
 
         Result<ElectronicJournalSnapshotEvidence> evidence = new OfficialDocumentSnapshotEvidenceBuilder().Build(draft.Value);
         RequireTrue(evidence.IsSuccess, "Evidence must succeed.");
-        RequireContains(evidence.Value.PayloadJson, "SALRYN_OFFICIAL_DOCUMENT_SNAPSHOT_V2", "V2 schema required when buyer present.");
+        // M4-RC2: line-tax evidence upgrades to V3 while still carrying buyer (V2 shape without line tax remains valid).
+        bool schemaOk =
+            evidence.Value.PayloadJson.Contains("SALRYN_OFFICIAL_DOCUMENT_SNAPSHOT_V3", StringComparison.Ordinal)
+            || evidence.Value.PayloadJson.Contains("SALRYN_OFFICIAL_DOCUMENT_SNAPSHOT_V2", StringComparison.Ordinal);
+        RequireTrue(schemaOk, "V2 or V3 schema required when buyer present (V3 when line-tax frozen).");
         RequireContains(evidence.Value.PayloadJson, "Buyer Co", "Buyer name in payload.");
 
         // Parse + render
@@ -94,6 +99,7 @@ public static class RmoBirTradM3Rc2SnapshotCaptureChecks
     {
         OfficialDocumentSnapshotDraftBuilder builder = new();
         Sale sale = BuildSale(11200);
+        // True V1: no buyer/statutory and no line-tax freeze (tax engine deferred).
         Result<OfficialDocumentSnapshotDraft> draft = builder.Build(new OfficialDocumentSnapshotDraftBuildRequest(
             OfficialDocumentSnapshotDraftKind.OfficialInvoice,
             BuildProfile(),
@@ -103,10 +109,8 @@ public static class RmoBirTradM3Rc2SnapshotCaptureChecks
             "INV-RC2-V1",
             "cashier@test",
             "POS-1",
-            SalrynOfficialTaxBucketPolicy.EngineTaxModeCode,
-            null,
-            new[] { OfficialDocumentLineTaxClassification.Vatable },
-            OfficialDocumentTaxBucketDraftTaxpayerMode.VatRegistered));
+            "ENGINEERING_DEFERRED",
+            "No line-tax freeze for V1 historical path."));
 
         RequireTrue(draft.IsSuccess, "V1 draft must build.");
         Result<ElectronicJournalSnapshotEvidence> evidence = new OfficialDocumentSnapshotEvidenceBuilder().Build(draft.Value);

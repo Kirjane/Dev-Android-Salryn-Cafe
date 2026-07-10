@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Salryn.Core.Common;
 using Salryn.Core.Models;
+// LINQ used for V3 line-tax detection.
 
 namespace Salryn.Core.Services;
 
@@ -165,12 +166,16 @@ public sealed class OfficialDocumentSnapshotEvidenceBuilder
         using MemoryStream stream = new();
         using Utf8JsonWriter writer = new(stream, new JsonWriterOptions { Indented = false });
 
-        // V1: no buyer/statutory members (historical hash-stable rows).
-        // V2: buyer and/or statutory present at post time — explicit version, not silent V1 extension.
+        // V1: no buyer/statutory; no line-tax evidence (historical hash-stable).
+        // V2: buyer and/or statutory present; no line-tax evidence.
+        // V3: per-line immutable tax evidence present (M4-RC2).
+        bool hasLineTax = draft.Lines.Any(l => l.TaxClassification is not null && l.SaleItemId is not null);
         bool hasOptionalParties = draft.Buyer is not null || draft.Statutory is not null;
-        string schema = hasOptionalParties
-            ? "SALRYN_OFFICIAL_DOCUMENT_SNAPSHOT_V2"
-            : "SALRYN_OFFICIAL_DOCUMENT_SNAPSHOT_V1";
+        string schema = hasLineTax
+            ? "SALRYN_OFFICIAL_DOCUMENT_SNAPSHOT_V3"
+            : hasOptionalParties
+                ? "SALRYN_OFFICIAL_DOCUMENT_SNAPSHOT_V2"
+                : "SALRYN_OFFICIAL_DOCUMENT_SNAPSHOT_V1";
 
         writer.WriteStartObject();
         writer.WriteString("schema", schema);
@@ -271,6 +276,62 @@ public sealed class OfficialDocumentSnapshotEvidenceBuilder
             writer.WriteNumber("unitPriceCents", line.UnitPriceCents);
             writer.WriteNumber("discountCents", line.DiscountCents);
             writer.WriteNumber("lineTotalCents", line.LineTotalCents);
+            // V3 optional members only when present — keeps V1/V2 bytes stable for lines without them.
+            if (line.LineIndex is int lineIndex)
+            {
+                writer.WriteNumber("lineIndex", lineIndex);
+            }
+
+            if (line.SaleItemId is Guid saleItemId)
+            {
+                writer.WriteString("saleItemId", saleItemId.ToString("D"));
+            }
+
+            if (line.ProductId is Guid productId)
+            {
+                writer.WriteString("productId", productId.ToString("D"));
+            }
+
+            if (line.TaxClassification is OfficialDocumentLineTaxClassification taxClass)
+            {
+                writer.WriteString("taxClassification", taxClass.ToString());
+            }
+
+            if (line.VatableBaseCents is long vatable)
+            {
+                writer.WriteNumber("vatableBaseCents", vatable);
+            }
+
+            if (line.VatAmountCents is long vat)
+            {
+                writer.WriteNumber("vatAmountCents", vat);
+            }
+
+            if (line.VatExemptCents is long exempt)
+            {
+                writer.WriteNumber("vatExemptCents", exempt);
+            }
+
+            if (line.ZeroRatedCents is long zero)
+            {
+                writer.WriteNumber("zeroRatedCents", zero);
+            }
+
+            if (line.SsptCents is long sspt)
+            {
+                writer.WriteNumber("ssptCents", sspt);
+            }
+
+            if (line.NonVatExemptCents is long nv)
+            {
+                writer.WriteNumber("nonVatExemptCents", nv);
+            }
+
+            if (line.StockTracked is bool tracked)
+            {
+                writer.WriteBoolean("stockTracked", tracked);
+            }
+
             writer.WriteEndObject();
         }
 

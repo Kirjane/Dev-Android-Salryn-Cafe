@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { postLifecycleAction } from "../api/documentLifecycle";
 import { fetchSaleDetail, fetchSalesHistory, type SaleHistoryItem } from "../api/sales";
 import {
+  Alert,
   Button,
   Card,
   CardBody,
@@ -16,11 +18,25 @@ import {
 } from "../components/ui";
 import { formatDateTime, formatMoney } from "../utils/format";
 
+function newIdempotencyKey(prefix: string): string {
+  return `${prefix}-${crypto.randomUUID()}`;
+}
+
 export function SalesHistoryPage() {
   const [receiptNo, setReceiptNo] = useState("");
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [lifecycleReason, setLifecycleReason] = useState("");
+  const [lifecycleBusy, setLifecycleBusy] = useState(false);
+  const [lifecycleMessage, setLifecycleMessage] = useState<string | null>(null);
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null);
+  const [lifecyclePreviewHtml, setLifecyclePreviewHtml] = useState<string | null>(null);
+  const [refundItemId, setRefundItemId] = useState("");
+  const [refundQtyX1000, setRefundQtyX1000] = useState("1000");
+  const [refundDisposition, setRefundDisposition] = useState<"Restock" | "DamagedNonRestockable" | "ServiceNoStock">(
+    "Restock",
+  );
 
   const salesQuery = useQuery({
     queryKey: ["sales-history", receiptNo, status, page],
@@ -195,6 +211,164 @@ export function SalesHistoryPage() {
               rows={detailQuery.data.items}
               getRowKey={(row) => row.id}
             />
+
+            <div className="mt-4 space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <p className="font-semibold text-amber-900">Official document lifecycle (host-only, activation OFF)</p>
+              <p className="text-xs text-amber-800">
+                Engineering workflow. Actor comes from your session. Refunds require explicit line quantities — not
+                amount-only ratios. Adjustment output is INTERNAL ADJUSTMENT DOCUMENT (no legal series claim).
+              </p>
+              <TextInput
+                placeholder="Reason (required)..."
+                value={lifecycleReason}
+                onChange={(event) => setLifecycleReason(event.target.value)}
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  disabled={lifecycleBusy || !lifecycleReason.trim()}
+                  onClick={() => {
+                    void (async () => {
+                      setLifecycleBusy(true);
+                      setLifecycleError(null);
+                      setLifecycleMessage(null);
+                      try {
+                        const result = await postLifecycleAction({
+                          action: "Reprint",
+                          saleId: detailQuery.data.id,
+                          officialDocumentNumber: detailQuery.data.receiptNo,
+                          reason: lifecycleReason.trim(),
+                          idempotencyKey: newIdempotencyKey("reprint"),
+                        });
+                        setLifecycleMessage(result.summary);
+                        setLifecyclePreviewHtml(result.outputHtml ?? null);
+                      } catch (error) {
+                        setLifecycleError((error as Error).message);
+                      } finally {
+                        setLifecycleBusy(false);
+                      }
+                    })();
+                  }}
+                >
+                  Reprint
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={lifecycleBusy || !lifecycleReason.trim()}
+                  onClick={() => {
+                    if (!window.confirm("Void this completed official sale? This cannot be undone.")) {
+                      return;
+                    }
+                    void (async () => {
+                      setLifecycleBusy(true);
+                      setLifecycleError(null);
+                      setLifecycleMessage(null);
+                      try {
+                        const result = await postLifecycleAction({
+                          action: "Void",
+                          saleId: detailQuery.data.id,
+                          officialDocumentNumber: detailQuery.data.receiptNo,
+                          reason: lifecycleReason.trim(),
+                          idempotencyKey: newIdempotencyKey("void"),
+                        });
+                        setLifecycleMessage(result.summary);
+                        void detailQuery.refetch();
+                        void salesQuery.refetch();
+                      } catch (error) {
+                        setLifecycleError((error as Error).message);
+                      } finally {
+                        setLifecycleBusy(false);
+                      }
+                    })();
+                  }}
+                >
+                  Void
+                </Button>
+              </div>
+              <div className="grid gap-2 md:grid-cols-3">
+                <select
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  value={refundItemId}
+                  onChange={(event) => setRefundItemId(event.target.value)}
+                >
+                  <option value="">Select line to return...</option>
+                  {detailQuery.data.items.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.productNameSnapshot}
+                    </option>
+                  ))}
+                </select>
+                <TextInput
+                  placeholder="Qty x1000 (e.g. 1000 = 1 unit)"
+                  value={refundQtyX1000}
+                  onChange={(event) => setRefundQtyX1000(event.target.value)}
+                />
+                <select
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  value={refundDisposition}
+                  onChange={(event) =>
+                    setRefundDisposition(event.target.value as typeof refundDisposition)
+                  }
+                >
+                  <option value="Restock">Restock</option>
+                  <option value="DamagedNonRestockable">Damaged / non-restockable</option>
+                  <option value="ServiceNoStock">Service / no stock</option>
+                </select>
+              </div>
+              <Button
+                size="sm"
+                disabled={lifecycleBusy || !lifecycleReason.trim() || !refundItemId}
+                onClick={() => {
+                  if (!window.confirm("Submit line-level refund/return for this sale?")) {
+                    return;
+                  }
+                  void (async () => {
+                    setLifecycleBusy(true);
+                    setLifecycleError(null);
+                    setLifecycleMessage(null);
+                    try {
+                      const qty = Number(refundQtyX1000);
+                      const result = await postLifecycleAction({
+                        action: "Refund",
+                        saleId: detailQuery.data.id,
+                        officialDocumentNumber: detailQuery.data.receiptNo,
+                        reason: lifecycleReason.trim(),
+                        idempotencyKey: newIdempotencyKey("refund"),
+                        refundLines: [
+                          {
+                            saleItemId: refundItemId,
+                            quantityX1000: qty,
+                            disposition: refundDisposition,
+                          },
+                        ],
+                        settlement: { method: "Cash", immediateComplete: true },
+                      });
+                      setLifecycleMessage(
+                        `${result.summary}${result.adjustmentDocumentNumber ? ` · ${result.adjustmentDocumentNumber}` : ""}`,
+                      );
+                      setLifecyclePreviewHtml(result.outputHtml ?? null);
+                      void detailQuery.refetch();
+                    } catch (error) {
+                      setLifecycleError((error as Error).message);
+                    } finally {
+                      setLifecycleBusy(false);
+                    }
+                  })();
+                }}
+              >
+                Refund / return selected line
+              </Button>
+              {lifecycleMessage ? <Alert tone="success">{lifecycleMessage}</Alert> : null}
+              {lifecycleError ? <Alert tone="danger">{lifecycleError}</Alert> : null}
+              {lifecyclePreviewHtml ? (
+                <iframe
+                  title="Lifecycle output preview"
+                  className="h-64 w-full rounded border border-slate-200 bg-white"
+                  srcDoc={lifecyclePreviewHtml}
+                />
+              ) : null}
+            </div>
           </CardBody>
         </Card>
       ) : null}

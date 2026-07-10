@@ -59,7 +59,7 @@ public static class RmoBirM4OfficialSetupChecks
         AssertNotContains(migration, "CREATE TABLE sales", "Setup migration must not alter sales tables.");
 
         string migrationCatalog = Read(Path.Combine(root, "src", "Salryn.Infrastructure", "Data", "SalrynDatabaseMigrationCatalog.cs"));
-        AssertContains(migrationCatalog, "SupportedMigrationVersion = 16", "Backup catalog must accept current max migration version.");
+        AssertContains(migrationCatalog, "SupportedMigrationVersion = 17", "Backup catalog must accept current max migration version.");
         AssertContains(migrationCatalog, "official_receipt_profiles", "Backup critical-table catalog must include official_receipt_profiles.");
 
         AssertContains(setupPage, "Not compliance-ready", "Setup page must warn not compliance-ready.");

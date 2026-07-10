@@ -59,7 +59,8 @@ public static class OfficialInvoiceSnapshotParser
             string? schema = schemaEl.GetString();
             bool schemaOk =
                 string.Equals(schema, InvoiceOutputConstants.SnapshotSchema, StringComparison.Ordinal)
-                || string.Equals(schema, InvoiceOutputConstants.SnapshotSchemaV2, StringComparison.Ordinal);
+                || string.Equals(schema, InvoiceOutputConstants.SnapshotSchemaV2, StringComparison.Ordinal)
+                || string.Equals(schema, InvoiceOutputConstants.SnapshotSchemaV3, StringComparison.Ordinal);
             if (!schemaOk)
             {
                 return Result<ParsedOfficialInvoiceSnapshot>.Fail(Error.Validation(

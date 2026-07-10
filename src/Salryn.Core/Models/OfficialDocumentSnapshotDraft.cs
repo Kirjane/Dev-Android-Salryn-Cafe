@@ -68,7 +68,19 @@ public sealed record OfficialDocumentSnapshotDraftLine(
     long QuantityX1000,
     long UnitPriceCents,
     long DiscountCents,
-    long LineTotalCents);
+    long LineTotalCents,
+    // TRAD-M4-RC2 / Snapshot V3 optional immutable line-tax evidence (null = V1/V2 line shape).
+    int? LineIndex = null,
+    Guid? SaleItemId = null,
+    Guid? ProductId = null,
+    OfficialDocumentLineTaxClassification? TaxClassification = null,
+    long? VatableBaseCents = null,
+    long? VatAmountCents = null,
+    long? VatExemptCents = null,
+    long? ZeroRatedCents = null,
+    long? SsptCents = null,
+    long? NonVatExemptCents = null,
+    bool? StockTracked = null);
 
 // Kirch strict dev guide:
 // C04 amount shape only.

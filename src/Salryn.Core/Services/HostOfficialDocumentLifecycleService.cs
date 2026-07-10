@@ -10,7 +10,9 @@ public enum OfficialDocumentLifecycleAction
     Reprint = 1,
     Void = 2,
     Refund = 3,
-    Cancel = 4
+    Cancel = 4,
+    /// <summary>Internal adjustment document path (legal series fail-closed unless source-backed).</summary>
+    Adjust = 5
 }
 
 public sealed record OfficialDocumentLifecycleActionRequest(

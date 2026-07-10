@@ -168,8 +168,8 @@ public static class RmoBirM9FullClosureChecks
         AssertNotContains(setupPage, "Salryn is accredited", "UI must not claim Salryn is accredited.");
         AssertNotContains(setupPage, "Salryn is certified", "UI must not claim Salryn is certified.");
 
-        AssertContains(catalog, "SupportedMigrationVersion = 16", "Catalog must support v16 after M4-RC1.");
-        AssertContains(dbA2, "futureVersion = 17", "DB-A2 future probe must remain supported+1.");
+        AssertContains(catalog, "SupportedMigrationVersion = 17", "Catalog must support v17 after M4-RC2.");
+        AssertContains(dbA2, "futureVersion = 18", "DB-A2 future probe must remain supported+1.");
         AssertContains(program, "rmo-bir-full-closure", "CoreSmoke must wire full-closure check.");
 
         AssertNoForbiddenClaims(legal, "legal doc");

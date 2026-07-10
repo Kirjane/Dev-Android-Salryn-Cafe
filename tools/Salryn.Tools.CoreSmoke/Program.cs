@@ -112,6 +112,7 @@ public static class Program
         RmoBirTradM3Rc2SnapshotCaptureChecks.Run();
         RmoBirTradM4DocumentLifecycleChecks.Run();
         RmoBirTradM4Rc1LifecycleRuntimeChecks.Run();
+        RmoBirTradM4Rc2LifecycleAccountingRuntimeChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
         M5VerifiedCandidateStackLedgerChecks.Run();
         M6CandidateStackPromotionDryRunChecks.Run();
@@ -332,6 +333,9 @@ public static class Program
                 return;
             case "rmo-bir-trad-document-lifecycle-runtime":
                 RmoBirTradM4Rc1LifecycleRuntimeChecks.Run();
+                return;
+            case "rmo-bir-trad-document-lifecycle-accounting-runtime":
+                RmoBirTradM4Rc2LifecycleAccountingRuntimeChecks.Run();
                 return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);
