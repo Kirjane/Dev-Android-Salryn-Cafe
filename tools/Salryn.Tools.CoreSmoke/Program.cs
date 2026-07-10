@@ -291,6 +291,9 @@ public static class Program
             case "rmo-bir-full-closure":
                 RmoBirM9FullClosureChecks.Run();
                 return;
+            case "rmo-bir-source-acquisition":
+                RmoBirM10OfficialSourceAcquisitionChecks.Run();
+                return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);
         }

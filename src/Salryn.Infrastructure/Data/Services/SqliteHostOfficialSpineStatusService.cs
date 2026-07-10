@@ -147,10 +147,10 @@ public sealed class SqliteHostOfficialSpineStatusService : IHostOfficialSpineSta
 
             components.Add(Component(
                 OfficialSpineComponentName.LegalSourceClosure,
-                OfficialSpineReadinessLevel.SkeletonPresent,
+                OfficialSpineReadinessLevel.PreviewReady,
                 present: true,
                 liveBound: false,
-                "Annex F text and retention years source-closed for planning; validation seal and eSales class path remain incomplete for live issuance."));
+                "Seal/push/eSales process source text acquired (dual-track). EIS JSON API schema and product live paths remain incomplete; live issuance blocked."));
 
             blockers.Add(new OfficialSpineBlocker(
                 "HostOfficialSpine.LiveOfficialCheckoutNotImplemented",
@@ -166,10 +166,10 @@ public sealed class SqliteHostOfficialSpineStatusService : IHostOfficialSpineSta
                 "Void/refund live official integration is incomplete."));
             blockers.Add(new OfficialSpineBlocker(
                 "HostOfficialSpine.AnnexFUnresolved",
-                "Annex F validation seal form and eSales class/schema remain unresolved for live issuance."));
+                "Annex F product demo readiness incomplete; EIS API field schema still open; live issuance blocked."));
             blockers.Add(new OfficialSpineBlocker(
                 "HostOfficialSpine.LegalSourceClosureIncomplete",
-                "Legal source closure is incomplete; live official issuance remains blocked."));
+                "Legal source process text improved; live official issuance remains blocked (product + EIS schema + accreditation)."));
 
             warnings.Add(new OfficialSpineWarning(
                 "HostOfficialSpine.InternalDryRunOnly",

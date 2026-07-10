@@ -265,7 +265,7 @@ public sealed class HostOfficialReadinessService : IHostOfficialReadinessService
             "Void/refund integrity skeleton may be present, but live official void/refund integration is incomplete."));
         blockers.Add(new HostOfficialReadinessItem(
             "HostOfficialReadiness.UnresolvedAnnexFRetentionESales",
-            "Annex F validation seal form and eSales class/schema remain unresolved for live issuance; retention years are source-closed (3/10) but live posting stays blocked."));
+            "Annex F / seal / push / eSales process text is source-acquired (dual-track: traditional monthly eSales + EIS JSON when applicable); EIS API field schema and product live paths remain incomplete. Retention years source-closed (3/10). Live posting stays blocked."));
     }
 
     private static void AddProductSpineWarnings(List<HostOfficialReadinessItem> warnings)
@@ -297,6 +297,9 @@ public sealed class HostOfficialReadinessService : IHostOfficialReadinessService
         warnings.Add(new HostOfficialReadinessItem(
             "HostOfficialReadiness.SourceSaleReadOnlyAvailable",
             "Operational sale read-only dry-run source mode is available; adapter does not mutate sales, sequences, or EJ."));
+        warnings.Add(new HostOfficialReadinessItem(
+            "HostOfficialReadiness.OfficialSourceAcquisitionM10",
+            "Official source acquisition improved seal/push/eSales process definitions; live official issuance and EIS push remain not implemented."));
     }
 
     private static HostOfficialReadinessStatus ResolveStatus(
