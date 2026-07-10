@@ -38,6 +38,7 @@ public static class DefaultDatabaseInitializationFactory
         // Version 12 adds LAN-M6 hash-only terminal credential and remote handshake state.
         // Version 13 adds official receipt profile setup text (RMO-BIR-M4); no checkout/sales mutation.
         // Version 14 adds internal official dry-run package storage (RMO-BIR-M8); no live issuance.
+        // Version 15 adds vat_registration_mode on bir_machine_profiles (TRAD-M1 tax spine); no live issuance.
         IDatabaseMigration[] migrations =
         {
             new InitialSchemaMigration(),
@@ -53,7 +54,8 @@ public static class DefaultDatabaseInitializationFactory
             new LanRemoteTransportSchemaMigration(),
             new TerminalCredentialHandshakeSchemaMigration(),
             new OfficialReceiptProfileSchemaMigration(),
-            new OfficialDryRunPackageSchemaMigration()
+            new OfficialDryRunPackageSchemaMigration(),
+            new VatRegistrationModeSchemaMigration()
         };
 
         MigrationRunner migrationRunner = new(connectionFactory, migrations);

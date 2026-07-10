@@ -2,7 +2,7 @@ namespace Salryn.Infrastructure.Data;
 
 internal static class SalrynDatabaseMigrationCatalog
 {
-    public const int SupportedMigrationVersion = 14;
+    public const int SupportedMigrationVersion = 15;
 
     private static readonly (int Version, string Table)[] CriticalTablesByIntroducingVersion =
     {

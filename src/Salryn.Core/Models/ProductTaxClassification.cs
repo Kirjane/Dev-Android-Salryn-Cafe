@@ -7,7 +7,10 @@ public enum ProductTaxClassification
     Vatable = 1,
     VatExempt = 2,
     ZeroRated = 3,
-    NonVat = 4
+    /// <summary>Non-VAT / SSPT (sales subject to percentage tax).</summary>
+    NonVat = 4,
+    /// <summary>Non-VAT exempt sales.</summary>
+    NonVatExempt = 5
 }
 
 public static class ProductTaxClassificationMapper
@@ -21,7 +24,11 @@ public static class ProductTaxClassificationMapper
             ProductTaxClassification.VatExempt => OfficialDocumentLineTaxClassification.VatExempt,
             ProductTaxClassification.ZeroRated => OfficialDocumentLineTaxClassification.ZeroRated,
             ProductTaxClassification.NonVat => OfficialDocumentLineTaxClassification.NonVat,
-            _ => throw new ArgumentOutOfRangeException(nameof(classification), classification, "Product tax classification is unsupported.")
+            ProductTaxClassification.NonVatExempt => OfficialDocumentLineTaxClassification.NonVatExempt,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(classification),
+                classification,
+                "Product tax classification is unsupported.")
         };
     }
 
@@ -44,7 +51,8 @@ public static class ProductTaxClassificationMapper
             ProductTaxClassification.Vatable => "VATable",
             ProductTaxClassification.VatExempt => "VAT-exempt",
             ProductTaxClassification.ZeroRated => "Zero-rated",
-            ProductTaxClassification.NonVat => "Non-VAT",
+            ProductTaxClassification.NonVat => "SSPT (non-VAT taxable)",
+            ProductTaxClassification.NonVatExempt => "Non-VAT exempt",
             _ => classification.ToString()
         };
     }
@@ -56,7 +64,8 @@ public static class ProductTaxClassificationMapper
             (ProductTaxClassification.Vatable, ToDisplayText(ProductTaxClassification.Vatable)),
             (ProductTaxClassification.VatExempt, ToDisplayText(ProductTaxClassification.VatExempt)),
             (ProductTaxClassification.ZeroRated, ToDisplayText(ProductTaxClassification.ZeroRated)),
-            (ProductTaxClassification.NonVat, ToDisplayText(ProductTaxClassification.NonVat))
+            (ProductTaxClassification.NonVat, ToDisplayText(ProductTaxClassification.NonVat)),
+            (ProductTaxClassification.NonVatExempt, ToDisplayText(ProductTaxClassification.NonVatExempt))
         };
     }
 }

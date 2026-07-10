@@ -323,26 +323,25 @@ public static class PrelanHarden1ProductTaxClassificationChecks
         OfficialDocumentSnapshotDraftBuilder builder = new();
         OfficialDocumentSnapshotEvidenceBuilder evidenceBuilder = new();
 
-        Sale sale = BuildSale(22500, 0);
+        // TRAD-M1: VAT-registered mode allows only VATable / VAT-exempt / zero-rated lines (fail closed).
+        Sale sale = BuildSale(19200, 0);
         SaleItem vatableItem = BuildItem(sale.Id, 11200);
         SaleItem exemptItem = BuildItem(sale.Id, 5000);
         SaleItem zeroRatedItem = BuildItem(sale.Id, 3000);
-        SaleItem nonVatItem = BuildItem(sale.Id, 3300);
 
         IReadOnlyList<OfficialDocumentLineTaxClassification> classifications = new[]
         {
             OfficialDocumentLineTaxClassification.Vatable,
             OfficialDocumentLineTaxClassification.VatExempt,
-            OfficialDocumentLineTaxClassification.ZeroRated,
-            OfficialDocumentLineTaxClassification.NonVat
+            OfficialDocumentLineTaxClassification.ZeroRated
         };
 
         Result<OfficialDocumentSnapshotDraft> snapshotResult = builder.Build(new OfficialDocumentSnapshotDraftBuildRequest(
             OfficialDocumentSnapshotDraftKind.OfficialReceipt,
             BuildProfile(),
             sale,
-            new[] { vatableItem, exemptItem, zeroRatedItem, nonVatItem },
-            new[] { BuildPayment(sale.Id, 22500) },
+            new[] { vatableItem, exemptItem, zeroRatedItem },
+            new[] { BuildPayment(sale.Id, 19200) },
             "OR-PRELAN-000001",
             "cashier-1",
             "POS-1",
@@ -359,14 +358,22 @@ public static class PrelanHarden1ProductTaxClassificationChecks
             {
                 new OfficialDocumentTaxBucketCalculationLine(11200, 0, OfficialDocumentLineTaxClassification.Vatable),
                 new OfficialDocumentTaxBucketCalculationLine(5000, 0, OfficialDocumentLineTaxClassification.VatExempt),
-                new OfficialDocumentTaxBucketCalculationLine(3000, 0, OfficialDocumentLineTaxClassification.ZeroRated),
-                new OfficialDocumentTaxBucketCalculationLine(3300, 0, OfficialDocumentLineTaxClassification.NonVat)
+                new OfficialDocumentTaxBucketCalculationLine(3000, 0, OfficialDocumentLineTaxClassification.ZeroRated)
             },
             0));
 
         RequireSuccess(bucketResult, "Mixed classification VAT buckets should compute.");
         RequireEqual(5000L, BucketSales(bucketResult.Value, OfficialDocumentTaxBucketDraftKind.VatExemptSales), "VAT-exempt bucket.");
         RequireEqual(3000L, BucketSales(bucketResult.Value, OfficialDocumentTaxBucketDraftKind.ZeroRatedSales), "Zero-rated bucket.");
+
+        Result<OfficialDocumentTaxBucketDraft> rejectNonVatOnVatMode = engine.Calculate(new OfficialDocumentTaxBucketCalculationRequest(
+            OfficialDocumentTaxBucketDraftTaxpayerMode.VatRegistered,
+            new[] { new OfficialDocumentTaxBucketCalculationLine(3300, 0, OfficialDocumentLineTaxClassification.NonVat) },
+            0));
+        if (rejectNonVatOnVatMode.IsSuccess)
+        {
+            throw new InvalidOperationException("VAT-registered mode must reject non-VAT/SSPT line classification (TRAD-M1 fail-closed).");
+        }
 
         Result<ElectronicJournalSnapshotEvidence> allVatableEvidence =
             evidenceBuilder.Build(snapshotResult.Value with

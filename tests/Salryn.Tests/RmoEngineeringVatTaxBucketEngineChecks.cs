@@ -61,12 +61,12 @@ public static class RmoEngineeringVatTaxBucketEngineChecks
     private static void RequireNonVat(OfficialDocumentTaxBucketEngine engine)
     {
         Result<OfficialDocumentTaxBucketDraft> result = engine.Calculate(new OfficialDocumentTaxBucketCalculationRequest(
-            OfficialDocumentTaxBucketDraftTaxpayerMode.NonVatRegistered,
-            new[] { new OfficialDocumentTaxBucketCalculationLine(2500, 0, OfficialDocumentLineTaxClassification.Vatable) },
+            OfficialDocumentTaxBucketDraftTaxpayerMode.NonVatPercentageTax,
+            new[] { new OfficialDocumentTaxBucketCalculationLine(2500, 0, OfficialDocumentLineTaxClassification.NonVat) },
             0));
 
         RequireSuccess(result, "Non-VAT taxpayer sale should compute.");
-        RequireEqual(2500L, BucketSales(result.Value, OfficialDocumentTaxBucketDraftKind.NonVatSales), "Non-VAT sales.");
+        RequireEqual(2500L, BucketSales(result.Value, OfficialDocumentTaxBucketDraftKind.SsptSales), "SSPT / non-VAT sales.");
     }
 
     private static void RequireSaleDiscountRounding(OfficialDocumentTaxBucketEngine engine)

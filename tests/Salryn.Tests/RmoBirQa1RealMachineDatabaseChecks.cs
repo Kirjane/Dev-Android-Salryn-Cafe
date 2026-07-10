@@ -36,10 +36,10 @@ public static class RmoBirQa1RealMachineDatabaseChecks
 
         try
         {
-            RunCleanV14(qaRoot);
-            RunV12ToV14(qaRoot);
-            RunV13ToV14(qaRoot);
-            RunFutureV15Rejection(qaRoot);
+            RunCleanCurrent(qaRoot);
+            RunV12ToCurrent(qaRoot);
+            RunV14ToCurrent(qaRoot);
+            RunFutureVersionRejection(qaRoot);
             RunBackupRestoreAndNonMutation(qaRoot);
             Console.WriteLine("[QA1] All automated real-machine scenarios passed.");
         }
@@ -67,10 +67,13 @@ public static class RmoBirQa1RealMachineDatabaseChecks
         RequireTrue(File.Exists(study), "QA1 study document must exist.");
     }
 
-    private static void RunCleanV14(string qaRoot)
+    private const int CurrentSupportedMigrationVersion = 15;
+    private const int FutureProbeMigrationVersion = 16;
+
+    private static void RunCleanCurrent(string qaRoot)
     {
-        Console.WriteLine("[QA1] A. Clean → v14");
-        DbPaths paths = CreateQaDbPaths(qaRoot, "clean-v14");
+        Console.WriteLine("[QA1] A. Clean → v" + CurrentSupportedMigrationVersion);
+        DbPaths paths = CreateQaDbPaths(qaRoot, "clean-v" + CurrentSupportedMigrationVersion);
         AssertInsideQaRoot(qaRoot, paths.DatabasePath);
 
         Result<DatabaseInitializationSummary> init =
@@ -78,11 +81,17 @@ public static class RmoBirQa1RealMachineDatabaseChecks
         RequireTrue(init.IsSuccess, "Clean init must succeed: " + (init.IsFailure ? init.ErrorDetail.Message : ""));
 
         int maxVersion = ReadMaxMigrationVersion(paths.DatabasePath);
-        RequireTrue(maxVersion == 14, "Clean DB max migration must be 14, was " + maxVersion);
-        RequireTrue(TableExists(paths.DatabasePath, "official_receipt_profiles"), "v14 clean must have official_receipt_profiles.");
-        RequireTrue(TableExists(paths.DatabasePath, "official_dry_run_packages"), "v14 clean must have official_dry_run_packages.");
-        RequireTrue(CountMigrationRows(paths.DatabasePath) == 14, "Exactly 14 migration rows required.");
-        for (int v = 1; v <= 14; v++)
+        RequireTrue(
+            maxVersion == CurrentSupportedMigrationVersion,
+            "Clean DB max migration must be " + CurrentSupportedMigrationVersion + ", was " + maxVersion);
+        RequireTrue(TableExists(paths.DatabasePath, "official_receipt_profiles"), "clean must have official_receipt_profiles.");
+        RequireTrue(TableExists(paths.DatabasePath, "official_dry_run_packages"), "clean must have official_dry_run_packages.");
+        RequireTrue(ColumnExists(paths.DatabasePath, "bir_machine_profiles", "vat_registration_mode"),
+            "v15 clean must have vat_registration_mode column.");
+        RequireTrue(
+            CountMigrationRows(paths.DatabasePath) == CurrentSupportedMigrationVersion,
+            "Exactly " + CurrentSupportedMigrationVersion + " migration rows required.");
+        for (int v = 1; v <= CurrentSupportedMigrationVersion; v++)
         {
             RequireTrue(MigrationVersionPresent(paths.DatabasePath, v), "Migration " + v + " must be present.");
         }
@@ -92,17 +101,17 @@ public static class RmoBirQa1RealMachineDatabaseChecks
         HashSet<string> tables = ReadTableNames(paths.DatabasePath);
         foreach (string table in critical)
         {
-            RequireTrue(tables.Contains(table), "Critical table missing for v14: " + table);
+            RequireTrue(tables.Contains(table), "Critical table missing for current schema: " + table);
         }
 
         RequireIntegrityOk(paths.DatabasePath);
         RequireForeignKeysOk(paths.DatabasePath);
-        Console.WriteLine("[QA1] A evidence: maxVersion=14 tables ok integrity=ok");
+        Console.WriteLine("[QA1] A evidence: maxVersion=" + CurrentSupportedMigrationVersion + " tables ok integrity=ok");
     }
 
-    private static void RunV12ToV14(string qaRoot)
+    private static void RunV12ToCurrent(string qaRoot)
     {
-        Console.WriteLine("[QA1] B. Genuine v12 → v14");
+        Console.WriteLine("[QA1] B. Genuine v12 → v" + CurrentSupportedMigrationVersion);
         DbPaths paths = CreateQaDbPaths(qaRoot, "v12-upgrade");
         AssertInsideQaRoot(qaRoot, paths.DatabasePath);
 
@@ -116,13 +125,18 @@ public static class RmoBirQa1RealMachineDatabaseChecks
 
         Result<DatabaseInitializationSummary> upgrade =
             DefaultDatabaseInitializationFactory.Create(paths).InitializeDatabase();
-        RequireTrue(upgrade.IsSuccess, "v12→v14 upgrade must succeed: " + (upgrade.IsFailure ? upgrade.ErrorDetail.Message : ""));
+        RequireTrue(upgrade.IsSuccess, "v12→current upgrade must succeed: " + (upgrade.IsFailure ? upgrade.ErrorDetail.Message : ""));
 
-        RequireTrue(ReadMaxMigrationVersion(paths.DatabasePath) == 14, "After upgrade max must be 14.");
+        RequireTrue(
+            ReadMaxMigrationVersion(paths.DatabasePath) == CurrentSupportedMigrationVersion,
+            "After upgrade max must be " + CurrentSupportedMigrationVersion + ".");
         RequireTrue(MigrationVersionPresent(paths.DatabasePath, 13), "v13 must apply.");
         RequireTrue(MigrationVersionPresent(paths.DatabasePath, 14), "v14 must apply.");
+        RequireTrue(MigrationVersionPresent(paths.DatabasePath, 15), "v15 must apply.");
         RequireTrue(TableExists(paths.DatabasePath, "official_receipt_profiles"), "v13 table required.");
         RequireTrue(TableExists(paths.DatabasePath, "official_dry_run_packages"), "v14 table required.");
+        RequireTrue(ColumnExists(paths.DatabasePath, "bir_machine_profiles", "vat_registration_mode"),
+            "v15 column required.");
 
         SentinelState after = ReadSentinelState(paths.DatabasePath, before);
         AssertSentinelUnchanged(before, after);
@@ -133,26 +147,31 @@ public static class RmoBirQa1RealMachineDatabaseChecks
             " sale=" + after.SaleId + " ej=" + after.EjCount);
     }
 
-    private static void RunV13ToV14(string qaRoot)
+    private static void RunV14ToCurrent(string qaRoot)
     {
-        Console.WriteLine("[QA1] C. Genuine v13 → v14");
-        DbPaths paths = CreateQaDbPaths(qaRoot, "v13-upgrade");
+        Console.WriteLine("[QA1] C. Genuine v14 → v" + CurrentSupportedMigrationVersion);
+        DbPaths paths = CreateQaDbPaths(qaRoot, "v14-upgrade");
         AssertInsideQaRoot(qaRoot, paths.DatabasePath);
 
-        RunMigrationsThrough(paths, maxVersion: 13);
+        RunMigrationsThrough(paths, maxVersion: 14);
         new DatabaseSeeder(new SqliteConnectionFactory(paths)).SeedDefaultData();
-        SentinelState before = InsertSentinelState(paths, includeReceiptProfile: true, label: "v13");
+        SentinelState before = InsertSentinelState(paths, includeReceiptProfile: true, label: "v14");
 
-        RequireTrue(ReadMaxMigrationVersion(paths.DatabasePath) == 13, "Fixture must be genuine v13.");
-        RequireTrue(TableExists(paths.DatabasePath, "official_receipt_profiles"), "v13 must have receipt profiles.");
-        RequireFalse(TableExists(paths.DatabasePath, "official_dry_run_packages"), "v13 must not have dry-run packages.");
+        RequireTrue(ReadMaxMigrationVersion(paths.DatabasePath) == 14, "Fixture must be genuine v14.");
+        RequireTrue(TableExists(paths.DatabasePath, "official_receipt_profiles"), "v14 must have receipt profiles.");
+        RequireTrue(TableExists(paths.DatabasePath, "official_dry_run_packages"), "v14 must have dry-run packages.");
+        RequireFalse(ColumnExists(paths.DatabasePath, "bir_machine_profiles", "vat_registration_mode"),
+            "v14 must not yet have vat_registration_mode.");
 
         Result<DatabaseInitializationSummary> upgrade =
             DefaultDatabaseInitializationFactory.Create(paths).InitializeDatabase();
-        RequireTrue(upgrade.IsSuccess, "v13→v14 upgrade must succeed.");
+        RequireTrue(upgrade.IsSuccess, "v14→current upgrade must succeed.");
 
-        RequireTrue(ReadMaxMigrationVersion(paths.DatabasePath) == 14, "After upgrade max must be 14.");
-        RequireTrue(TableExists(paths.DatabasePath, "official_dry_run_packages"), "v14 table required.");
+        RequireTrue(
+            ReadMaxMigrationVersion(paths.DatabasePath) == CurrentSupportedMigrationVersion,
+            "After upgrade max must be " + CurrentSupportedMigrationVersion + ".");
+        RequireTrue(ColumnExists(paths.DatabasePath, "bir_machine_profiles", "vat_registration_mode"),
+            "v15 column required.");
         RequireTrue(ReadReceiptProfileTitle(paths.DatabasePath, before.ReceiptProfileId!) == before.ReceiptTitle,
             "Receipt profile title must survive upgrade.");
 
@@ -163,34 +182,35 @@ public static class RmoBirQa1RealMachineDatabaseChecks
         Console.WriteLine("[QA1] C evidence: receipt title preserved; seq unchanged " + after.SequenceCurrentNumber);
     }
 
-    private static void RunFutureV15Rejection(string qaRoot)
+    private static void RunFutureVersionRejection(string qaRoot)
     {
-        Console.WriteLine("[QA1] D. Future v15 rejection");
-        DbPaths paths = CreateQaDbPaths(qaRoot, "future-v15");
+        Console.WriteLine("[QA1] D. Future v" + FutureProbeMigrationVersion + " rejection");
+        DbPaths paths = CreateQaDbPaths(qaRoot, "future-v" + FutureProbeMigrationVersion);
         AssertInsideQaRoot(qaRoot, paths.DatabasePath);
 
         Result<DatabaseInitializationSummary> init =
             DefaultDatabaseInitializationFactory.Create(paths).InitializeDatabase();
-        RequireTrue(init.IsSuccess, "v14 live QA DB init must succeed.");
-        InsertSentinelState(paths, includeReceiptProfile: true, label: "v15live");
+        RequireTrue(init.IsSuccess, "Current live QA DB init must succeed.");
+        InsertSentinelState(paths, includeReceiptProfile: true, label: "futurelive");
         long salesBefore = CountRows(paths.DatabasePath, "sales");
         int seqBefore = ReadSequenceCurrent(paths.DatabasePath);
 
         SqliteBackupRecoveryService recovery = new(paths);
         Result<string> backupResult = recovery.CreateBackup();
-        RequireTrue(backupResult.IsSuccess, "Backup for v15 probe must succeed.");
+        RequireTrue(backupResult.IsSuccess, "Backup for future probe must succeed.");
         string goodBackup = backupResult.Value;
         AssertInsideQaRoot(qaRoot, goodBackup);
 
-        string futureBackup = Path.Combine(paths.BackupPath, "future-v15-probe.db");
+        string futureBackup = Path.Combine(paths.BackupPath, "future-v" + FutureProbeMigrationVersion + "-probe.db");
         File.Copy(goodBackup, futureBackup, overwrite: true);
         using (SqliteConnection connection = OpenRw(futureBackup))
         {
             using SqliteCommand command = connection.CreateCommand();
             command.CommandText = """
                 INSERT INTO schema_migrations (version, name, applied_at)
-                VALUES (15, 'qa1-future-probe', $appliedAt);
+                VALUES ($version, 'qa1-future-probe', $appliedAt);
                 """;
+            command.Parameters.AddWithValue("$version", FutureProbeMigrationVersion);
             command.Parameters.AddWithValue("$appliedAt", DateTimeOffset.UtcNow.ToString("O"));
             command.ExecuteNonQuery();
         }
@@ -206,7 +226,9 @@ public static class RmoBirQa1RealMachineDatabaseChecks
             SqliteBackupRecoveryService.RestoreConfirmationText);
         RequireTrue(restore.IsFailure, "Future restore must be rejected.");
 
-        RequireTrue(ReadMaxMigrationVersion(paths.DatabasePath) == 14, "Live QA DB must remain v14.");
+        RequireTrue(
+            ReadMaxMigrationVersion(paths.DatabasePath) == CurrentSupportedMigrationVersion,
+            "Live QA DB must remain at current supported version.");
         RequireTrue(CountRows(paths.DatabasePath, "sales") == salesBefore, "Live sales count must be unchanged after rejected restore.");
         RequireTrue(ReadSequenceCurrent(paths.DatabasePath) == seqBefore, "Live sequence must be unchanged after rejected restore.");
         Console.WriteLine("[QA1] D evidence: HasFuture=true IsRestorable=false live unchanged");
@@ -299,7 +321,9 @@ public static class RmoBirQa1RealMachineDatabaseChecks
 
         Result<BackupVerificationSummary> verify = recovery.VerifyBackup(backupPath);
         RequireTrue(verify.IsSuccess, "VerifyBackup must succeed.");
-        RequireTrue(verify.Value.BackupMigrationVersion == 14, "Backup migration version must be 14.");
+        RequireTrue(
+            verify.Value.BackupMigrationVersion == CurrentSupportedMigrationVersion,
+            "Backup migration version must be " + CurrentSupportedMigrationVersion + ".");
         RequireTrue(verify.Value.CriticalTablesExist, "Critical tables must exist.");
         RequireTrue(verify.Value.MigrationVersionCompatible, "Must be migration-compatible.");
         RequireTrue(verify.Value.IsRestorable, "Must be restorable.");
@@ -381,7 +405,8 @@ public static class RmoBirQa1RealMachineDatabaseChecks
             new LanRemoteTransportSchemaMigration(),
             new TerminalCredentialHandshakeSchemaMigration(),
             new OfficialReceiptProfileSchemaMigration(),
-            new OfficialDryRunPackageSchemaMigration()
+            new OfficialDryRunPackageSchemaMigration(),
+            new VatRegistrationModeSchemaMigration()
         };
 
     private static void RunMigrationsThrough(DbPaths paths, int maxVersion)
@@ -838,6 +863,23 @@ public static class RmoBirQa1RealMachineDatabaseChecks
             SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = $n LIMIT 1;
             """, ("$n", table));
         return value is not null;
+    }
+
+    private static bool ColumnExists(string databasePath, string table, string column)
+    {
+        using SqliteConnection connection = OpenRo(databasePath);
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "PRAGMA table_info(" + table + ");";
+        using SqliteDataReader reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static HashSet<string> ReadTableNames(string databasePath)

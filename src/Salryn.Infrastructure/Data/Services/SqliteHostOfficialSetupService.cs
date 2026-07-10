@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Salryn.Core.Common;
+using Salryn.Core.Models;
 using Salryn.Core.Official;
 using Salryn.Core.Services;
 
@@ -66,6 +67,17 @@ public sealed class SqliteHostOfficialSetupService : IHostOfficialSetupService
             ActiveProfileRow profile = EnsureActiveProfile(connection, tx);
             string now = DateTimeOffset.UtcNow.ToString("O");
 
+            Result<TaxpayerRegistrationMode?> modeParse =
+                TaxpayerRegistrationModeCodes.ParseOptional(request.VatRegistrationMode);
+            if (modeParse.IsFailure)
+            {
+                return Task.FromResult(Result<OfficialSetupSnapshotContract>.Fail(modeParse.ErrorDetail));
+            }
+
+            string? persistedMode = modeParse.Value is null
+                ? null
+                : TaxpayerRegistrationModeCodes.ToPersistedCode(modeParse.Value.Value);
+
             using (SqliteCommand command = connection.CreateCommand())
             {
                 command.Transaction = tx;
@@ -77,6 +89,7 @@ public sealed class SqliteHostOfficialSetupService : IHostOfficialSetupService
                         branch_address = $branchAddress,
                         taxpayer_identification_number = $tin,
                         branch_code = $branchCode,
+                        vat_registration_mode = $vatMode,
                         compliance_mode = 'NOT_ACCREDITED',
                         official_output_enabled = 0,
                         updated_at = $updatedAt
@@ -92,6 +105,9 @@ public sealed class SqliteHostOfficialSetupService : IHostOfficialSetupService
                     string.IsNullOrWhiteSpace(request.BranchAddress) ? DBNull.Value : request.BranchAddress.Trim());
                 command.Parameters.AddWithValue("$tin", request.TaxpayerIdentificationNumber.Trim());
                 command.Parameters.AddWithValue("$branchCode", request.BranchCode.Trim());
+                command.Parameters.AddWithValue(
+                    "$vatMode",
+                    persistedMode is null ? DBNull.Value : persistedMode);
                 command.Parameters.AddWithValue("$updatedAt", now);
                 command.Parameters.AddWithValue("$id", profile.Id.ToString("D"));
                 command.ExecuteNonQuery();
@@ -440,6 +456,13 @@ public sealed class SqliteHostOfficialSetupService : IHostOfficialSetupService
                 "Branch code is required."));
         }
 
+        Result<TaxpayerRegistrationMode?> modeParse =
+            TaxpayerRegistrationModeCodes.ParseOptional(request.VatRegistrationMode);
+        if (modeParse.IsFailure)
+        {
+            return Result.Fail(modeParse.ErrorDetail);
+        }
+
         return Result.Success();
     }
 
@@ -557,7 +580,8 @@ public sealed class SqliteHostOfficialSetupService : IHostOfficialSetupService
                        machine_serial_number, machine_identification_number, pos_terminal_number,
                        accreditation_number, permit_to_use_number,
                        software_version, software_build,
-                       compliance_mode, official_output_enabled, is_active
+                       compliance_mode, official_output_enabled, is_active,
+                       vat_registration_mode
                 FROM bir_machine_profiles
                 WHERE registration_scope_code = 'LOCAL_SINGLE_STORE'
                   AND is_active = 1
@@ -567,6 +591,17 @@ public sealed class SqliteHostOfficialSetupService : IHostOfficialSetupService
             if (reader.Read())
             {
                 Guid profileId = Guid.Parse(reader.GetString(0));
+                string? vatModeRaw = reader.IsDBNull(17) ? null : reader.GetString(17);
+                string? vatModeNormalized = null;
+                if (!string.IsNullOrWhiteSpace(vatModeRaw))
+                {
+                    Result<TaxpayerRegistrationMode> parsed = TaxpayerRegistrationModeCodes.Parse(vatModeRaw);
+                    if (parsed.IsSuccess)
+                    {
+                        vatModeNormalized = TaxpayerRegistrationModeCodes.ToPersistedCode(parsed.Value);
+                    }
+                }
+
                 business = new OfficialSetupBusinessProfileContract(
                     RegisteredTaxpayerName: reader.GetString(1),
                     BusinessName: reader.IsDBNull(2) ? null : reader.GetString(2),
@@ -574,7 +609,7 @@ public sealed class SqliteHostOfficialSetupService : IHostOfficialSetupService
                     BranchAddress: reader.IsDBNull(4) ? null : reader.GetString(4),
                     TaxpayerIdentificationNumber: reader.GetString(5),
                     BranchCode: reader.GetString(6),
-                    VatRegistrationMode: null,
+                    VatRegistrationMode: vatModeNormalized,
                     ContactNote: null);
                 machine = new OfficialSetupMachineProfileContract(
                     ProfileId: profileId,

@@ -53,9 +53,9 @@ public static class RmoBirM8EndgameChecks
         AssertContains(migration, "live_official_posting_allowed INTEGER NOT NULL DEFAULT 0", "Migration must force live posting off.");
         AssertContains(migration, "sequence_will_mutate INTEGER NOT NULL DEFAULT 0", "Migration must force sequence no-mutate.");
         AssertContains(initFactory, "OfficialDryRunPackageSchemaMigration", "Migration must be registered.");
-        AssertContains(catalog, "SupportedMigrationVersion = 14", "Catalog must support v14.");
+        AssertContains(catalog, "SupportedMigrationVersion = 15", "Catalog must support v15 (TRAD-M1).");
         AssertContains(catalog, "official_dry_run_packages", "Catalog critical tables must include dry-run packages.");
-        AssertContains(dbA2, "futureVersion = 15", "DB-A2 future probe must be supported+1.");
+        AssertContains(dbA2, "futureVersion = 16", "DB-A2 future probe must be supported+1.");
 
         AssertContains(packageService, "official_dry_run_packages", "Package service must persist to table.");
         AssertContains(packageService, "OfficialDryRunPackageSourceMode.Synthetic", "Packages must support synthetic source.");

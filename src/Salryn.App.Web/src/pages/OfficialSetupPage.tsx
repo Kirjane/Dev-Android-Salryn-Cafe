@@ -86,6 +86,7 @@ export function OfficialSetupPage() {
     branchAddress: "",
     taxpayerIdentificationNumber: "",
     branchCode: "",
+    vatRegistrationMode: "",
   });
   const [machine, setMachine] = useState({
     machineSerialNumber: "",
@@ -131,6 +132,7 @@ export function OfficialSetupPage() {
         taxpayerIdentificationNumber:
           data.business.taxpayerIdentificationNumber === "UNSET" ? "" : data.business.taxpayerIdentificationNumber,
         branchCode: data.business.branchCode === "00000" ? "" : data.business.branchCode,
+        vatRegistrationMode: data.business.vatRegistrationMode ?? "",
       });
     }
 
@@ -194,7 +196,9 @@ export function OfficialSetupPage() {
         branchAddress: business.branchAddress || null,
         taxpayerIdentificationNumber: business.taxpayerIdentificationNumber,
         branchCode: business.branchCode,
-        vatRegistrationMode: null,
+        vatRegistrationMode: business.vatRegistrationMode.trim()
+          ? business.vatRegistrationMode.trim()
+          : null,
         contactNote: null,
       }),
     onSuccess: () => onSaved("Business profile"),
@@ -431,6 +435,23 @@ export function OfficialSetupPage() {
               value={business.branchCode}
               onChange={(e) => setBusiness({ ...business, branchCode: e.target.value })}
             />
+          </FormField>
+          <FormField label="VAT / non-VAT registration mode">
+            <select
+              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+              value={business.vatRegistrationMode}
+              onChange={(e) => setBusiness({ ...business, vatRegistrationMode: e.target.value })}
+              aria-label="VAT registration mode"
+            >
+              <option value="">Not set (fail-closed for official tax path)</option>
+              <option value="VAT_REGISTERED">VAT-registered</option>
+              <option value="NON_VAT_PERCENTAGE_TAX">Non-VAT (percentage tax / SSPT)</option>
+              <option value="NON_VAT_EXEMPT">Non-VAT (exempt)</option>
+            </select>
+            <p className="mt-1 text-xs text-slate-500">
+              Installation-level mode. Must match the taxpayer BIR registration. Product tax classifications that
+              contradict this mode are rejected by the tax engine. Not an accreditation claim.
+            </p>
           </FormField>
           <div className="md:col-span-2">
             <Button onClick={() => businessMutation.mutate()} disabled={businessMutation.isPending}>

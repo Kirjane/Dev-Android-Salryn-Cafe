@@ -220,7 +220,12 @@ public sealed class OfficialDocumentTaxBucketDraftValidator
 
     private static Result ValidateTaxpayerModeShape(OfficialDocumentTaxBucketDraft draft)
     {
-        if (draft.TaxpayerMode == OfficialDocumentTaxBucketDraftTaxpayerMode.NonVatRegistered)
+        bool isNonVat =
+            draft.TaxpayerMode is OfficialDocumentTaxBucketDraftTaxpayerMode.NonVatRegistered
+                or OfficialDocumentTaxBucketDraftTaxpayerMode.NonVatPercentageTax
+                or OfficialDocumentTaxBucketDraftTaxpayerMode.NonVatExempt;
+
+        if (isNonVat)
         {
             if (string.IsNullOrWhiteSpace(draft.NonVatStatement))
             {
@@ -229,11 +234,26 @@ public sealed class OfficialDocumentTaxBucketDraftValidator
                     "Non-VAT draft requires a non-VAT statement placeholder."));
             }
 
-            if (!ContainsBucketKind(draft.Buckets, OfficialDocumentTaxBucketDraftKind.NonVatSales))
+            bool hasNonVatShape =
+                ContainsBucketKind(draft.Buckets, OfficialDocumentTaxBucketDraftKind.NonVatSales)
+                || ContainsBucketKind(draft.Buckets, OfficialDocumentTaxBucketDraftKind.SsptSales)
+                || ContainsBucketKind(draft.Buckets, OfficialDocumentTaxBucketDraftKind.NonVatExemptSales);
+
+            if (!hasNonVatShape)
             {
                 return Result.Fail(Error.Validation(
                     "OfficialDocumentTaxBucketDraft.NonVatBucketRequired",
-                    "Non-VAT draft requires a non-VAT sales bucket shape."));
+                    "Non-VAT draft requires an SSPT, non-VAT exempt, or legacy non-VAT sales bucket shape."));
+            }
+
+            // Non-VAT drafts must not carry VAT output buckets (fail closed).
+            if (ContainsBucketKind(draft.Buckets, OfficialDocumentTaxBucketDraftKind.VatableSales)
+                || ContainsBucketKind(draft.Buckets, OfficialDocumentTaxBucketDraftKind.VatAmount)
+                || ContainsBucketKind(draft.Buckets, OfficialDocumentTaxBucketDraftKind.ZeroRatedSales))
+            {
+                return Result.Fail(Error.Validation(
+                    "OfficialDocumentTaxBucketDraft.NonVatCannotCarryVatBuckets",
+                    "Non-VAT draft must not include VAT sales or VAT amount buckets."));
             }
         }
 
@@ -243,6 +263,18 @@ public sealed class OfficialDocumentTaxBucketDraftValidator
             return Result.Fail(Error.Validation(
                 "OfficialDocumentTaxBucketDraft.VatDraftNonVatStatementNotAllowed",
                 "VAT-registered draft must not carry a non-VAT statement placeholder."));
+        }
+
+        if (draft.TaxpayerMode == OfficialDocumentTaxBucketDraftTaxpayerMode.VatRegistered)
+        {
+            if (ContainsBucketKind(draft.Buckets, OfficialDocumentTaxBucketDraftKind.SsptSales)
+                || ContainsBucketKind(draft.Buckets, OfficialDocumentTaxBucketDraftKind.NonVatExemptSales)
+                || ContainsBucketKind(draft.Buckets, OfficialDocumentTaxBucketDraftKind.NonVatSales))
+            {
+                return Result.Fail(Error.Validation(
+                    "OfficialDocumentTaxBucketDraft.VatCannotCarryNonVatBuckets",
+                    "VAT-registered draft must not include non-VAT SSPT/exempt sales buckets."));
+            }
         }
 
         return Result.Success();

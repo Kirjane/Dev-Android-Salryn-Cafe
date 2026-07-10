@@ -13,7 +13,7 @@ public sealed record OfficialDocumentTaxBucketCalculationRequest(
     IReadOnlyList<OfficialDocumentTaxBucketCalculationLine> Lines,
     long SaleLevelDiscountCents);
 
-// Deterministic VAT bucket calculator. Does not claim legal VAT correctness.
+// Deterministic VAT / non-VAT bucket calculator. Does not claim legal VAT correctness.
 public sealed class OfficialDocumentTaxBucketEngine
 {
     private readonly OfficialDocumentTaxBucketDraftValidator _validator = new();
@@ -27,68 +27,97 @@ public sealed class OfficialDocumentTaxBucketEngine
             return Result<OfficialDocumentTaxBucketDraft>.Fail(validation.ErrorDetail);
         }
 
+        OfficialDocumentTaxBucketDraftTaxpayerMode mode = NormalizeMode(request.TaxpayerMode);
+
+        return mode switch
+        {
+            OfficialDocumentTaxBucketDraftTaxpayerMode.VatRegistered =>
+                CalculateVatRegistered(request),
+            OfficialDocumentTaxBucketDraftTaxpayerMode.NonVatPercentageTax =>
+                CalculateNonVatPercentageTax(request),
+            OfficialDocumentTaxBucketDraftTaxpayerMode.NonVatExempt =>
+                CalculateNonVatExempt(request),
+            _ => Result<OfficialDocumentTaxBucketDraft>.Fail(Error.Validation(
+                "OfficialDocumentTaxBucketEngine.TaxpayerModeRequired",
+                "Known taxpayer mode is required."))
+        };
+    }
+
+    private Result<OfficialDocumentTaxBucketDraft> CalculateVatRegistered(
+        OfficialDocumentTaxBucketCalculationRequest request)
+    {
         long vatableSalesCents = 0;
         long vatAmountCents = 0;
         long vatExemptSalesCents = 0;
         long zeroRatedSalesCents = 0;
-        long nonVatSalesCents = 0;
 
-        if (request.TaxpayerMode == OfficialDocumentTaxBucketDraftTaxpayerMode.NonVatRegistered)
+        foreach (OfficialDocumentTaxBucketCalculationLine line in request.Lines)
         {
-            foreach (OfficialDocumentTaxBucketCalculationLine line in request.Lines)
+            if (!SalrynTaxpayerTaxPolicy.IsLineClassificationAllowed(
+                    OfficialDocumentTaxBucketDraftTaxpayerMode.VatRegistered,
+                    line.Classification))
             {
-                nonVatSalesCents = checked(nonVatSalesCents + line.LineTotalCents);
+                return Result<OfficialDocumentTaxBucketDraft>.Fail(Error.Validation(
+                    "OfficialDocumentTaxBucketEngine.ClassificationNotAllowedForMode",
+                    "Line tax classification is not allowed for VAT-registered taxpayer mode."));
             }
-        }
-        else
-        {
-            foreach (OfficialDocumentTaxBucketCalculationLine line in request.Lines)
+
+            switch (line.Classification)
             {
-                switch (line.Classification)
+                case OfficialDocumentLineTaxClassification.Vatable:
                 {
-                    case OfficialDocumentLineTaxClassification.Vatable:
-                    {
-                        long lineVat = ComputeInclusiveVatAmountCents(line.LineTotalCents);
-                        vatAmountCents = checked(vatAmountCents + lineVat);
-                        vatableSalesCents = checked(vatableSalesCents + (line.LineTotalCents - lineVat));
-                        break;
-                    }
-
-                    case OfficialDocumentLineTaxClassification.VatExempt:
-                        vatExemptSalesCents = checked(vatExemptSalesCents + line.LineTotalCents);
-                        break;
-
-                    case OfficialDocumentLineTaxClassification.ZeroRated:
-                        zeroRatedSalesCents = checked(zeroRatedSalesCents + line.LineTotalCents);
-                        break;
-
-                    case OfficialDocumentLineTaxClassification.NonVat:
-                        nonVatSalesCents = checked(nonVatSalesCents + line.LineTotalCents);
-                        break;
-
-                    default:
-                        return Result<OfficialDocumentTaxBucketDraft>.Fail(Error.Validation(
-                            "OfficialDocumentTaxBucketEngine.UnsupportedClassification",
-                            "Official document line tax classification is unsupported."));
+                    long lineVat = ComputeInclusiveVatAmountCents(line.LineTotalCents);
+                    vatAmountCents = checked(vatAmountCents + lineVat);
+                    vatableSalesCents = checked(vatableSalesCents + (line.LineTotalCents - lineVat));
+                    break;
                 }
+
+                case OfficialDocumentLineTaxClassification.VatExempt:
+                    vatExemptSalesCents = checked(vatExemptSalesCents + line.LineTotalCents);
+                    break;
+
+                case OfficialDocumentLineTaxClassification.ZeroRated:
+                    zeroRatedSalesCents = checked(zeroRatedSalesCents + line.LineTotalCents);
+                    break;
             }
         }
 
-        if (request.SaleLevelDiscountCents > 0 && request.TaxpayerMode == OfficialDocumentTaxBucketDraftTaxpayerMode.VatRegistered)
+        if (request.SaleLevelDiscountCents > 0)
         {
-            Result<OfficialDocumentTaxBucketDraft> adjusted =
-                ApplySaleLevelDiscountToVatableBuckets(
-                    vatableSalesCents,
-                    vatAmountCents,
-                    request.SaleLevelDiscountCents);
+            Result<DiscountAllocation> allocated = AllocateSaleLevelDiscountProportionally(
+                request,
+                includeClassifications: c => c is OfficialDocumentLineTaxClassification.Vatable
+                    or OfficialDocumentLineTaxClassification.VatExempt
+                    or OfficialDocumentLineTaxClassification.ZeroRated);
 
-            if (adjusted.IsFailure)
+            if (allocated.IsFailure)
             {
-                return adjusted;
+                return Result<OfficialDocumentTaxBucketDraft>.Fail(allocated.ErrorDetail);
             }
 
-            vatableSalesCents = ReadBucketAmount(adjusted.Value, OfficialDocumentTaxBucketDraftKind.VatableSales);
-            vatAmountCents = ReadBucketAmount(adjusted.Value, OfficialDocumentTaxBucketDraftKind.VatAmount);
+            // Recompute VATable from discounted VATable gross; exempt/zero-rated take proportional share only.
+            long vatableGross = SumLineGross(request.Lines, OfficialDocumentLineTaxClassification.Vatable);
+            long exemptGross = SumLineGross(request.Lines, OfficialDocumentLineTaxClassification.VatExempt);
+            long zeroGross = SumLineGross(request.Lines, OfficialDocumentLineTaxClassification.ZeroRated);
+            long totalGross = checked(vatableGross + exemptGross + zeroGross);
+
+            if (totalGross <= 0)
+            {
+                return Result<OfficialDocumentTaxBucketDraft>.Fail(Error.Validation(
+                    "OfficialDocumentTaxBucketEngine.SaleDiscountWithoutGross",
+                    "Sale-level discount requires positive line gross."));
+            }
+
+            long discount = request.SaleLevelDiscountCents;
+            long vatableDiscount = Proportion(discount, vatableGross, totalGross);
+            long exemptDiscount = Proportion(discount, exemptGross, totalGross);
+            long zeroDiscount = checked(discount - vatableDiscount - exemptDiscount);
+
+            long adjustedVatableGross = checked(vatableGross - vatableDiscount);
+            vatAmountCents = ComputeInclusiveVatAmountCents(adjustedVatableGross);
+            vatableSalesCents = checked(adjustedVatableGross - vatAmountCents);
+            vatExemptSalesCents = checked(exemptGross - exemptDiscount);
+            zeroRatedSalesCents = checked(zeroGross - zeroDiscount);
         }
 
         List<OfficialDocumentTaxBucketDraftBucket> buckets = new();
@@ -126,35 +155,165 @@ public sealed class OfficialDocumentTaxBucketEngine
                 null));
         }
 
-        if (nonVatSalesCents > 0)
+        if (buckets.Count == 0)
         {
             buckets.Add(new OfficialDocumentTaxBucketDraftBucket(
-                OfficialDocumentTaxBucketDraftKind.NonVatSales,
-                nonVatSalesCents,
+                OfficialDocumentTaxBucketDraftKind.VatableSales,
+                0,
+                0,
+                "Zero-amount engineering bucket placeholder."));
+            buckets.Add(new OfficialDocumentTaxBucketDraftBucket(
+                OfficialDocumentTaxBucketDraftKind.VatAmount,
+                0,
                 0,
                 null));
+        }
+
+        return Finalize(
+            OfficialDocumentTaxBucketDraftTaxpayerMode.VatRegistered,
+            buckets,
+            nonVatStatement: null);
+    }
+
+    private Result<OfficialDocumentTaxBucketDraft> CalculateNonVatPercentageTax(
+        OfficialDocumentTaxBucketCalculationRequest request)
+    {
+        long ssptSalesCents = 0;
+        long exemptSalesCents = 0;
+
+        foreach (OfficialDocumentTaxBucketCalculationLine line in request.Lines)
+        {
+            if (!SalrynTaxpayerTaxPolicy.IsLineClassificationAllowed(
+                    OfficialDocumentTaxBucketDraftTaxpayerMode.NonVatPercentageTax,
+                    line.Classification))
+            {
+                return Result<OfficialDocumentTaxBucketDraft>.Fail(Error.Validation(
+                    "OfficialDocumentTaxBucketEngine.ClassificationNotAllowedForMode",
+                    "Line tax classification is not allowed for non-VAT percentage-tax taxpayer mode."));
+            }
+
+            if (line.Classification == OfficialDocumentLineTaxClassification.NonVat)
+            {
+                ssptSalesCents = checked(ssptSalesCents + line.LineTotalCents);
+            }
+            else if (line.Classification == OfficialDocumentLineTaxClassification.NonVatExempt)
+            {
+                exemptSalesCents = checked(exemptSalesCents + line.LineTotalCents);
+            }
+        }
+
+        if (request.SaleLevelDiscountCents > 0)
+        {
+            long totalGross = checked(ssptSalesCents + exemptSalesCents);
+            if (request.SaleLevelDiscountCents > totalGross)
+            {
+                return Result<OfficialDocumentTaxBucketDraft>.Fail(Error.Validation(
+                    "OfficialDocumentTaxBucketEngine.SaleDiscountExceedsNonVatGross",
+                    "Sale-level discount cannot exceed non-VAT gross."));
+            }
+
+            long ssptDiscount = Proportion(request.SaleLevelDiscountCents, ssptSalesCents, totalGross);
+            long exemptDiscount = checked(request.SaleLevelDiscountCents - ssptDiscount);
+            ssptSalesCents = checked(ssptSalesCents - ssptDiscount);
+            exemptSalesCents = checked(exemptSalesCents - exemptDiscount);
+        }
+
+        List<OfficialDocumentTaxBucketDraftBucket> buckets = new();
+
+        if (ssptSalesCents > 0)
+        {
+            buckets.Add(new OfficialDocumentTaxBucketDraftBucket(
+                OfficialDocumentTaxBucketDraftKind.SsptSales,
+                ssptSalesCents,
+                0,
+                "Sales subject to percentage tax (SSPT) — engineering bucket."));
+        }
+
+        if (exemptSalesCents > 0)
+        {
+            buckets.Add(new OfficialDocumentTaxBucketDraftBucket(
+                OfficialDocumentTaxBucketDraftKind.NonVatExemptSales,
+                exemptSalesCents,
+                0,
+                "Non-VAT exempt sales — engineering bucket."));
         }
 
         if (buckets.Count == 0)
         {
             buckets.Add(new OfficialDocumentTaxBucketDraftBucket(
-                OfficialDocumentTaxBucketDraftKind.NonVatSales,
+                OfficialDocumentTaxBucketDraftKind.SsptSales,
                 0,
                 0,
                 "Zero-amount engineering bucket placeholder."));
         }
 
-        OfficialDocumentTaxBucketDraft draft = new(
-            request.TaxpayerMode,
+        return Finalize(
+            OfficialDocumentTaxBucketDraftTaxpayerMode.NonVatPercentageTax,
             buckets,
-            request.TaxpayerMode == OfficialDocumentTaxBucketDraftTaxpayerMode.NonVatRegistered
-                ? SalrynOfficialTaxBucketPolicy.NonVatRegisteredStatement
-                : null,
+            nonVatStatement: SalrynOfficialTaxBucketPolicy.NonVatRegisteredStatement);
+    }
+
+    private Result<OfficialDocumentTaxBucketDraft> CalculateNonVatExempt(
+        OfficialDocumentTaxBucketCalculationRequest request)
+    {
+        long exemptSalesCents = 0;
+
+        foreach (OfficialDocumentTaxBucketCalculationLine line in request.Lines)
+        {
+            if (!SalrynTaxpayerTaxPolicy.IsLineClassificationAllowed(
+                    OfficialDocumentTaxBucketDraftTaxpayerMode.NonVatExempt,
+                    line.Classification))
+            {
+                return Result<OfficialDocumentTaxBucketDraft>.Fail(Error.Validation(
+                    "OfficialDocumentTaxBucketEngine.ClassificationNotAllowedForMode",
+                    "Line tax classification is not allowed for non-VAT exempt taxpayer mode."));
+            }
+
+            exemptSalesCents = checked(exemptSalesCents + line.LineTotalCents);
+        }
+
+        if (request.SaleLevelDiscountCents > 0)
+        {
+            if (request.SaleLevelDiscountCents > exemptSalesCents)
+            {
+                return Result<OfficialDocumentTaxBucketDraft>.Fail(Error.Validation(
+                    "OfficialDocumentTaxBucketEngine.SaleDiscountExceedsNonVatGross",
+                    "Sale-level discount cannot exceed non-VAT exempt gross."));
+            }
+
+            exemptSalesCents = checked(exemptSalesCents - request.SaleLevelDiscountCents);
+        }
+
+        List<OfficialDocumentTaxBucketDraftBucket> buckets =
+        [
+            new OfficialDocumentTaxBucketDraftBucket(
+                OfficialDocumentTaxBucketDraftKind.NonVatExemptSales,
+                exemptSalesCents,
+                0,
+                "Non-VAT exempt-only taxpayer path — engineering bucket.")
+        ];
+
+        return Finalize(
+            OfficialDocumentTaxBucketDraftTaxpayerMode.NonVatExempt,
+            buckets,
+            nonVatStatement: SalrynOfficialTaxBucketPolicy.NonVatRegisteredStatement);
+    }
+
+    private Result<OfficialDocumentTaxBucketDraft> Finalize(
+        OfficialDocumentTaxBucketDraftTaxpayerMode mode,
+        List<OfficialDocumentTaxBucketDraftBucket> buckets,
+        string? nonVatStatement)
+    {
+        OfficialDocumentTaxBucketDraft draft = new(
+            mode,
+            buckets,
+            nonVatStatement,
             new[]
             {
                 SalrynOfficialTaxBucketPolicy.EngineBoundaryNote,
                 SalrynOfficialTaxBucketPolicy.NoLegalVatClaimNote,
-                SalrynOfficialTaxBucketPolicy.NoOfficialOutputRenderingNote
+                SalrynOfficialTaxBucketPolicy.NoOfficialOutputRenderingNote,
+                SalrynInvoiceDocumentPolicy.InvoiceFirstBoundaryNote
             });
 
         Result validatorResult = _validator.ValidateEngineComputed(draft);
@@ -181,58 +340,65 @@ public sealed class OfficialDocumentTaxBucketEngine
         return RoundHalfAwayFromZero(vat);
     }
 
-    private static Result<OfficialDocumentTaxBucketDraft> ApplySaleLevelDiscountToVatableBuckets(
-        long vatableSalesCents,
-        long vatAmountCents,
-        long saleLevelDiscountCents)
+    private static OfficialDocumentTaxBucketDraftTaxpayerMode NormalizeMode(
+        OfficialDocumentTaxBucketDraftTaxpayerMode mode)
     {
-        long vatableGross = checked(vatableSalesCents + vatAmountCents);
-
-        if (saleLevelDiscountCents > vatableGross)
+        // NonVatRegistered and NonVatPercentageTax share value 2.
+        if (mode == OfficialDocumentTaxBucketDraftTaxpayerMode.NonVatRegistered)
         {
-            return Result<OfficialDocumentTaxBucketDraft>.Fail(Error.Validation(
-                "OfficialDocumentTaxBucketEngine.SaleDiscountExceedsVatableGross",
-                "Sale-level discount cannot exceed vatable gross for engineering bucket calculation."));
+            return OfficialDocumentTaxBucketDraftTaxpayerMode.NonVatPercentageTax;
         }
 
-        long adjustedGross = checked(vatableGross - saleLevelDiscountCents);
-        long adjustedVat = ComputeInclusiveVatAmountCents(adjustedGross);
-        long adjustedNet = checked(adjustedGross - adjustedVat);
-
-        return Result<OfficialDocumentTaxBucketDraft>.Success(new OfficialDocumentTaxBucketDraft(
-            OfficialDocumentTaxBucketDraftTaxpayerMode.VatRegistered,
-            new[]
-            {
-                new OfficialDocumentTaxBucketDraftBucket(
-                    OfficialDocumentTaxBucketDraftKind.VatableSales,
-                    adjustedNet,
-                    0,
-                    null),
-                new OfficialDocumentTaxBucketDraftBucket(
-                    OfficialDocumentTaxBucketDraftKind.VatAmount,
-                    0,
-                    adjustedVat,
-                    null)
-            },
-            null,
-            Array.Empty<string>()));
+        return mode;
     }
 
-    private static long ReadBucketAmount(
-        OfficialDocumentTaxBucketDraft draft,
-        OfficialDocumentTaxBucketDraftKind kind)
+    private static long SumLineGross(
+        IReadOnlyList<OfficialDocumentTaxBucketCalculationLine> lines,
+        OfficialDocumentLineTaxClassification classification)
     {
-        foreach (OfficialDocumentTaxBucketDraftBucket bucket in draft.Buckets)
+        long sum = 0;
+        foreach (OfficialDocumentTaxBucketCalculationLine line in lines)
         {
-            if (bucket.Kind == kind)
+            if (line.Classification == classification)
             {
-                return kind == OfficialDocumentTaxBucketDraftKind.VatAmount
-                    ? bucket.TaxAmountCents
-                    : bucket.SalesAmountCents;
+                sum = checked(sum + line.LineTotalCents);
             }
         }
 
-        return 0;
+        return sum;
+    }
+
+    private static long Proportion(long amount, long part, long whole)
+    {
+        if (whole <= 0 || part <= 0 || amount <= 0)
+        {
+            return 0;
+        }
+
+        return (long)decimal.Round((decimal)amount * part / whole, 0, MidpointRounding.AwayFromZero);
+    }
+
+    private static Result<DiscountAllocation> AllocateSaleLevelDiscountProportionally(
+        OfficialDocumentTaxBucketCalculationRequest request,
+        Func<OfficialDocumentLineTaxClassification, bool> includeClassifications)
+    {
+        long gross = 0;
+        foreach (OfficialDocumentTaxBucketCalculationLine line in request.Lines)
+        {
+            if (includeClassifications(line.Classification))
+            {
+                gross = checked(gross + line.LineTotalCents);
+            }
+        }
+
+        if (request.SaleLevelDiscountCents > gross)
+        {
+            return Result<DiscountAllocation>.Fail(Error.Validation(
+                "OfficialDocumentTaxBucketEngine.SaleDiscountExceedsVatableGross",
+                "Sale-level discount cannot exceed applicable gross for engineering bucket calculation."));
+        }
+
+        return Result<DiscountAllocation>.Success(new DiscountAllocation(gross, request.SaleLevelDiscountCents));
     }
 
     private static long RoundHalfAwayFromZero(decimal value)
@@ -297,4 +463,6 @@ public sealed class OfficialDocumentTaxBucketEngine
 
         return Result.Success();
     }
+
+    private sealed record DiscountAllocation(long GrossCents, long DiscountCents);
 }
