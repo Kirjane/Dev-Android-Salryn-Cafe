@@ -268,6 +268,40 @@ public sealed class SqliteOfficialCheckoutPersistenceService
                 "Official checkout persistence requires a cashier session id already enforced by checkout."));
         }
 
+        // TRAD-M2: atomic official path requires known taxpayer mode (TRAD-M1 spine).
+        if (!request.TaxpayerMode.HasValue
+            || request.TaxpayerMode.Value == OfficialDocumentTaxBucketDraftTaxpayerMode.Unknown
+            || !Enum.IsDefined(typeof(OfficialDocumentTaxBucketDraftTaxpayerMode), request.TaxpayerMode.Value))
+        {
+            return Result.Fail(Error.Validation(
+                "OfficialCheckout.TaxpayerModeRequired",
+                "Atomic official posting requires a known taxpayer mode (VAT or non-VAT)."));
+        }
+
+        if (request.LineTaxClassifications is null || request.LineTaxClassifications.Count == 0)
+        {
+            return Result.Fail(Error.Validation(
+                "OfficialCheckout.LineTaxClassificationsRequired",
+                "Atomic official posting requires per-line tax classifications."));
+        }
+
+        if (request.CheckoutSale.Items.Count != request.LineTaxClassifications.Count)
+        {
+            return Result.Fail(Error.Validation(
+                "OfficialCheckout.LineTaxClassificationCountMismatch",
+                "Line tax classification count must match sale item count."));
+        }
+
+        foreach (OfficialDocumentLineTaxClassification classification in request.LineTaxClassifications)
+        {
+            if (!SalrynTaxpayerTaxPolicy.IsLineClassificationAllowed(request.TaxpayerMode.Value, classification))
+            {
+                return Result.Fail(Error.Validation(
+                    "OfficialCheckout.LineTaxClassificationNotAllowed",
+                    "Line tax classification is not allowed for the taxpayer mode (fail closed)."));
+            }
+        }
+
         return Result.Success();
     }
 

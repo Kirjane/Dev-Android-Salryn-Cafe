@@ -36,7 +36,7 @@ Verified at program start (after fetch):
 | 0 | Program ledger + source stamp + source register | **DONE** |
 | 0.5 | QA1 manual Official Setup UI acceptance | **PENDING HUMAN (Kirch)** — automated QA1 green |
 | 1 | TRAD-M1 taxpayer mode + invoice policy spine | **DONE (engineering)** — see implementation report |
-| 2 | TRAD-M2 atomic official posting | Pending |
+| 2 | TRAD-M2 atomic official posting | **DONE (engineering)** — harden existing shared-tx path + activation OFF facade |
 | 3 | TRAD-M3 VAT/Non-VAT Invoice output | Pending |
 | 4 | TRAD-M4 reprint/void/refund/adjustment lifecycle | Pending |
 | 5 | TRAD-M5 X/Z, EJ export, traditional eSales | Pending |

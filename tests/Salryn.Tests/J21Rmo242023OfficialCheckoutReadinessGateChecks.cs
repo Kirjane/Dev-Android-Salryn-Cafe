@@ -215,8 +215,10 @@ public static class J21Rmo242023OfficialCheckoutReadinessGateChecks
             OfficialDocumentSnapshotDraftKind.OfficialReceipt,
             CashierIdentifier: "cashier@test",
             TerminalIdentifier: "POS-1",
-            TaxModeCode: "VAT_BUCKET_ENGINE_DEFERRED",
-            TaxModeNotes: "C05 is deferred.");
+            TaxModeCode: SalrynOfficialTaxBucketPolicy.EngineTaxModeCode,
+            TaxModeNotes: SalrynOfficialTaxBucketPolicy.EngineBoundaryNote,
+            LineTaxClassifications: new[] { OfficialDocumentLineTaxClassification.Vatable },
+            TaxpayerMode: OfficialDocumentTaxBucketDraftTaxpayerMode.VatRegistered);
     }
 
     private static void SeedCheckoutDependencies(SqliteConnectionFactory factory)
