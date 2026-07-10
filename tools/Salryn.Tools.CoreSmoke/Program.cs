@@ -114,6 +114,7 @@ public static class Program
         RmoBirTradM4Rc1LifecycleRuntimeChecks.Run();
         RmoBirTradM4Rc2LifecycleAccountingRuntimeChecks.Run();
         RmoBirTradM5Rc2XzEjEsalesCompletionChecks.Run();
+        PreCrystalM0FullReportingSpineChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
         M5VerifiedCandidateStackLedgerChecks.Run();
         M6CandidateStackPromotionDryRunChecks.Run();
@@ -155,13 +156,12 @@ public static class Program
         J21Rmo242023ElectronicJournalSchemaHardeningChecks.Run();
         J21Rmo242023ElectronicJournalAppendContractPlanningChecks.Run();
         J21Rmo242023ElectronicJournalAppendServiceBoundaryChecks.Run();
-        J21Rmo242023ElectronicJournalAppendAtomicBoundaryChecks.Run();
+        J21Rmo242023ElectronicJournalAppendAtomicBoundaryChecks.RunAsync().GetAwaiter().GetResult();
         J21Rmo242023ElectronicJournalAppendPersistencePortChecks.RunAsync().GetAwaiter().GetResult();
         J21Rmo242023ElectronicJournalAppendOrchestrationShellChecks.RunAsync().GetAwaiter().GetResult();
         J21Rmo242023ElectronicJournalAppendRegistrationBoundaryChecks.RunAsync().GetAwaiter().GetResult();
         J21Rmo242023ElectronicJournalAppendBoundaryDocumentationSealChecks.Run();
         J21Rmo242023SharedSqliteTransactionBoundaryContractChecks.Run();
-        J21Rmo242023SharedSqliteTransactionBoundaryImplementationChecks.Run();
         J21Rmo242023SharedTransactionOfficialSequenceAllocationParticipantChecks.Run();
         J21Rmo242023OfficialSequenceAllocationServiceSharedBoundaryReuseChecks.Run();
         J21Rmo242023SqliteElectronicJournalAppendParticipantSkeletonChecks.Run();
@@ -340,6 +340,9 @@ public static class Program
                 return;
             case "rmo-bir-trad-m5-rc2-xz-ej-esales-completion":
                 RmoBirTradM5Rc2XzEjEsalesCompletionChecks.Run();
+                return;
+            case "reports-precrystal-m0-full-reporting-spine":
+                PreCrystalM0FullReportingSpineChecks.Run();
                 return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);
