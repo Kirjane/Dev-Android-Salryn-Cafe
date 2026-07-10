@@ -14,6 +14,15 @@ public interface IHostOfficialDryRunPackageService
         string? createdByUserId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Build and persist an internal dry-run package from an operational sale (read-only).
+    /// Never mutates the sale, sequence, EJ, shift, payment, or inventory.
+    /// </summary>
+    Task<Result<OfficialDryRunPackageContract>> CreateFromSaleAsync(
+        Guid saleId,
+        string? createdByUserId,
+        CancellationToken cancellationToken = default);
+
     Task<Result<IReadOnlyList<OfficialDryRunPackageSummaryContract>>> ListRecentAsync(
         int take = 20,
         CancellationToken cancellationToken = default);

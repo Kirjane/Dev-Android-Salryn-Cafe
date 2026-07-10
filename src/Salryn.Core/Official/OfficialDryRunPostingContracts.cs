@@ -12,7 +12,8 @@ public enum OfficialDryRunPostingStatus
 
 public enum OfficialDryRunSaleSource
 {
-    SyntheticInternal = 1
+    SyntheticInternal = 1,
+    OperationalSaleReadOnly = 2
 }
 
 public sealed record OfficialDryRunBlocker(

@@ -4,10 +4,13 @@ import {
   buildOfficialDryRunPostingPlan,
   buildOfficialReportPreview,
   createOfficialDryRunPackage,
+  createOfficialDryRunPackageFromSale,
   fetchOfficialIntegrityStatus,
+  fetchOfficialInternalReports,
   fetchOfficialNumberingPreview,
   fetchOfficialReadiness,
   fetchOfficialSetup,
+  fetchOfficialSourceSaleDryRunReadonly,
   fetchOfficialSpineStatus,
   listOfficialDryRunPackages,
   saveOfficialBusiness,
@@ -63,6 +66,9 @@ export function OfficialSetupPage() {
     journalExport: { plainTextPreview: string };
     voidRefund: { plainTextPreview: string };
   } | null>(null);
+  const [sourceSaleId, setSourceSaleId] = useState("");
+  const [sourceSaleNote, setSourceSaleNote] = useState<string | null>(null);
+  const [internalReportsNote, setInternalReportsNote] = useState<string | null>(null);
   const packagesQuery = useQuery({
     queryKey: ["official-dry-run-packages"],
     queryFn: listOfficialDryRunPackages,
@@ -278,6 +284,60 @@ export function OfficialSetupPage() {
     onError: onFail,
   });
 
+  const fromSaleMutation = useMutation({
+    mutationFn: () => createOfficialDryRunPackageFromSale(sourceSaleId.trim()),
+    onSuccess: (data) => {
+      setError(null);
+      setDryRunPackage(data);
+      setSourceSaleNote(
+        "Source-sale read-only dry-run package built. Internal dry-run only. Live posting blocked. Sale is not mutated.",
+      );
+      setMessage("Source-sale read-only package saved. Not an official receipt or invoice.");
+      void queryClient.invalidateQueries({ queryKey: ["official-dry-run-packages"] });
+    },
+    onError: onFail,
+  });
+
+  const sourceSaleProbeMutation = useMutation({
+    mutationFn: () => fetchOfficialSourceSaleDryRunReadonly(sourceSaleId.trim()),
+    onSuccess: (data) => {
+      setError(null);
+      setSourceSaleNote(
+        `${data.summary} Sales mutates: ${data.salesWillMutate ? "yes" : "no"}. Sequence mutates: ${
+          data.sequenceWillMutate ? "yes" : "no"
+        }.`,
+      );
+    },
+    onError: onFail,
+  });
+
+  const internalReportsMutation = useMutation({
+    mutationFn: async () => {
+      if (!dryRunPackage?.id) {
+        throw new Error("Build an internal dry-run package first.");
+      }
+      return fetchOfficialInternalReports(dryRunPackage.id);
+    },
+    onSuccess: (data) => {
+      setError(null);
+      setInternalReportsNote(
+        `${data.watermark} ${data.note} Internal preview only.`,
+      );
+      if (data.reportPreview) {
+        setReportPreview({
+          watermark: data.reportPreview.watermark,
+          summary: data.reportPreview.summary,
+          receipt: { plainTextPreview: data.reportPreview.receiptPlainText },
+          xReading: { plainTextPreview: data.reportPreview.xReadingPlainText },
+          zReading: { plainTextPreview: data.reportPreview.zReadingPlainText },
+          journalExport: { plainTextPreview: data.reportPreview.journalPlainText },
+          voidRefund: { plainTextPreview: data.reportPreview.voidRefundPlainText },
+        });
+      }
+    },
+    onError: onFail,
+  });
+
   if (setupQuery.isLoading || readinessQuery.isLoading) {
     return <LoadingState label="Loading official setup…" />;
   }
@@ -295,8 +355,9 @@ export function OfficialSetupPage() {
       />
 
       <Alert tone="warning" title="Not compliance-ready">
-        Official output is not implemented. This setup does not make Salryn BIR-compliant, accredited, or certified.
-        There is no official receipt generation or PDF action on this page. liveOfficialPostingAllowed remains false.
+        Official output is not implemented. This setup does not make Salryn BIR-compliant. Live posting blocked.
+        Internal dry-run only. Not an official receipt or invoice. There is no official receipt generation action on this
+        page. liveOfficialPostingAllowed remains false.
       </Alert>
 
       {message ? <Alert tone="success" title="Saved">{message}</Alert> : null}
@@ -721,6 +782,81 @@ export function OfficialSetupPage() {
               </details>
             </div>
           ) : null}
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Source-sale read-only dry-run</CardTitle>
+          <StatusPill tone="neutral">Read-only</StatusPill>
+        </CardHeader>
+        <CardBody className="space-y-3 text-sm text-slate-700">
+          <Alert tone="warning" title="Internal dry-run only">
+            Builds a dry-run package from an existing operational sale. Does not mutate the sale, sequence, journal,
+            shift, payment, or inventory. Live posting blocked. Not an official receipt or invoice.
+          </Alert>
+          <FormField label="Operational sale id (GUID)">
+            <TextInput value={sourceSaleId} onChange={(e) => setSourceSaleId(e.target.value)} />
+          </FormField>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={() => sourceSaleProbeMutation.mutate()}
+              disabled={sourceSaleProbeMutation.isPending || !sourceSaleId.trim()}
+            >
+              Probe sale (read-only)
+            </Button>
+            <Button
+              onClick={() => fromSaleMutation.mutate()}
+              disabled={fromSaleMutation.isPending || !sourceSaleId.trim()}
+            >
+              Build package from sale
+            </Button>
+          </div>
+          {sourceSaleNote ? <p>{sourceSaleNote}</p> : null}
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Internal reports</CardTitle>
+          <StatusPill tone="neutral">Internal preview only</StatusPill>
+        </CardHeader>
+        <CardBody className="space-y-3 text-sm text-slate-700">
+          <Alert tone="warning" title="Internal preview only">
+            Watermarked text previews only. No device output. No official output. Live posting blocked.
+          </Alert>
+          <div>
+            <Button
+              onClick={() => internalReportsMutation.mutate()}
+              disabled={internalReportsMutation.isPending || !dryRunPackage}
+            >
+              Load internal reports for latest package
+            </Button>
+          </div>
+          {internalReportsNote ? <p>{internalReportsNote}</p> : null}
+          <p className="text-xs text-slate-500">
+            QA checklist: see handoff document REAL_QA_PLAN (migration, backup/restore, UI, installer notes).
+          </p>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Legal/source closure status</CardTitle>
+          <StatusPill tone="warning">Legal closure unresolved</StatusPill>
+        </CardHeader>
+        <CardBody className="space-y-2 text-sm text-slate-700">
+          <Alert tone="warning" title="Live posting blocked">
+            Legal closure unresolved for validation seal form and eSales class path. Retention years are source-noted
+            for planning only. Live official posting remains blocked. Internal dry-run only.
+          </Alert>
+          <p>
+            Output engine decision: internal JSON/text/HTML previews only for this branch. Official layout engines are
+            not selected. No official output generation.
+          </p>
+          <p>
+            Checkout is not connected to official numbering. No official number is issued. Internal preview only.
+          </p>
         </CardBody>
       </Card>
     </div>

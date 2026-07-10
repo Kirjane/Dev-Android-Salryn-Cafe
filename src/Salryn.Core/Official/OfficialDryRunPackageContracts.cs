@@ -27,7 +27,8 @@ public sealed record OfficialDryRunPackageFlags(
     bool EjWillAppendLive,
     bool OutputWillGenerate,
     bool OfficialReceiptIssued,
-    bool ComplianceClaimed);
+    bool ComplianceClaimed,
+    bool SourceSaleReadOnly = false);
 
 public sealed record OfficialDryRunPackageWarning(
     string Code,

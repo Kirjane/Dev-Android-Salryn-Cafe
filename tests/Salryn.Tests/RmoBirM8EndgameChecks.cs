@@ -15,6 +15,8 @@ public static class RmoBirM8EndgameChecks
         string previewIface = Read(Path.Combine(root, "src", "Salryn.Core", "Services", "IHostOfficialReportPreviewService.cs"));
         string packageService = Read(Path.Combine(root, "src", "Salryn.Infrastructure", "Data", "Services", "SqliteHostOfficialDryRunPackageService.cs"));
         string previewService = Read(Path.Combine(root, "src", "Salryn.Infrastructure", "Data", "Services", "HostOfficialReportPreviewService.cs"));
+        string safetyConstants = Read(Path.Combine(root, "src", "Salryn.Core", "Official", "OfficialSafetyConstants.cs"));
+        string internalRenderers = Read(Path.Combine(root, "src", "Salryn.Core", "Services", "OfficialInternalReportRenderers.cs"));
         string migration = Read(Path.Combine(root, "src", "Salryn.Infrastructure", "Data", "Migrations", "OfficialDryRunPackageSchemaMigration.cs"));
         string catalog = Read(Path.Combine(root, "src", "Salryn.Infrastructure", "Data", "SalrynDatabaseMigrationCatalog.cs"));
         string initFactory = Read(Path.Combine(root, "src", "Salryn.Infrastructure", "Data", "Initialization", "DefaultDatabaseInitializationFactory.cs"));
@@ -56,22 +58,25 @@ public static class RmoBirM8EndgameChecks
         AssertContains(dbA2, "futureVersion = 15", "DB-A2 future probe must be supported+1.");
 
         AssertContains(packageService, "official_dry_run_packages", "Package service must persist to table.");
-        AssertContains(packageService, "OfficialDryRunPackageSourceMode.Synthetic", "Packages must be synthetic.");
-        AssertContains(packageService, "SequenceWillMutate: false", "Package flags must deny sequence mutation.");
-        AssertContains(packageService, "SalesWillMutate: false", "Package flags must deny sales mutation.");
-        AssertContains(packageService, "EjWillAppendLive: false", "Package flags must deny live EJ append.");
-        AssertContains(packageService, "OutputWillGenerate: false", "Package flags must deny output generate.");
-        AssertContains(packageService, "OfficialReceiptIssued: false", "Package flags must deny official receipt issued.");
-        AssertContains(packageService, "ComplianceClaimed: false", "Package flags must deny compliance claim.");
+        AssertContains(packageService, "OfficialDryRunPackageSourceMode.Synthetic", "Packages must support synthetic source.");
+        AssertContains(safetyConstants, "SequenceWillMutate: false", "Package flags must deny sequence mutation.");
+        AssertContains(safetyConstants, "SalesWillMutate: false", "Package flags must deny sales mutation.");
+        AssertContains(safetyConstants, "EjWillAppendLive: false", "Package flags must deny live EJ append.");
+        AssertContains(safetyConstants, "OutputWillGenerate: false", "Package flags must deny output generate.");
+        AssertContains(safetyConstants, "OfficialReceiptIssued: false", "Package flags must deny official receipt issued.");
+        AssertContains(safetyConstants, "ComplianceClaimed: false", "Package flags must deny compliance claim.");
+        AssertContains(packageService, "ForcedNonLivePackageFlags", "Package service must use forced non-live flags.");
         AssertNotContains(packageService, "UPDATE bir_official_document_sequences", "Package service must not mutate sequences.");
         AssertNotContains(packageService, "INSERT INTO bir_electronic_journal", "Package service must not append EJ.");
         AssertNotContains(packageService, "AllocateNextAsync", "Package service must not allocate official numbers.");
 
-        AssertContains(previewService, "INTERNAL DRY-RUN ONLY — NOT AN OFFICIAL RECEIPT OR INVOICE", "Preview watermark required.");
+        AssertContains(safetyConstants, "INTERNAL DRY-RUN ONLY — NOT AN OFFICIAL RECEIPT OR INVOICE", "Preview watermark required.");
         AssertContains(previewService, "OfficialReceiptIssued: false", "Preview must not issue official receipt.");
-        AssertContains(previewService, "ResetsCounters: false", "X/Z preview must not reset counters.");
+        AssertContains(internalRenderers, "ResetsCounters: false", "X/Z preview must not reset counters.");
         AssertNotContains(previewService, "GeneratePdf", "Preview must not generate PDF payloads.");
         AssertNotContains(previewService, "SendToPrinter", "Preview must not send to printer.");
+        AssertNotContains(internalRenderers, "GeneratePdf", "Internal renderers must not generate PDF payloads.");
+        AssertNotContains(internalRenderers, "SendToPrinter", "Internal renderers must not send to printer.");
 
         AssertContains(endpoints, "/api/official/dry-run/packages", "Packages list/create endpoint required.");
         AssertContains(endpoints, "/api/official/dry-run/report-preview", "Report preview endpoint required.");
@@ -114,7 +119,7 @@ public static class RmoBirM8EndgameChecks
         AssertContains(readiness, "VoidRefundIntegrityPathIncomplete", "Void/refund live blocker must remain.");
         AssertContains(readiness, "UnresolvedAnnexFRetentionESales", "Annex F blocker must remain.");
         AssertContains(readiness, "InternalDryRunPackageAvailable", "Readiness must note internal package.");
-        AssertContains(readiness, "SourceSaleReadOnlyDeferred", "Readiness must note source-sale deferred.");
+        AssertContains(readiness, "SourceSaleReadOnlyAvailable", "Readiness must note source-sale read-only available.");
 
         AssertContains(setupPage, "Internal dry-run only", "UI must warn internal dry-run.");
         AssertContains(setupPage, "Not an official receipt or invoice", "UI must deny official receipt.");

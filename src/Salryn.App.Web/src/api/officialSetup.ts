@@ -321,6 +321,51 @@ export async function createOfficialDryRunPackage(): Promise<OfficialDryRunPacka
   return readJson<OfficialDryRunPackage>(response);
 }
 
+export async function createOfficialDryRunPackageFromSale(saleId: string): Promise<OfficialDryRunPackage> {
+  const response = await fetch("/api/official/dry-run/packages/from-sale", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ saleId }),
+  });
+  return readJson<OfficialDryRunPackage>(response);
+}
+
+export async function fetchOfficialSourceSaleDryRunReadonly(saleId: string): Promise<{
+  summary: string;
+  sourceSaleReadOnly: boolean;
+  liveOfficialPostingAllowed: boolean;
+  salesWillMutate: boolean;
+  sequenceWillMutate: boolean;
+  snapshot: { operationalReceiptNo: string; status: string; lineCount: number } | null;
+}> {
+  const response = await fetch(`/api/official/source-sale/${encodeURIComponent(saleId)}/dry-run-readonly`, {
+    credentials: "include",
+  });
+  return readJson(response);
+}
+
+export async function fetchOfficialInternalReports(packageId: string): Promise<{
+  watermark: string;
+  summary?: string;
+  note: string;
+  reportPreview: {
+    watermark: string;
+    receiptPlainText: string;
+    xReadingPlainText: string;
+    zReadingPlainText: string;
+    journalPlainText: string;
+    voidRefundPlainText: string;
+    salesSummaryPlainText?: string;
+    summary: string;
+  } | null;
+}> {
+  const response = await fetch(`/api/official/internal-reports/${encodeURIComponent(packageId)}`, {
+    credentials: "include",
+  });
+  return readJson(response);
+}
+
 export async function buildOfficialReportPreview(): Promise<{
   watermark: string;
   summary: string;

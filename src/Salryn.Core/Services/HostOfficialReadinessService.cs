@@ -265,7 +265,7 @@ public sealed class HostOfficialReadinessService : IHostOfficialReadinessService
             "Void/refund integrity skeleton may be present, but live official void/refund integration is incomplete."));
         blockers.Add(new HostOfficialReadinessItem(
             "HostOfficialReadiness.UnresolvedAnnexFRetentionESales",
-            "Annex F push/seal details, retention years, and eSales transmission remain unresolved."));
+            "Annex F validation seal form and eSales class/schema remain unresolved for live issuance; retention years are source-closed (3/10) but live posting stays blocked."));
     }
 
     private static void AddProductSpineWarnings(List<HostOfficialReadinessItem> warnings)
@@ -295,8 +295,8 @@ public sealed class HostOfficialReadinessService : IHostOfficialReadinessService
             "HostOfficialReadiness.InternalDryRunPackageAvailable",
             "Internal dry-run package persistence and watermarked report previews are available for engineering only."));
         warnings.Add(new HostOfficialReadinessItem(
-            "HostOfficialReadiness.SourceSaleReadOnlyDeferred",
-            "Operational sale read-only dry-run source mode is deferred; packages remain synthetic."));
+            "HostOfficialReadiness.SourceSaleReadOnlyAvailable",
+            "Operational sale read-only dry-run source mode is available; adapter does not mutate sales, sequences, or EJ."));
     }
 
     private static HostOfficialReadinessStatus ResolveStatus(

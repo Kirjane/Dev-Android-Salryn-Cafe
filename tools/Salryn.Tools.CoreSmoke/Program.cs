@@ -288,6 +288,9 @@ public static class Program
             case "rmo-bir-endgame":
                 RmoBirM8EndgameChecks.Run();
                 return;
+            case "rmo-bir-full-closure":
+                RmoBirM9FullClosureChecks.Run();
+                return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);
         }
