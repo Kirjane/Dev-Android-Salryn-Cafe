@@ -69,3 +69,15 @@ public sealed record LocalLicenseValidationResult(
     string Message,
     string SourcePath,
     DateTimeOffset ValidationTimestamp);
+
+public sealed record LocalLicenseInstallRequest(
+    string? LicenseJson);
+
+public sealed record LocalLicenseInstallResponse(
+    string InstallStatus,
+    LicenseStatus ValidationStatus,
+    string? SourcePath,
+    string? BackupPath,
+    string? ErrorCode,
+    string? ErrorMessage,
+    DateTimeOffset Timestamp);
