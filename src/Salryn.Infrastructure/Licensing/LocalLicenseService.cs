@@ -140,18 +140,18 @@ public sealed class LocalLicenseService : ILocalLicenseService
 
             foreach (JsonProperty property in parsed.RootElement.EnumerateObject())
             {
-                if (!AllowedDocumentFields.Contains(property.Name))
-                {
-                    return LocalLicenseInstallDraft.Failed(
-                        "License.Install.UnsupportedField",
-                        "License document contains an unsupported field: " + property.Name);
-                }
-
                 if (property.Name.Contains("path", StringComparison.OrdinalIgnoreCase))
                 {
                     return LocalLicenseInstallDraft.Failed(
                         "License.Install.CallerPathRejected",
                         "License install does not accept caller filesystem paths.");
+                }
+
+                if (!AllowedDocumentFields.Contains(property.Name))
+                {
+                    return LocalLicenseInstallDraft.Failed(
+                        "License.Install.UnsupportedField",
+                        "License document contains an unsupported field: " + property.Name);
                 }
             }
 
@@ -232,6 +232,6 @@ public sealed class LocalLicenseService : ILocalLicenseService
 
         public static LocalLicenseInstallDraft Failed(
             string errorCode,
-            string errorMessage) => new(Document: null, CanonicalJson: null, errorCode, errorMessage);
+            string errorMessage) => new(null, null, errorCode, errorMessage);
     }
 }
