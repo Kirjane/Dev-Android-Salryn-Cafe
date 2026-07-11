@@ -41,21 +41,41 @@ public static class LocalProductionReportEndpoints
                 return denied;
             }
 
-            UnavailableCrystalReportRenderer renderer = new();
+            UnavailableCrystalReportRenderer crystalRenderer = new();
             NativePdfReportRenderer nativeRenderer = new();
+
+            ProductionReportRendererStatus primaryRenderer = nativeRenderer.GetStatus();
+            ProductionReportRendererCapability primaryCapability = nativeRenderer.GetCapability();
+            ProductionReportRendererStatus crystalStatus = crystalRenderer.GetStatus();
+            ProductionReportRendererCapability crystalCapability = crystalRenderer.GetCapability();
+
             return Results.Json(new
             {
-                crystal = new
+                reportingEngine = "native-pdf-primary",
+                note = "Native PDF is the primary local reporting renderer. Crystal Reports is parked as optional isolated compatibility only and remains disabled by default.",
+                primaryRenderer,
+                primaryCapability,
+                crystalCompatibility = new
                 {
-                    status = renderer.GetStatus(),
-                    capability = renderer.GetCapability(),
+                    status = crystalStatus,
+                    capability = crystalCapability,
                     workerProtocol = CrystalWorkerProtocol.CurrentProtocolVersion,
-                    deploymentMode = CrystalWorkerProtocol.RequiredDeploymentMode
+                    deploymentMode = CrystalWorkerProtocol.RequiredDeploymentMode,
+                    mode = "optional-compatibility-parked",
+                    disabledByDefault = true,
+                    note = "Crystal compatibility is not activated by the local reporting closure lane."
                 },
                 nativePdf = new
                 {
-                    status = nativeRenderer.GetStatus(),
-                    capability = nativeRenderer.GetCapability()
+                    status = primaryRenderer,
+                    capability = primaryCapability
+                },
+                crystal = new
+                {
+                    status = crystalStatus,
+                    capability = crystalCapability,
+                    workerProtocol = CrystalWorkerProtocol.CurrentProtocolVersion,
+                    deploymentMode = CrystalWorkerProtocol.RequiredDeploymentMode
                 },
                 allowedOutputKinds = ProductionReportOutputKinds.All
             });
