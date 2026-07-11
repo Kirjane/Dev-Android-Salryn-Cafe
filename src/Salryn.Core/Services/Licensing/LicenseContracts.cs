@@ -107,6 +107,7 @@ public sealed record LocalLicenseEntitlementsResponse(
     LicenseStatus LicenseStatus,
     IReadOnlyList<string> EnabledFeatures,
     IReadOnlyList<string> KnownFeatures,
+    IReadOnlyList<LicenseEnforcementDecision> FeatureDecisions,
     bool MachineMatched,
     string Message,
     DateTimeOffset Timestamp);
