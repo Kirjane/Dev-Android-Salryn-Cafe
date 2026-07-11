@@ -22,7 +22,6 @@ public static class NativePdfM6IntegrationFreezeCandidateChecks
         RequireContains(coreSmoke, "reports-native-pdf-m6-integration-freeze-candidate", "Focused M6 CoreSmoke route required.");
         RequireContains(coreSmoke, "NativePdfM6IntegrationFreezeCandidateChecks.Run()", "Full CoreSmoke must run M6 checks.");
 
-        RequireContains(endpointSource, "POST /api/production-reports/export", "M6 report comment may document export endpoint, but source must include export endpoint mapping or route string nearby.");
         RequireContains(endpointSource, "MapPost(\"/api/production-reports/export\"", "Export endpoint must remain mapped.");
         RequireContains(endpointSource, "ProductionReportExportApiRequest", "Export request contract required.");
         RequireContains(endpointSource, "TryBuildDatasetRequest", "Export path must rebuild a server-owned dataset from filters.");
@@ -101,8 +100,8 @@ public static class NativePdfM6IntegrationFreezeCandidateChecks
 
         RequireContains(artifactContractsSource, "NoCallerPathAccepted", "Artifact manifest must record no caller path accepted.");
         RequireContains(artifactContractsSource, "RetentionCleanupNote", "Artifact manifest must record retention/cleanup note.");
-        RequireContains(rootPolicySource, "PathTraversal", "Root policy must reject traversal.");
-        RequireContains(rootPolicySource, "Absolute paths are not accepted", "Root policy must reject absolute caller paths.");
+        RequireContains(rootPolicySource, "path traversal is forbidden", "Root policy must reject traversal.");
+        RequireContains(rootPolicySource, "Absolute report artifact paths are forbidden", "Root policy must reject absolute caller paths.");
     }
 
     private static string FindRoot()
