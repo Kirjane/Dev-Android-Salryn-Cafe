@@ -56,10 +56,19 @@ public static class LocalLicenseEndpoints
                 .GetStatusAsync(cancellationToken)
                 .ConfigureAwait(false);
 
+            List<LicenseEnforcementDecision> decisions = new();
+            foreach (string feature in LicenseFeatures.AllList)
+            {
+                decisions.Add(await localLicenseEnforcementService
+                    .RequireFeatureAsync(feature, cancellationToken)
+                    .ConfigureAwait(false));
+            }
+
             return Results.Json(new LocalLicenseEntitlementsResponse(
                 status.Status,
                 status.EnabledFeatures,
                 LicenseFeatures.AllList,
+                decisions,
                 status.MachineMatched,
                 status.Message,
                 status.ValidationTimestamp));
