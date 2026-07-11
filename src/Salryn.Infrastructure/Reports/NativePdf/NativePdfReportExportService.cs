@@ -52,8 +52,8 @@ public sealed class NativePdfReportExportService
                 new ProductionReportRenderRequest(
                     request.Dataset,
                     outputKind,
-                    TimeoutMilliseconds: 120000,
-                    CancellationToken: request.RequestCancellationToken),
+                    120000,
+                    request.RequestCancellationToken),
                 cancellationToken).ConfigureAwait(false);
 
             if (render.IsFailure)
