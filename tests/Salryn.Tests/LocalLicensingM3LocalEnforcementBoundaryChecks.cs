@@ -33,14 +33,14 @@ public static class LocalLicensingM3LocalEnforcementBoundaryChecks
                 .RequireFeatureAsync(LicenseFeatures.Pos)
                 .GetAwaiter()
                 .GetResult();
-            RequireDecision(missing, allowed: false, LicenseEnforcementReason.MissingLicense, "Missing license must deny POS feature.");
+            RequireDecision(missing, false, LicenseEnforcementReason.MissingLicense, "Missing license must deny POS feature.");
 
             File.WriteAllText(store.LicenseFilePath, "{not-valid-json");
             LicenseEnforcementDecision malformed = noVerifierEnforcement
                 .RequireFeatureAsync(LicenseFeatures.Pos)
                 .GetAwaiter()
                 .GetResult();
-            RequireDecision(malformed, allowed: false, LicenseEnforcementReason.InvalidLicense, "Malformed local license must deny feature access.");
+            RequireDecision(malformed, false, LicenseEnforcementReason.InvalidLicense, "Malformed local license must deny feature access.");
 
             LocalLicenseService acceptingLicenseService = new(
                 store,
@@ -56,21 +56,21 @@ public static class LocalLicensingM3LocalEnforcementBoundaryChecks
                 .RequireFeatureAsync(LicenseFeatures.Pos)
                 .GetAwaiter()
                 .GetResult();
-            RequireDecision(expired, allowed: false, LicenseEnforcementReason.ExpiredLicense, "Expired local license must deny feature access.");
+            RequireDecision(expired, false, LicenseEnforcementReason.ExpiredLicense, "Expired local license must deny feature access.");
 
             WriteLicense(store, License("LIC-M3-UNSIGNED", FixedNow.AddDays(30), signature: null, features: new[] { LicenseFeatures.Pos }));
             LicenseEnforcementDecision unsigned = acceptingEnforcement
                 .RequireFeatureAsync(LicenseFeatures.Pos)
                 .GetAwaiter()
                 .GetResult();
-            RequireDecision(unsigned, allowed: false, LicenseEnforcementReason.InvalidLicense, "Unsigned production license must deny feature access.");
+            RequireDecision(unsigned, false, LicenseEnforcementReason.InvalidLicense, "Unsigned production license must deny feature access.");
 
             WriteLicense(store, License("LIC-M3-NOVERIFIER", FixedNow.AddDays(30), signature: "signed-test", features: new[] { LicenseFeatures.Pos }));
             LicenseEnforcementDecision noVerifier = noVerifierEnforcement
                 .RequireFeatureAsync(LicenseFeatures.Pos)
                 .GetAwaiter()
                 .GetResult();
-            RequireDecision(noVerifier, allowed: false, LicenseEnforcementReason.VerifierUnavailable, "Signed license with no verifier must deny feature access.");
+            RequireDecision(noVerifier, false, LicenseEnforcementReason.VerifierUnavailable, "Signed license with no verifier must deny feature access.");
 
             WriteLicense(store, License("LIC-M3-MACHINE", FixedNow.AddDays(30), signature: "signed-test", features: new[] { LicenseFeatures.Pos }, machineBinding: "machine-a"));
             LocalLicenseService wrongMachineLicenseService = new(
@@ -85,7 +85,7 @@ public static class LocalLicensingM3LocalEnforcementBoundaryChecks
                 .RequireFeatureAsync(LicenseFeatures.Pos)
                 .GetAwaiter()
                 .GetResult();
-            RequireDecision(machineMismatch, allowed: false, LicenseEnforcementReason.MachineMismatch, "Machine mismatch must deny feature access.");
+            RequireDecision(machineMismatch, false, LicenseEnforcementReason.MachineMismatch, "Machine mismatch must deny feature access.");
 
             WriteLicense(store, License("LIC-M3-VALID", FixedNow.AddDays(30), signature: "signed-test", features: new[] { LicenseFeatures.Pos, LicenseFeatures.Licensing }));
             string beforeEnforcement = File.ReadAllText(store.LicenseFilePath);
@@ -94,21 +94,21 @@ public static class LocalLicensingM3LocalEnforcementBoundaryChecks
                 .RequireFeatureAsync(LicenseFeatures.Pos)
                 .GetAwaiter()
                 .GetResult();
-            RequireDecision(validPos, allowed: true, LicenseEnforcementReason.LicensedFeatureAllowed, "Valid signed license with verifier must allow included feature.");
+            RequireDecision(validPos, true, LicenseEnforcementReason.LicensedFeatureAllowed, "Valid signed license with verifier must allow included feature.");
             RequireTrue(acceptingEnforcement.IsFeatureAllowedAsync(LicenseFeatures.Pos).GetAwaiter().GetResult(), "IsFeatureAllowedAsync must return true for allowed included feature.");
 
             LicenseEnforcementDecision missingFeature = acceptingEnforcement
                 .RequireFeatureAsync(LicenseFeatures.Reports)
                 .GetAwaiter()
                 .GetResult();
-            RequireDecision(missingFeature, allowed: false, LicenseEnforcementReason.FeatureNotLicensed, "Valid signed license must deny a feature that is not included.");
+            RequireDecision(missingFeature, false, LicenseEnforcementReason.FeatureNotLicensed, "Valid signed license must deny a feature that is not included.");
             RequireTrue(!acceptingEnforcement.IsFeatureAllowedAsync(LicenseFeatures.Reports).GetAwaiter().GetResult(), "IsFeatureAllowedAsync must return false for feature not included.");
 
             LicenseEnforcementDecision unknown = acceptingEnforcement
                 .RequireFeatureAsync("NotAFeature")
                 .GetAwaiter()
                 .GetResult();
-            RequireDecision(unknown, allowed: false, LicenseEnforcementReason.UnknownFeature, "Unknown feature must deny access.");
+            RequireDecision(unknown, false, LicenseEnforcementReason.UnknownFeature, "Unknown feature must deny access.");
             RequireTrue(File.ReadAllText(store.LicenseFilePath) == beforeEnforcement, "Enforcement checks must not mutate local license file content.");
 
             string devRoot = Path.Combine(root, "dev");
@@ -128,13 +128,13 @@ public static class LocalLicensingM3LocalEnforcementBoundaryChecks
                 .RequireFeatureAsync(LicenseFeatures.Licensing)
                 .GetAwaiter()
                 .GetResult();
-            RequireDecision(devAllowed, allowed: true, LicenseEnforcementReason.DevelopmentModeAllowed, "Development mode must allow explicitly configured features.");
+            RequireDecision(devAllowed, true, LicenseEnforcementReason.DevelopmentModeAllowed, "Development mode must allow explicitly configured features.");
 
             LicenseEnforcementDecision devDenied = devEnforcement
                 .RequireFeatureAsync(LicenseFeatures.Pos)
                 .GetAwaiter()
                 .GetResult();
-            RequireDecision(devDenied, allowed: false, LicenseEnforcementReason.FeatureNotLicensed, "Development mode must deny features not explicitly configured.");
+            RequireDecision(devDenied, false, LicenseEnforcementReason.FeatureNotLicensed, "Development mode must deny features not explicitly configured.");
 
             string endpointSource = ReadRepoFile("src", "Salryn.Api.Local", "LocalLicenseEndpoints.cs");
             RequireContains(endpointSource, "MapGet(\"/api/license/status\"", "M1 status endpoint must remain mapped.");
