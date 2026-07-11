@@ -8,17 +8,19 @@ public static class SalrynLocalDataContract
 {
     public const string ProductionRootOwner = "ProgramData/Salryn";
     public const string DevelopmentRootOwner = ".salryn-dev";
+    public const string LocalLicenseRootOwner = "LocalApplicationData/Salryn/Licensing";
+    public const string NativePdfReportRootOwner = "LocalApplicationData/Salryn/Reports/NativePdf";
 
     public static IReadOnlyList<SalrynLocalPathContractEntry> RequiredEntries =>
     [
-        new("database", "data/salryn.db", mustPreserveAcrossUpdate: true, mayDeleteOnUninstallOnlyWithOperatorConsent: true),
-        new("backups", "backups", mustPreserveAcrossUpdate: true, mayDeleteOnUninstallOnlyWithOperatorConsent: true),
-        new("exports", "exports", mustPreserveAcrossUpdate: true, mayDeleteOnUninstallOnlyWithOperatorConsent: true),
-        new("logs", "logs", mustPreserveAcrossUpdate: false, mayDeleteOnUninstallOnlyWithOperatorConsent: false),
-        new("receipts", "receipts", mustPreserveAcrossUpdate: true, mayDeleteOnUninstallOnlyWithOperatorConsent: true),
-        new("config", "config", mustPreserveAcrossUpdate: true, mayDeleteOnUninstallOnlyWithOperatorConsent: true),
-        new("license", "config/license.json", mustPreserveAcrossUpdate: true, mayDeleteOnUninstallOnlyWithOperatorConsent: true),
-        new("license-backups", "config/license-backups", mustPreserveAcrossUpdate: true, mayDeleteOnUninstallOnlyWithOperatorConsent: true),
+        new("database", "ProgramData/Salryn/data/salryn.db", mustPreserveAcrossUpdate: true, mayDeleteOnUninstallOnlyWithOperatorConsent: true),
+        new("backups", "ProgramData/Salryn/backups", mustPreserveAcrossUpdate: true, mayDeleteOnUninstallOnlyWithOperatorConsent: true),
+        new("exports", "ProgramData/Salryn/exports", mustPreserveAcrossUpdate: true, mayDeleteOnUninstallOnlyWithOperatorConsent: true),
+        new("logs", "ProgramData/Salryn/logs", mustPreserveAcrossUpdate: false, mayDeleteOnUninstallOnlyWithOperatorConsent: false),
+        new("receipts", "ProgramData/Salryn/receipts", mustPreserveAcrossUpdate: true, mayDeleteOnUninstallOnlyWithOperatorConsent: true),
+        new("config", "ProgramData/Salryn/config", mustPreserveAcrossUpdate: true, mayDeleteOnUninstallOnlyWithOperatorConsent: true),
+        new("license", "LocalApplicationData/Salryn/Licensing/license.json", mustPreserveAcrossUpdate: true, mayDeleteOnUninstallOnlyWithOperatorConsent: true),
+        new("license-backups", "LocalApplicationData/Salryn/Licensing/*.bak.json", mustPreserveAcrossUpdate: true, mayDeleteOnUninstallOnlyWithOperatorConsent: true),
         new("native-pdf-reports", "LocalApplicationData/Salryn/Reports/NativePdf", mustPreserveAcrossUpdate: true, mayDeleteOnUninstallOnlyWithOperatorConsent: true)
     ];
 
