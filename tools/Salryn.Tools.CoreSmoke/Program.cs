@@ -123,6 +123,7 @@ public static class Program
         NativePdfM6IntegrationFreezeCandidateChecks.Run();
         LocalLicensingM1FoundationChecks.Run();
         LocalLicensingM2SignedInstallImportChecks.Run();
+        LocalLicensingM3LocalEnforcementBoundaryChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
         M5VerifiedCandidateStackLedgerChecks.Run();
         M6CandidateStackPromotionDryRunChecks.Run();
@@ -376,6 +377,9 @@ public static class Program
                 return;
             case "licensing-m2-signed-license-install-import":
                 LocalLicensingM2SignedInstallImportChecks.Run();
+                return;
+            case "licensing-m3-local-enforcement-boundaries":
+                LocalLicensingM3LocalEnforcementBoundaryChecks.Run();
                 return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);
