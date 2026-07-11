@@ -149,8 +149,8 @@ public static class LocalLicenseEndpoints
         string errorMessage) => new(
             "Rejected",
             LicenseStatus.Invalid,
-            SourcePath: null,
-            BackupPath: null,
+            null,
+            null,
             errorCode,
             errorMessage,
             DateTimeOffset.UtcNow);
@@ -163,6 +163,6 @@ public static class LocalLicenseEndpoints
             LocalLicenseInstallRequest request) => new(request, Error: null);
 
         public static LocalLicenseInstallEnvelopeReadResult WithError(
-            LocalLicenseInstallResponse error) => new(Request: null, error);
+            LocalLicenseInstallResponse error) => new(null, error);
     }
 }
