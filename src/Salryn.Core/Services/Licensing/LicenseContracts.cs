@@ -81,3 +81,32 @@ public sealed record LocalLicenseInstallResponse(
     string? ErrorCode,
     string? ErrorMessage,
     DateTimeOffset Timestamp);
+
+public enum LicenseEnforcementReason
+{
+    LicensedFeatureAllowed = 0,
+    DevelopmentModeAllowed = 1,
+    MissingLicense = 2,
+    InvalidLicense = 3,
+    ExpiredLicense = 4,
+    FeatureNotLicensed = 5,
+    UnknownFeature = 6,
+    VerifierUnavailable = 7,
+    MachineMismatch = 8
+}
+
+public sealed record LicenseEnforcementDecision(
+    bool Allowed,
+    string RequiredFeature,
+    LicenseStatus LicenseStatus,
+    LicenseEnforcementReason ReasonCode,
+    string Message,
+    IReadOnlyList<string> EnabledFeatures);
+
+public sealed record LocalLicenseEntitlementsResponse(
+    LicenseStatus LicenseStatus,
+    IReadOnlyList<string> EnabledFeatures,
+    IReadOnlyList<string> KnownFeatures,
+    bool MachineMatched,
+    string Message,
+    DateTimeOffset Timestamp);
