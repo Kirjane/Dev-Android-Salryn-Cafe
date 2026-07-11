@@ -237,6 +237,8 @@ public static class LocalApiApplicationFactory
             return Results.Ok(sessions.GetSession(sessionId));
         });
 
+        app.MapLocalLicenseEndpoints();
+
         app.MapGet("/api/dashboard/summary", async (
             HttpContext httpContext,
             LocalApiSessionService sessions,
@@ -259,7 +261,6 @@ public static class LocalApiApplicationFactory
         app.MapRemoteReadOnlyEndpoints();
         app.MapLocalLanControlEndpoints();
         app.MapRemotePosEndpoints();
-        // RMO-BIR-M3/M4: host-local official readiness + setup (no live official posting).
         app.MapLocalOfficialReadinessEndpoints(composition.ConnectionFactory);
         app.MapLocalOfficialSetupEndpoints(composition.ConnectionFactory);
         app.MapLocalOfficialNumberingEndpoints(composition.ConnectionFactory);
@@ -267,13 +268,9 @@ public static class LocalApiApplicationFactory
         app.MapLocalOfficialSpineEndpoints(composition.ConnectionFactory);
         app.MapLocalOfficialDryRunPackageEndpoints(composition.ConnectionFactory);
         app.MapLocalOfficialLivePostingCandidateEndpoints(composition.ConnectionFactory);
-        // TRAD-M3: host-local invoice output projection (immutable snapshot read; no live posting).
         app.MapLocalOfficialInvoiceOutputEndpoints(composition.ConnectionFactory);
-        // TRAD-M4: host-local document lifecycle (reprint/void/refund append-only events).
         app.MapLocalOfficialDocumentLifecycleEndpoints(composition.ConnectionFactory);
-        // TRAD-M5-RC2: lifecycle-aware traditional reporting (X/Z/EJ/eSales draft). BIR schema unconfirmed.
         app.MapLocalOfficialTraditionalReportingEndpoints(composition.ConnectionFactory);
-        // PRE-CRYSTAL M0: host-only production report dataset spine. Crystal renderer unavailable.
         app.MapLocalProductionReportEndpoints(composition.ConnectionFactory);
 
         if (webDistPath is not null)
@@ -320,65 +317,26 @@ public static class LocalApiApplicationFactory
             });
     }
 
-    private static int StatusCodeForAuthError(Error error)
+    private static int StatusCodeForAuthError(Error error) => error.Code switch
     {
-        return error.Code switch
-        {
-            var code when code.StartsWith("Auth.InvalidCredentials", StringComparison.Ordinal) =>
-                StatusCodes.Status401Unauthorized,
-            var code when code.StartsWith("Auth.UserNotActive", StringComparison.Ordinal) =>
-                StatusCodes.Status403Forbidden,
-            var code when code.StartsWith("Session.", StringComparison.Ordinal) =>
-                StatusCodes.Status401Unauthorized,
-            _ => StatusCodes.Status400BadRequest
-        };
-    }
+        "Auth.InvalidCredentials" => StatusCodes.Status401Unauthorized,
+        "Auth.UserNotFound" => StatusCodes.Status401Unauthorized,
+        "Auth.UserDisabled" => StatusCodes.Status403Forbidden,
+        _ => StatusCodes.Status400BadRequest
+    };
 
     private static string? ResolveWebDistPath()
     {
-        foreach (string root in WebDistCandidateRoots())
+        string baseDir = AppContext.BaseDirectory;
+        string[] candidates =
         {
-            string distPath = Path.Combine(root, "src", "Salryn.App.Web", "dist");
+            Path.GetFullPath(Path.Combine(baseDir, "../../../../Salryn.App.Web/dist")),
+            Path.GetFullPath(Path.Combine(baseDir, "../../../../../src/Salryn.App.Web/dist")),
+            Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, "src/Salryn.App.Web/dist")),
+            Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, "../Salryn.App.Web/dist")),
+            Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, "../../src/Salryn.App.Web/dist"))
+        };
 
-            if (File.Exists(Path.Combine(distPath, "index.html")))
-            {
-                return distPath;
-            }
-        }
-
-        return null;
-    }
-
-    private static IEnumerable<string> WebDistCandidateRoots()
-    {
-        string? fromBase = FindRepositoryRootFrom(AppContext.BaseDirectory);
-        if (fromBase is not null)
-        {
-            yield return fromBase;
-        }
-
-        string? fromCurrent = FindRepositoryRootFrom(Directory.GetCurrentDirectory());
-        if (fromCurrent is not null &&
-            !string.Equals(fromCurrent, fromBase, StringComparison.OrdinalIgnoreCase))
-        {
-            yield return fromCurrent;
-        }
-    }
-
-    private static string? FindRepositoryRootFrom(string startPath)
-    {
-        DirectoryInfo? current = new(startPath);
-
-        while (current is not null)
-        {
-            if (File.Exists(Path.Combine(current.FullName, "Salryn.sln")))
-            {
-                return current.FullName;
-            }
-
-            current = current.Parent;
-        }
-
-        return null;
+        return candidates.FirstOrDefault(Directory.Exists);
     }
 }
