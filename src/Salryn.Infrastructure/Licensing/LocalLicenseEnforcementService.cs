@@ -110,7 +110,7 @@ public sealed class LocalLicenseEnforcementService : ILocalLicenseEnforcementSer
         LocalLicenseValidationResult status,
         LicenseEnforcementReason reason,
         string message) => new(
-            Allowed: true,
+            true,
             requiredFeature,
             status.Status,
             reason,
@@ -134,7 +134,7 @@ public sealed class LocalLicenseEnforcementService : ILocalLicenseEnforcementSer
         LicenseEnforcementReason reason,
         string message,
         IReadOnlyList<string> enabledFeatures) => new(
-            Allowed: false,
+            false,
             requiredFeature,
             status,
             reason,
