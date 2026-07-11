@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Salryn.Core.Services.Licensing;
@@ -14,6 +16,10 @@ public sealed record LocalLicenseFileReadResult(
     bool Malformed,
     LocalLicenseDocument? Document,
     string? ErrorMessage);
+
+public sealed record LocalLicenseFileReplaceResult(
+    string SourcePath,
+    string? BackupPath);
 
 public sealed class LocalLicenseFileStore
 {
@@ -74,6 +80,51 @@ public sealed class LocalLicenseFileStore
         }
     }
 
+    public async Task<LocalLicenseFileReplaceResult> ReplaceAsync(
+        string canonicalLicenseJson,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(canonicalLicenseJson))
+        {
+            throw new InvalidOperationException("Canonical local license JSON is required before replacement.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        Directory.CreateDirectory(_rootDirectory);
+
+        string tempFileName = EnsureSafeFileName("license-" + Guid.NewGuid().ToString("N") + ".tmp");
+        string tempPath = Path.Combine(_rootDirectory, tempFileName);
+        string targetPath = LicenseFilePath;
+        string? backupPath = null;
+
+        try
+        {
+            await File.WriteAllTextAsync(tempPath, canonicalLicenseJson, Encoding.UTF8, cancellationToken)
+                .ConfigureAwait(false);
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (File.Exists(targetPath))
+            {
+                backupPath = CreateSystemBackupPath();
+                ReplaceExistingLicense(tempPath, targetPath, backupPath);
+            }
+            else
+            {
+                File.Move(tempPath, targetPath);
+            }
+
+            return new LocalLicenseFileReplaceResult(targetPath, backupPath);
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
+    }
+
     public static string EnsureSafeFileName(string fileName)
     {
         if (string.IsNullOrWhiteSpace(fileName))
@@ -98,6 +149,38 @@ public sealed class LocalLicenseFileStore
         }
 
         return trimmed;
+    }
+
+    private string CreateSystemBackupPath()
+    {
+        string backupFileName = EnsureSafeFileName(
+            "license-" +
+            DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmssfff", CultureInfo.InvariantCulture) +
+            "-" +
+            Guid.NewGuid().ToString("N") +
+            ".bak.json");
+
+        return Path.Combine(_rootDirectory, backupFileName);
+    }
+
+    private static void ReplaceExistingLicense(
+        string tempPath,
+        string targetPath,
+        string backupPath)
+    {
+        try
+        {
+            File.Replace(tempPath, targetPath, backupPath, ignoreMetadataErrors: true);
+        }
+        catch (Exception ex) when (ex is IOException or PlatformNotSupportedException or UnauthorizedAccessException)
+        {
+            if (!File.Exists(backupPath))
+            {
+                File.Copy(targetPath, backupPath, overwrite: false);
+            }
+
+            File.Move(tempPath, targetPath, overwrite: true);
+        }
     }
 
     private static string GetDefaultRootDirectory()
