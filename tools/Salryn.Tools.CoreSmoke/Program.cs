@@ -121,6 +121,7 @@ public static class Program
         NativePdfM4CoreReportFamilyProofChecks.Run();
         NativePdfM5ArtifactExportHardeningChecks.Run();
         NativePdfM6IntegrationFreezeCandidateChecks.Run();
+        LocalLicensingM1FoundationChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
         M5VerifiedCandidateStackLedgerChecks.Run();
         M6CandidateStackPromotionDryRunChecks.Run();
@@ -368,6 +369,9 @@ public static class Program
                 return;
             case "reports-native-pdf-m6-integration-freeze-candidate":
                 NativePdfM6IntegrationFreezeCandidateChecks.Run();
+                return;
+            case "licensing-m1-local-license-foundation":
+                LocalLicensingM1FoundationChecks.Run();
                 return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);
