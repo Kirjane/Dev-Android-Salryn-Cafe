@@ -118,6 +118,7 @@ public static class Program
         CrystalM1RuntimeDecisionMinimalProofChecks.Run();
         NativePdfM2PackageProbeChecks.Run();
         NativePdfM3RendererCoreChecks.Run();
+        NativePdfM4CoreReportFamilyProofChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
         M5VerifiedCandidateStackLedgerChecks.Run();
         M6CandidateStackPromotionDryRunChecks.Run();
@@ -356,6 +357,9 @@ public static class Program
                 return;
             case "reports-native-pdf-m3-renderer-core":
                 NativePdfM3RendererCoreChecks.Run();
+                return;
+            case "reports-native-pdf-m4-core-report-family-proof":
+                NativePdfM4CoreReportFamilyProofChecks.Run();
                 return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);
