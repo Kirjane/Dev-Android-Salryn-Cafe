@@ -23,7 +23,7 @@ public static class HardenA8ReportingExportCodeSideReadinessChecks
         Require(client.Contains("/api/production-reports/export", StringComparison.Ordinal), "HARDEN-A8 client must use existing export endpoint.");
         Require(client.Contains("requestedOutputKind: \"pdf\"", StringComparison.Ordinal), "HARDEN-A8 client must constrain export request to PDF.");
         Require(!client.Contains("outputPath", StringComparison.OrdinalIgnoreCase), "HARDEN-A8 client must not send caller output paths.");
-        Require(!client.Contains("callerPath", StringComparison.OrdinalIgnoreCase), "HARDEN-A8 client must not add caller-controlled path fields.");
+        Require(!client.Contains("outputDirectory", StringComparison.OrdinalIgnoreCase), "HARDEN-A8 client must not add caller-controlled output directories.");
 
         Require(endpoints.Contains("reportingEngine = \"native-pdf-primary\"", StringComparison.Ordinal), "HARDEN-A8 backend must keep native PDF primary status.");
         Require(endpoints.Contains("disabledByDefault = true", StringComparison.Ordinal), "HARDEN-A8 Crystal compatibility must remain disabled by default.");
