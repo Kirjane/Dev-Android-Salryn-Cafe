@@ -103,8 +103,8 @@ public sealed class LocalLicenseService : ILocalLicenseService
             afterInstall.Status,
             afterInstall.SourcePath,
             replacement.BackupPath,
-            ErrorCode: null,
-            ErrorMessage: null,
+            null,
+            null,
             _clock());
     }
 
