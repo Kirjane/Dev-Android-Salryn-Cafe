@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, Layers3 } from "lucide-react";
 import { logout, type SessionState } from "./api/session";
 import { AppShell } from "./components/AppShell";
 import { Button, Card, CardBody, CommandBar } from "./components/ui";
@@ -101,11 +102,23 @@ function RemoteClientApp() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 p-6">
-      <div className="mx-auto max-w-7xl space-y-4">
+    <div className="min-h-screen bg-[#f6f7f9]">
+      <header className="flex h-[60px] items-center justify-between bg-navy-900 px-5 text-white shadow-sm">
+        <div className="flex items-center gap-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-white text-navy-900">
+            <Layers3 aria-hidden="true" size={21} />
+          </span>
+          <div>
+            <p className="text-sm font-bold">SALRYN LEDGER CONSOLE</p>
+            <p className="text-xs text-slate-400">Remote client</p>
+          </div>
+        </div>
         <Button variant="secondary" onClick={() => setMode("landing")}>
-          Back to remote client entry
+          <ArrowLeft aria-hidden="true" size={16} />
+          Back to client entry
         </Button>
+      </header>
+      <div className="mx-auto max-w-7xl space-y-4 p-6">
         {mode === "remote-pos" ? <RemotePosClientPage /> : <RemoteReadOnlyClientPage />}
       </div>
     </div>
@@ -151,7 +164,7 @@ function ConsoleApp() {
   if (sessionQuery.isError) {
     return (
       <FullScreenCenter>
-        <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-card">
+        <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-8 shadow-xl">
           <h1 className="text-xl font-semibold text-slate-900">Salryn local API unavailable</h1>
           <p className="mt-2 text-sm text-slate-500">The console could not reach the Salryn local API on this device.</p>
           <div className="mt-6"><Button onClick={() => void sessionQuery.refetch()}>Try again</Button></div>

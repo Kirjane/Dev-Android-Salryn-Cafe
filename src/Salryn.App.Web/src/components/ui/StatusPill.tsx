@@ -10,8 +10,9 @@ type StatusPillProps = {
 export function StatusPill({ tone = "neutral", children, className = "" }: StatusPillProps) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${tonePill[tone]} ${className}`}
+      className={`inline-flex min-h-6 items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${tonePill[tone]} ${className}`}
     >
+      <span className="h-1.5 w-1.5 rounded-full bg-current opacity-75" aria-hidden="true" />
       {children}
     </span>
   );

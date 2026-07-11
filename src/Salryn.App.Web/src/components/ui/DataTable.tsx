@@ -40,15 +40,15 @@ export function DataTable<TRow>({
   }
 
   return (
-    <div className="overflow-x-auto overflow-y-hidden rounded-xl border border-slate-200">
+    <div className="overflow-x-auto overflow-y-hidden rounded-md border border-slate-200">
       <table className="min-w-full divide-y divide-slate-200">
-        <thead className="bg-slate-50">
+        <thead className="bg-slate-100">
           <tr>
             {columns.map((column) => (
               <th
                 key={column.key}
                 scope="col"
-                className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 ${
+                className={`whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-slate-600 ${
                   alignClass[column.align ?? "left"]
                 }`}
               >
@@ -63,15 +63,15 @@ export function DataTable<TRow>({
             return (
             <tr
               key={rowKey}
-              className={`hover:bg-slate-50 ${
-                selectedRowKey === rowKey ? "bg-sky-50" : ""
+              className={`transition-colors hover:bg-slate-50 ${
+                selectedRowKey === rowKey ? "bg-blue-50 shadow-[inset_3px_0_0_#2563eb]" : ""
               } ${onRowClick ? "cursor-pointer" : ""}`}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
             >
               {columns.map((column) => (
                 <td
                   key={column.key}
-                  className={`px-4 py-3 text-sm text-slate-700 ${alignClass[column.align ?? "left"]}`}
+                  className={`whitespace-nowrap px-3 py-2.5 text-sm text-slate-700 ${alignClass[column.align ?? "left"]}`}
                 >
                   {column.render(row)}
                 </td>

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { RefreshCw } from "lucide-react";
 import {
   Alert,
   Button,
@@ -9,6 +10,7 @@ import {
   CommandBar,
   ErrorState,
   LoadingState,
+  MetricCard,
   StatusPill,
   TextInput,
 } from "../components/ui";
@@ -234,6 +236,7 @@ export function HostLanControlPage() {
         status={<StatusPill tone="success">Host control is local-only</StatusPill>}
         actions={
           <Button variant="secondary" onClick={refreshAll}>
+            <RefreshCw aria-hidden="true" size={16} />
             Refresh
           </Button>
         }
@@ -245,6 +248,38 @@ export function HostLanControlPage() {
 
       {status ? (
         <>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              title="LAN connection"
+              value={readinessTitle(runtime?.readinessState ?? "Disabled")}
+              tone={readinessTone(runtime?.readinessState ?? "Disabled")}
+              badge={runtime?.readinessState ?? "Disabled"}
+              subtitle={runtime?.clientUrl || status.hostLocalUrl}
+            />
+            <MetricCard
+              title="Remote POS runtime"
+              value={status.remotePosRuntimeEnabled ? "Enabled" : "Disabled"}
+              tone={status.remotePosRuntimeEnabled ? "success" : "neutral"}
+              badge={status.remotePosRuntimeEnabled ? "Ready" : "Off"}
+              subtitle="Host-controlled runtime state"
+            />
+            <MetricCard
+              title="Pending requests"
+              value={pendingRequestCount.toLocaleString()}
+              tone={pendingRequestCount > 0 ? "warning" : "success"}
+              badge={pendingRequestCount > 0 ? "Review" : "Clear"}
+              subtitle="Pairing approval queue"
+              emphasis={pendingRequestCount > 0}
+            />
+            <MetricCard
+              title="Visible terminals"
+              value={visibleTerminals.length.toLocaleString()}
+              tone="info"
+              badge="Host view"
+              subtitle={capacitySummary}
+            />
+          </div>
+
           <LanConnectionCard
             runtime={runtime}
             hostLocalUrl={status.hostLocalUrl}

@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "./Button";
 
@@ -26,14 +27,26 @@ export function Dialog({ open, title, description, children, onClose, footer }: 
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="relative z-10 w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl"
+        className="relative z-10 w-full max-w-lg overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xl"
       >
-        <div className="border-b border-slate-100 px-6 py-4">
-          <h3 className="text-base font-semibold text-slate-900">{title}</h3>
-          {description ? <p className="mt-1 text-sm text-slate-500">{description}</p> : null}
+        <div className="flex min-h-13 items-center justify-between gap-4 bg-navy-900 px-5 py-3 text-white">
+          <h3 className="text-base font-semibold">{title}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-slate-300 hover:bg-white/10 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            aria-label="Close dialog"
+          >
+            <X aria-hidden="true" size={20} />
+          </button>
         </div>
-        {children ? <div className="px-6 py-5">{children}</div> : null}
-        <div className="flex justify-end gap-2 border-t border-slate-100 px-6 py-4">
+        {description || children ? (
+          <div className="space-y-4 px-6 py-5">
+            {description ? <div className="text-sm leading-6 text-slate-600">{description}</div> : null}
+            {children}
+          </div>
+        ) : null}
+        <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3.5">
           {footer ?? (
             <Button variant="secondary" onClick={onClose}>
               Close
