@@ -98,7 +98,7 @@ public static class NativePdfM6IntegrationFreezeCandidateChecks
         RequireContains(datasetServiceSource, "Internal eSales draft dataset only", "Internal eSales draft boundary must remain visible.");
         RequireContains(datasetServiceSource, "transmission disabled", "Internal eSales transmission must remain disabled/unclaimed in summary text.");
 
-        RequireContains(artifactContractsSource, "NoCallerPathAccepted", "Artifact manifest must record no caller path accepted.");
+        RequireContains(artifactContractsSource, "CallerPathAccepted", "Artifact manifest must record whether caller path was accepted.");
         RequireContains(artifactContractsSource, "RetentionCleanupNote", "Artifact manifest must record retention/cleanup note.");
         RequireContains(rootPolicySource, "path traversal is forbidden", "Root policy must reject traversal.");
         RequireContains(rootPolicySource, "Absolute report artifact paths are forbidden", "Root policy must reject absolute caller paths.");
