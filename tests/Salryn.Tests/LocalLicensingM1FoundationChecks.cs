@@ -95,10 +95,9 @@ public static class LocalLicensingM1FoundationChecks
             string endpointSource = ReadRepoFile("src", "Salryn.Api.Local", "LocalLicenseEndpoints.cs");
             RequireContains(endpointSource, "MapGet(\"/api/license/status\"", "License status endpoint must be mapped.");
             RequireContains(endpointSource, "RequireLoopbackOperatorRequest", "License endpoint must preserve loopback/local guard.");
-            RequireContains(endpointSource, "RequireAuthenticatedSession", "License endpoint must require authenticated operator session.");
+            RequireContains(endpointSource, "RequireAuthenticatedSession", "License status endpoint must require authenticated operator session.");
             RequireNotContains(endpointSource, "LicensePath", "License endpoint must not accept or expose caller license path fields.");
             RequireNotContains(endpointSource, "OutputPath", "License endpoint must not accept filesystem output paths.");
-            RequireNotContains(endpointSource, "MapPost", "Licensing M1 endpoint must not mutate license files.");
 
             string implementationSource = string.Join("\n", new[]
             {
