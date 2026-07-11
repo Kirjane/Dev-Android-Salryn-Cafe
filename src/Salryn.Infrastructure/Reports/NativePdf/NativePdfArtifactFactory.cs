@@ -39,7 +39,7 @@ public static class NativePdfArtifactFactory
     public static string Sha256(byte[] bytes) =>
         Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
-    private static string SanitizeFileToken(string? value)
+    public static string SanitizeFileToken(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
