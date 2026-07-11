@@ -116,6 +116,7 @@ public static class Program
         RmoBirTradM5Rc2XzEjEsalesCompletionChecks.Run();
         PreCrystalM0FullReportingSpineChecks.Run();
         CrystalM1RuntimeDecisionMinimalProofChecks.Run();
+        NativePdfM2PackageProbeChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
         M5VerifiedCandidateStackLedgerChecks.Run();
         M6CandidateStackPromotionDryRunChecks.Run();
@@ -348,6 +349,9 @@ public static class Program
                 return;
             case "reports-crystal-m1-runtime-decision-minimal-proof":
                 CrystalM1RuntimeDecisionMinimalProofChecks.Run();
+                return;
+            case "reports-native-pdf-m2-package-probe":
+                NativePdfM2PackageProbeChecks.Run();
                 return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);
