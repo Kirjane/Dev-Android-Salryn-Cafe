@@ -122,6 +122,7 @@ public static class Program
         NativePdfM5ArtifactExportHardeningChecks.Run();
         NativePdfM6IntegrationFreezeCandidateChecks.Run();
         LocalLicensingM1FoundationChecks.Run();
+        LocalLicensingM2SignedInstallImportChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
         M5VerifiedCandidateStackLedgerChecks.Run();
         M6CandidateStackPromotionDryRunChecks.Run();
@@ -170,7 +171,7 @@ public static class Program
         J21Rmo242023ElectronicJournalAppendBoundaryDocumentationSealChecks.Run();
         J21Rmo242023SharedSqliteTransactionBoundaryContractChecks.Run();
         J21Rmo242023SharedSqliteTransactionBoundaryImplementationChecks.Run();
-        J21Rmo242023SharedTransactionOfficialSequenceAllocationParticipantChecks.Run();
+        J21Rmo242023SharedTransactionSequenceAndJournalAppendParticipantChecks.Run();
         J21Rmo242023OfficialSequenceAllocationServiceSharedBoundaryReuseChecks.Run();
         J21Rmo242023SqliteElectronicJournalAppendParticipantSkeletonChecks.Run();
         J21Rmo242023SqliteElectronicJournalAppendParticipantInsertChecks.Run();
@@ -372,6 +373,9 @@ public static class Program
                 return;
             case "licensing-m1-local-license-foundation":
                 LocalLicensingM1FoundationChecks.Run();
+                return;
+            case "licensing-m2-signed-license-install-import":
+                LocalLicensingM2SignedInstallImportChecks.Run();
                 return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);
