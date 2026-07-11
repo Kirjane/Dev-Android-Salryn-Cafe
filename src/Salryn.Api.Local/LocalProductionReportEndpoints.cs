@@ -5,12 +5,14 @@ using Salryn.Core.Services.Reports;
 using Salryn.Infrastructure.Data;
 using Salryn.Infrastructure.Data.Services;
 using Salryn.Infrastructure.Reports;
+using Salryn.Infrastructure.Reports.NativePdf;
 
 namespace Salryn.Api.Local;
 
 /// <summary>
-/// PRE-CRYSTAL M0 / Crystal-M1 host-only production reporting spine.
-/// Dataset generation only. Crystal renderer is unavailable and fails closed.
+/// PRE-CRYSTAL M0 / Crystal-M1 / native PDF reporting spine.
+/// Dataset generation remains server-owned. Crystal stays unavailable/fail-closed.
+/// Native PDF export writes only controlled local artifacts and manifest metadata.
 /// </summary>
 public static class LocalProductionReportEndpoints
 {
@@ -40,12 +42,21 @@ public static class LocalProductionReportEndpoints
             }
 
             UnavailableCrystalReportRenderer renderer = new();
+            NativePdfReportRenderer nativeRenderer = new();
             return Results.Json(new
             {
-                status = renderer.GetStatus(),
-                capability = renderer.GetCapability(),
-                workerProtocol = CrystalWorkerProtocol.CurrentProtocolVersion,
-                deploymentMode = CrystalWorkerProtocol.RequiredDeploymentMode,
+                crystal = new
+                {
+                    status = renderer.GetStatus(),
+                    capability = renderer.GetCapability(),
+                    workerProtocol = CrystalWorkerProtocol.CurrentProtocolVersion,
+                    deploymentMode = CrystalWorkerProtocol.RequiredDeploymentMode
+                },
+                nativePdf = new
+                {
+                    status = nativeRenderer.GetStatus(),
+                    capability = nativeRenderer.GetCapability()
+                },
                 allowedOutputKinds = ProductionReportOutputKinds.All
             });
         });
@@ -56,7 +67,7 @@ public static class LocalProductionReportEndpoints
             LocalApiSessionService sessions,
             CancellationToken cancellationToken) =>
         {
-            if (!TryBuildDatasetRequest(body, httpContext, sessions, out ProductionReportDatasetRequest request, out ProductionReportCatalogItem catalogItem, out IResult? bad))
+            if (!TryBuildDatasetRequest(body, httpContext, sessions, out ProductionReportDatasetRequest request, out _, out IResult? bad))
             {
                 return bad!;
             }
@@ -90,7 +101,7 @@ public static class LocalProductionReportEndpoints
                 body.DocumentKind,
                 body.TerminalId);
 
-            if (!TryBuildDatasetRequest(datasetBody, httpContext, sessions, out ProductionReportDatasetRequest request, out ProductionReportCatalogItem catalogItem, out IResult? bad))
+            if (!TryBuildDatasetRequest(datasetBody, httpContext, sessions, out ProductionReportDatasetRequest request, out _, out IResult? bad))
             {
                 return bad!;
             }
@@ -115,10 +126,61 @@ public static class LocalProductionReportEndpoints
 
             return ToJson(result);
         });
+
+        app.MapPost("/api/production-reports/export", async (
+            ProductionReportExportApiRequest body,
+            HttpContext httpContext,
+            LocalApiSessionService sessions,
+            CancellationToken cancellationToken) =>
+        {
+            if (!ProductionReportOutputKinds.TryNormalize(body.RequestedOutputKind, out string requestedOutputKind, out Error? outputKindError))
+            {
+                return Results.Json(
+                    new { code = outputKindError!.Code, message = outputKindError.Message },
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            ProductionReportDatasetApiRequest datasetBody = new(
+                body.ReportKind,
+                body.RangeStart,
+                body.RangeEnd,
+                body.BirMachineProfileId,
+                body.RegistrationScopeCode,
+                body.DocumentKind,
+                body.TerminalId);
+
+            if (!TryBuildDatasetRequest(datasetBody, httpContext, sessions, out ProductionReportDatasetRequest request, out _, out IResult? bad))
+            {
+                return bad!;
+            }
+
+            Result<ProductionReportDatasetEnvelope> dataset = await ComposeDatasetService(connectionFactory)
+                .BuildDatasetAsync(request, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (dataset.IsFailure)
+            {
+                return ToJson(dataset);
+            }
+
+            NativePdfReportExportService exportService = ComposeNativePdfExportService();
+            Result<ProductionReportArtifactExportResult> exported = await exportService.ExportAsync(
+                new NativePdfReportExportRequest(
+                    dataset.Value,
+                    requestedOutputKind,
+                    ExportScope: "local-api-production-report-export",
+                    cancellationToken),
+                cancellationToken).ConfigureAwait(false);
+
+            return ToJson(exported);
+        });
     }
 
     private static PreCrystalReportDatasetService ComposeDatasetService(SqliteConnectionFactory connectionFactory) =>
         new(new SqliteOfficialReportingProjectionService(connectionFactory));
+
+    private static NativePdfReportExportService ComposeNativePdfExportService() =>
+        new(new NativePdfReportRenderer(), new NativePdfArtifactStore(NativePdfArtifactRootPolicy.CreateDefault()));
 
     private static bool TryBuildDatasetRequest(
         ProductionReportDatasetApiRequest body,
@@ -336,4 +398,14 @@ public static class LocalProductionReportEndpoints
         string? TerminalId,
         string? RequestedOutputKind,
         int TimeoutMilliseconds);
+
+    public sealed record ProductionReportExportApiRequest(
+        string? ReportKind,
+        string? RangeStart,
+        string? RangeEnd,
+        string? BirMachineProfileId,
+        string? RegistrationScopeCode,
+        string? DocumentKind,
+        string? TerminalId,
+        string? RequestedOutputKind);
 }
