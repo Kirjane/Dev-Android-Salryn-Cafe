@@ -119,6 +119,7 @@ public static class Program
         NativePdfM2PackageProbeChecks.Run();
         NativePdfM3RendererCoreChecks.Run();
         NativePdfM4CoreReportFamilyProofChecks.Run();
+        NativePdfM5ArtifactExportHardeningChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
         M5VerifiedCandidateStackLedgerChecks.Run();
         M6CandidateStackPromotionDryRunChecks.Run();
@@ -360,6 +361,9 @@ public static class Program
                 return;
             case "reports-native-pdf-m4-core-report-family-proof":
                 NativePdfM4CoreReportFamilyProofChecks.Run();
+                return;
+            case "reports-native-pdf-m5-artifact-export-hardening":
+                NativePdfM5ArtifactExportHardeningChecks.Run();
                 return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);
