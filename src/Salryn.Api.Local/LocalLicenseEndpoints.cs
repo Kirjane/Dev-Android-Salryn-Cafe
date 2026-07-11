@@ -9,9 +9,11 @@ public static class LocalLicenseEndpoints
 {
     public static void MapLocalLicenseEndpoints(
         this WebApplication app,
-        ILocalLicenseService? licenseService = null)
+        ILocalLicenseService? licenseService = null,
+        ILocalLicenseEnforcementService? enforcementService = null)
     {
         ILocalLicenseService localLicenseService = licenseService ?? new LocalLicenseService();
+        ILocalLicenseEnforcementService localLicenseEnforcementService = enforcementService ?? new LocalLicenseEnforcementService(localLicenseService);
 
         app.MapGet("/api/license/status", async (
             HttpContext httpContext,
@@ -33,6 +35,34 @@ public static class LocalLicenseEndpoints
                 .ConfigureAwait(false);
 
             return Results.Json(result);
+        });
+
+        app.MapGet("/api/license/entitlements", async (
+            HttpContext httpContext,
+            LocalApiSessionService sessions,
+            CancellationToken cancellationToken) =>
+        {
+            if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult localOnly)
+            {
+                return localOnly;
+            }
+
+            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
+            {
+                return unauthorized;
+            }
+
+            LocalLicenseValidationResult status = await localLicenseService
+                .GetStatusAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            return Results.Json(new LocalLicenseEntitlementsResponse(
+                status.Status,
+                status.EnabledFeatures,
+                LicenseFeatures.AllList,
+                status.MachineMatched,
+                status.Message,
+                status.ValidationTimestamp));
         });
 
         app.MapPost("/api/license/install", async (
