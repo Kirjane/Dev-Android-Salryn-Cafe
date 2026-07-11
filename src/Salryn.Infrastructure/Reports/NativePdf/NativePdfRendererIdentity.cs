@@ -19,7 +19,7 @@ public static class NativePdfRendererIdentity
             Assembly assembly = typeof(NativePdfPackageProbe).Assembly;
             string assemblyVersion = assembly.GetName().Version?.ToString() ?? "unknown";
             NativePdfPackageProbeResult package = NativePdfPackageProbe.Read();
-            return $"pdfsharp-migradoc:{package.PackageVersion};salryn-infrastructure:{assemblyVersion}";
+            return $"pdfsharp-migradoc:{package.RequestedPackageVersion};salryn-infrastructure:{assemblyVersion}";
         }
     }
 }
