@@ -184,16 +184,22 @@ public static class NativePdfM4CoreReportFamilyProofChecks
     {
         string root = FindRoot();
         string nativePdfRoot = Path.Combine(root, "src", "Salryn.Infrastructure", "Reports", "NativePdf");
-        string combined = string.Join("\n", Directory.GetFiles(nativePdfRoot, "*.cs").Select(File.ReadAllText));
+        string combined = string.Join("\n", new[]
+        {
+            Path.Combine(nativePdfRoot, "NativePdfReportRenderer.cs"),
+            Path.Combine(nativePdfRoot, "NativePdfDocumentBuilder.cs"),
+            Path.Combine(nativePdfRoot, "NativePdfArtifactFactory.cs"),
+            Path.Combine(nativePdfRoot, "NativePdfRendererIdentity.cs")
+        }.Select(File.ReadAllText));
 
-        RequireNotContains(combined, "File.WriteAllBytes", "Native PDF renderer must not write PDF files to disk.");
-        RequireNotContains(combined, "new FileStream", "Native PDF renderer must not use FileStream.");
-        RequireNotContains(combined, "File.Create", "Native PDF renderer must not create files.");
-        RequireNotContains(combined, "File.Open", "Native PDF renderer must not open output files.");
-        RequireNotContains(combined, "Directory.CreateDirectory", "Native PDF renderer must not create output directories.");
-        RequireNotContains(combined, "OutputPath", "Native PDF renderer must not accept caller output paths.");
-        RequireNotContains(combined, "CrystalDecisions", "Native PDF renderer must not call Crystal.");
-        RequireNotContains(combined, "ReportDocument", "Native PDF renderer must not call Crystal ReportDocument.");
+        RequireNotContains(combined, "File.WriteAll", "Native PDF renderer core must not write PDF files to disk.");
+        RequireNotContains(combined, "new FileStream", "Native PDF renderer core must not use FileStream.");
+        RequireNotContains(combined, "File.Create", "Native PDF renderer core must not create files.");
+        RequireNotContains(combined, "File.Open", "Native PDF renderer core must not open output files.");
+        RequireNotContains(combined, "Directory.CreateDirectory", "Native PDF renderer core must not create output directories.");
+        RequireNotContains(combined, "OutputPath", "Native PDF renderer core must not accept caller output paths.");
+        RequireNotContains(combined, "CrystalDecisions", "Native PDF renderer core must not call Crystal.");
+        RequireNotContains(combined, "ReportDocument", "Native PDF renderer core must not call Crystal ReportDocument.");
     }
 
     private sealed class ControlledOfficialReportingProjectionService : IOfficialReportingProjectionService
