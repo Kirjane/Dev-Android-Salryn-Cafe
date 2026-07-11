@@ -124,6 +124,7 @@ public static class Program
         LocalLicensingM1FoundationChecks.Run();
         LocalLicensingM2SignedInstallImportChecks.Run();
         LocalLicensingM3LocalEnforcementBoundaryChecks.Run();
+        HardenA1A6PreBetaFoundationChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
         M5VerifiedCandidateStackLedgerChecks.Run();
         M6CandidateStackPromotionDryRunChecks.Run();
@@ -380,6 +381,9 @@ public static class Program
                 return;
             case "licensing-m3-local-enforcement-boundaries":
                 LocalLicensingM3LocalEnforcementBoundaryChecks.Run();
+                return;
+            case "harden-a1-a6-pre-beta-foundation":
+                HardenA1A6PreBetaFoundationChecks.Run();
                 return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);
