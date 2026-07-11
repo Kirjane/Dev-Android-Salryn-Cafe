@@ -10,9 +10,9 @@ Base branch: `KIRCH-LICENSING-M2-SIGNED-LICENSE-INSTALL-IMPORT`
 
 Base SHA: `657b3d830567771c2d53b35ab1c9ca5d25cfcfde`
 
-Last implementation commit before this report: `4cdcacf91a1c15bd95c012c29ca6ca1ff174dc77`
+Last implementation commit before this final report update: `8040778f71242b04c46ee59c0b1779f68588f9d1`
 
-Final SHA note: the final candidate SHA must be taken from the Freehand final output or repository head after this report commit. A commit cannot include its own resulting SHA inside its content.
+Final SHA note: the final candidate SHA must be taken from the Freehand final output or repository head after this report update. A commit cannot include its own resulting SHA inside its content.
 
 ## What was added
 
@@ -127,6 +127,9 @@ Connector-level checks performed only:
 - file fetch inspection
 - connector file writes
 - connector source inspection of CoreSmoke hook registration
+- connector compare against M2 base
+- connector combined status lookup
+- source-level cleanup of named-argument compile-risk patterns before final report update
 
 Do not treat those connector checks as local verification.
 
