@@ -68,9 +68,12 @@ public sealed class NativePdfArtifactRootPolicy
         string rootWithSeparator = RootDirectory.EndsWith(Path.DirectorySeparatorChar)
             ? RootDirectory
             : RootDirectory + Path.DirectorySeparatorChar;
+        StringComparison comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
 
-        if (!combined.StartsWith(rootWithSeparator, StringComparison.Ordinal) &&
-            !string.Equals(combined, RootDirectory, StringComparison.Ordinal))
+        if (!combined.StartsWith(rootWithSeparator, comparison) &&
+            !string.Equals(combined, RootDirectory, comparison))
         {
             throw new InvalidOperationException("Resolved report artifact path escaped the controlled root.");
         }
