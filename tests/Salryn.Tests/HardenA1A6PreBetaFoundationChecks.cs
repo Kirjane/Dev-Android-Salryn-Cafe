@@ -109,7 +109,7 @@ public static class HardenA1A6PreBetaFoundationChecks
     private static void VerifyA4PermissionGuardExpectations()
     {
         string licenseEndpoints = ReadRepoFile("src/Salryn.Api.Local/LocalLicenseEndpoints.cs");
-        string permissionGuards = ReadRepoFile("src/Salryn.Api.Local/Auth/LocalApiPermissions.cs");
+        string permissionGuards = ReadRepoFile("src/Salryn.Api.Local/Auth/LocalApiPermissionGuards.cs");
         string apiLicenseGuard = ReadRepoFile("src/Salryn.Api.Local/Auth/ApiLicenseGuard.cs");
 
         RequireEndpointGuard(licenseEndpoints, "MapGet(\"/api/license/status\"", "RequireLoopbackOperatorRequest");

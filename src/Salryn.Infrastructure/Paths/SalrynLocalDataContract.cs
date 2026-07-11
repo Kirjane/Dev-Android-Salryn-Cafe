@@ -13,15 +13,15 @@ public static class SalrynLocalDataContract
 
     public static IReadOnlyList<SalrynLocalPathContractEntry> RequiredEntries =>
     [
-        new("database", "ProgramData/Salryn/data/salryn.db", mustPreserveAcrossUpdate: true, mayDeleteOnUninstallOnlyWithOperatorConsent: true),
-        new("backups", "ProgramData/Salryn/backups", mustPreserveAcrossUpdate: true, mayDeleteOnUninstallOnlyWithOperatorConsent: true),
-        new("exports", "ProgramData/Salryn/exports", mustPreserveAcrossUpdate: true, mayDeleteOnUninstallOnlyWithOperatorConsent: true),
-        new("logs", "ProgramData/Salryn/logs", mustPreserveAcrossUpdate: false, mayDeleteOnUninstallOnlyWithOperatorConsent: false),
-        new("receipts", "ProgramData/Salryn/receipts", mustPreserveAcrossUpdate: true, mayDeleteOnUninstallOnlyWithOperatorConsent: true),
-        new("config", "ProgramData/Salryn/config", mustPreserveAcrossUpdate: true, mayDeleteOnUninstallOnlyWithOperatorConsent: true),
-        new("license", "LocalApplicationData/Salryn/Licensing/license.json", mustPreserveAcrossUpdate: true, mayDeleteOnUninstallOnlyWithOperatorConsent: true),
-        new("license-backups", "LocalApplicationData/Salryn/Licensing/*.bak.json", mustPreserveAcrossUpdate: true, mayDeleteOnUninstallOnlyWithOperatorConsent: true),
-        new("native-pdf-reports", "LocalApplicationData/Salryn/Reports/NativePdf", mustPreserveAcrossUpdate: true, mayDeleteOnUninstallOnlyWithOperatorConsent: true)
+        new("database", "ProgramData/Salryn/data/salryn.db", MustPreserveAcrossUpdate: true, MayDeleteOnUninstallOnlyWithOperatorConsent: true),
+        new("backups", "ProgramData/Salryn/backups", MustPreserveAcrossUpdate: true, MayDeleteOnUninstallOnlyWithOperatorConsent: true),
+        new("exports", "ProgramData/Salryn/exports", MustPreserveAcrossUpdate: true, MayDeleteOnUninstallOnlyWithOperatorConsent: true),
+        new("logs", "ProgramData/Salryn/logs", MustPreserveAcrossUpdate: false, MayDeleteOnUninstallOnlyWithOperatorConsent: false),
+        new("receipts", "ProgramData/Salryn/receipts", MustPreserveAcrossUpdate: true, MayDeleteOnUninstallOnlyWithOperatorConsent: true),
+        new("config", "ProgramData/Salryn/config", MustPreserveAcrossUpdate: true, MayDeleteOnUninstallOnlyWithOperatorConsent: true),
+        new("license", "LocalApplicationData/Salryn/Licensing/license.json", MustPreserveAcrossUpdate: true, MayDeleteOnUninstallOnlyWithOperatorConsent: true),
+        new("license-backups", "LocalApplicationData/Salryn/Licensing/*.bak.json", MustPreserveAcrossUpdate: true, MayDeleteOnUninstallOnlyWithOperatorConsent: true),
+        new("native-pdf-reports", "LocalApplicationData/Salryn/Reports/NativePdf", MustPreserveAcrossUpdate: true, MayDeleteOnUninstallOnlyWithOperatorConsent: true)
     ];
 
     public static bool IsKnownEntry(string name) => RequiredEntries.Any(
