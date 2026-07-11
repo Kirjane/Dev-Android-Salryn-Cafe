@@ -53,7 +53,7 @@ public sealed class NativePdfReportExportService
                     request.Dataset,
                     outputKind,
                     TimeoutMilliseconds: 120000,
-                    request.RequestCancellationToken),
+                    CancellationToken: request.RequestCancellationToken),
                 cancellationToken).ConfigureAwait(false);
 
             if (render.IsFailure)
