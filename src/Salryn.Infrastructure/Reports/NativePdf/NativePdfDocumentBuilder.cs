@@ -2,12 +2,21 @@ using System.Globalization;
 using MigraDoc.DocumentObjectModel;
 using MigraDoc.DocumentObjectModel.Tables;
 using MigraDoc.Rendering;
+using PdfSharp.Fonts;
 using Salryn.Core.Services.Reports;
 
 namespace Salryn.Infrastructure.Reports.NativePdf;
 
 public static class NativePdfDocumentBuilder
 {
+    static NativePdfDocumentBuilder()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            GlobalFontSettings.UseWindowsFontsUnderWindows = true;
+        }
+    }
+
     public static byte[] BuildPdfBytes(
         ProductionReportDatasetEnvelope dataset,
         CancellationToken cancellationToken = default)

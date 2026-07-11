@@ -90,7 +90,7 @@ public static class NativePdfM6IntegrationFreezeCandidateChecks
         RequireTrue(!crystalStatus.CanRenderPdf, "Crystal renderer must not claim PDF capability.");
         RequireTrue(!crystalStatus.CanPrint, "Crystal renderer must not claim printer support.");
         RequireTrue(!crystalCapability.DirectInProcessSupported, "Crystal direct in-process path remains unsupported.");
-        RequireTrue(crystalCapability.IsolatedWorkerSupported, "Crystal remains isolated compatibility worker only.");
+        RequireTrue(!crystalCapability.IsolatedWorkerSupported, "Crystal isolated compatibility remains parked and unsupported until a worker is verified.");
 
         RequireContains(datasetServiceSource, "BirAccreditationClaimed: false", "BIR accreditation must remain unclaimed.");
         RequireContains(datasetServiceSource, "BirESalesSchemaConfirmed: projection.BirAuthoritativeESalesSchemaConfirmed", "eSales schema flag must come from projection and remain explicit.");
