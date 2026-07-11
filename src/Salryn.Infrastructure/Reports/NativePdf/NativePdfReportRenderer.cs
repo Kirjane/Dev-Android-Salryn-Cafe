@@ -14,7 +14,7 @@ public sealed class NativePdfReportRenderer : IProductionReportRenderer
         CanPrint: false,
         RequiresExternalRuntime: false,
         StatusCode: NativePdfRendererIdentity.StatusAvailable,
-        Message: "Native PDF renderer core is available for in-memory PDF generation only. No file output, export endpoint, storage, preview, print, or report-family proof is claimed in M3.");
+        Message: "Native PDF renderer is available for in-memory PDF generation. Controlled artifact export is handled by the M5 export service. No print, installer, UI preview/download, Crystal runtime, or final reporting freeze is claimed here.");
 
     public ProductionReportRendererCapability GetCapability() => new(
         NativePdfRendererIdentity.RendererName,
