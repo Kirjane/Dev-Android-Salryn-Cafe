@@ -117,7 +117,7 @@ public static class PreCrystalM0FullReportingSpineChecks
             "pdf",
             30000,
             CancellationToken.None)).GetAwaiter().GetResult();
-        RequireTrue(render.IsFailure && render.ErrorDetail.Code == "Crystal.Unavailable", "Unavailable renderer fails closed.");
+        RequireTrue(render.IsFailure && render.ErrorDetail.Code == "Crystal.WorkerPending", "Unavailable renderer fails closed.");
 
         RequireTrue(!ProductionOfficialPostingActivation.IsEnabled, "Production official posting activation remains OFF.");
         RequireTrue(!first.Value.SafetyFlags.ESalesTransmissionEnabled, "eSales transmission remains disabled in dataset safety flags.");
