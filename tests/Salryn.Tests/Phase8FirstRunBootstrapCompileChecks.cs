@@ -27,7 +27,7 @@ public static class Phase8FirstRunBootstrapCompileChecks
 
         SqliteConnectionFactory factory = new(paths);
 
-        FirstRunBootstrapper bootstrapper = new(factory, hasher);
+        FirstRunBootstrapper bootstrapper = new(factory);
 
         AdminBootstrapRequest request = new(
             StoreName: "Sample Store",
