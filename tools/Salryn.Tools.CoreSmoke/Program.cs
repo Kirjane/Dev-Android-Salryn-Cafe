@@ -141,6 +141,7 @@ public static class Program
         PosStabA4InventoryAdjustmentChecks.Run();
         PosStabA5ReceiptPrintingChecks.Run();
         PosM1ReceiptSnapshotFileReceiptChecks.Run();
+        PosM2PrinterReprintFailureChecks.Run();
         PosStabB2BackupUiChecks.Run();
         PosStabB2AuditViewerChecks.Run();
         PosStabB3ProductionDbWritabilityChecks.Run();
@@ -277,6 +278,9 @@ public static class Program
         {
             case "pos-m1-receipt-snapshot-file-receipt":
                 PosM1ReceiptSnapshotFileReceiptChecks.Run();
+                return;
+            case "pos-m2-printer-reprint-failure":
+                PosM2PrinterReprintFailureChecks.Run();
                 return;
             case "v2-host-shift":
                 V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();
