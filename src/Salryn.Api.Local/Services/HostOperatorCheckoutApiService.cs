@@ -31,13 +31,15 @@ public sealed class HostOperatorCheckoutApiService
     private readonly ICashierSessionService _cashierSessionService;
     private readonly ISaleReadRepository _saleReadRepository;
     private readonly HostOperatorReceiptNumberAllocator _receiptAllocator;
+    private readonly IFileReceiptWriter _fileReceiptWriter;
 
     public HostOperatorCheckoutApiService(
         IProductReadRepository productReadRepository,
         IPosCheckoutApplicationService checkoutApplicationService,
         ICashierSessionService cashierSessionService,
         ISaleReadRepository saleReadRepository,
-        HostOperatorReceiptNumberAllocator receiptAllocator)
+        HostOperatorReceiptNumberAllocator receiptAllocator,
+        IFileReceiptWriter fileReceiptWriter)
     {
         _productReadRepository = productReadRepository
             ?? throw new ArgumentNullException(nameof(productReadRepository));
@@ -49,6 +51,8 @@ public sealed class HostOperatorCheckoutApiService
             ?? throw new ArgumentNullException(nameof(saleReadRepository));
         _receiptAllocator = receiptAllocator
             ?? throw new ArgumentNullException(nameof(receiptAllocator));
+        _fileReceiptWriter = fileReceiptWriter
+            ?? throw new ArgumentNullException(nameof(fileReceiptWriter));
     }
 
     public async Task<HostOperatorCheckoutOperationResult> SubmitAsync(
@@ -203,18 +207,65 @@ public sealed class HostOperatorCheckoutApiService
             .ConfigureAwait(false);
 
         SaleDetailReadModel? sale = saleResult.IsSuccess ? saleResult.Value : null;
+        bool receiptSnapshotSaved = !string.IsNullOrWhiteSpace(sale?.ReceiptSnapshot);
+        FileReceiptWriteResult fileReceipt = await WriteFileReceiptAfterCommitAsync(sale, saleResult, cancellationToken)
+            .ConfigureAwait(false);
+
+        string message = BuildCompletedMessage(fileReceipt);
 
         return new HostOperatorCheckoutOperationResult(
             true,
             "HostOperator.Checkout.Completed",
-            "Sale completed on host.",
+            message,
             new HostOperatorCheckoutResponse(
                 HostOperatorCheckoutStatus.Completed,
                 receiptNumber,
                 sale?.Id.ToString(),
                 sale?.Total.Cents,
                 sale?.Change.Cents,
-                "Sale completed on host."));
+                message,
+                receiptSnapshotSaved,
+                fileReceipt.Status,
+                fileReceipt.FilePath,
+                fileReceipt.ErrorMessage));
+    }
+
+    private async Task<FileReceiptWriteResult> WriteFileReceiptAfterCommitAsync(
+        SaleDetailReadModel? sale,
+        Result<SaleDetailReadModel?> saleResult,
+        CancellationToken cancellationToken)
+    {
+        if (saleResult.IsFailure)
+        {
+            return FileReceiptWriteResult.NotAttempted(
+                "Sale was committed, but sale detail reload failed: " + saleResult.ErrorDetail.Message);
+        }
+
+        if (sale is null)
+        {
+            return FileReceiptWriteResult.NotAttempted(
+                "Sale was committed, but sale detail was not found for receipt reload.");
+        }
+
+        if (string.IsNullOrWhiteSpace(sale.ReceiptSnapshot))
+        {
+            return FileReceiptWriteResult.NotAttempted(
+                "Sale was committed, but receipt snapshot was empty.");
+        }
+
+        return await _fileReceiptWriter
+            .WriteAsync(sale, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static string BuildCompletedMessage(FileReceiptWriteResult fileReceipt)
+    {
+        return fileReceipt.Status switch
+        {
+            "Written" => "Sale completed on host. Receipt snapshot saved and file receipt written.",
+            "Failed" => "Sale completed on host. Receipt snapshot saved, but file receipt write failed; sale remains committed.",
+            _ => "Sale completed on host. Receipt file was not written; sale remains committed."
+        };
     }
 
     private HostOperatorCheckoutOperationResult MapFailure(Error error)
