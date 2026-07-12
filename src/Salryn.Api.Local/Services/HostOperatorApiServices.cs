@@ -41,13 +41,15 @@ public sealed class HostOperatorApiServices
             composition.ProductReadRepository);
 
         HostOperatorShiftApiService shiftService = new(cashierSessionService);
+        FileReceiptWriter fileReceiptWriter = new(composition.DbPaths.ReceiptPath);
 
         HostOperatorCheckoutApiService checkoutService = new(
             composition.ProductReadRepository,
             checkoutApplicationService,
             cashierSessionService,
             composition.SaleReadRepository,
-            new HostOperatorReceiptNumberAllocator());
+            new HostOperatorReceiptNumberAllocator(),
+            fileReceiptWriter);
 
         return new HostOperatorApiServices(cashierSessionService, shiftService, checkoutService);
     }
