@@ -18,4 +18,8 @@ public sealed record HostOperatorCheckoutResponse(
     string? SaleId,
     long? TotalCents,
     long? ChangeCents,
-    string Message);
+    string Message,
+    bool ReceiptSnapshotSaved = false,
+    string FileReceiptStatus = "NotAttempted",
+    string? FileReceiptPath = null,
+    string? FileReceiptError = null);
