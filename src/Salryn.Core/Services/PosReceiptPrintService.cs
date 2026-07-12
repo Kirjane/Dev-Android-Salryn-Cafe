@@ -1,4 +1,5 @@
 using Salryn.Core.Common;
+using Salryn.Core.ReadModels;
 using Salryn.Core.Repositories;
 
 namespace Salryn.Core.Services;
@@ -166,7 +167,7 @@ public sealed class PosReceiptPrintService
                 "Sale id is required before printing can be attempted.");
         }
 
-        Result<ReadModels.SaleDetailReadModel?> saleResult = await _saleReadRepository
+        Result<SaleDetailReadModel?> saleResult = await _saleReadRepository
             .FindSaleByIdAsync(saleId, cancellationToken)
             .ConfigureAwait(false);
 
@@ -181,7 +182,7 @@ public sealed class PosReceiptPrintService
                 saleResult.ErrorDetail.Message);
         }
 
-        ReadModels.SaleDetailReadModel? sale = saleResult.Value;
+        SaleDetailReadModel? sale = saleResult.Value;
         if (sale is null)
         {
             return PosReceiptPrintResult.Failed(
