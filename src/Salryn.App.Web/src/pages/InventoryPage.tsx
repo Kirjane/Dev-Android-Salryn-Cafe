@@ -81,7 +81,7 @@ export function InventoryPage() {
     void movementsQuery.refetch();
   }
 
-  function clearMovementFilters() {
+  function resetStockFilters() {
     setPage(1);
     setMovementType("");
     setFrom("");
@@ -218,7 +218,7 @@ export function InventoryPage() {
                   setTo(event.target.value);
                 }}
               />
-              <Button variant="secondary" onClick={clearMovementFilters} disabled={!movementType && !from && !to}>
+              <Button variant="secondary" onClick={resetStockFilters} disabled={!movementType && !from && !to}>
                 Clear
               </Button>
             </div>
