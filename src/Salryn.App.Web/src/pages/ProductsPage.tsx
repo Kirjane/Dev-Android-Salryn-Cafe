@@ -158,7 +158,7 @@ export function ProductsPage() {
     <div className="space-y-6">
       <CommandBar
         title="Product Management"
-        subtitle="Text-only catalog view backed by the local product API. Create/edit remains parked until a product write contract is approved."
+        subtitle="Text-only catalog view backed by the local product API. Catalog write actions are unavailable in this lane."
         status={
           productsQuery.data ? (
             <div className="flex flex-wrap gap-2">
@@ -176,7 +176,8 @@ export function ProductsPage() {
       />
 
       <Alert tone="info" title="Read-only catalog lane">
-        This page uses GET product endpoints only. Add, edit, import, image upload, and media fields stay disabled because this lane does not add product write APIs.
+        This page is read-only until an approved catalog write contract exists. Creation, editing, importing,
+        deactivation, upload, and media fields remain parked.
       </Alert>
 
       <Card>
