@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchAuditLogs, fetchErrorLogs, type AuditLog, type ErrorLog } from "../api/audit";
 import {
+  Alert,
   Button,
   Card,
   CardBody,
@@ -16,17 +17,19 @@ import { formatDateTime } from "../utils/format";
 export function AuditPage() {
   const [tab, setTab] = useState<"audit" | "errors">("audit");
   const [search, setSearch] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [page, setPage] = useState(1);
 
   const auditQuery = useQuery({
-    queryKey: ["audit-logs", search, page],
-    queryFn: () => fetchAuditLogs({ search: search || undefined, page, pageSize: 25 }),
+    queryKey: ["audit-logs", search, from, to, page],
+    queryFn: () => fetchAuditLogs({ search: search.trim() || undefined, from: from.trim() || undefined, to: to.trim() || undefined, page, pageSize: 25 }),
     enabled: tab === "audit",
   });
 
   const errorQuery = useQuery({
-    queryKey: ["error-logs", search, page],
-    queryFn: () => fetchErrorLogs({ search: search || undefined, page, pageSize: 25 }),
+    queryKey: ["error-logs", search, from, to, page],
+    queryFn: () => fetchErrorLogs({ search: search.trim() || undefined, from: from.trim() || undefined, to: to.trim() || undefined, page, pageSize: 25 }),
     enabled: tab === "errors",
   });
 
@@ -37,7 +40,14 @@ export function AuditPage() {
     if (data && data.totalPages > 0 && page > data.totalPages) {
       setPage(data.totalPages);
     }
-  }, [activeQuery.data?.totalPages, tab]);
+  }, [activeQuery.data, page, tab]);
+
+  function clearFilters() {
+    setPage(1);
+    setSearch("");
+    setFrom("");
+    setTo("");
+  }
 
   const auditColumns = [
     {
@@ -47,7 +57,7 @@ export function AuditPage() {
     },
     { key: "user", header: "User", render: (row: AuditLog) => row.userDisplayName ?? "—" },
     { key: "action", header: "Action", render: (row: AuditLog) => row.action },
-    { key: "entity", header: "Entity", render: (row: AuditLog) => row.entityType },
+    { key: "entity", header: "Entity", render: (row: AuditLog) => row.entityId ? `${row.entityType} · ${row.entityId}` : row.entityType },
     { key: "reason", header: "Reason", render: (row: AuditLog) => row.reason ?? "—" },
   ];
 
@@ -66,13 +76,17 @@ export function AuditPage() {
     <div className="space-y-6">
       <CommandBar
         title="Audit"
-        subtitle="Read-only audit and error logs from the local database."
+        subtitle="Read-only audit and error records from approved audit endpoints."
         actions={
-          <Button variant="secondary" onClick={() => void activeQuery.refetch()}>
-            Refresh
+          <Button variant="secondary" onClick={() => void activeQuery.refetch()} disabled={activeQuery.isFetching}>
+            {activeQuery.isFetching ? "Refreshing..." : "Refresh"}
           </Button>
         }
       />
+
+      <Alert tone="info" title="Read-only audit lane">
+        This page fetches real audit/error records only. It does not create, edit, export, or fabricate audit rows.
+      </Alert>
 
       <Card>
         <CardBody className="space-y-4">
@@ -99,14 +113,35 @@ export function AuditPage() {
             </Button>
           </div>
 
-          <TextInput
-            placeholder="Search logs..."
-            value={search}
-            onChange={(event) => {
-              setPage(1);
-              setSearch(event.target.value);
-            }}
-          />
+          <div className="grid gap-3 lg:grid-cols-[minmax(14rem,1fr)_minmax(11rem,0.8fr)_minmax(11rem,0.8fr)_auto]">
+            <TextInput
+              placeholder="Search logs..."
+              value={search}
+              onChange={(event) => {
+                setPage(1);
+                setSearch(event.target.value);
+              }}
+            />
+            <TextInput
+              placeholder="From ISO/date"
+              value={from}
+              onChange={(event) => {
+                setPage(1);
+                setFrom(event.target.value);
+              }}
+            />
+            <TextInput
+              placeholder="To ISO/date"
+              value={to}
+              onChange={(event) => {
+                setPage(1);
+                setTo(event.target.value);
+              }}
+            />
+            <Button variant="secondary" onClick={clearFilters} disabled={!search && !from && !to}>
+              Clear
+            </Button>
+          </div>
 
           {activeQuery.isLoading ? <LoadingState label="Loading logs..." /> : null}
           {activeQuery.isError ? <ErrorState message={(activeQuery.error as Error).message} /> : null}
@@ -120,12 +155,7 @@ export function AuditPage() {
                 emptyTitle="No audit logs"
                 emptyDescription="Audit activity will appear here when records exist."
               />
-              <Pagination
-                page={page}
-                totalPages={auditQuery.data.totalPages}
-                totalCount={auditQuery.data.totalCount}
-                onPageChange={setPage}
-              />
+              <Pagination page={page} totalPages={auditQuery.data.totalPages} totalCount={auditQuery.data.totalCount} onPageChange={setPage} />
             </>
           ) : null}
 
@@ -138,12 +168,7 @@ export function AuditPage() {
                 emptyTitle="No error logs"
                 emptyDescription="Error records will appear here when they exist."
               />
-              <Pagination
-                page={page}
-                totalPages={errorQuery.data.totalPages}
-                totalCount={errorQuery.data.totalCount}
-                onPageChange={setPage}
-              />
+              <Pagination page={page} totalPages={errorQuery.data.totalPages} totalCount={errorQuery.data.totalCount} onPageChange={setPage} />
             </>
           ) : null}
         </CardBody>
@@ -172,12 +197,7 @@ function Pagination({
         <Button variant="secondary" size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
           Previous
         </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={page >= totalPages}
-          onClick={() => onPageChange(page + 1)}
-        >
+        <Button variant="secondary" size="sm" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
           Next
         </Button>
       </div>
