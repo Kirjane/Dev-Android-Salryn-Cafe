@@ -155,10 +155,10 @@ export function ProductsPage() {
   ];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 overflow-hidden">
       <CommandBar
         title="Product Catalog"
-        subtitle="Stable read-only product catalog. This page does not create, edit, or deactivate products."
+        subtitle="Stable read-only catalog view backed by the local product API. Catalog write actions are unavailable in this lane."
         status={
           productsQuery.data ? (
             <div className="flex flex-wrap gap-2">
@@ -176,15 +176,15 @@ export function ProductsPage() {
       />
 
       <Alert tone="info" title="Read-only catalog lane">
-        This page is a lookup catalog only. Product maintenance, deactivation, and asset fields remain parked until an approved write lane exists.
+        This page is a lookup catalog only. Product create, edit, deactivate, Fast Add, and image management remain parked.
       </Alert>
 
-      <div className="grid min-h-0 gap-4 xl:h-[calc(100vh-14rem)] xl:min-h-[34rem] xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <Card className="flex min-h-[30rem] min-w-0 flex-col xl:min-h-0">
+      <div className="grid min-h-0 gap-4 xl:h-[calc(100vh-13rem)] xl:min-h-[34rem] xl:grid-cols-[minmax(0,1.25fr)_minmax(18rem,0.75fr)]">
+        <Card className="flex min-h-[32rem] min-w-0 flex-col xl:min-h-0">
           <CardHeader className="shrink-0">
             <CardTitle>Catalog search</CardTitle>
           </CardHeader>
-          <CardBody className="flex min-h-0 flex-1 flex-col gap-4">
+          <CardBody className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
             <div className="grid shrink-0 gap-3 lg:grid-cols-[minmax(16rem,1fr)_12rem_12rem_10rem]">
               <TextInput
                 placeholder="Search SKU, barcode, or name..."
@@ -205,9 +205,7 @@ export function ProductsPage() {
               >
                 <option value="">All categories</option>
                 {(categoriesQuery.data ?? []).map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
+                  <option key={item.id} value={item.id}>{item.name}</option>
                 ))}
               </select>
               <select
@@ -220,9 +218,7 @@ export function ProductsPage() {
               >
                 <option value="">All brands</option>
                 {(brandsQuery.data ?? []).map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
+                  <option key={item.id} value={item.id}>{item.name}</option>
                 ))}
               </select>
               <select
@@ -241,63 +237,55 @@ export function ProductsPage() {
 
             <div className="flex shrink-0 flex-wrap gap-2 text-xs text-slate-500">
               <span>Current page stock: {activeSummary.low} low, {activeSummary.out} out, {activeSummary.untracked} untracked.</span>
-              <span>Results are bounded so typing and filters do not move the whole page.</span>
+              <span>Results are bounded so typing does not push the page.</span>
             </div>
 
             {productsQuery.isLoading ? <LoadingState label="Loading products..." /> : null}
             {productsQuery.isError ? <ErrorState message={(productsQuery.error as Error).message} /> : null}
 
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+              {productsQuery.data ? (
+                <DataTable
+                  columns={columns}
+                  rows={productsQuery.data.items}
+                  getRowKey={(row) => row.id}
+                  onRowClick={(row) => setSelectedId(row.id)}
+                  selectedRowKey={selectedId}
+                  emptyTitle="No products found"
+                  emptyDescription="Try adjusting search, category, brand, or status filters."
+                />
+              ) : null}
+            </div>
+
             {productsQuery.data ? (
-              <>
-                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-                  <DataTable
-                    columns={columns}
-                    rows={productsQuery.data.items}
-                    getRowKey={(row) => row.id}
-                    onRowClick={(row) => setSelectedId(row.id)}
-                    selectedRowKey={selectedId}
-                    emptyTitle="No products found"
-                    emptyDescription="Try adjusting search, category, brand, or status filters."
-                  />
+              <div className="flex shrink-0 items-center justify-between border-t border-slate-100 pt-3 text-sm text-slate-500">
+                <span>
+                  {productsQuery.data.totalCount.toLocaleString()} products · page {productsQuery.data.pageNumber} of {Math.max(1, productsQuery.data.totalPages || 1)}
+                </span>
+                <div className="flex gap-2">
+                  <Button variant="secondary" size="sm" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>
+                    Previous
+                  </Button>
+                  <Button variant="secondary" size="sm" disabled={page >= productsQuery.data.totalPages} onClick={() => setPage((current) => current + 1)}>
+                    Next
+                  </Button>
                 </div>
-                <div className="flex shrink-0 items-center justify-between border-t border-slate-100 pt-3 text-sm text-slate-500">
-                  <span>
-                    {productsQuery.data.totalCount.toLocaleString()} products · page {productsQuery.data.pageNumber} of {Math.max(1, productsQuery.data.totalPages || 1)}
-                  </span>
-                  <div className="flex gap-2">
-                    <Button variant="secondary" size="sm" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>
-                      Previous
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      disabled={page >= productsQuery.data.totalPages}
-                      onClick={() => setPage((current) => current + 1)}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
-              </>
+              </div>
             ) : null}
           </CardBody>
         </Card>
 
-        <Card className="flex min-h-[24rem] flex-col xl:min-h-0">
+        <Card className="flex min-h-[24rem] min-w-0 flex-col xl:min-h-0">
           <CardHeader className="shrink-0">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3">
               <CardTitle>Selected product</CardTitle>
-              {selectedId ? (
-                <Button variant="secondary" size="sm" onClick={() => setSelectedId(null)}>
-                  Close
-                </Button>
-              ) : null}
+              {selectedId ? <Button variant="secondary" size="sm" onClick={() => setSelectedId(null)}>Clear</Button> : null}
             </div>
           </CardHeader>
-          <CardBody className="min-h-0 flex-1 overflow-y-auto text-sm text-slate-600">
+          <CardBody className="min-h-0 flex-1 overflow-y-auto overscroll-contain text-sm text-slate-600">
             {!selectedId ? (
               <div className="rounded-lg border border-dashed border-slate-300 p-6 text-slate-500">
-                Select a product row to view catalog details.
+                Select a product row to view read-only catalog details. This panel does not push the page down.
               </div>
             ) : null}
             {selectedId && detailQuery.isLoading ? <LoadingState label="Loading product detail..." /> : null}
@@ -305,13 +293,13 @@ export function ProductsPage() {
             {selectedId && detailQuery.data ? (
               <div className="space-y-4">
                 <div>
-                  <h3 className="text-base font-semibold text-slate-950">{detailQuery.data.name}</h3>
+                  <h3 className="text-lg font-semibold text-slate-950">{detailQuery.data.name}</h3>
                   <div className="mt-2 flex flex-wrap gap-2">
                     <StatusPill tone={detailQuery.data.isActive ? "success" : "neutral"}>{detailQuery.data.isActive ? "Active" : "Inactive"}</StatusPill>
                     <StatusPill tone={detailQuery.data.trackStock ? "primary" : "info"}>{detailQuery.data.trackStock ? "Tracked" : "Untracked"}</StatusPill>
                   </div>
                 </div>
-                <div className="space-y-2">
+                <div className="grid gap-2">
                   <p>SKU: {detailQuery.data.sku ?? "—"}</p>
                   <p>Barcode: {detailQuery.data.barcode ?? "—"}</p>
                   <p>Category: {detailQuery.data.categoryName ?? "—"}</p>
