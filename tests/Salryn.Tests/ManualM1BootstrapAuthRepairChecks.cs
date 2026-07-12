@@ -1,4 +1,5 @@
 using Salryn.Composition.Local;
+using Salryn.Core.Security;
 using Salryn.Core.Services;
 using Salryn.Infrastructure.Data;
 using Salryn.Infrastructure.Data.Bootstrap;

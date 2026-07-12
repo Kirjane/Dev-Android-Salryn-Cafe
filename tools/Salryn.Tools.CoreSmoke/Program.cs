@@ -125,6 +125,7 @@ public static class Program
         LocalLicensingM2SignedInstallImportChecks.Run();
         LocalLicensingM3LocalEnforcementBoundaryChecks.Run();
         HardenA1A6PreBetaFoundationChecks.Run();
+        ManualM1BootstrapAuthRepairChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
         M5VerifiedCandidateStackLedgerChecks.Run();
         M6CandidateStackPromotionDryRunChecks.Run();
@@ -384,6 +385,9 @@ public static class Program
                 return;
             case "harden-a1-a6-pre-beta-foundation":
                 HardenA1A6PreBetaFoundationChecks.Run();
+                return;
+            case "manual-m1-bootstrap-auth-repair":
+                ManualM1BootstrapAuthRepairChecks.Run();
                 return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);

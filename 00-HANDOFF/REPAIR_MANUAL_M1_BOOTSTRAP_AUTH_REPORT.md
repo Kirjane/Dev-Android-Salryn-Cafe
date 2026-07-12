@@ -100,7 +100,13 @@ The check performs this end-to-end flow:
 9. asserts duplicate first-admin bootstrap fails after completion
 10. clears SQLite pools and deletes the temp DB directory
 
-Focused CoreSmoke runner was not registered in this connector pass. Sol should run this check through CoreSmoke registration or direct local harness wiring before GREEN is claimed.
+Focused CoreSmoke runner is now registered as:
+
+```powershell
+dotnet run --project tools/Salryn.Tools.CoreSmoke -- --only manual-m1-bootstrap-auth-repair
+```
+
+That focused gate executes the temp-DB bootstrap-to-auth flow above.
 
 ## 7. Duplicate bootstrap proof
 
@@ -114,7 +120,42 @@ The new automated check attempts login with `admin / WrongAdmin123!` after boots
 
 ## 9. Gates
 
-No local PowerShell commands were run by this ChatGPT connector session.
+Sol Light reverify found a compile regression after the first bootstrap-auth repair:
+
+- `tools/Salryn.Tools.InfrastructureSmoke/RepositorySmokeChecks.cs`
+- `tests/Salryn.Tests/DatabaseInitializationStatusReadOnlyChecks.cs`
+- `tests/Salryn.Tests/PrelanHarden1ProductTaxClassificationChecks.cs`
+
+Those call sites still used the removed `FirstRunBootstrapper(connectionFactory, hasher)` constructor. They were updated to the current `FirstRunBootstrapper(connectionFactory)` constructor without reintroducing `Infrastructure.Security.Pbkdf2PasswordHasher` into the bootstrapper path.
+
+Sol also found `ManualM1BootstrapAuthRepairChecks.cs` missing the `LoginRequest` namespace import. The check now imports `Salryn.Core.Security`.
+
+CoreSmoke now registers the focused gate:
+
+```text
+manual-m1-bootstrap-auth-repair
+```
+
+Local PowerShell gates for this compile/gate repair were run before committing this report update:
+
+| Gate | Result |
+|---|---|
+| `dotnet restore Salryn.sln` | PASS |
+| `dotnet build Salryn.sln` | PASS, with two existing nullable warnings and zero errors |
+| `dotnet run --project tools/Salryn.Tools.CoreSmoke -- --only manual-m1-bootstrap-auth-repair` | PASS |
+| `dotnet run --project tools/Salryn.Tools.CoreSmoke -- --only licensing-m1-local-license-foundation` | PASS |
+| `dotnet run --project tools/Salryn.Tools.CoreSmoke -- --only licensing-m2-signed-license-install-import` | PASS |
+| `dotnet run --project tools/Salryn.Tools.CoreSmoke -- --only licensing-m3-local-enforcement-boundaries` | PASS |
+| `dotnet run --project tools/Salryn.Tools.CoreSmoke -- --only harden-a1-a6-pre-beta-foundation` | PASS |
+| `dotnet run --project tools/Salryn.Tools.CoreSmoke -- --only v2-lan-bind-truth` | PASS |
+| `dotnet run --project tools/Salryn.Tools.CoreSmoke` | PASS |
+| `dotnet run --project tools\Salryn.Tools.DevData -- --help` | PASS |
+| `dotnet run --project tools\Salryn.Tools.DevData -- reset-db` | PASS as guard refusal: requires `--confirm-dev-reset` |
+| `dotnet run --project tools\Salryn.Tools.DevData -- seed-general-store --count 1000` | PASS as guard refusal: requires `--confirm-dev-seed` |
+| `npm --prefix src/Salryn.App.Web run build` | PASS |
+| `git diff --check` | PASS |
+
+No confirmed reset, confirmed seed, app launch, admin creation, or manual proof continuation was run.
 
 Required Sol/local reverify:
 
@@ -134,6 +175,7 @@ dotnet run --project tools/Salryn.Tools.CoreSmoke -- --only licensing-m2-signed-
 dotnet run --project tools/Salryn.Tools.CoreSmoke -- --only licensing-m3-local-enforcement-boundaries
 dotnet run --project tools/Salryn.Tools.CoreSmoke -- --only harden-a1-a6-pre-beta-foundation
 dotnet run --project tools/Salryn.Tools.CoreSmoke -- --only v2-lan-bind-truth
+dotnet run --project tools/Salryn.Tools.CoreSmoke -- --only manual-m1-bootstrap-auth-repair
 dotnet run --project tools/Salryn.Tools.CoreSmoke
 dotnet run --project tools\Salryn.Tools.DevData -- --help
 dotnet run --project tools\Salryn.Tools.DevData -- reset-db

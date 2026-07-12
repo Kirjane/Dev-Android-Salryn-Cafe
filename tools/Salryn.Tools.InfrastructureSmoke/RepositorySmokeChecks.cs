@@ -6,7 +6,6 @@ using Salryn.Infrastructure.Data.Bootstrap;
 using Salryn.Infrastructure.Data.Initialization;
 using Salryn.Infrastructure.Data.Repositories;
 using Salryn.Infrastructure.Paths;
-using Salryn.Infrastructure.Security;
 
 internal static class RepositorySmokeChecks
 {
@@ -64,9 +63,7 @@ internal static class RepositorySmokeChecks
 
     private static Guid EnsureBootstrapAdmin(SqliteConnectionFactory connectionFactory)
     {
-        FirstRunBootstrapper bootstrapper = new(
-            connectionFactory,
-            new Pbkdf2PasswordHasher());
+        FirstRunBootstrapper bootstrapper = new(connectionFactory);
 
         FirstRunStatus status = RequireSuccess(
             bootstrapper.CheckStatus(),

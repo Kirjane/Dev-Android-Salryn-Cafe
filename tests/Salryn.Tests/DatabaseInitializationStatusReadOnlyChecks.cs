@@ -7,7 +7,6 @@ using Salryn.Infrastructure.Data.Initialization;
 using Salryn.Infrastructure.Data.Migrations;
 using Salryn.Infrastructure.Data.Seeding;
 using Salryn.Infrastructure.Paths;
-using Salryn.Infrastructure.Security;
 
 namespace Salryn.Tests;
 
@@ -172,7 +171,7 @@ public static class DatabaseInitializationStatusReadOnlyChecks
             connectionFactory,
             migrationRunner,
             new DatabaseSeeder(connectionFactory),
-            new FirstRunBootstrapper(connectionFactory, new Pbkdf2PasswordHasher()));
+            new FirstRunBootstrapper(connectionFactory));
     }
 
     private static bool ColumnExists(

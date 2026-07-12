@@ -452,9 +452,7 @@ public static class PrelanHarden1ProductTaxClassificationChecks
             connectionFactory,
             migrationRunner,
             new Salryn.Infrastructure.Data.Seeding.DatabaseSeeder(connectionFactory),
-            new Salryn.Infrastructure.Data.Bootstrap.FirstRunBootstrapper(
-                connectionFactory,
-                new Salryn.Infrastructure.Security.Pbkdf2PasswordHasher()));
+            new Salryn.Infrastructure.Data.Bootstrap.FirstRunBootstrapper(connectionFactory));
     }
 
     private static Sale BuildSale(long totalCents, long discountCents)
