@@ -108,7 +108,6 @@ public static class LocalApiApplicationFactory
         WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
         builder.WebHost.UseUrls(listenUrls.ToArray());
-
         builder.Services.AddSingleton(composition);
         builder.Services.AddSingleton(lanRemoteTransportServices);
         builder.Services.AddSingleton(remotePosRuntimeGate);
@@ -258,6 +257,7 @@ public static class LocalApiApplicationFactory
         app.MapReadOnlyOperatorEndpoints();
         app.MapLocalHostShiftEndpoints();
         app.MapLocalHostCheckoutEndpoints();
+        app.MapLocalReceiptPrinterEndpoints();
         app.MapLocalUserAdminEndpoints();
         app.MapRemoteReadOnlyEndpoints();
         app.MapLocalLanControlEndpoints();
@@ -360,7 +360,8 @@ public static class LocalApiApplicationFactory
             yield return fromBase;
         }
 
-        string? fromCurrent = FindRepositoryRootFrom(Directory.GetCurrentDirectory());
+        string currentDirectory = Directory.GetCurrentDirectory();
+        string? fromCurrent = FindRepositoryRootFrom(currentDirectory);
         if (fromCurrent is not null &&
             !string.Equals(fromCurrent, fromBase, StringComparison.OrdinalIgnoreCase))
         {
@@ -370,16 +371,15 @@ public static class LocalApiApplicationFactory
 
     private static string? FindRepositoryRootFrom(string startPath)
     {
-        DirectoryInfo? current = new(startPath);
-
-        while (current is not null)
+        DirectoryInfo? directory = new(startPath);
+        while (directory is not null)
         {
-            if (File.Exists(Path.Combine(current.FullName, "Salryn.sln")))
+            if (File.Exists(Path.Combine(directory.FullName, "Salryn.sln")))
             {
-                return current.FullName;
+                return directory.FullName;
             }
 
-            current = current.Parent;
+            directory = directory.Parent;
         }
 
         return null;
