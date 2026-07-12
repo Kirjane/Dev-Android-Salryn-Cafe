@@ -156,15 +156,9 @@ dotnet run --project tools/Salryn.Tools.CoreSmoke -- --only licensing-m3-local-e
 dotnet run --project tools/Salryn.Tools.CoreSmoke -- --only harden-a1-a6-pre-beta-foundation
 dotnet run --project tools/Salryn.Tools.CoreSmoke -- --only v2-lan-bind-truth
 dotnet run --project tools/Salryn.Tools.CoreSmoke
-auto npm --prefix src/Salryn.App.Web run build
+npm --prefix src/Salryn.App.Web run build
 git diff --check
 git status
-```
-
-Note: the required user-provided gate list includes `npm --prefix src/Salryn.App.Web run build`; the accidental `auto` prefix above is not a command and must not be copied. Use the corrected command below:
-
-```powershell
-npm --prefix src/Salryn.App.Web run build
 ```
 
 Connector actions performed:
@@ -220,8 +214,8 @@ This repair does not add first-run setup, admin bootstrap, seeded user credentia
 
 | Question | Answer |
 | --- | --- |
-| Did stale persisted LAN bind still crash startup? | Expected no after local manual launch proof; connector session did not launch app. |
-| Does app still start loopback? | Expected yes; resolver always seeds `defaultUrl` before LAN checks. |
+| Did stale persisted LAN bind still crash startup? | No at resolver level; manual launch proof still required. |
+| Does app still start loopback? | Yes at resolver level; `defaultUrl` is always seeded before LAN checks. |
 | Did you enable wildcard LAN bind? | No |
 | Did you auto-enable LAN exposure? | No |
 | Did you change Remote POS behavior? | No |
