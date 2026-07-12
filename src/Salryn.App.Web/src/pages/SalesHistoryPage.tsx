@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchSaleDetail, fetchSalesHistory, type SaleHistoryItem } from "../api/sales";
 import {
@@ -15,20 +15,54 @@ import {
   StatusPill,
   TextInput,
 } from "../components/ui";
-import { formatDateTime, formatMoney } from "../utils/format";
+import { formatDateTime, formatMoney, formatQuantity } from "../utils/format";
+
+function Dialog({ title, children, footer, onClose }: { title: string; children: ReactNode; footer: ReactNode; onClose: () => void }) {
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4" role="dialog" aria-modal="true">
+      <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
+            <p className="mt-1 text-xs text-slate-500">Read-only sale detail. Esc closes this dialog.</p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
+        </div>
+        <div className="max-h-[62vh] overflow-y-auto px-5 py-4">{children}</div>
+        <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4">{footer}</div>
+      </div>
+    </div>
+  );
+}
 
 export function SalesHistoryPage() {
   const [receiptNo, setReceiptNo] = useState("");
   const [status, setStatus] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const salesQuery = useQuery({
-    queryKey: ["sales-history", receiptNo, status, page],
+    queryKey: ["sales-history", receiptNo, status, from, to, page],
     queryFn: () =>
       fetchSalesHistory({
         receiptNo: receiptNo || undefined,
         status: status || undefined,
+        from: from || undefined,
+        to: to || undefined,
         page,
         pageSize: 25,
       }),
@@ -48,69 +82,53 @@ export function SalesHistoryPage() {
 
   useEffect(() => {
     setSelectedId(null);
-  }, [receiptNo, status]);
+  }, [receiptNo, status, from, to]);
 
-  function closeDetail() {
-    setSelectedId(null);
+  function resetFilters() {
+    setReceiptNo("");
+    setStatus("");
+    setFrom("");
+    setTo("");
+    setPage(1);
   }
 
   const columns = [
     { key: "receipt", header: "Receipt", render: (row: SaleHistoryItem) => row.receiptNo },
-    {
-      key: "date",
-      header: "Date",
-      render: (row: SaleHistoryItem) => formatDateTime(row.saleDate),
-    },
+    { key: "date", header: "Date", render: (row: SaleHistoryItem) => formatDateTime(row.saleDate) },
     { key: "cashier", header: "Cashier", render: (row: SaleHistoryItem) => row.cashierDisplayName },
-    {
-      key: "total",
-      header: "Total",
-      align: "right" as const,
-      render: (row: SaleHistoryItem) => formatMoney(row.total),
-    },
+    { key: "total", header: "Total", align: "right" as const, render: (row: SaleHistoryItem) => formatMoney(row.total) },
     {
       key: "status",
       header: "Status",
-      render: (row: SaleHistoryItem) => (
-        <StatusPill tone={row.status === "Completed" ? "success" : "warning"}>
-          {row.status}
-        </StatusPill>
-      ),
+      render: (row: SaleHistoryItem) => <StatusPill tone={row.status === "Completed" ? "success" : "warning"}>{row.status}</StatusPill>,
     },
     {
       key: "view",
       header: "View",
-      align: "right" as const,
       render: (row: SaleHistoryItem) => (
-        <Button size="sm" variant="secondary" onClick={() => setSelectedId(row.id)}>
-          View
-        </Button>
+        <Button size="sm" variant="secondary" onClick={() => setSelectedId(row.id)}>View</Button>
       ),
     },
   ];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 overflow-hidden">
       <CommandBar
         title="Sales History"
-        subtitle="Read-only sale lookup. Detail opens in a separated dialog without changing sales backend behavior."
-        actions={
-          <Button variant="secondary" onClick={() => void salesQuery.refetch()}>
-            Refresh
-          </Button>
-        }
+        subtitle="Read-only completed and voided sales from the local database. No reprint, void, refund, printer, RMO, BIR, or eSales action is exposed here."
+        actions={<Button variant="secondary" onClick={() => void salesQuery.refetch()}>Refresh</Button>}
       />
 
-      <Alert tone="info" title="Read-only sales lane">
-        POS-UX0 only improves sales lookup usability. It does not add reprint, void, refund, printer, or official output actions.
+      <Alert tone="info" title="Read-only sales evidence">
+        Sale detail opens in a separated dialog. This repair does not change sales backend behavior or POS-M1 receipt generation.
       </Alert>
 
-      <Card className="flex min-h-[32rem] flex-col">
+      <Card className="flex min-h-[34rem] flex-col xl:h-[calc(100vh-13rem)]">
         <CardHeader className="shrink-0">
-          <CardTitle>Sales list</CardTitle>
+          <CardTitle>Sales search</CardTitle>
         </CardHeader>
-        <CardBody className="flex min-h-0 flex-1 flex-col gap-4">
-          <div className="grid shrink-0 gap-3 md:grid-cols-2">
+        <CardBody className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+          <div className="grid shrink-0 gap-3 lg:grid-cols-[minmax(14rem,1fr)_10rem_10rem_10rem_auto]">
             <TextInput
               placeholder="Receipt number..."
               value={receiptNo}
@@ -131,112 +149,120 @@ export function SalesHistoryPage() {
               <option value="Completed">Completed</option>
               <option value="Voided">Voided</option>
             </select>
+            <TextInput
+              type="date"
+              aria-label="From date"
+              value={from}
+              onChange={(event) => {
+                setPage(1);
+                setFrom(event.target.value);
+              }}
+            />
+            <TextInput
+              type="date"
+              aria-label="To date"
+              value={to}
+              onChange={(event) => {
+                setPage(1);
+                setTo(event.target.value);
+              }}
+            />
+            <Button variant="secondary" onClick={resetFilters} disabled={!receiptNo && !status && !from && !to}>Clear</Button>
           </div>
+
+          <p className="shrink-0 text-xs text-slate-500">
+            Date filters use closed date controls. Receipt remains the only free-text filter.
+          </p>
 
           {salesQuery.isLoading ? <LoadingState label="Loading sales..." /> : null}
           {salesQuery.isError ? <ErrorState message={(salesQuery.error as Error).message} /> : null}
 
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+            {salesQuery.data ? (
+              <DataTable
+                columns={columns}
+                rows={salesQuery.data.items}
+                getRowKey={(row) => row.id}
+                selectedRowKey={selectedId}
+                emptyTitle="No sales found"
+                emptyDescription="Try adjusting receipt, date, or status filters."
+              />
+            ) : null}
+          </div>
+
           {salesQuery.data ? (
-            <>
-              <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-                <DataTable
-                  columns={columns}
-                  rows={salesQuery.data.items}
-                  getRowKey={(row) => row.id}
-                  onRowClick={(row) => setSelectedId(row.id)}
-                  selectedRowKey={selectedId}
-                  emptyTitle="No sales found"
-                  emptyDescription="Try adjusting receipt or status filters."
-                />
+            <div className="flex shrink-0 items-center justify-between border-t border-slate-100 pt-3 text-sm text-slate-500">
+              <span>
+                {salesQuery.data.totalCount.toLocaleString()} sales · page {salesQuery.data.pageNumber} of {Math.max(1, salesQuery.data.totalPages || 1)}
+              </span>
+              <div className="flex gap-2">
+                <Button variant="secondary" size="sm" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>Previous</Button>
+                <Button variant="secondary" size="sm" disabled={page >= salesQuery.data.totalPages} onClick={() => setPage((current) => current + 1)}>Next</Button>
               </div>
-              <div className="flex shrink-0 items-center justify-between border-t border-slate-100 pt-3 text-sm text-slate-500">
-                <span>
-                  {salesQuery.data.totalCount.toLocaleString()} sales · page {salesQuery.data.pageNumber}{" "}
-                  of {Math.max(1, salesQuery.data.totalPages || 1)}
-                </span>
-                <div className="flex gap-2">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    disabled={page <= 1}
-                    onClick={() => setPage((current) => current - 1)}
-                  >
-                    Previous
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    disabled={page >= salesQuery.data.totalPages}
-                    onClick={() => setPage((current) => current + 1)}
-                  >
-                    Next
-                  </Button>
-                </div>
-              </div>
-            </>
+            </div>
           ) : null}
         </CardBody>
       </Card>
 
       {selectedId ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
-          <div className="max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-              <div>
-                <h2 className="text-base font-semibold text-slate-950">
-                  {detailQuery.data ? `Receipt ${detailQuery.data.receiptNo}` : "Sale detail"}
-                </h2>
-                <p className="mt-1 text-xs text-slate-500">Read-only detail panel. No reprint, void, or official output action is exposed here.</p>
+        <Dialog title={detailQuery.data ? `Receipt ${detailQuery.data.receiptNo}` : "Sale detail"} onClose={() => setSelectedId(null)} footer={<Button variant="secondary" onClick={() => setSelectedId(null)}>Close</Button>}>
+          {detailQuery.isLoading ? <LoadingState label="Loading sale detail..." /> : null}
+          {detailQuery.isError ? <ErrorState message={(detailQuery.error as Error).message} /> : null}
+          {detailQuery.data ? (
+            <div className="space-y-4 text-sm text-slate-600">
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusPill tone={detailQuery.data.status === "Completed" ? "success" : "warning"}>{detailQuery.data.status}</StatusPill>
+                <span>{formatDateTime(detailQuery.data.saleDate)}</span>
+                <span>Cashier: {detailQuery.data.cashierDisplayName}</span>
               </div>
-              <Button variant="secondary" size="sm" onClick={closeDetail}>
-                Close
-              </Button>
-            </div>
-            <div className="max-h-[calc(90vh-5rem)] overflow-y-auto p-5">
-              {detailQuery.isLoading ? <LoadingState label="Loading sale detail..." /> : null}
-              {detailQuery.isError ? <ErrorState message={(detailQuery.error as Error).message} /> : null}
-              {detailQuery.data ? (
-                <div className="space-y-4 text-sm text-slate-600">
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                    <p>{formatDateTime(detailQuery.data.saleDate)}</p>
-                    <p>{detailQuery.data.cashierDisplayName}</p>
-                    <p>
-                      <StatusPill tone={detailQuery.data.status === "Completed" ? "success" : "warning"}>
-                        {detailQuery.data.status}
-                      </StatusPill>
-                    </p>
-                    <p className="font-semibold text-slate-900">Total: {formatMoney(detailQuery.data.total)}</p>
-                    <p>Subtotal: {formatMoney(detailQuery.data.subtotal)}</p>
-                    <p>Discount: {formatMoney(detailQuery.data.discount)}</p>
-                    <p>Tax: {formatMoney(detailQuery.data.tax)}</p>
-                    <p>Paid: {formatMoney(detailQuery.data.amountPaid)}</p>
-                    <p>Change: {formatMoney(detailQuery.data.change)}</p>
-                  </div>
-                  {detailQuery.data.voidReason ? <Alert tone="warning">Void reason: {detailQuery.data.voidReason}</Alert> : null}
-                  <DataTable
-                    columns={[
-                      { key: "item", header: "Item", render: (row) => row.productNameSnapshot },
-                      {
-                        key: "qty",
-                        header: "Qty",
-                        align: "right",
-                        render: (row) => row.quantity.toString(),
-                      },
-                      {
-                        key: "total",
-                        header: "Line total",
-                        align: "right",
-                        render: (row) => formatMoney(row.lineTotal),
-                      },
-                    ]}
-                    rows={detailQuery.data.items}
-                    getRowKey={(row) => row.id}
-                  />
+              <div className="grid gap-3 sm:grid-cols-5">
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Subtotal</p>
+                  <p className="font-semibold text-slate-950">{formatMoney(detailQuery.data.subtotal)}</p>
                 </div>
-              ) : null}
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Discount</p>
+                  <p className="font-semibold text-slate-950">{formatMoney(detailQuery.data.discount)}</p>
+                </div>
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Tax</p>
+                  <p className="font-semibold text-slate-950">{formatMoney(detailQuery.data.tax)}</p>
+                </div>
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Total</p>
+                  <p className="font-semibold text-slate-950">{formatMoney(detailQuery.data.total)}</p>
+                </div>
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Change</p>
+                  <p className="font-semibold text-emerald-700">{formatMoney(detailQuery.data.change)}</p>
+                </div>
+              </div>
+              {detailQuery.data.voidReason ? <Alert tone="warning">Void reason: {detailQuery.data.voidReason}</Alert> : null}
+              <DataTable
+                columns={[
+                  { key: "item", header: "Item", render: (row) => row.productNameSnapshot },
+                  { key: "qty", header: "Qty", align: "right", render: (row) => formatQuantity(row.quantity) },
+                  { key: "unit", header: "Unit", align: "right", render: (row) => formatMoney(row.unitPrice) },
+                  { key: "total", header: "Line total", align: "right", render: (row) => formatMoney(row.lineTotal) },
+                ]}
+                rows={detailQuery.data.items}
+                getRowKey={(row) => row.id}
+              />
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-slate-900">Payments</h3>
+                <DataTable
+                  columns={[
+                    { key: "method", header: "Method", render: (row) => row.method },
+                    { key: "amount", header: "Amount", align: "right", render: (row) => formatMoney(row.amount) },
+                    { key: "paidAt", header: "Paid at", render: (row) => formatDateTime(row.paidAt) },
+                  ]}
+                  rows={detailQuery.data.payments}
+                  getRowKey={(row) => row.id}
+                />
+              </div>
             </div>
-          </div>
-        </div>
+          ) : null}
+        </Dialog>
       ) : null}
     </div>
   );
