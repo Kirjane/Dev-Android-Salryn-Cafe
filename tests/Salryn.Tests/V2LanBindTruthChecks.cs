@@ -38,7 +38,14 @@ public static class V2LanBindTruthChecks
         AssertContains(factory, "UseUrls(listenUrls.ToArray())", "Application factory must configure Kestrel listen URLs.");
         AssertNotContains(factory, "0.0.0.0", "Application factory must not introduce wildcard bind.");
 
+        AssertContains(resolver, "List<string> urls = [defaultUrl]", "LAN URL resolver must always seed loopback/default URL first.");
+        AssertContains(resolver, "!config.RemoteTransportEnabled", "LAN URL resolver must return loopback-only when remote transport is disabled.");
+        AssertContains(resolver, "config.BindMode != LanRemoteTransportBindMode.ExplicitLanAddress", "LAN URL resolver must return loopback-only when bind mode is not explicit.");
         AssertContains(resolver, "ExplicitLanAddress", "LAN URL resolver must require explicit LAN bind mode.");
+        AssertContains(resolver, "SalrynHostCommandLoopbackRules.IsForbiddenBindAddress", "LAN URL resolver must reject wildcard/forbidden persisted bind addresses.");
+        AssertContains(resolver, "LocalApiNetworkInterfaceValidator.IsAssignedToLocalInterface(bindAddress)", "LAN URL resolver must not add stale persisted LAN bind addresses to Kestrel URLs.");
+        AssertContains(resolver, "return urls;", "LAN URL resolver must degrade to loopback-only instead of throwing on stale persisted bind.");
+        AssertContains(resolver, "urls.Add($\"http://{bindAddress}:{port}\")", "LAN URL resolver must only add explicit LAN URL after safety checks.");
         AssertNotContains(resolver, "0.0.0.0", "LAN URL resolver must not introduce wildcard bind.");
 
         AssertContains(runtimeStatus, "ApiLoopbackOnly", "Runtime status must classify loopback-only API state.");
