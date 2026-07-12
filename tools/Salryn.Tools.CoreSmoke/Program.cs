@@ -140,6 +140,7 @@ public static class Program
         PosStabA3SalesVoidChecks.Run();
         PosStabA4InventoryAdjustmentChecks.Run();
         PosStabA5ReceiptPrintingChecks.Run();
+        PosM1ReceiptSnapshotFileReceiptChecks.Run();
         PosStabB2BackupUiChecks.Run();
         PosStabB2AuditViewerChecks.Run();
         PosStabB3ProductionDbWritabilityChecks.Run();
@@ -274,6 +275,9 @@ public static class Program
     {
         switch (checkName.ToLowerInvariant())
         {
+            case "pos-m1-receipt-snapshot-file-receipt":
+                PosM1ReceiptSnapshotFileReceiptChecks.Run();
+                return;
             case "v2-host-shift":
                 V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();
                 return;
