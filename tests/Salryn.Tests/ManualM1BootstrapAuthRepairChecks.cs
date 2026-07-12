@@ -93,6 +93,8 @@ public static class ManualM1BootstrapAuthRepairChecks
             {
                 throw new InvalidOperationException("Duplicate first-admin bootstrap must fail after setup completion.");
             }
+
+            ManualM1DevSeedFkRepairChecks.Run();
         }
         finally
         {
