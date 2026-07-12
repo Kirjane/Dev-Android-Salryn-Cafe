@@ -40,6 +40,25 @@ public static class Program
         }
     }
 
+    public static int SeedGeneralStoreForManualProof(
+        DbPaths paths,
+        int count,
+        bool confirmDevSeed,
+        bool replaceDevProducts = false)
+    {
+        if (!confirmDevSeed)
+        {
+            return Fail("seed-general-store requires --confirm-dev-seed.");
+        }
+
+        if (count != RequiredCount)
+        {
+            return Fail("Manual Proof M1 dev seed requires exactly 1000 products. Requested count: " + count);
+        }
+
+        return SeedGeneralStoreCore(paths, replaceDevProducts);
+    }
+
     private static int ResetDb(string[] args, DbPaths paths)
     {
         if (!args.Contains("--confirm-dev-reset", StringComparer.OrdinalIgnoreCase))
@@ -84,12 +103,17 @@ public static class Program
         }
 
         int count = ReadIntOption(args, "--count", RequiredCount);
-        if (count != RequiredCount)
-        {
-            return Fail("Manual Proof M1 dev seed requires exactly 1000 products. Requested count: " + count);
-        }
-
         bool replace = args.Contains("--replace-dev-products", StringComparer.OrdinalIgnoreCase);
+
+        return SeedGeneralStoreForManualProof(
+            paths,
+            count,
+            confirmDevSeed: true,
+            replaceDevProducts: replace);
+    }
+
+    private static int SeedGeneralStoreCore(DbPaths paths, bool replace)
+    {
         EnsureDevOnly(paths.DatabasePath);
 
         if (!File.Exists(paths.DatabasePath))
@@ -144,45 +168,22 @@ public static class Program
         using var tx = connection.BeginTransaction();
         string now = DateTimeOffset.UtcNow.ToString("O");
 
+        Dictionary<string, string> unitIds = new(StringComparer.OrdinalIgnoreCase);
         foreach (string unit in products.Select(p => p.Unit).Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            Execute(
-                connection,
-                tx,
-                "INSERT OR IGNORE INTO units (id, name, abbreviation, allows_decimal_quantity, is_active) VALUES ($id, $name, $abbr, $decimal, 1);",
-                new Dictionary<string, object?>
-                {
-                    ["$id"] = StableGuid("unit:" + unit),
-                    ["$name"] = UnitName(unit),
-                    ["$abbr"] = unit,
-                    ["$decimal"] = unit is "kg" or "g" or "liter" or "ml" or "meter" ? 1 : 0
-                });
+            unitIds[unit] = EnsureUnit(connection, tx, unit);
         }
 
+        Dictionary<string, string> categoryIds = new(StringComparer.OrdinalIgnoreCase);
         foreach (string category in products.Select(p => p.Category).Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            Execute(
-                connection,
-                tx,
-                "INSERT OR IGNORE INTO categories (id, name, is_active) VALUES ($id, $name, 1);",
-                new Dictionary<string, object?>
-                {
-                    ["$id"] = StableGuid("category:" + category),
-                    ["$name"] = category
-                });
+            categoryIds[category] = EnsureCategory(connection, tx, category);
         }
 
+        Dictionary<string, string> brandIds = new(StringComparer.OrdinalIgnoreCase);
         foreach (string brand in products.Select(p => p.Brand).Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            Execute(
-                connection,
-                tx,
-                "INSERT OR IGNORE INTO brands (id, name, is_active) VALUES ($id, $name, 1);",
-                new Dictionary<string, object?>
-                {
-                    ["$id"] = StableGuid("brand:" + brand),
-                    ["$name"] = brand
-                });
+            brandIds[brand] = EnsureBrand(connection, tx, brand);
         }
 
         foreach (SeedProduct p in products)
@@ -203,9 +204,9 @@ public static class Program
                     ["$barcode"] = p.Barcode,
                     ["$name"] = p.Name,
                     ["$description"] = p.Category + " manual-proof seed item",
-                    ["$categoryId"] = StableGuid("category:" + p.Category),
-                    ["$brandId"] = StableGuid("brand:" + p.Brand),
-                    ["$unitId"] = StableGuid("unit:" + p.Unit),
+                    ["$categoryId"] = categoryIds[p.Category],
+                    ["$brandId"] = brandIds[p.Brand],
+                    ["$unitId"] = unitIds[p.Unit],
                     ["$cost"] = p.CostPriceCents,
                     ["$selling"] = p.SellingPriceCents,
                     ["$stock"] = p.StockOnHand * 1000,
@@ -245,6 +246,142 @@ public static class Program
         Console.WriteLine("Out of stock items: " + products.Count(p => p.TrackStock && p.StockOnHand == 0));
         Console.WriteLine("No product images, image paths, image URLs, or media fields were seeded.");
         return 0;
+    }
+
+    private static string EnsureUnit(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string unit)
+    {
+        string name = UnitName(unit);
+        int allowsDecimal = unit is "kg" or "g" or "liter" or "ml" or "meter" ? 1 : 0;
+
+        Execute(
+            connection,
+            transaction,
+            "INSERT OR IGNORE INTO units (id, name, abbreviation, allows_decimal_quantity, is_active) VALUES ($id, $name, $abbr, $decimal, 1);",
+            new Dictionary<string, object?>
+            {
+                ["$id"] = StableGuid("unit:" + unit),
+                ["$name"] = name,
+                ["$abbr"] = unit,
+                ["$decimal"] = allowsDecimal
+            });
+
+        string actualId = RequiredScalarString(
+            connection,
+            transaction,
+            """
+            SELECT id
+            FROM units
+            WHERE lower(name) = lower($name)
+            LIMIT 1;
+            """,
+            new Dictionary<string, object?>
+            {
+                ["$name"] = name
+            },
+            "unit",
+            name);
+
+        Execute(
+            connection,
+            transaction,
+            "UPDATE units SET is_active = 1, abbreviation = COALESCE(abbreviation, $abbr), allows_decimal_quantity = $decimal WHERE id = $id;",
+            new Dictionary<string, object?>
+            {
+                ["$id"] = actualId,
+                ["$abbr"] = unit,
+                ["$decimal"] = allowsDecimal
+            });
+
+        return actualId;
+    }
+
+    private static string EnsureCategory(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string category)
+    {
+        Execute(
+            connection,
+            transaction,
+            "INSERT OR IGNORE INTO categories (id, name, is_active) VALUES ($id, $name, 1);",
+            new Dictionary<string, object?>
+            {
+                ["$id"] = StableGuid("category:" + category),
+                ["$name"] = category
+            });
+
+        string actualId = RequiredScalarString(
+            connection,
+            transaction,
+            """
+            SELECT id
+            FROM categories
+            WHERE lower(name) = lower($name)
+            LIMIT 1;
+            """,
+            new Dictionary<string, object?>
+            {
+                ["$name"] = category
+            },
+            "category",
+            category);
+
+        Execute(
+            connection,
+            transaction,
+            "UPDATE categories SET is_active = 1 WHERE id = $id;",
+            new Dictionary<string, object?>
+            {
+                ["$id"] = actualId
+            });
+
+        return actualId;
+    }
+
+    private static string EnsureBrand(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string brand)
+    {
+        Execute(
+            connection,
+            transaction,
+            "INSERT OR IGNORE INTO brands (id, name, is_active) VALUES ($id, $name, 1);",
+            new Dictionary<string, object?>
+            {
+                ["$id"] = StableGuid("brand:" + brand),
+                ["$name"] = brand
+            });
+
+        string actualId = RequiredScalarString(
+            connection,
+            transaction,
+            """
+            SELECT id
+            FROM brands
+            WHERE lower(name) = lower($name)
+            LIMIT 1;
+            """,
+            new Dictionary<string, object?>
+            {
+                ["$name"] = brand
+            },
+            "brand",
+            brand);
+
+        Execute(
+            connection,
+            transaction,
+            "UPDATE brands SET is_active = 1 WHERE id = $id;",
+            new Dictionary<string, object?>
+            {
+                ["$id"] = actualId
+            });
+
+        return actualId;
     }
 
     private static int ReadIntOption(string[] args, string name, int fallback)
@@ -301,6 +438,33 @@ public static class Program
         using var command = connection.CreateCommand();
         command.CommandText = sql;
         return Convert.ToInt64(command.ExecuteScalar());
+    }
+
+    private static string RequiredScalarString(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string sql,
+        IReadOnlyDictionary<string, object?> parameters,
+        string label,
+        string value)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+
+        foreach (var p in parameters)
+        {
+            command.Parameters.AddWithValue(p.Key, p.Value ?? DBNull.Value);
+        }
+
+        object? result = command.ExecuteScalar();
+        string? actual = result?.ToString();
+        if (string.IsNullOrWhiteSpace(actual))
+        {
+            throw new InvalidOperationException("Unable to resolve seeded " + label + " id for: " + value);
+        }
+
+        return actual;
     }
 
     private static void Execute(
