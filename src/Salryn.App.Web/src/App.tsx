@@ -1,12 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Layers3 } from "lucide-react";
+import { fetchBootstrapStatus, type BootstrapStatus } from "./api/bootstrap";
 import { logout, type SessionState } from "./api/session";
 import { AppShell } from "./components/AppShell";
 import { Button, Card, CardBody, CommandBar } from "./components/ui";
 import { useAppSession } from "./hooks/useAppSession";
 import { type AppPage } from "./navigation";
 import { AuditPage } from "./pages/AuditPage";
+import { BootstrapSetupPage } from "./pages/BootstrapSetupPage";
 import { CheckoutPage } from "./pages/CheckoutPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { HostLanControlPage } from "./pages/HostLanControlPage";
@@ -129,6 +131,37 @@ function ConsoleApp() {
   const queryClient = useQueryClient();
   const sessionQuery = useAppSession();
   const [currentPage, setCurrentPage] = useState<AppPage>("dashboard");
+  const [bootstrapStatus, setBootstrapStatus] = useState<BootstrapStatus | null>(null);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [isBootstrapLoading, setIsBootstrapLoading] = useState(true);
+
+  async function refreshBootstrapStatus() {
+    setIsBootstrapLoading(true);
+    setBootstrapError(null);
+
+    try {
+      const status = await fetchBootstrapStatus();
+      setBootstrapStatus(status);
+    } catch (error) {
+      setBootstrapError((error as Error).message || "Could not read first-run setup status.");
+    } finally {
+      setIsBootstrapLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void refreshBootstrapStatus();
+  }, []);
+
+  useEffect(() => {
+    if (bootstrapStatus?.firstRunRequired && window.location.pathname !== "/bootstrap") {
+      window.history.replaceState(null, "", "/bootstrap");
+    }
+
+    if (bootstrapStatus && !bootstrapStatus.firstRunRequired && window.location.pathname === "/bootstrap") {
+      window.history.replaceState(null, "", "/");
+    }
+  }, [bootstrapStatus]);
 
   useEffect(() => {
     const session = sessionQuery.data;
@@ -157,19 +190,33 @@ function ConsoleApp() {
     void sessionQuery.refetch();
   }
 
-  if (sessionQuery.isLoading) {
+  if (isBootstrapLoading || sessionQuery.isLoading) {
     return <FullScreenCenter><p className="text-sm text-slate-300">Connecting to the Salryn local API...</p></FullScreenCenter>;
   }
 
-  if (sessionQuery.isError) {
+  if (bootstrapError || sessionQuery.isError) {
     return (
       <FullScreenCenter>
         <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-8 shadow-xl">
           <h1 className="text-xl font-semibold text-slate-900">Salryn local API unavailable</h1>
-          <p className="mt-2 text-sm text-slate-500">The console could not reach the Salryn local API on this device.</p>
-          <div className="mt-6"><Button onClick={() => void sessionQuery.refetch()}>Try again</Button></div>
+          <p className="mt-2 text-sm text-slate-500">
+            {bootstrapError || "The console could not reach the Salryn local API on this device."}
+          </p>
+          <div className="mt-6"><Button onClick={() => void refreshBootstrapStatus()}>Try again</Button></div>
         </div>
       </FullScreenCenter>
+    );
+  }
+
+  if (bootstrapStatus?.firstRunRequired) {
+    return (
+      <BootstrapSetupPage
+        status={bootstrapStatus}
+        onCompleted={() => {
+          void refreshBootstrapStatus();
+          void queryClient.invalidateQueries({ queryKey: ["session"] });
+        }}
+      />
     );
   }
 
