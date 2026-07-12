@@ -237,6 +237,7 @@ public static class LocalApiApplicationFactory
             return Results.Ok(sessions.GetSession(sessionId));
         });
 
+        app.MapLocalBootstrapEndpoints(composition);
         app.MapLocalLicenseEndpoints();
 
         app.MapGet("/api/dashboard/summary", async (
