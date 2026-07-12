@@ -9,11 +9,13 @@ public sealed class HostOperatorApiServices
     private HostOperatorApiServices(
         ICashierSessionService cashierSessionService,
         HostOperatorShiftApiService shiftService,
-        HostOperatorCheckoutApiService checkoutService)
+        HostOperatorCheckoutApiService checkoutService,
+        PosReceiptPrintService receiptPrintService)
     {
         CashierSessionService = cashierSessionService;
         ShiftService = shiftService;
         CheckoutService = checkoutService;
+        ReceiptPrintService = receiptPrintService;
     }
 
     public ICashierSessionService CashierSessionService { get; }
@@ -21,6 +23,8 @@ public sealed class HostOperatorApiServices
     public HostOperatorShiftApiService ShiftService { get; }
 
     public HostOperatorCheckoutApiService CheckoutService { get; }
+
+    public PosReceiptPrintService ReceiptPrintService { get; }
 
     public static HostOperatorApiServices Create(SalrynLocalComposition composition)
     {
@@ -51,6 +55,16 @@ public sealed class HostOperatorApiServices
             new HostOperatorReceiptNumberAllocator(),
             fileReceiptWriter);
 
-        return new HostOperatorApiServices(cashierSessionService, shiftService, checkoutService);
+        // POS-M2: real thermal/Windows/ESC-POS execution is intentionally parked behind this adapter.
+        // The store path reports Disabled/Unavailable until a printer adapter is explicitly configured.
+        PosReceiptPrintService receiptPrintService = new(
+            composition.SaleReadRepository,
+            new DisabledReceiptPrinterAdapter());
+
+        return new HostOperatorApiServices(
+            cashierSessionService,
+            shiftService,
+            checkoutService,
+            receiptPrintService);
     }
 }
