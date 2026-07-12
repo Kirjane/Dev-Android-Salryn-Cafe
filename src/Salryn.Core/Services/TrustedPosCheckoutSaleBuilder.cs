@@ -166,6 +166,27 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
             }
 
             long changeCents = checked(amountPaidCents - totalCents);
+            Money subtotal = Money.FromCents(subtotalCents);
+            Money saleDiscount = Money.FromCents(request.SaleDiscountCents);
+            Money tax = Money.FromCents(request.TaxCents);
+            Money total = Money.FromCents(totalCents);
+            Money amountPaid = Money.FromCents(amountPaidCents);
+            Money change = Money.FromCents(changeCents);
+            string receiptSnapshot = string.IsNullOrWhiteSpace(request.ReceiptSnapshot)
+                ? PosReceiptTextRenderer.Render(new PosReceiptSnapshotDraft(
+                    request.ReceiptNumber.Trim(),
+                    saleDate,
+                    request.CashierUserId,
+                    subtotal,
+                    saleDiscount,
+                    tax,
+                    total,
+                    amountPaid,
+                    change,
+                    SaleStatus.Completed,
+                    items,
+                    payments))
+                : request.ReceiptSnapshot.Trim();
 
             Sale sale = new()
             {
@@ -174,19 +195,17 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
                 SaleDate = saleDate,
                 CashierUserId = request.CashierUserId,
                 CashierSessionId = request.CashierSessionId,
-                Subtotal = Money.FromCents(subtotalCents),
-                Discount = Money.FromCents(request.SaleDiscountCents),
-                Tax = Money.FromCents(request.TaxCents),
-                Total = Money.FromCents(totalCents),
-                AmountPaid = Money.FromCents(amountPaidCents),
-                Change = Money.FromCents(changeCents),
+                Subtotal = subtotal,
+                Discount = saleDiscount,
+                Tax = tax,
+                Total = total,
+                AmountPaid = amountPaid,
+                Change = change,
                 Status = SaleStatus.Completed,
                 VoidedByUserId = null,
                 VoidReason = null,
                 VoidedAt = null,
-                ReceiptSnapshot = string.IsNullOrWhiteSpace(request.ReceiptSnapshot)
-                    ? null
-                    : request.ReceiptSnapshot.Trim(),
+                ReceiptSnapshot = receiptSnapshot,
                 CreatedAt = now
             };
 
