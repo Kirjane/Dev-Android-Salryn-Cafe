@@ -28,8 +28,13 @@ public static class LocalApiLanUrlResolver
             return urls;
         }
 
-        int port = ExtractPort(defaultUrl) ?? 5299;
         string bindAddress = config.BindAddress.Trim();
+        if (!LocalApiNetworkInterfaceValidator.IsAssignedToLocalInterface(bindAddress))
+        {
+            return urls;
+        }
+
+        int port = ExtractPort(defaultUrl) ?? 5299;
         urls.Add($"http://{bindAddress}:{port}");
 
         return urls;
