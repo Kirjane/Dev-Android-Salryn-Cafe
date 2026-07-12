@@ -17,17 +17,27 @@ import {
 } from "../components/ui";
 import { formatDateTime, formatQuantity } from "../utils/format";
 
+const movementTypeOptions = [
+  { value: "", label: "All movement types" },
+  { value: "Sale", label: "Sale stock-out" },
+  { value: "StockIn", label: "Stock-in" },
+  { value: "StockOut", label: "Stock-out" },
+  { value: "AdjustmentIn", label: "Adjustment in" },
+  { value: "AdjustmentOut", label: "Adjustment out" },
+  { value: "VoidReversal", label: "Void reversal" },
+];
+
 function lowStockTone(row: LowStockProduct): "warning" | "danger" {
   return row.stockOnHand <= 0 ? "danger" : "warning";
 }
 
 function movementTone(type: string): "success" | "warning" | "danger" | "info" | "neutral" {
   const normalized = type.toLowerCase();
-  if (normalized.includes("sale") || normalized.includes("out") || normalized.includes("void")) {
+  if (normalized.includes("sale") || normalized.includes("out")) {
     return "danger";
   }
 
-  if (normalized.includes("in") || normalized.includes("receive")) {
+  if (normalized.includes("in") || normalized.includes("receive") || normalized.includes("reversal")) {
     return "success";
   }
 
@@ -53,7 +63,7 @@ export function InventoryPage() {
     queryKey: ["inventory-movements", page, movementType, from, to],
     queryFn: () =>
       fetchStockMovements({
-        movementType: movementType.trim() || undefined,
+        movementType: movementType || undefined,
         from: from.trim() || undefined,
         to: to.trim() || undefined,
         page,
@@ -142,10 +152,10 @@ export function InventoryPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <CommandBar
-        title="Inventory"
-        subtitle="Read-only stock levels and stock movement history from approved inventory endpoints."
+        title="Stock Movements"
+        subtitle="Read-only stock attention and movement ledger. This page does not perform stock-in or adjustment writes."
         status={
           <div className="flex flex-wrap gap-2">
             <StatusPill tone={lowStockSummary.total > 0 ? "warning" : "success"}>{lowStockSummary.total} attention item(s)</StatusPill>
@@ -159,13 +169,13 @@ export function InventoryPage() {
         }
       />
 
-      <Alert tone="info" title="Read-only inventory lane">
-        This page does not perform stock adjustments because no approved React adjustment contract is wired in this lane.
+      <Alert tone="info" title="Read-only stock ledger">
+        This page clarifies existing stock movement evidence only. No React stock adjustment contract is wired in this lane.
       </Alert>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.3fr)]">
-        <Card>
-          <CardHeader>
+      <div className="grid min-h-0 gap-4 xl:h-[calc(100vh-13rem)] xl:min-h-[34rem] xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.3fr)]">
+        <Card className="flex min-h-[24rem] min-w-0 flex-col xl:min-h-0">
+          <CardHeader className="shrink-0">
             <div className="flex items-center justify-between gap-3">
               <CardTitle>Stock attention</CardTitle>
               <StatusPill tone={lowStockSummary.total > 0 ? "warning" : "success"}>
@@ -173,7 +183,7 @@ export function InventoryPage() {
               </StatusPill>
             </div>
           </CardHeader>
-          <CardBody className="space-y-4">
+          <CardBody className="min-h-0 flex-1 overflow-y-auto">
             {lowStockQuery.isLoading ? <LoadingState label="Loading low stock..." /> : null}
             {lowStockQuery.isError ? <ErrorState message={(lowStockQuery.error as Error).message} /> : null}
             {lowStockQuery.data ? (
@@ -188,22 +198,28 @@ export function InventoryPage() {
           </CardBody>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Stock movements</CardTitle>
+        <Card className="flex min-h-[28rem] min-w-0 flex-col xl:min-h-0">
+          <CardHeader className="shrink-0">
+            <CardTitle>Movement ledger</CardTitle>
           </CardHeader>
-          <CardBody className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-[minmax(12rem,1fr)_minmax(11rem,0.8fr)_minmax(11rem,0.8fr)_auto]">
-              <TextInput
-                placeholder="Movement type filter..."
+          <CardBody className="flex min-h-0 flex-1 flex-col gap-4">
+            <div className="grid shrink-0 gap-3 md:grid-cols-[minmax(12rem,1fr)_minmax(11rem,0.8fr)_minmax(11rem,0.8fr)_auto]">
+              <select
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
                 value={movementType}
                 onChange={(event) => {
                   setPage(1);
                   setMovementType(event.target.value);
                 }}
-              />
+              >
+                {movementTypeOptions.map((option) => (
+                  <option key={option.value || "all"} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
               <TextInput
-                placeholder="From ISO/date"
+                placeholder="From date / ISO"
                 value={from}
                 onChange={(event) => {
                   setPage(1);
@@ -211,7 +227,7 @@ export function InventoryPage() {
                 }}
               />
               <TextInput
-                placeholder="To ISO/date"
+                placeholder="To date / ISO"
                 value={to}
                 onChange={(event) => {
                   setPage(1);
@@ -223,18 +239,24 @@ export function InventoryPage() {
               </Button>
             </div>
 
+            <div className="shrink-0 text-xs text-slate-500">
+              Reference and reason stay in the table; filter controls avoid open-ended status/reference text fields.
+            </div>
+
             {movementsQuery.isLoading ? <LoadingState label="Loading movements..." /> : null}
             {movementsQuery.isError ? <ErrorState message={(movementsQuery.error as Error).message} /> : null}
             {movementsQuery.data ? (
               <>
-                <DataTable
-                  columns={movementColumns}
-                  rows={movementsQuery.data.items}
-                  getRowKey={(row) => row.id}
-                  emptyTitle="No stock movements"
-                  emptyDescription="Movement history will appear here when records exist."
-                />
-                <div className="flex items-center justify-between text-sm text-slate-500">
+                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                  <DataTable
+                    columns={movementColumns}
+                    rows={movementsQuery.data.items}
+                    getRowKey={(row) => row.id}
+                    emptyTitle="No stock movements"
+                    emptyDescription="Movement history will appear here when records exist."
+                  />
+                </div>
+                <div className="flex shrink-0 items-center justify-between border-t border-slate-100 pt-3 text-sm text-slate-500">
                   <span>
                     {movementsQuery.data.totalCount.toLocaleString()} movements · page {movementsQuery.data.pageNumber} of {Math.max(1, movementsQuery.data.totalPages || 1)}
                   </span>
