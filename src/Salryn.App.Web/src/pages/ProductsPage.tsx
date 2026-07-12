@@ -176,8 +176,8 @@ export function ProductsPage() {
       />
 
       <Alert tone="info" title="Read-only catalog lane">
-        This page is read-only until an approved catalog write contract exists. Creation, editing, importing,
-        deactivation, upload, and media fields remain parked.
+        This page is read-only until an approved catalog write contract exists. Catalog maintenance,
+        deactivation, and asset fields remain parked.
       </Alert>
 
       <Card>

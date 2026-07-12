@@ -741,7 +741,7 @@ export function CheckoutPage() {
               </div>
 
               {cartValidationMessage ? (
-                <Alert tone={checkoutResult ? "success" : "warning"} title="Checkout state">
+                <Alert tone={checkoutResult ? "success" : "warning"} title="Checkout readiness">
                   {cartValidationMessage}
                 </Alert>
               ) : (
@@ -775,7 +775,7 @@ export function CheckoutPage() {
               <CardBody className="space-y-3 text-sm">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <p className="text-xs text-slate-500">Receipt</p>
+                    <p className="text-xs text-slate-500">checkout receipt number</p>
                     <p className="font-semibold text-slate-950">{checkoutResult.checkout.receiptNumber ?? "—"}</p>
                   </div>
                   <div>
