@@ -2,7 +2,6 @@
 using Salryn.Infrastructure.Data.Migrations;
 using Salryn.Infrastructure.Data.Seeding;
 using Salryn.Infrastructure.Paths;
-using Salryn.Infrastructure.Security;
 
 namespace Salryn.Infrastructure.Data.Initialization;
 
@@ -62,8 +61,7 @@ public static class DefaultDatabaseInitializationFactory
 
         MigrationRunner migrationRunner = new(connectionFactory, migrations);
         DatabaseSeeder databaseSeeder = new(connectionFactory);
-        Pbkdf2PasswordHasher passwordHasher = new();
-        FirstRunBootstrapper bootstrapper = new(connectionFactory, passwordHasher);
+        FirstRunBootstrapper bootstrapper = new(connectionFactory);
 
         return new DatabaseInitializationOrchestrator(
             connectionFactory,
