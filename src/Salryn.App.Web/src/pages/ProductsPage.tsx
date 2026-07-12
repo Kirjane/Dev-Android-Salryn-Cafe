@@ -155,10 +155,10 @@ export function ProductsPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <CommandBar
-        title="Product Management"
-        subtitle="Text-only catalog view backed by the local product API. Catalog write actions are unavailable in this lane."
+        title="Product Catalog"
+        subtitle="Stable read-only product catalog. This page does not create, edit, or deactivate products."
         status={
           productsQuery.data ? (
             <div className="flex flex-wrap gap-2">
@@ -176,142 +176,162 @@ export function ProductsPage() {
       />
 
       <Alert tone="info" title="Read-only catalog lane">
-        This page is read-only until an approved catalog write contract exists. Catalog maintenance,
-        deactivation, and asset fields remain parked.
+        This page is a lookup catalog only. Product maintenance, deactivation, and asset fields remain parked until an approved write lane exists.
       </Alert>
 
-      <Card>
-        <CardBody className="space-y-4">
-          <div className="grid gap-3 lg:grid-cols-[minmax(16rem,1fr)_12rem_12rem_10rem]">
-            <TextInput
-              placeholder="Search SKU, barcode, or name..."
-              value={search}
-              onChange={(event) => {
-                setPage(1);
-                setSearch(event.target.value);
-              }}
-              autoComplete="off"
-            />
-            <select
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              value={categoryId}
-              onChange={(event) => {
-                setPage(1);
-                setCategoryId(event.target.value);
-              }}
-            >
-              <option value="">All categories</option>
-              {(categoriesQuery.data ?? []).map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-            <select
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              value={brandId}
-              onChange={(event) => {
-                setPage(1);
-                setBrandId(event.target.value);
-              }}
-            >
-              <option value="">All brands</option>
-              {(brandsQuery.data ?? []).map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-            <select
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              value={statusFilter}
-              onChange={(event) => {
-                setPage(1);
-                setStatusFilter(event.target.value as "" | "active" | "inactive");
-              }}
-            >
-              <option value="">All statuses</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
-          </div>
-
-          <div className="flex flex-wrap gap-2 text-xs text-slate-500">
-            <span>Current page stock: {activeSummary.low} low, {activeSummary.out} out, {activeSummary.untracked} untracked.</span>
-            <span>No images or thumbnails are used.</span>
-          </div>
-
-          {productsQuery.isLoading ? <LoadingState label="Loading products..." /> : null}
-          {productsQuery.isError ? <ErrorState message={(productsQuery.error as Error).message} /> : null}
-
-          {productsQuery.data ? (
-            <>
-              <DataTable
-                columns={columns}
-                rows={productsQuery.data.items}
-                getRowKey={(row) => row.id}
-                onRowClick={(row) => setSelectedId(row.id)}
-                selectedRowKey={selectedId}
-                emptyTitle="No products found"
-                emptyDescription="Try adjusting search, category, brand, or status filters."
-              />
-              <div className="flex items-center justify-between text-sm text-slate-500">
-                <span>
-                  {productsQuery.data.totalCount.toLocaleString()} products · page {productsQuery.data.pageNumber} of {Math.max(1, productsQuery.data.totalPages || 1)}
-                </span>
-                <div className="flex gap-2">
-                  <Button variant="secondary" size="sm" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>
-                    Previous
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    disabled={page >= productsQuery.data.totalPages}
-                    onClick={() => setPage((current) => current + 1)}
-                  >
-                    Next
-                  </Button>
-                </div>
-              </div>
-            </>
-          ) : null}
-        </CardBody>
-      </Card>
-
-      {selectedId && detailQuery.data ? (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>{detailQuery.data.name}</CardTitle>
-              <Button variant="secondary" size="sm" onClick={() => setSelectedId(null)}>
-                Close
-              </Button>
-            </div>
+      <div className="grid min-h-0 gap-4 xl:h-[calc(100vh-14rem)] xl:min-h-[34rem] xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <Card className="flex min-h-[30rem] min-w-0 flex-col xl:min-h-0">
+          <CardHeader className="shrink-0">
+            <CardTitle>Catalog search</CardTitle>
           </CardHeader>
-          <CardBody className="space-y-4 text-sm text-slate-600">
-            <div className="flex flex-wrap gap-2">
-              <StatusPill tone={detailQuery.data.isActive ? "success" : "neutral"}>{detailQuery.data.isActive ? "Active" : "Inactive"}</StatusPill>
-              <StatusPill tone={detailQuery.data.trackStock ? "primary" : "info"}>{detailQuery.data.trackStock ? "Tracked" : "Untracked"}</StatusPill>
+          <CardBody className="flex min-h-0 flex-1 flex-col gap-4">
+            <div className="grid shrink-0 gap-3 lg:grid-cols-[minmax(16rem,1fr)_12rem_12rem_10rem]">
+              <TextInput
+                placeholder="Search SKU, barcode, or name..."
+                value={search}
+                onChange={(event) => {
+                  setPage(1);
+                  setSearch(event.target.value);
+                }}
+                autoComplete="off"
+              />
+              <select
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                value={categoryId}
+                onChange={(event) => {
+                  setPage(1);
+                  setCategoryId(event.target.value);
+                }}
+              >
+                <option value="">All categories</option>
+                {(categoriesQuery.data ?? []).map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                value={brandId}
+                onChange={(event) => {
+                  setPage(1);
+                  setBrandId(event.target.value);
+                }}
+              >
+                <option value="">All brands</option>
+                {(brandsQuery.data ?? []).map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                value={statusFilter}
+                onChange={(event) => {
+                  setPage(1);
+                  setStatusFilter(event.target.value as "" | "active" | "inactive");
+                }}
+              >
+                <option value="">All statuses</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
             </div>
-            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-              <p>SKU: {detailQuery.data.sku ?? "—"}</p>
-              <p>Barcode: {detailQuery.data.barcode ?? "—"}</p>
-              <p>Category: {detailQuery.data.categoryName ?? "—"}</p>
-              <p>Brand: {detailQuery.data.brandName ?? "—"}</p>
-              <p>Unit: {detailQuery.data.unitName}</p>
-              <p>Supplier: {detailQuery.data.supplierName ?? "—"}</p>
-              <p>Selling: {formatMoney(detailQuery.data.sellingPrice)}</p>
-              <p>Cost: {detailQuery.data.costPrice === null ? "—" : formatMoney(detailQuery.data.costPrice)}</p>
-              <p>Wholesale: {detailQuery.data.wholesalePrice === null ? "—" : formatMoney(detailQuery.data.wholesalePrice)}</p>
-              <p>Stock: {formatQuantity(detailQuery.data.stockOnHand)}</p>
-              <p>Reorder: {formatQuantity(detailQuery.data.reorderLevel)}</p>
-              <p>Updated: {detailQuery.data.updatedAt ? formatDateTime(detailQuery.data.updatedAt) : "—"}</p>
+
+            <div className="flex shrink-0 flex-wrap gap-2 text-xs text-slate-500">
+              <span>Current page stock: {activeSummary.low} low, {activeSummary.out} out, {activeSummary.untracked} untracked.</span>
+              <span>Results are bounded so typing and filters do not move the whole page.</span>
             </div>
-            {detailQuery.data.description ? <p>{detailQuery.data.description}</p> : null}
-            {detailQuery.data.notes ? <p>Notes: {detailQuery.data.notes}</p> : null}
+
+            {productsQuery.isLoading ? <LoadingState label="Loading products..." /> : null}
+            {productsQuery.isError ? <ErrorState message={(productsQuery.error as Error).message} /> : null}
+
+            {productsQuery.data ? (
+              <>
+                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                  <DataTable
+                    columns={columns}
+                    rows={productsQuery.data.items}
+                    getRowKey={(row) => row.id}
+                    onRowClick={(row) => setSelectedId(row.id)}
+                    selectedRowKey={selectedId}
+                    emptyTitle="No products found"
+                    emptyDescription="Try adjusting search, category, brand, or status filters."
+                  />
+                </div>
+                <div className="flex shrink-0 items-center justify-between border-t border-slate-100 pt-3 text-sm text-slate-500">
+                  <span>
+                    {productsQuery.data.totalCount.toLocaleString()} products · page {productsQuery.data.pageNumber} of {Math.max(1, productsQuery.data.totalPages || 1)}
+                  </span>
+                  <div className="flex gap-2">
+                    <Button variant="secondary" size="sm" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>
+                      Previous
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={page >= productsQuery.data.totalPages}
+                      onClick={() => setPage((current) => current + 1)}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              </>
+            ) : null}
           </CardBody>
         </Card>
-      ) : null}
+
+        <Card className="flex min-h-[24rem] flex-col xl:min-h-0">
+          <CardHeader className="shrink-0">
+            <div className="flex items-center justify-between">
+              <CardTitle>Selected product</CardTitle>
+              {selectedId ? (
+                <Button variant="secondary" size="sm" onClick={() => setSelectedId(null)}>
+                  Close
+                </Button>
+              ) : null}
+            </div>
+          </CardHeader>
+          <CardBody className="min-h-0 flex-1 overflow-y-auto text-sm text-slate-600">
+            {!selectedId ? (
+              <div className="rounded-lg border border-dashed border-slate-300 p-6 text-slate-500">
+                Select a product row to view catalog details.
+              </div>
+            ) : null}
+            {selectedId && detailQuery.isLoading ? <LoadingState label="Loading product detail..." /> : null}
+            {selectedId && detailQuery.isError ? <ErrorState message={(detailQuery.error as Error).message} /> : null}
+            {selectedId && detailQuery.data ? (
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-950">{detailQuery.data.name}</h3>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <StatusPill tone={detailQuery.data.isActive ? "success" : "neutral"}>{detailQuery.data.isActive ? "Active" : "Inactive"}</StatusPill>
+                    <StatusPill tone={detailQuery.data.trackStock ? "primary" : "info"}>{detailQuery.data.trackStock ? "Tracked" : "Untracked"}</StatusPill>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <p>SKU: {detailQuery.data.sku ?? "—"}</p>
+                  <p>Barcode: {detailQuery.data.barcode ?? "—"}</p>
+                  <p>Category: {detailQuery.data.categoryName ?? "—"}</p>
+                  <p>Brand: {detailQuery.data.brandName ?? "—"}</p>
+                  <p>Unit: {detailQuery.data.unitName}</p>
+                  <p>Supplier: {detailQuery.data.supplierName ?? "—"}</p>
+                  <p>Selling: {formatMoney(detailQuery.data.sellingPrice)}</p>
+                  <p>Cost: {detailQuery.data.costPrice === null ? "—" : formatMoney(detailQuery.data.costPrice)}</p>
+                  <p>Wholesale: {detailQuery.data.wholesalePrice === null ? "—" : formatMoney(detailQuery.data.wholesalePrice)}</p>
+                  <p>Stock: {formatQuantity(detailQuery.data.stockOnHand)}</p>
+                  <p>Reorder: {formatQuantity(detailQuery.data.reorderLevel)}</p>
+                  <p>Updated: {detailQuery.data.updatedAt ? formatDateTime(detailQuery.data.updatedAt) : "—"}</p>
+                </div>
+                {detailQuery.data.description ? <p>{detailQuery.data.description}</p> : null}
+                {detailQuery.data.notes ? <p>Notes: {detailQuery.data.notes}</p> : null}
+              </div>
+            ) : null}
+          </CardBody>
+        </Card>
+      </div>
     </div>
   );
 }
