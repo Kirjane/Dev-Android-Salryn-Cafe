@@ -179,7 +179,7 @@ export function ProductsPage() {
   const canGoNext = productsQuery.data ? currentPage < productsQuery.data.totalPages : false;
 
   return (
-    <div className="flex min-h-0 flex-col gap-3 overflow-hidden xl:h-[calc(100vh-9rem)]">
+    <div className="flex h-[calc(100vh-9rem)] max-h-[calc(100vh-9rem)] min-h-0 flex-col gap-3 overflow-hidden">
       <div className="shrink-0">
         <CommandBar
           title="Product Catalog"
@@ -205,7 +205,7 @@ export function ProductsPage() {
         </Alert>
       </div>
 
-      <div className="grid min-h-0 flex-1 gap-3 overflow-hidden xl:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)]">
+      <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(10rem,0.45fr)] gap-3 overflow-hidden xl:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)] xl:grid-rows-none">
         <Card className="flex min-h-0 min-w-0 flex-col overflow-hidden">
           <CardHeader className="shrink-0">
             <CardTitle>Catalog search</CardTitle>
