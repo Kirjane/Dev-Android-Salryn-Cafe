@@ -237,12 +237,12 @@ export function CheckoutPage() {
       return "Start a new sale before submitting again.";
     }
 
-    if (cartLines.length === 0) {
-      return "No cart lines yet.";
-    }
-
     if (!shiftOpen) {
       return "No open shift.";
+    }
+
+    if (cartLines.length === 0) {
+      return "No cart lines yet.";
     }
 
     if (cashCents <= 0) {
@@ -271,6 +271,11 @@ export function CheckoutPage() {
   }
 
   function addProduct(product: ProductListItem) {
+    if (!shiftOpen) {
+      setBackendMessage("Open a shift before adding products.");
+      return;
+    }
+
     const state = stockState(product);
     if (!state.canAdd) {
       setBackendMessage(`${product.name} cannot be added: ${state.helper}`);
@@ -351,7 +356,7 @@ export function CheckoutPage() {
     try {
       const result = await openHostShift({ openingCashCents: toCents(openingCash) });
       setBackendMessage(result.message);
-      await shiftQuery.refetch();
+      await Promise.all([shiftQuery.refetch(), productsQuery.refetch()]);
       setLastRefreshAt(new Date().toISOString());
     } catch (error) {
       setBackendMessage(describeCheckoutBackendError(error));
@@ -365,6 +370,7 @@ export function CheckoutPage() {
     setIsClosingShift(true);
     try {
       const result = await closeHostShift();
+      clearCart();
       setBackendMessage(result.message);
       await shiftQuery.refetch();
       setLastRefreshAt(new Date().toISOString());
@@ -408,8 +414,7 @@ export function CheckoutPage() {
         receiptNumber: result.checkout.receiptNumber,
         saleId: result.checkout.saleId,
       });
-      await Promise.all([shiftQuery.refetch(), productsQuery.refetch()]);
-      setLastRefreshAt(new Date().toISOString());
+      await productsQuery.refetch();
     } catch (error) {
       if (error instanceof ApiError) {
         setAttemptState({
@@ -461,7 +466,7 @@ export function CheckoutPage() {
               className="mt-2"
               variant={state.canAdd ? "primary" : "secondary"}
               onClick={() => addProduct(product)}
-              disabled={!state.canAdd}
+              disabled={!state.canAdd || !shiftOpen}
             >
               Add
             </Button>
@@ -471,82 +476,43 @@ export function CheckoutPage() {
     );
   }
 
-  return (
-    <div className="space-y-5">
-      <CommandBar
-        title="POS Checkout"
-        subtitle="Cashier workstation using the wired local session, shift, product, and checkout APIs."
-        status={
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusPill tone={sessionQuery.data?.isAuthenticated ? "success" : "warning"}>
-              {operatorLabel}
-            </StatusPill>
-            <StatusPill tone={shiftOpen ? "success" : "warning"}>
-              Shift {shift?.shiftState ?? "Unknown"}
-            </StatusPill>
-          </div>
-        }
-        actions={
-          <Button
-            variant="secondary"
-            onClick={() => void refreshShiftAndProducts()}
-            disabled={shiftQuery.isFetching || productsQuery.isFetching || sessionQuery.isFetching}
-          >
-            {shiftQuery.isFetching || productsQuery.isFetching || sessionQuery.isFetching ? "Refreshing..." : "Refresh"}
-          </Button>
-        }
-      />
-
-      <Card className="border-slate-300">
-        <CardBody className="grid gap-3 py-3 text-sm lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-center">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Operator</p>
-            <p className="font-semibold text-slate-950">{operatorLabel}</p>
-            <p className="text-xs text-slate-500">Role: {roleLabel}</p>
-          </div>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Shift</p>
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              <StatusPill tone={shiftOpen ? "success" : "warning"}>{shift?.shiftState ?? "Unknown"}</StatusPill>
-              <span className="font-mono text-xs text-slate-500">{shortId(shift?.shiftId)}</span>
+  function renderShiftLockedState() {
+    return (
+      <Card className="border-amber-300 bg-amber-50/70">
+        <CardHeader>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle>Cashier workstation locked</CardTitle>
+              <p className="mt-1 text-sm text-amber-900">
+                Open a cashier shift before product search, cart, payment, and checkout controls become available.
+              </p>
             </div>
+            <StatusPill tone="warning">Shift required</StatusPill>
           </div>
+        </CardHeader>
+        <CardBody className="grid gap-4 text-sm text-amber-950 lg:grid-cols-[1fr_auto] lg:items-end">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Opened / cash</p>
-            <p className="font-semibold text-slate-800">
-              {shift?.openedAtUtc ? formatDateTime(shift.openedAtUtc) : "No open shift"}
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-amber-900">
+              Opening cash
+            </label>
+            <TextInput value={openingCash} onChange={(event) => setOpeningCash(event.target.value)} />
+            <p className="mt-2 text-xs text-amber-800">
+              Locked state intentionally hides cashier product/cart/payment controls until the shift opens.
             </p>
-            <p className="text-xs text-slate-500">Opening cash: {fromCents(shift?.openingCashCents)}</p>
           </div>
-          <div className="flex flex-wrap items-end gap-2 lg:justify-end">
-            {!shiftOpen ? (
-              <>
-                <div className="w-32">
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Opening cash
-                  </label>
-                  <TextInput value={openingCash} onChange={(event) => setOpeningCash(event.target.value)} />
-                </div>
-                <Button onClick={() => void handleOpenShift()} disabled={isOpeningShift}>
-                  {isOpeningShift ? "Opening..." : "Open Shift"}
-                </Button>
-              </>
-            ) : (
-              <Button variant="danger" onClick={() => void handleCloseShift()} disabled={isClosingShift}>
-                {isClosingShift ? "Closing..." : "Close Shift"}
-              </Button>
-            )}
-          </div>
+          <Button onClick={() => void handleOpenShift()} disabled={isOpeningShift || shiftQuery.isLoading}>
+            {isOpeningShift ? "Opening..." : "Open Shift"}
+          </Button>
         </CardBody>
       </Card>
+    );
+  }
 
-      {backendMessage ? <Alert tone={checkoutResult ? "success" : "warning"}>{backendMessage}</Alert> : null}
-      {shiftQuery.isLoading ? <LoadingState label="Reading host shift..." /> : null}
-      {shiftQuery.isError ? <ErrorState message={describeCheckoutBackendError(shiftQuery.error)} /> : null}
-
-      <div className="grid gap-5 xl:grid-cols-[minmax(18rem,1fr)_minmax(22rem,1.05fr)_24rem]">
-        <Card className="min-h-[34rem]">
-          <CardHeader>
+  function renderWorkstation() {
+    return (
+      <div className="grid min-h-0 gap-4 xl:h-[calc(100vh-17rem)] xl:min-h-[34rem] xl:grid-cols-[minmax(18rem,1fr)_minmax(22rem,1.05fr)_24rem]">
+        <Card className="flex min-h-[28rem] min-w-0 flex-col xl:min-h-0">
+          <CardHeader className="shrink-0">
             <div className="flex items-center justify-between gap-3">
               <CardTitle>Product search</CardTitle>
               {productResponse ? (
@@ -556,32 +522,32 @@ export function CheckoutPage() {
               ) : null}
             </div>
           </CardHeader>
-          <CardBody className="space-y-3">
+          <CardBody className="flex min-h-0 flex-1 flex-col gap-3">
             <TextInput
-              className="min-h-12 text-base"
-              placeholder="Scan barcode or search SKU/product..."
+              className="min-h-12 shrink-0 text-base"
+              placeholder="Search SKU/product/barcode text..."
               value={search}
               onChange={(event) => handleSearchChange(event.target.value)}
               autoComplete="off"
             />
-            <p className="text-xs text-slate-500">
-              Active products from /api/products. Showing {checkoutPageSize} per page; no product images are used.
+            <p className="shrink-0 text-xs text-slate-500">
+              Active products from /api/products. Barcode scanner behavior is not changed in this lane.
             </p>
 
             {productsQuery.isLoading ? <LoadingState label="Loading products..." /> : null}
             {productsQuery.isError ? <ErrorState message={describeCheckoutBackendError(productsQuery.error)} /> : null}
             {productResponse ? (
               <>
-                <div className="space-y-2">
+                <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
                   {productResponse.items.length > 0 ? (
                     productResponse.items.map(renderProductCard)
                   ) : (
                     <div className="rounded-lg border border-dashed border-slate-300 p-6 text-sm text-slate-500">
-                      No active products found. Try SKU, barcode, or product name.
+                      No active products found. Try SKU, barcode text, or product name.
                     </div>
                   )}
                 </div>
-                <div className="flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
+                <div className="flex shrink-0 items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
                   <span>
                     Page {productResponse.pageNumber} of {Math.max(1, productResponse.totalPages)}
                   </span>
@@ -609,8 +575,8 @@ export function CheckoutPage() {
           </CardBody>
         </Card>
 
-        <Card className="min-h-[34rem]">
-          <CardHeader>
+        <Card className="flex min-h-[28rem] min-w-0 flex-col xl:min-h-0">
+          <CardHeader className="shrink-0">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <CardTitle>Active cart</CardTitle>
@@ -624,80 +590,82 @@ export function CheckoutPage() {
               </Button>
             </div>
           </CardHeader>
-          <CardBody className="space-y-3">
+          <CardBody className="min-h-0 flex-1 overflow-y-auto pr-1">
             {cartLines.length === 0 ? (
               <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
-                Search or scan a product, then press Add. Cart lines stay visible until New sale is selected after checkout.
+                Search a product, then press Add. Cart lines stay visible until New sale is selected after checkout.
               </div>
             ) : (
-              cartLines.map((line) => {
-                const max = maxQuantity(line.product);
-                const stock = stockState(line.product);
-                return (
-                  <div key={line.product.id} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-slate-950">{line.product.name}</p>
-                        <p className="text-xs text-slate-500">
-                          SKU {line.product.sku ?? "—"} · {line.product.unitName} · {formatMoney(line.product.sellingPrice)} each
-                        </p>
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          <StatusPill tone={stock.tone}>{stock.label}</StatusPill>
-                          {line.product.categoryName ? <StatusPill tone="neutral">{line.product.categoryName}</StatusPill> : null}
+              <div className="space-y-3">
+                {cartLines.map((line) => {
+                  const max = maxQuantity(line.product);
+                  const stock = stockState(line.product);
+                  return (
+                    <div key={line.product.id} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-slate-950">{line.product.name}</p>
+                          <p className="text-xs text-slate-500">
+                            SKU {line.product.sku ?? "—"} · {line.product.unitName} · {formatMoney(line.product.sellingPrice)} each
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            <StatusPill tone={stock.tone}>{stock.label}</StatusPill>
+                            {line.product.categoryName ? <StatusPill tone="neutral">{line.product.categoryName}</StatusPill> : null}
+                          </div>
+                          {max !== null && line.quantity >= max ? (
+                            <p className="mt-2 text-xs font-semibold text-amber-700">Reached known stock limit.</p>
+                          ) : null}
                         </div>
-                        {max !== null && line.quantity >= max ? (
-                          <p className="mt-2 text-xs font-semibold text-amber-700">Reached known stock limit.</p>
-                        ) : null}
-                      </div>
-                      <Button size="sm" variant="ghost" onClick={() => updateQuantity(line.product.id, 0)}>
-                        Remove
-                      </Button>
-                    </div>
-                    <div className="mt-3 grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-[auto_1fr_auto] sm:items-center">
-                      <div className="inline-flex items-center rounded-md border border-slate-300 bg-slate-50">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => updateQuantity(line.product.id, Math.max(0, line.quantity - 1))}
-                        >
-                          −
-                        </Button>
-                        <input
-                          className="h-8 w-14 border-x border-slate-200 bg-white text-center text-sm font-semibold text-slate-900 focus:outline-none"
-                          type="number"
-                          min={0}
-                          max={max ?? undefined}
-                          value={line.quantity}
-                          onChange={(event) => updateQuantity(line.product.id, Number(event.target.value))}
-                        />
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => updateQuantity(line.product.id, line.quantity + 1)}
-                          disabled={max !== null && line.quantity >= max}
-                        >
-                          +
+                        <Button size="sm" variant="ghost" onClick={() => updateQuantity(line.product.id, 0)}>
+                          Remove
                         </Button>
                       </div>
-                      <p className="text-xs text-slate-500">
-                        {max === null ? "Untracked item; backend still validates sale." : `${formatQuantity(max)} known stock.`}
-                      </p>
-                      <div className="text-right">
-                        <p className="text-xs text-slate-500">Line total</p>
-                        <p className="text-base font-bold text-slate-950">
-                          {formatMoney(line.product.sellingPrice * line.quantity)}
+                      <div className="mt-3 grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-[auto_1fr_auto] sm:items-center">
+                        <div className="inline-flex items-center rounded-md border border-slate-300 bg-slate-50">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => updateQuantity(line.product.id, Math.max(0, line.quantity - 1))}
+                          >
+                            −
+                          </Button>
+                          <input
+                            className="h-8 w-14 border-x border-slate-200 bg-white text-center text-sm font-semibold text-slate-900 focus:outline-none"
+                            type="number"
+                            min={0}
+                            max={max ?? undefined}
+                            value={line.quantity}
+                            onChange={(event) => updateQuantity(line.product.id, Number(event.target.value))}
+                          />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => updateQuantity(line.product.id, line.quantity + 1)}
+                            disabled={max !== null && line.quantity >= max}
+                          >
+                            +
+                          </Button>
+                        </div>
+                        <p className="text-xs text-slate-500">
+                          {max === null ? "Untracked item; backend still validates sale." : `${formatQuantity(max)} known stock.`}
                         </p>
+                        <div className="text-right">
+                          <p className="text-xs text-slate-500">Line total</p>
+                          <p className="text-base font-bold text-slate-950">
+                            {formatMoney(line.product.sellingPrice * line.quantity)}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })
+                  );
+                })}
+              </div>
             )}
           </CardBody>
         </Card>
 
-        <div className="space-y-5">
-          <Card className="border-slate-300">
+        <div className="flex min-h-0 flex-col gap-4">
+          <Card className="border-slate-300 xl:sticky xl:top-4">
             <CardHeader>
               <CardTitle>Payment / receipt</CardTitle>
             </CardHeader>
@@ -759,7 +727,7 @@ export function CheckoutPage() {
                 {isSubmittingCheckout ? "Completing..." : "Complete Checkout"}
               </Button>
               <p className="text-xs text-slate-500">
-                Cash-only contract: POST /api/checkout with productId, quantityX1000, and Cash amountCents.
+                Cash-only contract: POST /api/checkout. POS-UX0 does not change checkout math or receipt generation.
               </p>
             </CardBody>
           </Card>
@@ -775,7 +743,7 @@ export function CheckoutPage() {
               <CardBody className="space-y-3 text-sm">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <p className="text-xs text-slate-500">checkout receipt number</p>
+                    <p className="text-xs text-slate-500">Receipt number</p>
                     <p className="font-semibold text-slate-950">{checkoutResult.checkout.receiptNumber ?? "—"}</p>
                   </div>
                   <div>
@@ -800,6 +768,73 @@ export function CheckoutPage() {
           ) : null}
         </div>
       </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4 xl:space-y-3">
+      <CommandBar
+        title="POS Checkout"
+        subtitle="Cashier workstation using the wired local session, shift, product, and checkout APIs."
+        status={
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusPill tone={sessionQuery.data?.isAuthenticated ? "success" : "warning"}>
+              {operatorLabel}
+            </StatusPill>
+            <StatusPill tone={shiftOpen ? "success" : "warning"}>
+              Shift {shift?.shiftState ?? "Unknown"}
+            </StatusPill>
+          </div>
+        }
+        actions={
+          <Button
+            variant="secondary"
+            onClick={() => void refreshShiftAndProducts()}
+            disabled={shiftQuery.isFetching || productsQuery.isFetching || sessionQuery.isFetching}
+          >
+            {shiftQuery.isFetching || productsQuery.isFetching || sessionQuery.isFetching ? "Refreshing..." : "Refresh"}
+          </Button>
+        }
+      />
+
+      <Card className="border-slate-300">
+        <CardBody className="grid gap-3 py-3 text-sm lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-center">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Operator</p>
+            <p className="font-semibold text-slate-950">{operatorLabel}</p>
+            <p className="text-xs text-slate-500">Role: {roleLabel}</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Shift</p>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <StatusPill tone={shiftOpen ? "success" : "warning"}>{shift?.shiftState ?? "Unknown"}</StatusPill>
+              <span className="font-mono text-xs text-slate-500">{shortId(shift?.shiftId)}</span>
+            </div>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Opened / cash</p>
+            <p className="font-semibold text-slate-800">
+              {shift?.openedAtUtc ? formatDateTime(shift.openedAtUtc) : "No open shift"}
+            </p>
+            <p className="text-xs text-slate-500">Opening cash: {fromCents(shift?.openingCashCents)}</p>
+          </div>
+          <div className="flex flex-wrap items-end gap-2 lg:justify-end">
+            {shiftOpen ? (
+              <Button variant="danger" onClick={() => void handleCloseShift()} disabled={isClosingShift}>
+                {isClosingShift ? "Closing..." : "Close Shift"}
+              </Button>
+            ) : (
+              <StatusPill tone="warning">Locked</StatusPill>
+            )}
+          </div>
+        </CardBody>
+      </Card>
+
+      {backendMessage ? <Alert tone={checkoutResult ? "success" : "warning"}>{backendMessage}</Alert> : null}
+      {shiftQuery.isLoading ? <LoadingState label="Reading host shift..." /> : null}
+      {shiftQuery.isError ? <ErrorState message={describeCheckoutBackendError(shiftQuery.error)} /> : null}
+
+      {!shiftOpen ? renderShiftLockedState() : renderWorkstation()}
 
       <details className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-card">
         <summary className="cursor-pointer text-sm font-semibold text-slate-900">Checkout diagnostics / runtime proof</summary>
