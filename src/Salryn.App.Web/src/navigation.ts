@@ -21,8 +21,8 @@ export type NavItemConfig = EnabledNavItem | DisabledNavItem;
 export const navItems: NavItemConfig[] = [
   { id: "dashboard", label: "Dashboard", enabled: true },
   { id: "checkout", label: "POS Checkout", enabled: true },
-  { id: "products", label: "Products", enabled: true },
-  { id: "inventory", label: "Inventory", enabled: true },
+  { id: "products", label: "Product Catalog", enabled: true },
+  { id: "inventory", label: "Stock Movements", enabled: true },
   { id: "sales", label: "Sales History", enabled: true },
   {
     id: "disabled",
