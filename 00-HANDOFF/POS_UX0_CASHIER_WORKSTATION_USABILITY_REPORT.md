@@ -1,10 +1,11 @@
 # POS-UX0 Cashier Workstation Usability Repair Report
 
-Date: 2026-07-12  
+Date: 2026-07-13  
 Branch: `KIRCH-POS-UX0-CASHIER-WORKSTATION-USABILITY`  
 Base branch: `KIRCH-POS-M1-RECEIPT-SNAPSHOT-FILE-RECEIPT`  
 Base SHA: `365a6080f5c744422596180168d560f2cdbed4a9`  
-Head at report authoring: `20f1ffc5411b5f3e64637a9135a1136e765d4435`
+Old repair SHA: `002ecdf978f18b84171265ef6583f7ad5246a996`  
+Head before this report update: `20bfd3223e8a4a50a1d67ff8f524858d28f2ffb9`
 
 Authoring mode: GitHub connector-backed frontend-only repair. Local shell gates and manual browser proof were not executable from this session.
 
@@ -19,10 +20,12 @@ In scope:
 - checkout laptop-safe layout
 - checkout shift-closed lock state
 - product search/results bounded scroll areas
-- Product Management naming cleanup to Product Catalog
-- Inventory naming cleanup to Stock Movements
-- stock movement filter/layout clarification
-- Sales History detail separation into a dialog
+- two-stage checkout confirmation
+- large sale-completed dialog
+- safe keyboard shortcut hints
+- Product Catalog stable results and side detail panel
+- Stock Movements date controls and closed movement-type filter
+- Sales History date controls and read-only detail dialog
 - report file
 
 Out of scope and not implemented:
@@ -30,7 +33,8 @@ Out of scope and not implemented:
 - backend transaction rewrites
 - checkout calculation changes
 - receipt rendering changes
-- printer logic
+- receipt file writer changes
+- printer integration
 - barcode scanner logic
 - Fast Add Product
 - product write backend
@@ -52,11 +56,11 @@ Out of scope and not implemented:
 - `src/Salryn.App.Web/src/navigation.ts`
 - `00-HANDOFF/POS_UX0_CASHIER_WORKSTATION_USABILITY_REPORT.md`
 
-No backend, schema, receipt renderer, printer, RMO, BIR, eSales, or installer files were changed.
+No backend, schema, receipt renderer, receipt writer, printer, RMO, BIR, eSales, or installer files were changed.
 
 ---
 
-## 3. Defect fixes
+## 3. Original defect fixes
 
 ### 3.1 Checkout layout scroll problem
 
@@ -73,7 +77,7 @@ After:
   - right: payment/summary
 - Product results use a dedicated scroll area.
 - Cart lines use a dedicated scroll area.
-- Payment and Complete Checkout stay in the right column and remain visible during normal cashier flow.
+- Payment and checkout controls stay in the right column and remain visible during normal cashier flow.
 - Extremely small viewports may still scroll normally.
 
 ### 3.2 Shift gate
@@ -85,7 +89,7 @@ Before:
 After:
 
 - Closed shift shows `Cashier workstation locked`.
-- Product/cart/payment/complete checkout controls are hidden until the shift is open.
+- Product/cart/payment/checkout controls are hidden until the shift is open.
 - Opening the shift refreshes shift/product data and transitions into workstation mode.
 - Closing the shift clears the active cart and returns the page to the locked state.
 
@@ -113,19 +117,7 @@ After:
 - Filters stay in a fixed header area.
 - Product details are shown in a stable side panel.
 
-### 3.5 Checkout laptop-safe layout
-
-Before:
-
-- Payment controls could be visually displaced by product/cart content.
-
-After:
-
-- Product, cart, and payment areas are separated.
-- Product/cart internal scrolling does not move the full page during normal laptop-height usage.
-- Complete Checkout remains in the payment column when cart/payment are valid.
-
-### 3.6 Sales History detail
+### 3.5 Sales History detail
 
 Before:
 
@@ -134,28 +126,113 @@ Before:
 
 After:
 
-- Sale rows support row click and an explicit `View` button.
+- Sale rows have an explicit `View` action.
 - Detail opens in a separated read-only dialog.
 - The detail dialog exposes no reprint, void, refund, printer, official output, RMO, BIR, or eSales action.
 
-### 3.7 Stock Movements usability
+---
 
-Before:
+## 4. Kirch manual proof repair findings
 
-- Inventory page title was broad.
-- Movement type was free text.
-- Movement table and filters could move with page content.
+Kirch manual proof after POS-M1 receipt file success found these UX defects still present:
 
-After:
-
-- Page is named `Stock Movements`.
-- Movement type uses a dropdown of known movement names.
-- Reference/reason are minimized to table evidence instead of open-ended filters.
-- Low-stock and movement ledger panels use stable bounded areas.
+1. Product Catalog search still moved the whole page at laptop height / 80-100% zoom.
+2. Sale completion was not obvious enough after checkout.
+3. Checkout needed a review/confirm step so the sale does not commit on the first button press.
+4. Keyboard guidance was missing for safe cashier actions.
+5. Date filtering still used vague free-text controls in Stock Movements and Sales History.
 
 ---
 
-## 4. Receipt regression note
+## 5. POS-UX0 repair update
+
+### 5.1 Product Catalog search stability
+
+Repair:
+
+- Product Catalog now uses a fixed large-screen shell height.
+- Search/filter controls are in a fixed header section.
+- Product results are inside a bounded `overflow-y-auto` panel.
+- Selected product details stay in a side panel instead of rendering below the results.
+- Typing search/filter text should no longer push the full page down during normal laptop-height use.
+
+### 5.2 Sale completion modal
+
+Repair:
+
+- Successful checkout now opens a large `Sale Completed` dialog.
+- Dialog shows:
+  - receipt number
+  - sale id
+  - total
+  - amount paid
+  - change
+  - receipt file status if the checkout response includes it
+- Dialog includes a clear `New Sale (F5)` action.
+- Dialog explicitly says physical printing is not available in this lane.
+- No physical printer button was added.
+
+### 5.3 Two-stage checkout confirmation
+
+Repair:
+
+- The payment panel primary action is now `Review Checkout`.
+- `Review Checkout` opens a confirmation dialog.
+- Confirmation dialog shows:
+  - cart line count
+  - item count
+  - total
+  - cash tendered
+  - change
+  - line summary
+- Sale commits only after `Confirm Sale`.
+- Insufficient cash remains blocked before the confirmation dialog can open.
+
+### 5.4 Keyboard shortcut hints
+
+Repair:
+
+- Added safe hints only:
+  - `F9 = Review Checkout`
+  - `Enter = Confirm` when the confirmation dialog is open
+  - `F5 = New Sale` after sale completed
+  - `Esc = Close/cancel dialog`
+- No barcode scanner behavior was added.
+- No Fast Add behavior was added.
+
+### 5.5 Date controls
+
+Repair:
+
+- Stock Movements now uses date inputs for from/to filters.
+- Sales History now uses date inputs for from/to filters.
+- Stock Movements movement type uses a dropdown instead of vague free text.
+- Receipt number remains a free-text filter because it is an identifier search.
+
+---
+
+## 6. What remains intentionally parked
+
+Still parked by instruction:
+
+- POS-M2 printer adapter
+- ESC/POS printer
+- Windows printer
+- LAN printer
+- barcode scanner logic
+- Fast Add Product
+- product write backend
+- stock-in/adjustment backend
+- void sale
+- reprint UI
+- installer/package
+- RMO/BIR/eSales
+- Crystal runtime
+- cloud upload
+
+---
+
+## 7. Receipt regression note
 
 POS-UX0 does not change POS-M1 receipt snapshot, renderer, file writer, or checkout backend integration.
 
@@ -170,7 +247,7 @@ Receipt regression still requires local/browser proof after this UX branch is pu
 
 ---
 
-## 5. Gates
+## 8. Gates
 
 Required commands:
 
@@ -201,24 +278,33 @@ Connector result:
 
 ---
 
-## 6. Manual proof checklist
+## 9. New manual checklist
 
 Run after local build/web build passes:
 
-- [ ] Checkout usable on laptop screen without normal sale scrolling.
-- [ ] Shift closed locks workstation.
-- [ ] Shift open unlocks workstation.
-- [ ] Search/add/cart/payment/complete checkout visible and usable.
-- [ ] Receipt file still created after checkout.
-- [ ] Product Catalog search does not move whole page.
-- [ ] Sales History detail opens cleanly in dialog.
-- [ ] Stock Movements page is clearer and stable.
+- [ ] Product Catalog search/filter typing does not move the whole page at laptop height and 80-100% zoom.
+- [ ] Product Catalog results remain inside the bounded scroll area.
+- [ ] Selected product panel does not push results/page downward.
+- [ ] Checkout `Review Checkout` opens a confirmation dialog.
+- [ ] Insufficient cash blocks before confirmation.
+- [ ] Confirm dialog shows cart count, total, cash tendered, and change.
+- [ ] Sale commits only after `Confirm Sale`.
+- [ ] Successful sale opens a large completion dialog.
+- [ ] Completion dialog shows receipt number, sale id, total, amount paid, change, and receipt file status if available.
+- [ ] `New Sale (F5)` resets the workstation after completion.
+- [ ] F9 opens checkout review when ready.
+- [ ] Enter confirms only when confirmation dialog is open.
+- [ ] Esc closes/cancels open dialogs.
+- [ ] Stock Movements date filters use date controls.
+- [ ] Sales History date filters use date controls.
+- [ ] Sales History detail opens cleanly in a read-only dialog.
+- [ ] Receipt file is still created after checkout.
 - [ ] No console errors.
 - [ ] No backend exceptions.
 
 ---
 
-## 7. Non-claims
+## 10. Non-claims
 
 This branch does not claim:
 
@@ -243,7 +329,7 @@ This branch does not claim:
 
 ---
 
-## 8. Status
+## 11. Status
 
 Status: `BLOCKED`
 
