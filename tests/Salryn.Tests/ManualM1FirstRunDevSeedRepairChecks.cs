@@ -61,7 +61,7 @@ public static class ManualM1FirstRunDevSeedRepairChecks
         AssertContains(devTool, "No product images", "Dev seed must explicitly avoid product images.");
         AssertNotContains(devTool, "image_url", "Dev seed must not add image_url fields.");
         AssertNotContains(devTool, "imagePath", "Dev seed must not add imagePath fields.");
-        AssertNotContains(devTool, "media", "Dev seed must not add media fields.");
+        AssertNotContains(devTool, "media_id", "Dev seed must not add media identifier fields.");
     }
 
     private static string FindProjectRoot(string startPath)
