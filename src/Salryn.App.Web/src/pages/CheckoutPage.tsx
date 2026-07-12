@@ -9,6 +9,7 @@ import {
 } from "../api/checkout";
 import { ApiError } from "../api/http";
 import { fetchProducts, type ProductListItem } from "../api/products";
+import { printReceiptForSale, type ReceiptPrintResult } from "../api/sales";
 import { fetchSession } from "../api/session";
 import {
   Alert,
@@ -75,11 +76,7 @@ const checkoutPageSize = 25;
 
 function toCents(value: string): number {
   const parsed = Number(value);
-  if (!Number.isFinite(parsed)) {
-    return 0;
-  }
-
-  return Math.round(parsed * 100);
+  return Number.isFinite(parsed) ? Math.round(parsed * 100) : 0;
 }
 
 function fromCents(value: number | null | undefined): string {
@@ -135,39 +132,21 @@ export function describeCheckoutBackendError(error: unknown): string {
 }
 
 function isOpenShift(state: string | undefined): boolean {
-  return stringEquals(state, "Open") || stringEquals(state, "Opened");
-}
-
-function stringEquals(left: string | undefined, right: string): boolean {
-  return (left ?? "").localeCompare(right, undefined, { sensitivity: "accent" }) === 0;
+  return (state ?? "").localeCompare("Open", undefined, { sensitivity: "accent" }) === 0 ||
+    (state ?? "").localeCompare("Opened", undefined, { sensitivity: "accent" }) === 0;
 }
 
 function stockState(product: ProductListItem): StockState {
   if (!product.isActive) {
-    return {
-      label: "Inactive",
-      tone: "danger",
-      canAdd: false,
-      helper: "Product is inactive.",
-    };
+    return { label: "Inactive", tone: "danger", canAdd: false, helper: "Product is inactive." };
   }
 
   if (!product.trackStock) {
-    return {
-      label: "Untracked",
-      tone: "info",
-      canAdd: true,
-      helper: "Stock is not tracked for this item.",
-    };
+    return { label: "Untracked", tone: "info", canAdd: true, helper: "Stock is not tracked for this item." };
   }
 
   if (product.stockOnHand <= 0) {
-    return {
-      label: "Out of stock",
-      tone: "danger",
-      canAdd: false,
-      helper: "Tracked item has no available stock.",
-    };
+    return { label: "Out of stock", tone: "danger", canAdd: false, helper: "Tracked item has no available stock." };
   }
 
   if (product.stockOnHand <= product.reorderLevel) {
@@ -179,20 +158,11 @@ function stockState(product: ProductListItem): StockState {
     };
   }
 
-  return {
-    label: "In stock",
-    tone: "success",
-    canAdd: true,
-    helper: `${formatQuantity(product.stockOnHand)} available.`,
-  };
+  return { label: "In stock", tone: "success", canAdd: true, helper: `${formatQuantity(product.stockOnHand)} available.` };
 }
 
 function maxQuantity(product: ProductListItem): number | null {
-  if (!product.trackStock) {
-    return null;
-  }
-
-  return Math.max(0, Math.floor(product.stockOnHand));
+  return product.trackStock ? Math.max(0, Math.floor(product.stockOnHand)) : null;
 }
 
 function Dialog({ title, children, footer, onClose }: { title: string; children: ReactNode; footer: ReactNode; onClose: () => void }) {
@@ -213,6 +183,22 @@ function Dialog({ title, children, footer, onClose }: { title: string; children:
   );
 }
 
+function printTone(status: string | null | undefined): "success" | "warning" | "danger" | "info" {
+  if (status === "Succeeded") {
+    return "success";
+  }
+
+  if (status === "Failed") {
+    return "danger";
+  }
+
+  if (status === "Disabled/Unavailable") {
+    return "warning";
+  }
+
+  return "info";
+}
+
 export function CheckoutPage() {
   const [search, setSearch] = useState("");
   const [productPage, setProductPage] = useState(1);
@@ -228,39 +214,19 @@ export function CheckoutPage() {
   const [isOpeningShift, setIsOpeningShift] = useState(false);
   const [isClosingShift, setIsClosingShift] = useState(false);
   const [isSubmittingCheckout, setIsSubmittingCheckout] = useState(false);
+  const [isPrintingReceipt, setIsPrintingReceipt] = useState(false);
+  const [printResult, setPrintResult] = useState<ReceiptPrintResult | null>(null);
 
-  const sessionQuery = useQuery({
-    queryKey: ["host-checkout-session"],
-    queryFn: fetchSession,
-    retry: false,
-  });
-
-  const shiftQuery = useQuery({
-    queryKey: ["host-checkout-shift"],
-    queryFn: fetchHostShift,
-    retry: false,
-  });
-
+  const sessionQuery = useQuery({ queryKey: ["host-checkout-session"], queryFn: fetchSession, retry: false });
+  const shiftQuery = useQuery({ queryKey: ["host-checkout-shift"], queryFn: fetchHostShift, retry: false });
   const productsQuery = useQuery({
     queryKey: ["host-checkout-products", search, productPage],
-    queryFn: () =>
-      fetchProducts({
-        search: search.trim() || undefined,
-        isActive: true,
-        page: productPage,
-        pageSize: checkoutPageSize,
-      }),
+    queryFn: () => fetchProducts({ search: search.trim() || undefined, isActive: true, page: productPage, pageSize: checkoutPageSize }),
     retry: false,
   });
 
-  const subtotal = useMemo(
-    () => cartLines.reduce((sum, line) => sum + line.product.sellingPrice * line.quantity, 0),
-    [cartLines],
-  );
-  const itemQuantityTotal = useMemo(
-    () => cartLines.reduce((sum, line) => sum + line.quantity, 0),
-    [cartLines],
-  );
+  const subtotal = useMemo(() => cartLines.reduce((sum, line) => sum + line.product.sellingPrice * line.quantity, 0), [cartLines]);
+  const itemQuantityTotal = useMemo(() => cartLines.reduce((sum, line) => sum + line.quantity, 0), [cartLines]);
   const cashCents = toCents(cashAmount);
   const subtotalCents = Math.round(subtotal * 100);
   const estimatedChangeCents = cashCents >= subtotalCents ? cashCents - subtotalCents : 0;
@@ -268,6 +234,9 @@ export function CheckoutPage() {
   const shiftOpen = isOpenShift(shift?.shiftState);
   const operatorLabel = sessionQuery.data?.user?.displayName ?? sessionQuery.data?.user?.username ?? "Not signed in";
   const roleLabel = sessionQuery.data?.user?.roleName ?? "—";
+  const productResponse = productsQuery.data;
+  const canGoPrevious = (productResponse?.pageNumber ?? productPage) > 1;
+  const canGoNext = productResponse ? productResponse.pageNumber < productResponse.totalPages : false;
 
   const cartValidationMessage = useMemo(() => {
     if (completedSale) {
@@ -298,9 +267,6 @@ export function CheckoutPage() {
   }, [cartLines.length, cashCents, completedSale, isSubmittingCheckout, shiftOpen, subtotalCents]);
 
   const canReviewCheckout = cartValidationMessage === null && cartLines.length > 0;
-  const productResponse = productsQuery.data;
-  const canGoPrevious = (productResponse?.pageNumber ?? productPage) > 1;
-  const canGoNext = productResponse ? productResponse.pageNumber < productResponse.totalPages : false;
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -359,6 +325,7 @@ export function CheckoutPage() {
 
     setCheckoutResult(null);
     setCompletedSale(null);
+    setPrintResult(null);
     setBackendMessage(null);
     setCartLines((current) => {
       const existing = current.find((line) => line.product.id === product.id);
@@ -369,10 +336,7 @@ export function CheckoutPage() {
           setBackendMessage(`${product.name} has only ${formatQuantity(max)} available.`);
           return current;
         }
-
-        return current.map((line) =>
-          line.product.id === product.id ? { ...line, quantity: nextQuantity } : line,
-        );
+        return current.map((line) => (line.product.id === product.id ? { ...line, quantity: nextQuantity } : line));
       }
 
       if (max !== null && max < 1) {
@@ -387,13 +351,13 @@ export function CheckoutPage() {
   function updateQuantity(productId: string, quantity: number) {
     setCheckoutResult(null);
     setCompletedSale(null);
+    setPrintResult(null);
     setCartLines((current) =>
       current
         .map((line) => {
           if (line.product.id !== productId) {
             return line;
           }
-
           const numericQuantity = Number.isFinite(quantity) ? Math.floor(quantity) : 0;
           const nextQuantity = Math.max(0, numericQuantity);
           const max = maxQuantity(line.product);
@@ -401,7 +365,6 @@ export function CheckoutPage() {
             setBackendMessage(`${line.product.name} has only ${formatQuantity(max)} available.`);
             return { ...line, quantity: max };
           }
-
           return { ...line, quantity: nextQuantity };
         })
         .filter((line) => line.quantity > 0),
@@ -413,6 +376,7 @@ export function CheckoutPage() {
     setCashAmount("");
     setCheckoutResult(null);
     setCompletedSale(null);
+    setPrintResult(null);
     setShowConfirmCheckout(false);
     setAttemptState(initialAttemptState);
     setBackendMessage(null);
@@ -478,21 +442,14 @@ export function CheckoutPage() {
     setBackendMessage(null);
     setCheckoutResult(null);
     setCompletedSale(null);
+    setPrintResult(null);
     setAttemptState(initialAttemptState);
     setIsSubmittingCheckout(true);
 
     try {
       const result = await submitCheckout({
-        lines: cartLines.map((line) => ({
-          productId: line.product.id,
-          quantityX1000: Math.round(line.quantity * 1000),
-        })),
-        payments: [
-          {
-            method: "Cash",
-            amountCents: cashCents,
-          },
-        ],
+        lines: cartLines.map((line) => ({ productId: line.product.id, quantityX1000: Math.round(line.quantity * 1000) })),
+        payments: [{ method: "Cash", amountCents: cashCents }],
       });
 
       const receiptMetadata = result.checkout as CheckoutReceiptMetadata;
@@ -527,10 +484,36 @@ export function CheckoutPage() {
           saleId: null,
         });
       }
-
       setBackendMessage(describeCheckoutBackendError(error));
     } finally {
       setIsSubmittingCheckout(false);
+    }
+  }
+
+  async function handlePrintCompletedReceipt() {
+    if (!completedSale?.saleId || isPrintingReceipt) {
+      return;
+    }
+
+    setIsPrintingReceipt(true);
+    setPrintResult(null);
+    try {
+      const result = await printReceiptForSale(completedSale.saleId);
+      setPrintResult(result.print);
+    } catch (error) {
+      setPrintResult({
+        succeeded: false,
+        status: "Failed",
+        saleId: completedSale.saleId,
+        receiptNumber: completedSale.receiptNumber,
+        source: "PersistedReceiptSnapshot",
+        adapterName: "Unknown",
+        message: "Receipt print request failed. Sale remains committed.",
+        errorMessage: error instanceof Error ? error.message : "Unknown print error.",
+        printedAtUtc: null,
+      });
+    } finally {
+      setIsPrintingReceipt(false);
     }
   }
 
@@ -538,17 +521,12 @@ export function CheckoutPage() {
     const state = stockState(product);
     const alreadyInCart = cartLines.find((line) => line.product.id === product.id)?.quantity ?? 0;
     return (
-      <div
-        key={product.id}
-        className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition-colors hover:border-blue-200 hover:bg-blue-50/40"
-      >
+      <div key={product.id} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition-colors hover:border-blue-200 hover:bg-blue-50/40">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 space-y-2">
             <div>
               <p className="truncate text-sm font-semibold text-slate-950">{product.name}</p>
-              <p className="text-xs text-slate-500">
-                SKU {product.sku ?? "—"} · Barcode {product.barcode ?? "—"}
-              </p>
+              <p className="text-xs text-slate-500">SKU {product.sku ?? "—"} · Barcode {product.barcode ?? "—"}</p>
             </div>
             <div className="flex flex-wrap gap-1.5">
               <StatusPill tone="neutral">{product.categoryName ?? "No category"}</StatusPill>
@@ -560,18 +538,8 @@ export function CheckoutPage() {
           <div className="shrink-0 text-right">
             <p className="text-base font-bold text-slate-950">{formatMoney(product.sellingPrice)}</p>
             <p className="text-xs text-slate-500">per {product.unitName}</p>
-            {alreadyInCart > 0 ? (
-              <p className="mt-1 text-xs font-semibold text-blue-700">In cart: {formatQuantity(alreadyInCart)}</p>
-            ) : null}
-            <Button
-              size="sm"
-              className="mt-2"
-              variant={state.canAdd ? "primary" : "secondary"}
-              onClick={() => addProduct(product)}
-              disabled={!state.canAdd || !shiftOpen}
-            >
-              Add
-            </Button>
+            {alreadyInCart > 0 ? <p className="mt-1 text-xs font-semibold text-blue-700">In cart: {formatQuantity(alreadyInCart)}</p> : null}
+            <Button size="sm" className="mt-2" variant={state.canAdd ? "primary" : "secondary"} onClick={() => addProduct(product)} disabled={!state.canAdd || !shiftOpen}>Add</Button>
           </div>
         </div>
       </div>
@@ -585,26 +553,18 @@ export function CheckoutPage() {
           <div className="flex items-start justify-between gap-3">
             <div>
               <CardTitle>Cashier workstation locked</CardTitle>
-              <p className="mt-1 text-sm text-amber-900">
-                Open a cashier shift before product search, cart, payment, and checkout controls become available.
-              </p>
+              <p className="mt-1 text-sm text-amber-900">Open a cashier shift before product search, cart, payment, and checkout controls become available.</p>
             </div>
             <StatusPill tone="warning">Shift required</StatusPill>
           </div>
         </CardHeader>
         <CardBody className="grid gap-4 text-sm text-amber-950 lg:grid-cols-[1fr_auto] lg:items-end">
           <div>
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-amber-900">
-              Opening cash
-            </label>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-amber-900">Opening cash</label>
             <TextInput value={openingCash} onChange={(event) => setOpeningCash(event.target.value)} />
-            <p className="mt-2 text-xs text-amber-800">
-              Locked state intentionally hides cashier product/cart/payment controls until the shift opens.
-            </p>
+            <p className="mt-2 text-xs text-amber-800">Locked state intentionally hides cashier product/cart/payment controls until the shift opens.</p>
           </div>
-          <Button onClick={() => void handleOpenShift()} disabled={isOpeningShift || shiftQuery.isLoading}>
-            {isOpeningShift ? "Opening..." : "Open Shift"}
-          </Button>
+          <Button onClick={() => void handleOpenShift()} disabled={isOpeningShift || shiftQuery.isLoading}>{isOpeningShift ? "Opening..." : "Open Shift"}</Button>
         </CardBody>
       </Card>
     );
@@ -617,49 +577,24 @@ export function CheckoutPage() {
           <CardHeader className="shrink-0">
             <div className="flex items-center justify-between gap-3">
               <CardTitle>Product search</CardTitle>
-              {productResponse ? (
-                <span className="text-xs font-semibold text-slate-500">
-                  {productResponse.totalCount} result{productResponse.totalCount === 1 ? "" : "s"}
-                </span>
-              ) : null}
+              {productResponse ? <span className="text-xs font-semibold text-slate-500">{productResponse.totalCount} result{productResponse.totalCount === 1 ? "" : "s"}</span> : null}
             </div>
           </CardHeader>
           <CardBody className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
-            <TextInput
-              className="min-h-12 shrink-0 text-base"
-              placeholder="Search SKU, product, or barcode text..."
-              value={search}
-              onChange={(event) => handleSearchChange(event.target.value)}
-              autoComplete="off"
-            />
-            <p className="shrink-0 text-xs text-slate-500">
-              Active products from /api/products. No barcode scanner behavior is added in this lane.
-            </p>
-
+            <TextInput className="min-h-12 shrink-0 text-base" placeholder="Search SKU, product, or barcode text..." value={search} onChange={(event) => handleSearchChange(event.target.value)} autoComplete="off" />
+            <p className="shrink-0 text-xs text-slate-500">Active products from /api/products. No barcode scanner behavior is added in this lane.</p>
             {productsQuery.isLoading ? <LoadingState label="Loading products..." /> : null}
             {productsQuery.isError ? <ErrorState message={describeCheckoutBackendError(productsQuery.error)} /> : null}
             {productResponse ? (
               <>
                 <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1">
-                  {productResponse.items.length > 0 ? (
-                    productResponse.items.map(renderProductCard)
-                  ) : (
-                    <div className="rounded-lg border border-dashed border-slate-300 p-6 text-sm text-slate-500">
-                      No active products found. Try SKU, barcode text, or product name.
-                    </div>
-                  )}
+                  {productResponse.items.length > 0 ? productResponse.items.map(renderProductCard) : <div className="rounded-lg border border-dashed border-slate-300 p-6 text-sm text-slate-500">No active products found. Try SKU, barcode text, or product name.</div>}
                 </div>
                 <div className="flex shrink-0 items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
-                  <span>
-                    Page {productResponse.pageNumber} of {Math.max(1, productResponse.totalPages)}
-                  </span>
+                  <span>Page {productResponse.pageNumber} of {Math.max(1, productResponse.totalPages)}</span>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="secondary" onClick={() => setProductPage((page) => Math.max(1, page - 1))} disabled={!canGoPrevious || productsQuery.isFetching}>
-                      Prev
-                    </Button>
-                    <Button size="sm" variant="secondary" onClick={() => setProductPage((page) => page + 1)} disabled={!canGoNext || productsQuery.isFetching}>
-                      Next
-                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => setProductPage((page) => Math.max(1, page - 1))} disabled={!canGoPrevious || productsQuery.isFetching}>Prev</Button>
+                    <Button size="sm" variant="secondary" onClick={() => setProductPage((page) => page + 1)} disabled={!canGoNext || productsQuery.isFetching}>Next</Button>
                   </div>
                 </div>
               </>
@@ -672,21 +607,14 @@ export function CheckoutPage() {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <CardTitle>Active cart</CardTitle>
-                <p className="mt-1 text-xs text-slate-500">
-                  {cartLines.length} line{cartLines.length === 1 ? "" : "s"} · {formatQuantity(itemQuantityTotal)} item
-                  {itemQuantityTotal === 1 ? "" : "s"}
-                </p>
+                <p className="mt-1 text-xs text-slate-500">{cartLines.length} line{cartLines.length === 1 ? "" : "s"} · {formatQuantity(itemQuantityTotal)} item{itemQuantityTotal === 1 ? "" : "s"}</p>
               </div>
-              <Button variant="secondary" size="sm" onClick={clearCart} disabled={cartLines.length === 0}>
-                Clear
-              </Button>
+              <Button variant="secondary" size="sm" onClick={clearCart} disabled={cartLines.length === 0}>Clear</Button>
             </div>
           </CardHeader>
           <CardBody className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
             {cartLines.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
-                Search a product, then press Add. Cart lines stay visible until New Sale is selected after checkout.
-              </div>
+              <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">Search a product, then press Add. Cart lines stay visible until New Sale is selected after checkout.</div>
             ) : (
               <div className="space-y-3">
                 {cartLines.map((line) => {
@@ -697,41 +625,20 @@ export function CheckoutPage() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold text-slate-950">{line.product.name}</p>
-                          <p className="text-xs text-slate-500">
-                            SKU {line.product.sku ?? "—"} · {line.product.unitName} · {formatMoney(line.product.sellingPrice)} each
-                          </p>
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            <StatusPill tone={stock.tone}>{stock.label}</StatusPill>
-                            {line.product.categoryName ? <StatusPill tone="neutral">{line.product.categoryName}</StatusPill> : null}
-                          </div>
-                          {max !== null && line.quantity >= max ? (
-                            <p className="mt-2 text-xs font-semibold text-amber-700">Reached known stock limit.</p>
-                          ) : null}
+                          <p className="text-xs text-slate-500">SKU {line.product.sku ?? "—"} · {line.product.unitName} · {formatMoney(line.product.sellingPrice)} each</p>
+                          <div className="mt-2 flex flex-wrap gap-1.5"><StatusPill tone={stock.tone}>{stock.label}</StatusPill>{line.product.categoryName ? <StatusPill tone="neutral">{line.product.categoryName}</StatusPill> : null}</div>
+                          {max !== null && line.quantity >= max ? <p className="mt-2 text-xs font-semibold text-amber-700">Reached known stock limit.</p> : null}
                         </div>
-                        <Button size="sm" variant="ghost" onClick={() => updateQuantity(line.product.id, 0)}>
-                          Remove
-                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => updateQuantity(line.product.id, 0)}>Remove</Button>
                       </div>
                       <div className="mt-3 grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-[auto_1fr_auto] sm:items-center">
                         <div className="inline-flex items-center rounded-md border border-slate-300 bg-slate-50">
                           <Button size="sm" variant="ghost" onClick={() => updateQuantity(line.product.id, Math.max(0, line.quantity - 1))}>−</Button>
-                          <input
-                            className="h-8 w-14 border-x border-slate-200 bg-white text-center text-sm font-semibold text-slate-900 focus:outline-none"
-                            type="number"
-                            min={0}
-                            max={max ?? undefined}
-                            value={line.quantity}
-                            onChange={(event) => updateQuantity(line.product.id, Number(event.target.value))}
-                          />
+                          <input className="h-8 w-14 border-x border-slate-200 bg-white text-center text-sm font-semibold text-slate-900 focus:outline-none" type="number" min={0} max={max ?? undefined} value={line.quantity} onChange={(event) => updateQuantity(line.product.id, Number(event.target.value))} />
                           <Button size="sm" variant="ghost" onClick={() => updateQuantity(line.product.id, line.quantity + 1)} disabled={max !== null && line.quantity >= max}>+</Button>
                         </div>
-                        <p className="text-xs text-slate-500">
-                          {max === null ? "Untracked item; backend still validates sale." : `${formatQuantity(max)} known stock.`}
-                        </p>
-                        <div className="text-right">
-                          <p className="text-xs text-slate-500">Line total</p>
-                          <p className="text-base font-bold text-slate-950">{formatMoney(line.product.sellingPrice * line.quantity)}</p>
-                        </div>
+                        <p className="text-xs text-slate-500">{max === null ? "Untracked item; backend still validates sale." : `${formatQuantity(max)} known stock.`}</p>
+                        <div className="text-right"><p className="text-xs text-slate-500">Line total</p><p className="text-base font-bold text-slate-950">{formatMoney(line.product.sellingPrice * line.quantity)}</p></div>
                       </div>
                     </div>
                   );
@@ -742,59 +649,19 @@ export function CheckoutPage() {
         </Card>
 
         <Card className="flex min-h-[28rem] flex-col border-slate-300 xl:min-h-0">
-          <CardHeader className="shrink-0">
-            <CardTitle>Payment / checkout</CardTitle>
-          </CardHeader>
+          <CardHeader className="shrink-0"><CardTitle>Payment / checkout</CardTitle></CardHeader>
           <CardBody className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain">
-            <div className="rounded-lg bg-slate-950 p-4 text-white">
-              <div className="flex items-center justify-between text-sm text-slate-300">
-                <span>Subtotal</span>
-                <span>{cartLines.length} line(s)</span>
-              </div>
-              <p className="mt-2 text-3xl font-bold tracking-tight">{formatMoney(subtotal)}</p>
-            </div>
-
+            <div className="rounded-lg bg-slate-950 p-4 text-white"><div className="flex items-center justify-between text-sm text-slate-300"><span>Subtotal</span><span>{cartLines.length} line(s)</span></div><p className="mt-2 text-3xl font-bold tracking-tight">{formatMoney(subtotal)}</p></div>
             <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Cash tendered
-              </label>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Cash tendered</label>
               <TextInput className="min-h-12 text-lg font-semibold" value={cashAmount} onChange={(event) => setCashAmount(event.target.value)} placeholder="0.00" inputMode="decimal" />
-              <div className="mt-2 grid grid-cols-3 gap-2">
-                <Button size="sm" variant="secondary" onClick={() => setCashAmount(subtotal.toFixed(2))} disabled={subtotal <= 0}>Exact</Button>
-                <Button size="sm" variant="secondary" onClick={() => setCashAmount("500.00")}>500</Button>
-                <Button size="sm" variant="secondary" onClick={() => setCashAmount("1000.00")}>1000</Button>
-              </div>
+              <div className="mt-2 grid grid-cols-3 gap-2"><Button size="sm" variant="secondary" onClick={() => setCashAmount(subtotal.toFixed(2))} disabled={subtotal <= 0}>Exact</Button><Button size="sm" variant="secondary" onClick={() => setCashAmount("500.00")}>500</Button><Button size="sm" variant="secondary" onClick={() => setCashAmount("1000.00")}>1000</Button></div>
             </div>
-
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-center justify-between text-sm text-slate-500">
-                <span>Change due</span>
-                <span>{cashCents < subtotalCents ? "Insufficient cash" : "Ready"}</span>
-              </div>
-              <p className={`mt-1 text-2xl font-bold ${cashCents < subtotalCents ? "text-red-700" : "text-emerald-700"}`}>
-                {fromCents(estimatedChangeCents)}
-              </p>
-            </div>
-
-            {cartValidationMessage ? (
-              <Alert tone={completedSale ? "success" : "warning"} title="Checkout readiness">
-                {cartValidationMessage}
-              </Alert>
-            ) : (
-              <Alert tone="success" title="Ready">
-                Press Review Checkout or F9 to verify totals before committing the sale.
-              </Alert>
-            )}
-
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4"><div className="flex items-center justify-between text-sm text-slate-500"><span>Change due</span><span>{cashCents < subtotalCents ? "Insufficient cash" : "Ready"}</span></div><p className={`mt-1 text-2xl font-bold ${cashCents < subtotalCents ? "text-red-700" : "text-emerald-700"}`}>{fromCents(estimatedChangeCents)}</p></div>
+            {cartValidationMessage ? <Alert tone={completedSale ? "success" : "warning"} title="Checkout readiness">{cartValidationMessage}</Alert> : <Alert tone="success" title="Ready">Press Review Checkout or F9 to verify totals before committing the sale.</Alert>}
             <div className="mt-auto space-y-3 border-t border-slate-100 pt-3">
-              <Button className="min-h-14 w-full text-base" variant="success" onClick={reviewCheckout} disabled={!canReviewCheckout}>
-                {isSubmittingCheckout ? "Completing..." : "Review Checkout"}
-              </Button>
-              <div className="rounded-lg bg-slate-100 p-3 text-xs text-slate-600">
-                <p className="font-semibold text-slate-800">Keyboard hints</p>
-                <p>F9 = Review Checkout · Enter = Confirm when review is open · F5 = New Sale after completion · Esc = Close/cancel dialog</p>
-                <p className="mt-1">No barcode scanner, Fast Add, or physical printer action is added in this lane.</p>
-              </div>
+              <Button className="min-h-14 w-full text-base" variant="success" onClick={reviewCheckout} disabled={!canReviewCheckout}>{isSubmittingCheckout ? "Completing..." : "Review Checkout"}</Button>
+              <div className="rounded-lg bg-slate-100 p-3 text-xs text-slate-600"><p className="font-semibold text-slate-800">Keyboard hints</p><p>F9 = Review Checkout · Enter = Confirm when review is open · F5 = New Sale after completion · Esc = Close/cancel dialog</p><p className="mt-1">No barcode scanner or Fast Add behavior is added in this lane.</p></div>
             </div>
           </CardBody>
         </Card>
@@ -806,165 +673,33 @@ export function CheckoutPage() {
     <div className="space-y-4 overflow-hidden">
       <CommandBar
         title="POS Checkout"
-        subtitle="Cashier workstation using wired local session, shift, product, checkout, and POS-M1 receipt file status."
-        status={
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusPill tone={sessionQuery.data?.isAuthenticated ? "success" : "warning"}>{operatorLabel}</StatusPill>
-            <StatusPill tone={shiftOpen ? "success" : "warning"}>Shift {shift?.shiftState ?? "Unknown"}</StatusPill>
-          </div>
-        }
-        actions={
-          <Button variant="secondary" onClick={() => void refreshShiftAndProducts()} disabled={shiftQuery.isFetching || productsQuery.isFetching || sessionQuery.isFetching}>
-            {shiftQuery.isFetching || productsQuery.isFetching || sessionQuery.isFetching ? "Refreshing..." : "Refresh"}
-          </Button>
-        }
+        subtitle="Cashier workstation using wired local session, shift, product, checkout, receipt file status, and POS-M2 printer adapter status."
+        status={<div className="flex flex-wrap items-center gap-2"><StatusPill tone={sessionQuery.data?.isAuthenticated ? "success" : "warning"}>{operatorLabel}</StatusPill><StatusPill tone={shiftOpen ? "success" : "warning"}>Shift {shift?.shiftState ?? "Unknown"}</StatusPill></div>}
+        actions={<Button variant="secondary" onClick={() => void refreshShiftAndProducts()} disabled={shiftQuery.isFetching || productsQuery.isFetching || sessionQuery.isFetching}>{shiftQuery.isFetching || productsQuery.isFetching || sessionQuery.isFetching ? "Refreshing..." : "Refresh"}</Button>}
       />
-
-      <Card className="border-slate-300">
-        <CardBody className="grid gap-3 py-3 text-sm lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-center">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Operator</p>
-            <p className="font-semibold text-slate-950">{operatorLabel}</p>
-            <p className="text-xs text-slate-500">Role: {roleLabel}</p>
-          </div>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Shift</p>
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              <StatusPill tone={shiftOpen ? "success" : "warning"}>{shift?.shiftState ?? "Unknown"}</StatusPill>
-              <span className="font-mono text-xs text-slate-500">{shortId(shift?.shiftId)}</span>
-            </div>
-          </div>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Opened / cash</p>
-            <p className="font-semibold text-slate-800">{shift?.openedAtUtc ? formatDateTime(shift.openedAtUtc) : "No open shift"}</p>
-            <p className="text-xs text-slate-500">Opening cash: {fromCents(shift?.openingCashCents)}</p>
-          </div>
-          <div className="flex flex-wrap items-end gap-2 lg:justify-end">
-            {shiftOpen ? (
-              <Button variant="danger" onClick={() => void handleCloseShift()} disabled={isClosingShift}>
-                {isClosingShift ? "Closing..." : "Close Shift"}
-              </Button>
-            ) : null}
-          </div>
-        </CardBody>
-      </Card>
-
+      <Card className="border-slate-300"><CardBody className="grid gap-3 py-3 text-sm lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-center"><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Operator</p><p className="font-semibold text-slate-950">{operatorLabel}</p><p className="text-xs text-slate-500">Role: {roleLabel}</p></div><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Shift</p><div className="mt-1 flex flex-wrap items-center gap-2"><StatusPill tone={shiftOpen ? "success" : "warning"}>{shift?.shiftState ?? "Unknown"}</StatusPill><span className="font-mono text-xs text-slate-500">{shortId(shift?.shiftId)}</span></div></div><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Opened / cash</p><p className="font-semibold text-slate-800">{shift?.openedAtUtc ? formatDateTime(shift.openedAtUtc) : "No open shift"}</p><p className="text-xs text-slate-500">Opening cash: {fromCents(shift?.openingCashCents)}</p></div><div className="flex flex-wrap items-end gap-2 lg:justify-end">{shiftOpen ? <Button variant="danger" onClick={() => void handleCloseShift()} disabled={isClosingShift}>{isClosingShift ? "Closing..." : "Close Shift"}</Button> : null}</div></CardBody></Card>
       {backendMessage ? <Alert tone={completedSale ? "success" : "warning"}>{backendMessage}</Alert> : null}
       {shiftQuery.isLoading ? <LoadingState label="Reading host shift..." /> : null}
       {shiftQuery.isError ? <ErrorState message={describeCheckoutBackendError(shiftQuery.error)} /> : null}
-
       {!shiftOpen ? renderShiftLockedState() : renderWorkstation()}
-
-      <details className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-card">
-        <summary className="cursor-pointer text-sm font-semibold text-slate-900">Checkout diagnostics / runtime proof</summary>
-        <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-          <p>Session: {sessionQuery.isLoading ? "Loading..." : sessionQuery.data?.isAuthenticated ? `Authenticated as ${operatorLabel}` : "Not authenticated"}</p>
-          <p>Shift status: {shift?.shiftState ?? "Unknown"}</p>
-          <p>Permission required: Sales.Create</p>
-          <p>Product source: real backend products API</p>
-          <p>Cart line count: {cartLines.length}</p>
-          <p>Cart item quantity: {formatQuantity(itemQuantityTotal)}</p>
-          <p>Cart total: {formatMoney(subtotal)}</p>
-          <p>Cash tendered: {fromCents(cashCents)}</p>
-          <p>Local validation: {cartValidationMessage ?? "Ready for review"}</p>
-          <p>Submit lock: {isSubmittingCheckout ? "Locked" : "Unlocked"}</p>
-          <p>Last checkout HTTP status: {attemptState.httpStatus ?? "—"}</p>
-          <p>Last backend code: {attemptState.backendCode ?? "—"}</p>
-          <p>Last checkout status: {attemptState.checkoutStatus ?? "—"}</p>
-          <p>Last receipt number: {attemptState.receiptNumber ?? "—"}</p>
-          <p>Last sale ID: {attemptState.saleId ?? "—"}</p>
-          <p>Last refresh: {lastRefreshAt ? formatDateTime(lastRefreshAt) : "—"}</p>
-        </div>
-      </details>
-
+      <details className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-card"><summary className="cursor-pointer text-sm font-semibold text-slate-900">Checkout diagnostics / runtime proof</summary><div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4"><p>Session: {sessionQuery.isLoading ? "Loading..." : sessionQuery.data?.isAuthenticated ? `Authenticated as ${operatorLabel}` : "Not authenticated"}</p><p>Shift status: {shift?.shiftState ?? "Unknown"}</p><p>Permission required: Sales.Create</p><p>Product source: real backend products API</p><p>Cart line count: {cartLines.length}</p><p>Cart item quantity: {formatQuantity(itemQuantityTotal)}</p><p>Cart total: {formatMoney(subtotal)}</p><p>Cash tendered: {fromCents(cashCents)}</p><p>Local validation: {cartValidationMessage ?? "Ready for review"}</p><p>Submit lock: {isSubmittingCheckout ? "Locked" : "Unlocked"}</p><p>Print status: {printResult?.status ?? "NotAttempted"}</p><p>Last checkout HTTP status: {attemptState.httpStatus ?? "—"}</p><p>Last backend code: {attemptState.backendCode ?? "—"}</p><p>Last checkout status: {attemptState.checkoutStatus ?? "—"}</p><p>Last receipt number: {attemptState.receiptNumber ?? "—"}</p><p>Last sale ID: {attemptState.saleId ?? "—"}</p><p>Last refresh: {lastRefreshAt ? formatDateTime(lastRefreshAt) : "—"}</p></div></details>
       {showConfirmCheckout ? (
-        <Dialog
-          title="Review Checkout"
-          onClose={() => setShowConfirmCheckout(false)}
-          footer={
-            <>
-              <Button variant="secondary" onClick={() => setShowConfirmCheckout(false)} disabled={isSubmittingCheckout}>Cancel</Button>
-              <Button variant="success" onClick={() => void handleSubmitCheckout()} disabled={isSubmittingCheckout || !canReviewCheckout}>
-                {isSubmittingCheckout ? "Committing..." : "Confirm Sale"}
-              </Button>
-            </>
-          }
-        >
-          <div className="space-y-4 text-sm text-slate-700">
-            <Alert tone="warning" title="Final review before sale commit">
-              Sale commits only after Confirm Sale. Physical printing is not available in this lane.
-            </Alert>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Cart</p>
-                <p className="text-lg font-semibold text-slate-950">{cartLines.length} line(s) · {formatQuantity(itemQuantityTotal)} item(s)</p>
-              </div>
-              <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Total</p>
-                <p className="text-lg font-semibold text-slate-950">{formatMoney(subtotal)}</p>
-              </div>
-              <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Cash tendered</p>
-                <p className="text-lg font-semibold text-slate-950">{fromCents(cashCents)}</p>
-              </div>
-              <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Change</p>
-                <p className="text-lg font-semibold text-emerald-700">{fromCents(estimatedChangeCents)}</p>
-              </div>
-            </div>
-            <div className="max-h-56 overflow-y-auto rounded-lg border border-slate-200">
-              {cartLines.map((line) => (
-                <div key={line.product.id} className="flex justify-between gap-3 border-b border-slate-100 px-3 py-2 last:border-b-0">
-                  <div>
-                    <p className="font-semibold text-slate-900">{line.product.name}</p>
-                    <p className="text-xs text-slate-500">{formatQuantity(line.quantity)} × {formatMoney(line.product.sellingPrice)}</p>
-                  </div>
-                  <p className="font-semibold text-slate-900">{formatMoney(line.quantity * line.product.sellingPrice)}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+        <Dialog title="Review Checkout" onClose={() => setShowConfirmCheckout(false)} footer={<><Button variant="secondary" onClick={() => setShowConfirmCheckout(false)} disabled={isSubmittingCheckout}>Cancel</Button><Button variant="success" onClick={() => void handleSubmitCheckout()} disabled={isSubmittingCheckout || !canReviewCheckout}>{isSubmittingCheckout ? "Committing..." : "Confirm Sale"}</Button></>}>
+          <div className="space-y-4 text-sm text-slate-700"><Alert tone="warning" title="Final review before sale commit">Sale commits only after Confirm Sale. Printing is attempted only after a committed sale and only when Print Receipt is clicked.</Alert><div className="grid gap-3 sm:grid-cols-2"><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Cart</p><p className="text-lg font-semibold text-slate-950">{cartLines.length} line(s) · {formatQuantity(itemQuantityTotal)} item(s)</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Total</p><p className="text-lg font-semibold text-slate-950">{formatMoney(subtotal)}</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Cash tendered</p><p className="text-lg font-semibold text-slate-950">{fromCents(cashCents)}</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Change</p><p className="text-lg font-semibold text-emerald-700">{fromCents(estimatedChangeCents)}</p></div></div><div className="max-h-56 overflow-y-auto rounded-lg border border-slate-200">{cartLines.map((line) => <div key={line.product.id} className="flex justify-between gap-3 border-b border-slate-100 px-3 py-2 last:border-b-0"><div><p className="font-semibold text-slate-900">{line.product.name}</p><p className="text-xs text-slate-500">{formatQuantity(line.quantity)} × {formatMoney(line.product.sellingPrice)}</p></div><p className="font-semibold text-slate-900">{formatMoney(line.quantity * line.product.sellingPrice)}</p></div>)}</div></div>
         </Dialog>
       ) : null}
-
       {completedSale ? (
         <Dialog
           title="Sale Completed"
           onClose={() => setCompletedSale(null)}
-          footer={
-            <Button className="min-h-12" variant="success" onClick={() => void startNewSale()}>
-              New Sale (F5)
-            </Button>
-          }
+          footer={<><Button className="min-h-12" variant="secondary" onClick={() => void handlePrintCompletedReceipt()} disabled={!completedSale.saleId || isPrintingReceipt}>{isPrintingReceipt ? "Printing..." : "Print Receipt"}</Button><Button className="min-h-12" variant="success" onClick={() => void startNewSale()}>New Sale (F5)</Button></>}
         >
           <div className="space-y-4 text-sm text-slate-700">
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-center">
-              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Cash sale committed</p>
-              <p className="mt-2 text-2xl font-bold text-emerald-900">{completedSale.receiptNumber ?? "Receipt pending"}</p>
-              <p className="mt-1 font-mono text-xs text-emerald-800">Sale ID: {completedSale.saleId ?? "—"}</p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Total</p>
-                <p className="text-lg font-semibold text-slate-950">{fromCents(completedSale.totalCents)}</p>
-              </div>
-              <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Amount paid</p>
-                <p className="text-lg font-semibold text-slate-950">{fromCents(completedSale.amountPaidCents)}</p>
-              </div>
-              <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Change</p>
-                <p className="text-lg font-semibold text-emerald-700">{fromCents(completedSale.changeCents)}</p>
-              </div>
-            </div>
-            <Alert tone={completedSale.fileReceiptStatus === "Written" ? "success" : "warning"} title="Receipt file status">
-              {completedSale.fileReceiptStatus === "Written"
-                ? `Receipt file created${completedSale.fileReceiptPath ? `: ${completedSale.fileReceiptPath}` : "."}`
-                : completedSale.fileReceiptStatus
-                  ? `Receipt file status: ${completedSale.fileReceiptStatus}${completedSale.fileReceiptError ? ` — ${completedSale.fileReceiptError}` : ""}`
-                  : "Receipt file status was not included in this checkout response."}
-            </Alert>
-            <p className="text-xs text-slate-500">Physical printing is not available in this lane. No printer button is exposed.</p>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-center"><p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Cash sale committed</p><p className="mt-2 text-2xl font-bold text-emerald-900">{completedSale.receiptNumber ?? "Receipt pending"}</p><p className="mt-1 font-mono text-xs text-emerald-800">Sale ID: {completedSale.saleId ?? "—"}</p></div>
+            <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Total</p><p className="text-lg font-semibold text-slate-950">{fromCents(completedSale.totalCents)}</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Amount paid</p><p className="text-lg font-semibold text-slate-950">{fromCents(completedSale.amountPaidCents)}</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Change</p><p className="text-lg font-semibold text-emerald-700">{fromCents(completedSale.changeCents)}</p></div></div>
+            <Alert tone={completedSale.fileReceiptStatus === "Written" ? "success" : "warning"} title="Receipt file status">{completedSale.fileReceiptStatus === "Written" ? `Receipt file created${completedSale.fileReceiptPath ? `: ${completedSale.fileReceiptPath}` : "."}` : completedSale.fileReceiptStatus ? `Receipt file status: ${completedSale.fileReceiptStatus}${completedSale.fileReceiptError ? ` — ${completedSale.fileReceiptError}` : ""}` : "Receipt file status was not included in this checkout response."}</Alert>
+            {printResult ? <Alert tone={printTone(printResult.status)} title="Printer adapter status">{printResult.message}{printResult.errorMessage ? ` — ${printResult.errorMessage}` : ""} Source: {printResult.source}. Adapter: {printResult.adapterName}.</Alert> : <Alert tone="info" title="Printer adapter status">Printing is optional. Sale remains committed if printer is disabled, unavailable, or failed.</Alert>}
+            <p className="text-xs text-slate-500">Print Receipt uses the persisted receipt snapshot/file source through the printer adapter. It does not start a new sale. New Sale remains a separate action.</p>
             {checkoutResult ? <p className="rounded-md bg-slate-100 p-3 text-slate-700">{checkoutResult.checkout.message}</p> : null}
           </div>
         </Dialog>
