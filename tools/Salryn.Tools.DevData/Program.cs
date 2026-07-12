@@ -42,14 +42,22 @@ public static class Program
 
     private static int ResetDb(string[] args, DbPaths paths)
     {
-        if (!args.Contains("--confirm-dev-reset", StringComparer.OrdinalIgnoreCase)) return Fail("reset-db requires --confirm-dev-reset.");
+        if (!args.Contains("--confirm-dev-reset", StringComparer.OrdinalIgnoreCase))
+        {
+            return Fail("reset-db requires --confirm-dev-reset.");
+        }
+
         EnsureDevOnly(paths.DatabasePath);
         Directory.CreateDirectory(paths.DataPath);
         string backupDir = Path.Combine(paths.DataPath, "manual-backups");
         Directory.CreateDirectory(backupDir);
-        string backupPath = Path.Combine(backupDir, "salryn-dev-reset-" + DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss") + ".db");
+        string backupPath = Path.Combine(
+            backupDir,
+            "salryn-dev-reset-" + DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss") + ".db");
+
         Console.WriteLine("Source DB path: " + paths.DatabasePath);
         Console.WriteLine("Backup path: " + backupPath);
+
         if (File.Exists(paths.DatabasePath))
         {
             File.Copy(paths.DatabasePath, backupPath, overwrite: false);
@@ -58,56 +66,125 @@ public static class Program
         }
         else
         {
-            File.WriteAllText(backupPath + ".empty.txt", "No active dev database existed at reset time." + Environment.NewLine);
+            File.WriteAllText(
+                backupPath + ".empty.txt",
+                "No active dev database existed at reset time." + Environment.NewLine);
             Console.WriteLine("No active dev DB existed; empty-reset marker created.");
         }
+
         Console.WriteLine("Next: start the app and complete first-run setup at /bootstrap.");
         return 0;
     }
 
     private static int SeedGeneralStore(string[] args, DbPaths paths)
     {
-        if (!args.Contains("--confirm-dev-seed", StringComparer.OrdinalIgnoreCase)) return Fail("seed-general-store requires --confirm-dev-seed.");
+        if (!args.Contains("--confirm-dev-seed", StringComparer.OrdinalIgnoreCase))
+        {
+            return Fail("seed-general-store requires --confirm-dev-seed.");
+        }
+
         int count = ReadIntOption(args, "--count", RequiredCount);
-        if (count != RequiredCount) return Fail("Manual Proof M1 dev seed requires exactly 1000 products. Requested count: " + count);
+        if (count != RequiredCount)
+        {
+            return Fail("Manual Proof M1 dev seed requires exactly 1000 products. Requested count: " + count);
+        }
+
         bool replace = args.Contains("--replace-dev-products", StringComparer.OrdinalIgnoreCase);
         EnsureDevOnly(paths.DatabasePath);
-        if (!File.Exists(paths.DatabasePath)) return Fail("Dev database does not exist. Start the app and complete first-run setup before seeding.");
+
+        if (!File.Exists(paths.DatabasePath))
+        {
+            return Fail("Dev database does not exist. Start the app and complete first-run setup before seeding.");
+        }
 
         DatabaseInitializationOrchestrator init = DefaultDatabaseInitializationFactory.Create(paths);
         var status = init.CheckStatus();
-        if (status.IsFailure) return Fail(status.ErrorDetail.Code + ": " + status.ErrorDetail.Message);
-        if (status.Value.FirstRunStatus.IsFirstRunRequired || !status.Value.FirstRunStatus.HasUsers || !status.Value.FirstRunStatus.HasStoreSettings) return Fail("Complete first-run admin setup before seeding dev products.");
+        if (status.IsFailure)
+        {
+            return Fail(status.ErrorDetail.Code + ": " + status.ErrorDetail.Message);
+        }
+
+        if (status.Value.FirstRunStatus.IsFirstRunRequired ||
+            !status.Value.FirstRunStatus.HasUsers ||
+            !status.Value.FirstRunStatus.HasStoreSettings)
+        {
+            return Fail("Complete first-run admin setup before seeding dev products.");
+        }
 
         IReadOnlyList<SeedProduct> products = SeedCatalog.Generate(RequiredCount);
         SeedCatalog.Validate(products, RequiredCount);
 
-        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = paths.DatabasePath }.ToString());
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = paths.DatabasePath
+        }.ToString());
         connection.Open();
         SqlitePragma.Apply(connection);
+
         long existingProducts = ScalarLong(connection, "SELECT COUNT(*) FROM products;");
-        if (existingProducts > 0 && !replace) return Fail("Products already exist. Reset the dev DB first or pass --replace-dev-products for seeded dev rows only.");
+        if (existingProducts > 0 && !replace)
+        {
+            return Fail("Products already exist. Reset the dev DB first or pass --replace-dev-products for seeded dev rows only.");
+        }
+
         if (replace)
         {
-            if (ScalarLong(connection, "SELECT COUNT(*) FROM sale_items;") > 0) return Fail("Refusing --replace-dev-products because sale_items exist. Reset the dev DB instead.");
-            Execute(connection, null, "DELETE FROM stock_movements WHERE product_id IN (SELECT id FROM products WHERE sku LIKE 'DEV-GMHW-%');");
+            if (ScalarLong(connection, "SELECT COUNT(*) FROM sale_items;") > 0)
+            {
+                return Fail("Refusing --replace-dev-products because sale_items exist. Reset the dev DB instead.");
+            }
+
+            Execute(
+                connection,
+                null,
+                "DELETE FROM stock_movements WHERE product_id IN (SELECT id FROM products WHERE sku LIKE 'DEV-GMHW-%');");
             Execute(connection, null, "DELETE FROM products WHERE sku LIKE 'DEV-GMHW-%';");
         }
 
         using var tx = connection.BeginTransaction();
         string now = DateTimeOffset.UtcNow.ToString("O");
+
         foreach (string unit in products.Select(p => p.Unit).Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            Execute(connection, tx, "INSERT OR IGNORE INTO units (id, name, abbreviation, allows_decimal_quantity, is_active) VALUES ($id, $name, $abbr, $decimal, 1);", new() { ["$id"] = StableGuid("unit:" + unit), ["$name"] = UnitName(unit), ["$abbr"] = unit, ["$decimal"] = unit is "kg" or "g" or "liter" or "ml" or "meter" ? 1 : 0 });
+            Execute(
+                connection,
+                tx,
+                "INSERT OR IGNORE INTO units (id, name, abbreviation, allows_decimal_quantity, is_active) VALUES ($id, $name, $abbr, $decimal, 1);",
+                new Dictionary<string, object?>
+                {
+                    ["$id"] = StableGuid("unit:" + unit),
+                    ["$name"] = UnitName(unit),
+                    ["$abbr"] = unit,
+                    ["$decimal"] = unit is "kg" or "g" or "liter" or "ml" or "meter" ? 1 : 0
+                });
         }
+
         foreach (string category in products.Select(p => p.Category).Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            Execute(connection, tx, "INSERT OR IGNORE INTO categories (id, name, is_active) VALUES ($id, $name, 1);", new() { ["$id"] = StableGuid("category:" + category), ["$name"] = category });
+            Execute(
+                connection,
+                tx,
+                "INSERT OR IGNORE INTO categories (id, name, is_active) VALUES ($id, $name, 1);",
+                new Dictionary<string, object?>
+                {
+                    ["$id"] = StableGuid("category:" + category),
+                    ["$name"] = category
+                });
         }
+
         foreach (string brand in products.Select(p => p.Brand).Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            Execute(connection, tx, "INSERT OR IGNORE INTO brands (id, name, is_active) VALUES ($id, $name, 1);", new() { ["$id"] = StableGuid("brand:" + brand), ["$name"] = brand });
+            Execute(
+                connection,
+                tx,
+                "INSERT OR IGNORE INTO brands (id, name, is_active) VALUES ($id, $name, 1);",
+                new Dictionary<string, object?>
+                {
+                    ["$id"] = StableGuid("brand:" + brand),
+                    ["$name"] = brand
+                });
         }
+
         foreach (SeedProduct p in products)
         {
             Execute(connection, tx, """
@@ -118,21 +195,42 @@ public static class Program
                 VALUES
                     ($id, $sku, $barcode, $name, $description, $categoryId, $brandId, $unitId, NULL,
                      $cost, $selling, NULL, $stock, $reorder, $track, 1, $active, $notes, $createdAt, NULL);
-                """, new()
-            {
-                ["$id"] = StableGuid("product:" + p.Sku), ["$sku"] = p.Sku, ["$barcode"] = p.Barcode, ["$name"] = p.Name,
-                ["$description"] = p.Category + " manual-proof seed item", ["$categoryId"] = StableGuid("category:" + p.Category), ["$brandId"] = StableGuid("brand:" + p.Brand), ["$unitId"] = StableGuid("unit:" + p.Unit),
-                ["$cost"] = p.CostPriceCents, ["$selling"] = p.SellingPriceCents, ["$stock"] = p.StockOnHand * 1000, ["$reorder"] = p.ReorderLevel * 1000,
-                ["$track"] = p.TrackStock ? 1 : 0, ["$active"] = p.IsActive ? 1 : 0, ["$notes"] = "Manual Proof M1 deterministic dev seed; no product images.", ["$createdAt"] = now
-            });
+                """,
+                new Dictionary<string, object?>
+                {
+                    ["$id"] = StableGuid("product:" + p.Sku),
+                    ["$sku"] = p.Sku,
+                    ["$barcode"] = p.Barcode,
+                    ["$name"] = p.Name,
+                    ["$description"] = p.Category + " manual-proof seed item",
+                    ["$categoryId"] = StableGuid("category:" + p.Category),
+                    ["$brandId"] = StableGuid("brand:" + p.Brand),
+                    ["$unitId"] = StableGuid("unit:" + p.Unit),
+                    ["$cost"] = p.CostPriceCents,
+                    ["$selling"] = p.SellingPriceCents,
+                    ["$stock"] = p.StockOnHand * 1000,
+                    ["$reorder"] = p.ReorderLevel * 1000,
+                    ["$track"] = p.TrackStock ? 1 : 0,
+                    ["$active"] = p.IsActive ? 1 : 0,
+                    ["$notes"] = "Manual Proof M1 deterministic dev seed; no product images.",
+                    ["$createdAt"] = now
+                });
         }
+
         tx.Commit();
 
         long inserted = ScalarLong(connection, "SELECT COUNT(*) FROM products WHERE sku LIKE 'DEV-GMHW-%';");
         long uniqueSkus = ScalarLong(connection, "SELECT COUNT(DISTINCT sku) FROM products WHERE sku LIKE 'DEV-GMHW-%';");
         long uniqueNames = ScalarLong(connection, "SELECT COUNT(DISTINCT name) FROM products WHERE sku LIKE 'DEV-GMHW-%';");
         long uniqueBarcodes = ScalarLong(connection, "SELECT COUNT(DISTINCT barcode) FROM products WHERE sku LIKE 'DEV-GMHW-%';");
-        if (inserted != RequiredCount || uniqueSkus != RequiredCount || uniqueNames != RequiredCount || uniqueBarcodes != RequiredCount) return Fail($"Seed verification failed. Inserted={inserted}; Unique SKUs={uniqueSkus}; Unique names={uniqueNames}; Unique barcodes={uniqueBarcodes}.");
+        if (inserted != RequiredCount ||
+            uniqueSkus != RequiredCount ||
+            uniqueNames != RequiredCount ||
+            uniqueBarcodes != RequiredCount)
+        {
+            return Fail(
+                $"Seed verification failed. Inserted={inserted}; Unique SKUs={uniqueSkus}; Unique names={uniqueNames}; Unique barcodes={uniqueBarcodes}.");
+        }
 
         Console.WriteLine("DB path: " + paths.DatabasePath);
         Console.WriteLine("Seed profile: Philippine general merchandise + hardware store");
@@ -152,8 +250,16 @@ public static class Program
     private static int ReadIntOption(string[] args, string name, int fallback)
     {
         int index = Array.FindIndex(args, arg => string.Equals(arg, name, StringComparison.OrdinalIgnoreCase));
-        if (index < 0) return fallback;
-        if (index + 1 >= args.Length || !int.TryParse(args[index + 1], out int value)) throw new InvalidOperationException(name + " requires an integer value.");
+        if (index < 0)
+        {
+            return fallback;
+        }
+
+        if (index + 1 >= args.Length || !int.TryParse(args[index + 1], out int value))
+        {
+            throw new InvalidOperationException(name + " requires an integer value.");
+        }
+
         return value;
     }
 
@@ -161,9 +267,17 @@ public static class Program
     {
         string fullPath = Path.GetFullPath(databasePath);
         string marker = Path.DirectorySeparatorChar + ".salryn-dev" + Path.DirectorySeparatorChar;
-        if (!fullPath.Contains(marker, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Refusing to touch non-dev database path: " + fullPath);
+        if (!fullPath.Contains(marker, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Refusing to touch non-dev database path: " + fullPath);
+        }
+
         string programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
-        if (!string.IsNullOrWhiteSpace(programData) && fullPath.StartsWith(Path.GetFullPath(programData), StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Refusing to touch ProgramData production path: " + fullPath);
+        if (!string.IsNullOrWhiteSpace(programData) &&
+            fullPath.StartsWith(Path.GetFullPath(programData), StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Refusing to touch ProgramData production path: " + fullPath);
+        }
     }
 
     private static string FindProjectRoot(string start)
@@ -171,9 +285,14 @@ public static class Program
         DirectoryInfo? current = new(start);
         while (current is not null)
         {
-            if (File.Exists(Path.Combine(current.FullName, "Salryn.sln"))) return current.FullName;
+            if (File.Exists(Path.Combine(current.FullName, "Salryn.sln")))
+            {
+                return current.FullName;
+            }
+
             current = current.Parent;
         }
+
         throw new InvalidOperationException("Could not find Salryn.sln from " + start);
     }
 
@@ -184,22 +303,81 @@ public static class Program
         return Convert.ToInt64(command.ExecuteScalar());
     }
 
-    private static void Execute(SqliteConnection connection, SqliteTransaction? transaction, string sql, IReadOnlyDictionary<string, object?>? parameters = null)
+    private static void Execute(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        string sql,
+        IReadOnlyDictionary<string, object?>? parameters = null)
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = sql;
-        if (parameters is not null) foreach (var p in parameters) command.Parameters.AddWithValue(p.Key, p.Value ?? DBNull.Value);
+
+        if (parameters is not null)
+        {
+            foreach (var p in parameters)
+            {
+                command.Parameters.AddWithValue(p.Key, p.Value ?? DBNull.Value);
+            }
+        }
+
         command.ExecuteNonQuery();
     }
 
-    private static string StableGuid(string key) => new Guid(MD5.HashData(Encoding.UTF8.GetBytes("Salryn.DevData." + key))).ToString("D");
-    private static string UnitName(string u) => u switch { "pc" => "Piece", "box" => "Box", "pack" => "Pack", "set" => "Set", "pair" => "Pair", "kg" => "Kilogram", "g" => "Gram", "liter" => "Liter", "ml" => "Milliliter", "bottle" => "Bottle", "can" => "Can", "sachet" => "Sachet", "roll" => "Roll", "meter" => "Meter", "bag" => "Bag", "bundle" => "Bundle", "tube" => "Tube", "gal" => "Gallon", _ => u };
-    private static int Fail(string message) { Console.Error.WriteLine("[Salryn DevData] ERROR: " + message); return 1; }
+    private static string StableGuid(string key) =>
+        new Guid(MD5.HashData(Encoding.UTF8.GetBytes("Salryn.DevData." + key))).ToString("D");
+
+    private static string UnitName(string u) => u switch
+    {
+        "pc" => "Piece",
+        "box" => "Box",
+        "pack" => "Pack",
+        "set" => "Set",
+        "pair" => "Pair",
+        "kg" => "Kilogram",
+        "g" => "Gram",
+        "liter" => "Liter",
+        "ml" => "Milliliter",
+        "bottle" => "Bottle",
+        "can" => "Can",
+        "sachet" => "Sachet",
+        "roll" => "Roll",
+        "meter" => "Meter",
+        "bag" => "Bag",
+        "bundle" => "Bundle",
+        "tube" => "Tube",
+        "gal" => "Gallon",
+        _ => u
+    };
+
+    private static int Fail(string message)
+    {
+        Console.Error.WriteLine("[Salryn DevData] ERROR: " + message);
+        return 1;
+    }
 }
 
-internal sealed record SeedProduct(string Sku, string Barcode, string Name, string Category, string Brand, string Unit, int CostPriceCents, int SellingPriceCents, int StockOnHand, int ReorderLevel, bool TrackStock, bool IsActive);
-internal sealed record SeedCategory(string Category, string Code, string Unit, string[] Brands, string[] Bases, string[] Specs);
+internal sealed record SeedProduct(
+    string Sku,
+    string Barcode,
+    string Name,
+    string Category,
+    string Brand,
+    string Unit,
+    int CostPriceCents,
+    int SellingPriceCents,
+    int StockOnHand,
+    int ReorderLevel,
+    bool TrackStock,
+    bool IsActive);
+
+internal sealed record SeedCategory(
+    string Category,
+    string Code,
+    string Unit,
+    string[] Brands,
+    string[] Bases,
+    string[] Specs);
 
 internal static class SeedCatalog
 {
@@ -234,38 +412,94 @@ internal static class SeedCatalog
         List<SeedProduct> products = new(count);
         int i = 1;
         foreach (SeedCategory c in Categories)
-        foreach (string b in c.Bases)
-        foreach (string s in c.Specs)
         {
-            string brand = c.Brands[(i - 1) % c.Brands.Length];
-            int cost = Cost(c.Code, i);
-            bool tracked = i % 13 != 0;
-            int reorder = tracked ? 5 + i % 12 : 0;
-            int stock = tracked ? i % 17 == 0 ? 0 : i % 11 == 0 ? Math.Max(1, reorder - 1) : reorder + 10 + i % 90 : 0;
-            products.Add(new(SeedSkuPrefix + i.ToString("D4"), (4_809_000_000_000L + i).ToString(), brand + " " + b + " " + s, c.Category, brand, c.Unit, cost, cost + Math.Max(100, cost / 4 + (i % 7) * 25), stock, reorder, tracked, i % 97 != 0));
-            if (products.Count == count) return products;
-            i++;
+            foreach (string b in c.Bases)
+            {
+                foreach (string s in c.Specs)
+                {
+                    string brand = c.Brands[(i - 1) % c.Brands.Length];
+                    int cost = Cost(c.Code, i);
+                    bool tracked = i % 13 != 0;
+                    int reorder = tracked ? 5 + i % 12 : 0;
+                    int stock = tracked
+                        ? i % 17 == 0
+                            ? 0
+                            : i % 11 == 0
+                                ? Math.Max(1, reorder - 1)
+                                : reorder + 10 + i % 90
+                        : 0;
+
+                    products.Add(new SeedProduct(
+                        SeedSkuPrefix + i.ToString("D4"),
+                        (4_809_000_000_000L + i).ToString(),
+                        brand + " " + b + " " + s,
+                        c.Category,
+                        brand,
+                        c.Unit,
+                        cost,
+                        cost + Math.Max(100, cost / 4 + (i % 7) * 25),
+                        stock,
+                        reorder,
+                        tracked,
+                        i % 97 != 0));
+
+                    if (products.Count == count)
+                    {
+                        return products;
+                    }
+
+                    i++;
+                }
+            }
         }
+
         return products;
     }
 
     public static void Validate(IReadOnlyList<SeedProduct> products, int expected)
     {
-        if (products.Count != expected) throw new InvalidOperationException($"Seed generator produced {products.Count}; expected {expected}.");
+        if (products.Count != expected)
+        {
+            throw new InvalidOperationException($"Seed generator produced {products.Count}; expected {expected}.");
+        }
+
         Unique(products.Select(p => p.Sku), "SKU");
         Unique(products.Select(p => p.Name), "product name");
         Unique(products.Select(p => p.Barcode), "barcode");
         Unique(products.Select(p => p.Category + "|" + p.Name), "category/name");
-        if (products.Any(p => p.CostPriceCents >= p.SellingPriceCents)) throw new InvalidOperationException("Every seed product must have cost below selling price.");
-        if (products.Any(p => p.Name.Contains("Item ", StringComparison.OrdinalIgnoreCase))) throw new InvalidOperationException("Generic Item filler is forbidden.");
+        if (products.Any(p => p.CostPriceCents >= p.SellingPriceCents))
+        {
+            throw new InvalidOperationException("Every seed product must have cost below selling price.");
+        }
+
+        if (products.Any(p => p.Name.Contains("Item ", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException("Generic Item filler is forbidden.");
+        }
     }
 
     private static void Unique(IEnumerable<string> values, string label)
     {
-        string? duplicate = values.GroupBy(v => v, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1).Select(g => g.Key).FirstOrDefault();
-        if (duplicate is not null) throw new InvalidOperationException("Duplicate " + label + ": " + duplicate);
+        string? duplicate = values
+            .GroupBy(v => v, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .FirstOrDefault();
+        if (duplicate is not null)
+        {
+            throw new InvalidOperationException("Duplicate " + label + ": " + duplicate);
+        }
     }
 
-    private static int Cost(string code, int i) => (code switch { "TO" => 120 + i % 45 * 35, "CM" => 80 + i % 35 * 45, "AU" => 90 + i % 40 * 30, "HW" or "EL" or "PL" or "PA" or "FA" => 15 + i % 60 * 18, _ => 5 + i % 95 * 6 }) * 100;
-    private static SeedCategory C(string category, string code, string unit, string brands, string bases) => new(category, code, unit, brands.Split('|'), bases.Split('|'), Specs);
+    private static int Cost(string code, int i) => (code switch
+    {
+        "TO" => 120 + i % 45 * 35,
+        "CM" => 80 + i % 35 * 45,
+        "AU" => 90 + i % 40 * 30,
+        "HW" or "EL" or "PL" or "PA" or "FA" => 15 + i % 60 * 18,
+        _ => 5 + i % 95 * 6
+    }) * 100;
+
+    private static SeedCategory C(string category, string code, string unit, string brands, string bases) =>
+        new(category, code, unit, brands.Split('|'), bases.Split('|'), Specs);
 }
