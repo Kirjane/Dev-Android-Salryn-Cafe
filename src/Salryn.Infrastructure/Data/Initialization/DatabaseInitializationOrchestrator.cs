@@ -68,6 +68,11 @@ public sealed class DatabaseInitializationOrchestrator
                 PendingMigrationCount: pendingMigrationCount));
     }
 
+    public Result<AdminBootstrapSummary> CreateFirstAdmin(AdminBootstrapRequest request)
+    {
+        return _firstRunBootstrapper.CreateFirstAdmin(request);
+    }
+
     public Result<DatabaseInitializationSummary> InitializeDatabase()
     {
         try
