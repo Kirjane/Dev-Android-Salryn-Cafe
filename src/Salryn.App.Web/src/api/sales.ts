@@ -27,6 +27,7 @@ export type SaleDetail = {
   status: string;
   voidReason: string | null;
   voidedAt: string | null;
+  receiptSnapshot: string | null;
   items: {
     id: string;
     productNameSnapshot: string;
@@ -52,6 +53,24 @@ export type SaleSearchParams = {
   receiptNo?: string;
   page?: number;
   pageSize?: number;
+};
+
+export type ReceiptPrintResult = {
+  succeeded: boolean;
+  status: "NotAttempted" | "Succeeded" | "Failed" | "Disabled/Unavailable" | string;
+  saleId: string | null;
+  receiptNumber: string | null;
+  source: string;
+  adapterName: string;
+  message: string;
+  errorMessage: string | null;
+  printedAtUtc: string | null;
+};
+
+export type ReceiptPrintEnvelope = {
+  code: string;
+  message: string;
+  print: ReceiptPrintResult;
 };
 
 function toQuery(params: Record<string, string | number | undefined>): string {
@@ -85,4 +104,20 @@ export async function fetchSalesHistory(
 export async function fetchSaleDetail(saleId: string): Promise<SaleDetail> {
   const response = await fetch(`/api/sales/${saleId}`, { credentials: "include" });
   return readJson<SaleDetail>(response);
+}
+
+export async function printReceiptForSale(saleId: string): Promise<ReceiptPrintEnvelope> {
+  const response = await fetch(`/api/receipts/${saleId}/print`, {
+    method: "POST",
+    credentials: "include",
+  });
+  return readJson<ReceiptPrintEnvelope>(response);
+}
+
+export async function testPrintReceipt(): Promise<ReceiptPrintEnvelope> {
+  const response = await fetch("/api/receipts/test-print", {
+    method: "POST",
+    credentials: "include",
+  });
+  return readJson<ReceiptPrintEnvelope>(response);
 }
