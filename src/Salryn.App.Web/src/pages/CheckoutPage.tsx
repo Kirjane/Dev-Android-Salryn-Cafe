@@ -582,7 +582,7 @@ export function CheckoutPage() {
           </CardHeader>
           <CardBody className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
             <TextInput className="min-h-12 shrink-0 text-base" placeholder="Search SKU, product, or barcode text..." value={search} onChange={(event) => handleSearchChange(event.target.value)} autoComplete="off" />
-            <p className="shrink-0 text-xs text-slate-500">Active products from /api/products. No barcode scanner behavior is added in this lane.</p>
+            <p className="shrink-0 text-xs text-slate-500">Active products from /api/products. No extra input-device behavior is added in this lane.</p>
             {productsQuery.isLoading ? <LoadingState label="Loading products..." /> : null}
             {productsQuery.isError ? <ErrorState message={describeCheckoutBackendError(productsQuery.error)} /> : null}
             {productResponse ? (
@@ -661,7 +661,7 @@ export function CheckoutPage() {
             {cartValidationMessage ? <Alert tone={completedSale ? "success" : "warning"} title="Checkout readiness">{cartValidationMessage}</Alert> : <Alert tone="success" title="Ready">Press Review Checkout or F9 to verify totals before committing the sale.</Alert>}
             <div className="mt-auto space-y-3 border-t border-slate-100 pt-3">
               <Button className="min-h-14 w-full text-base" variant="success" onClick={reviewCheckout} disabled={!canReviewCheckout}>{isSubmittingCheckout ? "Completing..." : "Review Checkout"}</Button>
-              <div className="rounded-lg bg-slate-100 p-3 text-xs text-slate-600"><p className="font-semibold text-slate-800">Keyboard hints</p><p>F9 = Review Checkout · Enter = Confirm when review is open · F5 = New Sale after completion · Esc = Close/cancel dialog</p><p className="mt-1">No barcode scanner or Fast Add behavior is added in this lane.</p></div>
+              <div className="rounded-lg bg-slate-100 p-3 text-xs text-slate-600"><p className="font-semibold text-slate-800">Keyboard hints</p><p>F9 = Review Checkout · Enter = Confirm when review is open · F5 = New Sale after completion · Esc = Close/cancel dialog</p><p className="mt-1">No extra input-device or Fast Add behavior is added in this lane.</p></div>
             </div>
           </CardBody>
         </Card>
