@@ -4,11 +4,10 @@ import { ApiError } from "../api/http";
 import {
   fetchLowStockProducts,
   fetchStockMovements,
-  submitStockAdjustment,
-  submitStockIn,
   type LowStockProduct,
   type StockMovement,
 } from "../api/inventory";
+import { submitStockAdjustment, submitStockIn } from "../api/inventoryManagement";
 import { fetchProducts, type ProductListItem } from "../api/products";
 import {
   Alert,
@@ -105,7 +104,7 @@ function Dialog({ title, children, footer, onClose }: { title: string; children:
         <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
           <div>
             <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
-            <p className="mt-1 text-xs text-slate-500">Stock writes create movement ledger entries only. They do not create sales, payments, or receipts.</p>
+            <p className="mt-1 text-xs text-slate-500">Stock-In and Stock Adjustment does not create sales, payments, receipts. Every write creates an inventory movement ledger entry only.</p>
           </div>
           <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
         </div>
@@ -188,7 +187,7 @@ export function InventoryPage() {
 
   function openStockDialog(mode: StockDialogMode) {
     setDialogMode(mode);
-    setForm({ ...emptyStockForm, direction: mode === "adjustment" ? "add" : "add" });
+    setForm({ ...emptyStockForm, direction: "add" });
     setFormError(null);
     setWriteMessage(null);
     setShowStockDialog(true);
@@ -301,7 +300,7 @@ export function InventoryPage() {
       />
 
       <Alert tone="info" title="POS-M6 stock write boundary">
-        Stock-In and Stock Adjustment create inventory movement ledger entries only. They do not create sales, payments, receipts, or reprint side effects.
+        Stock-In and Stock Adjustment does not create sales, payments, receipts. Stock writes create inventory movement ledger entries only and do not create reprint side effects.
       </Alert>
       {writeMessage ? <Alert tone={writeMessage.includes("denied") || writeMessage.includes("required") ? "warning" : "success"}>{writeMessage}</Alert> : null}
 
@@ -365,7 +364,7 @@ export function InventoryPage() {
           footer={<><Button variant="secondary" onClick={() => setShowStockDialog(false)} disabled={isSavingStock}>Cancel</Button><Button variant="success" onClick={() => void submitStockWrite()} disabled={isSavingStock || productLookupQuery.isLoading}>{isSavingStock ? "Saving..." : dialogMode === "stock-in" ? "Record Stock-In" : "Record Adjustment"}</Button></>}
         >
           <div className="space-y-4 text-sm text-slate-700">
-            <Alert tone="warning" title="Explicit stock write confirmation required">Every write creates an inventory movement ledger entry. No sale, payment, or receipt is created from this dialog.</Alert>
+            <Alert tone="warning" title="Explicit stock write confirmation required">Stock-In and Stock Adjustment does not create sales, payments, receipts. Every write creates an inventory movement ledger entry.</Alert>
             {formError ? <Alert tone="danger" title="Stock write validation">{formError}</Alert> : null}
             <div className="grid gap-3 md:grid-cols-[1fr_12rem]">
               <div>
