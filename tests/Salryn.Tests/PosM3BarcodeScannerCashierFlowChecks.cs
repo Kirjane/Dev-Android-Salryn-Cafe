@@ -26,7 +26,7 @@ public static class PosM3BarcodeScannerCashierFlowChecks
         RequireContains(checkoutPage, "addProduct(match)", "Exact barcode match must reuse existing cart add path.");
         RequireContains(checkoutPage, "Scan barcode or search product name", "Scan/search input must remain visible and product-name search usable.");
         RequireContains(checkoutPage, "Product-name search remains available", "Product-name search regression proof must remain in UI copy.");
-        RequireContains(checkoutPage, "Product not found. Fast Add is parked for POS-M4.", "Unknown barcode must show the POS-M4 Fast Add parked message.");
+        RequireContains(checkoutPage, "openFastAddForBarcode(barcode)", "Unknown barcode must hand off to POS-M4 Fast Add flow.");
         RequireContains(checkoutPage, "Stock changes only when checkout completes", "Scan add must not claim stock mutation before checkout.");
 
         RequireContains(checkoutPage, "submitCheckout", "Checkout submit path must remain available after barcode cart add.");
@@ -34,9 +34,9 @@ public static class PosM3BarcodeScannerCashierFlowChecks
         RequireContains(checkoutPage, "printReceiptForSale", "POS-M2 print path must remain wired for Sale Completed modal.");
         RequireContains(receiptPrintApi, "method: \"POST\"", "POS-M2 print client must remain isolated outside read-only sales API.");
 
-        RequireNotContains(checkoutPage, "createProduct", "Barcode flow must not create products.");
+        RequireNotContains(checkoutPage, "createProduct", "Barcode flow must not silently create products.");
         RequireNotContains(checkoutPage, "method: \"POST\"", "Checkout page must not introduce direct product writes.");
-        RequireNotContains(checkoutPage, "StockIn", "Barcode flow must not add stock-in behavior.");
+        RequireNotContains(checkoutPage, "StockIn", "Barcode flow must not add direct stock-in behavior inside checkout UI.");
         RequireNotContains(checkoutPage, "Adjustment", "Barcode flow must not add stock adjustment behavior.");
         RequireNotContains(checkoutPage, "Void Sale", "Barcode flow must not add void behavior.");
         RequireNotContains(checkoutPage, "Official", "Barcode flow must not add official/RMO/BIR behavior.");
