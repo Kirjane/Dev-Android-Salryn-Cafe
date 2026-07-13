@@ -83,7 +83,6 @@ public static class WebB0ReadOnlyOperatorSurfacesChecks
             inventoryApi,
             salesApi,
             auditApi,
-            ReadRequiredFile(webSrc, "pages", "ProductsPage.tsx"),
             ReadRequiredFile(webSrc, "pages", "InventoryPage.tsx"),
             ReadRequiredFile(webSrc, "pages", "SalesHistoryPage.tsx"),
             ReadRequiredFile(webSrc, "pages", "AuditPage.tsx"));

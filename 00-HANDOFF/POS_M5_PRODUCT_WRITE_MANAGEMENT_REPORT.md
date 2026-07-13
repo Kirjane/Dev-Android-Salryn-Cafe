@@ -5,7 +5,7 @@ Branch: `KIRCH-POS-M5-PRODUCT-WRITE-MANAGEMENT`
 Base branch: `KIRCH-POS-M4-FAST-ADD-UNKNOWN-BARCODE-INVENTORY`  
 Base SHA: `b4982b81ccd5606797998d595002d83be05650c5`
 
-Authoring mode: GitHub connector-backed implementation. Local shell gates, browser/manual proof, and physical scanner/printer proof were not executable from this session.
+Verification mode: local Codex self-check plus in-app browser manual proof. This is candidate evidence, not independent acceptance.
 
 ---
 
@@ -59,6 +59,7 @@ Out of scope and not implemented:
 - `src/Salryn.App.Web/src/api/products.ts`
 - `src/Salryn.App.Web/src/pages/ProductsPage.tsx`
 - `tests/Salryn.Tests/PosM5ProductWriteManagementChecks.cs`
+- `tests/Salryn.Tests/WebB0ReadOnlyOperatorSurfacesChecks.cs`
 
 No receipt snapshot/file writer, backend printer service, checkout sale math, stock adjustment screen, installer, protected ref, RMO/BIR/eSales file was intentionally changed.
 
@@ -179,15 +180,16 @@ Coverage intent:
 
 CoreSmoke entry-point status:
 
-- POS-M5 smoke file exists.
-- Program.cs entry-point wiring was not safely updated before this report due the large existing CoreSmoke file needing a full replacement through the connector.
-- Targeted `--only pos-m5-product-write-management` remains `BLOCKED` until Program.cs is patched and locally verified.
+- POS-M5 is registered as `--only pos-m5-product-write-management`.
+- The focused POS-M5 gate executes `PosM5ProductWriteManagementChecks.Run()`.
+- Full CoreSmoke initially failed because the older WEB-B0 read-only aggregate still scanned `ProductsPage.tsx` for forbidden mutation labels, even though POS-M5 deliberately adds permission-gated Product Catalog writes.
+- The repair removes only `ProductsPage.tsx` from that stale read-only aggregate. Product API, Inventory, Sales History, and Audit remain covered there, while the dedicated POS-M5 gate continues to require create/edit/deactivate UI markers and `Products.Manage` guards.
 
 ---
 
 ## 11. Gates
 
-Not executed from this session:
+Executed locally after the narrow WEB-B0 scope repair:
 
 ```powershell
 dotnet build Salryn.sln
@@ -202,13 +204,40 @@ git diff --check
 git status
 ```
 
-Gate status: `BLOCKED` until run on Kirch's local workstation.
+Results:
+
+- `dotnet build Salryn.sln`: PASS, 0 errors (nullable warnings remain in existing code).
+- full CoreSmoke: PASS.
+- targeted POS-M1 CoreSmoke: PASS.
+- targeted POS-M2 CoreSmoke: PASS.
+- targeted POS-M3 CoreSmoke: PASS.
+- targeted POS-M4 CoreSmoke: PASS.
+- targeted POS-M5 CoreSmoke: PASS.
+- web build: PASS.
+- `git diff --check`: PASS.
+- final clean status is recorded after the verification commit.
 
 ---
 
 ## 12. Manual proof
 
-Not executable from this session. Required manual proof remains pending.
+Completed locally against the development database and host at `http://127.0.0.1:5299`:
+
+- Product Catalog, create, edit, and deactivate flows opened and completed.
+- Required product name validation and selling-price-greater-than-zero validation were shown.
+- Duplicate active barcode was rejected with a clear conflict message.
+- A valid product was created, refreshed into the list, and found by name and barcode.
+- The created zero-stock tracked product was found by Checkout barcode lookup but was correctly refused for cart add.
+- A stocked POS-M4 product was scanned, sold, and reduced from stock 4 to 3 only after checkout.
+- The resulting receipt text file exists at the controlled development receipt path.
+- Print Receipt and Sales History Reprint Receipt both showed the disabled adapter clearly and did not create another sale or stock movement.
+- After editing the sold product's name, barcode, unit, and price, Sales History still displayed the persisted old name and PHP 25.00 receipt line, proving the historical snapshot was not rewritten.
+- Deactivation succeeded and the Product Catalog marked the product inactive. Reactivation remains explicitly parked because no approved repository method exists.
+- Scanning the inactive barcode did not add it to the cart; it entered the separate explicit Fast Add confirmation and was cancelled without a write.
+- POS-M4 Fast Add regression proof created a separate unknown barcode product with initial stock 1 and added it to the cart; the cart was cleared without checkout.
+- Browser warning/error log was empty, backend stderr was empty, the cashier shift was closed, and the host stopped cleanly.
+
+No physical barcode scanner or physical printer was used; keyboard-wedge behavior and the default disabled printer adapter were exercised through the browser UI.
 
 ---
 
@@ -223,8 +252,8 @@ Not touched by this branch work:
 
 ## 14. Status
 
-`BLOCKED`
+`CANDIDATE_SELF_CHECKED_AND_MANUAL_PROVEN`
 
-Reason: implementation is repo-backed, but local build/CoreSmoke/web build/diff/status and manual proof were not executable from this session. Program.cs targeted CoreSmoke wiring remains blocked pending a safe full-file patch.
+Reason: required automated gates and the scoped POS-M5 browser workflow passed locally after the narrow WEB-B0 scope correction. Independent maintainer acceptance is still separate.
 
 No `GREEN`, `ACCEPTED`, `STORE_READY`, `BETA_READY`, `PRODUCTION_READY`, or `BIR_READY` claim is made.
