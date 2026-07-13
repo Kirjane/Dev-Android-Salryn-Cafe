@@ -110,6 +110,7 @@ public sealed record SaleDetailResponse(
     string Status,
     string? VoidReason,
     DateTimeOffset? VoidedAt,
+    string? ReceiptSnapshot,
     IReadOnlyList<SaleItemDetailResponse> Items,
     IReadOnlyList<SalePaymentResponse> Payments);
 

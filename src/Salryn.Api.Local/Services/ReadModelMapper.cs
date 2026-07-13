@@ -113,6 +113,7 @@ internal static class ReadModelMapper
             model.Status.ToString(),
             model.VoidReason,
             model.VoidedAt,
+            model.ReceiptSnapshot,
             model.Items.Select(item => new SaleItemDetailResponse(
                 item.Id,
                 item.ProductNameSnapshot,

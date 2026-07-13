@@ -4,6 +4,8 @@ using Salryn.Core.ReadModels;
 using Salryn.Core.Repositories;
 using Salryn.Core.Services;
 using Salryn.Core.ValueObjects;
+using Salryn.Api.Local.Contracts;
+using System.Text.Json;
 
 namespace Salryn.Tests;
 
@@ -24,6 +26,26 @@ public static class PosM2PrinterReprintFailureChecks
         Require(string.Equals(success.Source, PosReceiptPrintSources.PersistedReceiptSnapshot, StringComparison.Ordinal), "Print source must be persisted receipt snapshot.");
         Require(string.Equals(successAdapter.LastReceiptText, persistedSnapshot, StringComparison.Ordinal), "Printer adapter must receive persisted snapshot text exactly.");
         Require(successRepo.FindByIdCalls == 1, "Print service should read the existing sale once.");
+
+        Type mapperType = typeof(SaleDetailResponse).Assembly.GetType(
+            "Salryn.Api.Local.Services.ReadModelMapper",
+            throwOnError: true)!;
+        object? mappedValue = mapperType
+            .GetMethod("ToSaleDetail")!
+            .Invoke(null, new object[] { sale });
+        SaleDetailResponse mappedSale = mappedValue as SaleDetailResponse
+            ?? throw new InvalidOperationException("Sale detail mapper must return the API response contract.");
+
+        Require(
+            string.Equals(mappedSale.ReceiptSnapshot, persistedSnapshot, StringComparison.Ordinal),
+            "Sale detail API mapping must expose the persisted receipt snapshot exactly.");
+
+        string mappedJson = JsonSerializer.Serialize(mappedSale, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        using JsonDocument mappedDocument = JsonDocument.Parse(mappedJson);
+        Require(
+            mappedDocument.RootElement.TryGetProperty("receiptSnapshot", out JsonElement snapshotProperty)
+            && string.Equals(snapshotProperty.GetString(), persistedSnapshot, StringComparison.Ordinal),
+            "Sale detail JSON must expose the persisted snapshot as receiptSnapshot.");
 
         MemorySaleReadRepository failureRepo = new(sale);
         PosReceiptPrintService failureService = new(failureRepo, new FailingReceiptPrinterAdapter());

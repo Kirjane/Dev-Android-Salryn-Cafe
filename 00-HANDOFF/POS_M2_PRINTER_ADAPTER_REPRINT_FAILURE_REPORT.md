@@ -375,5 +375,58 @@ Blocking runtime finding:
 - Therefore POS-M2 reprint cannot be manually proven through the current API response,
   even though checkout saved the snapshot and receipt file.
 
-No backend/API repair was made because this verification task restricted edits to the
-Checkout page and this report. POS-M2 remains `BLOCKED`; POS-M3 must not start.
+No backend/API repair was made during that verification pass because edits were restricted
+to the Checkout page and this report. The finding is repaired and reverified in section 16.
+
+---
+
+## 16. Receipt snapshot API repair and manual reproof
+
+The blocking mismatch was repaired on 2026-07-13 by:
+
+- adding `ReceiptSnapshot` to `SaleDetailResponse`
+- mapping `SaleDetailReadModel.ReceiptSnapshot` in `ReadModelMapper.ToSaleDetail`
+- extending the POS-M2 executable smoke check to assert the mapped value and serialized
+  `receiptSnapshot` JSON property preserve the persisted text exactly
+
+No receipt regeneration, checkout math, receipt writer, sale/payment/stock write, receipt
+identity, printer adapter, product write, void, installer, RMO, BIR, or eSales behavior was
+changed.
+
+Automated self-check results:
+
+| Gate | Result |
+| --- | --- |
+| `dotnet build Salryn.sln` | PASS - 3 existing nullable test warnings, 0 errors |
+| Full CoreSmoke | PASS |
+| POS-M1 targeted CoreSmoke | PASS |
+| POS-M2 targeted CoreSmoke | PASS |
+| Web build | PASS |
+| `git diff --check` | PASS |
+
+Manual proof sale:
+
+```text
+Sale ID: ebf8ed9b-6c12-4116-b25c-bf42f9856623
+Receipt: POS-1783942783-103AA65B-000001
+Total: PHP 672.00
+Payment rows: 1
+Tracked product stock before sale: 107
+Tracked product stock after sale and reprint: 106
+Sales count after sale and after reprint: 20
+```
+
+Manual proof results:
+
+- Sale Completed showed separate `Print Receipt` and `New Sale` actions.
+- Default disabled-adapter print status was clear and retained the committed sale.
+- The receipt text file exists under `.salryn-dev/receipts`.
+- Sales History found the sale and exposed the persisted receipt snapshot.
+- `Reprint Receipt` was enabled and used `PersistedReceiptSnapshot`.
+- Disabled-adapter reprint status was clear.
+- Reprint did not add a sale, payment, or stock movement.
+- Browser console and backend error scans were clean.
+
+Status: `CANDIDATE_SELF_CHECKED_AND_MANUAL_PROVEN`
+
+POS-M3 remains outside this lane and must not start until maintainer review accepts POS-M2.
