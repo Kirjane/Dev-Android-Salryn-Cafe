@@ -1,3 +1,4 @@
+using Salryn.Api.Local.Auth;
 using Salryn.Api.Local.Contracts;
 using Salryn.Composition.Local;
 using Salryn.Core.Common;
