@@ -39,7 +39,7 @@ internal static class LocalFastAddProductEndpoints
                 : ToFastAddErrorResult(result.ErrorDetail);
         });
 
-        return app;
+        return app.MapLocalInventoryManagementEndpoints();
     }
 
     private static IResult? RequireFastAddPermissions(
