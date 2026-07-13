@@ -99,6 +99,22 @@ public sealed class OperatorReadService
             result.Value.Select(ReadModelMapper.ToCatalogOption).ToList());
     }
 
+    public async Task<Result<IReadOnlyList<CatalogOptionResponse>>> GetProductUnitsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        Result<IReadOnlyList<UnitReadModel>> result = await _composition.CatalogReadRepository
+            .GetUnitsAsync(includeInactive: false, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (result.IsFailure)
+        {
+            return Result<IReadOnlyList<CatalogOptionResponse>>.Fail(result.ErrorDetail);
+        }
+
+        return Result<IReadOnlyList<CatalogOptionResponse>>.Success(
+            result.Value.Select(ReadModelMapper.ToCatalogOption).ToList());
+    }
+
     public async Task<Result<IReadOnlyList<LowStockProductResponse>>> GetLowStockAsync(
         CancellationToken cancellationToken = default)
     {
@@ -302,7 +318,7 @@ public sealed class OperatorReadService
         int pageSize,
         CancellationToken cancellationToken = default)
     {
-        Result<PagedResult<ErrorLogReadModel>> result = await _composition.ErrorLogReadRepository
+        Result<PagedResult<ErrorLogReadModel>> result = await _composition.ErrorLogRepository_PLACEHOLDER
             .SearchErrorLogsAsync(
                 new ErrorLogSearchFilter(
                     ReadModelMapper.ToPageRequest(page, pageSize),
