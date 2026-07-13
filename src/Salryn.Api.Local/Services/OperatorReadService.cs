@@ -318,7 +318,7 @@ public sealed class OperatorReadService
         int pageSize,
         CancellationToken cancellationToken = default)
     {
-        Result<PagedResult<ErrorLogReadModel>> result = await _composition.ErrorLogRepository_PLACEHOLDER
+        Result<PagedResult<ErrorLogReadModel>> result = await _composition.ErrorLogReadRepository
             .SearchErrorLogsAsync(
                 new ErrorLogSearchFilter(
                     ReadModelMapper.ToPageRequest(page, pageSize),
