@@ -11,6 +11,7 @@ public static class PosM6StockInStockAdjustmentChecks
 
         string inventoryPage = ReadRequiredFile(webSrc, "pages", "InventoryPage.tsx");
         string inventoryApi = ReadRequiredFile(webSrc, "api", "inventory.ts");
+        string inventoryManagementApi = ReadRequiredFile(webSrc, "api", "inventoryManagement.ts");
         string checkoutPage = ReadRequiredFile(webSrc, "pages", "CheckoutPage.tsx");
         string productsPage = ReadRequiredFile(webSrc, "pages", "ProductsPage.tsx");
         string contracts = ReadRequiredFile(apiLocal, "Contracts", "InventoryManagementContracts.cs");
@@ -58,9 +59,15 @@ public static class PosM6StockInStockAdjustmentChecks
         RequireContains(writeRepo, "StockMovementType.AdjustmentRemove", "Inventory repository must support AdjustmentRemove movement.");
         RequireContains(writeRepo, "ProductNotFoundOrInactive", "Inventory repository must reject inactive products.");
 
-        RequireContains(inventoryApi, "submitStockIn", "Web inventory API must expose Stock-In write client.");
-        RequireContains(inventoryApi, "submitStockAdjustment", "Web inventory API must expose Stock Adjustment write client.");
-        RequireContains(inventoryApi, "method: \"POST\"", "Inventory write API client must use controlled POST endpoints.");
+        RequireContains(inventoryApi, "fetchLowStockProducts", "Read-only inventory API must expose low-stock read client.");
+        RequireContains(inventoryApi, "fetchStockMovements", "Read-only inventory API must expose stock movement ledger read client.");
+        RequireNotContains(inventoryApi, "method: \"POST\"", "Read-only inventory API must not contain stock write POST clients.");
+        RequireNotContains(inventoryApi, "method: \"PUT\"", "Read-only inventory API must not contain PUT clients.");
+        RequireNotContains(inventoryApi, "method: \"PATCH\"", "Read-only inventory API must not contain PATCH clients.");
+        RequireNotContains(inventoryApi, "method: \"DELETE\"", "Read-only inventory API must not contain DELETE clients.");
+        RequireContains(inventoryManagementApi, "submitStockIn", "Web inventory management API must expose Stock-In write client.");
+        RequireContains(inventoryManagementApi, "submitStockAdjustment", "Web inventory management API must expose Stock Adjustment write client.");
+        RequireContains(inventoryManagementApi, "method: \"POST\"", "Inventory management write API client must use controlled POST endpoints.");
 
         RequireContains(inventoryPage, "Stock-In", "Stock Movements UI must expose Stock-In flow.");
         RequireContains(inventoryPage, "Stock Adjustment", "Stock Movements UI must expose Stock Adjustment flow.");
