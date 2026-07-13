@@ -11,7 +11,7 @@ Authoring mode: GitHub connector-backed implementation. Local shell gates, brows
 
 ## 1. Scope
 
-POS-M6 adds controlled Stock-In and Stock Adjustment from the Stock Movements surface.
+POS-M6 adds controlled Stock-In and Stock Adjustment from the Stock Movements surface, then POS-M6-R1 repairs store-operator workflow by making Product Catalog the practical owner screen for product metadata plus stock actions.
 
 In scope:
 
@@ -25,6 +25,10 @@ In scope:
 - product stock readback after successful write
 - inventory/product views refresh after write
 - clear validation / permission / backend failure messages
+- Product Catalog selected-product actions for Stock-In, Adjust Stock, and View Movements path
+- Product Create copy explaining one product record and stock quantity added through Stock-In after saving
+- visible optional Category / Brand copy with No category / No brand accepted
+- checkout repeated same product/barcode quantity path preserved
 - POS-M6 targeted CoreSmoke registration
 
 Out of scope and not implemented:
@@ -41,6 +45,7 @@ Out of scope and not implemented:
 - official receipt or BIR language
 - physical printer/scanner proof
 - product reactivation
+- Store Settings / category-brand-unit management / printer selection implementation
 
 ---
 
@@ -53,7 +58,9 @@ Out of scope and not implemented:
 - `src/Salryn.Api.Local/LocalInventoryManagementEndpoints.cs`
 - `src/Salryn.Api.Local/Services/InventoryManagementApiService.cs`
 - `src/Salryn.App.Web/src/api/inventory.ts`
+- `src/Salryn.App.Web/src/api/inventoryManagement.ts`
 - `src/Salryn.App.Web/src/pages/InventoryPage.tsx`
+- `src/Salryn.App.Web/src/pages/ProductsPage.tsx`
 - `tests/Salryn.Tests/PosM6StockInStockAdjustmentChecks.cs`
 - `tools/Salryn.Tools.CoreSmoke/Program.cs`
 
@@ -72,6 +79,8 @@ POST /api/inventory/stock-in
 The endpoint requires local/session permission checks and `Inventory.Adjust`, `Inventory.View`, and `Products.View` permission boundaries.
 
 The service creates a `StockMovement` with `StockMovementType.StockIn` and writes it through `IInventoryWriteRepository`.
+
+POS-M6-R1 exposes Product Catalog action copy as `Stock-In this product` and opens a product-preselected stock dialog using the existing write client module.
 
 ---
 
@@ -110,6 +119,8 @@ Adjustment uses the existing safe delta model:
 
 Set-to-count adjustment is not implemented in POS-M6 because the existing repository supports delta movement types cleanly.
 
+POS-M6-R1 exposes Product Catalog action copy as `Adjust Stock` and opens the same product-preselected dialog with AdjustmentAdd / AdjustmentRemove direction selection.
+
 ---
 
 ## 7. Stock Adjustment validation
@@ -129,7 +140,9 @@ Client and server validation cover:
 
 Adjustment writes create `AdjustmentAdd` or `AdjustmentRemove` stock movement rows through `IInventoryWriteRepository`.
 
-The ledger filter now exposes `StockIn`, `AdjustmentAdd`, and `AdjustmentRemove` explicitly.
+The ledger filter exposes `StockIn`, `AdjustmentAdd`, and `AdjustmentRemove` explicitly.
+
+Product Catalog now exposes a `View Movements` path from the selected product panel. It does not add a new route or backend endpoint.
 
 ---
 
@@ -137,7 +150,7 @@ The ledger filter now exposes `StockIn`, `AdjustmentAdd`, and `AdjustmentRemove`
 
 Product stock on hand is updated by the existing inventory repository transaction. After a successful write, the API reads back the product and returns the updated `ProductListItemResponse`.
 
-The web page refreshes low-stock data, movement ledger data, and product lookup data after write.
+The web page refreshes low-stock data, movement ledger data, product lookup data, and Product Catalog detail/list data after write.
 
 ---
 
@@ -146,6 +159,8 @@ The web page refreshes low-stock data, movement ledger data, and product lookup 
 Stock-In and Stock Adjustment do not call sale write repositories, payment paths, checkout paths, receipt snapshot writers, or printer/reprint paths.
 
 The service response and UI state that no sale, payment, or receipt is created by stock writes.
+
+Product Catalog create/edit still does not mutate stock quantity. Product Create now states: `Create one product record. Add quantity through Stock-In after saving.`
 
 ---
 
@@ -159,12 +174,14 @@ Preserved:
 - POS-M4 Fast Add path
 - POS-M5 Product Catalog product write path and stock-neutral product edit boundary
 - checkout remains the sale stock-reduction path
+- repeated same barcode/product add increments the existing cart quantity path rather than requiring duplicate product records
+- WEB-B0 read-only inventory API boundary: `inventory.ts` stays read-only and stock POST clients live in `inventoryManagement.ts`
 
 ---
 
 ## 12. Automated coverage added
 
-Added:
+Added / updated:
 
 ```text
 tests/Salryn.Tests/PosM6StockInStockAdjustmentChecks.cs
@@ -183,6 +200,9 @@ Coverage intent:
 - inventory ledger repository use
 - no sale/payment/receipt side effects
 - Stock Movements UI write flows
+- Product Catalog selected-product Stock-In / Adjust Stock / View Movements workflow
+- Product Create stock guidance and optional category/brand copy
+- checkout repeated add / quantity control strings
 - POS-M1/POS-M2/POS-M3/POS-M4/POS-M5 regression strings
 
 Updated CoreSmoke:
@@ -218,7 +238,7 @@ Gate status: `BLOCKED` until run on Kirch's local workstation.
 
 ## 14. Manual proof
 
-Not executable from this session. Required manual proof remains pending.
+Not executable from this session. Required POS-M6-R1 strict manual proof remains pending.
 
 ---
 
@@ -235,6 +255,6 @@ Not touched by this branch work:
 
 `BLOCKED`
 
-Reason: implementation is repo-backed, but local build/CoreSmoke/web build/diff/status and manual proof were not executable from this session.
+Reason: implementation is repo-backed, but local build/CoreSmoke/web build/diff/status and strict manual proof were not executable from this session.
 
 No `GREEN`, `ACCEPTED`, `STORE_READY`, `BETA_READY`, `PRODUCTION_READY`, `BIR_READY`, `PHYSICAL_SCANNER_PROVEN`, or `PHYSICAL_PRINTER_PROVEN` claim is made.
