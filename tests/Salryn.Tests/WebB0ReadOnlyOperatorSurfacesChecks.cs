@@ -38,7 +38,7 @@ public static class WebB0ReadOnlyOperatorSurfacesChecks
         RequireContains(readOnlyEndpoints, "LocalApiPermissionGuards.RequirePermission", "Read endpoints must require backend permission checks.");
         RequireContains(compositionText, "IUserReadRepository", "Composition must wire user read repository.");
         RequireContains(compositionText, "IAuditReadRepository", "Composition must wire audit read repository.");
-        RequireContains(compositionText, "IErrorLogReadRepository", "Composition must wire error log read repository.");
+        RequireContains(compositionText, "IErrorLogReadRepository", "Composition must wire error log repository.");
         RequireContains(compositionText, "ICatalogReadRepository", "Composition must wire catalog read repository.");
 
         RequireNotContains(readOnlyEndpoints, "MapPost(\"/api/products", "Products must not expose POST.");
@@ -69,8 +69,8 @@ public static class WebB0ReadOnlyOperatorSurfacesChecks
         RequireContains(auditApi, "/api/audit/logs", "Audit client must call audit logs endpoint.");
         RequireContains(auditApi, "/api/audit/errors", "Audit client must call error logs endpoint.");
 
-        RequireContains(navigation, "Products", "Navigation must enable Products.");
-        RequireContains(navigation, "Inventory", "Navigation must enable Inventory.");
+        RequireContains(navigation, "Product Catalog", "Navigation must enable Product Catalog.");
+        RequireContains(navigation, "Stock Movements", "Navigation must enable Stock Movements.");
         RequireContains(navigation, "Sales History", "Navigation must enable Sales History.");
         RequireContains(navigation, "Users", "Navigation must enable Users.");
         RequireContains(navigation, "Audit", "Navigation must enable Audit.");
