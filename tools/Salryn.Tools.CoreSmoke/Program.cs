@@ -144,6 +144,7 @@ public static class Program
         PosM2PrinterReprintFailureChecks.Run();
         PosM3BarcodeScannerCashierFlowChecks.Run();
         PosM4FastAddUnknownBarcodeInventoryChecks.Run();
+        PosM5ProductWriteManagementChecks.Run();
         PosStabB2BackupUiChecks.Run();
         PosStabB2AuditViewerChecks.Run();
         PosStabB3ProductionDbWritabilityChecks.Run();
@@ -288,6 +289,9 @@ public static class Program
                 return;
             case "pos-m4-fast-add-unknown-barcode-inventory":
                 PosM4FastAddUnknownBarcodeInventoryChecks.Run();
+                return;
+            case "pos-m5-product-write-management":
+                PosM5ProductWriteManagementChecks.Run();
                 return;
             case "v2-host-shift":
                 V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();
