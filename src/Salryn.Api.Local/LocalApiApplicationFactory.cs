@@ -118,6 +118,7 @@ public static class LocalApiApplicationFactory
         builder.Services.AddSingleton(dashboardSummaryService);
         builder.Services.AddSingleton<OperatorReadService>();
         builder.Services.AddSingleton<FastAddProductApiService>();
+        builder.Services.AddSingleton<ProductManagementApiService>();
         builder.Services.AddSingleton<UserAdminApiService>();
         builder.Services.AddSingleton<RemoteReadOnlyApiService>();
         builder.Services.AddSingleton<LocalApiLanRuntimeStatusService>();
@@ -257,6 +258,7 @@ public static class LocalApiApplicationFactory
 
         app.MapReadOnlyOperatorEndpoints();
         app.MapLocalFastAddProductEndpoints();
+        app.MapLocalProductManagementEndpoints();
         app.MapLocalHostShiftEndpoints();
         app.MapLocalHostCheckoutEndpoints();
         app.MapLocalReceiptPrinterEndpoints();
