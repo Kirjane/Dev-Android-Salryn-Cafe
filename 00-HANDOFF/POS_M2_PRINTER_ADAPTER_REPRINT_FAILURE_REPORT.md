@@ -328,3 +328,52 @@ This branch does not claim:
 Status: `BLOCKED`
 
 Reason: implementation was authored through the GitHub connector, but required local build, smoke, web build, git checks, real-printer/no-printer behavior proof, and browser/manual proof could not be executed from this session.
+
+---
+
+## 15. Local verification and blocking runtime finding
+
+Verification was run on 2026-07-13 from branch head
+`bc73de36a5aaefe99b1c0fb02464bef4856cdc3b` after adding the required
+non-official checkout reference copy:
+
+```text
+This checkout receipt number is an internal POS reference only.
+```
+
+Automated results:
+
+| Gate | Result |
+| --- | --- |
+| `dotnet build Salryn.sln` | PASS - 0 warnings, 0 errors |
+| Full CoreSmoke | PASS |
+| POS-M1 targeted CoreSmoke | PASS |
+| POS-M2 targeted CoreSmoke | PASS |
+| Web build | PASS |
+| `git diff --check` | PASS |
+
+Manual checkout/print results:
+
+- App, login, Checkout, shift open, product add, review, and sale commit passed.
+- Sale `58fbacd3-ea23-4e31-af07-d436055b5feb` committed as receipt
+  `POS-1783932841-055120B2-000001` for PHP 672.00.
+- The Sale Completed dialog showed separate `Print Receipt` and `New Sale` actions.
+- Disabled-adapter printing returned a clear `Disabled/Unavailable` result and kept the
+  same committed sale visible.
+- `New Sale` cleared the cart only when selected.
+- The receipt text file exists under the controlled development receipt root.
+- Browser console warnings/errors were empty.
+
+Blocking runtime finding:
+
+- Sales History found the committed sale and opened its detail dialog.
+- The detail dialog reported that no persisted receipt snapshot was exposed and disabled
+  `Reprint Receipt`.
+- The repository read model contains `ReceiptSnapshot`, but
+  `SaleDetailResponse` and `ReadModelMapper.ToSaleDetail` omit that field.
+- The frontend `SaleDetail` contract and Sales History page expect `receiptSnapshot`.
+- Therefore POS-M2 reprint cannot be manually proven through the current API response,
+  even though checkout saved the snapshot and receipt file.
+
+No backend/API repair was made because this verification task restricted edits to the
+Checkout page and this report. POS-M2 remains `BLOCKED`; POS-M3 must not start.
