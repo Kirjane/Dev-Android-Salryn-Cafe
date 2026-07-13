@@ -23,9 +23,13 @@ export type ProductDetail = {
   barcode: string | null;
   name: string;
   description: string | null;
+  categoryId: string | null;
   categoryName: string | null;
+  brandId: string | null;
   brandName: string | null;
+  unitId: string;
   unitName: string;
+  supplierId: string | null;
   supplierName: string | null;
   costPrice: number | null;
   sellingPrice: number;
