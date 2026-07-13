@@ -17,7 +17,9 @@ public sealed class SalrynLocalComposition
         IAuthenticationService authentication,
         ISaleReadRepository saleReadRepository,
         IProductReadRepository productReadRepository,
+        IProductWriteRepository productWriteRepository,
         IInventoryReadRepository inventoryReadRepository,
+        IInventoryWriteRepository inventoryWriteRepository,
         ICatalogReadRepository catalogReadRepository,
         IUserReadRepository userReadRepository,
         IUserPermissionReadRepository userPermissionReadRepository,
@@ -30,7 +32,9 @@ public sealed class SalrynLocalComposition
         Authentication = authentication;
         SaleReadRepository = saleReadRepository;
         ProductReadRepository = productReadRepository;
+        ProductWriteRepository = productWriteRepository;
         InventoryReadRepository = inventoryReadRepository;
+        InventoryWriteRepository = inventoryWriteRepository;
         CatalogReadRepository = catalogReadRepository;
         UserReadRepository = userReadRepository;
         UserPermissionReadRepository = userPermissionReadRepository;
@@ -50,7 +54,11 @@ public sealed class SalrynLocalComposition
 
     public IProductReadRepository ProductReadRepository { get; }
 
+    public IProductWriteRepository ProductWriteRepository { get; }
+
     public IInventoryReadRepository InventoryReadRepository { get; }
+
+    public IInventoryWriteRepository InventoryWriteRepository { get; }
 
     public ICatalogReadRepository CatalogReadRepository { get; }
 
@@ -111,7 +119,9 @@ public sealed class SalrynLocalComposition
             authentication,
             repositories.CreateSaleReadRepository(),
             repositories.CreateProductReadRepository(),
+            repositories.CreateProductWriteRepository(),
             repositories.CreateInventoryReadRepository(),
+            repositories.CreateInventoryWriteRepository(),
             repositories.CreateCatalogReadRepository(),
             repositories.CreateUserReadRepository(),
             userPermissionReadRepository,
