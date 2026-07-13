@@ -5,7 +5,7 @@ Branch: `KIRCH-POS-M6-STOCK-IN-STOCK-ADJUSTMENT`
 Base branch: `KIRCH-POS-M5-PRODUCT-WRITE-MANAGEMENT`  
 Base SHA: `e2e36a0dd34738af6dbf750283c0f2406957cf31`
 
-Authoring mode: GitHub connector-backed implementation. Local shell gates, browser/manual proof, and physical scanner/printer proof were not executable from this session.
+Verification mode: local Codex automated self-check. Manual runtime/UX and physical scanner/printer proof remain deferred to Kirch.
 
 ---
 
@@ -216,7 +216,7 @@ PosM6StockInStockAdjustmentChecks.Run();
 
 ## 13. Gates
 
-Not executed from this session:
+Executed locally at milestone boundary:
 
 ```powershell
 dotnet build Salryn.sln
@@ -232,13 +232,20 @@ git diff --check
 git status
 ```
 
-Gate status: `BLOCKED` until run on Kirch's local workstation.
+Gate results:
+
+- build: PASS, 0 warnings, 0 errors.
+- full CoreSmoke: PASS.
+- targeted POS-M1 through POS-M6 CoreSmoke: PASS.
+- web build: PASS (Vite emitted only its bundle-size advisory).
+- `git diff --check`: PASS.
+- worktree: clean before this report-only closure commit.
 
 ---
 
 ## 14. Manual proof
 
-Not executable from this session. Required POS-M6-R1 strict manual proof remains pending.
+Deferred to Kirch. Automated behavior coverage proves the stock movement and side-effect boundaries; visual clarity and strict operator walkthrough remain manual work.
 
 ---
 
@@ -253,8 +260,8 @@ Not touched by this branch work:
 
 ## 16. Status
 
-`BLOCKED`
+`CANDIDATE_AUTOMATED_PROVEN_MANUAL_PENDING`
 
-Reason: implementation is repo-backed, but local build/CoreSmoke/web build/diff/status and strict manual proof were not executable from this session.
+Reason: required build, full/focused smoke, web build, diff, and clean-worktree gates passed locally. Manual runtime/UX proof remains explicitly deferred.
 
 No `GREEN`, `ACCEPTED`, `STORE_READY`, `BETA_READY`, `PRODUCTION_READY`, `BIR_READY`, `PHYSICAL_SCANNER_PROVEN`, or `PHYSICAL_PRINTER_PROVEN` claim is made.
