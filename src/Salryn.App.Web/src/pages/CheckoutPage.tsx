@@ -9,7 +9,7 @@ import {
 } from "../api/checkout";
 import { ApiError } from "../api/http";
 import { fetchProducts, type ProductListItem } from "../api/products";
-import { printReceiptForSale, type ReceiptPrintResult } from "../api/sales";
+import { printReceiptForSale, type ReceiptPrintResult } from "../api/receiptPrint";
 import { fetchSession } from "../api/session";
 import {
   Alert,
@@ -89,6 +89,19 @@ function shortId(value: string | null | undefined): string {
   }
 
   return value.length <= 8 ? value : value.slice(0, 8);
+}
+
+function normalizeBarcode(value: string | null | undefined): string {
+  return (value ?? "").trim();
+}
+
+function exactBarcodeMatch(products: ProductListItem[], barcode: string): ProductListItem | null {
+  const normalized = normalizeBarcode(barcode);
+  if (!normalized) {
+    return null;
+  }
+
+  return products.find((product) => normalizeBarcode(product.barcode) === normalized) ?? null;
 }
 
 export function describeCheckoutBackendError(error: unknown): string {
@@ -199,6 +212,14 @@ function printTone(status: string | null | undefined): "success" | "warning" | "
   return "info";
 }
 
+function barcodeTone(message: string | null): "success" | "warning" | "info" {
+  if (!message) {
+    return "info";
+  }
+
+  return message.includes("added to cart") ? "success" : "warning";
+}
+
 export function CheckoutPage() {
   const [search, setSearch] = useState("");
   const [productPage, setProductPage] = useState(1);
@@ -215,6 +236,8 @@ export function CheckoutPage() {
   const [isClosingShift, setIsClosingShift] = useState(false);
   const [isSubmittingCheckout, setIsSubmittingCheckout] = useState(false);
   const [isPrintingReceipt, setIsPrintingReceipt] = useState(false);
+  const [isBarcodeAdding, setIsBarcodeAdding] = useState(false);
+  const [barcodeStatus, setBarcodeStatus] = useState<string | null>(null);
   const [printResult, setPrintResult] = useState<ReceiptPrintResult | null>(null);
 
   const sessionQuery = useQuery({ queryKey: ["host-checkout-session"], queryFn: fetchSession, retry: false });
@@ -309,6 +332,7 @@ export function CheckoutPage() {
   function handleSearchChange(value: string) {
     setSearch(value);
     setProductPage(1);
+    setBarcodeStatus(null);
   }
 
   function addProduct(product: ProductListItem) {
@@ -348,6 +372,45 @@ export function CheckoutPage() {
     });
   }
 
+  async function handleBarcodeEnter() {
+    const barcode = normalizeBarcode(search);
+    if (!barcode || isBarcodeAdding) {
+      return;
+    }
+
+    if (!shiftOpen) {
+      setBarcodeStatus("Open a shift before adding barcode products.");
+      return;
+    }
+
+    setIsBarcodeAdding(true);
+    setBarcodeStatus(`Looking up barcode ${barcode}...`);
+    try {
+      const lookup = await fetchProducts({ search: barcode, isActive: true, page: 1, pageSize: 50 });
+      const match = exactBarcodeMatch(lookup.items, barcode);
+      if (!match) {
+        setBarcodeStatus("Product not found. Fast Add is parked for POS-M4.");
+        return;
+      }
+
+      const state = stockState(match);
+      if (!state.canAdd) {
+        setBarcodeStatus(`${match.name} cannot be added: ${state.helper}`);
+        return;
+      }
+
+      addProduct(match);
+      setBarcodeStatus(`${match.name} added to cart from exact barcode match.`);
+      setSearch("");
+      setProductPage(1);
+      await productsQuery.refetch();
+    } catch (error) {
+      setBarcodeStatus(error instanceof Error ? error.message : "Barcode lookup failed. No product was added.");
+    } finally {
+      setIsBarcodeAdding(false);
+    }
+  }
+
   function updateQuantity(productId: string, quantity: number) {
     setCheckoutResult(null);
     setCompletedSale(null);
@@ -377,6 +440,7 @@ export function CheckoutPage() {
     setCheckoutResult(null);
     setCompletedSale(null);
     setPrintResult(null);
+    setBarcodeStatus(null);
     setShowConfirmCheckout(false);
     setAttemptState(initialAttemptState);
     setBackendMessage(null);
@@ -576,13 +640,29 @@ export function CheckoutPage() {
         <Card className="flex min-h-[28rem] min-w-0 flex-col xl:min-h-0">
           <CardHeader className="shrink-0">
             <div className="flex items-center justify-between gap-3">
-              <CardTitle>Product search</CardTitle>
+              <CardTitle>Scan / search</CardTitle>
               {productResponse ? <span className="text-xs font-semibold text-slate-500">{productResponse.totalCount} result{productResponse.totalCount === 1 ? "" : "s"}</span> : null}
             </div>
           </CardHeader>
           <CardBody className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
-            <TextInput className="min-h-12 shrink-0 text-base" placeholder="Search SKU, product, or barcode text..." value={search} onChange={(event) => handleSearchChange(event.target.value)} autoComplete="off" />
-            <p className="shrink-0 text-xs text-slate-500">Active products from /api/products. No extra input-device behavior is added in this lane.</p>
+            <TextInput
+              className="min-h-12 shrink-0 text-base"
+              placeholder="Scan barcode or search product name..."
+              value={search}
+              onChange={(event) => handleSearchChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void handleBarcodeEnter();
+                }
+              }}
+              autoComplete="off"
+              autoFocus
+              inputMode="search"
+            />
+            <p className="shrink-0 text-xs text-slate-500">Enter performs exact barcode add first. Product-name search remains available as you type.</p>
+            {barcodeStatus ? <Alert tone={barcodeTone(barcodeStatus)} title="Barcode lookup">{barcodeStatus}</Alert> : null}
             {productsQuery.isLoading ? <LoadingState label="Loading products..." /> : null}
             {productsQuery.isError ? <ErrorState message={describeCheckoutBackendError(productsQuery.error)} /> : null}
             {productResponse ? (
@@ -614,7 +694,7 @@ export function CheckoutPage() {
           </CardHeader>
           <CardBody className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
             {cartLines.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">Search a product, then press Add. Cart lines stay visible until New Sale is selected after checkout.</div>
+              <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">Scan barcode or search a product, then press Add. Stock changes only when checkout completes.</div>
             ) : (
               <div className="space-y-3">
                 {cartLines.map((line) => {
@@ -661,7 +741,7 @@ export function CheckoutPage() {
             {cartValidationMessage ? <Alert tone={completedSale ? "success" : "warning"} title="Checkout readiness">{cartValidationMessage}</Alert> : <Alert tone="success" title="Ready">Press Review Checkout or F9 to verify totals before committing the sale.</Alert>}
             <div className="mt-auto space-y-3 border-t border-slate-100 pt-3">
               <Button className="min-h-14 w-full text-base" variant="success" onClick={reviewCheckout} disabled={!canReviewCheckout}>{isSubmittingCheckout ? "Completing..." : "Review Checkout"}</Button>
-              <div className="rounded-lg bg-slate-100 p-3 text-xs text-slate-600"><p className="font-semibold text-slate-800">Keyboard hints</p><p>F9 = Review Checkout · Enter = Confirm when review is open · F5 = New Sale after completion · Esc = Close/cancel dialog</p><p className="mt-1">No extra input-device or Fast Add behavior is added in this lane.</p></div>
+              <div className="rounded-lg bg-slate-100 p-3 text-xs text-slate-600"><p className="font-semibold text-slate-800">Keyboard hints</p><p>Enter = exact barcode add from scan/search input · F9 = Review Checkout · Enter = Confirm when review is open · F5 = New Sale after completion · Esc = Close/cancel dialog</p><p className="mt-1">Fast Add remains parked for POS-M4. No product writes are added in this lane.</p></div>
             </div>
           </CardBody>
         </Card>
@@ -673,7 +753,7 @@ export function CheckoutPage() {
     <div className="space-y-4 overflow-hidden">
       <CommandBar
         title="POS Checkout"
-        subtitle="Cashier workstation using wired local session, shift, product, checkout, receipt file status, and POS-M2 printer adapter status."
+        subtitle="Cashier workstation using wired local session, shift, product, checkout, receipt file status, POS-M2 printer adapter status, and POS-M3 barcode flow."
         status={<div className="flex flex-wrap items-center gap-2"><StatusPill tone={sessionQuery.data?.isAuthenticated ? "success" : "warning"}>{operatorLabel}</StatusPill><StatusPill tone={shiftOpen ? "success" : "warning"}>Shift {shift?.shiftState ?? "Unknown"}</StatusPill></div>}
         actions={<Button variant="secondary" onClick={() => void refreshShiftAndProducts()} disabled={shiftQuery.isFetching || productsQuery.isFetching || sessionQuery.isFetching}>{shiftQuery.isFetching || productsQuery.isFetching || sessionQuery.isFetching ? "Refreshing..." : "Refresh"}</Button>}
       />
@@ -682,7 +762,7 @@ export function CheckoutPage() {
       {shiftQuery.isLoading ? <LoadingState label="Reading host shift..." /> : null}
       {shiftQuery.isError ? <ErrorState message={describeCheckoutBackendError(shiftQuery.error)} /> : null}
       {!shiftOpen ? renderShiftLockedState() : renderWorkstation()}
-      <details className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-card"><summary className="cursor-pointer text-sm font-semibold text-slate-900">Checkout diagnostics / runtime proof</summary><div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4"><p>Session: {sessionQuery.isLoading ? "Loading..." : sessionQuery.data?.isAuthenticated ? `Authenticated as ${operatorLabel}` : "Not authenticated"}</p><p>Shift status: {shift?.shiftState ?? "Unknown"}</p><p>Permission required: Sales.Create</p><p>Product source: real backend products API</p><p>Cart line count: {cartLines.length}</p><p>Cart item quantity: {formatQuantity(itemQuantityTotal)}</p><p>Cart total: {formatMoney(subtotal)}</p><p>Cash tendered: {fromCents(cashCents)}</p><p>Local validation: {cartValidationMessage ?? "Ready for review"}</p><p>Submit lock: {isSubmittingCheckout ? "Locked" : "Unlocked"}</p><p>Print status: {printResult?.status ?? "NotAttempted"}</p><p>Last checkout HTTP status: {attemptState.httpStatus ?? "—"}</p><p>Last backend code: {attemptState.backendCode ?? "—"}</p><p>Last checkout status: {attemptState.checkoutStatus ?? "—"}</p><p>Last receipt number: {attemptState.receiptNumber ?? "—"}</p><p>Last sale ID: {attemptState.saleId ?? "—"}</p><p>Last refresh: {lastRefreshAt ? formatDateTime(lastRefreshAt) : "—"}</p></div></details>
+      <details className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-card"><summary className="cursor-pointer text-sm font-semibold text-slate-900">Checkout diagnostics / runtime proof</summary><div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4"><p>Session: {sessionQuery.isLoading ? "Loading..." : sessionQuery.data?.isAuthenticated ? `Authenticated as ${operatorLabel}` : "Not authenticated"}</p><p>Shift status: {shift?.shiftState ?? "Unknown"}</p><p>Permission required: Sales.Create</p><p>Product source: real backend products API</p><p>Cart line count: {cartLines.length}</p><p>Cart item quantity: {formatQuantity(itemQuantityTotal)}</p><p>Cart total: {formatMoney(subtotal)}</p><p>Cash tendered: {fromCents(cashCents)}</p><p>Local validation: {cartValidationMessage ?? "Ready for review"}</p><p>Submit lock: {isSubmittingCheckout ? "Locked" : "Unlocked"}</p><p>Barcode status: {barcodeStatus ?? "NotAttempted"}</p><p>Print status: {printResult?.status ?? "NotAttempted"}</p><p>Last checkout HTTP status: {attemptState.httpStatus ?? "—"}</p><p>Last backend code: {attemptState.backendCode ?? "—"}</p><p>Last checkout status: {attemptState.checkoutStatus ?? "—"}</p><p>Last receipt number: {attemptState.receiptNumber ?? "—"}</p><p>Last sale ID: {attemptState.saleId ?? "—"}</p><p>Last refresh: {lastRefreshAt ? formatDateTime(lastRefreshAt) : "—"}</p></div></details>
       {showConfirmCheckout ? (
         <Dialog title="Review Checkout" onClose={() => setShowConfirmCheckout(false)} footer={<><Button variant="secondary" onClick={() => setShowConfirmCheckout(false)} disabled={isSubmittingCheckout}>Cancel</Button><Button variant="success" onClick={() => void handleSubmitCheckout()} disabled={isSubmittingCheckout || !canReviewCheckout}>{isSubmittingCheckout ? "Committing..." : "Confirm Sale"}</Button></>}>
           <div className="space-y-4 text-sm text-slate-700"><Alert tone="warning" title="Final review before sale commit">Sale commits only after Confirm Sale. Printing is attempted only after a committed sale and only when Print Receipt is clicked.</Alert><div className="grid gap-3 sm:grid-cols-2"><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Cart</p><p className="text-lg font-semibold text-slate-950">{cartLines.length} line(s) · {formatQuantity(itemQuantityTotal)} item(s)</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Total</p><p className="text-lg font-semibold text-slate-950">{formatMoney(subtotal)}</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Cash tendered</p><p className="text-lg font-semibold text-slate-950">{fromCents(cashCents)}</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Change</p><p className="text-lg font-semibold text-emerald-700">{fromCents(estimatedChangeCents)}</p></div></div><div className="max-h-56 overflow-y-auto rounded-lg border border-slate-200">{cartLines.map((line) => <div key={line.product.id} className="flex justify-between gap-3 border-b border-slate-100 px-3 py-2 last:border-b-0"><div><p className="font-semibold text-slate-900">{line.product.name}</p><p className="text-xs text-slate-500">{formatQuantity(line.quantity)} × {formatMoney(line.product.sellingPrice)}</p></div><p className="font-semibold text-slate-900">{formatMoney(line.quantity * line.product.sellingPrice)}</p></div>)}</div></div>
