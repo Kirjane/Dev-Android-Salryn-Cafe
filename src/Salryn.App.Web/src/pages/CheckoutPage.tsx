@@ -8,7 +8,8 @@ import {
   type CheckoutEnvelope,
 } from "../api/checkout";
 import { ApiError } from "../api/http";
-import { fetchProducts, type ProductListItem } from "../api/products";
+import { fastAddUnknownBarcode } from "../api/fastAddProduct";
+import { fetchProducts, fetchProductUnits, type ProductListItem } from "../api/products";
 import { printReceiptForSale, type ReceiptPrintResult } from "../api/receiptPrint";
 import { fetchSession } from "../api/session";
 import {
@@ -83,6 +84,11 @@ function fromCents(value: number | null | undefined): string {
   return formatMoney((value ?? 0) / 100);
 }
 
+function toNumber(value: string): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function shortId(value: string | null | undefined): string {
   if (!value) {
     return "—";
@@ -120,6 +126,10 @@ export function describeCheckoutBackendError(error: unknown): string {
     if (error.status === 409) {
       if (code.includes("OpenShiftRequired") || checkoutStatus === "OpenShiftRequired") {
         return "Open a shift before checkout.";
+      }
+
+      if (code === "Products.DuplicateBarcode") {
+        return "Duplicate barcode. An active product already uses this barcode.";
       }
 
       if (code === "Sales.NegativeStockNotAllowed" || checkoutStatus === "StockChanged") {
@@ -217,7 +227,7 @@ function barcodeTone(message: string | null): "success" | "warning" | "info" {
     return "info";
   }
 
-  return message.includes("added to cart") ? "success" : "warning";
+  return message.includes("added to cart") || message.includes("created") ? "success" : "warning";
 }
 
 export function CheckoutPage() {
@@ -230,6 +240,13 @@ export function CheckoutPage() {
   const [checkoutResult, setCheckoutResult] = useState<CheckoutEnvelope | null>(null);
   const [completedSale, setCompletedSale] = useState<CompletedSaleState | null>(null);
   const [showConfirmCheckout, setShowConfirmCheckout] = useState(false);
+  const [showFastAdd, setShowFastAdd] = useState(false);
+  const [fastAddBarcode, setFastAddBarcode] = useState("");
+  const [fastAddProductName, setFastAddProductName] = useState("");
+  const [fastAddUnitId, setFastAddUnitId] = useState("");
+  const [fastAddSellingPrice, setFastAddSellingPrice] = useState("");
+  const [fastAddInitialStock, setFastAddInitialStock] = useState("1");
+  const [fastAddError, setFastAddError] = useState<string | null>(null);
   const [attemptState, setAttemptState] = useState<CheckoutAttemptState>(initialAttemptState);
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
   const [isOpeningShift, setIsOpeningShift] = useState(false);
@@ -237,11 +254,13 @@ export function CheckoutPage() {
   const [isSubmittingCheckout, setIsSubmittingCheckout] = useState(false);
   const [isPrintingReceipt, setIsPrintingReceipt] = useState(false);
   const [isBarcodeAdding, setIsBarcodeAdding] = useState(false);
+  const [isFastAdding, setIsFastAdding] = useState(false);
   const [barcodeStatus, setBarcodeStatus] = useState<string | null>(null);
   const [printResult, setPrintResult] = useState<ReceiptPrintResult | null>(null);
 
   const sessionQuery = useQuery({ queryKey: ["host-checkout-session"], queryFn: fetchSession, retry: false });
   const shiftQuery = useQuery({ queryKey: ["host-checkout-shift"], queryFn: fetchHostShift, retry: false });
+  const unitsQuery = useQuery({ queryKey: ["host-checkout-product-units"], queryFn: fetchProductUnits, retry: false });
   const productsQuery = useQuery({
     queryKey: ["host-checkout-products", search, productPage],
     queryFn: () => fetchProducts({ search: search.trim() || undefined, isActive: true, page: productPage, pageSize: checkoutPageSize }),
@@ -318,6 +337,10 @@ export function CheckoutPage() {
           event.preventDefault();
           setShowConfirmCheckout(false);
         }
+        if (showFastAdd) {
+          event.preventDefault();
+          setShowFastAdd(false);
+        }
         if (completedSale) {
           event.preventDefault();
           setCompletedSale(null);
@@ -327,7 +350,13 @@ export function CheckoutPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [canReviewCheckout, completedSale, showConfirmCheckout]);
+  }, [canReviewCheckout, completedSale, showConfirmCheckout, showFastAdd]);
+
+  useEffect(() => {
+    if (!fastAddUnitId && unitsQuery.data && unitsQuery.data.length > 0) {
+      setFastAddUnitId(unitsQuery.data[0].id);
+    }
+  }, [fastAddUnitId, unitsQuery.data]);
 
   function handleSearchChange(value: string) {
     setSearch(value);
@@ -389,7 +418,7 @@ export function CheckoutPage() {
       const lookup = await fetchProducts({ search: barcode, isActive: true, page: 1, pageSize: 50 });
       const match = exactBarcodeMatch(lookup.items, barcode);
       if (!match) {
-        setBarcodeStatus("Product not found. Fast Add is parked for POS-M4.");
+        openFastAddForBarcode(barcode);
         return;
       }
 
@@ -408,6 +437,76 @@ export function CheckoutPage() {
       setBarcodeStatus(error instanceof Error ? error.message : "Barcode lookup failed. No product was added.");
     } finally {
       setIsBarcodeAdding(false);
+    }
+  }
+
+  function openFastAddForBarcode(barcode: string) {
+    const preserved = normalizeBarcode(barcode);
+    setFastAddBarcode(preserved);
+    setFastAddProductName("");
+    setFastAddSellingPrice("");
+    setFastAddInitialStock("1");
+    setFastAddError(null);
+    setShowFastAdd(true);
+    setBarcodeStatus("Product not found. Complete Fast Add to create this product explicitly.");
+  }
+
+  function validateFastAdd(): string | null {
+    if (!fastAddProductName.trim()) {
+      return "Product name is required.";
+    }
+
+    if (!normalizeBarcode(fastAddBarcode)) {
+      return "Barcode is required.";
+    }
+
+    if (!fastAddUnitId) {
+      return "Unit is required.";
+    }
+
+    if (toNumber(fastAddSellingPrice) <= 0) {
+      return "Selling price must be greater than zero.";
+    }
+
+    if (toNumber(fastAddInitialStock) < 0) {
+      return "Initial stock quantity cannot be negative.";
+    }
+
+    return null;
+  }
+
+  async function handleSubmitFastAdd() {
+    if (isFastAdding) {
+      return;
+    }
+
+    const validation = validateFastAdd();
+    if (validation) {
+      setFastAddError(validation);
+      return;
+    }
+
+    setIsFastAdding(true);
+    setFastAddError(null);
+    try {
+      const result = await fastAddUnknownBarcode({
+        productName: fastAddProductName.trim(),
+        barcode: normalizeBarcode(fastAddBarcode),
+        unitId: fastAddUnitId,
+        sellingPrice: toNumber(fastAddSellingPrice),
+        initialStockQuantity: toNumber(fastAddInitialStock),
+      });
+
+      addProduct(result.product);
+      setBarcodeStatus(`${result.product.name} created by Fast Add and added to cart.`);
+      setShowFastAdd(false);
+      setSearch("");
+      setProductPage(1);
+      await productsQuery.refetch();
+    } catch (error) {
+      setFastAddError(describeCheckoutBackendError(error));
+    } finally {
+      setIsFastAdding(false);
     }
   }
 
@@ -453,7 +552,7 @@ export function CheckoutPage() {
 
   async function refreshShiftAndProducts() {
     setBackendMessage(null);
-    await Promise.all([sessionQuery.refetch(), shiftQuery.refetch(), productsQuery.refetch()]);
+    await Promise.all([sessionQuery.refetch(), shiftQuery.refetch(), productsQuery.refetch(), unitsQuery.refetch()]);
     setLastRefreshAt(new Date().toISOString());
   }
 
@@ -463,7 +562,7 @@ export function CheckoutPage() {
     try {
       const result = await openHostShift({ openingCashCents: toCents(openingCash) });
       setBackendMessage(result.message);
-      await Promise.all([shiftQuery.refetch(), productsQuery.refetch()]);
+      await Promise.all([shiftQuery.refetch(), productsQuery.refetch(), unitsQuery.refetch()]);
       setLastRefreshAt(new Date().toISOString());
     } catch (error) {
       setBackendMessage(describeCheckoutBackendError(error));
@@ -661,7 +760,7 @@ export function CheckoutPage() {
               autoFocus
               inputMode="search"
             />
-            <p className="shrink-0 text-xs text-slate-500">Enter performs exact barcode add first. Product-name search remains available as you type.</p>
+            <p className="shrink-0 text-xs text-slate-500">Enter performs exact barcode add first. Unknown barcode opens Fast Add confirmation. Product-name search remains available as you type.</p>
             {barcodeStatus ? <Alert tone={barcodeTone(barcodeStatus)} title="Barcode lookup">{barcodeStatus}</Alert> : null}
             {productsQuery.isLoading ? <LoadingState label="Loading products..." /> : null}
             {productsQuery.isError ? <ErrorState message={describeCheckoutBackendError(productsQuery.error)} /> : null}
@@ -741,7 +840,7 @@ export function CheckoutPage() {
             {cartValidationMessage ? <Alert tone={completedSale ? "success" : "warning"} title="Checkout readiness">{cartValidationMessage}</Alert> : <Alert tone="success" title="Ready">Press Review Checkout or F9 to verify totals before committing the sale.</Alert>}
             <div className="mt-auto space-y-3 border-t border-slate-100 pt-3">
               <Button className="min-h-14 w-full text-base" variant="success" onClick={reviewCheckout} disabled={!canReviewCheckout}>{isSubmittingCheckout ? "Completing..." : "Review Checkout"}</Button>
-              <div className="rounded-lg bg-slate-100 p-3 text-xs text-slate-600"><p className="font-semibold text-slate-800">Keyboard hints</p><p>Enter = exact barcode add from scan/search input · F9 = Review Checkout · Enter = Confirm when review is open · F5 = New Sale after completion · Esc = Close/cancel dialog</p><p className="mt-1">Fast Add remains parked for POS-M4. No product writes are added in this lane.</p></div>
+              <div className="rounded-lg bg-slate-100 p-3 text-xs text-slate-600"><p className="font-semibold text-slate-800">Keyboard hints</p><p>Enter = exact barcode add or Fast Add from scan/search input · F9 = Review Checkout · Enter = Confirm when review is open · F5 = New Sale after completion · Esc = Close/cancel dialog</p><p className="mt-1">Fast Add requires explicit confirmation. Product and initial stock setup do not reduce stock; sale stock reduction remains checkout-only.</p></div>
             </div>
           </CardBody>
         </Card>
@@ -753,7 +852,7 @@ export function CheckoutPage() {
     <div className="space-y-4 overflow-hidden">
       <CommandBar
         title="POS Checkout"
-        subtitle="Cashier workstation using wired local session, shift, product, checkout, receipt file status, POS-M2 printer adapter status, and POS-M3 barcode flow."
+        subtitle="Cashier workstation using wired local session, shift, product, checkout, receipt file status, POS-M2 printer adapter status, barcode flow, and POS-M4 Fast Add."
         status={<div className="flex flex-wrap items-center gap-2"><StatusPill tone={sessionQuery.data?.isAuthenticated ? "success" : "warning"}>{operatorLabel}</StatusPill><StatusPill tone={shiftOpen ? "success" : "warning"}>Shift {shift?.shiftState ?? "Unknown"}</StatusPill></div>}
         actions={<Button variant="secondary" onClick={() => void refreshShiftAndProducts()} disabled={shiftQuery.isFetching || productsQuery.isFetching || sessionQuery.isFetching}>{shiftQuery.isFetching || productsQuery.isFetching || sessionQuery.isFetching ? "Refreshing..." : "Refresh"}</Button>}
       />
@@ -762,10 +861,51 @@ export function CheckoutPage() {
       {shiftQuery.isLoading ? <LoadingState label="Reading host shift..." /> : null}
       {shiftQuery.isError ? <ErrorState message={describeCheckoutBackendError(shiftQuery.error)} /> : null}
       {!shiftOpen ? renderShiftLockedState() : renderWorkstation()}
-      <details className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-card"><summary className="cursor-pointer text-sm font-semibold text-slate-900">Checkout diagnostics / runtime proof</summary><div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4"><p>Session: {sessionQuery.isLoading ? "Loading..." : sessionQuery.data?.isAuthenticated ? `Authenticated as ${operatorLabel}` : "Not authenticated"}</p><p>Shift status: {shift?.shiftState ?? "Unknown"}</p><p>Permission required: Sales.Create</p><p>Product source: real backend products API</p><p>Cart line count: {cartLines.length}</p><p>Cart item quantity: {formatQuantity(itemQuantityTotal)}</p><p>Cart total: {formatMoney(subtotal)}</p><p>Cash tendered: {fromCents(cashCents)}</p><p>Local validation: {cartValidationMessage ?? "Ready for review"}</p><p>Submit lock: {isSubmittingCheckout ? "Locked" : "Unlocked"}</p><p>Barcode status: {barcodeStatus ?? "NotAttempted"}</p><p>Print status: {printResult?.status ?? "NotAttempted"}</p><p>Last checkout HTTP status: {attemptState.httpStatus ?? "—"}</p><p>Last backend code: {attemptState.backendCode ?? "—"}</p><p>Last checkout status: {attemptState.checkoutStatus ?? "—"}</p><p>Last receipt number: {attemptState.receiptNumber ?? "—"}</p><p>Last sale ID: {attemptState.saleId ?? "—"}</p><p>Last refresh: {lastRefreshAt ? formatDateTime(lastRefreshAt) : "—"}</p></div></details>
+      <details className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-card"><summary className="cursor-pointer text-sm font-semibold text-slate-900">Checkout diagnostics / runtime proof</summary><div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4"><p>Session: {sessionQuery.isLoading ? "Loading..." : sessionQuery.data?.isAuthenticated ? `Authenticated as ${operatorLabel}` : "Not authenticated"}</p><p>Shift status: {shift?.shiftState ?? "Unknown"}</p><p>Permission required: Sales.Create</p><p>Product source: real backend products API</p><p>Cart line count: {cartLines.length}</p><p>Cart item quantity: {formatQuantity(itemQuantityTotal)}</p><p>Cart total: {formatMoney(subtotal)}</p><p>Cash tendered: {fromCents(cashCents)}</p><p>Local validation: {cartValidationMessage ?? "Ready for review"}</p><p>Submit lock: {isSubmittingCheckout ? "Locked" : "Unlocked"}</p><p>Barcode status: {barcodeStatus ?? "NotAttempted"}</p><p>Fast Add: {showFastAdd ? "Open" : "Closed"}</p><p>Print status: {printResult?.status ?? "NotAttempted"}</p><p>Last checkout HTTP status: {attemptState.httpStatus ?? "—"}</p><p>Last backend code: {attemptState.backendCode ?? "—"}</p><p>Last checkout status: {attemptState.checkoutStatus ?? "—"}</p><p>Last receipt number: {attemptState.receiptNumber ?? "—"}</p><p>Last sale ID: {attemptState.saleId ?? "—"}</p><p>Last refresh: {lastRefreshAt ? formatDateTime(lastRefreshAt) : "—"}</p></div></details>
       {showConfirmCheckout ? (
         <Dialog title="Review Checkout" onClose={() => setShowConfirmCheckout(false)} footer={<><Button variant="secondary" onClick={() => setShowConfirmCheckout(false)} disabled={isSubmittingCheckout}>Cancel</Button><Button variant="success" onClick={() => void handleSubmitCheckout()} disabled={isSubmittingCheckout || !canReviewCheckout}>{isSubmittingCheckout ? "Committing..." : "Confirm Sale"}</Button></>}>
           <div className="space-y-4 text-sm text-slate-700"><Alert tone="warning" title="Final review before sale commit">Sale commits only after Confirm Sale. Printing is attempted only after a committed sale and only when Print Receipt is clicked.</Alert><div className="grid gap-3 sm:grid-cols-2"><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Cart</p><p className="text-lg font-semibold text-slate-950">{cartLines.length} line(s) · {formatQuantity(itemQuantityTotal)} item(s)</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Total</p><p className="text-lg font-semibold text-slate-950">{formatMoney(subtotal)}</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Cash tendered</p><p className="text-lg font-semibold text-slate-950">{fromCents(cashCents)}</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Change</p><p className="text-lg font-semibold text-emerald-700">{fromCents(estimatedChangeCents)}</p></div></div><div className="max-h-56 overflow-y-auto rounded-lg border border-slate-200">{cartLines.map((line) => <div key={line.product.id} className="flex justify-between gap-3 border-b border-slate-100 px-3 py-2 last:border-b-0"><div><p className="font-semibold text-slate-900">{line.product.name}</p><p className="text-xs text-slate-500">{formatQuantity(line.quantity)} × {formatMoney(line.product.sellingPrice)}</p></div><p className="font-semibold text-slate-900">{formatMoney(line.quantity * line.product.sellingPrice)}</p></div>)}</div></div>
+        </Dialog>
+      ) : null}
+      {showFastAdd ? (
+        <Dialog
+          title="Fast Add Unknown Barcode"
+          onClose={() => setShowFastAdd(false)}
+          footer={<><Button variant="secondary" onClick={() => setShowFastAdd(false)} disabled={isFastAdding}>Cancel</Button><Button variant="success" onClick={() => void handleSubmitFastAdd()} disabled={isFastAdding || unitsQuery.isLoading}>{isFastAdding ? "Creating..." : "Create Product and Add to Cart"}</Button></>}
+        >
+          <div className="space-y-4 text-sm text-slate-700">
+            <Alert tone="warning" title="Explicit cashier confirmation required">This creates a minimal active product and optional initial stock entry for the preserved unknown barcode. It does not reduce stock; checkout remains the only sale stock-reducing operation.</Alert>
+            {fastAddError ? <Alert tone="danger" title="Fast Add error">{fastAddError}</Alert> : null}
+            {unitsQuery.isError ? <Alert tone="danger" title="Units unavailable">{describeCheckoutBackendError(unitsQuery.error)}</Alert> : null}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Barcode</label>
+                <TextInput value={fastAddBarcode} readOnly aria-readonly="true" />
+                <p className="mt-1 text-xs text-slate-500">Preserved from the unknown scan/search input.</p>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Product name</label>
+                <TextInput value={fastAddProductName} onChange={(event) => setFastAddProductName(event.target.value)} placeholder="Product name" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Unit</label>
+                <select className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900" value={fastAddUnitId} onChange={(event) => setFastAddUnitId(event.target.value)}>
+                  <option value="">Select unit</option>
+                  {(unitsQuery.data ?? []).map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Selling price</label>
+                <TextInput value={fastAddSellingPrice} onChange={(event) => setFastAddSellingPrice(event.target.value)} placeholder="0.00" inputMode="decimal" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Initial stock quantity</label>
+                <TextInput value={fastAddInitialStock} onChange={(event) => setFastAddInitialStock(event.target.value)} placeholder="0" inputMode="decimal" />
+                <p className="mt-1 text-xs text-slate-500">Must be zero or higher. Positive quantity creates an initial Stock-In entry.</p>
+              </div>
+            </div>
+            <p className="rounded-md bg-slate-100 p-3 text-xs text-slate-600">Duplicate barcode is rejected by the local API. Product creation is explicit and uses the local product/inventory write path.</p>
+          </div>
         </Dialog>
       ) : null}
       {completedSale ? (
