@@ -104,6 +104,26 @@ internal static class ReadOnlyEndpointExtensions
             return result.IsSuccess ? Results.Ok(result.Value) : ApiAuthExtensions.ToErrorResult(result);
         });
 
+        app.MapGet("/api/products/catalog/units", async (
+            HttpContext httpContext,
+            LocalApiSessionService sessions,
+            OperatorReadService reads,
+            CancellationToken cancellationToken) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    LocalApiPermissions.ProductsView) is IResult unauthorized)
+            {
+                return unauthorized;
+            }
+
+            Result<IReadOnlyList<Contracts.CatalogOptionResponse>> result =
+                await reads.GetProductUnitsAsync(cancellationToken).ConfigureAwait(false);
+
+            return result.IsSuccess ? Results.Ok(result.Value) : ApiAuthExtensions.ToErrorResult(result);
+        });
+
         app.MapGet("/api/inventory/low-stock", async (
             HttpContext httpContext,
             LocalApiSessionService sessions,
