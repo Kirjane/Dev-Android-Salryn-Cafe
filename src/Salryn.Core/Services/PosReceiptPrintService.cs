@@ -71,7 +71,7 @@ public sealed record PosReceiptPrintResult(
         string? errorMessage) =>
         new(false, PosReceiptPrintStatuses.Failed, saleId, receiptNumber, source, adapterName, message, errorMessage, null);
 
-    public static PosReceiptPrintResult Succeeded(
+    public static PosReceiptPrintResult Printed(
         Guid? saleId,
         string? receiptNumber,
         string source,
@@ -273,7 +273,7 @@ public sealed class PosReceiptPrintService
 
             if (adapterResult.Succeeded)
             {
-                return PosReceiptPrintResult.Succeeded(
+                return PosReceiptPrintResult.Printed(
                     saleId,
                     receiptNumber,
                     source,
