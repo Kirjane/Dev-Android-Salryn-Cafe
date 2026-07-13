@@ -62,6 +62,12 @@ export const implementedPages: readonly AppPage[] = [
   "production-reports",
 ] as const;
 
+const RoleIds = {
+  Admin: "00000000-0000-0000-0000-000000000001",
+  Manager: "00000000-0000-0000-0000-000000000002",
+  Cashier: "00000000-0000-0000-0000-000000000003",
+} as const;
+
 const authenticatedOnlyPages = new Set<AppPage>(["dashboard"]);
 
 const pagePermissions: Partial<Record<AppPage, readonly Permission[]>> = {
@@ -106,9 +112,13 @@ export function canAccessPage(session: SessionState | null | undefined, page: Ap
     return false;
   }
 
-  if (authenticatedOnlyPages.has(page)) {
-    return true;
-  }
+  const roleId = session.user.roleId.toLowerCase();
+  const cashierPages: readonly AppPage[] = ["checkout", "sales"];
+  const managerPages: readonly AppPage[] = ["dashboard", "checkout", "products", "inventory", "sales", "audit", "traditional-reporting", "production-reports"];
+  if (roleId === RoleIds.Cashier && !cashierPages.includes(page)) return false;
+  if (roleId === RoleIds.Manager && !managerPages.includes(page)) return false;
+
+  if (authenticatedOnlyPages.has(page)) return roleId !== RoleIds.Cashier;
 
   const requiredPermissions = pagePermissions[page];
 

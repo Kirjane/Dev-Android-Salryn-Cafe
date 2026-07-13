@@ -42,7 +42,8 @@ public static class RmoA6OfficialOutputAuditTrailChecks
         RequireContains(contractsSource, "OfficialOutputTextFileWorkflowUi.AuditRecordFailed", "Contracts must define the controlled post-output audit failure code.");
         RequireNotContains(recorderSource, "reprint", "Official output audit recorder must not introduce reprint wording.");
         RequireNotContains(contractsSource, "reprint", "Official output audit contracts must not introduce reprint wording.");
-        RequireContains(navigation, "enabled: false", "Web nav must keep disabled official-output surfaces.");
+        RequireNotContains(navigation, "Official Output Text File", "Unsupported official-output work must not appear in store navigation.");
+        RequireNotContains(navigation, "enabled: false", "Store navigation must not render disabled developer-only surfaces.");
         RequireNotContains(readOnlyEndpoints, "official-output", "Read-only API must not expose official-output endpoints.");
         RequireContains(auditReadSource, "FROM audit_logs", "Generic audit read path must remain available for WEB-B0 Audit page.");
 

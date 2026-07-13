@@ -43,8 +43,8 @@ public static class RmoA2OfficialOutputSmokeRoutingChecks
 
         RequireContains(smokeChecks, "Official text-file output smoke checks succeeded.", "Official-output smoke success line must remain stable.");
 
-        RequireContains(navigation, "Official Output Text File", "Web nav must keep Official Output Text File entry.");
-        RequireContains(navigation, "enabled: false", "Web nav must keep disabled official-output surfaces.");
+        RequireNotContains(navigation, "Official Output Text File", "Unsupported official-output work must not appear in store navigation.");
+        RequireNotContains(navigation, "enabled: false", "Store navigation must not render disabled developer-only surfaces.");
         RequireNotContains(readOnlyEndpoints, "official-output", "Read-only API must not expose official-output endpoints.");
         RequireNotContains(apiProgram, "MapGet(\"/api/official-output", "API must not expose official-output routes.");
 

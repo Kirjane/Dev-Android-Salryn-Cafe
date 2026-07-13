@@ -45,8 +45,8 @@ public static class RmoA5OfficialOutputPermissionChecks
         RequireContains(boundary, "OfficialOutputTextFileWorkflowUi.PermissionRequired", "Workflow UI boundary must use dedicated permission error code.");
         RequireNotContains(boundary, "reprint", "Permission boundary must not introduce reprint wording.");
 
-        RequireContains(navigation, "Official Output Text File", "Web nav must keep Official Output Text File entry.");
-        RequireContains(navigation, "enabled: false", "Web nav must keep disabled official-output surfaces.");
+        RequireNotContains(navigation, "Official Output Text File", "Unsupported official-output work must not appear in store navigation.");
+        RequireNotContains(navigation, "enabled: false", "Store navigation must not render disabled developer-only surfaces.");
         RequireNotContains(readOnlyEndpoints, "official-output", "Read-only API must not expose official-output endpoints.");
         RequireContains(policySource, "RejectIfOutputPackageDirectoryExists", "Output-root policy must remain unchanged.");
         RequireContains(adapterSource, "ValidateWritableOutputRoot", "Adapter output-root validation must remain unchanged.");

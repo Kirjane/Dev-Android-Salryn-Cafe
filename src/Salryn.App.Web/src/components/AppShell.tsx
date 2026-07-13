@@ -4,7 +4,6 @@ import {
   BarChart3,
   Boxes,
   ClipboardCheck,
-  DatabaseBackup,
   FileText,
   History,
   Layers3,
@@ -12,7 +11,6 @@ import {
   LogOut,
   Network,
   ReceiptText,
-  Settings,
   ShieldCheck,
   ShoppingCart,
   Store,
@@ -33,10 +31,7 @@ const navIcons: Record<string, LucideIcon> = {
   Products: Tags,
   Inventory: Boxes,
   "Sales History": History,
-  "Official Output Text File": FileText,
-  Settings,
   Users,
-  Backup: DatabaseBackup,
   Audit: ShieldCheck,
   "Host LAN Control": Network,
   "Official Setup": ClipboardCheck,
@@ -108,9 +103,6 @@ export function AppShell({ session, currentPage, onNavigate, onLogout, children 
 
       <div className="flex min-h-0 flex-1">
         <aside className="flex w-60 shrink-0 flex-col border-r border-white/5 bg-navy-800 text-slate-200 shadow-rail">
-          <div className="border-b border-white/5 px-4 py-3 text-[11px] font-semibold text-slate-500">
-            OPERATIONS
-          </div>
           <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3">
             {visibleNavItems.map((item) => {
               const Icon = navIcons[item.label] ?? FileText;
@@ -118,46 +110,14 @@ export function AppShell({ session, currentPage, onNavigate, onLogout, children 
               const showPendingJoinBadge =
                 item.enabled && item.id === "host-lan-control" && pendingJoinRequestCount > 0;
 
-              if (!item.enabled) {
-                return (
-                  <div
-                    key={item.label}
-                    aria-disabled="true"
-                    title={item.reason}
-                    className="flex min-h-10 cursor-not-allowed items-center justify-between gap-2 rounded-md px-3 py-2 text-sm text-slate-500"
-                  >
-                    <span className="flex min-w-0 items-center gap-3">
-                      <Icon aria-hidden="true" className="shrink-0" size={17} />
-                      <span className="truncate">{item.label}</span>
-                    </span>
-                    <span className="shrink-0 rounded border border-slate-600 px-1.5 py-0.5 text-[0.55rem] font-semibold text-slate-500">
-                      Unsupported
-                    </span>
-                  </div>
-                );
-              }
-
               return (
-                <button
-                  key={item.label}
-                  type="button"
-                  onClick={() => onNavigate(item.id)}
-                  className={`flex min-h-10 w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors ${
-                    isActive
-                      ? "bg-blue-600 font-semibold text-white shadow-sm"
-                      : "text-slate-300 hover:bg-white/5 hover:text-white"
-                  }`}
-                >
-                  <span className="flex items-center gap-3">
-                    <Icon aria-hidden="true" size={17} />
-                    {item.label}
-                  </span>
-                  {showPendingJoinBadge ? (
-                    <span className="rounded bg-amber-300 px-2 py-0.5 text-[0.65rem] font-semibold text-amber-950">
-                      {pendingJoinRequestCount}
-                    </span>
-                  ) : null}
-                </button>
+                <div key={item.label}>
+                  {(visibleNavItems.findIndex((candidate) => candidate.group === item.group) === visibleNavItems.indexOf(item)) ? <div className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase text-slate-500">{item.group}</div> : null}
+                  <button type="button" onClick={() => onNavigate(item.id)} className={`flex min-h-10 w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors ${isActive ? "bg-blue-600 font-semibold text-white shadow-sm" : "text-slate-300 hover:bg-white/5 hover:text-white"}`}>
+                    <span className="flex items-center gap-3"><Icon aria-hidden="true" size={17} />{item.label}</span>
+                    {showPendingJoinBadge ? <span className="rounded bg-amber-300 px-2 py-0.5 text-[0.65rem] font-semibold text-amber-950">{pendingJoinRequestCount}</span> : null}
+                  </button>
+                </div>
               );
             })}
           </nav>

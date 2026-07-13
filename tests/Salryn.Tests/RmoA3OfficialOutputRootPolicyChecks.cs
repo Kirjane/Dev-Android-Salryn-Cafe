@@ -25,8 +25,8 @@ public static class RmoA3OfficialOutputRootPolicyChecks
         RequireContains(adapterSource, "MapWriteException", "Adapter must map write exceptions to controlled validation errors.");
         RequireNotContains(adapterSource, "reprint", "Adapter must not add repeat-run/reprint policy.");
         RequireNotContains(policySource, "reprint", "Output-root policy must not add repeat-run/reprint policy.");
-        RequireContains(navigation, "Official Output Text File", "Web nav must keep Official Output Text File entry.");
-        RequireContains(navigation, "enabled: false", "Web nav must keep disabled official-output surfaces.");
+        RequireNotContains(navigation, "Official Output Text File", "Unsupported official-output work must not appear in store navigation.");
+        RequireNotContains(navigation, "enabled: false", "Store navigation must not render disabled developer-only surfaces.");
         RequireNotContains(readOnlyEndpoints, "official-output", "Read-only API must not expose official-output endpoints.");
 
         OfficialTextFileOutputPathPolicy policy = new();

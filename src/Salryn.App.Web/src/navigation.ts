@@ -7,49 +7,25 @@ export type EnabledNavItem = {
   id: AppPage;
   label: string;
   enabled: true;
+  group: "Cashier" | "Manager" | "Admin" | "Advanced";
 };
 
-export type DisabledNavItem = {
-  id: "disabled";
-  label: string;
-  enabled: false;
-  reason: string;
-};
-
-export type NavItemConfig = EnabledNavItem | DisabledNavItem;
+export type NavItemConfig = EnabledNavItem;
 
 export const navItems: NavItemConfig[] = [
-  { id: "dashboard", label: "Dashboard", enabled: true },
-  { id: "checkout", label: "POS Checkout", enabled: true },
-  { id: "products", label: "Product Catalog", enabled: true },
-  { id: "inventory", label: "Stock Movements", enabled: true },
-  { id: "sales", label: "Sales History", enabled: true },
-  {
-    id: "disabled",
-    label: "Official Output Text File",
-    enabled: false,
-    reason: "Disabled because the React shell has no approved Official Output Text File API contract yet.",
-  },
-  {
-    id: "disabled",
-    label: "Settings",
-    enabled: false,
-    reason: "Disabled because the React shell has no approved settings API contract yet.",
-  },
-  { id: "users", label: "Users", enabled: true },
-  {
-    id: "disabled",
-    label: "Backup",
-    enabled: false,
-    reason: "Disabled because the React shell has no approved backup API contract yet.",
-  },
-  { id: "audit", label: "Audit", enabled: true },
-  { id: "host-lan-control", label: "Host LAN Control", enabled: true },
-  { id: "official-setup", label: "Official Setup", enabled: true },
-  { id: "traditional-reporting", label: "Traditional Reporting", enabled: true },
-  { id: "production-reports", label: "Production Reports", enabled: true },
+  { id: "checkout", label: "POS Checkout", enabled: true, group: "Cashier" },
+  { id: "sales", label: "Sales History", enabled: true, group: "Cashier" },
+  { id: "dashboard", label: "Dashboard", enabled: true, group: "Manager" },
+  { id: "products", label: "Product Catalog", enabled: true, group: "Manager" },
+  { id: "inventory", label: "Stock Movements", enabled: true, group: "Manager" },
+  { id: "users", label: "Users", enabled: true, group: "Admin" },
+  { id: "audit", label: "Audit", enabled: true, group: "Admin" },
+  { id: "host-lan-control", label: "Host LAN Control", enabled: true, group: "Advanced" },
+  { id: "official-setup", label: "Official Setup", enabled: true, group: "Advanced" },
+  { id: "traditional-reporting", label: "Traditional Reporting", enabled: true, group: "Advanced" },
+  { id: "production-reports", label: "Production Reports", enabled: true, group: "Advanced" },
 ];
 
 export function getNavItems(session: SessionState): NavItemConfig[] {
-  return navItems.filter((item) => !item.enabled || canAccessPage(session, item.id));
+  return navItems.filter((item) => canAccessPage(session, item.id));
 }

@@ -145,7 +145,7 @@ public static class LanM16RcBEntryBoundaryChecks
         AssertContains(dashboardPage, "Open Host LAN Control", "Dashboard must provide an obvious handoff to Host LAN Control.");
         AssertContains(dashboardPage, "canOpenHostLanControl", "Dashboard must hide Host LAN Control card from unqualified users.");
         AssertContains(navigation, "Host LAN Control", "Navigation must expose dedicated Host LAN Control page to local operators.");
-        AssertContains(navigation, "{ id: \"host-lan-control\", label: \"Host LAN Control\", enabled: true }", "Host LAN Control must be an enabled sidebar item, not marked Later.");
+        AssertContains(navigation, "{ id: \"host-lan-control\", label: \"Host LAN Control\", enabled: true, group: \"Advanced\" }", "Host LAN Control must be an enabled Advanced sidebar item, not marked Later.");
         AssertNotContains(navigation, "label: \"Host LAN Control\", enabled: false", "Host LAN Control must not be disabled in navigation.");
         AssertNotContains(navigation, "Remote POS Client", "Host navigation must not show Remote POS Client.");
         AssertNotContains(navigation, "Remote Read-Only Client", "Host navigation must not show Remote Read-Only Client.");

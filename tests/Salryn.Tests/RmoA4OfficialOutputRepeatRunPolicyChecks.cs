@@ -27,7 +27,8 @@ public static class RmoA4OfficialOutputRepeatRunPolicyChecks
         RequireContains(smokeChecks, "OfficialTextFileOutput.OutputPackageAlreadyExists", "Official-output smoke must prove duplicate package runs are refused.");
         RequireNotContains(policySource, "reprint", "Repeat-run policy must not introduce reprint wording.");
         RequireNotContains(adapterSource, "reprint", "Adapter must not introduce reprint wording.");
-        RequireContains(navigation, "enabled: false", "Web nav must keep disabled official-output surfaces.");
+        RequireNotContains(navigation, "Official Output Text File", "Unsupported official-output work must not appear in store navigation.");
+        RequireNotContains(navigation, "enabled: false", "Store navigation must not render disabled developer-only surfaces.");
         RequireNotContains(readOnlyEndpoints, "official-output", "Read-only API must not expose official-output endpoints.");
 
         string root = CreateTempDirectory();
