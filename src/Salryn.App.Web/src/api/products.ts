@@ -97,3 +97,8 @@ export async function fetchProductBrands(): Promise<CatalogOption[]> {
   const response = await fetch("/api/products/catalog/brands", { credentials: "include" });
   return readJson<CatalogOption[]>(response);
 }
+
+export async function fetchProductUnits(): Promise<CatalogOption[]> {
+  const response = await fetch("/api/products/catalog/units", { credentials: "include" });
+  return readJson<CatalogOption[]>(response);
+}
