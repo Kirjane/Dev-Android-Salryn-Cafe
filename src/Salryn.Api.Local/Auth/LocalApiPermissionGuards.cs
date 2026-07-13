@@ -3,6 +3,7 @@ namespace Salryn.Api.Local.Auth;
 internal static class LocalApiPermissions
 {
     public const string ProductsView = "Products.View";
+    public const string ProductsManage = "Products.Manage";
     public const string InventoryView = "Inventory.View";
     public const string SalesViewHistory = "Sales.ViewHistory";
     public const string UsersManage = "Users.Manage";
