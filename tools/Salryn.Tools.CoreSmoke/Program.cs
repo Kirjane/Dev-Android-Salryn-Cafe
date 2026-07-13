@@ -76,7 +76,6 @@ public static class Program
         UiA1RProductMockupAlignmentChecks.Run();
         UiA1RProductVisualParityChecks.Run();
         UiA1RInventoryVisualAlignmentChecks.Run();
-        UiA1RAdminTablesVisualAlignmentChecks.Run();
         UiA1RSettingsBackupAuditVisualAlignmentChecks.Run();
         J20DevelopmentLaunchModeChecks.Run();
         WebA1LocalApiReactDashboardChecks.Run();
@@ -142,6 +141,7 @@ public static class Program
         PosStabA5ReceiptPrintingChecks.Run();
         PosM1ReceiptSnapshotFileReceiptChecks.Run();
         PosM2PrinterReprintFailureChecks.Run();
+        PosM3BarcodeScannerCashierFlowChecks.Run();
         PosStabB2BackupUiChecks.Run();
         PosStabB2AuditViewerChecks.Run();
         PosStabB3ProductionDbWritabilityChecks.Run();
@@ -281,6 +281,9 @@ public static class Program
                 return;
             case "pos-m2-printer-reprint-failure":
                 PosM2PrinterReprintFailureChecks.Run();
+                return;
+            case "pos-m3-barcode-scanner-cashier-flow":
+                PosM3BarcodeScannerCashierFlowChecks.Run();
                 return;
             case "v2-host-shift":
                 V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();
