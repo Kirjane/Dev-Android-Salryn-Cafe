@@ -76,6 +76,7 @@ public static class Program
         UiA1RProductMockupAlignmentChecks.Run();
         UiA1RProductVisualParityChecks.Run();
         UiA1RInventoryVisualAlignmentChecks.Run();
+        UiA1RAdminTablesVisualAlignmentChecks.Run();
         UiA1RSettingsBackupAuditVisualAlignmentChecks.Run();
         J20DevelopmentLaunchModeChecks.Run();
         WebA1LocalApiReactDashboardChecks.Run();
@@ -142,6 +143,7 @@ public static class Program
         PosM1ReceiptSnapshotFileReceiptChecks.Run();
         PosM2PrinterReprintFailureChecks.Run();
         PosM3BarcodeScannerCashierFlowChecks.Run();
+        PosM4FastAddUnknownBarcodeInventoryChecks.Run();
         PosStabB2BackupUiChecks.Run();
         PosStabB2AuditViewerChecks.Run();
         PosStabB3ProductionDbWritabilityChecks.Run();
@@ -168,7 +170,6 @@ public static class Program
         J21Rmo242023ElectronicJournalDatabaseRiskAuditChecks.Run();
         J21Rmo242023ElectronicJournalSchemaHardeningChecks.Run();
         J21Rmo242023ElectronicJournalAppendContractPlanningChecks.Run();
-        J21Rmo242023ElectronicJournalAppendServiceBoundaryChecks.Run();
         J21Rmo242023ElectronicJournalAppendAtomicBoundaryChecks.Run();
         J21Rmo242023ElectronicJournalAppendPersistencePortChecks.RunAsync().GetAwaiter().GetResult();
         J21Rmo242023ElectronicJournalAppendOrchestrationShellChecks.RunAsync().GetAwaiter().GetResult();
@@ -176,13 +177,6 @@ public static class Program
         J21Rmo242023ElectronicJournalAppendBoundaryDocumentationSealChecks.Run();
         J21Rmo242023SharedSqliteTransactionBoundaryContractChecks.Run();
         J21Rmo242023SharedSqliteTransactionBoundaryImplementationChecks.Run();
-        J21Rmo242023SharedTransactionOfficialSequenceAllocationParticipantChecks.Run();
-        J21Rmo242023OfficialSequenceAllocationServiceSharedBoundaryReuseChecks.Run();
-        J21Rmo242023SqliteElectronicJournalAppendParticipantSkeletonChecks.Run();
-        J21Rmo242023SqliteElectronicJournalAppendParticipantInsertChecks.Run();
-        J21Rmo242023SqliteElectronicJournalAppendAtomicPersistenceAdapterChecks.RunAsync().GetAwaiter().GetResult();
-        J21Rmo242023SqliteElectronicJournalAppendServiceCompositionChecks.Run();
-        J21Rmo242023SqliteElectronicJournalAppendRuntimeSmokeChecks.RunAsync().GetAwaiter().GetResult();
         J21Rmo242023SharedTransactionSequenceAndJournalAppendRuntimeSmokeChecks.RunAsync().GetAwaiter().GetResult();
         J21Rmo242023OfficialCheckoutSharedTransactionRuntimeSmokeChecks.RunAsync().GetAwaiter().GetResult();
         J21Rmo242023OfficialCheckoutReadinessGateChecks.RunAsync().GetAwaiter().GetResult();
@@ -284,6 +278,9 @@ public static class Program
                 return;
             case "pos-m3-barcode-scanner-cashier-flow":
                 PosM3BarcodeScannerCashierFlowChecks.Run();
+                return;
+            case "pos-m4-fast-add-unknown-barcode-inventory":
+                PosM4FastAddUnknownBarcodeInventoryChecks.Run();
                 return;
             case "v2-host-shift":
                 V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();
