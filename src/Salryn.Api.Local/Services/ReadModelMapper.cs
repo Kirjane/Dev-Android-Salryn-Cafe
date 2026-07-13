@@ -35,6 +35,22 @@ internal static class ReadModelMapper
             model.TrackStock,
             model.IsActive);
 
+    public static ProductListItemResponse ToProductListItem(ProductDetailReadModel model) =>
+        new(
+            model.Id,
+            model.Sku,
+            model.Barcode,
+            model.Name,
+            model.UnitName,
+            model.CategoryName,
+            model.BrandName,
+            model.SellingPrice.ToPesos(),
+            model.CostPrice?.ToPesos(),
+            model.StockOnHand.ToUnits(),
+            model.ReorderLevel.ToUnits(),
+            model.TrackStock,
+            model.IsActive);
+
     public static ProductDetailResponse ToProductDetail(ProductDetailReadModel model) =>
         new(
             model.Id,
@@ -62,6 +78,9 @@ internal static class ReadModelMapper
         new(model.Id, model.Name, model.IsActive);
 
     public static CatalogOptionResponse ToCatalogOption(BrandReadModel model) =>
+        new(model.Id, model.Name, model.IsActive);
+
+    public static CatalogOptionResponse ToCatalogOption(UnitReadModel model) =>
         new(model.Id, model.Name, model.IsActive);
 
     public static LowStockProductResponse ToLowStock(LowStockProductReadModel model) =>
