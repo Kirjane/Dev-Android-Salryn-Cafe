@@ -16,6 +16,7 @@ public sealed class SalrynLocalComposition
         DatabaseInitializationOrchestrator databaseInitialization,
         IAuthenticationService authentication,
         ISaleReadRepository saleReadRepository,
+        ISaleWriteRepository saleWriteRepository,
         IProductReadRepository productReadRepository,
         IProductWriteRepository productWriteRepository,
         IInventoryReadRepository inventoryReadRepository,
@@ -31,6 +32,7 @@ public sealed class SalrynLocalComposition
         DatabaseInitialization = databaseInitialization;
         Authentication = authentication;
         SaleReadRepository = saleReadRepository;
+        SaleWriteRepository = saleWriteRepository;
         ProductReadRepository = productReadRepository;
         ProductWriteRepository = productWriteRepository;
         InventoryReadRepository = inventoryReadRepository;
@@ -51,6 +53,8 @@ public sealed class SalrynLocalComposition
     public IAuthenticationService Authentication { get; }
 
     public ISaleReadRepository SaleReadRepository { get; }
+
+    public ISaleWriteRepository SaleWriteRepository { get; }
 
     public IProductReadRepository ProductReadRepository { get; }
 
@@ -118,6 +122,7 @@ public sealed class SalrynLocalComposition
             databaseInitialization,
             authentication,
             repositories.CreateSaleReadRepository(),
+            repositories.CreateSaleWriteRepository(),
             repositories.CreateProductReadRepository(),
             repositories.CreateProductWriteRepository(),
             repositories.CreateInventoryReadRepository(),

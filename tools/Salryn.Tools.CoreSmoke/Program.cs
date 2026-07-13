@@ -146,6 +146,7 @@ public static class Program
         PosM4FastAddUnknownBarcodeInventoryChecks.Run();
         PosM5ProductWriteManagementChecks.Run();
         PosM6StockInStockAdjustmentChecks.Run();
+        PosM7VoidSaleStockReversalChecks.Run();
         PosStabB2BackupUiChecks.Run();
         PosStabB2AuditViewerChecks.Run();
         PosStabB3ProductionDbWritabilityChecks.Run();
@@ -296,6 +297,9 @@ public static class Program
                 return;
             case "pos-m6-stock-in-stock-adjustment":
                 PosM6StockInStockAdjustmentChecks.Run();
+                return;
+            case "pos-m7-void-sale-stock-reversal":
+                PosM7VoidSaleStockReversalChecks.Run();
                 return;
             case "v2-host-shift":
                 V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();

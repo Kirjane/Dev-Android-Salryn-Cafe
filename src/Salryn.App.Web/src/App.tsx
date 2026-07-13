@@ -71,7 +71,7 @@ function renderPage(page: AppPage, session: SessionState, onLogout: () => void, 
     case "inventory":
       return <InventoryPage />;
     case "sales":
-      return <SalesHistoryPage />;
+      return <SalesHistoryPage canVoid={session.user?.permissions.includes("Sales.Void") ?? false} />;
     case "users":
       return <UsersPage />;
     case "audit":

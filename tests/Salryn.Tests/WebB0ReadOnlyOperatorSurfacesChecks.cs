@@ -84,7 +84,6 @@ public static class WebB0ReadOnlyOperatorSurfacesChecks
             salesApi,
             auditApi,
             ReadRequiredFile(webSrc, "pages", "InventoryPage.tsx"),
-            ReadRequiredFile(webSrc, "pages", "SalesHistoryPage.tsx"),
             ReadRequiredFile(webSrc, "pages", "AuditPage.tsx"));
         string usersModuleSource = usersApi + "\n" + usersPage;
 

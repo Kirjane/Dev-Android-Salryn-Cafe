@@ -14,6 +14,7 @@ internal static class LocalApiPermissions
     public const string SettingsManage = "Settings.Manage";
     public const string ShiftOpenClose = "Shift.OpenClose";
     public const string SalesCreate = "Sales.Create";
+    public const string SalesVoid = "Sales.Void";
 }
 
 internal static class LocalApiPermissionGuards

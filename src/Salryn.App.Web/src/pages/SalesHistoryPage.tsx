@@ -22,6 +22,7 @@ import {
   TextInput,
 } from "../components/ui";
 import { formatDateTime, formatMoney, formatQuantity } from "../utils/format";
+import { voidSale } from "../api/saleVoid";
 
 function Dialog({ title, children, footer, onClose }: { title: string; children: ReactNode; footer: ReactNode; onClose: () => void }) {
   useEffect(() => {
@@ -69,7 +70,7 @@ function printTone(status: string | null | undefined): "success" | "warning" | "
   return "info";
 }
 
-export function SalesHistoryPage() {
+export function SalesHistoryPage({ canVoid = false }: { canVoid?: boolean }) {
   const [receiptNo, setReceiptNo] = useState("");
   const [status, setStatus] = useState("");
   const [from, setFrom] = useState("");
@@ -78,6 +79,9 @@ export function SalesHistoryPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isReprinting, setIsReprinting] = useState(false);
   const [reprintResult, setReprintResult] = useState<ReceiptPrintResult | null>(null);
+  const [voidReason, setVoidReason] = useState("");
+  const [voidMessage, setVoidMessage] = useState<string | null>(null);
+  const [isVoiding, setIsVoiding] = useState(false);
 
   const salesQuery = useQuery({
     queryKey: ["sales-history", receiptNo, status, from, to, page],
@@ -139,6 +143,22 @@ export function SalesHistoryPage() {
     }
   }
 
+  async function handleVoid() {
+    if (!detailQuery.data?.id || !voidReason.trim() || isVoiding) return;
+    setIsVoiding(true);
+    setVoidMessage(null);
+    try {
+      const result = await voidSale(detailQuery.data.id, voidReason.trim());
+      setVoidMessage(`${result.message} Reversal movements: ${result.reversalMovementCount}.`);
+      setVoidReason("");
+      await Promise.all([detailQuery.refetch(), salesQuery.refetch()]);
+    } catch (error) {
+      setVoidMessage(error instanceof Error ? error.message : "Sale void failed.");
+    } finally {
+      setIsVoiding(false);
+    }
+  }
+
   const columns = [
     { key: "receipt", header: "Receipt", render: (row: SaleHistoryItem) => row.receiptNo },
     { key: "date", header: "Date", render: (row: SaleHistoryItem) => formatDateTime(row.saleDate) },
@@ -152,7 +172,8 @@ export function SalesHistoryPage() {
     { key: "view", header: "View", render: (row: SaleHistoryItem) => <Button size="sm" variant="secondary" onClick={() => setSelectedId(row.id)}>View</Button> },
   ];
 
-  const canReprint = Boolean(detailQuery.data?.receiptSnapshot?.trim());
+  const isVoided = detailQuery.data?.status === "Voided";
+  const canReprint = Boolean(detailQuery.data?.receiptSnapshot?.trim()) && !isVoided;
 
   return (
     <div className="space-y-4 overflow-hidden">
@@ -202,7 +223,7 @@ export function SalesHistoryPage() {
         <Dialog
           title={detailQuery.data ? `Receipt ${detailQuery.data.receiptNo}` : "Sale detail"}
           onClose={() => setSelectedId(null)}
-          footer={<><Button variant="secondary" onClick={() => setSelectedId(null)}>Close</Button><Button variant="success" onClick={() => void handleReprint()} disabled={!canReprint || isReprinting}>{isReprinting ? "Reprinting..." : "Reprint Receipt"}</Button></>}
+          footer={<><Button variant="secondary" onClick={() => setSelectedId(null)}>Close</Button><Button variant="success" onClick={() => void handleReprint()} disabled={!canReprint || isReprinting}>{isVoided ? "Reprint blocked: VOIDED" : isReprinting ? "Reprinting..." : "Reprint Receipt"}</Button></>}
         >
           {detailQuery.isLoading ? <LoadingState label="Loading sale detail..." /> : null}
           {detailQuery.isError ? <ErrorState message={(detailQuery.error as Error).message} /> : null}
@@ -211,6 +232,16 @@ export function SalesHistoryPage() {
               <div className="flex flex-wrap items-center gap-2"><StatusPill tone={detailQuery.data.status === "Completed" ? "success" : "warning"}>{detailQuery.data.status}</StatusPill><span>{formatDateTime(detailQuery.data.saleDate)}</span><span>Cashier: {detailQuery.data.cashierDisplayName}</span></div>
               <div className="grid gap-3 sm:grid-cols-5"><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Subtotal</p><p className="font-semibold text-slate-950">{formatMoney(detailQuery.data.subtotal)}</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Discount</p><p className="font-semibold text-slate-950">{formatMoney(detailQuery.data.discount)}</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Tax</p><p className="font-semibold text-slate-950">{formatMoney(detailQuery.data.tax)}</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Total</p><p className="font-semibold text-slate-950">{formatMoney(detailQuery.data.total)}</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Change</p><p className="font-semibold text-emerald-700">{formatMoney(detailQuery.data.change)}</p></div></div>
               {detailQuery.data.voidReason ? <Alert tone="warning">Void reason: {detailQuery.data.voidReason}</Alert> : null}
+              {detailQuery.data.voidedAt ? <Alert tone="warning" title="VOIDED">Voided at {formatDateTime(detailQuery.data.voidedAt)}. The original persisted receipt snapshot remains unchanged; normal reprint is blocked.</Alert> : null}
+              {canVoid && detailQuery.data.status === "Completed" ? (
+                <div className="space-y-2 rounded-md border border-rose-200 bg-rose-50 p-3">
+                  <label className="text-sm font-medium text-rose-950">Void reason</label>
+                  <TextInput value={voidReason} onChange={(event) => setVoidReason(event.target.value)} placeholder="Required reason..." />
+                  <Button variant="danger" onClick={() => void handleVoid()} disabled={!voidReason.trim() || isVoiding}>{isVoiding ? "Voiding..." : "Void Sale"}</Button>
+                  <p className="text-xs text-rose-800">This preserves the original sale, payment, and receipt snapshot while reversing recorded stock movements.</p>
+                </div>
+              ) : null}
+              {voidMessage ? <Alert tone={detailQuery.data.status === "Voided" ? "success" : "danger"}>{voidMessage}</Alert> : null}
               <Alert tone={canReprint ? "info" : "warning"} title="Reprint source">
                 {canReprint ? "Persisted receipt snapshot is available. Reprint will use that stored text only." : "No persisted receipt snapshot was exposed for this sale detail, so reprint is disabled in the UI."}
               </Alert>
