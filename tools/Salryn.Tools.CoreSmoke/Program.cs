@@ -148,6 +148,7 @@ public static class Program
         PosM6StockInStockAdjustmentChecks.Run();
         PosM7VoidSaleStockReversalChecks.Run();
         PosSurface1RolePageLockStoreNavChecks.Run();
+        PosR1OwnerReportsChecks.Run();
         PosStabB2BackupUiChecks.Run();
         PosStabB2AuditViewerChecks.Run();
         PosStabB3ProductionDbWritabilityChecks.Run();
@@ -304,6 +305,9 @@ public static class Program
                 return;
             case "pos-surface1-role-page-lock-store-nav":
                 PosSurface1RolePageLockStoreNavChecks.Run();
+                return;
+            case "pos-r1-owner-reports":
+                PosR1OwnerReportsChecks.Run();
                 return;
             case "v2-host-shift":
                 V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();
