@@ -7,6 +7,7 @@ internal static class LocalApiPermissions
     public const string InventoryView = "Inventory.View";
     public const string InventoryAdjust = "Inventory.Adjust";
     public const string SalesViewHistory = "Sales.ViewHistory";
+    public const string ReportsView = "Reports.View";
     public const string UsersManage = "Users.Manage";
     public const string AuditView = "Audit.View";
     public const string StoreTerminalView = "StoreTerminal.View";
