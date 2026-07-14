@@ -19,6 +19,12 @@ public static class PosReceiptPrintSources
     public const string None = "None";
 }
 
+public static class ReceiptPrinterModes
+{
+    public const string Disabled = "Disabled";
+    public const string WindowsPrinter = "WindowsPrinter";
+}
+
 public sealed record ReceiptPrinterAdapterResult(
     bool Succeeded,
     string Status,
@@ -95,7 +101,21 @@ public interface IReceiptPrinterAdapter
 
 public sealed class DisabledReceiptPrinterAdapter : IReceiptPrinterAdapter
 {
-    public string AdapterName => "DisabledReceiptPrinterAdapter";
+    private readonly string _message;
+
+    public DisabledReceiptPrinterAdapter(
+        string? message = null,
+        string? adapterName = null)
+    {
+        _message = string.IsNullOrWhiteSpace(message)
+            ? "Receipt printing is disabled or unavailable on this workstation."
+            : message.Trim();
+        AdapterName = string.IsNullOrWhiteSpace(adapterName)
+            ? "DisabledReceiptPrinterAdapter"
+            : adapterName.Trim();
+    }
+
+    public string AdapterName { get; }
 
     public bool IsEnabled => false;
 
@@ -105,8 +125,7 @@ public sealed class DisabledReceiptPrinterAdapter : IReceiptPrinterAdapter
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(ReceiptPrinterAdapterResult.Disabled(
-            "Receipt printing is disabled or unavailable on this workstation."));
+        return Task.FromResult(ReceiptPrinterAdapterResult.Disabled(_message));
     }
 }
 
@@ -141,14 +160,21 @@ public sealed class NoOpReceiptPrinterAdapter : IReceiptPrinterAdapter
 public sealed class PosReceiptPrintService
 {
     private readonly ISaleReadRepository _saleReadRepository;
-    private readonly IReceiptPrinterAdapter _printerAdapter;
+    private readonly Func<IReceiptPrinterAdapter> _printerAdapterFactory;
 
     public PosReceiptPrintService(
         ISaleReadRepository saleReadRepository,
         IReceiptPrinterAdapter printerAdapter)
+        : this(saleReadRepository, () => printerAdapter)
+    {
+    }
+
+    public PosReceiptPrintService(
+        ISaleReadRepository saleReadRepository,
+        Func<IReceiptPrinterAdapter> printerAdapterFactory)
     {
         _saleReadRepository = saleReadRepository ?? throw new ArgumentNullException(nameof(saleReadRepository));
-        _printerAdapter = printerAdapter ?? throw new ArgumentNullException(nameof(printerAdapter));
+        _printerAdapterFactory = printerAdapterFactory ?? throw new ArgumentNullException(nameof(printerAdapterFactory));
     }
 
     public async Task<PosReceiptPrintResult> PrintSaleReceiptAsync(
@@ -156,6 +182,7 @@ public sealed class PosReceiptPrintService
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        IReceiptPrinterAdapter printerAdapter = CreatePrinterAdapter();
 
         if (saleId == Guid.Empty)
         {
@@ -163,7 +190,7 @@ public sealed class PosReceiptPrintService
                 null,
                 null,
                 PosReceiptPrintSources.None,
-                _printerAdapter.AdapterName,
+                printerAdapter.AdapterName,
                 "Sale id is required before printing can be attempted.");
         }
 
@@ -177,7 +204,7 @@ public sealed class PosReceiptPrintService
                 saleId,
                 null,
                 PosReceiptPrintSources.None,
-                _printerAdapter.AdapterName,
+                printerAdapter.AdapterName,
                 "Sale was not modified. Receipt print lookup failed.",
                 saleResult.ErrorDetail.Message);
         }
@@ -189,7 +216,7 @@ public sealed class PosReceiptPrintService
                 saleId,
                 null,
                 PosReceiptPrintSources.None,
-                _printerAdapter.AdapterName,
+                printerAdapter.AdapterName,
                 "Sale was not modified. Sale was not found for receipt printing.",
                 "Sale not found.");
         }
@@ -201,11 +228,12 @@ public sealed class PosReceiptPrintService
                 sale.Id,
                 sale.ReceiptNo,
                 PosReceiptPrintSources.None,
-                _printerAdapter.AdapterName,
+                printerAdapter.AdapterName,
                 "Sale was not modified. No persisted receipt snapshot exists for this sale.");
         }
 
         return await PrintPersistedTextAsync(
+                printerAdapter,
                 sale.Id,
                 sale.ReceiptNo,
                 PosReceiptPrintSources.PersistedReceiptSnapshot,
@@ -217,6 +245,7 @@ public sealed class PosReceiptPrintService
 
     public Task<PosReceiptPrintResult> TestPrintAsync(CancellationToken cancellationToken = default)
     {
+        IReceiptPrinterAdapter printerAdapter = CreatePrinterAdapter();
         string text = string.Join(Environment.NewLine, new[]
         {
             "SALRYN POS TEST PRINT",
@@ -227,15 +256,33 @@ public sealed class PosReceiptPrintService
         });
 
         return PrintPersistedTextAsync(
+            printerAdapter,
             null,
             null,
             PosReceiptPrintSources.TestPrintSample,
-            "POS-M2 test print",
+            "Salryn test print",
             text,
             cancellationToken);
     }
 
+    private IReceiptPrinterAdapter CreatePrinterAdapter()
+    {
+        try
+        {
+            return _printerAdapterFactory() ?? new DisabledReceiptPrinterAdapter(
+                "Receipt printing is unavailable because no printer adapter was created.",
+                "ReceiptPrinterAdapterFactory.Empty");
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or NotSupportedException or IOException or UnauthorizedAccessException)
+        {
+            return new DisabledReceiptPrinterAdapter(
+                "Receipt printing is unavailable because printer settings could not be resolved: " + ex.Message,
+                "ReceiptPrinterAdapterFactory.Error");
+        }
+    }
+
     private async Task<PosReceiptPrintResult> PrintPersistedTextAsync(
+        IReceiptPrinterAdapter printerAdapter,
         Guid? saleId,
         string? receiptNumber,
         string source,
@@ -251,23 +298,39 @@ public sealed class PosReceiptPrintService
                 saleId,
                 receiptNumber,
                 PosReceiptPrintSources.None,
-                _printerAdapter.AdapterName,
+                printerAdapter.AdapterName,
                 "No receipt text was available for printing.");
         }
 
-        if (!_printerAdapter.IsEnabled)
+        if (!printerAdapter.IsEnabled)
         {
-            return PosReceiptPrintResult.Disabled(
-                saleId,
-                receiptNumber,
-                source,
-                _printerAdapter.AdapterName,
-                "Receipt printing is disabled or unavailable on this workstation. Sale state is unchanged.");
+            try
+            {
+                ReceiptPrinterAdapterResult unavailable = await printerAdapter
+                    .PrintAsync(jobName, receiptText, cancellationToken)
+                    .ConfigureAwait(false);
+
+                return PosReceiptPrintResult.Disabled(
+                    saleId,
+                    receiptNumber,
+                    source,
+                    printerAdapter.AdapterName,
+                    unavailable.Message);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException or NotSupportedException)
+            {
+                return PosReceiptPrintResult.Disabled(
+                    saleId,
+                    receiptNumber,
+                    source,
+                    printerAdapter.AdapterName,
+                    "Receipt printing is disabled or unavailable on this workstation. Sale state is unchanged. " + ex.Message);
+            }
         }
 
         try
         {
-            ReceiptPrinterAdapterResult adapterResult = await _printerAdapter
+            ReceiptPrinterAdapterResult adapterResult = await printerAdapter
                 .PrintAsync(jobName, receiptText, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -277,7 +340,7 @@ public sealed class PosReceiptPrintService
                     saleId,
                     receiptNumber,
                     source,
-                    _printerAdapter.AdapterName,
+                    printerAdapter.AdapterName,
                     adapterResult.Message,
                     DateTimeOffset.UtcNow);
             }
@@ -288,7 +351,7 @@ public sealed class PosReceiptPrintService
                     saleId,
                     receiptNumber,
                     source,
-                    _printerAdapter.AdapterName,
+                    printerAdapter.AdapterName,
                     adapterResult.Message);
             }
 
@@ -296,7 +359,7 @@ public sealed class PosReceiptPrintService
                 saleId,
                 receiptNumber,
                 source,
-                _printerAdapter.AdapterName,
+                printerAdapter.AdapterName,
                 adapterResult.Message,
                 adapterResult.ErrorMessage);
         }
@@ -306,7 +369,7 @@ public sealed class PosReceiptPrintService
                 saleId,
                 receiptNumber,
                 source,
-                _printerAdapter.AdapterName,
+                printerAdapter.AdapterName,
                 "Receipt print failed. Sale state is unchanged.",
                 ex.GetType().Name + ": " + ex.Message);
         }
