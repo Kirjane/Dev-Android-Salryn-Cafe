@@ -36,7 +36,10 @@ public sealed class SqliteStoreSettingsReadRepository :
                     receipt_width_mm,
                     tax_mode_enabled,
                     shift_mode_enabled,
-                    allow_negative_stock
+                    allow_negative_stock,
+                    receipt_header,
+                    receipt_footer,
+                    printer_mode
                 FROM store_settings
                 ORDER BY created_at DESC
                 LIMIT 1;
@@ -56,7 +59,10 @@ public sealed class SqliteStoreSettingsReadRepository :
                     reader.GetInt32Value("receipt_width_mm"),
                     reader.GetBoolValue("tax_mode_enabled"),
                     reader.GetBoolValue("shift_mode_enabled"),
-                    reader.GetBoolValue("allow_negative_stock"))
+                    reader.GetBoolValue("allow_negative_stock"),
+                    reader.GetNullableString("receipt_header"),
+                    reader.GetNullableString("receipt_footer"),
+                    reader.GetStringValue("printer_mode"))
                 : null;
 
             return Task.FromResult(Result<StoreSettingsReadModel?>.Success(settings));

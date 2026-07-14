@@ -104,7 +104,10 @@ public sealed record StoreSettingsUpdateRequest(
     string CurrencyLabel,
     int ReceiptWidthMm,
     bool TaxModeEnabled,
-    bool ShiftModeEnabled);
+    bool ShiftModeEnabled,
+    string? ReceiptHeader = null,
+    string? ReceiptFooter = null,
+    string PrinterMode = "Disabled");
 
 public interface IStoreSettingsWriteRepository
 {

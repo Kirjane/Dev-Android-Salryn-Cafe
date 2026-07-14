@@ -45,6 +45,9 @@ public sealed class SqliteStoreSettingsWriteRepository :
                     receipt_width_mm = $receiptWidthMm,
                     tax_mode_enabled = $taxModeEnabled,
                     shift_mode_enabled = $shiftModeEnabled,
+                    receipt_header = $receiptHeader,
+                    receipt_footer = $receiptFooter,
+                    printer_mode = $printerMode,
                     updated_at = $updatedAt
                 WHERE id = $id;
                 """;
@@ -59,6 +62,9 @@ public sealed class SqliteStoreSettingsWriteRepository :
             command.Parameters.AddWithValue("$receiptWidthMm", request.ReceiptWidthMm);
             command.Parameters.AddWithValue("$taxModeEnabled", request.TaxModeEnabled ? 1 : 0);
             command.Parameters.AddWithValue("$shiftModeEnabled", request.ShiftModeEnabled ? 1 : 0);
+            command.Parameters.AddWithValue("$receiptHeader", DbNullableText(request.ReceiptHeader));
+            command.Parameters.AddWithValue("$receiptFooter", DbNullableText(request.ReceiptFooter));
+            command.Parameters.AddWithValue("$printerMode", request.PrinterMode.Trim());
             command.Parameters.AddWithValue("$updatedAt", DateTimeOffset.UtcNow.ToString("O"));
 
             int affectedRows = command.ExecuteNonQuery();
@@ -110,6 +116,13 @@ public sealed class SqliteStoreSettingsWriteRepository :
             return Result.Fail(Error.Validation(
                 "StoreSettings.InvalidReceiptWidth",
                 "Receipt width must be 58 or 80 millimeters."));
+        }
+
+        if (request.PrinterMode is not "Disabled" and not "WindowsPrinter")
+        {
+            return Result.Fail(Error.Validation(
+                "StoreSettings.InvalidPrinterMode",
+                "Printer mode must be Disabled or WindowsPrinter."));
         }
 
         return Result.Success();

@@ -53,7 +53,10 @@ public sealed record StoreSettingsReadModel(
     int ReceiptWidthMm,
     bool TaxModeEnabled,
     bool ShiftModeEnabled,
-    bool AllowNegativeStock);
+    bool AllowNegativeStock,
+    string? ReceiptHeader = null,
+    string? ReceiptFooter = null,
+    string PrinterMode = "Disabled");
 
 public sealed record CashierSessionReadModel(
     Guid Id,

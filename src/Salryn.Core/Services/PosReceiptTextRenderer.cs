@@ -18,7 +18,13 @@ public sealed record PosReceiptSnapshotDraft(
     Money Change,
     SaleStatus Status,
     IReadOnlyList<SaleItem> Items,
-    IReadOnlyList<Payment> Payments);
+    IReadOnlyList<Payment> Payments,
+    string? StoreName = null,
+    string? BusinessName = null,
+    string? Address = null,
+    string? ContactNumber = null,
+    string? ReceiptHeader = null,
+    string? ReceiptFooter = null);
 
 public static class PosReceiptTextRenderer
 {
@@ -55,7 +61,11 @@ public static class PosReceiptTextRenderer
         ArgumentNullException.ThrowIfNull(draft.Payments);
 
         var builder = new StringBuilder();
-        AppendCentered(builder, "SALRYN POS");
+        AppendCentered(builder, string.IsNullOrWhiteSpace(draft.StoreName) ? "SALRYN POS" : draft.StoreName);
+        if (!string.IsNullOrWhiteSpace(draft.BusinessName)) AppendCentered(builder, draft.BusinessName);
+        if (!string.IsNullOrWhiteSpace(draft.Address)) AppendCentered(builder, draft.Address);
+        if (!string.IsNullOrWhiteSpace(draft.ContactNumber)) AppendCentered(builder, draft.ContactNumber);
+        if (!string.IsNullOrWhiteSpace(draft.ReceiptHeader)) AppendCentered(builder, draft.ReceiptHeader);
         AppendCentered(builder, "RECEIPT SNAPSHOT");
         builder.AppendLine(new string('-', ReceiptWidth));
         builder.AppendLine("Receipt : " + Safe(draft.ReceiptNumber));
@@ -121,6 +131,7 @@ public static class PosReceiptTextRenderer
         builder.AppendLine(new string('-', ReceiptWidth));
         builder.AppendLine("Snapshot source: persisted sale_items and payments.");
         builder.AppendLine("This is not a physical printer output.");
+        if (!string.IsNullOrWhiteSpace(draft.ReceiptFooter)) AppendCentered(builder, draft.ReceiptFooter);
         return builder.ToString();
     }
 

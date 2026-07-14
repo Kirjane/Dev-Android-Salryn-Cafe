@@ -21,6 +21,7 @@ export const navItems: NavItemConfig[] = [
   { id: "owner-reports", label: "Owner Reports", enabled: true, group: "Manager" },
   { id: "users", label: "Users", enabled: true, group: "Admin" },
   { id: "audit", label: "Audit", enabled: true, group: "Admin" },
+  { id: "settings", label: "Store Settings", enabled: true, group: "Admin" },
   { id: "host-lan-control", label: "Host LAN Control", enabled: true, group: "Advanced" },
   { id: "official-setup", label: "Official Setup", enabled: true, group: "Advanced" },
   { id: "traditional-reporting", label: "Traditional Reporting", enabled: true, group: "Advanced" },

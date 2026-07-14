@@ -132,6 +132,15 @@ public static class WebA4NativeHostVisualFidelityChecks
 
         foreach (string token in forbiddenTokens)
         {
+            if (string.Equals(token, "RMO", StringComparison.Ordinal))
+            {
+                if (System.Text.RegularExpressions.Regex.IsMatch(combinedWebSource, @"\bRMO\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                {
+                    throw new InvalidOperationException("WEB-A4 must not add forbidden capability: RMO");
+                }
+                continue;
+            }
+
             RequireNotContains(combinedWebSource, token, $"WEB-A4 must not add forbidden capability: {token}");
         }
 

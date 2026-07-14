@@ -15,6 +15,7 @@ import { HostLanControlPage } from "./pages/HostLanControlPage";
 import { InventoryPage } from "./pages/InventoryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { OwnerReportsPage } from "./pages/OwnerReportsPage";
+import { StoreSettingsPage } from "./pages/StoreSettingsPage";
 import { ProductsPage } from "./pages/ProductsPage";
 import { ProductionReportsPage } from "./pages/ProductionReportsPage";
 import { RemoteClientLandingPage } from "./pages/RemoteClientLandingPage";
@@ -75,6 +76,8 @@ function renderPage(page: AppPage, session: SessionState, onLogout: () => void, 
       return <SalesHistoryPage canVoid={session.user?.permissions.includes("Sales.Void") ?? false} />;
     case "owner-reports":
       return <OwnerReportsPage />;
+    case "settings":
+      return <StoreSettingsPage />;
     case "users":
       return <UsersPage />;
     case "audit":

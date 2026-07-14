@@ -42,7 +42,8 @@ public sealed class HostOperatorApiServices
 
         PosCheckoutApplicationService checkoutApplicationService = new(
             posCheckoutService,
-            composition.ProductReadRepository);
+            composition.ProductReadRepository,
+            repositories.CreateStoreSettingsReadRepository());
 
         HostOperatorShiftApiService shiftService = new(cashierSessionService);
         FileReceiptWriter fileReceiptWriter = new(composition.DbPaths.ReceiptPath);

@@ -149,6 +149,7 @@ public static class Program
         PosM7VoidSaleStockReversalChecks.Run();
         PosSurface1RolePageLockStoreNavChecks.Run();
         PosR1OwnerReportsChecks.Run();
+        PosS1StoreSettingsIdentityPrinterChecks.Run();
         PosStabB2BackupUiChecks.Run();
         PosStabB2AuditViewerChecks.Run();
         PosStabB3ProductionDbWritabilityChecks.Run();
@@ -308,6 +309,9 @@ public static class Program
                 return;
             case "pos-r1-owner-reports":
                 PosR1OwnerReportsChecks.Run();
+                return;
+            case "pos-s1-store-settings-identity-printer":
+                PosS1StoreSettingsIdentityPrinterChecks.Run();
                 return;
             case "v2-host-shift":
                 V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();

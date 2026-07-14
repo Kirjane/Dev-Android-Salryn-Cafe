@@ -56,7 +56,8 @@ public static class DefaultDatabaseInitializationFactory
             new OfficialDryRunPackageSchemaMigration(),
             new VatRegistrationModeSchemaMigration(),
             new OfficialDocumentLifecycleCompletionSchemaMigration(),
-            new OfficialDocumentLifecycleAccountingSchemaMigration()
+            new OfficialDocumentLifecycleAccountingSchemaMigration(),
+            new StorePrinterModeSchemaMigration()
         };
 
         MigrationRunner migrationRunner = new(connectionFactory, migrations);

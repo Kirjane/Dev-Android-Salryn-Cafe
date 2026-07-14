@@ -57,6 +57,14 @@ public sealed class PosCheckoutApplicationService : IPosCheckoutApplicationServi
 
     public PosCheckoutApplicationService(
         IPosCheckoutService checkoutService,
+        IProductReadRepository productReadRepository,
+        IStoreSettingsReadRepository storeSettingsReadRepository)
+        : this(checkoutService, new TrustedPosCheckoutSaleBuilder(productReadRepository, storeSettingsReadRepository))
+    {
+    }
+
+    public PosCheckoutApplicationService(
+        IPosCheckoutService checkoutService,
         ITrustedPosCheckoutSaleBuilder trustedSaleBuilder)
     {
         _checkoutService = checkoutService ?? throw new ArgumentNullException(nameof(checkoutService));

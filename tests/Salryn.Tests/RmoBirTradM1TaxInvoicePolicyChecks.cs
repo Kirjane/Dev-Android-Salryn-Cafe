@@ -48,7 +48,7 @@ public static class RmoBirTradM1TaxInvoicePolicyChecks
         string engine = File.ReadAllText(Path.Combine(projectRoot, "src", "Salryn.Core", "Services", "OfficialDocumentTaxBucketEngine.cs"));
         string invoicePolicy = File.ReadAllText(Path.Combine(projectRoot, "src", "Salryn.Core", "Services", "SalrynInvoiceDocumentPolicy.cs"));
 
-        RequireContains(catalog, "SupportedMigrationVersion = 17", "Catalog must be v17.");
+        RequireContains(catalog, "SupportedMigrationVersion = 18", "Catalog must include the additive store-settings migration.");
         RequireContains(factory, "VatRegistrationModeSchemaMigration", "Factory must register v15.");
         RequireContains(migration, "Version => 15", "Migration version must be 15.");
         RequireContains(migration, "vat_registration_mode", "Migration must add vat_registration_mode.");
@@ -60,7 +60,7 @@ public static class RmoBirTradM1TaxInvoicePolicyChecks
         RequireContains(setupPage, "NON_VAT_PERCENTAGE_TAX", "UI must expose NON_VAT_PERCENTAGE_TAX.");
         RequireContains(setupPage, "NON_VAT_EXEMPT", "UI must expose NON_VAT_EXEMPT.");
         RequireContains(setupPage, "vatRegistrationMode", "UI must bind vatRegistrationMode.");
-        RequireContains(dbA2, "futureVersion = 18", "DB-A2 future probe must be 18.");
+        RequireContains(dbA2, "futureVersion = 19", "DB-A2 future probe must be supported+1.");
         RequireContains(coreSmoke, "rmo-bir-trad-tax-invoice-policy", "CoreSmoke gate required.");
         RequireContains(coreSmoke, "RmoBirTradM1TaxInvoicePolicyChecks.Run()", "CoreSmoke must run TRAD-M1 checks.");
         RequireContains(engine, "SsptSales", "Engine must model SSPT bucket.");
@@ -216,7 +216,7 @@ public static class RmoBirTradM1TaxInvoicePolicyChecks
             Result<DatabaseInitializationSummary> init =
                 DefaultDatabaseInitializationFactory.Create(paths).InitializeDatabase();
             RequireTrue(init.IsSuccess, "Init must succeed: " + (init.IsFailure ? init.ErrorDetail.Message : ""));
-            RequireTrue(ReadMaxMigration(paths.DatabasePath) == 17, "Max migration must be 17.");
+            RequireTrue(ReadMaxMigration(paths.DatabasePath) == 18, "Max migration must be 18.");
             RequireTrue(ColumnExists(paths.DatabasePath, "bir_machine_profiles", "vat_registration_mode"),
                 "vat_registration_mode column required.");
 
@@ -277,7 +277,7 @@ public static class RmoBirTradM1TaxInvoicePolicyChecks
             Result<DatabaseInitializationSummary> upgraded =
                 DefaultDatabaseInitializationFactory.Create(upgradePaths).InitializeDatabase();
             RequireTrue(upgraded.IsSuccess, "v14→v15 must succeed.");
-            RequireTrue(ReadMaxMigration(upgradePaths.DatabasePath) == 17, "After upgrade max 17.");
+            RequireTrue(ReadMaxMigration(upgradePaths.DatabasePath) == 18, "After upgrade max 18.");
             RequireTrue(ColumnExists(upgradePaths.DatabasePath, "bir_machine_profiles", "vat_registration_mode"),
                 "v15 column after upgrade.");
         }

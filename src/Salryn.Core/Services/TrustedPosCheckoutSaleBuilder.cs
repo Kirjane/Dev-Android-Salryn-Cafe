@@ -20,6 +20,7 @@ public interface ITrustedPosCheckoutSaleBuilder
 public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuilder
 {
     private readonly IProductReadRepository? _productReadRepository;
+    private readonly IStoreSettingsReadRepository? _storeSettingsReadRepository;
 
     public TrustedPosCheckoutSaleBuilder()
     {
@@ -28,6 +29,14 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
     public TrustedPosCheckoutSaleBuilder(IProductReadRepository productReadRepository)
     {
         _productReadRepository = productReadRepository ?? throw new ArgumentNullException(nameof(productReadRepository));
+    }
+
+    public TrustedPosCheckoutSaleBuilder(
+        IProductReadRepository productReadRepository,
+        IStoreSettingsReadRepository storeSettingsReadRepository)
+    {
+        _productReadRepository = productReadRepository ?? throw new ArgumentNullException(nameof(productReadRepository));
+        _storeSettingsReadRepository = storeSettingsReadRepository ?? throw new ArgumentNullException(nameof(storeSettingsReadRepository));
     }
 
     public async Task<Result<TrustedPosCheckoutSaleBuildResult>> BuildAsync(
@@ -172,6 +181,14 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
             Money total = Money.FromCents(totalCents);
             Money amountPaid = Money.FromCents(amountPaidCents);
             Money change = Money.FromCents(changeCents);
+            StoreSettingsReadModel? settings = null;
+            if (_storeSettingsReadRepository is not null)
+            {
+                Result<StoreSettingsReadModel?> settingsResult = await _storeSettingsReadRepository.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+                if (settingsResult.IsFailure) return Result<TrustedPosCheckoutSaleBuildResult>.Fail(settingsResult.ErrorDetail);
+                settings = settingsResult.Value;
+            }
+
             string receiptSnapshot = string.IsNullOrWhiteSpace(request.ReceiptSnapshot)
                 ? PosReceiptTextRenderer.Render(new PosReceiptSnapshotDraft(
                     request.ReceiptNumber.Trim(),
@@ -185,7 +202,13 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
                     change,
                     SaleStatus.Completed,
                     items,
-                    payments))
+                    payments,
+                    settings?.StoreName,
+                    settings?.BusinessName,
+                    settings?.Address,
+                    settings?.ContactNumber,
+                    settings?.ReceiptHeader,
+                    settings?.ReceiptFooter))
                 : request.ReceiptSnapshot.Trim();
 
             Sale sale = new()
