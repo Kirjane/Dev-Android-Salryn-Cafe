@@ -141,7 +141,7 @@ export function StoreSettingsPage() {
               <span className="block text-xs font-normal text-slate-500">Use the exact printer name shown in Windows. Leave disabled mode selected if the printer is not ready.</span>
             </label>
             <Alert tone={value.printerMode === "WindowsPrinter" ? "info" : "warning"} title="Windows print queue">
-              Windows Printer mode submits the saved receipt text through the Windows print queue. Thermal ESC/POS, cutter, and cash drawer support remain deferred. Saving settings or submitting a job does not prove paper output.
+              Windows Printer mode submits the saved receipt text through the Windows print queue. Direct thermal-device commands and accessory controls remain deferred. Saving settings or submitting a job does not prove paper output.
             </Alert>
             <Alert tone="warning" title="Physical printing is not configured">
               Treat paper output as unproven until Kirch completes the manual Windows printer test. Disabled and unavailable printer paths keep sales saved and unchanged.

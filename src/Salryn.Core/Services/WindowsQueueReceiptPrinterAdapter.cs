@@ -97,17 +97,18 @@ public sealed class WindowsQueueReceiptPrinterAdapter : IReceiptPrinterAdapter
         ProcessStartInfo start = new()
         {
             FileName = "notepad.exe",
-            Arguments = "/pt " + Quote(receiptPath) + " " + Quote(printerName),
             CreateNoWindow = true,
             UseShellExecute = false,
             WindowStyle = ProcessWindowStyle.Hidden
         };
 
+        start.ArgumentList.Add("/pt");
+        start.ArgumentList.Add(receiptPath);
+        start.ArgumentList.Add(printerName);
+
         return Process.Start(start)
             ?? throw new InvalidOperationException("Windows print handler did not start.");
     }
-
-    private static string Quote(string value) => "\"" + value.Replace("\"", "\\\"") + "\"";
 
     private static string SanitizeFileName(string value)
     {

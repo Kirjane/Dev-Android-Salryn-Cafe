@@ -241,14 +241,17 @@ public static class PosPrinter1WindowsPrinterWiringChecks
         string settingsApi = File.ReadAllText(Path.Combine(web, "api", "storeSettings.ts"));
         string checkoutPage = File.ReadAllText(Path.Combine(web, "pages", "CheckoutPage.tsx"));
         string salesPage = File.ReadAllText(Path.Combine(web, "pages", "SalesHistoryPage.tsx"));
+        string windowsAdapter = File.ReadAllText(Path.Combine(root.FullName, "src", "Salryn.Core", "Services", "WindowsQueueReceiptPrinterAdapter.cs"));
         string printerSource = settingsPage + "\n" + settingsApi + "\n" + checkoutPage + "\n" + salesPage;
 
         RequireContains(settingsPage, "Windows Printer", "Store Settings must expose Windows Printer mode.");
         RequireContains(settingsPage, "Windows printer name", "Store Settings must expose Windows printer name field.");
         RequireContains(settingsPage, "Windows print queue", "Store Settings must explain Windows print queue behavior.");
-        RequireContains(settingsPage, "Thermal ESC/POS, cutter, and cash drawer support remain deferred", "Store Settings must keep thermal hardware extras deferred.");
+        RequireContains(settingsPage, "Direct thermal-device commands and accessory controls remain deferred", "Store Settings must keep thermal hardware extras deferred.");
         RequireContains(settingsPage, "does not prove paper output", "Store Settings must avoid manual-proof claims.");
         RequireContains(settingsApi, "windowsPrinterName", "Store settings API client must carry Windows printer name.");
+        RequireContains(windowsAdapter, "ArgumentList.Add", "Windows adapter must pass print arguments without manual command-line concatenation.");
+        RequireNotContains(windowsAdapter, "Arguments =", "Windows adapter must not concatenate caller-influenced printer names into a command line.");
         RequireContains(checkoutPage, "Print Receipt", "Checkout completion print action must remain discoverable.");
         RequireContains(salesPage, "Receipt Snapshot Preview", "Sales detail must keep persisted snapshot preview.");
         RequireContains(salesPage, "Reprint Receipt", "Sales detail must keep reprint action discoverable.");
