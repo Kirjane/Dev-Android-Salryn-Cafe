@@ -39,6 +39,7 @@ export type HostPage =
   | "products"
   | "inventory"
   | "sales"
+  | "owner-reports"
   | "users"
   | "audit"
   | "host-lan-control"
@@ -54,6 +55,7 @@ export const implementedPages: readonly AppPage[] = [
   "products",
   "inventory",
   "sales",
+  "owner-reports",
   "users",
   "audit",
   "host-lan-control",
@@ -80,6 +82,7 @@ const pagePermissions: Partial<Record<AppPage, readonly Permission[]>> = {
   products: [Permissions.ProductsView],
   inventory: [Permissions.InventoryView],
   sales: [Permissions.SalesViewHistory],
+  "owner-reports": [Permissions.ReportsView],
   users: [Permissions.UsersManage],
   audit: [Permissions.AuditView],
   // Host-local setup only; Settings.Manage operators (Admin/Owner style).
@@ -114,7 +117,7 @@ export function canAccessPage(session: SessionState | null | undefined, page: Ap
 
   const roleId = session.user.roleId.toLowerCase();
   const cashierPages: readonly AppPage[] = ["checkout", "sales"];
-  const managerPages: readonly AppPage[] = ["dashboard", "checkout", "products", "inventory", "sales", "audit", "traditional-reporting", "production-reports"];
+  const managerPages: readonly AppPage[] = ["dashboard", "checkout", "products", "inventory", "sales", "owner-reports", "audit", "traditional-reporting", "production-reports"];
   if (roleId === RoleIds.Cashier && !cashierPages.includes(page)) return false;
   if (roleId === RoleIds.Manager && !managerPages.includes(page)) return false;
 
