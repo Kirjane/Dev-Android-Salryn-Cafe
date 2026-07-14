@@ -56,7 +56,8 @@ public sealed record StoreSettingsReadModel(
     bool AllowNegativeStock,
     string? ReceiptHeader = null,
     string? ReceiptFooter = null,
-    string PrinterMode = "Disabled");
+    string PrinterMode = "Disabled",
+    string? WindowsPrinterName = null);
 
 public sealed record CashierSessionReadModel(
     Guid Id,
