@@ -158,7 +158,7 @@ function describeCatalogStockError(error: unknown): string {
     }
 
     if (error.code === "Inventory.ProductNotFoundOrInactive") {
-      return "Product was not found or is inactive. Inactive products cannot be stock-adjusted in POS-M6.";
+      return "Product was not found or is inactive. Inactive products cannot receive stock movements.";
     }
 
     return error.message;
@@ -199,7 +199,7 @@ export function ProductsPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [writeMessage, setWriteMessage] = useState<string | null>(null);
   const [isSavingProduct, setIsSavingProduct] = useState(false);
-  const [deactivateReason, setDeactivateReason] = useState("POS-M5 Product Catalog deactivation.");
+  const [deactivateReason, setDeactivateReason] = useState("Product deactivated from Product Catalog.");
   const [isDeactivating, setIsDeactivating] = useState(false);
   const [showStockDialog, setShowStockDialog] = useState(false);
   const [stockMode, setStockMode] = useState<CatalogStockMode>("stock-in");
@@ -267,13 +267,13 @@ export function ProductsPage() {
         </div>
       ),
     },
-    { key: "unit", header: "Unit", render: (row: ProductListItem) => row.unitName },
+    { key: "unit", header: "Unit of measure", render: (row: ProductListItem) => row.unitName },
     { key: "category", header: "Category", render: (row: ProductListItem) => row.categoryName ?? "No category" },
     { key: "brand", header: "Brand", render: (row: ProductListItem) => row.brandName ?? "No brand" },
     { key: "price", header: "Selling", align: "right" as const, render: (row: ProductListItem) => formatMoney(row.sellingPrice) },
     {
       key: "stock",
-      header: "Current stock",
+      header: "Stock on hand",
       align: "right" as const,
       render: (row: ProductListItem) =>
         row.trackStock ? `${formatQuantity(row.stockOnHand)} ${row.unitName} / reorder ${formatQuantity(row.reorderLevel)}` : "Not tracked",
@@ -338,7 +338,7 @@ export function ProductsPage() {
 
   function openCatalogStockDialog(mode: CatalogStockMode, detail: ProductDetail) {
     if (!detail.isActive) {
-      setWriteMessage("Inactive products cannot be stock-adjusted in POS-M6.");
+      setWriteMessage("Inactive products cannot receive stock movements.");
       return;
     }
 
@@ -668,7 +668,7 @@ export function ProductsPage() {
                     </div>
                   </div>
                 ) : (
-                  <Alert tone="warning" title="Reactivate parked">Reactivate is parked in POS-M5 because the existing ProductWriteRepository exposes add, update-active, and deactivate, but no clean reactivate method.</Alert>
+                  <Alert tone="warning" title="Reactivation unavailable">This product cannot be reactivated from the current catalog screen. No reactivation action is offered until a safe product contract is available.</Alert>
                 )}
               </div>
             ) : null}
@@ -733,7 +733,10 @@ export function ProductsPage() {
                 <TextInput value={form.reorderLevel} onChange={(event) => updateForm("reorderLevel", event.target.value)} placeholder="0" inputMode="decimal" />
               </div>
             </div>
-            <p className="rounded-md bg-slate-100 p-3 text-xs text-slate-600">Duplicate active barcodes are rejected by the local API. Editing a product does not rewrite historical receipt or sale item snapshots.</p>
+            <p className="rounded-md bg-slate-100 p-3 text-xs text-slate-600">Duplicate active barcodes are rejected. Editing a product does not rewrite historical receipt or sale item snapshots.</p>
+            <Alert tone="info" title="Unit of measure and stock are separate">
+              Unit of measure describes how the item is sold or counted, such as piece, pack, box, or kilogram. Product details do not change stock on hand; use Stock-In or Stock Adjustment so every quantity change is recorded.
+            </Alert>
           </div>
         </Dialog>
       ) : null}
@@ -745,7 +748,7 @@ export function ProductsPage() {
           footer={<><Button variant="secondary" onClick={() => setShowStockDialog(false)} disabled={isSavingStock}>Cancel</Button><Button variant="success" onClick={() => void submitCatalogStockWrite()} disabled={isSavingStock}>{isSavingStock ? "Saving..." : stockMode === "stock-in" ? "Record Stock-In" : "Record Adjustment"}</Button></>}
         >
           <div className="space-y-4 text-sm text-slate-700">
-            <Alert tone="warning" title="POS-M6 inventory movement boundary">Stock-In and Stock Adjustment does not create sales, payments, receipts. Every write creates an inventory movement ledger entry for the preselected product.</Alert>
+            <Alert tone="warning" title="Recorded inventory movement">Stock-In and Stock Adjustment do not create sales, payments, or receipts. Every quantity change creates an inventory movement entry for the selected product.</Alert>
             {stockError ? <Alert tone="danger" title="Stock write validation">{stockError}</Alert> : null}
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
               <p className="font-semibold text-slate-950">{detailQuery.data.name}</p>
@@ -758,7 +761,7 @@ export function ProductsPage() {
                   <option value="add">AdjustmentAdd</option>
                   <option value="remove">AdjustmentRemove</option>
                 </select>
-                <p className="mt-1 text-xs text-slate-500">POS-M6 uses delta movements, not set-to-count.</p>
+                <p className="mt-1 text-xs text-slate-500">Adjustments add or remove the entered quantity; they do not replace stock with a new count.</p>
               </div>
             ) : null}
             <div className="grid gap-3 sm:grid-cols-2">

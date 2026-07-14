@@ -132,14 +132,18 @@ export function OwnerReportsPage() {
               <Card>
                 <CardHeader><CardTitle>Top products</CardTitle></CardHeader>
                 <CardBody>
+                <div className="max-h-80 overflow-y-auto overscroll-contain">
                   <DataTable columns={topProductColumns} rows={data.topProducts} getRowKey={(row) => row.productId} emptyTitle="No product sales" emptyDescription="Completed non-voided sales will appear here." />
+                </div>
                 </CardBody>
               </Card>
 
               <Card>
                 <CardHeader><CardTitle>Cashier totals</CardTitle></CardHeader>
                 <CardBody>
+                <div className="max-h-80 overflow-y-auto overscroll-contain">
                   <DataTable columns={cashierColumns} rows={data.cashierTotals} getRowKey={(row) => row.cashierUserId} emptyTitle="No cashier totals" emptyDescription="Completed non-voided sales will appear here by cashier." />
+                </div>
                 </CardBody>
               </Card>
             </div>
@@ -148,14 +152,18 @@ export function OwnerReportsPage() {
               <Card>
                 <CardHeader><CardTitle>Category totals</CardTitle></CardHeader>
                 <CardBody>
+                <div className="max-h-80 overflow-y-auto overscroll-contain">
                   <DataTable columns={categoryColumns} rows={data.categoryTotals} getRowKey={(row) => row.categoryName} emptyTitle="No category totals" emptyDescription="Products without category are grouped as Uncategorized." />
+                </div>
                 </CardBody>
               </Card>
 
               <Card>
                 <CardHeader><CardTitle>Low stock</CardTitle></CardHeader>
                 <CardBody>
+                <div className="max-h-80 overflow-y-auto overscroll-contain">
                   <DataTable columns={lowStockColumns} rows={data.lowStock} getRowKey={(row) => row.productId} emptyTitle="No low stock" emptyDescription="Tracked products are above reorder level." />
+                </div>
                 </CardBody>
               </Card>
             </div>

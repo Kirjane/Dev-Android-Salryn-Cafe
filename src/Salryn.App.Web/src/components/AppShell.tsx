@@ -30,7 +30,7 @@ const navIcons: Record<string, LucideIcon> = {
   "POS Checkout": ShoppingCart,
   Products: Tags,
   Inventory: Boxes,
-  "Sales History": History,
+  "Sales & Receipts": History,
   Users,
   Audit: ShieldCheck,
   "Host LAN Control": Network,

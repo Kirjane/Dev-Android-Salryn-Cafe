@@ -150,13 +150,17 @@ export function UsersPage() {
     <div className="space-y-6">
       <CommandBar
         title="Users"
-        subtitle="Host-local operator accounts from the local database."
+        subtitle="Create host-local Manager and Cashier accounts and review their assigned access."
         actions={
           <Button variant="secondary" onClick={() => void usersQuery.refetch()}>
             Refresh
           </Button>
         }
       />
+
+      <Alert tone="info" title="Role access guide">
+        Admin manages store configuration and users. Manager handles catalog, inventory, sales, voids, and owner reports. Cashier is limited to Checkout and Sales & Receipts. An Auditor role is not available in this build.
+      </Alert>
 
       <Card>
         <CardHeader>

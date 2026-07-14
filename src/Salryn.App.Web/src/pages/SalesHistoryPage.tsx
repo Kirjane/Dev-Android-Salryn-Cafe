@@ -80,6 +80,7 @@ export function SalesHistoryPage({ canVoid = false }: { canVoid?: boolean }) {
   const [isReprinting, setIsReprinting] = useState(false);
   const [reprintResult, setReprintResult] = useState<ReceiptPrintResult | null>(null);
   const [voidReason, setVoidReason] = useState("");
+  const [voidConfirmed, setVoidConfirmed] = useState(false);
   const [voidMessage, setVoidMessage] = useState<string | null>(null);
   const [isVoiding, setIsVoiding] = useState(false);
 
@@ -106,6 +107,9 @@ export function SalesHistoryPage({ canVoid = false }: { canVoid?: boolean }) {
 
   useEffect(() => {
     setReprintResult(null);
+    setVoidReason("");
+    setVoidConfirmed(false);
+    setVoidMessage(null);
   }, [selectedId]);
 
   function resetFilters() {
@@ -144,13 +148,14 @@ export function SalesHistoryPage({ canVoid = false }: { canVoid?: boolean }) {
   }
 
   async function handleVoid() {
-    if (!detailQuery.data?.id || !voidReason.trim() || isVoiding) return;
+    if (!detailQuery.data?.id || !voidReason.trim() || !voidConfirmed || isVoiding) return;
     setIsVoiding(true);
     setVoidMessage(null);
     try {
       const result = await voidSale(detailQuery.data.id, voidReason.trim());
       setVoidMessage(`${result.message} Reversal movements: ${result.reversalMovementCount}.`);
       setVoidReason("");
+      setVoidConfirmed(false);
       await Promise.all([detailQuery.refetch(), salesQuery.refetch()]);
     } catch (error) {
       setVoidMessage(error instanceof Error ? error.message : "Sale void failed.");
@@ -169,7 +174,7 @@ export function SalesHistoryPage({ canVoid = false }: { canVoid?: boolean }) {
       header: "Status",
       render: (row: SaleHistoryItem) => <StatusPill tone={row.status === "Completed" ? "success" : "warning"}>{row.status}</StatusPill>,
     },
-    { key: "view", header: "View", render: (row: SaleHistoryItem) => <Button size="sm" variant="secondary" onClick={() => setSelectedId(row.id)}>View</Button> },
+    { key: "view", header: "Details", render: (row: SaleHistoryItem) => <Button size="sm" variant="secondary" onClick={() => setSelectedId(row.id)}>Sale & Receipt Details</Button> },
   ];
 
   const isVoided = detailQuery.data?.status === "Voided";
@@ -178,13 +183,13 @@ export function SalesHistoryPage({ canVoid = false }: { canVoid?: boolean }) {
   return (
     <div className="space-y-4 overflow-hidden">
       <CommandBar
-        title="Sales History"
-        subtitle="Read-only completed and voided sales from the local database. Reprint uses persisted receipt snapshot/file source only."
+        title="Sales & Receipts"
+        subtitle="Find completed or voided sales, review the saved receipt, and reprint without changing sale, payment, or stock records."
         actions={<Button variant="secondary" onClick={() => void salesQuery.refetch()}>Refresh</Button>}
       />
 
-      <Alert tone="info" title="Read-only sales evidence">
-        Sale detail opens in a separated dialog. POS-M2 reprint does not create a sale, payment, stock movement, void, refund, or official document.
+      <Alert tone="info" title="Saved sales and receipts">
+        Open Sale & Receipt Details to review the saved receipt. Reprint reads that saved snapshot only and does not create another sale, payment, or stock movement.
       </Alert>
 
       <Card className="flex min-h-[34rem] flex-col xl:h-[calc(100vh-13rem)]">
@@ -236,9 +241,13 @@ export function SalesHistoryPage({ canVoid = false }: { canVoid?: boolean }) {
               {canVoid && detailQuery.data.status === "Completed" ? (
                 <div className="space-y-2 rounded-md border border-rose-200 bg-rose-50 p-3">
                   <label className="text-sm font-medium text-rose-950">Void reason</label>
-                  <TextInput value={voidReason} onChange={(event) => setVoidReason(event.target.value)} placeholder="Required reason..." />
-                  <Button variant="danger" onClick={() => void handleVoid()} disabled={!voidReason.trim() || isVoiding}>{isVoiding ? "Voiding..." : "Void Sale"}</Button>
-                  <p className="text-xs text-rose-800">This preserves the original sale, payment, and receipt snapshot while reversing recorded stock movements.</p>
+                  <TextInput value={voidReason} onChange={(event) => { setVoidReason(event.target.value); setVoidConfirmed(false); }} placeholder="Required reason..." />
+                  <label className="flex items-start gap-2 rounded-md border border-rose-200 bg-white p-3 text-xs text-rose-900">
+                    <input type="checkbox" className="mt-0.5" checked={voidConfirmed} onChange={(event) => setVoidConfirmed(event.target.checked)} />
+                    <span>I understand the original sale, payment, and saved receipt remain historical while stock is restored through reversal movements.</span>
+                  </label>
+                  <Button variant="danger" onClick={() => void handleVoid()} disabled={!voidReason.trim() || !voidConfirmed || isVoiding}>{isVoiding ? "Voiding..." : "Confirm Void Sale"}</Button>
+                  <p className="text-xs text-rose-800">This action cannot be repeated after the sale is marked voided.</p>
                 </div>
               ) : null}
               {voidMessage ? <Alert tone={detailQuery.data.status === "Voided" ? "success" : "danger"}>{voidMessage}</Alert> : null}

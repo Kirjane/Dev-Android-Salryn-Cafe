@@ -86,13 +86,13 @@ public static class PosM6StockInStockAdjustmentChecks
         RequireContains(productsPage, "Brand (optional)", "Product create must make brand visibly optional.");
         RequireContains(productsPage, "No category", "Product create must allow no category.");
         RequireContains(productsPage, "No brand", "Product create must allow no brand.");
-        RequireContains(productsPage, "Current stock", "Product Catalog must clearly show current stock.");
+        RequireContains(productsPage, "Stock on hand", "Product Catalog must clearly show stock on hand.");
         RequireContains(productsPage, "Stock-In this product", "Product Catalog must expose Stock-In action for selected product.");
         RequireContains(productsPage, "Adjust Stock", "Product Catalog must expose Adjust Stock action for selected product.");
         RequireContains(productsPage, "View Movements", "Product Catalog must expose movement review path for selected product.");
         RequireContains(productsPage, "submitStockIn", "Product Catalog stock action must reuse POS-M6 stock-in API client.");
         RequireContains(productsPage, "submitStockAdjustment", "Product Catalog stock action must reuse POS-M6 stock adjustment API client.");
-        RequireContains(productsPage, "does not create sales, payments, receipts", "Product Catalog stock action must explain no sale/payment/receipt side effects.");
+        RequireContains(productsPage, "do not create sales, payments, or receipts", "Product Catalog stock action must explain no sale/payment/receipt side effects.");
 
         RequireContains(checkoutPage, "submitCheckout", "Checkout submit path must remain wired.");
         RequireContains(checkoutPage, "exactBarcodeMatch", "POS-M3 barcode checkout path must remain wired.");

@@ -21,6 +21,9 @@ import { formatMoney } from "../utils/format";
 type DashboardPageProps = {
   session: SessionState;
   onLogout: () => void;
+  onOpenSales: () => void;
+  onOpenInventory: () => void;
+  onOpenReports: () => void;
   canOpenHostLanControl: boolean;
   onOpenHostLanControl: () => void;
 };
@@ -28,6 +31,9 @@ type DashboardPageProps = {
 export function DashboardPage({
   session,
   onLogout,
+  onOpenSales,
+  onOpenInventory,
+  onOpenReports,
   canOpenHostLanControl,
   onOpenHostLanControl,
 }: DashboardPageProps) {
@@ -64,35 +70,6 @@ export function DashboardPage({
             </Button>
           }
         />
-
-        <Alert tone="primary" title="This computer is the POS host">
-          <ul className="list-disc space-y-1 pl-5">
-            <li>The SQLite database, users, roles, terminal trust, and official journal/sequence/inventory writes are local to this host.</li>
-            <li>Remote POS clients (other computers) connect to this host's explicit LAN address; they never open or share this database.</li>
-            <li>Opening this app on another computer's localhost makes THAT computer its own independent host, not a client of this host. Same app installed elsewhere does not mean sync.</li>
-            <li>LAN access stays disabled until an operator explicitly enables it here on the host; there is no default or wildcard bind.</li>
-          </ul>
-        </Alert>
-
-        {canOpenHostLanControl ? (
-          <Card>
-            <CardHeader>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <CardTitle>Manage LAN clients</CardTitle>
-                <StatusPill tone="info">Local-only</StatusPill>
-              </div>
-            </CardHeader>
-            <CardBody className="flex flex-wrap items-center justify-between gap-4">
-              <p className="max-w-3xl text-sm text-slate-600">
-                Use Host LAN Control to show or rotate the join code, approve pending Remote POS devices,
-                and see paired-terminal capacity before sending the client LAN URL to another device.
-              </p>
-              <Button onClick={onOpenHostLanControl}>
-                Open Host LAN Control
-              </Button>
-            </CardBody>
-          </Card>
-        ) : null}
 
         {isLoading ? <LoadingState label="Loading dashboard..." /> : null}
 
@@ -137,6 +114,17 @@ export function DashboardPage({
 
             <Card>
               <CardHeader>
+                <CardTitle>Store operations</CardTitle>
+              </CardHeader>
+              <CardBody className="flex flex-wrap gap-3">
+                <Button onClick={onOpenSales}>Open Sales & Receipts</Button>
+                <Button variant="secondary" onClick={onOpenInventory}>Review Stock Movements</Button>
+                <Button variant="secondary" onClick={onOpenReports}>Open Owner Reports</Button>
+              </CardBody>
+            </Card>
+
+            <Card>
+              <CardHeader>
                 <div className="flex items-center justify-between gap-3">
                   <CardTitle>Backend status</CardTitle>
                   <StatusPill tone={hasWarnings ? "warning" : "success"}>
@@ -161,6 +149,28 @@ export function DashboardPage({
                 ) : null}
               </CardBody>
             </Card>
+
+            {canOpenHostLanControl ? (
+              <Card>
+                <CardHeader>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <CardTitle>LAN terminals</CardTitle>
+                    <StatusPill tone="info">Host configuration</StatusPill>
+                  </div>
+                </CardHeader>
+                <CardBody className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="max-w-3xl space-y-1">
+                    <p className="text-sm text-slate-600">
+                      LAN access is configured separately and stays disabled until an authorized operator enables it on this host.
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      A second computer running Salryn is an independent host. Installing the same app does not mean sync.
+                    </p>
+                  </div>
+                  <Button variant="secondary" onClick={onOpenHostLanControl}>Open Host LAN Control</Button>
+                </CardBody>
+              </Card>
+            ) : null}
           </>
         ) : null}
       </div>

@@ -71,7 +71,7 @@ public static class WebB0ReadOnlyOperatorSurfacesChecks
 
         RequireContains(navigation, "Product Catalog", "Navigation must enable Product Catalog.");
         RequireContains(navigation, "Stock Movements", "Navigation must enable Stock Movements.");
-        RequireContains(navigation, "Sales History", "Navigation must enable Sales History.");
+        RequireContains(navigation, "Sales & Receipts", "Navigation must expose sales and saved receipts clearly.");
         RequireContains(navigation, "Users", "Navigation must enable Users.");
         RequireContains(navigation, "Audit", "Navigation must enable Audit.");
         RequireContains(appShell, "onNavigate", "AppShell must support page navigation.");

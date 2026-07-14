@@ -60,12 +60,15 @@ function renderPage(page: AppPage, session: SessionState, onLogout: () => void, 
         <DashboardPage
           session={session}
           onLogout={onLogout}
+          onOpenSales={() => onNavigate("sales")}
+          onOpenInventory={() => onNavigate("inventory")}
+          onOpenReports={() => onNavigate("owner-reports")}
           canOpenHostLanControl={canAccessPage(session, "host-lan-control")}
           onOpenHostLanControl={() => onNavigate("host-lan-control")}
         />
       );
     case "checkout":
-      return <CheckoutPage />;
+      return <CheckoutPage onOpenSalesHistory={() => onNavigate("sales")} />;
     case "host-lan-control":
       return <HostLanControlPage />;
     case "products":

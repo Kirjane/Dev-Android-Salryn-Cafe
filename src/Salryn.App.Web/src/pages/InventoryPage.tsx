@@ -88,7 +88,7 @@ function describeInventoryWriteError(error: unknown): string {
     }
 
     if (error.code === "Inventory.ProductNotFoundOrInactive") {
-      return "Product was not found or is inactive. Inactive products cannot be stock-adjusted in POS-M6.";
+      return "Product was not found or is inactive. Inactive products cannot receive stock movements.";
     }
 
     return error.message;
@@ -262,7 +262,7 @@ export function InventoryPage() {
         </div>
       ),
     },
-    { key: "stock", header: "Stock", align: "right" as const, render: (row: LowStockProduct) => `${formatQuantity(row.stockOnHand)} ${row.unitName}` },
+    { key: "stock", header: "Stock on hand", align: "right" as const, render: (row: LowStockProduct) => `${formatQuantity(row.stockOnHand)} ${row.unitName}` },
     { key: "reorder", header: "Reorder", align: "right" as const, render: (row: LowStockProduct) => formatQuantity(row.reorderLevel) },
     { key: "status", header: "Status", render: (row: LowStockProduct) => <StatusPill tone={lowStockTone(row)}>{row.stockOnHand <= 0 ? "Out of stock" : "Low stock"}</StatusPill> },
   ];
@@ -299,8 +299,8 @@ export function InventoryPage() {
         }
       />
 
-      <Alert tone="info" title="POS-M6 stock write boundary">
-        Stock-In and Stock Adjustment does not create sales, payments, receipts. Stock writes create inventory movement ledger entries only and do not create reprint side effects.
+      <Alert tone="info" title="Recorded stock changes">
+        Stock-In and Stock Adjustment do not create sales, payments, or receipts. Each quantity change creates an inventory movement entry only.
       </Alert>
       {writeMessage ? <Alert tone={writeMessage.includes("denied") || writeMessage.includes("required") ? "warning" : "success"}>{writeMessage}</Alert> : null}
 
@@ -384,7 +384,7 @@ export function InventoryPage() {
                   <option value="add">Add delta</option>
                   <option value="remove">Remove delta</option>
                 </select>
-                <p className="mt-1 text-xs text-slate-500">POS-M6 uses signed delta movements because the existing repository supports AdjustmentAdd and AdjustmentRemove cleanly.</p>
+                <p className="mt-1 text-xs text-slate-500">Adjustments add or remove the entered quantity. They do not replace stock with an untracked count.</p>
               </div>
             ) : null}
 
