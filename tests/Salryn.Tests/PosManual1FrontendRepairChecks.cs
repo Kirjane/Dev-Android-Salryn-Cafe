@@ -18,12 +18,14 @@ public static class PosManual1FrontendRepairChecks
         string users = Read(web, "pages", "UsersPage.tsx");
 
         RequireContains(navigation, "Sales & Receipts", "Navigation must make saved receipts discoverable.");
-        RequireContains(app, "onOpenSalesHistory", "Checkout must receive a post-sale Sales & Receipts action.");
-        RequireContains(checkout, "View Sales & Receipts", "Completed checkout must link to Sales & Receipts.");
+        RequireContains(checkout, "Saved under Sales & Receipts", "Completed checkout must keep Sales & Receipts discoverable without route-away button.");
+        RequireNotContains(checkout, "View Sales & Receipts", "Checkout completion must not offer the route-away button that resets completion state.");
+        RequireNotContains(app, "onOpenSalesHistory", "Checkout no longer receives a post-sale route-away action.");
         RequireContains(checkout, "Print Receipt", "Existing receipt print action must remain separate.");
         RequireContains(checkout, "New Sale (F5)", "New Sale must remain a distinct action.");
 
         RequireContains(sales, "Sale & Receipt Details", "Sales list must expose clear receipt detail copy.");
+        RequireContains(sales, "Receipt Snapshot Preview", "Sales detail must expose a receipt-form snapshot preview.");
         RequireContains(sales, "saved snapshot only", "Reprint must explain its persisted source.");
         RequireContains(sales, "voidConfirmed", "Void flow must require explicit confirmation in addition to a reason.");
         RequireContains(sales, "Confirm Void Sale", "Authorized void action must be discoverable and explicit.");
@@ -39,11 +41,16 @@ public static class PosManual1FrontendRepairChecks
 
         RequireContains(products, "Unit of measure", "Catalog must distinguish unit of measure from quantity.");
         RequireContains(products, "Product details do not change stock on hand", "Catalog edit must stay stock-neutral.");
+        RequireContains(products, "Confirm product deactivation", "Product deactivation must have a confirmation guard.");
+        RequireContains(products, "hidden from the active sale flow", "Deactivate copy must explain active sale-flow effect.");
+        RequireContains(products, "does not delete past records", "Deactivate copy must explain historical records are preserved.");
         RequireContains(inventory, "Stock on hand", "Inventory must label quantity clearly.");
         RequireContains(inventory, "Recorded stock changes", "Inventory movement semantics must be clear.");
+        RequireContains(inventory, "Fast Add currently starts from Checkout", "Inventory must explain Fast Add location.");
 
         RequireContains(dashboard, "Store operations", "Dashboard must prioritize daily store workflows.");
         RequireContains(dashboard, "Open Sales & Receipts", "Dashboard must link to sales and receipts.");
+        RequireContains(dashboard, "Owner report summary", "Dashboard must integrate owner report summary cards.");
         RequireContains(reports, "max-h-80 overflow-y-auto", "Large owner-report tables must have bounded scrolling.");
         RequireContains(users, "Role access guide", "Users page must explain manual role expectations.");
         RequireContains(users, "An Auditor role is not available", "Missing Auditor role must not be implied.");
