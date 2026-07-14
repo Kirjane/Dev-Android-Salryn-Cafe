@@ -1,6 +1,7 @@
 ﻿using Microsoft.Data.Sqlite;
 using Salryn.Core.Common;
 using Salryn.Core.Repositories;
+using Salryn.Core.Services;
 
 namespace Salryn.Infrastructure.Data.Repositories.System;
 
@@ -48,6 +49,7 @@ public sealed class SqliteStoreSettingsWriteRepository :
                     receipt_header = $receiptHeader,
                     receipt_footer = $receiptFooter,
                     printer_mode = $printerMode,
+                    windows_printer_name = $windowsPrinterName,
                     updated_at = $updatedAt
                 WHERE id = $id;
                 """;
@@ -65,6 +67,7 @@ public sealed class SqliteStoreSettingsWriteRepository :
             command.Parameters.AddWithValue("$receiptHeader", DbNullableText(request.ReceiptHeader));
             command.Parameters.AddWithValue("$receiptFooter", DbNullableText(request.ReceiptFooter));
             command.Parameters.AddWithValue("$printerMode", request.PrinterMode.Trim());
+            command.Parameters.AddWithValue("$windowsPrinterName", DbNullableText(request.WindowsPrinterName));
             command.Parameters.AddWithValue("$updatedAt", DateTimeOffset.UtcNow.ToString("O"));
 
             int affectedRows = command.ExecuteNonQuery();
@@ -118,11 +121,19 @@ public sealed class SqliteStoreSettingsWriteRepository :
                 "Receipt width must be 58 or 80 millimeters."));
         }
 
-        if (request.PrinterMode is not "Disabled" and not "WindowsPrinter")
+        if (request.PrinterMode is not ReceiptPrinterModes.Disabled and not ReceiptPrinterModes.WindowsPrinter)
         {
             return Result.Fail(Error.Validation(
                 "StoreSettings.InvalidPrinterMode",
                 "Printer mode must be Disabled or WindowsPrinter."));
+        }
+
+        if (string.Equals(request.PrinterMode, ReceiptPrinterModes.WindowsPrinter, StringComparison.Ordinal) &&
+            string.IsNullOrWhiteSpace(request.WindowsPrinterName))
+        {
+            return Result.Fail(Error.Validation(
+                "StoreSettings.WindowsPrinterNameRequired",
+                "Windows printer name is required when Windows Printer mode is selected."));
         }
 
         return Result.Success();
