@@ -101,12 +101,13 @@ public static class PosManual1R3FrontendSafetyUxRepairChecks
         {
             SalrynLocalComposition composition = SalrynLocalComposition.Create(DbPaths.CreateDevelopment(tempRoot));
             composition.InitializeDatabaseAsync().GetAwaiter().GetResult();
-            var admin = RequireValue(composition.DatabaseInitialization.CreateFirstAdmin(new AdminBootstrapRequest(
+            AdminBootstrapSummary admin = RequireValue(composition.DatabaseInitialization.CreateFirstAdmin(new AdminBootstrapRequest(
                 "MANUAL1-R3 Store", null, null, null, null, 80, "admin", "MANUAL1-R3 Admin", "StrongAdmin123!")), "bootstrap");
 
             var categories = RequireValue(composition.CatalogReadRepository.GetCategoriesAsync().GetAwaiter().GetResult(), "categories");
             var brands = RequireValue(composition.CatalogReadRepository.GetBrandsAsync().GetAwaiter().GetResult(), "brands");
             var units = RequireValue(composition.CatalogReadRepository.GetUnitsAsync().GetAwaiter().GetResult(), "units");
+            DateTimeOffset saleTime = new(2026, 7, 14, 9, 30, 0, TimeSpan.Zero);
             Product product = new()
             {
                 Id = Guid.NewGuid(),
@@ -121,7 +122,8 @@ public static class PosManual1R3FrontendSafetyUxRepairChecks
                 StockOnHand = RequireValue(Quantity.FromX1000(5000), "initial stock"),
                 ReorderLevel = Quantity.Zero,
                 TrackStock = true,
-                IsActive = true
+                IsActive = true,
+                CreatedAt = saleTime.AddHours(-1)
             };
             RequireSuccess(composition.ProductWriteRepository.AddAsync(product).GetAwaiter().GetResult(), "product");
 
@@ -132,16 +134,21 @@ public static class PosManual1R3FrontendSafetyUxRepairChecks
             {
                 Id = saleId,
                 ReceiptNumber = "MANUAL1-R3-000001",
-                CashierUserId = admin.UserId,
+                SaleDate = saleTime,
+                CashierUserId = admin.AdminUserId,
                 Subtotal = Money.FromCents(24000),
+                Discount = Money.Zero,
+                Tax = Money.Zero,
                 Total = Money.FromCents(24000),
                 AmountPaid = Money.FromCents(25000),
                 Change = Money.FromCents(1000),
                 Status = SaleStatus.Completed,
-                ReceiptSnapshot = snapshot
+                ReceiptSnapshot = snapshot,
+                CreatedAt = saleTime
             };
             SaleItem item = new()
             {
+                Id = Guid.NewGuid(),
                 SaleId = saleId,
                 ProductId = product.Id,
                 ProductNameSnapshot = product.Name,
@@ -150,11 +157,20 @@ public static class PosManual1R3FrontendSafetyUxRepairChecks
                 Quantity = sold,
                 UnitPrice = Money.FromCents(12000),
                 CostPrice = product.CostPrice,
+                Discount = Money.Zero,
                 LineTotal = Money.FromCents(24000)
             };
-            Payment payment = new() { SaleId = saleId, Amount = Money.FromCents(25000) };
+            Payment payment = new()
+            {
+                Id = Guid.NewGuid(),
+                SaleId = saleId,
+                Method = PaymentMethod.Cash,
+                Amount = Money.FromCents(25000),
+                PaidAt = saleTime.AddSeconds(30)
+            };
             StockMovement movement = new()
             {
+                Id = Guid.NewGuid(),
                 ProductId = product.Id,
                 MovementType = StockMovementType.Sale,
                 QuantityChange = sold,
@@ -162,7 +178,8 @@ public static class PosManual1R3FrontendSafetyUxRepairChecks
                 ReferenceType = "SALE",
                 ReferenceId = saleId,
                 Reason = "MANUAL1-R3 sale before reprint proof",
-                UserId = admin.UserId
+                UserId = admin.AdminUserId,
+                CreatedAt = saleTime.AddSeconds(30)
             };
             RequireSuccess(composition.SaleWriteRepository.AddCompletedSaleAsync(
                 sale, new[] { item }, new[] { payment }, new[] { movement }).GetAwaiter().GetResult(), "completed sale");
