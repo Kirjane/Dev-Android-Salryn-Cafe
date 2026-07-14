@@ -113,7 +113,7 @@ export function OwnerReportsPage() {
       />
 
       <Alert tone="info" title="Operational report boundary">
-        Owner Reports are store operational reports only. Not an official/BIR/RMO report. These cards and tables are read-only and do not create sales, payments, receipts, stock movements, or report filings.
+        Owner Reports are store operational reports only. Not an official or regulatory filing. These cards and tables are read-only and do not create sales, payments, receipts, stock movements, or report filings.
       </Alert>
 
       {query.isLoading ? <LoadingState label="Loading owner reports..." /> : null}

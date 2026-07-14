@@ -5,7 +5,7 @@ Branch: `KIRCH-POS-R1-OWNER-REPORTS`
 Base branch: `KIRCH-POS-SURFACE1-ROLE-PAGE-LOCK-STORE-NAV`  
 Base SHA: `c5b61a9d7a8adf90c474db73f23b86ead7b270f3`
 
-Authoring mode: GitHub connector-backed implementation only. Local shell gates and manual browser proof were not executed from this session by instruction.
+Authoring mode: repo-backed implementation with local automated self-checks. Manual browser proof remains deferred to Kirch.
 
 ---
 
@@ -13,7 +13,7 @@ Authoring mode: GitHub connector-backed implementation only. Local shell gates a
 
 POS-R1 adds read-only Owner Reports / Store Reports for store-owner and manager operational visibility.
 
-These reports are not official, BIR, RMO, eSales, Crystal, or legal-certification reports.
+These reports are store-operational and are not official or regulatory filings.
 
 ---
 
@@ -151,7 +151,7 @@ Target:
 
 ## 10. Gates
 
-Not executed from this session by instruction:
+Executed locally:
 
 ```powershell
 dotnet build Salryn.sln
@@ -170,7 +170,16 @@ git diff --check
 git status
 ```
 
-Gate status: `BLOCKED` until run on Kirch's local workstation.
+Results:
+
+- Solution build: PASS (0 errors; existing warnings only).
+- Full CoreSmoke: PASS.
+- POS-R1 focused CoreSmoke: PASS.
+- POS-M1 through POS-M7 and POS-SURFACE1 focused CoreSmoke: PASS.
+- Web build: PASS with the existing Vite chunk-size advisory.
+- `git diff --check`: PASS.
+
+The first full-smoke run caught a forbidden capability token in the Owner Reports disclaimer. The copy and its UI-copy assertion were narrowed to `Not an official or regulatory filing`; report behavior was unchanged.
 
 ---
 
@@ -203,8 +212,6 @@ Expected unchanged:
 
 ## 14. Status
 
-`BLOCKED`
-
-Reason: implementation and automated proof are repo-backed, but local build/CoreSmoke/web build/diff/status gates were not executed from this session by instruction.
+`CANDIDATE_AUTOMATED_PROVEN_MANUAL_PENDING`
 
 No `GREEN`, `ACCEPTED`, `MANUAL_PROVEN`, `STORE_READY`, `BETA_READY`, `PRODUCTION_READY`, `BIR_READY`, `PHYSICAL_PRINTER_PROVEN`, `PHYSICAL_SCANNER_PROVEN`, or `INSTALLER_PROVEN` claim is made.

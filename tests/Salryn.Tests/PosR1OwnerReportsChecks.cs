@@ -282,7 +282,7 @@ public static class PosR1OwnerReportsChecks
         Require(service.Contains("$voidedStatus", StringComparison.Ordinal), "Owner reports must track voided sales separately.");
         Require(!api.Contains("method: \"POST\"", StringComparison.Ordinal), "Owner reports web API client must remain read-only.");
         Require(page.Contains("Owner Reports", StringComparison.Ordinal), "Frontend must expose Owner Reports page title.");
-        Require(page.Contains("Not an official/BIR/RMO report", StringComparison.Ordinal), "Owner reports page must state non-official boundary.");
+        Require(page.Contains("Not an official or regulatory filing", StringComparison.Ordinal), "Owner reports page must state non-official boundary.");
         Require(page.Contains("read-only", StringComparison.Ordinal), "Owner reports UI must state read-only boundary.");
         Require(!page.Contains("Coming soon", StringComparison.Ordinal), "Developer-only disabled nav copy must not be reintroduced.");
         Require(permissions.Contains("\"owner-reports\": [Permissions.ReportsView]", StringComparison.Ordinal), "Owner reports direct page access must be gated by Reports.View.");
