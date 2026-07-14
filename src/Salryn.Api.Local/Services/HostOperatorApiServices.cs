@@ -1,4 +1,6 @@
 using Salryn.Composition.Local;
+using Salryn.Core.Common;
+using Salryn.Core.ReadModels;
 using Salryn.Core.Services;
 using Salryn.Infrastructure.Data.Repositories;
 
@@ -56,16 +58,32 @@ public sealed class HostOperatorApiServices
             new HostOperatorReceiptNumberAllocator(),
             fileReceiptWriter);
 
-        // POS-M2: real thermal/Windows/ESC-POS execution is intentionally parked behind this adapter.
-        // The store path reports Disabled/Unavailable until a printer adapter is explicitly configured.
         PosReceiptPrintService receiptPrintService = new(
             composition.SaleReadRepository,
-            new DisabledReceiptPrinterAdapter());
+            () => CreateConfiguredReceiptPrinterAdapter(repositories));
 
         return new HostOperatorApiServices(
             cashierSessionService,
             shiftService,
             checkoutService,
             receiptPrintService);
+    }
+
+    private static IReceiptPrinterAdapter CreateConfiguredReceiptPrinterAdapter(SqliteRepositoryFactory repositories)
+    {
+        Result<StoreSettingsReadModel?> settingsResult = repositories
+            .CreateStoreSettingsReadRepository()
+            .GetCurrentAsync()
+            .GetAwaiter()
+            .GetResult();
+
+        if (settingsResult.IsFailure)
+        {
+            return new DisabledReceiptPrinterAdapter(
+                "Receipt printing is unavailable because store printer settings could not be read: " + settingsResult.ErrorDetail.Message,
+                "ReceiptPrinterSettings.ReadFailed");
+        }
+
+        return ReceiptPrinterAdapterFactory.Create(settingsResult.Value);
     }
 }
