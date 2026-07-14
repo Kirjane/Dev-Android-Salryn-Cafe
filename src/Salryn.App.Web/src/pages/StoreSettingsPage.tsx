@@ -12,7 +12,7 @@ export function StoreSettingsPage() {
 
   useEffect(() => {
     fetchStoreSettings()
-      .then(setValue)
+      .then((settings) => setValue({ ...settings, windowsPrinterName: settings.windowsPrinterName ?? "" }))
       .catch((error) => setLoadError(error instanceof Error ? error.message : "Store settings could not be loaded."));
   }, []);
 
@@ -25,6 +25,7 @@ export function StoreSettingsPage() {
     if (!value?.storeName.trim()) return "Store name is required.";
     if (!supportedCurrencies.has(value.currencyLabel.trim())) return "Choose PHP or ₱ as the currency label.";
     if (value.receiptWidthMm !== 58 && value.receiptWidthMm !== 80) return "Receipt width must be 58 mm or 80 mm.";
+    if (value.printerMode === "WindowsPrinter" && !value.windowsPrinterName?.trim()) return "Windows printer name is required when Windows Printer mode is selected.";
     return null;
   }
 
@@ -40,8 +41,8 @@ export function StoreSettingsPage() {
     setMessage(null);
     try {
       const { id: _id, ...updateRequest } = value;
-      await saveStoreSettings(updateRequest);
-      setMessage("Store settings saved. New receipts will use the updated store and receipt details.");
+      await saveStoreSettings({ ...updateRequest, windowsPrinterName: updateRequest.windowsPrinterName?.trim() || null });
+      setMessage("Store settings saved. New receipts will use the updated store, receipt, and printer settings.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Store settings could not be saved.");
     } finally {
@@ -131,13 +132,18 @@ export function StoreSettingsPage() {
               <span>Printer mode</span>
               <select className="min-h-9 w-full rounded-md border border-slate-300 px-3" value={value.printerMode} onChange={(event) => update("printerMode", event.target.value as StoreSettings["printerMode"])}>
                 <option value="Disabled">Disabled</option>
-                <option value="WindowsPrinter" disabled={value.printerMode !== "WindowsPrinter"}>Windows printer (not active in this build)</option>
+                <option value="WindowsPrinter">Windows Printer</option>
               </select>
             </label>
-            <Alert tone="warning" title="Physical printing is not configured">
-              Disabled mode is safe. Windows printer support requires the separate printer-adapter implementation and device proof. Saving store settings does not prove that a printer is connected or compatible.
+            <label className="space-y-1 text-sm font-medium text-slate-700">
+              <span>Windows printer name</span>
+              <TextInput value={value.windowsPrinterName ?? ""} onChange={(event) => update("windowsPrinterName", event.target.value)} placeholder="Exact Windows printer name" />
+              <span className="block text-xs font-normal text-slate-500">Use the exact printer name shown in Windows. Leave disabled mode selected if the printer is not ready.</span>
+            </label>
+            <Alert tone={value.printerMode === "WindowsPrinter" ? "info" : "warning"} title="Windows print queue">
+              Windows Printer mode submits the saved receipt text through the Windows print queue. Thermal ESC/POS, cutter, and cash drawer support remain deferred. Saving settings or submitting a job does not prove paper output.
             </Alert>
-            <p className="text-xs text-slate-500">Receipt text files and saved receipt snapshots continue to work when physical printing is disabled.</p>
+            <p className="text-xs text-slate-500">Receipt text files and saved receipt snapshots continue to work when Windows printing is disabled or unavailable.</p>
           </CardBody>
         </Card>
       </div>
