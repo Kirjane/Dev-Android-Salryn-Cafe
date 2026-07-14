@@ -39,7 +39,8 @@ public sealed class SqliteStoreSettingsReadRepository :
                     allow_negative_stock,
                     receipt_header,
                     receipt_footer,
-                    printer_mode
+                    printer_mode,
+                    windows_printer_name
                 FROM store_settings
                 ORDER BY created_at DESC
                 LIMIT 1;
@@ -62,7 +63,8 @@ public sealed class SqliteStoreSettingsReadRepository :
                     reader.GetBoolValue("allow_negative_stock"),
                     reader.GetNullableString("receipt_header"),
                     reader.GetNullableString("receipt_footer"),
-                    reader.GetStringValue("printer_mode"))
+                    reader.GetStringValue("printer_mode"),
+                    reader.GetNullableString("windows_printer_name"))
                 : null;
 
             return Task.FromResult(Result<StoreSettingsReadModel?>.Success(settings));
