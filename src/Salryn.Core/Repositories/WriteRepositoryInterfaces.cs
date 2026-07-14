@@ -107,7 +107,8 @@ public sealed record StoreSettingsUpdateRequest(
     bool ShiftModeEnabled,
     string? ReceiptHeader = null,
     string? ReceiptFooter = null,
-    string PrinterMode = "Disabled");
+    string PrinterMode = "Disabled",
+    string? WindowsPrinterName = null);
 
 public interface IStoreSettingsWriteRepository
 {
