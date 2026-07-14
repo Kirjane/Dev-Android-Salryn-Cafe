@@ -153,6 +153,7 @@ public static class Program
         PosB1BackupRestoreSafetyChecks.Run();
         PosT1FullStoreRuntimeTortureChecks.Run();
         PosManual1FrontendRepairChecks.Run();
+        PosManual1R3FrontendSafetyUxRepairChecks.Run();
         PosStabB2BackupUiChecks.Run();
         PosStabB2AuditViewerChecks.Run();
         PosStabB3ProductionDbWritabilityChecks.Run();
@@ -186,7 +187,7 @@ public static class Program
         J21Rmo242023ElectronicJournalAppendBoundaryDocumentationSealChecks.Run();
         J21Rmo242023SharedSqliteTransactionBoundaryContractChecks.Run();
         J21Rmo242023SharedSqliteTransactionBoundaryImplementationChecks.Run();
-        J21Rmo242023SharedTransactionOfficialSequenceAllocationParticipantChecks.Run();
+        J21Rmo242023SharedTransactionSequenceAllocationParticipantChecks.Run();
         J21Rmo242023OfficialSequenceAllocationServiceSharedBoundaryReuseChecks.Run();
         J21Rmo242023SqliteElectronicJournalAppendParticipantSkeletonChecks.Run();
         J21Rmo242023SqliteElectronicJournalAppendParticipantInsertChecks.Run();
@@ -324,6 +325,9 @@ public static class Program
                 return;
             case "pos-manual1-frontend-repair":
                 PosManual1FrontendRepairChecks.Run();
+                return;
+            case "pos-manual1-r3-frontend-safety-ux-repair":
+                PosManual1R3FrontendSafetyUxRepairChecks.Run();
                 return;
             case "v2-host-shift":
                 V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();
