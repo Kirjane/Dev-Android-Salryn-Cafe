@@ -1,187 +1,23 @@
 import { useQuery } from "@tanstack/react-query";
 import { fetchDashboardSummary } from "../api/dashboard";
 import { ApiError } from "../api/http";
+import { fetchOwnerReportsSummary } from "../api/ownerReports";
 import type { SessionState } from "../api/session";
-import {
-  Alert,
-  Button,
-  Card,
-  CardBody,
-  CardHeader,
-  CardTitle,
-  CommandBar,
-  Dialog,
-  ErrorState,
-  LoadingState,
-  MetricCard,
-  StatusPill,
-} from "../components/ui";
+import { Alert, Button, Card, CardBody, CardHeader, CardTitle, CommandBar, Dialog, ErrorState, LoadingState, MetricCard, StatusPill } from "../components/ui";
 import { formatMoney } from "../utils/format";
 
-type DashboardPageProps = {
-  session: SessionState;
-  onLogout: () => void;
-  onOpenSales: () => void;
-  onOpenInventory: () => void;
-  onOpenReports: () => void;
-  canOpenHostLanControl: boolean;
-  onOpenHostLanControl: () => void;
-};
+type DashboardPageProps = { session: SessionState; onLogout: () => void; onOpenSales: () => void; onOpenInventory: () => void; onOpenReports: () => void; canOpenHostLanControl: boolean; onOpenHostLanControl: () => void };
 
-export function DashboardPage({
-  session,
-  onLogout,
-  onOpenSales,
-  onOpenInventory,
-  onOpenReports,
-  canOpenHostLanControl,
-  onOpenHostLanControl,
-}: DashboardPageProps) {
-  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
-    queryKey: ["dashboard-summary"],
-    queryFn: fetchDashboardSummary,
-    enabled: session.isAuthenticated,
-    retry: false,
-  });
-
+export function DashboardPage({ session, onLogout, onOpenSales, onOpenInventory, onOpenReports, canOpenHostLanControl, onOpenHostLanControl }: DashboardPageProps) {
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({ queryKey: ["dashboard-summary"], queryFn: fetchDashboardSummary, enabled: session.isAuthenticated, retry: false });
+  const ownerReportsQuery = useQuery({ queryKey: ["dashboard-owner-report-summary"], queryFn: fetchOwnerReportsSummary, enabled: session.isAuthenticated, retry: false });
   const sessionExpired = isError && error instanceof ApiError && error.status === 401;
-
   const hasWarnings = data ? data.warnings.length > 0 : false;
-  const lowStock = data?.lowStockCount ?? 0;
+  const lowStock = ownerReportsQuery.data?.lowStock.length ?? data?.lowStockCount ?? 0;
+  const todaySalesCents = ownerReportsQuery.data?.daily.salesAmountCents ?? null;
+  const todaySales = todaySalesCents === null ? data?.todaySalesTotal ?? 0 : todaySalesCents / 100;
+  const todayTransactions = ownerReportsQuery.data?.daily.salesCount ?? data?.todayTransactionCount ?? 0;
+  const voidedToday = ownerReportsQuery.data?.daily.voidedCount ?? 0;
 
-  return (
-    <>
-      <div className="space-y-6">
-        <CommandBar
-          title="Dashboard"
-          subtitle={`Signed in as ${session.user?.displayName ?? ""} (${
-            session.user?.roleName ?? ""
-          }).`}
-          status={
-            data ? (
-              <StatusPill tone={data.status === "ok" ? "success" : "warning"}>
-                {data.status === "ok" ? "All reads healthy" : "Read warnings present"}
-              </StatusPill>
-            ) : null
-          }
-          actions={
-            <Button variant="secondary" onClick={() => refetch()} disabled={isFetching}>
-              {isFetching ? "Refreshing..." : "Refresh"}
-            </Button>
-          }
-        />
-
-        {isLoading ? <LoadingState label="Loading dashboard..." /> : null}
-
-        {isError && !sessionExpired ? (
-          <ErrorState
-            message={(error as Error).message || "Failed to load dashboard summary."}
-            action={
-              <Button variant="secondary" size="sm" onClick={() => refetch()}>
-                Try again
-              </Button>
-            }
-          />
-        ) : null}
-
-        {data ? (
-          <>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <MetricCard
-                title="Today Sales"
-                value={formatMoney(data.todaySalesTotal)}
-                subtitle="Completed sales total"
-              />
-              <MetricCard
-                title="Transactions"
-                value={data.todayTransactionCount.toLocaleString()}
-                subtitle="Completed today"
-              />
-              <MetricCard
-                title="Products"
-                value={data.productCount.toLocaleString()}
-                subtitle="Catalog records"
-              />
-              <MetricCard
-                title="Low Stock"
-                value={lowStock.toLocaleString()}
-                subtitle="Needs attention"
-                tone={lowStock > 0 ? "warning" : "success"}
-                badge={lowStock > 0 ? "Review" : "OK"}
-                emphasis={lowStock > 0}
-              />
-            </div>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Store operations</CardTitle>
-              </CardHeader>
-              <CardBody className="flex flex-wrap gap-3">
-                <Button onClick={onOpenSales}>Open Sales & Receipts</Button>
-                <Button variant="secondary" onClick={onOpenInventory}>Review Stock Movements</Button>
-                <Button variant="secondary" onClick={onOpenReports}>Open Owner Reports</Button>
-              </CardBody>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between gap-3">
-                  <CardTitle>Backend status</CardTitle>
-                  <StatusPill tone={hasWarnings ? "warning" : "success"}>
-                    {hasWarnings ? "Warnings" : "Healthy"}
-                  </StatusPill>
-                </div>
-              </CardHeader>
-              <CardBody>
-                <p className="text-sm text-slate-600">
-                  {data.status === "ok"
-                    ? `Dashboard refreshed ${new Date(data.refreshedAt).toLocaleString()}.`
-                    : "Dashboard loaded with one or more repository warnings."}
-                </p>
-                {hasWarnings ? (
-                  <div className="mt-3 space-y-2">
-                    {data.warnings.map((warning) => (
-                      <Alert key={warning} tone="warning">
-                        {warning}
-                      </Alert>
-                    ))}
-                  </div>
-                ) : null}
-              </CardBody>
-            </Card>
-
-            {canOpenHostLanControl ? (
-              <Card>
-                <CardHeader>
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <CardTitle>LAN terminals</CardTitle>
-                    <StatusPill tone="info">Host configuration</StatusPill>
-                  </div>
-                </CardHeader>
-                <CardBody className="flex flex-wrap items-center justify-between gap-4">
-                  <div className="max-w-3xl space-y-1">
-                    <p className="text-sm text-slate-600">
-                      LAN access is configured separately and stays disabled until an authorized operator enables it on this host.
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      A second computer running Salryn is an independent host. Installing the same app does not mean sync.
-                    </p>
-                  </div>
-                  <Button variant="secondary" onClick={onOpenHostLanControl}>Open Host LAN Control</Button>
-                </CardBody>
-              </Card>
-            ) : null}
-          </>
-        ) : null}
-      </div>
-
-      <Dialog
-        open={sessionExpired}
-        title="Session expired"
-        description="Your session is no longer valid. Please sign in again to continue."
-        onClose={() => onLogout()}
-        footer={<Button onClick={() => onLogout()}>Sign in again</Button>}
-      />
-    </>
-  );
+  return <><div className="space-y-6"><CommandBar title="Dashboard" subtitle={`Signed in as ${session.user?.displayName ?? ""} (${session.user?.roleName ?? ""}).`} status={data ? <StatusPill tone={data.status === "ok" ? "success" : "warning"}>{data.status === "ok" ? "All reads healthy" : "Read warnings present"}</StatusPill> : null} actions={<Button variant="secondary" onClick={() => { void refetch(); void ownerReportsQuery.refetch(); }} disabled={isFetching || ownerReportsQuery.isFetching}>{isFetching || ownerReportsQuery.isFetching ? "Refreshing..." : "Refresh"}</Button>} />{isLoading ? <LoadingState label="Loading dashboard..." /> : null}{isError && !sessionExpired ? <ErrorState message={(error as Error).message || "Failed to load dashboard summary."} action={<Button variant="secondary" size="sm" onClick={() => refetch()}>Try again</Button>} /> : null}{data ? <><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><MetricCard title="Today Sales" value={formatMoney(todaySales)} subtitle="Completed non-voided sales" /><MetricCard title="Transactions" value={todayTransactions.toLocaleString()} subtitle="Completed today" /><MetricCard title="Low Stock" value={lowStock.toLocaleString()} subtitle="Needs attention" tone={lowStock > 0 ? "warning" : "success"} badge={lowStock > 0 ? "Review" : "OK"} emphasis={lowStock > 0} /><MetricCard title="Voided Today" value={voidedToday.toLocaleString()} subtitle="Shown separately from sales" tone={voidedToday > 0 ? "warning" : "success"} /></div>{ownerReportsQuery.data ? <Card><CardHeader><div className="flex items-center justify-between gap-3"><CardTitle>Owner report summary</CardTitle><StatusPill tone="info">Read-only</StatusPill></div></CardHeader><CardBody className="grid gap-3 md:grid-cols-4"><div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Today</p><p className="mt-1 text-lg font-bold text-slate-950">{formatMoney(ownerReportsQuery.data.daily.salesAmountCents / 100)}</p><p className="text-xs text-slate-500">{ownerReportsQuery.data.daily.salesCount} transaction(s)</p></div><div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">This week</p><p className="mt-1 text-lg font-bold text-slate-950">{formatMoney(ownerReportsQuery.data.weekly.salesAmountCents / 100)}</p><p className="text-xs text-slate-500">{ownerReportsQuery.data.weekly.salesCount} transaction(s)</p></div><div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">This month</p><p className="mt-1 text-lg font-bold text-slate-950">{formatMoney(ownerReportsQuery.data.monthly.salesAmountCents / 100)}</p><p className="text-xs text-slate-500">{ownerReportsQuery.data.monthly.salesCount} transaction(s)</p></div><div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Low stock</p><p className="mt-1 text-lg font-bold text-slate-950">{ownerReportsQuery.data.lowStock.length}</p><p className="text-xs text-slate-500">Detailed tables stay in Owner Reports.</p></div></CardBody></Card> : ownerReportsQuery.isError ? <Alert tone="warning" title="Owner report summary unavailable">Dashboard core metrics loaded. Open Owner Reports or refresh after report access is available.</Alert> : null}<Card><CardHeader><CardTitle>Store operations</CardTitle></CardHeader><CardBody className="flex flex-wrap gap-3"><Button onClick={onOpenSales}>Open Sales & Receipts</Button><Button variant="secondary" onClick={onOpenInventory}>Review Stock Movements</Button><Button variant="secondary" onClick={onOpenReports}>Open Owner Reports</Button></CardBody></Card><Card><CardHeader><div className="flex items-center justify-between gap-3"><CardTitle>Backend status</CardTitle><StatusPill tone={hasWarnings ? "warning" : "success"}>{hasWarnings ? "Warnings" : "Healthy"}</StatusPill></div></CardHeader><CardBody><p className="text-sm text-slate-600">{data.status === "ok" ? `Dashboard refreshed ${new Date(data.refreshedAt).toLocaleString()}.` : "Dashboard loaded with one or more repository warnings."}</p>{hasWarnings ? <div className="mt-3 space-y-2">{data.warnings.map((warning) => <Alert key={warning} tone="warning">{warning}</Alert>)}</div> : null}</CardBody></Card>{canOpenHostLanControl ? <Card><CardHeader><div className="flex flex-wrap items-center justify-between gap-3"><CardTitle>LAN terminals</CardTitle><StatusPill tone="info">Host configuration</StatusPill></div></CardHeader><CardBody className="flex flex-wrap items-center justify-between gap-4"><div className="max-w-3xl space-y-1"><p className="text-sm text-slate-600">LAN access is configured separately and stays disabled until an authorized operator enables it on this host.</p><p className="text-xs text-slate-500">A second computer running Salryn is an independent host. Installing the same app does not mean sync.</p></div><Button variant="secondary" onClick={onOpenHostLanControl}>Open Host LAN Control</Button></CardBody></Card> : null}</> : null}</div><Dialog open={sessionExpired} title="Session expired" description="Your session is no longer valid. Please sign in again to continue." onClose={() => onLogout()} footer={<Button onClick={() => onLogout()}>Sign in again</Button>} /></>;
 }
