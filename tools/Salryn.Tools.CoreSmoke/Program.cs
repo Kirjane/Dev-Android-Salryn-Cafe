@@ -151,6 +151,7 @@ public static class Program
         PosR1OwnerReportsChecks.Run();
         PosS1StoreSettingsIdentityPrinterChecks.Run();
         PosB1BackupRestoreSafetyChecks.Run();
+        PosT1FullStoreRuntimeTortureChecks.Run();
         PosStabB2BackupUiChecks.Run();
         PosStabB2AuditViewerChecks.Run();
         PosStabB3ProductionDbWritabilityChecks.Run();
@@ -316,6 +317,9 @@ public static class Program
                 return;
             case "pos-b1-backup-restore-safety":
                 PosB1BackupRestoreSafetyChecks.Run();
+                return;
+            case "pos-t1-full-store-runtime-torture":
+                PosT1FullStoreRuntimeTortureChecks.Run();
                 return;
             case "v2-host-shift":
                 V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();
