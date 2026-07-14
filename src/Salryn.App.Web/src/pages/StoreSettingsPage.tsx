@@ -143,6 +143,9 @@ export function StoreSettingsPage() {
             <Alert tone={value.printerMode === "WindowsPrinter" ? "info" : "warning"} title="Windows print queue">
               Windows Printer mode submits the saved receipt text through the Windows print queue. Thermal ESC/POS, cutter, and cash drawer support remain deferred. Saving settings or submitting a job does not prove paper output.
             </Alert>
+            <Alert tone="warning" title="Physical printing is not configured">
+              Treat paper output as unproven until Kirch completes the manual Windows printer test. Disabled and unavailable printer paths keep sales saved and unchanged.
+            </Alert>
             <p className="text-xs text-slate-500">Receipt text files and saved receipt snapshots continue to work when Windows printing is disabled or unavailable.</p>
           </CardBody>
         </Card>
