@@ -38,6 +38,8 @@ public static class DefaultDatabaseInitializationFactory
         // Version 13 adds official receipt profile setup text (RMO-BIR-M4); no checkout/sales mutation.
         // Version 14 adds internal official dry-run package storage (RMO-BIR-M8); no live issuance.
         // Version 15 adds vat_registration_mode on bir_machine_profiles (TRAD-M1 tax spine); no live issuance.
+        // Version 18 adds store printer mode.
+        // Version 19 adds the configured Windows printer name for host print-queue submission.
         IDatabaseMigration[] migrations =
         {
             new InitialSchemaMigration(),
@@ -57,7 +59,8 @@ public static class DefaultDatabaseInitializationFactory
             new VatRegistrationModeSchemaMigration(),
             new OfficialDocumentLifecycleCompletionSchemaMigration(),
             new OfficialDocumentLifecycleAccountingSchemaMigration(),
-            new StorePrinterModeSchemaMigration()
+            new StorePrinterModeSchemaMigration(),
+            new WindowsPrinterNameSchemaMigration()
         };
 
         MigrationRunner migrationRunner = new(connectionFactory, migrations);
