@@ -56,14 +56,16 @@ public static class PosManual1R3FrontendSafetyUxRepairChecks
         RequireContains(products, "does not delete past records", "Deactivate copy must explain no deletion.");
         RequireContains(products, "Product barcode fields accept manual barcode entry", "Product form must explain manual barcode entry.");
 
-        RequireContains(inventory, "Fast Add currently starts from Checkout", "Inventory must explain Fast Add location.");
-        RequireContains(inventory, "barcode scanner keyboard-wedge input", "Inventory must explain cashier scanner support.");
-        RequireContains(inventory, "Inventory Fast Add or scanner-driven receiving", "Inventory must mark scanner receiving deferred.");
+        RequireContains(inventory, "Fast Add currently starts from the cashier workstation", "Inventory must explain Fast Add location.");
+        RequireContains(inventory, "keyboard-wedge barcode input", "Inventory must explain cashier scanner support.");
+        RequireContains(inventory, "Inventory Fast Add or barcode-driven receiving", "Inventory must mark scanner receiving deferred.");
         RequireContains(inventory, "Inventory scans do not silently create products", "Inventory must not imply silent product creation.");
         RequireContains(inventory, "does not move the ledger search layout", "Stock movement filters must have stable-layout copy.");
         RequireContains(inventory, "Product lookup and quantity remain in the same fixed area", "Stock write dialog must stabilize lookup and quantity layout.");
 
         RequireContains(dashboard, "fetchOwnerReportsSummary", "Dashboard must use existing owner-report summary data when available.");
+        RequireContains(dashboard, "session.isAuthenticated && canOpenReports", "Dashboard owner-report query must honor the existing report permission.");
+        RequireContains(dashboard, "Loading owner report summary", "Dashboard must show owner-summary loading state.");
         RequireContains(dashboard, "Owner report summary", "Dashboard must include owner report summary section.");
         RequireContains(dashboard, "Voided Today", "Dashboard must surface voided count when available.");
         RequireContains(dashboard, "Open Owner Reports", "Dashboard must keep detailed reports discoverable.");

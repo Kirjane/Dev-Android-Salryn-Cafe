@@ -46,7 +46,7 @@ public static class PosManual1FrontendRepairChecks
         RequireContains(products, "does not delete past records", "Deactivate copy must explain historical records are preserved.");
         RequireContains(inventory, "Stock on hand", "Inventory must label quantity clearly.");
         RequireContains(inventory, "Recorded stock changes", "Inventory movement semantics must be clear.");
-        RequireContains(inventory, "Fast Add currently starts from Checkout", "Inventory must explain Fast Add location.");
+        RequireContains(inventory, "Fast Add currently starts from the cashier workstation", "Inventory must explain Fast Add location.");
 
         RequireContains(dashboard, "Store operations", "Dashboard must prioritize daily store workflows.");
         RequireContains(dashboard, "Open Sales & Receipts", "Dashboard must link to sales and receipts.");

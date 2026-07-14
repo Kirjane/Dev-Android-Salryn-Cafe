@@ -44,7 +44,7 @@ function AccessDenied({ currentPage, onGoHome }: { currentPage: AppPage; onGoHom
 function renderPage(page: AppPage, session: SessionState, onLogout: () => void, onNavigate: (page: AppPage) => void) {
   switch (page) {
     case "dashboard":
-      return <DashboardPage session={session} onLogout={onLogout} onOpenSales={() => onNavigate("sales")} onOpenInventory={() => onNavigate("inventory")} onOpenReports={() => onNavigate("owner-reports")} canOpenHostLanControl={canAccessPage(session, "host-lan-control")} onOpenHostLanControl={() => onNavigate("host-lan-control")} />;
+      return <DashboardPage session={session} onLogout={onLogout} onOpenSales={() => onNavigate("sales")} onOpenInventory={() => onNavigate("inventory")} onOpenReports={() => onNavigate("owner-reports")} canOpenReports={canAccessPage(session, "owner-reports")} canOpenHostLanControl={canAccessPage(session, "host-lan-control")} onOpenHostLanControl={() => onNavigate("host-lan-control")} />;
     case "checkout":
       return <CheckoutPage />;
     case "host-lan-control":
