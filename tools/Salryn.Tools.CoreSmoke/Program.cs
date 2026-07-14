@@ -154,6 +154,7 @@ public static class Program
         PosT1FullStoreRuntimeTortureChecks.Run();
         PosManual1FrontendRepairChecks.Run();
         PosManual1R3FrontendSafetyUxRepairChecks.Run();
+        PosPrinter1WindowsPrinterWiringChecks.Run();
         PosStabB2BackupUiChecks.Run();
         PosStabB2AuditViewerChecks.Run();
         PosStabB3ProductionDbWritabilityChecks.Run();
@@ -328,6 +329,9 @@ public static class Program
                 return;
             case "pos-manual1-r3-frontend-safety-ux-repair":
                 PosManual1R3FrontendSafetyUxRepairChecks.Run();
+                return;
+            case "pos-printer1-windows-printer-wiring":
+                PosPrinter1WindowsPrinterWiringChecks.Run();
                 return;
             case "v2-host-shift":
                 V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();
