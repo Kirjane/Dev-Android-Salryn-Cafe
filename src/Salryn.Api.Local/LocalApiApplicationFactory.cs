@@ -264,6 +264,7 @@ public static class LocalApiApplicationFactory
         app.MapLocalSaleVoidEndpoints();
         app.MapLocalOwnerReportsEndpoints();
         app.MapLocalStoreSettingsEndpoints(composition);
+        app.MapLocalBackupPackageEndpoints(composition);
         app.MapLocalHostShiftEndpoints();
         app.MapLocalHostCheckoutEndpoints();
         app.MapLocalReceiptPrinterEndpoints();
