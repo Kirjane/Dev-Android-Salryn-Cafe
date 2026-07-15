@@ -124,8 +124,8 @@ export function BackupRestorePage() {
       <Alert tone="warning" title="Local safety copy boundary">
         Backups are local safety copies for this installation. Keep copies outside this computer if you need disaster recovery. Restore replaces the current local database from a verified backup.
       </Alert>
-      <Alert tone="neutral" title="Not a release/compliance feature">
-        This page is not cloud backup, installer migration proof, licensing final, legal archive, BIR archive, eSales submission, or official output retention.
+      <Alert tone="neutral" title="Not a release/compliance archive">
+        This page is not cloud backup, installer migration proof, legal archive, BIR archive, eSales submission, or official output retention. The local license file is stored outside this database backup package unless a separate license process says otherwise.
       </Alert>
 
       <div className="grid gap-4 lg:grid-cols-3">
