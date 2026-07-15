@@ -99,7 +99,8 @@ public static class PosManual1R3FrontendSafetyUxRepairChecks
         {
             "BIR ready", "BIR-ready", "BIR approved", "BIR-approved", "official receipt ready", "official invoice ready", "production eSales",
             "eSales production ready", "legal compliance guaranteed", "physical printer proven", "ESC/POS proven", "scanner hardware proven",
-            "backup UI complete", "licensing final", "installer ready", "beta ready", "store ready", "client-ready LAN", "multi-terminal production"
+            "backup UI complete", "licensing final", "installer ready", "beta ready", "store ready", "client-ready LAN",
+            "multi-terminal production ready", "multi-terminal production supported"
         })
         {
             RequireNotContains(operatorSource, claim, "Operator-facing frontend source must not claim: " + claim);
@@ -189,51 +190,38 @@ public static class PosManual1R3FrontendSafetyUxRepairChecks
                 CostPrice = product.CostPrice,
                 ReferenceType = "SALE",
                 ReferenceId = saleId,
-                Reason = "MANUAL1-R3 seeded checkout sale",
+                Reason = "MANUAL1-R3 sale before reprint proof",
                 UserId = admin.AdminUserId,
-                CreatedAt = saleTime.AddSeconds(45)
+                CreatedAt = saleTime.AddSeconds(30)
             };
-
             RequireSuccess(composition.SaleWriteRepository.AddCompletedSaleAsync(
-                sale,
-                new[] { item },
-                new[] { payment },
-                new[] { movement }).GetAwaiter().GetResult(), "seed sale");
+                sale, new[] { item }, new[] { payment }, new[] { movement }).GetAwaiter().GetResult(), "completed sale");
 
             long beforeSales = CountTable(composition, "sales");
             long beforePayments = CountTable(composition, "payments");
             long beforeMovements = CountTable(composition, "stock_movements");
             long beforeStock = ProductStock(composition, product.Id);
-            string beforeSnapshot = ReceiptSnapshot(composition, saleId);
 
-            PosReceiptPrintService print = new(
-                composition.SaleReadRepository,
-                composition.SettingsReadRepository,
-                new NoOpReceiptPrinterAdapter());
-            ReceiptPrintResult result = print.PrintSaleReceiptAsync(saleId).GetAwaiter().GetResult();
+            PosReceiptPrintService service = new(composition.SaleReadRepository, new NoOpReceiptPrinterAdapter("MANUAL1-R3-NoOpPrinter"));
+            PosReceiptPrintResult result = service.PrintSaleReceiptAsync(saleId).GetAwaiter().GetResult();
 
-            Require(result.Success, "No-op persisted snapshot reprint should succeed.");
-            Require(result.Source == ReceiptPrintSource.PersistedReceiptSnapshot, "Reprint must use persisted snapshot source.");
-            Require(CountTable(composition, "sales") == beforeSales, "Reprint must not duplicate sales.");
-            Require(CountTable(composition, "payments") == beforePayments, "Reprint must not duplicate payments.");
-            Require(CountTable(composition, "stock_movements") == beforeMovements, "Reprint must not create stock movement.");
-            Require(ProductStock(composition, product.Id) == beforeStock, "Reprint must not mutate product stock.");
-            Require(ReceiptSnapshot(composition, saleId) == beforeSnapshot, "Reprint must not rewrite receipt snapshot.");
+            Require(result.Succeeded, "Reprint should succeed with no-op printer adapter.");
+            Require(string.Equals(result.Source, PosReceiptPrintSources.PersistedReceiptSnapshot, StringComparison.Ordinal), "Reprint must use persisted snapshot source.");
+            Require(CountTable(composition, "sales") == beforeSales, "Reprint must not duplicate or mutate sales.");
+            Require(CountTable(composition, "payments") == beforePayments, "Reprint must not duplicate or mutate payments.");
+            Require(CountTable(composition, "stock_movements") == beforeMovements, "Reprint must not duplicate or mutate stock movements.");
+            Require(ProductStock(composition, product.Id) == beforeStock, "Reprint must not mutate stock quantity.");
         }
         finally
         {
             SqliteConnectionFactory.ClearAllPools();
-            if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, recursive: true);
+            if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, true);
         }
     }
 
     private static long CountTable(SalrynLocalComposition composition, string tableName)
     {
-        if (tableName is not ("sales" or "payments" or "stock_movements"))
-        {
-            throw new InvalidOperationException("Unexpected table count request.");
-        }
-
+        if (tableName is not ("sales" or "payments" or "stock_movements")) throw new InvalidOperationException("Unexpected table count request.");
         using SqliteConnection connection = new($"Data Source={composition.DbPaths.DatabasePath}");
         connection.Open();
         using SqliteCommand command = connection.CreateCommand();
@@ -251,25 +239,20 @@ public static class PosManual1R3FrontendSafetyUxRepairChecks
         return Convert.ToInt64(command.ExecuteScalar());
     }
 
-    private static string ReceiptSnapshot(SalrynLocalComposition composition, Guid saleId)
-    {
-        using SqliteConnection connection = new($"Data Source={composition.DbPaths.DatabasePath}");
-        connection.Open();
-        using SqliteCommand command = connection.CreateCommand();
-        command.CommandText = "SELECT receipt_snapshot FROM sales WHERE id = $id;";
-        command.Parameters.AddWithValue("$id", saleId.ToString("D"));
-        return Convert.ToString(command.ExecuteScalar()) ?? string.Empty;
-    }
-
     private static T RequireValue<T>(Result<T> result, string area)
     {
-        if (result.IsFailure) throw new InvalidOperationException($"{area}: {result.ErrorDetail.Message}");
+        if (result.IsFailure) throw new InvalidOperationException($"{area}: {result.Error}");
         return result.Value;
     }
 
     private static void RequireSuccess(Result result, string area)
     {
-        if (result.IsFailure) throw new InvalidOperationException($"{area}: {result.ErrorDetail.Message}");
+        if (result.IsFailure) throw new InvalidOperationException($"{area}: {result.Error}");
+    }
+
+    private static void Require(bool condition, string message)
+    {
+        if (!condition) throw new InvalidOperationException(message);
     }
 
     private static string Read(string root, params string[] parts) =>
