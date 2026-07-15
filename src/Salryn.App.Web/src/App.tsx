@@ -8,6 +8,7 @@ import { Button, Card, CardBody, CommandBar } from "./components/ui";
 import { useAppSession } from "./hooks/useAppSession";
 import { type AppPage } from "./navigation";
 import { AuditPage } from "./pages/AuditPage";
+import { BackupRestorePage } from "./pages/BackupRestorePage";
 import { BootstrapSetupPage } from "./pages/BootstrapSetupPage";
 import { CheckoutPage } from "./pages/CheckoutPage";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -59,6 +60,8 @@ function renderPage(page: AppPage, session: SessionState, onLogout: () => void, 
       return <OwnerReportsPage />;
     case "settings":
       return <StoreSettingsPage />;
+    case "backup-restore":
+      return <BackupRestorePage />;
     case "users":
       return <UsersPage />;
     case "audit":
