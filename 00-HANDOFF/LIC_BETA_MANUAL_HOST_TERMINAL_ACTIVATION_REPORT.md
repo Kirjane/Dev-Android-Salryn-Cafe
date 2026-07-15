@@ -1,14 +1,18 @@
 # LIC-BETA — Manual Host/Terminal Activation Report
 
-**Branch:** `KIRCH-LIC-BETA-MANUAL-HOST-TERMINAL-ACTIVATION`  
-**Base branch:** `KIRCH-LIC-ARCH-R1-BETA-MANUAL-HOST-TERMINAL-STUDY`  
-**Base SHA:** `e4f7bc5af839d5c93b23594493988b2300e3c57d`  
-**Final SHA:** branch tip on `KIRCH-LIC-BETA-MANUAL-HOST-TERMINAL-ACTIVATION` (authoritative value: `git rev-parse HEAD` after last commit; report commit cannot self-hash)  
-**Status:** `CODE_COMPLETE_UNGATED_VERIFICATION_PARKED` (full CoreSmoke not green due to pre-existing R3/Backup UI stack conflict)
+**Branch:** `KIRCH-LIC-BETA-MANUAL-HOST-TERMINAL-ACTIVATION`
+**Base branch:** `KIRCH-LIC-ARCH-R1-BETA-MANUAL-HOST-TERMINAL-STUDY`
+**Base SHA:** `e4f7bc5af839d5c93b23594493988b2300e3c57d`
+**Final SHA:** branch tip (`git rev-parse HEAD` on `KIRCH-LIC-BETA-MANUAL-HOST-TERMINAL-ACTIVATION`)
+**Implementation SHA:** `10332e20aa73c76a311b5929f70630ba4d0b9e63`
+**Status:** `CODE_COMPLETE_UNGATED_VERIFICATION_PARKED` (licensing gates green; full CoreSmoke blocked by pre-existing R3/Backup UI stack conflict)
 
 **Protected refs (unchanged):**
 - `KIRCH-SANDBOX` = `1f74cd8bcaca1a5df487aa61677ee9829dd7fedb`
 - `KIRCH-INSTALLER-M1` = `6b9c46676390b8a86a989eca600cb02e406ce865`
+
+**Official beta contact:** `salryn.info@gmail.com`
+**Branch pushed:** NO
 
 ---
 
@@ -183,7 +187,19 @@
 | pos-surface1-role-page-lock-store-nav | **PASS** |
 | full CoreSmoke | **NOT RUN** (would hit R3 failure above) |
 | `npm --prefix src/Salryn.App.Web run build` | **PASS** |
+| `git diff --check` | **PASS** (clean tree) |
+| `git status` | **CLEAN** after implementation commits (report stamp may leave one doc file dirty until committed) |
 | Private key scan | **PASS** (no matches) |
+| Protected refs | **UNCHANGED** |
+| Branch pushed | **NO** |
+
+---
+
+## Final status
+
+`CODE_COMPLETE_UNGATED_VERIFICATION_PARKED`
+
+Licensing beta Host/Terminal activation is code-complete with focused gates green. Full CoreSmoke remains ungated because R3 fails on pre-existing AppShell backup copy drift (Backup UI already shipped; R3 still expects “Backup & Restore UI planned”). That failure is outside this licensing branch scope.
 
 ---
 
@@ -191,9 +207,9 @@
 
 `KIRCH-LIC-LAN-TERMINAL-ENTITLEMENT-ENFORCEMENT`
 
-- Host terminal count vs AllowedLanTerminals  
-- Terminal license pairing proof  
-- Reject wrong store/host/machine and host-as-terminal  
+- Host terminal count vs AllowedLanTerminals
+- Terminal license pairing proof
+- Reject wrong store/host/machine and host-as-terminal
 
 Then (outside POS): LicensingOps private generator implementation.
 
