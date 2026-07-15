@@ -90,9 +90,9 @@ const pagePermissions: Partial<Record<AppPage, readonly Permission[]>> = {
   audit: [Permissions.AuditView],
   // Host-local setup only; Settings.Manage operators (Admin/Owner style).
   "official-setup": [Permissions.SettingsManage],
-  // Host-only traditional reporting; report/view operators.
+  // Host-only traditional reporting lab; not in standard manager navigation.
   "traditional-reporting": [Permissions.ReportsView, Permissions.OfficialReadingView, Permissions.OfficialEvidenceExport],
-  // Host-only report dataset spine; no remote POS client access.
+  // Host-only internal artifact export spine; no remote POS client access.
   "production-reports": [Permissions.ReportsView, Permissions.OfficialReadingView],
 };
 
@@ -120,7 +120,7 @@ export function canAccessPage(session: SessionState | null | undefined, page: Ap
 
   const roleId = session.user.roleId.toLowerCase();
   const cashierPages: readonly AppPage[] = ["checkout", "sales"];
-  const managerPages: readonly AppPage[] = ["dashboard", "checkout", "products", "inventory", "sales", "owner-reports", "audit", "traditional-reporting", "production-reports"];
+  const managerPages: readonly AppPage[] = ["dashboard", "checkout", "products", "inventory", "sales", "owner-reports", "audit"];
   if (roleId === RoleIds.Cashier && !cashierPages.includes(page)) return false;
   if (roleId === RoleIds.Manager && !managerPages.includes(page)) return false;
 
