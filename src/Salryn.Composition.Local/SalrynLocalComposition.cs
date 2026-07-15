@@ -10,6 +10,8 @@ namespace Salryn.Composition.Local;
 
 public sealed class SalrynLocalComposition
 {
+    private const string CoreSmokeDevelopmentRootEnvironmentVariable = "SALRYN_CORE_SMOKE_DEVELOPMENT_ROOT";
+
     private SalrynLocalComposition(
         DbPaths dbPaths,
         SqliteConnectionFactory connectionFactory,
@@ -95,7 +97,8 @@ public sealed class SalrynLocalComposition
             throw new ArgumentException("Project root is required.", nameof(projectRoot));
         }
 
-        return Create(DbPaths.CreateDevelopment(projectRoot));
+        string resolvedRoot = ResolveDevelopmentRoot(projectRoot);
+        return Create(DbPaths.CreateDevelopment(resolvedRoot));
     }
 
     public static SalrynLocalComposition Create(DbPaths dbPaths)
@@ -147,5 +150,33 @@ public sealed class SalrynLocalComposition
         }
 
         return Task.CompletedTask;
+    }
+
+    private static string ResolveDevelopmentRoot(string projectRoot)
+    {
+        string? isolatedRoot = Environment.GetEnvironmentVariable(CoreSmokeDevelopmentRootEnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(isolatedRoot))
+        {
+            return projectRoot;
+        }
+
+        string fullProjectRoot = Path.GetFullPath(projectRoot);
+        string fullIsolatedRoot = Path.GetFullPath(isolatedRoot);
+
+        if (string.Equals(fullProjectRoot, fullIsolatedRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("CoreSmoke development database isolation root must not equal the active project root.");
+        }
+
+        string activeDevelopmentDatabase = Path.GetFullPath(DbPaths.CreateDevelopment(fullProjectRoot).DatabasePath);
+        string isolatedDevelopmentDatabase = Path.GetFullPath(DbPaths.CreateDevelopment(fullIsolatedRoot).DatabasePath);
+
+        if (string.Equals(activeDevelopmentDatabase, isolatedDevelopmentDatabase, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("CoreSmoke development database isolation must not resolve to the active development database.");
+        }
+
+        Directory.CreateDirectory(fullIsolatedRoot);
+        return fullIsolatedRoot;
     }
 }
