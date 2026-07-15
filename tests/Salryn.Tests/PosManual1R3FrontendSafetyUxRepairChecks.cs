@@ -81,11 +81,23 @@ public static class PosManual1R3FrontendSafetyUxRepairChecks
         RequireContains(appShell, "Advanced contains internal host tools only", "Advanced section must be internal-only framed.");
         RequireContains(appShell, "Host LAN Control is Coming Soon / internal preview only", "LAN must remain coming soon/internal preview.");
         RequireContains(appShell, "Report Artifacts are internal export proof only", "Report Artifacts must not look production-ready.");
-        RequireContains(appShell, "Backup & Restore UI planned", "Advanced copy must honestly defer backup UI.");
-        RequireContains(appShell, "backend foundation exists", "Advanced copy may mention existing foundation without fake UI.");
-        RequireContains(appShell, "No restore/create/list controls are exposed here", "Advanced copy must not fake backup UI controls.");
+        RequireContains(appShell, "not client-ready", "LAN Advanced copy must not claim client-ready / production-ready LAN.");
 
-        string operatorSource = string.Join("\n", app, appShell, navigation, checkout, sales, products, inventory, dashboard, reports, settings, users);
+        // Backup UI1: Backup & Restore is implemented and admin-gated (stale "planned" deferral copy is obsolete).
+        string backupPage = Read(web, "pages", "BackupRestorePage.tsx");
+        RequireContains(navigation, "id: \"backup-restore\", label: \"Backup & Restore\"", "Backup & Restore must appear as an implemented admin nav item.");
+        RequireContains(navigation, "group: \"Admin\"", "Backup & Restore must remain under Admin tools.");
+        RequireContains(appShell, "\"Backup & Restore\":", "AppShell must map the Backup & Restore nav label.");
+        RequireContains(appShell, "item.id === \"backup-restore\"", "AppShell must mark Backup & Restore as an admin-gated surface.");
+        RequireNotContains(appShell, "Backup & Restore UI planned", "Stale Backup UI deferral copy must not remain after Backup UI1.");
+        RequireNotContains(appShell, "No restore/create/list controls are exposed here", "Stale Backup UI absence copy must not remain after Backup UI1.");
+        RequireContains(backupPage, "not cloud backup", "Backup page must reject cloud backup claims.");
+        RequireContains(backupPage, "installer migration proof", "Backup page must reject installer migration proof claims.");
+        RequireContains(backupPage, "legal archive", "Backup page must reject legal archive claims.");
+        RequireContains(backupPage, "BIR archive", "Backup page must reject BIR archive claims.");
+        RequireContains(backupPage, "local license file is stored outside this database backup package", "Backup page must not claim license preservation via DB backup.");
+
+        string operatorSource = string.Join("\n", app, appShell, navigation, checkout, sales, products, inventory, dashboard, reports, settings, users, backupPage);
         foreach (string token in new[]
         {
             "POS-M1", "POS-M2", "POS-M3", "POS-M4", "POS-M5", "POS-M6", "POS-M7",
@@ -99,8 +111,8 @@ public static class PosManual1R3FrontendSafetyUxRepairChecks
         {
             "BIR ready", "BIR-ready", "BIR approved", "BIR-approved", "official receipt ready", "official invoice ready", "production eSales",
             "eSales production ready", "legal compliance guaranteed", "physical printer proven", "ESC/POS proven", "scanner hardware proven",
-            "backup UI complete", "licensing final", "installer ready", "beta ready", "store ready", "client-ready LAN",
-            "multi-terminal production ready", "multi-terminal production supported"
+            "hardware support ready", "backup UI complete", "licensing final", "installer ready", "beta ready", "store ready", "client-ready LAN",
+            "multi-terminal production ready", "multi-terminal production supported", "LAN production ready", "LAN production-ready"
         })
         {
             RequireNotContains(operatorSource, claim, "Operator-facing frontend source must not claim: " + claim);
