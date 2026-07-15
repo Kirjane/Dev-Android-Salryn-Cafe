@@ -448,6 +448,9 @@ public static class Program
             case "manual-m1-bootstrap-auth-repair":
                 ManualM1BootstrapAuthRepairChecks.Run();
                 return;
+            case "user-m1-host-only-user-creation":
+                UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
+                return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);
         }

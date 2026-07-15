@@ -28,7 +28,21 @@ public static class UserM1HostOnlyUserCreationChecks
 
     private static async Task RunRuntimeChecksAsync(string projectRoot)
     {
-        SalrynLocalComposition composition = SalrynLocalComposition.CreateDevelopment(projectRoot);
+        string isolatedRoot = Path.Combine(
+            Path.GetTempPath(),
+            "salryn-user-m1-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(isolatedRoot);
+
+        SalrynLocalComposition composition = SalrynLocalComposition.CreateDevelopment(isolatedRoot);
+        string activeDevelopmentDatabase = Path.GetFullPath(
+            SalrynLocalComposition.CreateDevelopment(projectRoot).DbPaths.DatabasePath);
+        string isolatedDatabase = Path.GetFullPath(composition.DbPaths.DatabasePath);
+
+        if (string.Equals(activeDevelopmentDatabase, isolatedDatabase, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("USER-M1 runtime checks must not use the active development database.");
+        }
+
         await composition.InitializeDatabaseAsync().ConfigureAwait(false);
 
         AuthenticatedUserReadModel adminUser = await EnsureUsersManageOperatorAsync(composition)
@@ -144,6 +158,8 @@ public static class UserM1HostOnlyUserCreationChecks
         finally
         {
             await app.StopAsync().ConfigureAwait(false);
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            Directory.Delete(isolatedRoot, recursive: true);
         }
     }
 
