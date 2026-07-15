@@ -161,6 +161,11 @@ public sealed class SalrynLocalComposition
         }
 
         string fullProjectRoot = Path.GetFullPath(projectRoot);
+        if (!File.Exists(Path.Combine(fullProjectRoot, "Salryn.sln")))
+        {
+            return projectRoot;
+        }
+
         string fullIsolatedRoot = Path.GetFullPath(isolatedRoot);
 
         if (string.Equals(fullProjectRoot, fullIsolatedRoot, StringComparison.OrdinalIgnoreCase))
