@@ -208,7 +208,7 @@ export function ProductionReportsPage() {
       const manifest = readManifest(result);
       setExportResult(result);
       setDataset(null);
-      setMessage(`Native PDF export completed: ${safeText(readString(asRecord(manifest), "fileName", "FileName"))}`);
+      setMessage(`Native PDF artifact export completed: ${safeText(readString(asRecord(manifest), "fileName", "FileName"))}`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -262,13 +262,13 @@ export function ProductionReportsPage() {
   return (
     <div className="space-y-6">
       <CommandBar
-        title="Production Reports"
-        subtitle="Native PDF export readiness for host-local operators. Controlled artifacts only; no Crystal activation, printer path, or caller-selected output directory."
+        title="Report Artifacts"
+        subtitle="Internal report dataset and native PDF artifact proof. Not legal submission, not eSales production transmission, and not BIR approval."
         status={(
           <div className="flex flex-wrap gap-2">
-            <StatusPill tone="success">Native PDF primary</StatusPill>
+            <StatusPill tone="success">Native PDF renderer</StatusPill>
             <StatusPill tone="warning">Crystal parked</StatusPill>
-            <StatusPill tone="neutral">No printer integration</StatusPill>
+            <StatusPill tone="neutral">Internal artifacts only</StatusPill>
           </div>
         )}
         actions={(
@@ -279,7 +279,7 @@ export function ProductionReportsPage() {
         )}
       />
 
-      <Alert tone="warning" title="Code-side readiness boundary">
+      <Alert tone="warning" title="Internal artifact boundary">
         This surface prepares local reporting/export proof. It does not enable Crystal Reports, SAP runtime, printer integration,
         arbitrary output paths, cloud upload, BIR approval, eSales production transmission, or legal production submission.
       </Alert>
@@ -351,13 +351,13 @@ export function ProductionReportsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Native PDF export</CardTitle>
+            <CardTitle>Native PDF artifact export</CardTitle>
           </CardHeader>
           <CardBody className="space-y-4">
             {selected ? (
               <Alert tone={selected.datasetAvailable ? "success" : "warning"} title={selected.title}>
                 {selected.datasetAvailable
-                  ? "This report can generate a dataset and native PDF artifact through the guarded local API."
+                  ? "This report can generate a dataset and internal native PDF artifact through the guarded local API."
                   : selected.unavailableReason ?? "Dataset unavailable."}
               </Alert>
             ) : (
@@ -383,7 +383,7 @@ export function ProductionReportsPage() {
               </Button>
               <Button disabled={!selectedCanRun} variant="success" onClick={() => void exportNativePdf()}>
                 <FileCheck2 aria-hidden="true" size={16} />
-                Export native PDF
+                Export native PDF artifact
               </Button>
             </div>
 
