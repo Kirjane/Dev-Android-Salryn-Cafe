@@ -24,7 +24,7 @@ export function StoreSettingsPage() {
   function validate(): string | null {
     if (!value?.storeName.trim()) return "Store name is required.";
     if (!supportedCurrencies.has(value.currencyLabel.trim())) return "Choose PHP or ₱ as the currency label.";
-    if (value.receiptWidthMm !== 58 && value.receiptWidthMm !== 80) return "Receipt width must be 58 mm or 80 mm.";
+    if (value.receiptWidthMm !== 58 && value.receiptWidthMm !== 80) return "Receipt text width setting is invalid.";
     if (value.printerMode === "WindowsPrinter" && !value.windowsPrinterName?.trim()) return "Windows printer name is required when Windows Printer mode is selected.";
     return null;
   }
@@ -109,18 +109,14 @@ export function StoreSettingsPage() {
           <CardBody className="grid gap-4 md:grid-cols-2">
             {field("receiptHeader", "Receipt header", "Optional message shown near the top of new receipts.")}
             {field("receiptFooter", "Receipt footer", "Optional message shown at the bottom of new receipts.")}
-            <label className="space-y-1 text-sm font-medium text-slate-700 md:col-span-2">
-              <span>Receipt width</span>
-              <select className="min-h-9 w-full rounded-md border border-slate-300 px-3" value={value.receiptWidthMm} onChange={(event) => update("receiptWidthMm", Number(event.target.value))}>
-                <option value={58}>58 mm</option>
-                <option value={80}>80 mm</option>
-              </select>
-            </label>
             <Alert tone="info" title="Historical receipts stay unchanged">
-              Store identity, header, footer, and width changes apply to newly completed receipts only. Saved receipts keep their original snapshot.
+              Store identity, header, footer, and internal text layout changes apply to newly completed receipts only. Saved receipts keep their original snapshot.
+            </Alert>
+            <Alert tone="warning" title="Receipt hardware profile out of beta scope">
+              Hardware receipt width/profile support is outside beta scope. This release uses stored internal receipt text only, not a hardware-specific profile.
             </Alert>
             <Alert tone="neutral" title="Store logo deferred">
-              Store logo support is planned but is not active in this build. No upload or placeholder image is stored.
+              Store logo support is not active in this build. No upload or placeholder image is stored.
             </Alert>
           </CardBody>
         </Card>
@@ -140,8 +136,11 @@ export function StoreSettingsPage() {
               <TextInput value={value.windowsPrinterName ?? ""} onChange={(event) => update("windowsPrinterName", event.target.value)} placeholder="Exact Windows printer name" />
               <span className="block text-xs font-normal text-slate-500">Use the exact printer name shown in Windows. Leave disabled mode selected if the printer is not ready.</span>
             </label>
-            <Alert tone={value.printerMode === "WindowsPrinter" ? "info" : "warning"} title="Windows print queue">
-              Windows Printer mode submits the saved receipt text through the Windows print queue. Direct thermal-device commands and accessory controls remain deferred. Saving settings or submitting a job does not prove paper output.
+            <Alert tone={value.printerMode === "WindowsPrinter" ? "info" : "warning"} title="Windows print queue only">
+              Windows Printer mode submits saved internal receipt text through the Windows print queue. Hardware peripherals beyond the Windows print queue are outside the beta scope.
+            </Alert>
+            <Alert tone="warning" title="Hardware scope ban">
+              No ESC/POS, no cutter, no cash drawer, no thermal receipt profile, and no hardware bundle/support claim. This release is Windows print queue only.
             </Alert>
             <Alert tone="warning" title="Physical printing is not configured">
               Treat paper output as unproven until Kirch completes the manual Windows printer test. Disabled and unavailable printer paths keep sales saved and unchanged.
