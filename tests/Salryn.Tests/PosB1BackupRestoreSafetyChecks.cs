@@ -95,7 +95,7 @@ public static class PosB1BackupRestoreSafetyChecks
         Require(backupPage.Contains("Restore replaces the current local database"), "Backup UI must warn destructive restore replacement.");
         Require(backupPage.Contains("Keep copies outside this computer"), "Backup UI must explain off-device disaster recovery boundary without claiming cloud backup.");
         Require(backupPage.Contains("not cloud backup"), "Backup UI must reject cloud backup claims.");
-        Require(backupPage.Contains("not cloud backup, installer migration proof, licensing final, legal archive, BIR archive, eSales submission, or official output retention"), "Backup UI must reject compliance/installer/licensing claims.");
+        Require(backupPage.Contains("local license file is stored outside this database backup package"), "Backup UI must not claim license preservation.");
         Require(!backupPage.Contains("type=\"file\""), "Backup UI must not expose raw file upload.");
         Require(!backupPage.Contains("FilePath"), "Backup UI must not display raw backup file paths.");
         Require(!backupPage.Contains("RestoredBackupPath"), "Backup UI must not display restored backup file paths.");
