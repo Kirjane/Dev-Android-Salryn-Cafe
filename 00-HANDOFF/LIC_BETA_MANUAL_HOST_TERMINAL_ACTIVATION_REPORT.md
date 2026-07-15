@@ -3,7 +3,7 @@
 **Branch:** `KIRCH-LIC-BETA-MANUAL-HOST-TERMINAL-ACTIVATION`  
 **Base branch:** `KIRCH-LIC-ARCH-R1-BETA-MANUAL-HOST-TERMINAL-STUDY`  
 **Base SHA:** `e4f7bc5af839d5c93b23594493988b2300e3c57d`  
-**Final SHA:** `a5b4f4c935a7763041a3995b7a12dc3354da3286`  
+**Final SHA:** branch tip on `KIRCH-LIC-BETA-MANUAL-HOST-TERMINAL-ACTIVATION` (authoritative value: `git rev-parse HEAD` after last commit; report commit cannot self-hash)  
 **Status:** `CODE_COMPLETE_UNGATED_VERIFICATION_PARKED` (full CoreSmoke not green due to pre-existing R3/Backup UI stack conflict)
 
 **Protected refs (unchanged):**
