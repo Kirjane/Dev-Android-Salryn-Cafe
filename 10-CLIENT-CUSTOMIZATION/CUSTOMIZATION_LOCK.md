@@ -1,139 +1,143 @@
-﻿# Salryn POS Client Customization Lock
+# Salryn POS Client Customization Lock
 
 Status:
-PLANNING LOCK ONLY.
+BETA / RELEASE SCOPE LOCK.
 
 Goal:
-Clients should customize Salryn without editing code.
+Clients should customize Salryn without editing code while avoiding hardware-scope drift.
+
+Hardware policy:
+Hardware peripherals beyond the Windows print queue are outside the beta scope.
 
 ---
 
-# 1. Store Profile Customization
+## 1. Store profile customization
 
 Fields:
-- Store name
-- Business name
-- Address line 1
-- Address line 2
-- Contact number
-- TIN optional
-- Logo path optional
-- Receipt header
-- Receipt footer
-- Currency symbol
+
+- Store name.
+- Business name.
+- Address line 1.
+- Address line 2.
+- Contact number.
+- Optional TIN field stored as identity text only.
+- Receipt header.
+- Receipt footer.
+- Currency symbol / label.
 
 ---
 
-# 2. Receipt Customization
+## 2. Receipt customization
 
-Settings:
-- Receipt width: 58mm or 80mm
-- Header text
-- Footer text
-- Show cashier name yes/no
-- Show barcode yes/no
-- Show TIN yes/no
-- Show business name yes/no
+Allowed settings:
 
-Template variables:
-- {STORE_NAME}
-- {BUSINESS_NAME}
-- {ADDRESS}
-- {CONTACT}
-- {TIN}
-- {RECEIPT_NO}
-- {DATE}
-- {TIME}
-- {CASHIER}
-- {ITEMS}
-- {SUBTOTAL}
-- {DISCOUNT}
-- {TOTAL}
-- {CASH}
-- {CHANGE}
-- {FOOTER}
+- Header text.
+- Footer text.
+- Store identity text.
+- Cashier name display when already supported by receipt snapshot.
+- Barcode text display when already supported by receipt snapshot.
+- Business/TIN identity text when configured.
+
+Out of beta scope:
+
+- hardware receipt width/profile support.
+- thermal receipt formatting.
+- ESC/POS formatting.
+- cutter or drawer commands.
+- hardware-specific templates.
+
+Template variables may exist as internal receipt text concepts only. They do not imply official/BIR output or hardware profile support.
 
 ---
 
-# 3. Product Custom Fields
+## 3. Product custom fields
 
 Purpose:
 Different clients sell different products.
 
 Custom field examples:
-- Rack location
-- Color
-- Size
-- Flavor
-- Batch number
-- Expiry date
-- Warranty months
-- Supplier code
 
-Supported field types:
-- TEXT
-- NUMBER
-- DATE
-- BOOLEAN
-- CHOICE
+- Rack location.
+- Color.
+- Size.
+- Flavor.
+- Batch number.
+- Expiry date.
+- Warranty months.
+- Supplier code.
+
+Supported field types when implemented:
+
+- TEXT.
+- NUMBER.
+- DATE.
+- BOOLEAN.
+- CHOICE.
 
 ---
 
-# 4. Inventory Behavior Settings
+## 4. Inventory behavior settings
 
 Settings:
-- Allow negative stock yes/no
-- Enable low-stock warnings yes/no
-- Default reorder level
-- Default unit
-- Track stock by default yes/no
+
+- Allow negative stock yes/no.
+- Enable low-stock warnings yes/no.
+- Default reorder level.
+- Default unit.
+- Track stock by default yes/no.
 
 Recommended defaults:
-- allow_negative_stock = false
-- low_stock_warning_enabled = true
-- track_stock = true
+
+- `allow_negative_stock = false`.
+- `low_stock_warning_enabled = true`.
+- `track_stock = true`.
 
 ---
 
-# 5. User/Role Customization
+## 5. User/role customization
 
 Default roles:
-- Admin
-- Cashier
 
-Admin can:
-- Manage everything
+- Admin.
+- Manager.
+- Cashier.
 
-Cashier can:
-- Create sale
-- Reprint receipt if allowed
-- Fast add product if allowed
-- Stock-in if allowed
+Admin can manage everything.
+
+Cashier can create sales and use allowed cashier workflows only.
 
 Recommended:
-Fast Add Product may be allowed for cashier, but stock adjustment should require admin.
+Fast Add Product may be allowed for cashier, but stock adjustment should require admin/manager permission.
 
 ---
 
-# 6. Report Customization
+## 6. Report customization
 
 Settings:
-- Store name shown on report
-- Date range
-- Include void section yes/no
-- Include low-stock section yes/no
-- Include cashier breakdown yes/no
+
+- Store name shown on report.
+- Date range.
+- Include void section yes/no.
+- Include low-stock section yes/no.
+- Include cashier breakdown yes/no.
+
+Report artifacts remain internal proof until explicitly accepted.
 
 ---
 
-# 7. Avoid Too Much Customization in V1
+## 7. Avoid too much customization in beta
 
 Avoid:
-- Drag-and-drop receipt designer
-- Full report designer
-- Custom SQL reports
-- Theme engine
-- Plugin system
+
+- Drag-and-drop receipt designer.
+- Full report designer.
+- Custom SQL reports.
+- Theme engine.
+- Plugin system.
+- Hardware profile designer.
+- Cash drawer/cutter/ESC/POS configuration.
 
 Reason:
-Too much customization early will delay the POS core.
+Too much customization early will delay the POS core and create hardware-support claims outside the beta scope.
+
+Status: `SCOPE_LOCKED_OUT_OF_BETA_HARDWARE_EXTRAS`
