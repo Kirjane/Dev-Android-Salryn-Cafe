@@ -1,25 +1,25 @@
-﻿SALRYN POS PROJECT WORKSPACE
+SALRYN POS PROJECT WORKSPACE
 
 Status:
-- No GitHub yet
-- No app code yet
-- No dotnet project yet
-- No database schema yet
-- Planning and feature lock stage only
+- Active repo state is maintained in 00-HANDOFF and current milestone branches.
+- Older planning folders remain historical unless explicitly refreshed.
 
 Current goal:
-Lock all features, architecture, database rules, algorithms, UI behavior, and hardware assumptions before writing code.
+Lock release scope, implementation truth, verification gates, and handoff notes before branch promotion.
 
 Folder meaning:
-00-HANDOFF              Final SSOT and project handoff notes
-01-FEATURE-LOCK         Must-have, good-to-have, and avoid lists
-02-ARCHITECTURE         Final system architecture
+00-HANDOFF              Current reports, branch handoffs, scope summaries
+01-FEATURE-LOCK         Feature scope and avoid lists
+02-ARCHITECTURE         Architecture and release boundary notes
 03-DATABASE-DESIGN      Tables, relationships, indexes, migration plans
 04-ALGORITHMS           Checkout, cart, inventory, scan, receipt, report algorithms
 05-UI-UX                Screen layouts and cashier workflow
-06-HARDWARE             Printer, barcode scanner, cash drawer notes
+06-HARDWARE             Windows print queue and keyboard-wedge scanner boundaries
 07-REPORTS              Daily, monthly, PDF, CSV report planning
 08-TESTING              Manual QA, test cases, edge cases
 09-DEPLOYMENT           Installer, backup, client setup, update process
 10-CLIENT-CUSTOMIZATION Store settings, receipt headers, fields, templates
 90-ARCHIVE              Old notes and rejected ideas
+
+Hardware scope note:
+Hardware peripherals beyond the Windows print queue are outside the beta scope. Cash drawer, cutter, ESC/POS, thermal profiles, hardware receipt width/profile support, and hardware bundle/support claims are not active beta/release roadmap items.
