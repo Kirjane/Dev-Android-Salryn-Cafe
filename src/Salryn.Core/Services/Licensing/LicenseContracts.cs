@@ -26,6 +26,7 @@ public static class LicenseFeatures
     public const string Users = "Users";
     public const string Backup = "Backup";
     public const string Licensing = "Licensing";
+    public const string LanTerminals = "LanTerminals";
 
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -34,7 +35,8 @@ public static class LicenseFeatures
         Reports,
         Users,
         Backup,
-        Licensing
+        Licensing,
+        LanTerminals
     };
 
     public static IReadOnlyList<string> AllList { get; } = new[]
@@ -44,7 +46,8 @@ public static class LicenseFeatures
         Reports,
         Users,
         Backup,
-        Licensing
+        Licensing,
+        LanTerminals
     };
 }
 
@@ -57,7 +60,12 @@ public sealed record LocalLicenseDocument(
     string? MachineBinding,
     IReadOnlyList<string>? Features,
     string? Signature,
-    int SchemaVersion);
+    int SchemaVersion,
+    string? ApplicationId = null,
+    string? StoreId = null,
+    int? AllowedLanTerminals = null,
+    DateTimeOffset? SupportExpiresAt = null,
+    DateTimeOffset? UpdatesUntil = null);
 
 public sealed record LocalLicenseValidationResult(
     LicenseStatus Status,
@@ -68,7 +76,15 @@ public sealed record LocalLicenseValidationResult(
     bool MachineMatched,
     string Message,
     string SourcePath,
-    DateTimeOffset ValidationTimestamp);
+    DateTimeOffset ValidationTimestamp,
+    string? LicenseId = null,
+    string? CustomerName = null,
+    string? ApplicationId = null,
+    string? StoreId = null,
+    int? AllowedLanTerminals = null,
+    DateTimeOffset? SupportExpiresAt = null,
+    DateTimeOffset? UpdatesUntil = null,
+    string? MachineFingerprint = null);
 
 public sealed record LocalLicenseInstallRequest(
     string? LicenseJson);
