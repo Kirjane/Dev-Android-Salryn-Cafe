@@ -2,6 +2,7 @@ using Salryn.Api.Local.Auth;
 using Salryn.Api.Local.Contracts;
 using Salryn.Api.Local.Services;
 using Salryn.Core.Common;
+using Salryn.Core.Services.Licensing;
 
 namespace Salryn.Api.Local;
 
@@ -18,6 +19,12 @@ internal static class LocalOwnerReportsEndpoints
             if (LocalApiPermissionGuards.RequirePermission(httpContext, sessions, LocalApiPermissions.ReportsView) is IResult denied)
             {
                 return denied;
+            }
+
+            if (await ApiLicenseGuard.RequireLicensedFeatureAsync(LicenseFeatures.Reports, cancellationToken)
+                    .ConfigureAwait(false) is IResult licenseDenied)
+            {
+                return licenseDenied;
             }
 
             Result<OwnerReportsResponse> result = await service.GetSummaryAsync(cancellationToken: cancellationToken)

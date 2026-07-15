@@ -352,15 +352,11 @@ public sealed class RemotePosPairingGateService
                 entitlement.Message));
         }
 
-        // When terminal license proof is presented, host verifies StoreId/HostLicenseId/type.
-        // Remaining protocol gap: remote client UI may not always send TerminalLicenseJson yet.
-        if (!string.IsNullOrWhiteSpace(request.TerminalLicenseJson))
+        // Operational terminal activation requires separate Terminal license proof (not optional).
+        Result proof = _entitlements.ValidateTerminalLicenseProof(request.TerminalLicenseJson, entitlement);
+        if (proof.IsFailure)
         {
-            Result proof = _entitlements.ValidateTerminalLicenseProof(request.TerminalLicenseJson, entitlement);
-            if (proof.IsFailure)
-            {
-                return Result<RemotePosPairingActivationResponse>.Fail(proof.ErrorDetail);
-            }
+            return Result<RemotePosPairingActivationResponse>.Fail(proof.ErrorDetail);
         }
 
         Result<int> activePairedCount = await CountActivePairedTerminalsAsync(

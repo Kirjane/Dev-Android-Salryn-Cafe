@@ -254,6 +254,7 @@ export function HostLanControlPage() {
           </span>
         ) : null}
         {limits?.licenseMessage ? <span className="mt-1 block text-xs">{limits.licenseMessage}</span> : null}
+        <span className="mt-1 block text-xs">Operational terminal activation requires a separate signed Terminal license proof (TerminalLicenseJson). Host cannot re-fingerprint remote hardware independently; terminal machines must self-bind their machine code.</span>
         <span className="mt-1 block text-xs">This page does not claim LAN production-ready, cloud activation, installer readiness, BIR/eSales, or hardware support.</span>
       </Alert>
       {!hostLanEntitled ? (

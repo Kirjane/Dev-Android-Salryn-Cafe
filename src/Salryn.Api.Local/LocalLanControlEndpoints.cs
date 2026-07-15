@@ -3,6 +3,7 @@ using Salryn.Api.Local.Contracts;
 using Salryn.Api.Local.RemotePos;
 using Salryn.Api.Local.Services;
 using Salryn.Core.Common;
+using Salryn.Core.Services.Licensing;
 using Salryn.Core.TerminalRegistry;
 
 namespace Salryn.Api.Local;
@@ -148,10 +149,11 @@ public static class LocalLanControlEndpoints
             return Results.Ok(remotePos.PairingGate.GetHostStatus());
         });
 
-        group.MapPost("/remote-pos/pairing/join-code/rotate", (
+        group.MapPost("/remote-pos/pairing/join-code/rotate", async (
             HttpContext httpContext,
             LocalApiSessionService sessions,
-            RemotePosApiServices remotePos) =>
+            RemotePosApiServices remotePos,
+            CancellationToken cancellationToken) =>
         {
             IResult? rejected = LocalLanControlAuthorization.RequireLocalOperator(
                 httpContext,
@@ -160,6 +162,13 @@ public static class LocalLanControlEndpoints
             if (rejected is not null)
             {
                 return rejected;
+            }
+
+            if (await ApiLicenseGuard.RequireLicensedFeatureAsync(
+                    LicenseFeatures.LanTerminals,
+                    cancellationToken).ConfigureAwait(false) is IResult licenseDenied)
+            {
+                return licenseDenied;
             }
 
             return ToApiResult(remotePos.PairingGate.RotateJoinCode());

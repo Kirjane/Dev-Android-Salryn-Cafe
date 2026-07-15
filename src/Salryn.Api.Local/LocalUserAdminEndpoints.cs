@@ -2,6 +2,7 @@ using Salryn.Api.Local.Auth;
 using Salryn.Api.Local.Contracts;
 using Salryn.Api.Local.Services;
 using Salryn.Core.Common;
+using Salryn.Core.Services.Licensing;
 
 namespace Salryn.Api.Local;
 
@@ -22,6 +23,12 @@ internal static class LocalUserAdminEndpoints
                     LocalApiPermissions.UsersManage) is IResult unauthorized)
             {
                 return unauthorized;
+            }
+
+            if (await ApiLicenseGuard.RequireLicensedFeatureAsync(LicenseFeatures.Users, cancellationToken)
+                    .ConfigureAwait(false) is IResult licenseDenied)
+            {
+                return licenseDenied;
             }
 
             string? sessionId = httpContext.Request.Cookies[LocalApiSessionService.SessionCookieName];

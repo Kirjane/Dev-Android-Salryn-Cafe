@@ -130,8 +130,29 @@ public sealed class LocalLicenseService : ILocalLicenseService
     private static LocalLicenseValidator CreateDefaultValidator() => new(new LocalLicenseValidatorOptions
     {
         MachineFingerprint = LocalMachineFingerprint.Current(),
-        SignatureVerifier = LocalLicenseSignatureVerifier.Verify
+        SignatureVerifier = LocalLicenseSignatureVerifier.Verify,
+        // Explicit opt-in only (CoreSmoke process or operator env). Not a silent production bypass.
+        AllowDevelopmentMode = IsExplicitDevelopmentLicenseMode(),
+        DevelopmentFeatures = LicenseFeatures.AllList
     });
+
+    /// <summary>
+    /// Development licensing mode is opt-in via SALRYN_LICENSE_DEVELOPMENT_MODE=1
+    /// or when CoreSmoke isolates a development DB root (automated regression only).
+    /// </summary>
+    public static bool IsExplicitDevelopmentLicenseMode()
+    {
+        if (string.Equals(
+                Environment.GetEnvironmentVariable("SALRYN_LICENSE_DEVELOPMENT_MODE"),
+                "1",
+                StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return !string.IsNullOrWhiteSpace(
+            Environment.GetEnvironmentVariable("SALRYN_CORE_SMOKE_DEVELOPMENT_ROOT"));
+    }
 
     private static LocalLicenseInstallDraft BuildDraft(string? licenseJson)
     {

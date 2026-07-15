@@ -8,14 +8,16 @@ namespace Salryn.Infrastructure.Licensing;
 
 public static class LocalLicenseSignatureVerifier
 {
+    // Beta key alignment (LIC-CLOSEOUT): public verification material only.
+    // Signing material stays outside the POS repository (LicensingOps secrets).
     private const string PublicKeyPem = "-----BEGIN PUBLIC KEY-----\n" +
-        "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAshRhcfmSFkjdJg1kHu8i\n" +
-        "+Hek3oe4WZ9EwW+zOAC9y25DjF9rJmkerC0+7v6ejeT43VpXoRXOhVjpQ9tUby+Z\n" +
-        "Pu2ANe1MLM6a13Jbm/T7NhlkbnyUL+TdVHs5evbUgMx3rUqaZFQZwXET+Orss3sp\n" +
-        "leTaAiik5ImCTK4LY3FFtmhABC1uewZp/juaDlcSVMIthnihHpxtZ+oYum1ltnB8\n" +
-        "tHWWfl4O/Ms9q0nrYyxze5RevACRJOusmhZH8CQiwoCNIfr0tlP0a91tAuH8tSE3\n" +
-        "kJS03r8YEmnqkYSnC46buIt7tOtVZ1QmyubUTtViwLsA8fArhNHavzFfH/zrpkJa\n" +
-        "awIDAQAB\n" +
+        "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsBeocMHSZe36naBP98g7\n" +
+        "qE38392z4QMEUSSqUs/Xgch2JnTixxaGqA/ZbyenNw33WCU5C2Ya4LP4e7W0NmmU\n" +
+        "8NJ4b9RGrocSRKctiJoqgg+fG0/5LojjYl+GxyO2fuyKbYifoyieqkhKF83lrhhV\n" +
+        "xi0ekIrkloD/t/QSkXH7im9aI6UmSEGQd9QIFjWUkpf1MR70/KKyYZ/8Z9DJrUQ5\n" +
+        "VbCooi7lYZHDoIh8KJwUGBFReVf/N3KBnCAwhapMRXNekNj8DVtTNdUmUHM0+GZk\n" +
+        "D3PJAaQAqdGFsdopky+JnH6h2CXQx6YwsrXpxJGYEQna9XNH0iKSbP5jVMM72DpV\n" +
+        "EwIDAQAB\n" +
         "-----END PUBLIC KEY-----";
 
     private static readonly JsonSerializerOptions JsonOptions = new()

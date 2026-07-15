@@ -128,9 +128,16 @@ export async function remotePosRequestPairing(
 
 export async function remotePosActivatePairing(
   connection: RemotePosHostConnection,
-  request: { requestId: string; pairingCode: string },
+  request: { requestId: string; pairingCode: string; terminalLicenseJson?: string | null },
 ): Promise<RemotePosPairingActivation> {
-  return postJson<RemotePosPairingActivation>(buildUrl(connection, "/api/remote-pos/pairing/activate"), {}, request);
+  const terminalLicenseJson =
+    request.terminalLicenseJson?.trim() ||
+    (typeof window !== "undefined" ? window.localStorage.getItem("salryn.terminalLicenseJson") : null);
+  return postJson<RemotePosPairingActivation>(buildUrl(connection, "/api/remote-pos/pairing/activate"), {}, {
+    requestId: request.requestId,
+    pairingCode: request.pairingCode,
+    terminalLicenseJson: terminalLicenseJson || null,
+  });
 }
 
 export async function fetchRemotePosTerminalTrust(

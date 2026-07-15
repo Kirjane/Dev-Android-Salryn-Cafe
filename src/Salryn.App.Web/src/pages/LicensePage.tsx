@@ -57,9 +57,20 @@ export function LicensePage() {
     setMessage(null);
     setError(null);
     try {
-      const result = await installLicense(licenseText.trim());
+      const payload = licenseText.trim();
+      const result = await installLicense(payload);
       setMessage(result.installStatus === "Installed" ? "License installed and verified offline." : result.errorMessage ?? "License was rejected.");
       if (result.installStatus === "Installed") {
+        try {
+          const parsed = JSON.parse(payload) as { licenseType?: string | number; LicenseType?: string | number };
+          const typeValue = parsed.licenseType ?? parsed.LicenseType;
+          const isTerminal = typeValue === "Terminal" || typeValue === 1;
+          if (isTerminal && typeof window !== "undefined") {
+            window.localStorage.setItem("salryn.terminalLicenseJson", payload);
+          }
+        } catch {
+          /* ignore parse for local cache */
+        }
         setLicenseText("");
         setReplaceConfirmed(false);
       }

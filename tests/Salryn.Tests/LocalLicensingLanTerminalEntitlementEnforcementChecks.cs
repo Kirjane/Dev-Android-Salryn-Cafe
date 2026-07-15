@@ -130,6 +130,7 @@ public static class LocalLicensingLanTerminalEntitlementEnforcementChecks
             RequireContains(pairingGate, "LocalLanTerminalEntitlementService", "Pairing gate must use entitlement service.");
             RequireContains(pairingGate, "GetEffectiveMaxPairedTerminals", "Pairing gate must use effective licensed max.");
             RequireContains(pairingGate, "PairedTerminalLimitReached", "Pairing gate must report terminal capacity overflow.");
+            RequireContains(pairingGate, "ValidateTerminalLicenseProof", "Activation must require terminal license proof validation.");
             RequireContains(hostLan, "salryn.info@gmail.com", "Host LAN page must show contact email.");
             RequireContains(hostLan, "licensed per additional operational terminal", "Host LAN page must state per-terminal licensing.");
             RequireContains(hostLan, "separate Terminal license", "Host LAN page must require separate terminal license.");

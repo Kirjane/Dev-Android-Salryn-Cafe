@@ -1,6 +1,7 @@
 using Salryn.Api.Local.Auth;
 using Salryn.Api.Local.Contracts;
 using Salryn.Api.Local.Services;
+using Salryn.Core.Services.Licensing;
 
 namespace Salryn.Api.Local;
 
@@ -21,6 +22,12 @@ internal static class LocalHostCheckoutEndpoints
                     LocalApiPermissions.SalesCreate) is IResult unauthorized)
             {
                 return unauthorized;
+            }
+
+            if (await ApiLicenseGuard.RequireLicensedFeatureAsync(LicenseFeatures.Pos, cancellationToken)
+                    .ConfigureAwait(false) is IResult licenseDenied)
+            {
+                return licenseDenied;
             }
 
             LocalApiSession? session = GetRequiredSession(httpContext, sessions);
