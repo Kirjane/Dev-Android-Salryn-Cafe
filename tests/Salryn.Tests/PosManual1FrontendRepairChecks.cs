@@ -38,7 +38,8 @@ public static class PosManual1FrontendRepairChecks
         RequireContains(settings, "Regional / Currency", "Settings must group currency behavior.");
         RequireContains(settings, "Receipt appearance", "Settings must group receipt behavior.");
         RequireContains(settings, "Physical printing is not configured", "Printer copy must remain honest.");
-        RequireContains(settings, "Store logo support is planned", "Logo must be explicitly deferred without fake upload.");
+        RequireContains(settings, "Store logo support is not active", "Logo must remain inactive without fake upload.");
+        RequireContains(settings, "Hardware peripherals beyond the Windows print queue are outside the beta scope", "Hardware extras must be explicitly out of beta scope.");
         RequireNotContains(settings, "type=\"file\"", "Settings must not add an unsupported logo upload.");
 
         RequireContains(products, "Unit of measure", "Catalog must distinguish unit of measure from quantity.");
@@ -67,6 +68,8 @@ public static class PosManual1FrontendRepairChecks
 
         RequireNotContains(operatorSource, "BIR-approved", "Repair must not introduce a BIR approval claim.");
         RequireNotContains(operatorSource, "eSales ready", "Repair must not introduce an eSales readiness claim.");
+        RequireNotContains(operatorSource, "hardware update later", "Repair must not introduce hardware-roadmap drift.");
+        RequireNotContains(operatorSource, "next hardware update", "Repair must not introduce hardware-roadmap drift.");
     }
 
     private static string Read(string root, params string[] parts) =>
