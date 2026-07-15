@@ -149,6 +149,12 @@ export type RemotePosLimits = {
   currentActiveSessions: number;
   remainingPairingCapacity: number;
   remainingActiveSessionCapacity: number;
+  hostLanEntitled?: boolean;
+  licensedAllowedLanTerminals?: number;
+  hostLicenseId?: string | null;
+  storeId?: string | null;
+  licenseMessage?: string | null;
+  licenseContactEmail?: string | null;
 };
 
 export type LocalLanControlRuntimeStatus = {

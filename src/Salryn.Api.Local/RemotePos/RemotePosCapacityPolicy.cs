@@ -36,4 +36,10 @@ public sealed record RemotePosCapacityStatusResponse(
     int CurrentPairedCount,
     int CurrentActiveSessions,
     int RemainingPairingCapacity,
-    int RemainingActiveSessionCapacity);
+    int RemainingActiveSessionCapacity,
+    bool HostLanEntitled = false,
+    int LicensedAllowedLanTerminals = 0,
+    string? HostLicenseId = null,
+    string? StoreId = null,
+    string? LicenseMessage = null,
+    string? LicenseContactEmail = null);

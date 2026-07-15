@@ -162,7 +162,7 @@ public static class LocalLanControlEndpoints
                 return rejected;
             }
 
-            return Results.Ok(remotePos.PairingGate.RotateJoinCode());
+            return ToApiResult(remotePos.PairingGate.RotateJoinCode());
         });
 
         group.MapGet("/remote-pos/pairing/requests", (

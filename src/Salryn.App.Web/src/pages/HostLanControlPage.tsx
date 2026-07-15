@@ -123,7 +123,10 @@ export function HostLanControlPage() {
   const limits = status?.remotePosLimits ?? null;
   const pendingRequests = pairing?.pendingRequests ?? [];
   const pendingRequestCount = pairing?.pendingRequestCount ?? pendingRequests.length;
-  const capacitySummary = `${limits?.currentPairedCount ?? 0} / ${limits?.maxPairedTerminals ?? 5} paired, ${limits?.currentActiveSessions ?? 0} / ${limits?.maxActiveSessions ?? 3} active`;
+  const hostLanEntitled = limits?.hostLanEntitled === true && (limits?.maxPairedTerminals ?? 0) > 0;
+  const licensedTerminals = limits?.licensedAllowedLanTerminals ?? limits?.maxPairedTerminals ?? 0;
+  const capacitySummary = `${limits?.currentPairedCount ?? 0} / ${limits?.maxPairedTerminals ?? 0} paired, ${limits?.currentActiveSessions ?? 0} / ${limits?.maxActiveSessions ?? 0} active`;
+  const licenseContact = limits?.licenseContactEmail ?? "salryn.info@gmail.com";
 
   const repairIp =
     runtime?.configuredBindAddressRepairSuggestion?.trim() ||
@@ -243,8 +246,21 @@ export function HostLanControlPage() {
       />
 
       <Alert tone="warning" title="LAN terminal license boundary">
-        Production LAN terminal access requires a separate Terminal license per operational device. A Host license is not valid as a terminal license and must not be copied to LAN terminals. Terminal count entitlement enforcement is prepared on the Host license but pairing-count hard enforcement is a separate lane.
+        LAN is licensed per additional operational terminal. Terminal production access requires a separate Terminal license per device. A Host license is not valid as a terminal license and must not be copied to LAN terminals. Contact {licenseContact} to license additional terminals.
+        {typeof licensedTerminals === "number" ? (
+          <span className="mt-1 block font-medium">
+            Current host license allows {licensedTerminals} LAN terminal{licensedTerminals === 1 ? "" : "s"}
+            {hostLanEntitled ? "" : " (operational pairing disabled until Host LAN entitlement is present)"}.
+          </span>
+        ) : null}
+        {limits?.licenseMessage ? <span className="mt-1 block text-xs">{limits.licenseMessage}</span> : null}
+        <span className="mt-1 block text-xs">This page does not claim LAN production-ready, cloud activation, installer readiness, BIR/eSales, or hardware support.</span>
       </Alert>
+      {!hostLanEntitled ? (
+        <Alert tone="danger" title="Host LAN terminal entitlement missing">
+          Pairing join-code rotation and terminal approval stay disabled until a valid Host license with AllowedLanTerminals greater than zero is installed. Email {licenseContact} for Host or Terminal licenses.
+        </Alert>
+      ) : null}
 
       {statusQuery.isLoading ? <LoadingState label="Loading host LAN control..." /> : null}
       {statusQuery.isError ? <ErrorState message={(statusQuery.error as Error).message} /> : null}
@@ -334,9 +350,12 @@ export function HostLanControlPage() {
                 device must re-pair.
               </p>
               <div className="mb-4">
-                <Button variant="secondary" disabled={busy} onClick={() => rotateJoinCodeMutation.mutate()}>
+                <Button variant="secondary" disabled={busy || !hostLanEntitled} onClick={() => rotateJoinCodeMutation.mutate()}>
                   Rotate/show host join code
                 </Button>
+                {!hostLanEntitled ? (
+                  <p className="text-xs text-amber-800">Join codes require Host LAN terminal entitlement (AllowedLanTerminals &gt; 0).</p>
+                ) : null}
               </div>
               {rotateJoinCodeMutation.data ? (
                 <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950">
@@ -372,7 +391,7 @@ export function HostLanControlPage() {
                       ) : null}
                       {request.pairingState === "Pending" ? (
                         <div className="mt-3 flex flex-wrap gap-2">
-                          <Button size="sm" disabled={busy} onClick={() => acceptRequest(request.requestId)}>
+                          <Button size="sm" disabled={busy || !hostLanEntitled} onClick={() => acceptRequest(request.requestId)}>
                             Accept
                           </Button>
                           <Button size="sm" variant="secondary" disabled={busy} onClick={() => rejectJoinRequestMutation.mutate(request.requestId)}>

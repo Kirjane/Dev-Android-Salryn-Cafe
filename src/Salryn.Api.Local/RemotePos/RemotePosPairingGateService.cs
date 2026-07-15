@@ -7,7 +7,9 @@ using Salryn.Api.Local.Services;
 using Salryn.Core.Common;
 using Salryn.Core.Host;
 using Salryn.Core.Services;
+using Salryn.Core.Services.Licensing;
 using Salryn.Core.TerminalRegistry;
+using Salryn.Infrastructure.Licensing;
 
 namespace Salryn.Api.Local.RemotePos;
 
@@ -20,6 +22,7 @@ public sealed class RemotePosPairingGateService
 
     private readonly LanRemoteTransportApiServices _lanServices;
     private readonly RemotePosCapacityPolicy _capacityPolicy;
+    private readonly LocalLanTerminalEntitlementService _entitlements;
     private readonly ConcurrentDictionary<Guid, PairingRequestState> _requests = new();
     private readonly object _joinCodeLock = new();
     private byte[]? _currentJoinCodeHash;
@@ -28,10 +31,12 @@ public sealed class RemotePosPairingGateService
 
     public RemotePosPairingGateService(
         LanRemoteTransportApiServices lanServices,
-        RemotePosCapacityPolicy capacityPolicy)
+        RemotePosCapacityPolicy capacityPolicy,
+        LocalLanTerminalEntitlementService? entitlements = null)
     {
         _lanServices = lanServices ?? throw new ArgumentNullException(nameof(lanServices));
         _capacityPolicy = capacityPolicy ?? throw new ArgumentNullException(nameof(capacityPolicy));
+        _entitlements = entitlements ?? new LocalLanTerminalEntitlementService();
     }
 
     public RemotePosPairingHostStatusResponse GetHostStatus()
@@ -53,8 +58,19 @@ public sealed class RemotePosPairingGateService
                 : "No active Remote POS join code. Rotate a join code from the POS host before pairing a device.");
     }
 
-    public RemotePosJoinCodeRotateResponse RotateJoinCode()
+    public Result<RemotePosJoinCodeRotateResponse> RotateJoinCode()
     {
+        LocalLanTerminalEntitlementStatus entitlement = _entitlements
+            .GetHostEntitlementAsync()
+            .GetAwaiter()
+            .GetResult();
+        if (!entitlement.HostOperationalLanAllowed || entitlement.EffectiveMaxPairedTerminals <= 0)
+        {
+            return Result<RemotePosJoinCodeRotateResponse>.Fail(Error.Forbidden(
+                LocalLanTerminalEntitlementCodes.NoTerminalsPurchased,
+                entitlement.Message + " Pairing join codes stay disabled until Host LAN terminal entitlement is present."));
+        }
+
         string joinCode = GenerateShortCode();
         DateTimeOffset now = DateTimeOffset.UtcNow;
         DateTimeOffset expires = now.Add(JoinCodeLifetime);
@@ -66,11 +82,11 @@ public sealed class RemotePosPairingGateService
             _joinCodeExpiresAtUtc = expires;
         }
 
-        return new RemotePosJoinCodeRotateResponse(
+        return Result<RemotePosJoinCodeRotateResponse>.Success(new RemotePosJoinCodeRotateResponse(
             JoinCode: joinCode,
             IssuedAtUtc: now.ToString("O"),
             ExpiresAtUtc: expires.ToString("O"),
-            Message: "Show this short-lived join code on the POS host. The code only opens a pending request; it does not pair or log in the device.");
+            Message: "Show this short-lived join code on the POS host. The code only opens a pending request; it does not pair or log in the device."));
     }
 
     public Result<RemotePosJoinResponse> RequestJoin(
@@ -197,6 +213,17 @@ public sealed class RemotePosPairingGateService
                 "Only pending join requests can be approved."));
         }
 
+        LocalLanTerminalEntitlementStatus entitlement = await _entitlements
+            .GetHostEntitlementAsync(cancellationToken)
+            .ConfigureAwait(false);
+        int maxPaired = GetEffectiveMaxPairedTerminals(entitlement);
+        if (maxPaired <= 0)
+        {
+            return Result<RemotePosApproveJoinResponse>.Fail(Error.Forbidden(
+                LocalLanTerminalEntitlementCodes.NoTerminalsPurchased,
+                entitlement.Message));
+        }
+
         Result<int> reservedOrPairedCount = await CountReservedOrPairedTerminalsAsync(
             actor,
             excludingRequestId: state.RequestId,
@@ -208,11 +235,11 @@ public sealed class RemotePosPairingGateService
             return Result<RemotePosApproveJoinResponse>.Fail(reservedOrPairedCount.ErrorDetail);
         }
 
-        if (reservedOrPairedCount.Value >= _capacityPolicy.MaxPairedTerminals)
+        if (reservedOrPairedCount.Value >= maxPaired)
         {
             return Result<RemotePosApproveJoinResponse>.Fail(Error.Conflict(
                 "RemotePosPairing.PairedTerminalLimitReached",
-                $"Remote POS paired terminal capacity is full ({reservedOrPairedCount.Value}/{_capacityPolicy.MaxPairedTerminals}). Revoke or disable an existing remote POS terminal before approving another device."));
+                $"Licensed LAN terminal capacity is full ({reservedOrPairedCount.Value}/{maxPaired}). AllowedLanTerminals on the Host license is {entitlement.AllowedLanTerminals}. Contact {entitlement.ContactEmail} to license more terminals, or revoke an existing terminal."));
         }
 
         Result<PairingInviteCreationResult> invite = await _lanServices.TerminalPairingPreparation
@@ -314,6 +341,28 @@ public sealed class RemotePosPairingGateService
             return PairingRejected("RemotePosPairing.PairingCodeRejected");
         }
 
+        LocalLanTerminalEntitlementStatus entitlement = await _entitlements
+            .GetHostEntitlementAsync(cancellationToken)
+            .ConfigureAwait(false);
+        int maxPaired = GetEffectiveMaxPairedTerminals(entitlement);
+        if (maxPaired <= 0)
+        {
+            return Result<RemotePosPairingActivationResponse>.Fail(Error.Forbidden(
+                LocalLanTerminalEntitlementCodes.NoTerminalsPurchased,
+                entitlement.Message));
+        }
+
+        // When terminal license proof is presented, host verifies StoreId/HostLicenseId/type.
+        // Remaining protocol gap: remote client UI may not always send TerminalLicenseJson yet.
+        if (!string.IsNullOrWhiteSpace(request.TerminalLicenseJson))
+        {
+            Result proof = _entitlements.ValidateTerminalLicenseProof(request.TerminalLicenseJson, entitlement);
+            if (proof.IsFailure)
+            {
+                return Result<RemotePosPairingActivationResponse>.Fail(proof.ErrorDetail);
+            }
+        }
+
         Result<int> activePairedCount = await CountActivePairedTerminalsAsync(
             new TerminalRegistryActorContext(
                 state.ApprovedByUserId ?? Guid.Empty,
@@ -326,11 +375,11 @@ public sealed class RemotePosPairingGateService
             return Result<RemotePosPairingActivationResponse>.Fail(activePairedCount.ErrorDetail);
         }
 
-        if (activePairedCount.Value >= _capacityPolicy.MaxPairedTerminals)
+        if (activePairedCount.Value >= maxPaired)
         {
             return Result<RemotePosPairingActivationResponse>.Fail(Error.Conflict(
                 "RemotePosPairing.PairedTerminalLimitReached",
-                $"Remote POS paired terminal capacity is full ({activePairedCount.Value}/{_capacityPolicy.MaxPairedTerminals}). Revoke or disable an existing remote POS terminal before pairing another device."));
+                $"Licensed LAN terminal capacity is full ({activePairedCount.Value}/{maxPaired}). AllowedLanTerminals on the Host license is {entitlement.AllowedLanTerminals}."));
         }
 
         TerminalPairingActivationRequest activationRequest = new(
@@ -446,18 +495,45 @@ public sealed class RemotePosPairingGateService
         int activeSessionCount,
         CancellationToken cancellationToken = default)
     {
+        LocalLanTerminalEntitlementStatus entitlement = await _entitlements
+            .GetHostEntitlementAsync(cancellationToken)
+            .ConfigureAwait(false);
+        int maxPaired = GetEffectiveMaxPairedTerminals(entitlement);
+        int maxSessions = entitlement.HostOperationalLanAllowed
+            ? Math.Min(_capacityPolicy.MaxActiveSessions, Math.Max(1, entitlement.EffectiveMaxActiveSessions))
+            : 0;
+
         Result<int> activePaired = await CountActivePairedTerminalsAsync(actor, cancellationToken)
             .ConfigureAwait(false);
 
         int currentPairedCount = activePaired.IsSuccess ? activePaired.Value : 0;
         return new RemotePosCapacityStatusResponse(
-            MaxPairedTerminals: _capacityPolicy.MaxPairedTerminals,
-            MaxActiveSessions: _capacityPolicy.MaxActiveSessions,
+            MaxPairedTerminals: maxPaired,
+            MaxActiveSessions: maxSessions,
             HardCap: RemotePosCapacityPolicy.HardCap,
             CurrentPairedCount: currentPairedCount,
             CurrentActiveSessions: activeSessionCount,
-            RemainingPairingCapacity: Math.Max(0, _capacityPolicy.MaxPairedTerminals - currentPairedCount),
-            RemainingActiveSessionCapacity: Math.Max(0, _capacityPolicy.MaxActiveSessions - activeSessionCount));
+            RemainingPairingCapacity: Math.Max(0, maxPaired - currentPairedCount),
+            RemainingActiveSessionCapacity: Math.Max(0, maxSessions - activeSessionCount),
+            HostLanEntitled: entitlement.HostOperationalLanAllowed,
+            LicensedAllowedLanTerminals: entitlement.AllowedLanTerminals,
+            HostLicenseId: entitlement.HostLicenseId,
+            StoreId: entitlement.StoreId,
+            LicenseMessage: entitlement.Message,
+            LicenseContactEmail: entitlement.ContactEmail);
+    }
+
+    private int GetEffectiveMaxPairedTerminals(LocalLanTerminalEntitlementStatus entitlement)
+    {
+        // Commercial entitlement wins over abuse default capacity; never exceed hard cap.
+        if (!entitlement.HostOperationalLanAllowed)
+        {
+            return 0;
+        }
+
+        return Math.Min(
+            Math.Min(entitlement.EffectiveMaxPairedTerminals, _capacityPolicy.MaxPairedTerminals),
+            RemotePosCapacityPolicy.HardCap);
     }
 
     private async Task<Result<int>> CountReservedOrPairedTerminalsAsync(

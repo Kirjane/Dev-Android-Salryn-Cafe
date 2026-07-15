@@ -126,6 +126,7 @@ public static class Program
         LocalLicensingM2SignedInstallImportChecks.Run();
         LocalLicensingM3LocalEnforcementBoundaryChecks.Run();
         LocalLicensingBetaManualHostTerminalActivationChecks.Run();
+        LocalLicensingLanTerminalEntitlementEnforcementChecks.Run();
         HardenA1A6PreBetaFoundationChecks.Run();
         ManualM1BootstrapAuthRepairChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
@@ -450,6 +451,9 @@ public static class Program
                 return;
             case "lic-beta-manual-host-terminal-activation":
                 LocalLicensingBetaManualHostTerminalActivationChecks.Run();
+                return;
+            case "lic-lan-terminal-entitlement-enforcement":
+                LocalLicensingLanTerminalEntitlementEnforcementChecks.Run();
                 return;
             case "harden-a1-a6-pre-beta-foundation":
                 HardenA1A6PreBetaFoundationChecks.Run();

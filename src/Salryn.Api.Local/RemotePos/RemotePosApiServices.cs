@@ -2,6 +2,7 @@ using Salryn.Api.Local.Composition;
 using Salryn.Composition.Local;
 using Salryn.Core.Services;
 using Salryn.Infrastructure.Data.Repositories;
+using Salryn.Infrastructure.Licensing;
 
 namespace Salryn.Api.Local.RemotePos;
 
@@ -80,6 +81,7 @@ public sealed class RemotePosApiServices
             new RemotePosReceiptNumberAllocator());
 
         RemotePosCapacityPolicy capacityPolicy = new();
+        LocalLanTerminalEntitlementService lanEntitlements = new(new LocalLicenseService());
 
         RemotePosOperatorSessionService sessionService = new(
             lanServices,
@@ -88,7 +90,7 @@ public sealed class RemotePosApiServices
             composition.UserReadRepository,
             capacityPolicy);
 
-        RemotePosPairingGateService pairingGate = new(lanServices, capacityPolicy);
+        RemotePosPairingGateService pairingGate = new(lanServices, capacityPolicy, lanEntitlements);
         RemotePosTerminalTrustService terminalTrustService = new(sessionService, pairingGate, lanServices);
 
         return new RemotePosApiServices(
