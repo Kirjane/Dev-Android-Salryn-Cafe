@@ -124,6 +124,11 @@ public static class WebB0ReadOnlyOperatorSurfacesChecks
         }
 
         // No forbidden module pages beyond read-only set.
+        // Backup UI1: BackupRestorePage is the only approved Backup* admin/safety page.
+        HashSet<string> approvedModulePages = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "BackupRestorePage.tsx",
+        };
         string[] forbiddenPagePrefixes =
         {
             "Backup", "Settings", "OfficialOutput", "Rmo",
@@ -139,7 +144,8 @@ public static class WebB0ReadOnlyOperatorSurfacesChecks
                 name.Equals("SalesHistoryPage.tsx", StringComparison.Ordinal) ||
                 name.Equals("UsersPage.tsx", StringComparison.Ordinal) ||
                 name.Equals("AuditPage.tsx", StringComparison.Ordinal) ||
-                name.Equals("CheckoutPage.tsx", StringComparison.Ordinal))
+                name.Equals("CheckoutPage.tsx", StringComparison.Ordinal) ||
+                approvedModulePages.Contains(name))
             {
                 continue;
             }

@@ -75,6 +75,11 @@ public static class WebA4NativeHostVisualFidelityChecks
         }
 
         // Read-only module pages are allowed after WEB-B0.
+        // Backup UI1: BackupRestorePage is the only approved Backup* admin/safety page.
+        HashSet<string> approvedModulePages = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "BackupRestorePage.tsx",
+        };
         string[] forbiddenPagePrefixes =
         {
             "Backup", "Settings", "OfficialOutput", "Rmo",
@@ -90,7 +95,8 @@ public static class WebA4NativeHostVisualFidelityChecks
                 name.Equals("SalesHistoryPage.tsx", StringComparison.Ordinal) ||
                 name.Equals("UsersPage.tsx", StringComparison.Ordinal) ||
                 name.Equals("AuditPage.tsx", StringComparison.Ordinal) ||
-                name.Equals("CheckoutPage.tsx", StringComparison.Ordinal))
+                name.Equals("CheckoutPage.tsx", StringComparison.Ordinal) ||
+                approvedModulePages.Contains(name))
             {
                 continue;
             }
@@ -138,7 +144,11 @@ public static class WebA4NativeHostVisualFidelityChecks
         {
             if (string.Equals(token, "RMO", StringComparison.Ordinal))
             {
-                if (System.Text.RegularExpressions.Regex.IsMatch(combinedWebSource, @"\bRMO\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                // Allow explicit licensing honesty non-claims (LIC-BETA), still reject real RMO product wiring.
+                string rmoScanSource = combinedWebSource
+                    .Replace("not BIR/RMO compliance", string.Empty, StringComparison.OrdinalIgnoreCase)
+                    .Replace("not BIR/RMO", string.Empty, StringComparison.OrdinalIgnoreCase);
+                if (System.Text.RegularExpressions.Regex.IsMatch(rmoScanSource, @"\bRMO\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
                 {
                     throw new InvalidOperationException("WEB-A4 must not add forbidden capability: RMO");
                 }

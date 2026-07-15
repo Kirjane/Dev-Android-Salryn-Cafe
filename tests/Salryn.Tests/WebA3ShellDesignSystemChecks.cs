@@ -46,7 +46,14 @@ public static class WebA3ShellDesignSystemChecks
             RequireNotContains(scoped, "NativeHandoff", "WEB-A3 must not reintroduce native handoff.");
         }
 
-        // Read-only module pages are allowed after WEB-B0.
+        // Approved stacked admin/safety pages (not free module sprawl).
+        // Backup UI1: BackupRestorePage is the only approved Backup* page.
+        HashSet<string> approvedModulePages = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "BackupRestorePage.tsx",
+        };
+
+        // Keep rejecting uncontrolled Backup*/Settings*/OfficialOutput* sprawl outside the allowlist.
         string[] forbiddenPagePrefixes =
         {
             "Backup", "Settings", "OfficialOutput",
@@ -62,7 +69,8 @@ public static class WebA3ShellDesignSystemChecks
                 name.Equals("SalesHistoryPage.tsx", StringComparison.Ordinal) ||
                 name.Equals("UsersPage.tsx", StringComparison.Ordinal) ||
                 name.Equals("AuditPage.tsx", StringComparison.Ordinal) ||
-                name.Equals("CheckoutPage.tsx", StringComparison.Ordinal))
+                name.Equals("CheckoutPage.tsx", StringComparison.Ordinal) ||
+                approvedModulePages.Contains(name))
             {
                 continue;
             }
@@ -76,6 +84,21 @@ public static class WebA3ShellDesignSystemChecks
                 }
             }
         }
+
+        // Backup UI1 must remain an admin-gated local safety surface with honest non-claims.
+        string navigationText = ReadRequiredFile(webSrc, "navigation.ts");
+        string permissionsText = ReadRequiredFile(webSrc, "security", "permissions.ts");
+        string appShellText = ReadRequiredFile(webSrc, "components", "AppShell.tsx");
+        string backupPageText = ReadRequiredFile(webSrc, "pages", "BackupRestorePage.tsx");
+        RequireContains(navigationText, "id: \"backup-restore\", label: \"Backup & Restore\"", "BackupRestorePage must remain an Admin nav item.");
+        RequireContains(permissionsText, "\"backup-restore\": [Permissions.BackupManage]", "BackupRestorePage must require Backup.Manage.");
+        RequireContains(appShellText, "item.id === \"backup-restore\"", "AppShell must mark Backup & Restore as admin-gated.");
+        RequireContains(webAppText, "BackupRestorePage", "App must render the approved BackupRestorePage.");
+        RequireContains(backupPageText, "not cloud backup", "BackupRestorePage must reject cloud backup claims.");
+        RequireContains(backupPageText, "installer migration proof", "BackupRestorePage must reject installer migration claims.");
+        RequireContains(backupPageText, "BIR archive", "BackupRestorePage must reject BIR archive claims.");
+        RequireContains(backupPageText, "legal archive", "BackupRestorePage must reject legal archive claims.");
+        RequireContains(backupPageText, "local license file is stored outside this database backup package", "BackupRestorePage must keep license outside DB backup boundary.");
 
         // Broad scan of web source for clearly-unique forbidden capabilities.
         string combinedWebSource = ReadAllWebSource(webSrc);

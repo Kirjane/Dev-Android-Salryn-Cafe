@@ -321,6 +321,9 @@ public static class Program
             case "pos-s1-store-settings-identity-printer":
                 PosS1StoreSettingsIdentityPrinterChecks.Run();
                 return;
+            case "web-a3-shell-design-system":
+                WebA3ShellDesignSystemChecks.Run();
+                return;
             case "pos-b1-backup-restore-safety":
                 PosB1BackupRestoreSafetyChecks.Run();
                 return;
