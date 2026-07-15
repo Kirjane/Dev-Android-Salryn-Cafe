@@ -90,6 +90,11 @@ public sealed class LocalLicenseValidator
             return Invalid(document, read.SourcePath, now, "Local license edition is not recognized.");
         }
 
+        if (document.AllowedLanTerminals is < 0)
+        {
+            return Invalid(document, read.SourcePath, now, "Local license LAN terminal count must not be negative.");
+        }
+
         string[] features = NormalizeFeatures(document.Features).ToArray();
         if (features.Length == 0)
         {
@@ -108,7 +113,8 @@ public sealed class LocalLicenseValidator
                 machineMatched: false,
                 "Local license machine binding does not match this installation.",
                 read.SourcePath,
-                now);
+                now,
+                document);
         }
 
         if (document.ExpiresAt is not null && document.ExpiresAt.Value <= now)
@@ -125,7 +131,8 @@ public sealed class LocalLicenseValidator
                     machineMatched,
                     "Local license is expired but inside the explicit grace window.",
                     read.SourcePath,
-                    now);
+                    now,
+                    document);
             }
 
             return Result(
@@ -137,7 +144,8 @@ public sealed class LocalLicenseValidator
                 machineMatched,
                 "Local license is expired.",
                 read.SourcePath,
-                now);
+                now,
+                document);
         }
 
         if (string.IsNullOrWhiteSpace(document.Signature))
@@ -164,7 +172,8 @@ public sealed class LocalLicenseValidator
             machineMatched,
             "Local license is valid.",
             read.SourcePath,
-            now);
+            now,
+            document);
     }
 
     public bool IsFeatureEnabled(LocalLicenseValidationResult status, string feature)
@@ -177,7 +186,7 @@ public sealed class LocalLicenseValidator
         return status.EnabledFeatures.Contains(feature, StringComparer.Ordinal);
     }
 
-    private static LocalLicenseValidationResult Invalid(
+    private LocalLicenseValidationResult Invalid(
         LocalLicenseDocument document,
         string sourcePath,
         DateTimeOffset now,
@@ -190,7 +199,8 @@ public sealed class LocalLicenseValidator
             machineMatched: false,
             message,
             sourcePath,
-            now);
+            now,
+            document);
 
     private bool MachineMatches(LocalLicenseDocument document)
     {
@@ -235,7 +245,7 @@ public sealed class LocalLicenseValidator
         return (int)Math.Ceiling((expiresAt.Value - now).TotalDays);
     }
 
-    private static LocalLicenseValidationResult Result(
+    private LocalLicenseValidationResult Result(
         LicenseStatus status,
         LicenseEdition? edition,
         IReadOnlyList<string> features,
@@ -244,7 +254,8 @@ public sealed class LocalLicenseValidator
         bool machineMatched,
         string message,
         string sourcePath,
-        DateTimeOffset timestamp) => new(
+        DateTimeOffset timestamp,
+        LocalLicenseDocument? document = null) => new(
             status,
             edition,
             features,
@@ -253,5 +264,13 @@ public sealed class LocalLicenseValidator
             machineMatched,
             message,
             sourcePath,
-            timestamp);
+            timestamp,
+            document?.LicenseId,
+            document?.CustomerName,
+            document?.ApplicationId,
+            document?.StoreId,
+            document?.AllowedLanTerminals,
+            document?.SupportExpiresAt,
+            document?.UpdatesUntil,
+            _options.MachineFingerprint);
 }
