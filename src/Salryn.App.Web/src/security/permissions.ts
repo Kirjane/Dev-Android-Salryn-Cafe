@@ -41,6 +41,7 @@ export type HostPage =
   | "sales"
   | "owner-reports"
   | "settings"
+  | "backup-restore"
   | "users"
   | "audit"
   | "host-lan-control"
@@ -58,6 +59,7 @@ export const implementedPages: readonly AppPage[] = [
   "sales",
   "owner-reports",
   "settings",
+  "backup-restore",
   "users",
   "audit",
   "host-lan-control",
@@ -86,6 +88,7 @@ const pagePermissions: Partial<Record<AppPage, readonly Permission[]>> = {
   sales: [Permissions.SalesViewHistory],
   "owner-reports": [Permissions.ReportsView],
   settings: [Permissions.SettingsManage],
+  "backup-restore": [Permissions.BackupManage],
   users: [Permissions.UsersManage],
   audit: [Permissions.AuditView],
   // Host-local setup only; Settings.Manage operators (Admin/Owner style).
