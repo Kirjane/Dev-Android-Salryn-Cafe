@@ -26,7 +26,12 @@ public sealed class LocalLicenseService : ILocalLicenseService
         nameof(LocalLicenseDocument.MachineBinding),
         nameof(LocalLicenseDocument.Features),
         nameof(LocalLicenseDocument.Signature),
-        nameof(LocalLicenseDocument.SchemaVersion)
+        nameof(LocalLicenseDocument.SchemaVersion),
+        nameof(LocalLicenseDocument.ApplicationId),
+        nameof(LocalLicenseDocument.StoreId),
+        nameof(LocalLicenseDocument.AllowedLanTerminals),
+        nameof(LocalLicenseDocument.SupportExpiresAt),
+        nameof(LocalLicenseDocument.UpdatesUntil)
     };
 
     private readonly LocalLicenseFileStore _store;
@@ -39,7 +44,7 @@ public sealed class LocalLicenseService : ILocalLicenseService
         Func<DateTimeOffset>? clock = null)
     {
         _store = store ?? new LocalLicenseFileStore();
-        _validator = validator ?? new LocalLicenseValidator();
+        _validator = validator ?? CreateDefaultValidator();
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
     }
 
@@ -118,6 +123,12 @@ public sealed class LocalLicenseService : ILocalLicenseService
         LocalLicenseValidationResult status = await GetStatusAsync(cancellationToken).ConfigureAwait(false);
         return _validator.IsFeatureEnabled(status, feature.Trim());
     }
+
+    private static LocalLicenseValidator CreateDefaultValidator() => new(new LocalLicenseValidatorOptions
+    {
+        MachineFingerprint = LocalMachineFingerprint.Current(),
+        SignatureVerifier = LocalLicenseSignatureVerifier.Verify
+    });
 
     private static LocalLicenseInstallDraft BuildDraft(string? licenseJson)
     {
@@ -198,7 +209,12 @@ public sealed class LocalLicenseService : ILocalLicenseService
             Clean(document.MachineBinding),
             normalizedFeatures,
             Clean(document.Signature),
-            document.SchemaVersion);
+            document.SchemaVersion,
+            Clean(document.ApplicationId),
+            Clean(document.StoreId),
+            document.AllowedLanTerminals,
+            document.SupportExpiresAt,
+            document.UpdatesUntil);
     }
 
     private static string? Clean(string? value)
