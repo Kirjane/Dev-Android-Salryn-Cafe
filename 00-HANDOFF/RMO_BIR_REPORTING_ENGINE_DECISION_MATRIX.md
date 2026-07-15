@@ -6,6 +6,8 @@ Branch: `KIRCH-POS-SURFACE3-LAN-COMING-SOON-RMO-REPORTING-STUDY`
 
 Base SHA: `b21fe40cc6437200a853cf5bcd44edbea209da6c`
 
+Surface4 hardware-scope note: hardware peripherals beyond the Windows print queue are outside the beta scope. They are not active beta roadmap items.
+
 Status: `READY_FOR_SOL_VERIFICATION`
 
 Legend:
@@ -22,7 +24,7 @@ Legend:
 | Owner Reports | YES | YES | YES | NO | NO | NO | YES/PARTIAL from prior owner-report smoke | NO | YES internal | YES internal | NO | Keep; rename to Detailed Reports later |
 | Sales & Receipts | YES | YES | YES | YES for void/reprint request paths; normal sales historical view read-only | Receipt snapshot preview/reprint | NO | YES from POS M/R lanes | PARTIAL manual | YES operational | YES after manual acceptance | NO | Keep operational only |
 | Internal receipt snapshot | YES | YES via Sales & Receipts | YES | Created at sale completion; reprint does not mutate | Text snapshot | NO | YES from POS M1/M2/R3/PRINTER1 lanes | PARTIAL | YES operational | YES after manual receipt/printer acceptance | NO | Keep as internal/operational receipt snapshot |
-| Windows printer internal receipt | YES | YES through print/reprint/settings | YES | NO print mutation | Windows queue submission | NO | YES per SOL-verified PRINTER1 truth supplied by Kirch; manual pending | NO unless Kirch manual printer test passes | YES internal after manual | YES after manual | NO | Run manual non-thermal printer test |
+| Windows printer internal receipt | YES | YES through print/reprint/settings | YES | NO print mutation | Windows queue submission | NO | YES per SOL-verified PRINTER1 truth supplied by Kirch; manual pending | NO unless Kirch manual printer test passes | YES internal after manual | YES after manual | NO | Windows print queue only; no hardware peripheral claim |
 | Official Setup | YES | YES Advanced | YES | YES setup rows and dry-run package rows | Internal previews/output links | NO | PARTIAL from RMO setup/readiness gates | NO | NO for standard client | NO | NO | Hide/relabel as Internal Compliance Setup / lab |
 | Traditional Reporting | YES | YES Advanced | YES | PARTIAL/YES: Z finalize endpoint mutates/finalizes | X/Z/EJ/eSales draft output | NO | PARTIAL from trad gates | NO | NO | NO | NO | Hide from standard client build; compliance lane only |
 | Production Reports | YES | YES Advanced | YES | NO business mutation; export writes artifact | YES PDF/artifact/manifest | NO | PARTIAL from native-PDF/report gates | NO | NO if named Production Reports | NO until renamed/gated | NO | Rename to Report Artifacts or hide |
@@ -51,7 +53,7 @@ Legend:
 
 ---
 
-## What to tag as coming soon
+## What to tag as coming soon or out of release scope
 
 | Item | Hide? | Disabled card? | Admin-only? | Exact recommended copy |
 |---|---:|---:|---:|---|
@@ -59,7 +61,7 @@ Legend:
 | Backup & Restore UI | Hide until built | Yes in Settings/Advanced only | Yes | `Backup & Restore UI planned. Backend foundation exists; create/restore/list controls are not exposed in this build.` |
 | Official/BIR output | Hide standard client | Optional internal lab only | Yes/compliance role | `Internal compliance lab only. No official receipt/invoice is issued. No BIR/RMO compliance claim.` |
 | eSales / Production Reports | Hide or rename | Optional | Yes/report admin | `Internal report artifacts only. No eSales production transmission or legal submission.` |
-| ESC/POS / cash drawer / cutter / thermal profiles | Hide until implemented | Yes in printer settings | Yes | `Deferred hardware support. Windows printer queue is separate and does not prove ESC/POS, cutter, or cash drawer behavior.` |
+| Cash drawer / cutter / ESC/POS / thermal profiles | Hide from beta/release | No | No | `Hardware peripherals beyond the Windows print queue are outside the beta scope. Windows print queue only.` |
 | Licensing final UI | Hide until LIC-FINAL | Yes | Yes | `Licensing final UI deferred. Offline license and LAN entitlements are not final in this build.` |
 | Cloud/license updater | Hide | Optional roadmap only | Admin only | `Cloud/license updater deferred. No cloud activation or updater is active in this build.` |
 
@@ -86,6 +88,8 @@ Unsafe to say now:
 - licensing final
 - LAN production ready
 - compliance guaranteed
+- hardware bundle/support ready
+- ESC/POS/cutter/cash drawer/thermal profile support
 
 ---
 
@@ -96,5 +100,7 @@ Unsafe to say now:
 3. `KIRCH-POS-BACKUP-UI1-SAFE-BACKUP-RESTORE`
 4. `KIRCH-LIC-FINAL-OFFLINE-LICENSE-LAN-ENTITLEMENTS`
 5. `KIRCH-I1-PACKAGE-INSTALL-PROOF`
+
+Hardware peripherals beyond Windows print queue must not be added as a beta/release roadmap branch.
 
 Status: `READY_FOR_SOL_VERIFICATION`
