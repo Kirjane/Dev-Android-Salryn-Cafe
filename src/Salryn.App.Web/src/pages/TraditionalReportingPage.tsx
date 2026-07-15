@@ -70,13 +70,14 @@ export function TraditionalReportingPage() {
   return (
     <div className="space-y-6">
       <CommandBar
-        title="Traditional official reporting"
-        subtitle="Host-only X/Z/EJ/eSales draft. Lifecycle-aware. Does not submit to BIR. Activation OFF."
+        title="Internal Compliance Reporting Lab"
+        subtitle="Internal X/Z/EJ/eSales draft tools only. Not client-facing, not BIR-approved, and no external submission."
       />
 
-      <Alert tone="warning" title="Safety boundary">
-        Production official activation remains OFF. eSales format is an internal draft while the authoritative BIR
-        schema is unconfirmed. Export does not submit to BIR. Manual acceptance remains pending.
+      <Alert tone="warning" title="Compliance foundation only">
+        This surface is hidden from standard navigation. Production activation remains OFF. eSales format is an internal
+        draft while the authoritative BIR schema is unconfirmed. Export does not submit to BIR. Manual acceptance and
+        compliance validation remain pending.
       </Alert>
 
       <Card>
@@ -95,36 +96,36 @@ export function TraditionalReportingPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Range</CardTitle>
+          <CardTitle>Internal report range</CardTitle>
         </CardHeader>
         <CardBody className="grid gap-3 md:grid-cols-2">
           <TextInput value={rangeStart} onChange={(e) => setRangeStart(e.target.value)} placeholder="Range start ISO" />
           <TextInput value={rangeEnd} onChange={(e) => setRangeEnd(e.target.value)} placeholder="Range end ISO" />
           <div className="flex flex-wrap gap-2 md:col-span-2">
-            <Button disabled={busy} onClick={() => void run(() => previewXReading(body), "X-reading")}>
-              Preview X-reading
+            <Button disabled={busy} onClick={() => void run(() => previewXReading(body), "X-reading preview")}> 
+              Preview internal X-reading
             </Button>
             <Button
               disabled={busy}
               variant="secondary"
               onClick={() => {
-                if (!window.confirm("Finalize Z-reading for this range? This is host-only engineering finalize.")) {
+                if (!window.confirm("Run internal Z-reading finalize test for this range? This is not client production use.")) {
                   return;
                 }
-                void run(() => finalizeZReading(body), "Z finalize");
+                void run(() => finalizeZReading(body), "Internal Z-reading finalize test");
               }}
             >
-              Finalize Z-reading
+              Run internal Z-reading finalize test
             </Button>
-            <Button disabled={busy} variant="secondary" onClick={() => void run(() => exportEj(body), "EJ export")}>
-              Export EJ
+            <Button disabled={busy} variant="secondary" onClick={() => void run(() => exportEj(body), "Internal EJ export")}> 
+              Build internal EJ export
             </Button>
             <Button
               disabled={busy}
               variant="secondary"
-              onClick={() => void run(() => exportESalesDraft(body), "eSales draft")}
+              onClick={() => void run(() => exportESalesDraft(body), "Internal eSales draft")}
             >
-              Export eSales draft
+              Build internal eSales draft
             </Button>
           </div>
           {message ? <Alert tone="success">{message}</Alert> : null}
