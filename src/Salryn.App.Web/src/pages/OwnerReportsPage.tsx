@@ -106,17 +106,17 @@ export function OwnerReportsPage() {
   return (
     <div className="flex h-[calc(100vh-9rem)] max-h-[calc(100vh-9rem)] min-h-0 flex-col gap-3 overflow-hidden">
       <CommandBar
-        title="Owner Reports"
-        subtitle="Store Reports for sales, products, cashier totals, category totals, low stock, and inventory value."
-        status={data ? <StatusPill tone="success">Read-only</StatusPill> : <StatusPill tone="info">Reports.View</StatusPill>}
+        title="Detailed Reports"
+        subtitle="Read-only sales, stock, cashier, category, and void summaries. Dashboard remains the owner home summary."
+        status={data ? <StatusPill tone="success">Read-only drilldown</StatusPill> : <StatusPill tone="info">Reports.View</StatusPill>}
         actions={<Button variant="secondary" onClick={() => void query.refetch()} disabled={query.isFetching}>{query.isFetching ? "Refreshing..." : "Refresh"}</Button>}
       />
 
       <Alert tone="info" title="Operational report boundary">
-        Owner Reports are store operational reports only. Not an official or regulatory filing. These cards and tables are read-only and do not create sales, payments, receipts, stock movements, or report filings.
+        Detailed Reports are store operational drilldowns only. Not an official or regulatory filing. These cards and tables are read-only and do not create sales, payments, receipts, stock movements, or report filings.
       </Alert>
 
-      {query.isLoading ? <LoadingState label="Loading owner reports..." /> : null}
+      {query.isLoading ? <LoadingState label="Loading detailed reports..." /> : null}
       {query.isError ? <ErrorState message={(query.error as Error).message} /> : null}
 
       {data ? (
