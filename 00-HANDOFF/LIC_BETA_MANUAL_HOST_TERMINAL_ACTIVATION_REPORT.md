@@ -3,7 +3,7 @@
 **Branch:** `KIRCH-LIC-BETA-MANUAL-HOST-TERMINAL-ACTIVATION`  
 **Base branch:** `KIRCH-LIC-ARCH-R1-BETA-MANUAL-HOST-TERMINAL-STUDY`  
 **Base SHA:** `e4f7bc5af839d5c93b23594493988b2300e3c57d`  
-**Final SHA:** `1ca568a2a84a94fd5908c64b088c4530691671e4`  
+**Final SHA:** `a5b4f4c935a7763041a3995b7a12dc3354da3286`  
 **Status:** `CODE_COMPLETE_UNGATED_VERIFICATION_PARKED` (full CoreSmoke not green due to pre-existing R3/Backup UI stack conflict)
 
 **Protected refs (unchanged):**
