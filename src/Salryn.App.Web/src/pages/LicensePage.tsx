@@ -66,7 +66,7 @@ export function LicensePage() {
       />
 
       <Alert tone="info" title="Offline-first license boundary">
-        Salryn uses a local signed license file with public-key verification. This page does not add cloud licensing, subscription billing, payment processing, installer proof, BIR/RMO compliance, official receipt/invoice readiness, or eSales readiness.
+        Salryn uses a local signed license file with public-key verification. This page is not cloud licensing, not subscription billing, not payment processing, not installer proof, not BIR/RMO compliance, not official receipt/invoice readiness, and not eSales readiness.
       </Alert>
       <Alert tone="warning" title="LAN entitlement boundary">
         LAN terminal production use is not claimed here. Host LAN Control remains Coming Soon / internal preview unless a verified license entitlement and separate LAN release proof exist.
