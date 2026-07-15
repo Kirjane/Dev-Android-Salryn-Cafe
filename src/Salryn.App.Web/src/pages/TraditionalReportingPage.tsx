@@ -102,7 +102,7 @@ export function TraditionalReportingPage() {
           <TextInput value={rangeStart} onChange={(e) => setRangeStart(e.target.value)} placeholder="Range start ISO" />
           <TextInput value={rangeEnd} onChange={(e) => setRangeEnd(e.target.value)} placeholder="Range end ISO" />
           <div className="flex flex-wrap gap-2 md:col-span-2">
-            <Button disabled={busy} onClick={() => void run(() => previewXReading(body), "X-reading preview")}> 
+            <Button disabled={busy} onClick={() => void run(() => previewXReading(body), "X-reading preview")}>
               Preview internal X-reading
             </Button>
             <Button
@@ -117,7 +117,7 @@ export function TraditionalReportingPage() {
             >
               Run internal Z-reading finalize test
             </Button>
-            <Button disabled={busy} variant="secondary" onClick={() => void run(() => exportEj(body), "Internal EJ export")}> 
+            <Button disabled={busy} variant="secondary" onClick={() => void run(() => exportEj(body), "Internal EJ export")}>
               Build internal EJ export
             </Button>
             <Button
