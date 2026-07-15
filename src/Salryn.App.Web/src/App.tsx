@@ -14,6 +14,7 @@ import { CheckoutPage } from "./pages/CheckoutPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { HostLanControlPage } from "./pages/HostLanControlPage";
 import { InventoryPage } from "./pages/InventoryPage";
+import { LicensePage } from "./pages/LicensePage";
 import { LoginPage } from "./pages/LoginPage";
 import { OwnerReportsPage } from "./pages/OwnerReportsPage";
 import { StoreSettingsPage } from "./pages/StoreSettingsPage";
@@ -60,6 +61,8 @@ function renderPage(page: AppPage, session: SessionState, onLogout: () => void, 
       return <OwnerReportsPage />;
     case "settings":
       return <StoreSettingsPage />;
+    case "license":
+      return <LicensePage />;
     case "backup-restore":
       return <BackupRestorePage />;
     case "users":
