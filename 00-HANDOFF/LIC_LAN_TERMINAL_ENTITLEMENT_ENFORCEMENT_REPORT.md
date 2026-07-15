@@ -3,7 +3,7 @@
 **Branch:** `KIRCH-LIC-LAN-TERMINAL-ENTITLEMENT-ENFORCEMENT`
 **Base:** `KIRCH-LIC-BETA-MANUAL-HOST-TERMINAL-ACTIVATION` @ Phase A final SHA
 **Phase A WEB-A3 repaired SHA:** `a7ca61488fa844de4f053a2882b41efe6c791db9`
-**Final SHA:** branch tip (`git rev-parse HEAD` after commit)
+**Final SHA:** `ebe489638849e3ad850e7eb7deac7d079fb497ce`
 **Status:** `CANDIDATE_AUTOMATED_PROVEN`
 
 **Protected refs (unchanged):**
