@@ -2,6 +2,7 @@ import { readJson } from "./http";
 
 export type LicenseStatusValue = "Unlicensed" | "Licensed" | "Expired" | "Invalid" | "Grace" | "Development" | number;
 export type LicenseEditionValue = "Trial" | "Local" | "Professional" | "Enterprise" | number;
+export type LicenseTypeValue = "Host" | "Terminal" | number;
 
 export type LocalLicenseStatus = {
   status: LicenseStatusValue;
@@ -20,6 +21,10 @@ export type LocalLicenseStatus = {
   supportExpiresAt: string | null;
   updatesUntil: string | null;
   machineFingerprint: string | null;
+  licenseType: LicenseTypeValue | null;
+  hostLicenseId: string | null;
+  terminalId: string | null;
+  machineCode: string | null;
 };
 
 export type LicenseInstallResponse = {

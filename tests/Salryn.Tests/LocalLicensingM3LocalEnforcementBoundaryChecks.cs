@@ -8,6 +8,7 @@ namespace Salryn.Tests;
 public static class LocalLicensingM3LocalEnforcementBoundaryChecks
 {
     private static readonly DateTimeOffset FixedNow = new(2026, 7, 12, 1, 0, 0, TimeSpan.Zero);
+    private const string TestMachine = "SALRYN-MC-TEST-M3AA-M3BB-M3CC";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -25,7 +26,10 @@ public static class LocalLicensingM3LocalEnforcementBoundaryChecks
 
             LocalLicenseService noVerifierLicenseService = new(
                 store,
-                new LocalLicenseValidator(clock: () => FixedNow),
+                new LocalLicenseValidator(new LocalLicenseValidatorOptions
+                {
+                    MachineFingerprint = TestMachine
+                }, () => FixedNow),
                 () => FixedNow);
             LocalLicenseEnforcementService noVerifierEnforcement = new(noVerifierLicenseService);
 
@@ -46,6 +50,7 @@ public static class LocalLicensingM3LocalEnforcementBoundaryChecks
                 store,
                 new LocalLicenseValidator(new LocalLicenseValidatorOptions
                 {
+                    MachineFingerprint = TestMachine,
                     SignatureVerifier = _ => true
                 }, () => FixedNow),
                 () => FixedNow);
@@ -217,7 +222,7 @@ public static class LocalLicensingM3LocalEnforcementBoundaryChecks
         DateTimeOffset? expiresAt,
         string? signature,
         IReadOnlyList<string> features,
-        string? machineBinding = null) => new(
+        string? machineBinding = TestMachine) => new(
             LicenseId: licenseId,
             CustomerName: "Salryn Local Test",
             Edition: LicenseEdition.Local,
@@ -226,7 +231,11 @@ public static class LocalLicensingM3LocalEnforcementBoundaryChecks
             MachineBinding: machineBinding,
             Features: features,
             Signature: signature,
-            SchemaVersion: LocalLicenseValidator.SupportedSchemaVersion);
+            SchemaVersion: LocalLicenseValidator.SupportedSchemaVersion,
+            ApplicationId: LocalLicenseContractPolicy.RequiredApplicationId,
+            StoreId: "store-m3-test",
+            AllowedLanTerminals: 0,
+            LicenseType: LicenseType.Host);
 
     private static void WriteLicense(LocalLicenseFileStore store, LocalLicenseDocument document)
     {

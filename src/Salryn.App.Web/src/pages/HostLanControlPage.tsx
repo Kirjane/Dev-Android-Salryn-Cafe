@@ -242,6 +242,10 @@ export function HostLanControlPage() {
         }
       />
 
+      <Alert tone="warning" title="LAN terminal license boundary">
+        Production LAN terminal access requires a separate Terminal license per operational device. A Host license is not valid as a terminal license and must not be copied to LAN terminals. Terminal count entitlement enforcement is prepared on the Host license but pairing-count hard enforcement is a separate lane.
+      </Alert>
+
       {statusQuery.isLoading ? <LoadingState label="Loading host LAN control..." /> : null}
       {statusQuery.isError ? <ErrorState message={(statusQuery.error as Error).message} /> : null}
       {actionError ? <ErrorState message={actionError} /> : null}

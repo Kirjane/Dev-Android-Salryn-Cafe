@@ -8,6 +8,7 @@ namespace Salryn.Tests;
 public static class LocalLicensingM1FoundationChecks
 {
     private static readonly DateTimeOffset FixedNow = new(2026, 7, 11, 9, 0, 0, TimeSpan.Zero);
+    private const string TestMachine = "SALRYN-MC-TEST-M1AA-M1BB-M1CC";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -49,6 +50,7 @@ public static class LocalLicensingM1FoundationChecks
                 features: new[] { LicenseFeatures.Pos, LicenseFeatures.Rmo }));
             LocalLicenseValidator acceptingExpiredSignature = new(new LocalLicenseValidatorOptions
             {
+                MachineFingerprint = TestMachine,
                 SignatureVerifier = _ => true
             }, () => FixedNow);
             LocalLicenseValidationResult expired = acceptingExpiredSignature.Validate(store.ReadAsync().GetAwaiter().GetResult());
@@ -60,6 +62,7 @@ public static class LocalLicensingM1FoundationChecks
                 features: new[] { LicenseFeatures.Pos, LicenseFeatures.Reports }));
             LocalLicenseValidator verifierPresent = new(new LocalLicenseValidatorOptions
             {
+                MachineFingerprint = TestMachine,
                 SignatureVerifier = _ => true
             }, () => FixedNow);
             LocalLicenseValidationResult unsigned = verifierPresent.Validate(store.ReadAsync().GetAwaiter().GetResult());
@@ -129,7 +132,7 @@ public static class LocalLicensingM1FoundationChecks
         DateTimeOffset? expiresAt,
         string? signature,
         IReadOnlyList<string> features,
-        string? machineBinding = null) => new(
+        string? machineBinding = TestMachine) => new(
             LicenseId: "LIC-LOCAL-M1-TEST",
             CustomerName: "Salryn Local Test",
             Edition: LicenseEdition.Local,
@@ -138,7 +141,11 @@ public static class LocalLicensingM1FoundationChecks
             MachineBinding: machineBinding,
             Features: features,
             Signature: signature,
-            SchemaVersion: LocalLicenseValidator.SupportedSchemaVersion);
+            SchemaVersion: LocalLicenseValidator.SupportedSchemaVersion,
+            ApplicationId: LocalLicenseContractPolicy.RequiredApplicationId,
+            StoreId: "store-m1-test",
+            AllowedLanTerminals: 0,
+            LicenseType: LicenseType.Host);
 
     private static void WriteLicense(LocalLicenseFileStore store, LocalLicenseDocument document)
     {

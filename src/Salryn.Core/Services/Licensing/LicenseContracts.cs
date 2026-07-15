@@ -18,6 +18,15 @@ public enum LicenseEdition
     Enterprise = 3
 }
 
+/// <summary>
+/// Host = licensed store workstation. Terminal = one paid LAN operational device.
+/// </summary>
+public enum LicenseType
+{
+    Host = 0,
+    Terminal = 1
+}
+
 public static class LicenseFeatures
 {
     public const string Pos = "Pos";
@@ -27,6 +36,23 @@ public static class LicenseFeatures
     public const string Backup = "Backup";
     public const string Licensing = "Licensing";
     public const string LanTerminals = "LanTerminals";
+
+    /// <summary>Features a Terminal license may enable (LAN terminal surface only).</summary>
+    public static IReadOnlySet<string> TerminalAllowed { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        LanTerminals
+    };
+
+    /// <summary>Features that require a Host license (not unlocked by Terminal).</summary>
+    public static IReadOnlySet<string> HostOnly { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        Pos,
+        Rmo,
+        Reports,
+        Users,
+        Backup,
+        Licensing
+    };
 
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -65,7 +91,10 @@ public sealed record LocalLicenseDocument(
     string? StoreId = null,
     int? AllowedLanTerminals = null,
     DateTimeOffset? SupportExpiresAt = null,
-    DateTimeOffset? UpdatesUntil = null);
+    DateTimeOffset? UpdatesUntil = null,
+    LicenseType? LicenseType = null,
+    string? HostLicenseId = null,
+    string? TerminalId = null);
 
 public sealed record LocalLicenseValidationResult(
     LicenseStatus Status,
@@ -84,7 +113,11 @@ public sealed record LocalLicenseValidationResult(
     int? AllowedLanTerminals = null,
     DateTimeOffset? SupportExpiresAt = null,
     DateTimeOffset? UpdatesUntil = null,
-    string? MachineFingerprint = null);
+    string? MachineFingerprint = null,
+    LicenseType? LicenseType = null,
+    string? HostLicenseId = null,
+    string? TerminalId = null,
+    string? MachineCode = null);
 
 public sealed record LocalLicenseInstallRequest(
     string? LicenseJson);
@@ -108,7 +141,8 @@ public enum LicenseEnforcementReason
     FeatureNotLicensed = 5,
     UnknownFeature = 6,
     VerifierUnavailable = 7,
-    MachineMismatch = 8
+    MachineMismatch = 8,
+    WrongLicenseType = 9
 }
 
 public sealed record LicenseEnforcementDecision(
@@ -126,4 +160,9 @@ public sealed record LocalLicenseEntitlementsResponse(
     IReadOnlyList<LicenseEnforcementDecision> FeatureDecisions,
     bool MachineMatched,
     string Message,
-    DateTimeOffset Timestamp);
+    DateTimeOffset Timestamp,
+    LicenseType? LicenseType = null,
+    string? HostLicenseId = null,
+    string? TerminalId = null,
+    string? MachineCode = null,
+    int? AllowedLanTerminals = null);

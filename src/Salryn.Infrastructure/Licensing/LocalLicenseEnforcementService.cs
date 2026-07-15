@@ -32,6 +32,29 @@ public sealed class LocalLicenseEnforcementService : ILocalLicenseEnforcementSer
 
         if (status.Status == LicenseStatus.Licensed)
         {
+            if (status.LicenseType == LicenseType.Terminal &&
+                LicenseFeatures.HostOnly.Contains(requiredFeature))
+            {
+                return Deny(
+                    requiredFeature,
+                    status,
+                    LicenseEnforcementReason.WrongLicenseType,
+                    "Terminal license cannot unlock host-only features. Install a Host license on the host workstation.");
+            }
+
+            if (status.LicenseType == LicenseType.Host &&
+                requiredFeature == LicenseFeatures.LanTerminals &&
+                (status.AllowedLanTerminals is null or <= 0 ||
+                 !status.EnabledFeatures.Contains(LicenseFeatures.LanTerminals, StringComparer.Ordinal)))
+            {
+                // Host without LAN entitlement: feature not licensed (pairing count enforcement is a later branch).
+                return Deny(
+                    requiredFeature,
+                    status,
+                    LicenseEnforcementReason.FeatureNotLicensed,
+                    "Host license does not entitle LAN terminals for production use.");
+            }
+
             return status.EnabledFeatures.Contains(requiredFeature, StringComparer.Ordinal)
                 ? Allow(
                     requiredFeature,
@@ -100,6 +123,13 @@ public sealed class LocalLicenseEnforcementService : ILocalLicenseEnforcementSer
         if (status.Message.Contains("verifier", StringComparison.OrdinalIgnoreCase))
         {
             return LicenseEnforcementReason.VerifierUnavailable;
+        }
+
+        if (status.Message.Contains("LicenseType", StringComparison.OrdinalIgnoreCase) ||
+            status.Message.Contains("Host license", StringComparison.OrdinalIgnoreCase) ||
+            status.Message.Contains("Terminal license", StringComparison.OrdinalIgnoreCase))
+        {
+            return LicenseEnforcementReason.WrongLicenseType;
         }
 
         return LicenseEnforcementReason.InvalidLicense;

@@ -8,6 +8,7 @@ namespace Salryn.Tests;
 public static class LocalLicensingM2SignedInstallImportChecks
 {
     private static readonly DateTimeOffset FixedNow = new(2026, 7, 11, 10, 30, 0, TimeSpan.Zero);
+    private const string TestMachine = "SALRYN-MC-TEST-M2AA-M2BB-M2CC";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -24,7 +25,10 @@ public static class LocalLicensingM2SignedInstallImportChecks
             LocalLicenseFileStore store = new(new LocalLicenseFileStoreOptions(root, null));
             LocalLicenseService noVerifierService = new(
                 store,
-                new LocalLicenseValidator(clock: () => FixedNow),
+                new LocalLicenseValidator(new LocalLicenseValidatorOptions
+                {
+                    MachineFingerprint = TestMachine
+                }, () => FixedNow),
                 () => FixedNow);
 
             LocalLicenseValidationResult missing = noVerifierService.GetStatusAsync().GetAwaiter().GetResult();
@@ -53,6 +57,7 @@ public static class LocalLicensingM2SignedInstallImportChecks
                 store,
                 new LocalLicenseValidator(new LocalLicenseValidatorOptions
                 {
+                    MachineFingerprint = TestMachine,
                     SignatureVerifier = _ => true
                 }, () => FixedNow),
                 () => FixedNow);
@@ -81,6 +86,7 @@ public static class LocalLicensingM2SignedInstallImportChecks
                 store,
                 new LocalLicenseValidator(new LocalLicenseValidatorOptions
                 {
+                    MachineFingerprint = TestMachine,
                     SignatureVerifier = _ => false
                 }, () => FixedNow),
                 () => FixedNow);
@@ -119,7 +125,7 @@ public static class LocalLicensingM2SignedInstallImportChecks
                       "machineBinding": null,
                       "features": ["Pos"],
                       "signature": "signed-test",
-                      "schemaVersion": 1,
+                      "schemaVersion": 2,
                       "callerSuppliedPath": "C:/unsafe/license.json"
                     }
                     """))
@@ -167,7 +173,7 @@ public static class LocalLicensingM2SignedInstallImportChecks
         DateTimeOffset? expiresAt,
         string? signature,
         IReadOnlyList<string> features,
-        string? machineBinding = null,
+        string? machineBinding = TestMachine,
         int schemaVersion = LocalLicenseValidator.SupportedSchemaVersion) => new(
             LicenseId: licenseId,
             CustomerName: "Salryn Local Test",
@@ -177,7 +183,11 @@ public static class LocalLicensingM2SignedInstallImportChecks
             MachineBinding: machineBinding,
             Features: features,
             Signature: signature,
-            SchemaVersion: schemaVersion);
+            SchemaVersion: schemaVersion,
+            ApplicationId: LocalLicenseContractPolicy.RequiredApplicationId,
+            StoreId: "store-m2-test",
+            AllowedLanTerminals: 0,
+            LicenseType: LicenseType.Host);
 
     private static void RequireCurrentLicenseId(
         LocalLicenseFileStore store,

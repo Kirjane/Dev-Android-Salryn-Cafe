@@ -31,7 +31,10 @@ public sealed class LocalLicenseService : ILocalLicenseService
         nameof(LocalLicenseDocument.StoreId),
         nameof(LocalLicenseDocument.AllowedLanTerminals),
         nameof(LocalLicenseDocument.SupportExpiresAt),
-        nameof(LocalLicenseDocument.UpdatesUntil)
+        nameof(LocalLicenseDocument.UpdatesUntil),
+        nameof(LocalLicenseDocument.LicenseType),
+        nameof(LocalLicenseDocument.HostLicenseId),
+        nameof(LocalLicenseDocument.TerminalId)
     };
 
     private readonly LocalLicenseFileStore _store;
@@ -214,7 +217,10 @@ public sealed class LocalLicenseService : ILocalLicenseService
             Clean(document.StoreId),
             document.AllowedLanTerminals,
             document.SupportExpiresAt,
-            document.UpdatesUntil);
+            document.UpdatesUntil,
+            document.LicenseType,
+            Clean(document.HostLicenseId),
+            Clean(document.TerminalId));
     }
 
     private static string? Clean(string? value)

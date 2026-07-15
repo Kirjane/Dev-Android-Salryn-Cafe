@@ -66,7 +66,10 @@ public static class LocalLicenseSignatureVerifier
             Clean(document.StoreId),
             document.AllowedLanTerminals,
             document.SupportExpiresAt,
-            document.UpdatesUntil);
+            document.UpdatesUntil,
+            document.LicenseType,
+            Clean(document.HostLicenseId),
+            Clean(document.TerminalId));
 
         return JsonSerializer.Serialize(payload, JsonOptions);
     }
@@ -86,5 +89,8 @@ public static class LocalLicenseSignatureVerifier
         string? StoreId,
         int? AllowedLanTerminals,
         DateTimeOffset? SupportExpiresAt,
-        DateTimeOffset? UpdatesUntil);
+        DateTimeOffset? UpdatesUntil,
+        LicenseType? LicenseType,
+        string? HostLicenseId,
+        string? TerminalId);
 }

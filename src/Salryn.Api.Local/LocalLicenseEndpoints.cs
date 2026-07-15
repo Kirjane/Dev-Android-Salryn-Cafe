@@ -71,7 +71,12 @@ public static class LocalLicenseEndpoints
                 decisions,
                 status.MachineMatched,
                 status.Message,
-                status.ValidationTimestamp));
+                status.ValidationTimestamp,
+                status.LicenseType,
+                status.HostLicenseId,
+                status.TerminalId,
+                status.MachineCode ?? status.MachineFingerprint,
+                status.AllowedLanTerminals));
         });
 
         app.MapPost("/api/license/install", async (
