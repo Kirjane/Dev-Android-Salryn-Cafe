@@ -117,10 +117,9 @@ export function LicensePage() {
                   <li>Owner / contact person</li>
                   <li>Machine code</li>
                   <li>Whether this device is the Host POS workstation or a LAN Terminal</li>
-                  <li>For Host: how many LAN terminals you need (allowed count)</li>
                 </ul>
               </li>
-              <li>Kirjane Labs will generate a signed license file outside this app.</li>
+              <li>Kirjane Labs will generate a signed Host or Terminal license file outside this app. Each LAN terminal uses a separate Terminal license (not a count field on Host activation).</li>
               <li>Paste the signed license JSON below to import and verify offline.</li>
             </ol>
             <p>
