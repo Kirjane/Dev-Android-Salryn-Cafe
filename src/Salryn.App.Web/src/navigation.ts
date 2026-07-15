@@ -22,6 +22,7 @@ export const navItems: NavItemConfig[] = [
   { id: "users", label: "Users", enabled: true, group: "Admin" },
   { id: "audit", label: "Audit", enabled: true, group: "Admin" },
   { id: "settings", label: "Store Settings", enabled: true, group: "Admin" },
+  { id: "license", label: "License", enabled: true, group: "Admin" },
   { id: "backup-restore", label: "Backup & Restore", enabled: true, group: "Admin" },
   { id: "host-lan-control", label: "Host LAN Control", enabled: true, group: "Advanced" },
   { id: "production-reports", label: "Report Artifacts", enabled: true, group: "Advanced" },
