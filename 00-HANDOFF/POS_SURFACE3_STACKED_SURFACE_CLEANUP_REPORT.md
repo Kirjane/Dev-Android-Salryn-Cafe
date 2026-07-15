@@ -10,11 +10,14 @@ Final SHA: populated by final assistant response after this report commit.
 
 Status: `READY_FOR_SOL_VERIFICATION`
 
+Surface4 supersession note:
+Hardware peripherals beyond the Windows print queue are outside the beta scope. Cash drawer, cutter, ESC/POS, thermal profiles, hardware receipt width/profile support, and hardware bundle/support claims are not deferred beta work and are not active roadmap items.
+
 ---
 
 ## Scope
 
-This stack completes the surface cleanup before SOL verification.
+This stack completed surface cleanup before SOL verification.
 
 The lane changed only frontend/product-surface copy, visibility, route-gating posture, and source guards. It did not implement RMO/BIR behavior, official receipts, official invoices, eSales transmission, Backup UI, licensing final, installer, beta, or PRINTER1 adapter behavior.
 
@@ -78,7 +81,7 @@ No protected ref was touched.
 - Dashboard action changed to `Open Detailed Reports`.
 - Dashboard low-stock summary now says detailed tables stay in `Detailed Reports`.
 - `OwnerReportsPage.tsx` title changed to `Detailed Reports`.
-- Detailed Reports subtitle now states it is read-only sales, stock, cashier, category, and void summaries, and that Dashboard remains the owner home summary.
+- Detailed Reports subtitle states it is read-only sales, stock, cashier, category, and void summaries, and that Dashboard remains the owner home summary.
 - Detailed Reports boundary copy remains operational-only, non-official, and read-only.
 
 ### Advanced tab cleanup
@@ -87,9 +90,9 @@ No protected ref was touched.
 - `Traditional Reporting` was removed from standard navigation.
 - `Production Reports` was renamed in nav to `Report Artifacts`.
 - `ProductionReportsPage.tsx` visible title changed to `Report Artifacts`.
-- `ProductionReportsPage.tsx` copy now says internal report dataset/native PDF artifact proof only; not legal submission, not eSales production transmission, and not BIR approval.
+- `ProductionReportsPage.tsx` copy says internal report dataset/native PDF artifact proof only; not legal submission, not eSales production transmission, and not BIR approval.
 - `TraditionalReportingPage.tsx` title changed to `Internal Compliance Reporting Lab`.
-- Traditional reporting copy now says internal X/Z/EJ/eSales draft tools only, not client-facing, no external submission, authoritative BIR schema unconfirmed, manual acceptance pending, and compliance validation pending.
+- Traditional reporting copy says internal X/Z/EJ/eSales draft tools only, not client-facing, no external submission, authoritative BIR schema unconfirmed, manual acceptance pending, and compliance validation pending.
 - Z-reading button was softened to `Run internal Z-reading finalize test`.
 - EJ/eSales buttons were softened to internal build language.
 
@@ -181,19 +184,30 @@ Still not claimable:
 - licensing final
 - LAN production ready
 - multi-terminal production ready
+- hardware bundle/support ready
+- ESC/POS/cutter/cash drawer/thermal profile support
 
 ---
 
-## Deferred items
+## Release blockers / deferred release work
 
 - Backup & Restore UI
 - LIC-FINAL offline license and LAN entitlements
 - LAN production/client acceptance
-- ESC/POS, cash drawer, cutter, and thermal profiles
-- official/BIR output
-- eSales production transmission
+- official/BIR output only if requirements are locked and separately validated
+- eSales production transmission only if requirements are locked and separately validated
 - installer/I1 proof
 - private beta
+
+Out of beta/release scope, not release blockers:
+
+- cash drawer
+- drawer kick
+- cutter
+- ESC/POS
+- thermal receipt profile
+- hardware receipt width/profile support
+- hardware bundle/support claims
 
 ---
 
