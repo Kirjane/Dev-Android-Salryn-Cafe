@@ -142,6 +142,7 @@ public static class LocalLicensingM3LocalEnforcementBoundaryChecks
             RequireContains(endpointSource, "MapGet(\"/api/license/entitlements\"", "M3 entitlement endpoint must be mapped read-only.");
             RequireContains(endpointSource, "RequireLoopbackOperatorRequest", "License API endpoints must preserve loopback/local guard.");
             RequireContains(endpointSource, "RequireAuthenticatedSession", "Read-only license API endpoints must require authenticated session.");
+            RequireContains(endpointSource, "LocalApiPermissions.SettingsManage", "License install must remain admin/settings guarded.");
             RequireNotContains(endpointSource, "MapPut", "M3 must not add broad license mutation endpoints.");
             RequireNotContains(endpointSource, "MapDelete", "M3 must not add broad license mutation endpoints.");
 
@@ -156,13 +157,46 @@ public static class LocalLicensingM3LocalEnforcementBoundaryChecks
                 ReadRepoFile("src", "Salryn.Core", "Services", "Licensing", "ILocalLicenseEnforcementService.cs"),
                 ReadRepoFile("src", "Salryn.Infrastructure", "Licensing", "LocalLicenseService.cs"),
                 ReadRepoFile("src", "Salryn.Infrastructure", "Licensing", "LocalLicenseEnforcementService.cs"),
+                ReadRepoFile("src", "Salryn.Infrastructure", "Licensing", "LocalLicenseSignatureVerifier.cs"),
+                ReadRepoFile("src", "Salryn.Infrastructure", "Licensing", "LocalMachineFingerprint.cs"),
                 ReadRepoFile("src", "Salryn.Api.Local", "Auth", "ApiLicenseGuard.cs"),
                 ReadRepoFile("src", "Salryn.Api.Local", "LocalLicenseEndpoints.cs")
             });
+            RequireContains(implementationSource, "LocalLicenseSignatureVerifier.Verify", "LIC-FINAL default service must use public-key signature verification.");
+            RequireContains(implementationSource, "PublicKeyPem", "LIC-FINAL verifier must carry only a public key.");
+            RequireContains(implementationSource, "AllowedLanTerminals", "LIC-FINAL license schema must carry LAN terminal entitlement count.");
+            RequireContains(implementationSource, "SupportExpiresAt", "LIC-FINAL license schema must carry support entitlement display.");
+            RequireContains(implementationSource, "UpdatesUntil", "LIC-FINAL license schema must carry update entitlement display.");
+            RequireNotContains(implementationSource, "PRIVATE KEY", "LIC-FINAL implementation must not include private keys.");
             RequireNotContains(implementationSource, "HttpClient", "Licensing M3 must not add network dependency.");
             RequireNotContains(implementationSource, "Vercel", "Licensing M3 must not add Vercel licensing.");
             RequireNotContains(implementationSource, "Payment", "Licensing M3 must not add payment dependency.");
             RequireNotContains(implementationSource, "Subscription", "Licensing M3 must not add subscription sync.");
+
+            string webRoot = Path.Combine(FindRoot(), "src", "Salryn.App.Web", "src");
+            string navigation = File.ReadAllText(Path.Combine(webRoot, "navigation.ts"));
+            string permissions = File.ReadAllText(Path.Combine(webRoot, "security", "permissions.ts"));
+            string app = File.ReadAllText(Path.Combine(webRoot, "App.tsx"));
+            string shell = File.ReadAllText(Path.Combine(webRoot, "components", "AppShell.tsx"));
+            string licenseApi = File.ReadAllText(Path.Combine(webRoot, "api", "license.ts"));
+            string licensePage = File.ReadAllText(Path.Combine(webRoot, "pages", "LicensePage.tsx"));
+            string backupPage = File.ReadAllText(Path.Combine(webRoot, "pages", "BackupRestorePage.tsx"));
+            RequireContains(navigation, "id: \"license\", label: \"License\"", "License page must appear as an admin nav item.");
+            RequireContains(permissions, "license: [Permissions.SettingsManage]", "License page must require Settings.Manage/admin-style access.");
+            RequireContains(permissions, "const cashierPages: readonly AppPage[] = [\"checkout\", \"sales\"]", "Cashier page allowlist must not include license management.");
+            RequireTrue(!permissions.Contains("\"license\", \"audit\"", StringComparison.Ordinal), "Manager allowlist must not include license management.");
+            RequireContains(app, "LicensePage", "App must render the License page.");
+            RequireContains(shell, "License: ShieldCheck", "AppShell must map the License nav label safely.");
+            RequireContains(licenseApi, "/api/license/status", "License API client must use status endpoint.");
+            RequireContains(licenseApi, "/api/license/install", "License API client must use install endpoint.");
+            RequireContains(licenseApi, "licenseJson", "License import must send signed local license content only.");
+            RequireContains(licensePage, "offline signed license", "License UI must describe offline signed licensing.");
+            RequireContains(licensePage, "public-key verification", "License UI must expose public-key verification boundary.");
+            RequireContains(licensePage, "LAN terminal production use is not claimed", "License UI must not claim LAN production readiness.");
+            RequireContains(licensePage, "not cloud licensing", "License UI must reject cloud licensing claims.");
+            RequireNotContains(licensePage, "type=\"file\"", "License UI must not expose arbitrary file upload.");
+            RequireNotContains(licensePage, "private key", "License UI must not mention private key handling.");
+            RequireContains(backupPage, "local license file is stored outside this database backup package", "Backup UI must not claim license preservation.");
 
             string productionReportEndpoint = ReadRepoFile("src", "Salryn.Api.Local", "LocalProductionReportEndpoints.cs");
             RequireNotContains(productionReportEndpoint, "LocalLicense", "Licensing M3 must not alter reporting endpoint behavior.");
