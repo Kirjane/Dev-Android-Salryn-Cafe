@@ -13,6 +13,7 @@ public static class Program
         {
             RunOnly(args[1]);
             Console.WriteLine("SALRYN Core smoke checks passed.");
+            CoreSmokeDevelopmentDatabaseIsolation.Cleanup();
             return;
         }
 
@@ -282,6 +283,7 @@ public static class Program
         LanM16RcBEntryBoundaryChecks.Run();
         J21Rmo242023ElectronicJournalPersistenceRuntimeDocumentationSealChecks.Run();
         Console.WriteLine("SALRYN Core smoke checks passed.");
+        CoreSmokeDevelopmentDatabaseIsolation.Cleanup();
     }
 
     private static void RunOnly(string checkName)

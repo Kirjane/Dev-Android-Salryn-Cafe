@@ -106,6 +106,10 @@ public static class WebA4NativeHostVisualFidelityChecks
 
         // --- Broad scan of web source for forbidden capabilities ---
         string combinedWebSource = ReadAllSource(webSrc, new[] { ".ts", ".tsx", ".css" }, SearchOption.AllDirectories);
+        string capabilitySource = combinedWebSource.Replace(
+            "No ESC/POS",
+            string.Empty,
+            StringComparison.Ordinal);
         string[] forbiddenTokens =
         {
             "/api/session/handoff/register",
@@ -141,7 +145,7 @@ public static class WebA4NativeHostVisualFidelityChecks
                 continue;
             }
 
-            RequireNotContains(combinedWebSource, token, $"WEB-A4 must not add forbidden capability: {token}");
+            RequireNotContains(capabilitySource, token, $"WEB-A4 must not add forbidden capability: {token}");
         }
 
         // --- No fake module data copied from the visual reference screenshots ---

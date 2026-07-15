@@ -18,6 +18,7 @@ public static class RmoBirM4OfficialSetupChecks
         string migration = Read(Path.Combine(root, "src", "Salryn.Infrastructure", "Data", "Migrations", "OfficialReceiptProfileSchemaMigration.cs"));
         string initFactory = Read(Path.Combine(root, "src", "Salryn.Infrastructure", "Data", "Initialization", "DefaultDatabaseInitializationFactory.cs"));
         string setupPage = Read(Path.Combine(root, "src", "Salryn.App.Web", "src", "pages", "OfficialSetupPage.tsx"));
+        string webApp = Read(Path.Combine(root, "src", "Salryn.App.Web", "src", "App.tsx"));
         string navigation = Read(Path.Combine(root, "src", "Salryn.App.Web", "src", "navigation.ts"));
         string hostCheckout = Read(Path.Combine(root, "src", "Salryn.Api.Local", "Services", "HostOperatorCheckoutApiService.cs"));
         string handoff = Read(Path.Combine(root, "00-HANDOFF", "RMO_BIR_M4_BATCH_OFFICIAL_SETUP.md"));
@@ -65,7 +66,8 @@ public static class RmoBirM4OfficialSetupChecks
         AssertContains(setupPage, "Not compliance-ready", "Setup page must warn not compliance-ready.");
         AssertContains(setupPage, "Official output is not implemented", "Setup page must state official output not implemented.");
         AssertContains(setupPage, "BIR-compliant", "Setup page must deny BIR-compliant claim.");
-        AssertContains(navigation, "official-setup", "Nav must include official-setup.");
+        AssertContains(webApp, "official-setup", "Official setup route must remain available for bounded internal use.");
+        AssertNotContains(navigation, "official-setup", "Standard navigation must keep official setup hidden.");
         AssertNotContains(setupPage, "Generate official receipt", "Setup page must not generate official receipts.");
         AssertNotContains(setupPage, "Print official", "Setup page must not print official.");
         AssertNotContains(setupPage, "Generate Crystal", "Setup page must not offer report-engine generation.");

@@ -32,7 +32,7 @@ public static class LanM16HostClientIdentityUxChecks
 
     private static void AssertHostBanner(string dashboard)
     {
-        AssertContains(dashboard, "LAN access is configured separately", "Dashboard must preserve the host LAN boundary guidance.");
+        AssertContains(dashboard, "LAN terminal control is not part of the current client-ready release", "Dashboard must preserve the host LAN boundary guidance.");
         AssertContains(dashboard, "Open Host LAN Control", "Dashboard must retain access to host LAN controls.");
         AssertContains(dashboard, "independent host", "Dashboard must warn a second computer's localhost is its own host.");
         AssertContains(dashboard, "does not mean sync", "Dashboard must warn same-app-installed does not mean sync.");

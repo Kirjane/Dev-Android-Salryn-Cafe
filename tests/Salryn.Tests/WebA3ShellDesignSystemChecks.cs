@@ -79,6 +79,10 @@ public static class WebA3ShellDesignSystemChecks
 
         // Broad scan of web source for clearly-unique forbidden capabilities.
         string combinedWebSource = ReadAllWebSource(webSrc);
+        string capabilitySource = combinedWebSource.Replace(
+            "No ESC/POS",
+            string.Empty,
+            StringComparison.Ordinal);
         string[] forbiddenTokens =
         {
             "/api/session/handoff/register",
@@ -104,7 +108,7 @@ public static class WebA3ShellDesignSystemChecks
 
         foreach (string token in forbiddenTokens)
         {
-            RequireNotContains(combinedWebSource, token, $"WEB-A3 must not add forbidden capability: {token}");
+            RequireNotContains(capabilitySource, token, $"WEB-A3 must not add forbidden capability: {token}");
         }
     }
 

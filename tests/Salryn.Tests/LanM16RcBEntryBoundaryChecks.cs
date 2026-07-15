@@ -136,7 +136,7 @@ public static class LanM16RcBEntryBoundaryChecks
         AssertContains(app, "useState<AppPage>(\"dashboard\")", "Authenticated host default page must remain dashboard, not Remote Read-Only Client.");
         AssertNotContains(app, "useState<AppPage>(\"remote-readonly\")", "Authenticated host default page must not be Remote Read-Only Client.");
         AssertNotContains(app, "useState<AppPage>(\"checkout\")", "Authenticated host default page must not be checkout.");
-        AssertContains(appShell, "Device wants to join", "Host shell must surface lightweight pending join notification.");
+        AssertContains(appShell, "Internal LAN preview request", "Host shell must surface lightweight pending join notification.");
         AssertContains(appShell, "onNavigate(\"host-lan-control\")", "Host shell pending notification must open Host LAN Control.");
         AssertContains(appShell, "fetchRemotePosPairingHostStatus", "Host shell must poll pending Remote POS join requests.");
         AssertContains(appShell, "Permissions.StoreTerminalView", "Host shell pending join polling must be permission-gated.");

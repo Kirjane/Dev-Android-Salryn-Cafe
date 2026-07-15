@@ -3,7 +3,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Salryn.Tests;
 
-internal static class CoreSmokeDevelopmentDatabaseIsolation
+public static class CoreSmokeDevelopmentDatabaseIsolation
 {
     internal const string EnvironmentVariable = "SALRYN_CORE_SMOKE_DEVELOPMENT_ROOT";
 
@@ -46,7 +46,7 @@ internal static class CoreSmokeDevelopmentDatabaseIsolation
         return commandLine.Contains("Salryn.Tools.CoreSmoke", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static void Cleanup()
+    public static void Cleanup()
     {
         lock (SyncRoot)
         {
@@ -59,26 +59,33 @@ internal static class CoreSmokeDevelopmentDatabaseIsolation
                 return;
             }
 
-            try
-            {
-                SqliteConnection.ClearAllPools();
-            }
-            catch (InvalidOperationException)
-            {
-            }
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
 
-            try
+            for (int attempt = 0; attempt < 5 && Directory.Exists(root); attempt++)
             {
-                if (Directory.Exists(root))
+                try
                 {
+                    SqliteConnection.ClearAllPools();
                     Directory.Delete(root, recursive: true);
                 }
-            }
-            catch (IOException)
-            {
-            }
-            catch (UnauthorizedAccessException)
-            {
+                catch (InvalidOperationException)
+                {
+                }
+                catch (IOException)
+                {
+                    if (attempt < 4)
+                    {
+                        Thread.Sleep(100);
+                    }
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    if (attempt < 4)
+                    {
+                        Thread.Sleep(100);
+                    }
+                }
             }
         }
     }
