@@ -1,7 +1,7 @@
 import { readJson } from "./http";
 
-export type LicenseStatusValue = "Unlicensed" | "Licensed" | "Expired" | "Invalid" | "Grace" | "Development";
-export type LicenseEditionValue = "Trial" | "Local" | "Professional" | "Enterprise";
+export type LicenseStatusValue = "Unlicensed" | "Licensed" | "Expired" | "Invalid" | "Grace" | "Development" | number;
+export type LicenseEditionValue = "Trial" | "Local" | "Professional" | "Enterprise" | number;
 
 export type LocalLicenseStatus = {
   status: LicenseStatusValue;
