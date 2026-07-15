@@ -277,16 +277,18 @@ public static class PosR1OwnerReportsChecks
         string permissions = File.ReadAllText(Path.Combine(root.FullName, "src", "Salryn.App.Web", "src", "security", "permissions.ts"));
         string navigation = File.ReadAllText(Path.Combine(root.FullName, "src", "Salryn.App.Web", "src", "navigation.ts"));
 
-        Require(endpoints.Contains("LocalApiPermissions.ReportsView", StringComparison.Ordinal), "Owner reports endpoint must require Reports.View.");
-        Require(service.Contains("WHERE s.status = $completedStatus", StringComparison.Ordinal), "Owner reports totals must filter active completed sales.");
-        Require(service.Contains("$voidedStatus", StringComparison.Ordinal), "Owner reports must track voided sales separately.");
-        Require(!api.Contains("method: \"POST\"", StringComparison.Ordinal), "Owner reports web API client must remain read-only.");
-        Require(page.Contains("Owner Reports", StringComparison.Ordinal), "Frontend must expose Owner Reports page title.");
-        Require(page.Contains("Not an official or regulatory filing", StringComparison.Ordinal), "Owner reports page must state non-official boundary.");
-        Require(page.Contains("read-only", StringComparison.Ordinal), "Owner reports UI must state read-only boundary.");
-        Require(!page.Contains("Coming soon", StringComparison.Ordinal), "Developer-only disabled nav copy must not be reintroduced.");
-        Require(permissions.Contains("\"owner-reports\": [Permissions.ReportsView]", StringComparison.Ordinal), "Owner reports direct page access must be gated by Reports.View.");
-        Require(navigation.Contains("Owner Reports", StringComparison.Ordinal), "Owner Reports must be reachable from store navigation.");
+        Require(endpoints.Contains("LocalApiPermissions.ReportsView", StringComparison.Ordinal), "Detailed reports endpoint must require Reports.View.");
+        Require(service.Contains("WHERE s.status = $completedStatus", StringComparison.Ordinal), "Detailed reports totals must filter active completed sales.");
+        Require(service.Contains("$voidedStatus", StringComparison.Ordinal), "Detailed reports must track voided sales separately.");
+        Require(!api.Contains("method: \"POST\"", StringComparison.Ordinal), "Detailed reports web API client must remain read-only.");
+        Require(page.Contains("Detailed Reports", StringComparison.Ordinal), "Frontend must expose Detailed Reports page title.");
+        Require(page.Contains("Dashboard remains the owner home summary", StringComparison.Ordinal), "Detailed Reports must not compete with Dashboard as owner home.");
+        Require(page.Contains("Not an official or regulatory filing", StringComparison.Ordinal), "Detailed reports page must state non-official boundary.");
+        Require(page.Contains("read-only", StringComparison.Ordinal), "Detailed reports UI must state read-only boundary.");
+        Require(!page.Contains("Coming soon", StringComparison.Ordinal), "Developer-only disabled nav copy must not be reintroduced to Detailed Reports.");
+        Require(permissions.Contains("\"owner-reports\": [Permissions.ReportsView]", StringComparison.Ordinal), "Detailed reports direct page access must be gated by Reports.View.");
+        Require(navigation.Contains("Detailed Reports", StringComparison.Ordinal), "Detailed Reports must be reachable from store navigation.");
+        Require(!navigation.Contains("label: \"Owner Reports\"", StringComparison.Ordinal), "Old Owner Reports nav label must not remain.");
     }
 
     private static DirectoryInfo FindRoot()
