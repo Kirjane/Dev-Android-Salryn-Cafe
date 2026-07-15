@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { fetchLicenseStatus, installLicense } from "../api/license";
-import { Alert, Button, Card, CardBody, CardHeader, CardTitle, CommandBar, LoadingState, StatusPill, TextInput } from "../components/ui";
+import { fetchLicenseStatus, installLicense, type LicenseStatusValue } from "../api/license";
+import { Alert, Button, Card, CardBody, CardHeader, CardTitle, CommandBar, LoadingState, StatusPill } from "../components/ui";
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return "Not set";
@@ -9,11 +9,17 @@ function formatDate(value: string | null | undefined): string {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
 }
 
-function statusTone(status: string): "success" | "warning" | "danger" | "neutral" | "info" {
-  if (status === "Licensed") return "success";
-  if (status === "Grace" || status === "Development") return "warning";
-  if (status === "Invalid" || status === "Expired") return "danger";
-  if (status === "Unlicensed") return "neutral";
+function statusLabel(status: LicenseStatusValue): string {
+  if (typeof status === "string") return status;
+  return ["Unlicensed", "Licensed", "Expired", "Invalid", "Grace", "Development"][status] ?? String(status);
+}
+
+function statusTone(status: LicenseStatusValue): "success" | "warning" | "danger" | "neutral" | "info" {
+  const label = statusLabel(status);
+  if (label === "Licensed") return "success";
+  if (label === "Grace" || label === "Development") return "warning";
+  if (label === "Invalid" || label === "Expired") return "danger";
+  if (label === "Unlicensed") return "neutral";
   return "info";
 }
 
@@ -28,6 +34,7 @@ export function LicensePage() {
   const status = statusQuery.data;
   const canInstall = licenseText.trim().length > 0 && replaceConfirmed && !busy;
   const lanCount = status?.allowedLanTerminals;
+  const currentStatusLabel = status ? statusLabel(status.status) : null;
 
   async function handleInstall() {
     if (!canInstall) return;
@@ -54,7 +61,7 @@ export function LicensePage() {
       <CommandBar
         title="License"
         subtitle="Admin-only offline signed license status and import. Normal use does not require cloud activation."
-        status={status ? <StatusPill tone={statusTone(status.status)}>{status.status}</StatusPill> : null}
+        status={status ? <StatusPill tone={statusTone(status.status)}>{currentStatusLabel}</StatusPill> : null}
         actions={<Button variant="secondary" disabled={statusQuery.isFetching || busy} onClick={() => void statusQuery.refetch()}>Refresh</Button>}
       />
 
@@ -75,7 +82,7 @@ export function LicensePage() {
           <Card>
             <CardHeader><CardTitle>Current license</CardTitle></CardHeader>
             <CardBody className="space-y-2 text-sm text-slate-700">
-              <p><span className="font-semibold">Status:</span> {status.status}</p>
+              <p><span className="font-semibold">Status:</span> {currentStatusLabel}</p>
               <p><span className="font-semibold">Message:</span> {status.message}</p>
               <p><span className="font-semibold">License ID:</span> <span className="font-mono text-xs">{status.licenseId ?? "Not installed"}</span></p>
               <p><span className="font-semibold">Customer:</span> {status.customerName ?? "Not available"}</p>
