@@ -246,8 +246,9 @@ public static class PosPrinter1WindowsPrinterWiringChecks
 
         RequireContains(settingsPage, "Windows Printer", "Store Settings must expose Windows Printer mode.");
         RequireContains(settingsPage, "Windows printer name", "Store Settings must expose Windows printer name field.");
-        RequireContains(settingsPage, "Windows print queue", "Store Settings must explain Windows print queue behavior.");
-        RequireContains(settingsPage, "Direct thermal-device commands and accessory controls remain deferred", "Store Settings must keep thermal hardware extras deferred.");
+        RequireContains(settingsPage, "Windows print queue only", "Store Settings must enforce Windows print queue only scope.");
+        RequireContains(settingsPage, "Hardware peripherals beyond the Windows print queue are outside the beta scope", "Store Settings must ban beta hardware drift.");
+        RequireContains(settingsPage, "No ESC/POS, no cutter, no cash drawer, no thermal receipt profile", "Store Settings must explicitly exclude unsupported hardware peripherals.");
         RequireContains(settingsPage, "does not prove paper output", "Store Settings must avoid manual-proof claims.");
         RequireContains(settingsApi, "windowsPrinterName", "Store settings API client must carry Windows printer name.");
         RequireContains(windowsAdapter, "ArgumentList.Add", "Windows adapter must pass print arguments without manual command-line concatenation.");
@@ -260,6 +261,13 @@ public static class PosPrinter1WindowsPrinterWiringChecks
         {
             "physical printer proven",
             "scanner hardware proven",
+            "cash drawer supported",
+            "cutter supported",
+            "ESC/POS supported",
+            "thermal profile supported",
+            "hardware bundle supported",
+            "hardware update later",
+            "next hardware update",
             "backup UI complete",
             "licensing final",
             "installer ready",
