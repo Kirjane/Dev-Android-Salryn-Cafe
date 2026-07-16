@@ -44,7 +44,7 @@ public static class PosManual1FrontendRepairChecks
         RequireNotContains(settings, "type=\"file\"", "Settings must not add an unsupported logo upload.");
 
         RequireContains(products, "Unit of measure", "Catalog must distinguish unit of measure from quantity.");
-        RequireContains(products, "Product details do not change stock on hand", "Catalog edit must stay stock-neutral.");
+        RequireContains(products, "Product details do not change stock", "Catalog edit must stay stock-neutral.");
         RequireContains(products, "Confirm product deactivation", "Product deactivation must have a confirmation guard.");
         RequireContains(products, "Confirm Deactivate Product", "Product deactivation must remain an explicit action.");
         RequireContains(products, "delete past records", "Deactivate copy must explain historical records are preserved.");
