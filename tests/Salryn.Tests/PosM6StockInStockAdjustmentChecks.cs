@@ -77,7 +77,7 @@ public static class PosM6StockInStockAdjustmentChecks
         RequireContains(inventoryPage, "AdjustmentRemove", "Movement ledger filter must show AdjustmentRemove.");
         RequireContains(inventoryPage, "fetchProducts", "Stock write UI must use existing product lookup.");
         RequireContains(inventoryPage, "isActive: true", "Stock write product lookup must exclude inactive products.");
-        RequireContains(inventoryPage, "does not create sales, payments, receipts", "Stock UI must explain side-effect boundary.");
+        RequireContains(inventoryPage, "Quantity changes are recorded as stock movements", "Stock UI must explain the recorded movement behavior.");
 
         RequireContains(productsPage, "Product Catalog", "POS-M5 Product Catalog must remain available.");
         RequireContains(productsPage, "Add stock through Stock-In after saving a product", "Product Catalog must direct stock entry through Stock-In.");
@@ -92,7 +92,8 @@ public static class PosM6StockInStockAdjustmentChecks
         RequireContains(productsPage, "View Movements", "Product Catalog must expose movement review path for selected product.");
         RequireContains(productsPage, "submitStockIn", "Product Catalog stock action must reuse POS-M6 stock-in API client.");
         RequireContains(productsPage, "submitStockAdjustment", "Product Catalog stock action must reuse POS-M6 stock adjustment API client.");
-        RequireContains(productsPage, "do not create sales, payments, or receipts", "Product Catalog stock action must explain no sale/payment/receipt side effects.");
+        RequireContains(productsPage, "Stock-In and Stock Adjustment do not create sales", "Product Catalog stock action must explain no sale side effect.");
+        RequireContains(productsPage, "Every quantity change creates an inventory movement entry", "Product Catalog stock action must explain recorded movement behavior.");
 
         RequireContains(checkoutPage, "submitCheckout", "Checkout submit path must remain wired.");
         RequireContains(checkoutPage, "exactBarcodeMatch", "POS-M3 barcode checkout path must remain wired.");
