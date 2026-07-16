@@ -6,7 +6,7 @@
 | --- | --- |
 | Branch | `KIRCH-PRE-BETA-C-STORE-LOGO-BRANDING` |
 | Base | `KIRCH-PRE-BETA-E-LAN-CLIENT-SHELL-PARITY` @ `541b6e5f8be42bd70bc2f1a51e5a571115af4c28` |
-| Final SHA | `279c44533fef32b77fd9231265403bb0a705068b` |
+| Final SHA | `7ca4c3d12ca3730e890693043069b92c1e1e5bc1` |
 | Protected SANDBOX | `1f74cd8bcaca1a5df487aa61677ee9829dd7fedb` (untouched) |
 | Protected INSTALLER-M1 | `6b9c46676390b8a86a989eca600cb02e406ce865` (untouched) |
 
