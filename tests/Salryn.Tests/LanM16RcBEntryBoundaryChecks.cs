@@ -52,16 +52,18 @@ public static class LanM16RcBEntryBoundaryChecks
         AssertContains(app, "return <ConsoleApp />;", "Loopback root must still render the local console path.");
         AssertContains(login, "Sign in to Salryn POS", "Local loopback login page must remain available.");
 
+        // PRE-BETA-E: primary path is Salryn terminal shell; Remote Read-Only is support-only.
         foreach (string requiredCopy in new[]
         {
-            "Connect to Salryn Host",
-            "This is a remote client device",
-            "The host owns the database, sales, inventory, and LAN approvals",
-            "Do not use localhost from another device",
-            "Use the host LAN address shown on the host PC",
-            "Remote POS allows Cashier or Manager only after pairing",
-            "Remote POS Client",
-            "Remote Read-Only Client"
+            "Open Salryn on this terminal",
+            "Terminal Mode",
+            "The Host owns the database, approvals, and admin tools",
+            "Use the Host LAN address shown on the Host PC",
+            "Pair this device, then sign in as Cashier or Manager",
+            "Admin and Owner accounts remain host-local",
+            "Open Salryn POS terminal",
+            "Internal support surfaces",
+            "Open Remote Read-Only (support only)"
         })
         {
             AssertContains(landing, requiredCopy, "Remote client landing copy missing: " + requiredCopy);
@@ -70,7 +72,8 @@ public static class LanM16RcBEntryBoundaryChecks
         AssertNotContains(landing, "Sign in to Salryn POS", "LAN landing must not show the local POS login.");
         AssertContains(app, "type RemoteClientMode = \"activation\" | \"landing\" | \"remote-pos\" | \"remote-readonly\"", "Remote client modes must stay separate from host pages.");
         AssertContains(app, "function RemoteClientApp()", "Remote client app must own LAN client rendering.");
-        AssertContains(app, "mode === \"remote-pos\" ? <RemotePosClientPage /> : <RemoteReadOnlyClientPage />", "Remote client app must still offer Remote POS and Remote Read-Only pages.");
+        AssertContains(app, "RemotePosClientPage onExitToLanding", "Remote client app must offer Remote POS terminal path.");
+        AssertContains(app, "RemoteReadOnlyClientPage", "Remote client app must still offer support Remote Read-Only page.");
         AssertContains(remotePosHook, "startsFromRemoteEntry ? currentBrowserOrigin() : \"\"", "Remote POS must use current LAN host origin from remote entry.");
         AssertContains(remotePosHook, "useState(startsFromRemoteEntry)", "Remote POS must skip the extra host-address state when launched from LAN root.");
     }

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Layers3 } from "lucide-react";
 import { Button, Card, CardBody, CardHeader, CardTitle, StatusPill } from "../components/ui";
 import { currentBrowserOrigin } from "../utils/lanEntry";
 import {
@@ -13,6 +14,11 @@ type RemoteClientLandingPageProps = {
   onManageTerminalLicense: () => void;
 };
 
+/**
+ * Terminal client entry after license activation.
+ * Primary path: Salryn POS terminal (pair + Cashier/Manager login).
+ * Remote Read-Only is support/internal only — not a normal beta choice.
+ */
 export function RemoteClientLandingPage({
   onOpenRemotePos,
   onOpenReadOnly,
@@ -49,37 +55,44 @@ export function RemoteClientLandingPage({
 
   return (
     <div className="min-h-screen bg-slate-100">
-      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center px-4 py-8">
-        <div className="mb-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-navy-900 text-xs font-bold text-white">
-              SL
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Salryn LAN</p>
-              <h1 className="text-3xl font-semibold text-slate-950">Connect to Salryn Host</h1>
-            </div>
+      <header className="flex h-[60px] items-center justify-between border-b border-white/10 bg-navy-900 px-5 text-white shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-white text-navy-900">
+            <Layers3 aria-hidden="true" size={21} />
           </div>
-          <p className="mt-3 text-base text-slate-600">This is a remote client device</p>
+          <div>
+            <p className="text-sm font-bold">Salryn POS</p>
+            <p className="text-xs text-slate-400">Terminal Mode · Client entry</p>
+          </div>
+        </div>
+        <StatusPill tone="primary">Terminal Mode</StatusPill>
+      </header>
+
+      <main className="mx-auto flex w-full max-w-3xl flex-col px-4 py-8">
+        <div className="mb-6">
+          <h1 className="text-3xl font-semibold text-slate-950">Open Salryn on this terminal</h1>
+          <p className="mt-2 text-base text-slate-600">
+            Same Salryn POS product language as the Host workstation. Cashier and Manager only — Host admin stays on the Host PC.
+          </p>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>Remote client entry</CardTitle>
+            <CardTitle>Terminal workstation</CardTitle>
           </CardHeader>
           <CardBody className="space-y-6">
             <div className="grid gap-3 text-sm text-slate-700 md:grid-cols-2">
               <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                The host owns the database, sales, inventory, and LAN approvals
+                The Host owns the database, approvals, and admin tools
               </p>
               <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                Do not use localhost from another device
+                Use the Host LAN address shown on the Host PC
               </p>
               <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                Use the host LAN address shown on the host PC
+                Pair this device, then sign in as Cashier or Manager
               </p>
               <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                Remote POS allows Cashier or Manager only after pairing
+                Admin and Owner accounts remain host-local
               </p>
             </div>
 
@@ -90,55 +103,35 @@ export function RemoteClientLandingPage({
                 className="w-full rounded-lg border border-emerald-200 bg-emerald-50 px-5 py-4 text-left shadow-sm hover:border-emerald-300 hover:bg-emerald-100"
               >
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-base font-semibold text-slate-950">Resume Remote POS terminal</span>
+                  <span className="text-base font-semibold text-slate-950">Resume Salryn terminal</span>
                   <StatusPill tone="success">Paired device</StatusPill>
                 </div>
                 <p className="mt-2 text-sm text-slate-600">
                   This device already has a trusted terminal pairing for{" "}
                   <span className="font-mono text-slate-700">{storedRemotePosPairing.hostBaseUrl}</span>
-                  {storedRemotePosPairing.displayName ? ` (${storedRemotePosPairing.displayName})` : ""}. Open Remote POS to
-                  restore this paired terminal. If the saved cashier session is still valid, it will resume automatically
-                  after the host validates it; otherwise sign in again without re-pairing.
+                  {storedRemotePosPairing.displayName ? ` (${storedRemotePosPairing.displayName})` : ""}. Open the terminal shell
+                  to restore pairing. If a saved cashier session is still valid, it resumes after Host validation.
                 </p>
               </button>
             ) : null}
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <button
-                type="button"
-                onClick={onOpenRemotePos}
-                className="rounded-lg border border-slate-200 bg-white px-5 py-4 text-left shadow-sm hover:border-blue-300 hover:bg-blue-50"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-base font-semibold text-slate-950">Remote POS Client</span>
-                  <StatusPill tone="primary">{storedRemotePosPairing ? "Open paired terminal" : "Pair first"}</StatusPill>
-                </div>
-                <p className="mt-2 text-sm text-slate-600">
-                  Request approval with the host join code and device name, enter the one-time pairing code, then sign in.
-                </p>
-              </button>
-
-              <button
-                type="button"
-                onClick={onOpenReadOnly}
-                className="rounded-lg border border-slate-200 bg-white px-5 py-4 text-left shadow-sm hover:border-blue-300 hover:bg-blue-50"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-base font-semibold text-slate-950">Remote Read-Only Client</span>
-                  <StatusPill tone="info">Read-only</StatusPill>
-                </div>
-                <p className="mt-2 text-sm text-slate-600">
-                  Use only the existing terminal and handshake requirements for safe host-owned reads.
-                </p>
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={onOpenRemotePos}
+              className="w-full rounded-lg border border-blue-200 bg-white px-5 py-4 text-left shadow-sm hover:border-blue-300 hover:bg-blue-50"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-base font-semibold text-slate-950">Open Salryn POS terminal</span>
+                <StatusPill tone="primary">{storedRemotePosPairing ? "Open paired terminal" : "Pair first"}</StatusPill>
+              </div>
+              <p className="mt-2 text-sm text-slate-600">
+                Request approval with the Host join code and device name, enter the one-time pairing code, then sign in.
+                After login you get the Salryn terminal shell (POS Checkout).
+              </p>
+            </button>
 
             <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-              <p className="font-medium text-slate-900">Stuck after a new build or host DB reset?</p>
-              <p>
-                Clear this device state removes saved terminal pairing and any cashier session token. Passwords are never
-                stored. Then request access again.
-              </p>
+              <p className="font-medium text-slate-900">Device tools</p>
               <div className="flex flex-wrap gap-2">
                 <Button variant="secondary" onClick={onManageTerminalLicense}>
                   Terminal License
@@ -151,9 +144,21 @@ export function RemoteClientLandingPage({
                 </Button>
               </div>
               {clearedNotice ? (
-                <p className="text-emerald-700">Device state cleared. Open Remote POS to request access again.</p>
+                <p className="text-emerald-700">Device state cleared. Open Salryn POS terminal to request access again.</p>
               ) : null}
             </div>
+
+            <details className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-3 text-sm text-slate-600">
+              <summary className="cursor-pointer font-medium text-slate-800">Internal support surfaces</summary>
+              <p className="mt-2">
+                Remote Read-Only Client is support/diagnostic only. It is not the normal beta terminal experience.
+              </p>
+              <div className="mt-3">
+                <Button variant="ghost" size="sm" onClick={onOpenReadOnly}>
+                  Open Remote Read-Only (support only)
+                </Button>
+              </div>
+            </details>
           </CardBody>
         </Card>
       </main>

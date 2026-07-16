@@ -14,15 +14,13 @@ import {
   TextInput,
   type DataTableColumn,
 } from "../components/ui";
+import { TerminalEntryFrame, TerminalShell } from "../components/TerminalShell";
 import { useRemotePosClient } from "../hooks/useRemotePosClient";
 import type { RemotePosCartLine } from "../types/remotePosClient";
 import { clearAllLanClientDeviceState } from "../utils/lanClientStorage";
 
 // LAN-M16-QA-B: Remote POS field UX. Pairing approves the device; login approves the person.
-// The normal path never asks the operator to type terminal identity or handshake proof manually.
-
-const REMOTE_POS_SIGN_OUT_CONFIRM =
-  "Sign out of this Remote POS session? This keeps the terminal paired, but the cashier must sign in again.";
+// PRE-BETA-E: After operator login, Salryn TerminalShell (Host visual language, terminal-safe nav).
 
 const REMOTE_POS_CLEAR_PAIRING_CONFIRM =
   "Clear this device pairing and saved cashier session? This device will need to request access from the host again.";
@@ -63,7 +61,11 @@ function checkoutTone(status: string): "success" | "warning" | "danger" | "info"
   }
 }
 
-export function RemotePosClientPage() {
+type RemotePosClientPageProps = {
+  onExitToLanding?: () => void;
+};
+
+export function RemotePosClientPage({ onExitToLanding }: RemotePosClientPageProps = {}) {
   const client = useRemotePosClient();
   const activePairingRequest = client.pairingStatus ?? client.pairingRequest;
 
@@ -130,13 +132,6 @@ export function RemotePosClientPage() {
     void client.submitCheckout(payments);
   }
 
-  function confirmSignOut() {
-    if (!window.confirm(REMOTE_POS_SIGN_OUT_CONFIRM)) {
-      return;
-    }
-    void client.logout();
-  }
-
   function confirmClearPairingOrState() {
     if (!window.confirm(REMOTE_POS_CLEAR_PAIRING_CONFIRM)) {
       return;
@@ -145,20 +140,130 @@ export function RemotePosClientPage() {
     client.clearPairing();
   }
 
-  return (
+  const checkoutBody = (
     <div className="space-y-6">
       <CommandBar
-        title="Remote POS client"
-        subtitle="Connect to the POS host over its explicit LAN address. Pair this device first, then sign in as Cashier or Manager."
+        title="POS Checkout"
+        subtitle="Terminal workstation checkout. Host validates products, pricing, and sales."
+        status={<StatusPill tone="success">Terminal Mode</StatusPill>}
       />
 
+      {client.errorMessage ? (
+        <Alert tone="danger" title="Request failed">
+          {client.errorMessage}
+        </Alert>
+      ) : null}
+
+      {client.statusMessage ? <Alert tone="info">{client.statusMessage}</Alert> : null}
+
+      {client.operatorSessionRestored ? (
+        <Alert tone="success" title="Operator session restored">
+          Operator session restored. Signed in as {client.session?.displayName ?? client.session?.username ?? "operator"}.
+        </Alert>
+      ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Cashier shift &amp; cart</CardTitle>
+        </CardHeader>
+        <CardBody className="space-y-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <FormField label="Opening cash" htmlFor="rpos-open-cash">
+              <TextInput id="rpos-open-cash" value={openingCash} onChange={(event) => setOpeningCash(event.target.value)} inputMode="decimal" className="w-32" />
+            </FormField>
+            <Button variant="secondary" onClick={handleOpenShift} disabled={client.busy !== "idle"}>Open shift</Button>
+            <Button variant="secondary" onClick={() => void client.startCart()} disabled={client.busy !== "idle"}>Start cart</Button>
+            {client.cart ? <Button variant="ghost" onClick={() => void client.clearCart()} disabled={client.busy !== "idle"}>Clear cart</Button> : null}
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-[2fr,1fr,auto] sm:items-end">
+            <FormField label="Product ID" htmlFor="rpos-product" hint="Host validates product reference and pricing">
+              <TextInput id="rpos-product" value={productId} onChange={(event) => setProductId(event.target.value)} placeholder="product guid" autoComplete="off" />
+            </FormField>
+            <FormField label="Quantity" htmlFor="rpos-qty">
+              <TextInput id="rpos-qty" value={quantity} onChange={(event) => setQuantity(event.target.value)} inputMode="decimal" />
+            </FormField>
+            <Button onClick={handleAddLine} disabled={client.busy !== "idle" || !client.cart}>Add line</Button>
+          </div>
+
+          {client.cart && client.cart.lines.length > 0 ? (
+            <div className="space-y-3">
+              <DataTable columns={cartColumns} rows={client.cart.lines} getRowKey={(line) => line.productId} />
+              <div className="flex items-center justify-between border-t border-slate-200 pt-3">
+                <span className="text-sm text-slate-500">Subtotal (host-priced)</span>
+                <span className="text-lg font-semibold text-slate-900">{formatCents(subtotalCents)}</span>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">Start a cart to add host-priced items.</p>
+          )}
+
+          <div className="flex flex-wrap items-end gap-3 border-t border-slate-200 pt-4">
+            <FormField label="Cash tender" htmlFor="rpos-tender" hint="Cash-only tender in this build">
+              <TextInput id="rpos-tender" value={tenderAmount} onChange={(event) => setTenderAmount(event.target.value)} inputMode="decimal" className="w-36" />
+            </FormField>
+            <Button onClick={handleSubmitCheckout} disabled={client.busy !== "idle" || !client.cart}>Submit checkout</Button>
+          </div>
+        </CardBody>
+      </Card>
+
+      {client.lastCheckout ? (
+        <Alert tone={checkoutTone(client.lastCheckout.status)} title={`Checkout: ${client.lastCheckout.status}`}>
+          {client.lastCheckout.message} {client.lastCheckout.receiptNumber ? `Receipt ${client.lastCheckout.receiptNumber}` : ""}
+        </Alert>
+      ) : null}
+
+      <details className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
+        <summary className="cursor-pointer font-medium text-slate-700">Diagnostics</summary>
+        <div className="mt-3 space-y-1">
+          <p>
+            Role: <span className="font-mono text-slate-700">{client.session?.roleName ?? "-"}</span>
+            {" · "}
+            Terminal: <span className="font-mono text-slate-700">{client.session?.terminalId ?? "-"}</span>
+            {" · "}
+            Host: <span className="font-mono text-slate-700">{client.hostBaseUrl.trim() || "-"}</span>
+          </p>
+          <p>
+            Session expires: <span className="font-mono text-slate-700">{formatExpiry(client.session?.expiresAtUtc ?? null)}</span>
+          </p>
+        </div>
+      </details>
+    </div>
+  );
+
+  if (client.isConnected) {
+    return (
+      <TerminalShell
+        operatorName={client.session?.displayName ?? client.session?.username ?? "Operator"}
+        roleName={client.session?.roleName ?? "Cashier"}
+        terminalLabel={client.pairingStatus?.deviceName ?? (client.terminalIdSuffix ? `…${client.terminalIdSuffix}` : null)}
+        hostLabel={client.hostBaseUrl.trim() || null}
+        activeNav="checkout"
+        onNavigate={() => undefined}
+        onSignOut={() => {
+          void client.logout();
+        }}
+        onExitToLanding={onExitToLanding}
+      >
+        {checkoutBody}
+      </TerminalShell>
+    );
+  }
+
+  return (
+    <TerminalEntryFrame
+      title="Connect terminal to Host"
+      subtitle="Pair this licensed terminal, then sign in as Cashier or Manager. Admin and Owner accounts remain host-local."
+      onBack={onExitToLanding}
+    >
+    <div className="space-y-6">
       <Alert tone="info" title="Terminal access">
         This licensed terminal must be approved by the POS Host before a Cashier or Manager can sign in. Admin and Owner
         accounts remain host-local.
       </Alert>
 
       {client.errorMessage ? (
-        <Alert tone="danger" title="Remote POS request failed">
+        <Alert tone="danger" title="Terminal request failed">
           {client.errorMessage}
         </Alert>
       ) : null}
@@ -348,7 +453,7 @@ export function RemotePosClientPage() {
               </Alert>
             ) : (
               <Alert tone="success" title="This terminal is paired">
-                Pairing is complete for this device. Sign in as Cashier or Manager to use Remote POS.
+                Pairing is complete for this device. Sign in as Cashier or Manager to open the Salryn terminal shell.
               </Alert>
             )}
             <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
@@ -402,101 +507,7 @@ export function RemotePosClientPage() {
         </Card>
       ) : null}
 
-      {client.isConnected ? (
-        <>
-          <Card>
-            <CardHeader>
-              <CardTitle>Remote POS</CardTitle>
-            </CardHeader>
-            <CardBody className="space-y-3">
-              {client.operatorSessionRestored ? (
-                <Alert tone="success" title="Operator session restored">
-                  Operator session restored. Signed in as {client.session?.displayName ?? client.session?.username ?? "operator"}.
-                </Alert>
-              ) : null}
-              <div className="flex flex-wrap items-center gap-2">
-                <StatusPill tone="primary">Remote POS client</StatusPill>
-                <StatusPill tone="info">Role: {client.session?.roleName ?? "-"}</StatusPill>
-                <StatusPill tone={client.session?.remotePosRuntimeEnabled ? "success" : "warning"}>
-                  Host runtime {client.session?.remotePosRuntimeEnabled ? "enabled" : "disabled"}
-                </StatusPill>
-              </div>
-              <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-                <div>
-                  <dt className="text-slate-400">Connected operator</dt>
-                  <dd className="text-slate-800">{client.session?.displayName ?? client.session?.username ?? "-"}</dd>
-                </div>
-                <div>
-                  <dt className="text-slate-400">Paired terminal</dt>
-                  <dd className="font-mono text-xs text-slate-800">{client.session?.terminalId ?? "-"}</dd>
-                </div>
-                <div>
-                  <dt className="text-slate-400">Session expires</dt>
-                  <dd className="text-slate-800">{formatExpiry(client.session?.expiresAtUtc ?? null)}</dd>
-                </div>
-                <div>
-                  <dt className="text-slate-400">Host LAN address</dt>
-                  <dd className="text-slate-800">{client.hostBaseUrl.trim()}</dd>
-                </div>
-              </dl>
-              <Button variant="secondary" size="sm" onClick={confirmSignOut} disabled={client.busy === "logout"}>
-                {client.busy === "logout" ? "Signing out..." : "Sign out"}
-              </Button>
-            </CardBody>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Cashier shift &amp; cart</CardTitle>
-            </CardHeader>
-            <CardBody className="space-y-4">
-              <div className="flex flex-wrap items-end gap-3">
-                <FormField label="Opening cash" htmlFor="rpos-open-cash">
-                  <TextInput id="rpos-open-cash" value={openingCash} onChange={(event) => setOpeningCash(event.target.value)} inputMode="decimal" className="w-32" />
-                </FormField>
-                <Button variant="secondary" onClick={handleOpenShift} disabled={client.busy !== "idle"}>Open shift</Button>
-                <Button variant="secondary" onClick={() => void client.startCart()} disabled={client.busy !== "idle"}>Start cart</Button>
-                {client.cart ? <Button variant="ghost" onClick={() => void client.clearCart()} disabled={client.busy !== "idle"}>Clear cart</Button> : null}
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-[2fr,1fr,auto] sm:items-end">
-                <FormField label="Product ID" htmlFor="rpos-product" hint="Host validates product reference and pricing authoritatively">
-                  <TextInput id="rpos-product" value={productId} onChange={(event) => setProductId(event.target.value)} placeholder="product guid" autoComplete="off" />
-                </FormField>
-                <FormField label="Quantity" htmlFor="rpos-qty">
-                  <TextInput id="rpos-qty" value={quantity} onChange={(event) => setQuantity(event.target.value)} inputMode="decimal" />
-                </FormField>
-                <Button onClick={handleAddLine} disabled={client.busy !== "idle" || !client.cart}>Add line</Button>
-              </div>
-
-              {client.cart && client.cart.lines.length > 0 ? (
-                <div className="space-y-3">
-                  <DataTable columns={cartColumns} rows={client.cart.lines} getRowKey={(line) => line.productId} />
-                  <div className="flex items-center justify-between border-t border-slate-200 pt-3">
-                    <span className="text-sm text-slate-500">Subtotal (host-priced)</span>
-                    <span className="text-lg font-semibold text-slate-900">{formatCents(subtotalCents)}</span>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-sm text-slate-500">Start a cart to add host-priced items.</p>
-              )}
-
-              <div className="flex flex-wrap items-end gap-3 border-t border-slate-200 pt-4">
-                <FormField label="Cash tender" htmlFor="rpos-tender" hint="Remote tender is Cash-only in this build">
-                  <TextInput id="rpos-tender" value={tenderAmount} onChange={(event) => setTenderAmount(event.target.value)} inputMode="decimal" className="w-36" />
-                </FormField>
-                <Button onClick={handleSubmitCheckout} disabled={client.busy !== "idle" || !client.cart}>Submit checkout</Button>
-              </div>
-            </CardBody>
-          </Card>
-
-          {client.lastCheckout ? (
-            <Alert tone={checkoutTone(client.lastCheckout.status)} title={`Checkout: ${client.lastCheckout.status}`}>
-              {client.lastCheckout.message} {client.lastCheckout.receiptNumber ? `Receipt ${client.lastCheckout.receiptNumber}` : ""}
-            </Alert>
-          ) : null}
-        </>
-      ) : null}
     </div>
+    </TerminalEntryFrame>
   );
 }

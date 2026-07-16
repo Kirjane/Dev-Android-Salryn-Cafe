@@ -92,10 +92,42 @@ function RemoteClientApp() {
     readInstalledTerminalLicense() ? "landing" : "activation",
   );
   if (mode === "activation") return <TerminalActivationPage onActivated={() => setMode("landing")} />;
-  if (mode === "landing") return <RemoteClientLandingPage onOpenRemotePos={() => setMode("remote-pos")} onOpenReadOnly={() => setMode("remote-readonly")} onManageTerminalLicense={() => setMode("activation")} />;
-  return (
-    <div className="min-h-screen bg-[#f6f7f9]"><header className="flex h-[60px] items-center justify-between bg-navy-900 px-5 text-white shadow-sm"><div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-md bg-white text-navy-900"><Layers3 aria-hidden="true" size={21} /></span><div><p className="text-sm font-bold">Salryn POS</p><p className="text-xs text-slate-400">Terminal client</p></div></div><Button variant="secondary" onClick={() => setMode("landing")}><ArrowLeft aria-hidden="true" size={16} />Back to client entry</Button></header><div className="mx-auto max-w-7xl space-y-4 p-6">{mode === "remote-pos" ? <RemotePosClientPage /> : <RemoteReadOnlyClientPage />}</div></div>
-  );
+  if (mode === "landing") {
+    return (
+      <RemoteClientLandingPage
+        onOpenRemotePos={() => setMode("remote-pos")}
+        onOpenReadOnly={() => setMode("remote-readonly")}
+        onManageTerminalLicense={() => setMode("activation")}
+      />
+    );
+  }
+  // PRE-BETA-E: logged-in Remote POS uses TerminalShell (Host visual language, terminal-safe nav).
+  // Remote Read-Only remains support-only (not normal landing CTA).
+  if (mode === "remote-readonly") {
+    return (
+      <div className="min-h-screen bg-[#f6f7f9]">
+        <header className="flex h-[60px] items-center justify-between bg-navy-900 px-5 text-white shadow-sm">
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-white text-navy-900">
+              <Layers3 aria-hidden="true" size={21} />
+            </span>
+            <div>
+              <p className="text-sm font-bold">Salryn POS</p>
+              <p className="text-xs text-slate-400">Support · Remote Read-Only</p>
+            </div>
+          </div>
+          <Button variant="secondary" onClick={() => setMode("landing")}>
+            <ArrowLeft aria-hidden="true" size={16} />
+            Client entry
+          </Button>
+        </header>
+        <div className="mx-auto max-w-7xl space-y-4 p-6">
+          <RemoteReadOnlyClientPage />
+        </div>
+      </div>
+    );
+  }
+  return <RemotePosClientPage onExitToLanding={() => setMode("landing")} />;
 }
 
 function ConsoleApp() {

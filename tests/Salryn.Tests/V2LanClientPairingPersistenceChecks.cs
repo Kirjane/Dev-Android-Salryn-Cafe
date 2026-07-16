@@ -12,6 +12,7 @@ public static class V2LanClientPairingPersistenceChecks
         string storage = ReadRequiredFile(Path.Combine(webRoot, "utils", "lanClientStorage.ts"));
         string hook = ReadRequiredFile(Path.Combine(webRoot, "hooks", "useRemotePosClient.ts"));
         string page = ReadRequiredFile(Path.Combine(webRoot, "pages", "RemotePosClientPage.tsx"));
+        string terminalShell = ReadRequiredFile(Path.Combine(webRoot, "components", "TerminalShell.tsx"));
         string landingPage = ReadRequiredFile(Path.Combine(webRoot, "pages", "RemoteClientLandingPage.tsx"));
         string remotePosClient = ReadRequiredFile(Path.Combine(webRoot, "api", "remotePosClient.ts"));
         string app = ReadRequiredFile(Path.Combine(webRoot, "App.tsx"));
@@ -115,7 +116,7 @@ public static class V2LanClientPairingPersistenceChecks
 
         AssertContains(landingPage, "readLanClientPairing", "Remote client landing must read stored pairing.");
         AssertContains(landingPage, "hasPairedTerminalMaterial", "Remote client landing must gate resume on paired terminal material.");
-        AssertContains(landingPage, "Resume Remote POS terminal", "Remote client landing must expose resume path for paired terminals.");
+        AssertContains(landingPage, "Resume Salryn terminal", "Remote client landing must expose resume path for paired terminals.");
         AssertContains(landingPage, "Clear this device state", "Remote client landing must expose clear-device-state action.");
         AssertContains(landingPage, "clearAllLanClientDeviceState", "Remote client landing must clear pairing and operator token storage.");
         AssertContains(storage, "clearAllLanClientDeviceState", "Storage helper must expose full device clear.");
@@ -123,10 +124,11 @@ public static class V2LanClientPairingPersistenceChecks
         AssertContains(page, "Clear this device state", "Remote POS page must expose clear device state action.");
         AssertContains(page, "Passwords are never stored", "Remote POS page must keep password non-storage truth.");
         AssertContains(page, "Admin and Owner accounts are host-local only", "Remote POS page must keep Admin/Owner host-local.");
-        AssertContains(page, "Sign out of this Remote POS session? This keeps the terminal paired", "Remote POS sign out must confirm and state pairing is kept.");
+        AssertContains(terminalShell, "Sign out of this terminal?", "Terminal shell sign out must confirm.");
+        AssertContains(terminalShell, "This terminal stays paired to the Host.", "Terminal shell sign out must state pairing is kept.");
         AssertContains(page, "Clear this device pairing and saved cashier session? This device will need to request access from the host again.", "Clear pairing/state must confirm and require host re-access.");
         AssertContains(page, "window.confirm", "Remote POS destructive actions must use confirmation.");
-        AssertContains(page, "confirmSignOut", "Remote POS sign out must go through confirmed handler.");
+        AssertContains(page, "TerminalShell", "Connected remote POS must use TerminalShell for sign-out UX");
         AssertContains(page, "confirmClearPairingOrState", "Remote POS clear pairing/state must go through confirmed handler.");
         AssertContains(landingPage, "window.confirm", "Landing clear-device-state must use confirmation.");
         AssertContains(landingPage, "This device will need to request access from the host again.", "Landing clear-state confirm must require host re-access.");

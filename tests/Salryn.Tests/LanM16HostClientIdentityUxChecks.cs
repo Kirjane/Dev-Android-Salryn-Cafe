@@ -39,16 +39,18 @@ public static class LanM16HostClientIdentityUxChecks
 
     private static void AssertRemoteClientIdentity(string remotePosPage)
     {
-        AssertContains(remotePosPage, "Remote POS client", "Remote POS page must identify the remote client role.");
+        // PRE-BETA-E: product language is Terminal Mode / POS Checkout shell; keep host-approval and Cashier/Manager boundaries.
+        AssertContains(remotePosPage, "TerminalShell", "Remote POS ready state must use Salryn terminal shell.");
+        AssertContains(remotePosPage, "Terminal Mode", "Remote POS page must identify Terminal Mode.");
         AssertContains(remotePosPage, "Terminal access", "Remote POS page must show concise terminal-access guidance.");
         AssertContains(remotePosPage, "This licensed terminal must be approved by the POS Host", "Remote POS page must explain host approval without a warning wall.");
-        AssertContains(remotePosPage, "Connect to the POS host over its explicit LAN address.", "Remote POS page must guide the operator to the host LAN address.");
-        AssertContains(remotePosPage, "Pair this device first, then sign in as Cashier or Manager.", "Remote POS page must show the pairing-then-login flow.");
+        AssertContains(remotePosPage, "Connect terminal to Host", "Remote POS entry must guide the operator to the host connection step.");
+        AssertContains(remotePosPage, "sign in as Cashier or Manager", "Remote POS page must show the pairing-then-login flow.");
         AssertContains(remotePosPage, "Cashier / Manager login", "Remote POS page must limit the login stage to Cashier/Manager.");
         AssertContains(remotePosPage, "Admin and Owner accounts are host-local only for this build", "Remote POS page must keep Admin/Owner host-local.");
         AssertContains(remotePosPage, "Session expires", "Remote POS page must show session expiry.");
-        AssertContains(remotePosPage, "Host LAN address", "Remote POS page must show the host LAN address.");
         AssertContains(remotePosPage, "Submit checkout", "Remote POS page must offer host-owned checkout.");
+        AssertContains(remotePosPage, "POS Checkout", "Connected terminal must present POS Checkout.");
     }
 
     private static void AssertRemoteClientWarningsAndHeaders(string remotePosClient)
