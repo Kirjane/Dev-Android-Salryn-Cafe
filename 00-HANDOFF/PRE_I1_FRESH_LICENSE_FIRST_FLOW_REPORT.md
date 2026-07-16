@@ -6,7 +6,7 @@
 - Base branch: `KIRCH-PRE-I1-UIUX-BACKUP-QUALITY-REVIEW`
 - Verified base SHA: `9f929bc6b47ff4f93a43d550ae474d12bbb01325`
 - Base origin parity: `0 0`
-- Final reviewed content SHA: `REVIEW_CONTENT_SHA`
+- Final reviewed content SHA: `ec212c5390ca8e373e346d24542ebfe8298af61a`
 - Protected `KIRCH-SANDBOX`: `1f74cd8bcaca1a5df487aa61677ee9829dd7fedb`
 - Protected `KIRCH-INSTALLER-M1`: `6b9c46676390b8a86a989eca600cb02e406ce865`
 - Protected refs unchanged: yes
