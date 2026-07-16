@@ -13,22 +13,30 @@ Define how Salryn should be installed, backed up, configured, and handed over wi
 
 Salryn beta/release deployment target:
 
-- One Windows PC or laptop.
-- One local SQLite database.
-- One cashier/operator workstation.
-- Windows print queue internal receipt printing only if manually proven on that host.
-- Keyboard-wedge barcode scanner if scanner flow is tested.
-- Local backup folder once Backup UI is implemented and verified.
+- **One Windows Host PC or laptop** running Salryn Host + one local SQLite database.
+- **Optional licensed LAN Cashier/Manager terminals** that connect to that Host (no local store DB on the terminal).
+- Windows print queue internal receipt printing only if manually proven on that host (see HARDWARE_LOCK).
+- Keyboard-wedge barcode scanner workflow (hardware paper/scan proof pending until physically tested).
+- Local portable backup import/export (`.salryn-backup.zip`) plus on-host backup packages.
+- Store logo/branding persisted on Host and shown on Host shell + LAN TerminalShell.
+
+Clarification (PRE-BETA-H):
+Older “single cashier workstation only” language is **superseded** for product truth.
+The deployment remains **single-host / single database**, not multi-master sync.
+LAN terminals are in beta scope when licensed and paired.
 
 Not included in beta/release scope:
 
-- Multi-terminal production sync.
+- Multi-terminal production **sync** (each terminal writing its own DB).
 - Cloud database.
 - Branch sync.
-- Web dashboard.
-- Mobile app.
-- Hardware peripherals beyond the Windows print queue.
+- Public SaaS web dashboard.
+- Mobile app store distribution as a product claim.
+- Hardware peripherals beyond the Windows print queue (ESC/POS, drawer, cutter, thermal profiles).
 - Hardware bundle/support claim.
+- Cloud activation.
+
+Authoritative honesty matrix: `00-HANDOFF/BETA_CAPABILITY_MATRIX.md`.
 
 ---
 

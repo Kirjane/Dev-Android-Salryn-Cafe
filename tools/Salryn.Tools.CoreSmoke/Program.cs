@@ -135,6 +135,7 @@ public static class Program
         PreBetaDPortableBackupImportExportChecks.Run();
         PreBetaFScannerFirstCheckoutChecks.Run();
         PreBetaGPrinterHardeningChecks.Run();
+        PreBetaHCapabilityMatrixSealChecks.Run();
         HardenA1A6PreBetaFoundationChecks.Run();
         ManualM1BootstrapAuthRepairChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
@@ -494,6 +495,9 @@ public static class Program
                 return;
             case "pre-beta-g-printer-hardening":
                 PreBetaGPrinterHardeningChecks.Run();
+                return;
+            case "pre-beta-h-capability-matrix-seal":
+                PreBetaHCapabilityMatrixSealChecks.Run();
                 return;
             case "lan-m16-remote-pos":
                 LanM16HostOwnedRemoteOperatorSessionChecks.Run();

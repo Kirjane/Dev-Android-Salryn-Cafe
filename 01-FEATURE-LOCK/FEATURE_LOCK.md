@@ -36,7 +36,7 @@ Permissions needed:
 - Stock adjustment.
 - View reports.
 - Edit settings.
-- Backup and restore once Backup UI is implemented.
+- Backup and restore, including portable Download/Import Backup File packages.
 
 ---
 
@@ -54,15 +54,19 @@ Needed:
 - Currency label.
 - Default unit.
 - Low-stock warning behavior.
+- Store logo / branding (PNG/JPEG/WebP; Host + LAN shell display) — PRE-BETA-C.
 
 Out of beta scope:
 
 - hardware receipt width/profile support.
 - thermal receipt formatting.
 - hardware-specific templates.
+- Official/BIR logo accreditation claims.
 
 Purpose:
 Each client should customize receipt text and store identity without editing code. This does not create an official/BIR output claim.
+
+See: `00-HANDOFF/BETA_CAPABILITY_MATRIX.md`.
 
 ---
 

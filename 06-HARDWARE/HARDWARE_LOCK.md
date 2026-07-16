@@ -3,6 +3,9 @@
 Status:
 BETA / RELEASE SCOPE LOCK.
 
+Cross-reference:
+`00-HANDOFF/BETA_CAPABILITY_MATRIX.md` (PRE-BETA-H seal) for SUPPORTED / CODE-PROVEN / HARDWARE-PROOF-PENDING / FORBIDDEN claims.
+
 Purpose:
 Prevent hardware-drift from entering active beta/release planning.
 
