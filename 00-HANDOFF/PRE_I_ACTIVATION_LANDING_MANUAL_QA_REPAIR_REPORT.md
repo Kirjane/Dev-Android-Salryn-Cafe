@@ -1,4 +1,4 @@
-# PRE-I — Activation Landing + Manual QA Repair Report
+﻿# PRE-I â€” Activation Landing + Manual QA Repair Report
 
 ## 1. Branch / base / final SHA
 
@@ -7,21 +7,21 @@
 | Branch | `KIRCH-PRE-I-ACTIVATION-LANDING-MANUAL-QA-REPAIR` |
 | Base branch | `KIRCH-PRE-BETA-LICENSE-CREDITS-LAN-SCOPE-REPAIR` |
 | Base SHA | `5ef674dedb6361fe6fc6fb9ceadb364464310c64` |
-| Final SHA | `b7ca537ba69d7b94a63e15bc7987d22375a17244` |
-| Protected refs | Untouched (`KIRCH-SANDBOX` @ `1f74cd8…`, `KIRCH-INSTALLER-M1` @ `6b9c466…`) |
+| Final SHA | `d03f67ae2c0970f42ec0f79061a1a4c9d7079a31` (branch tip; report SHA self-ref of prior tip) |
+| Protected refs | Untouched (`KIRCH-SANDBOX` @ `1f74cd8â€¦`, `KIRCH-INSTALLER-M1` @ `6b9c466â€¦`) |
 
 ## 2. Repo study summary
 
 Confirmed before coding:
 
-1. **LicensePage** — direct activation/import cards; not a product landing/wizard.
-2. **TerminalActivationPage** — same direct import style.
-3. **ProductCreditsCard** — cleaned but still limited as a landing showcase rail.
-4. **BackupRestorePage** — inline strings / plain cards for create/verify/restore.
-5. **navigation.ts** — Manager order had Reports after Product Catalog / Stock.
-6. **AppShell / TerminalShell** — `min-w-[48rem]` forced desktop width (phone overflow risk).
-7. **HostLanControlPage** — request block improved in prior lane; lifecycle wording still needed polish while preserving gate strings.
-8. **Store Settings** — schema 19 DBs missing `logo_content_type` / `logo_bytes` could crash reads when v20 was recorded without columns or skipped.
+1. **LicensePage** â€” direct activation/import cards; not a product landing/wizard.
+2. **TerminalActivationPage** â€” same direct import style.
+3. **ProductCreditsCard** â€” cleaned but still limited as a landing showcase rail.
+4. **BackupRestorePage** â€” inline strings / plain cards for create/verify/restore.
+5. **navigation.ts** â€” Manager order had Reports after Product Catalog / Stock.
+6. **AppShell / TerminalShell** â€” `min-w-[48rem]` forced desktop width (phone overflow risk).
+7. **HostLanControlPage** â€” request block improved in prior lane; lifecycle wording still needed polish while preserving gate strings.
+8. **Store Settings** â€” schema 19 DBs missing `logo_content_type` / `logo_bytes` could crash reads when v20 was recorded without columns or skipped.
 
 No Lane I, packaging, promotion, cloud activation, or BIR/eSales production claims added.
 
@@ -31,8 +31,8 @@ No Lane I, packaging, promotion, cloud activation, or BIR/eSales production clai
 | --- | --- |
 | Store Settings `logo_content_type` crash | Idempotent v20 + startup `EnsureStoreLogoColumns` |
 | Backup & Restore UX plain | Centered Dialog success/confirm flows + RESTORE gate retained |
-| Reports nav order | Manager: Dashboard → Reports → Product Catalog → … |
-| Terminal Management request/lifecycle | Product request wording retained; lifecycle “Revoked means re-pair” preserved |
+| Reports nav order | Manager: Dashboard â†’ Reports â†’ Product Catalog â†’ â€¦ |
+| Terminal Management request/lifecycle | Product request wording retained; lifecycle â€œRevoked means re-pairâ€ preserved |
 | LAN terminal mobile overflow | Shells use `min-w-0`; no `min-w-[48rem]` |
 | License landing dull | Host/Terminal product landing + 3-step wizard with terms |
 
@@ -53,11 +53,11 @@ Bounds copy avoids forbidden gate substrings (`cloud activation`, `eSales`, `RMO
 
 Modal/wizard steps:
 
-1. **Welcome / request license** — Host Machine Code, copy, support email, checklist, Next: Terms  
-2. **Salryn Activation Terms** — 10 plain-language terms + checkbox  
-3. **Import Signed Host License JSON** — install disabled until `termsAccepted` + non-empty text  
+1. **Welcome / request license** â€” Host Machine Code, copy, support email, checklist, Next: Terms  
+2. **Salryn Activation Terms** â€” 10 plain-language terms + checkbox  
+3. **Import Signed Host License JSON** â€” install disabled until `termsAccepted` + non-empty text  
 
-Import/install API behavior unchanged. Success: “Host license active” + summary.
+Import/install API behavior unchanged. Success: â€œHost license activeâ€ + summary.
 
 ## 6. Terminal activation wizard
 
@@ -85,7 +85,7 @@ Desktop layout: `lg:grid-cols-2` with `ProductCreditsCard` rail.
 - SALRYN wordmark, Kirjane Labs hierarchy  
 - Credits org tree (Business / Technology / Marketing + reports)  
 - Support email  
-- Tiny muted “Repository-backed beta build” footer only  
+- Tiny muted â€œRepository-backed beta buildâ€ footer only  
 - No Publisher / Product / Build Type / Products of Kirjane Labs blocks  
 
 ## 9. Stale licensing copy cleanup
@@ -111,10 +111,10 @@ Does **not** require DB reset.
 
 `BackupRestorePage.tsx`:
 
-- Create → Dialog “Backup created successfully”  
-- Verify → success Dialog  
-- Restore → Dialog requires typing **RESTORE**  
-- Restore complete → success Dialog  
+- Create â†’ Dialog â€œBackup created successfullyâ€  
+- Verify â†’ success Dialog  
+- Restore â†’ Dialog requires typing **RESTORE**  
+- Restore complete â†’ success Dialog  
 - Safety copy retained (replace local database warning)
 
 ## 12. Reports nav order repair
@@ -180,7 +180,7 @@ No crypto/licensing validation changes. Import still requires accepted terms in 
 
 Source-verified + build green. Live screenshot QA deferred to Kirch:
 
-- Host `/license` unlicensed → wizard → terms → import → active  
+- Host `/license` unlicensed â†’ wizard â†’ terms â†’ import â†’ active  
 - Terminal `/terminal-activation` same  
 - Store Settings (existing DB)  
 - Backup create/verify/restore modals  
@@ -195,7 +195,7 @@ Optional: `dotnet run --project src\Salryn.Api.Local -- --dev`
 - Visual polish is CSS/typography-only (no logo assets yet).  
 - Terms acceptance is session/UI state only (not a durable legal ledger).  
 - Phone overflow: shells no longer force desktop min-width; residual component-level overflow may still appear on complex tables.  
-- Restore still destructive by design — RESTORE typing gate unchanged.  
+- Restore still destructive by design â€” RESTORE typing gate unchanged.  
 - No live screenshot proof in this agent run.
 
 ## 19. Final decision
