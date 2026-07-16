@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchLicenseStatus, installLicense, type LicenseStatusValue, type LicenseTypeValue } from "../api/license";
-import { Alert, Button, Card, CardBody, CardHeader, CardTitle, CommandBar, LoadingState, StatusPill } from "../components/ui";
+import { ProductCreditsCard } from "../components/ProductCreditsCard";
+import { Alert, Button, Card, CardBody, CardHeader, CardTitle, LoadingState, StatusPill } from "../components/ui";
 
 const BETA_CONTACT_EMAIL = "salryn.info@gmail.com";
 
@@ -174,189 +175,225 @@ export function LicensePage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5">
-      <CommandBar
-        title={showActiveSummary ? "License" : "Activate Salryn"}
-        subtitle={
-          showActiveSummary
-            ? "License Active on this Host workstation."
-            : "Salryn needs a valid Host license before this device can be used."
-        }
-        status={status ? <StatusPill tone={statusTone(status.status)}>{showActiveSummary ? "Active" : currentStatusLabel}</StatusPill> : null}
-        actions={
-          <Button variant="secondary" disabled={statusQuery.isFetching || busy} onClick={() => void statusQuery.refetch()}>
-            Refresh
-          </Button>
-        }
-      />
+    <div className="min-h-[calc(100vh-2rem)] bg-[#f4f6f9] px-4 py-6 sm:px-6">
+      <div className="mx-auto max-w-6xl">
+        <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Salryn</p>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight text-navy-900" title={showActiveSummary ? "License" : "Activate Salryn"}>
+              {showActiveSummary ? "License" : "Activate Salryn"}
+            </h1>
+            <p className="mt-1 max-w-xl text-sm text-slate-600">
+              {showActiveSummary
+                ? "License Active on this Host workstation."
+                : "Salryn needs a valid Host license before this device can be used."}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {status ? <StatusPill tone={statusTone(status.status)}>{showActiveSummary ? "Active" : currentStatusLabel}</StatusPill> : null}
+            <Button variant="secondary" disabled={statusQuery.isFetching || busy} onClick={() => void statusQuery.refetch()}>
+              Refresh
+            </Button>
+          </div>
+        </header>
 
-      {statusQuery.isLoading ? <LoadingState label="Loading…" /> : null}
-      {statusQuery.isError ? <Alert tone="danger">{(statusQuery.error as Error).message}</Alert> : null}
-      {message ? <Alert tone="success">{message}</Alert> : null}
-      {error ? <Alert tone="danger">{error}</Alert> : null}
-      {hostSetupBlocked ? (
-        <Alert tone="danger" title="Host license required">
-          This Terminal license cannot unlock Host first-run setup or the full Host application. Install a valid Host license for this workstation.
-        </Alert>
-      ) : null}
+        {statusQuery.isLoading ? <LoadingState label="Loading…" /> : null}
+        {statusQuery.isError ? <Alert tone="danger">{(statusQuery.error as Error).message}</Alert> : null}
+        {message ? <Alert tone="success">{message}</Alert> : null}
+        {error ? <Alert tone="danger">{error}</Alert> : null}
+        {hostSetupBlocked ? (
+          <Alert tone="danger" title="Host license required">
+            This Terminal license cannot unlock Host first-run setup or the full Host application. Install a valid Host license for this workstation.
+          </Alert>
+        ) : null}
 
-      {showActiveSummary && status ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Status: Active</CardTitle>
-          </CardHeader>
-          <CardBody className="space-y-3 text-sm text-slate-700">
-            <p>
-              <span className="font-semibold text-slate-900">Licensed to:</span> {status.customerName ?? "Not available"}
-            </p>
-            <p>
-              <span className="font-semibold text-slate-900">Device type:</span> {deviceTypeLabel(typeLabel)}
-            </p>
-            <p>
-              <span className="font-semibold text-slate-900">Host Machine Code:</span>{" "}
-              <span className="break-all font-mono text-xs font-semibold text-navy-900">{machineCode}</span>
-            </p>
-            <p>
-              <span className="font-semibold text-slate-900">Support until:</span> {formatDate(status.supportExpiresAt)}
-            </p>
-            <p>
-              <span className="font-semibold text-slate-900">Updates until:</span> {formatDate(status.updatesUntil)}
-            </p>
-            <p className="text-xs text-slate-500">Works offline after activation.</p>
-            <button
-              type="button"
-              className="text-xs font-semibold text-blue-700 underline-offset-2 hover:underline"
-              onClick={() => setShowSupportDetails((value) => !value)}
-            >
-              {showSupportDetails ? "Hide support details" : "Show support details"}
-            </button>
-            {showSupportDetails ? (
-              <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                <p>Host License ID: <span className="font-mono">{status.licenseId ?? "Not installed"}</span></p>
-                <p>Store (internal): <span className="font-mono">{status.storeId ?? "Not specified"}</span></p>
-                <p>Application: {status.applicationId ?? "Not specified"}</p>
-                <p>Machine matched: {status.machineMatched ? "Yes" : "No"}</p>
-                {typeLabel === "Terminal" ? (
-                  <>
-                    <p>Host License ID (linked): <span className="font-mono">{status.hostLicenseId ?? "Not set"}</span></p>
-                    <p>Terminal ID: <span className="font-mono">{status.terminalId ?? "Not set"}</span></p>
-                  </>
-                ) : null}
-              </div>
+        <div className="mt-4 grid items-start gap-6 lg:grid-cols-2">
+          {/* LEFT: licensing / activation */}
+          <div className="space-y-4">
+            {showActiveSummary && status ? (
+              <Card className="overflow-hidden border-slate-200 shadow-md">
+                <CardHeader className="border-b border-emerald-100 bg-emerald-50/80">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <CardTitle>Status: Active</CardTitle>
+                    <StatusPill tone="success">License Active</StatusPill>
+                  </div>
+                </CardHeader>
+                <CardBody className="space-y-3 text-sm text-slate-700">
+                  <p>
+                    <span className="font-semibold text-slate-900">Licensed to:</span> {status.customerName ?? "Not available"}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-slate-900">Store:</span> {status.customerName ?? "Not available"}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-slate-900">License type:</span> {deviceTypeLabel(typeLabel)}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-slate-900">Host Machine Code:</span>{" "}
+                    <span className="break-all font-mono text-xs font-semibold text-navy-900">{machineCode}</span>
+                  </p>
+                  <p>
+                    <span className="font-semibold text-slate-900">Support until:</span> {formatDate(status.supportExpiresAt)}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-slate-900">Updates until:</span> {formatDate(status.updatesUntil)}
+                  </p>
+                  <p className="text-xs text-slate-500">Works offline after activation.</p>
+                  <button
+                    type="button"
+                    className="text-xs font-semibold text-blue-700 underline-offset-2 hover:underline"
+                    onClick={() => setShowSupportDetails((value) => !value)}
+                  >
+                    {showSupportDetails ? "Hide support details" : "Show support details"}
+                  </button>
+                  {showSupportDetails ? (
+                    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                      <p>
+                        Host License ID: <span className="break-all font-mono">{status.licenseId ?? "Not installed"}</span>
+                      </p>
+                      <p>
+                        Store ID: <span className="break-all font-mono">{status.storeId ?? "Not specified"}</span>
+                      </p>
+                      <p>Store (internal): <span className="font-mono">{status.storeId ?? "Not specified"}</span></p>
+                      <p>Application: {status.applicationId ?? "Not specified"}</p>
+                      <p>Machine matched: {status.machineMatched ? "Yes" : "No"}</p>
+                      {typeLabel === "Terminal" ? (
+                        <>
+                          <p>
+                            Host License ID (linked): <span className="break-all font-mono">{status.hostLicenseId ?? "Not set"}</span>
+                          </p>
+                          <p>
+                            Terminal ID: <span className="break-all font-mono">{status.terminalId ?? "Not set"}</span>
+                          </p>
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </CardBody>
+              </Card>
             ) : null}
-          </CardBody>
-        </Card>
-      ) : null}
 
-      {showActivation ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Host Machine Code</CardTitle>
-          </CardHeader>
-          <CardBody className="space-y-4 text-sm text-slate-700">
-            <Alert tone="info" title="How activation works">
-              Salryn generates this Machine Code. LicensingOps signs the Host license for it. You do not invent a Store ID or Host License ID on this screen.
-            </Alert>
+            {showActivation ? (
+              <Card className="overflow-hidden border-slate-200 shadow-md">
+                <CardHeader className="border-b border-slate-100 bg-white">
+                  <CardTitle>Host Machine Code</CardTitle>
+                </CardHeader>
+                <CardBody className="space-y-4 text-sm text-slate-700">
+                  <Alert tone="info" title="How activation works">
+                    Salryn generates this Machine Code. LicensingOps signs the Host license for it. You do not invent a Store ID or Host License ID on this screen.
+                  </Alert>
 
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-900">Host Machine Code</p>
-              <p className="mt-1 break-all font-mono text-lg font-bold tracking-wide text-navy-900">{machineCode}</p>
-              <div className="mt-3">
-                <Button variant="secondary" size="sm" disabled={machineCode === "Not available"} onClick={() => void copyMachineCode()}>
-                  Copy Host Machine Code
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-emerald-900">Host Machine Code</p>
+                    <p className="mt-2 break-all font-mono text-base font-bold leading-relaxed tracking-wide text-navy-900 sm:text-lg">
+                      {machineCode}
+                    </p>
+                    <div className="mt-3">
+                      <Button variant="secondary" size="sm" disabled={machineCode === "Not available"} onClick={() => void copyMachineCode()}>
+                        Copy Host Machine Code
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="font-semibold text-slate-900">For Host POS activation</p>
+                    <ol className="mt-2 list-decimal space-y-1 pl-5">
+                      <li>Copy the Host Machine Code above.</li>
+                      <li>
+                        Open LicensingOps (or email <span className="font-mono font-semibold">{BETA_CONTACT_EMAIL}</span>).
+                      </li>
+                      <li>Create or select your Store (Store ID is created for you).</li>
+                      <li>Paste this Host Machine Code and issue a Host license.</li>
+                      <li>Paste the signed Host license JSON below.</li>
+                    </ol>
+                    <ul className="mt-3 list-disc space-y-1 pl-5 text-slate-600">
+                      <li>Store / business name</li>
+                      <li>Contact person</li>
+                      <li>Contact number or email</li>
+                      <li>Host Machine Code</li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <p className="font-semibold text-slate-900">For LAN Terminal activation</p>
+                    <p className="mt-1 text-slate-600">
+                      On each terminal device, open Terminal Activation and copy that device&apos;s Terminal Machine Code.
+                      Your store admin or Kirjane Labs issues a Terminal license from the Host license — terminal users do not need a Host License ID.
+                    </p>
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-slate-600">
+                      <li>Terminal name or number (for example, Counter 1)</li>
+                      <li>Terminal Machine Code from that device</li>
+                    </ul>
+                  </div>
+
+                  <p>
+                    After your license is issued, paste the signed license below. Each LAN terminal needs its own Terminal license — not a shared Host license.
+                  </p>
+                </CardBody>
+              </Card>
+            ) : null}
+
+            {showActiveSummary && !showReplaceLicense ? (
+              <div>
+                <Button variant="secondary" onClick={() => setShowReplaceLicense(true)}>
+                  Replace License
                 </Button>
               </div>
-            </div>
+            ) : null}
 
-            <div>
-              <p className="font-semibold text-slate-900">For Host POS activation</p>
-              <ol className="mt-2 list-decimal space-y-1 pl-5">
-                <li>Copy the Host Machine Code above.</li>
-                <li>
-                  Open LicensingOps (or email <span className="font-mono font-semibold">{BETA_CONTACT_EMAIL}</span>).
-                </li>
-                <li>Create or select your Store (Store ID is created for you).</li>
-                <li>Paste this Host Machine Code and issue a Host license.</li>
-                <li>Paste the signed Host license JSON below.</li>
-              </ol>
-              <ul className="mt-3 list-disc space-y-1 pl-5 text-slate-600">
-                <li>Store / business name</li>
-                <li>Contact person</li>
-                <li>Contact number or email</li>
-                <li>Host Machine Code</li>
-              </ul>
-            </div>
+            {!showActiveSummary || showReplaceLicense ? (
+              <Card className="overflow-hidden border-slate-200 shadow-md">
+                <CardHeader className="border-b border-slate-100 bg-white">
+                  <CardTitle>Import Signed Host License JSON</CardTitle>
+                </CardHeader>
+                <CardBody className="space-y-4">
+                  <p className="text-sm text-slate-600">
+                    Paste only the signed Host license JSON you received. Importing replaces the current license on this device after Salryn verifies it.
+                  </p>
+                  <label className="space-y-1 text-sm font-medium text-slate-700">
+                    <span>Paste signed license JSON</span>
+                    <textarea
+                      value={licenseText}
+                      onChange={(event) => setLicenseText(event.target.value)}
+                      className="min-h-40 w-full rounded-md border border-slate-300 bg-white px-3 py-2 font-mono text-xs text-slate-900 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
+                      placeholder="Paste the signed Host license you received from LicensingOps or Kirjane Labs."
+                    />
+                  </label>
+                  <label className="flex items-start gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={replaceConfirmed}
+                      onChange={(event) => setReplaceConfirmed(event.target.checked)}
+                      className="mt-1"
+                    />
+                    <span>I understand this will replace the current license on this device.</span>
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    <Button disabled={!canInstall} onClick={() => void handleInstall()}>
+                      {busy ? "Installing…" : "Install License"}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      disabled={busy || (!licenseText && !replaceConfirmed)}
+                      onClick={() => {
+                        setLicenseText("");
+                        setReplaceConfirmed(false);
+                      }}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                </CardBody>
+              </Card>
+            ) : null}
+          </div>
 
-            <div>
-              <p className="font-semibold text-slate-900">For LAN Terminal activation</p>
-              <p className="mt-1 text-slate-600">
-                On each terminal device, open Terminal Activation and copy that device&apos;s Terminal Machine Code.
-                Your store admin or Kirjane Labs issues a Terminal license from the Host license — terminal users do not need a Host License ID.
-              </p>
-              <ul className="mt-2 list-disc space-y-1 pl-5 text-slate-600">
-                <li>Terminal name or number (for example, Counter 1)</li>
-                <li>Terminal Machine Code from that device</li>
-              </ul>
-            </div>
-
-            <p>
-              After your license is issued, paste the signed license below. Each LAN terminal needs its own Terminal license — not a shared Host license.
-            </p>
-          </CardBody>
-        </Card>
-      ) : null}
-
-      {showActiveSummary && !showReplaceLicense ? (
-        <div>
-          <Button variant="secondary" onClick={() => setShowReplaceLicense(true)}>Replace License</Button>
+          {/* RIGHT: product identity / credits */}
+          <div className="lg:sticky lg:top-4">
+            <ProductCreditsCard />
+          </div>
         </div>
-      ) : null}
-
-      {!showActiveSummary || showReplaceLicense ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Import License</CardTitle>
-          </CardHeader>
-          <CardBody className="space-y-4">
-            <p className="text-sm text-slate-600">
-              Paste only the signed Host license JSON you received. Importing replaces the current license on this device after Salryn verifies it.
-            </p>
-            <label className="space-y-1 text-sm font-medium text-slate-700">
-              <span>Paste signed license JSON</span>
-              <textarea
-                value={licenseText}
-                onChange={(event) => setLicenseText(event.target.value)}
-                className="min-h-40 w-full rounded-md border border-slate-300 bg-white px-3 py-2 font-mono text-xs text-slate-900 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
-                placeholder="Paste the signed Host license you received from LicensingOps or Kirjane Labs."
-              />
-            </label>
-            <label className="flex items-start gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={replaceConfirmed}
-                onChange={(event) => setReplaceConfirmed(event.target.checked)}
-                className="mt-1"
-              />
-              <span>I understand this will replace the current license on this device.</span>
-            </label>
-            <div className="flex flex-wrap gap-2">
-              <Button disabled={!canInstall} onClick={() => void handleInstall()}>
-                {busy ? "Installing…" : "Install License"}
-              </Button>
-              <Button
-                variant="secondary"
-                disabled={busy || (!licenseText && !replaceConfirmed)}
-                onClick={() => {
-                  setLicenseText("");
-                  setReplaceConfirmed(false);
-                }}
-              >
-                Clear
-              </Button>
-            </div>
-          </CardBody>
-        </Card>
-      ) : null}
+      </div>
     </div>
   );
 }
