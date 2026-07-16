@@ -6,7 +6,7 @@
 | --- | --- |
 | Branch | `KIRCH-PRE-BETA-LICENSE-CREDITS-LAN-SCOPE-REPAIR` |
 | Base | `KIRCH-PRE-BETA-LICENSE-CREDITS-CARD-CLEANUP` @ `95095f93f8e7ed953e3930e1e7c23d6ac376b812` |
-| Final SHA | *(branch tip after push)* |
+| Final SHA | `c835a5fad26c13d9f7e9c3b5e826186fcca99699` |
 | Protected refs | Untouched |
 
 ## 2. Manual QA issue
@@ -71,8 +71,8 @@ Guards: no RMO / eSales / BIR-approved on HostLanControl / credits / terminal pa
 | pre-i1-fresh-license-first-flow | PASS |
 | pre-i1-lan-terminal-activation-management-beta | PASS |
 | web-a3 / web-a4 | PASS |
-| full CoreSmoke | *(final run)* |
-| web build | *(final run)* |
+| full CoreSmoke | PASS |
+| web build | PASS |
 
 ## 11. Manual visual check
 
