@@ -118,15 +118,17 @@ public static class WebA4NativeHostVisualFidelityChecks
             StringComparison.Ordinal);
 
         // PRE-BETA-C/D: approved file surfaces — store logo + portable backup import only.
-        string storeSettingsPageText = ReadRequiredFile(webSrc, "pages", "StoreSettingsPage.tsx");
-        string storeSettingsApiText = ReadRequiredFile(webSrc, "api", "storeSettings.ts");
-        string backupPageText = ReadRequiredFile(webSrc, "pages", "BackupRestorePage.tsx");
-        string backupApiText = ReadRequiredFile(webSrc, "api", "backups.ts");
-        string capabilitySourceWithoutLogoUpload = capabilitySource
-            .Replace(storeSettingsPageText, string.Empty, StringComparison.Ordinal)
-            .Replace(storeSettingsApiText, string.Empty, StringComparison.Ordinal)
-            .Replace(backupPageText, string.Empty, StringComparison.Ordinal)
-            .Replace(backupApiText, string.Empty, StringComparison.Ordinal);
+        string capabilitySourceWithoutLogoUpload = ReadAllSourceExcluding(
+            webSrc,
+            new[] { ".ts", ".tsx", ".css" },
+            SearchOption.AllDirectories,
+            new[]
+            {
+                Path.Combine("pages", "StoreSettingsPage.tsx"),
+                Path.Combine("api", "storeSettings.ts"),
+                Path.Combine("pages", "BackupRestorePage.tsx"),
+                Path.Combine("api", "backups.ts"),
+            }).Replace("No ESC/POS", string.Empty, StringComparison.Ordinal);
 
         string[] alwaysForbiddenTokens =
         {
@@ -204,6 +206,34 @@ public static class WebA4NativeHostVisualFidelityChecks
         IEnumerable<string> files = Directory
             .GetFiles(root, "*.*", searchOption)
             .Where(path => extensions.Any(ext => path.EndsWith(ext, StringComparison.OrdinalIgnoreCase)));
+
+        return string.Join("\n", files.Select(File.ReadAllText));
+    }
+
+    private static string ReadAllSourceExcluding(
+        string root,
+        string[] extensions,
+        SearchOption searchOption,
+        IEnumerable<string> relativeExcludeSuffixes)
+    {
+        string[] excludes = relativeExcludeSuffixes
+            .Select(x => x.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar))
+            .ToArray();
+        IEnumerable<string> files = Directory
+            .GetFiles(root, "*.*", searchOption)
+            .Where(path => extensions.Any(ext => path.EndsWith(ext, StringComparison.OrdinalIgnoreCase)))
+            .Where(path =>
+            {
+                foreach (string suffix in excludes)
+                {
+                    if (path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            });
 
         return string.Join("\n", files.Select(File.ReadAllText));
     }

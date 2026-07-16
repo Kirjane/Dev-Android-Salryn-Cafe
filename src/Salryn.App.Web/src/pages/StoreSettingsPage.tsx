@@ -6,6 +6,7 @@ import {
   uploadStoreLogo,
   type StoreSettings,
 } from "../api/storeSettings";
+import { testPrintReceipt } from "../api/receiptPrint";
 import { Alert, Button, Card, CardBody, CardHeader, CardTitle, CommandBar, ErrorState, LoadingState, TextInput } from "../components/ui";
 
 const supportedCurrencies = new Set(["PHP", "₱"]);
@@ -18,6 +19,8 @@ export function StoreSettingsPage() {
   const [busy, setBusy] = useState(false);
   const [logoBusy, setLogoBusy] = useState(false);
   const [logoPreviewKey, setLogoPreviewKey] = useState(0);
+  const [testPrintBusy, setTestPrintBusy] = useState(false);
+  const [testPrintMessage, setTestPrintMessage] = useState<string | null>(null);
 
   useEffect(() => {
     fetchStoreSettings()
@@ -96,6 +99,24 @@ export function StoreSettingsPage() {
       setMessage(error instanceof Error ? error.message : "Logo could not be removed.");
     } finally {
       setLogoBusy(false);
+    }
+  }
+
+  async function onTestPrint() {
+    setTestPrintBusy(true);
+    setTestPrintMessage(null);
+    try {
+      const envelope = await testPrintReceipt();
+      const print = envelope.print;
+      if (print.succeeded) {
+        setTestPrintMessage(print.message || "Test print submitted to the Windows print queue.");
+      } else {
+        setTestPrintMessage(print.message || print.errorMessage || "Test print did not succeed.");
+      }
+    } catch (error) {
+      setTestPrintMessage(error instanceof Error ? error.message : "Test print failed.");
+    } finally {
+      setTestPrintBusy(false);
     }
   }
 
@@ -202,18 +223,26 @@ export function StoreSettingsPage() {
               <span>Printer mode</span>
               <select className="min-h-9 w-full rounded-md border border-slate-300 px-3" value={value.printerMode} onChange={(event) => update("printerMode", event.target.value as StoreSettings["printerMode"])}>
                 <option value="Disabled">Disabled</option>
-                <option value="WindowsPrinter">Windows Printer</option>
+                <option value="WindowsPrinter">Windows print queue</option>
               </select>
             </label>
             <label className="space-y-1 text-sm font-medium text-slate-700">
-              <span>Windows printer name</span>
+              <span>Exact Windows printer name</span>
               <TextInput value={value.windowsPrinterName ?? ""} onChange={(event) => update("windowsPrinterName", event.target.value)} placeholder="Exact Windows printer name" />
-              <span className="block text-xs font-normal text-slate-500">Use the exact printer name shown in Windows. Leave disabled mode selected if the printer is not ready.</span>
+              <span className="block text-xs font-normal text-slate-500">
+                Copy the printer name exactly from Windows Settings → Bluetooth &amp; devices → Printers (or Control Panel → Devices and Printers). Name must match character-for-character.
+              </span>
             </label>
-            <Alert tone={value.printerMode === "WindowsPrinter" ? "info" : "warning"} title="Windows printer">
-              Enter the printer name exactly as it appears in Windows. Leave printing disabled if it is not configured.
+            <Alert tone={value.printerMode === "WindowsPrinter" ? "info" : "warning"} title="Windows print queue only">
+              Internal receipt printing uses the Windows print queue only. No ESC/POS, cash drawer, cutter, or thermal-profile support. Save settings before running Test print. Leave mode Disabled if the printer is not configured.
             </Alert>
-            <p className="text-xs text-slate-500">Saved receipts remain available when printing is disabled.</p>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" disabled={testPrintBusy || busy} onClick={() => void onTestPrint()}>
+                {testPrintBusy ? "Testing…" : "Test print"}
+              </Button>
+            </div>
+            {testPrintMessage ? <Alert tone="info" title="Test print result">{testPrintMessage}</Alert> : null}
+            <p className="text-xs text-slate-500">Saved receipts remain available when printing is disabled. Print or reprint never changes sale, payment, or stock records.</p>
           </CardBody>
         </Card>
       </div>

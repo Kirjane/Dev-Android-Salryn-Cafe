@@ -244,11 +244,14 @@ public static class PosPrinter1WindowsPrinterWiringChecks
         string windowsAdapter = File.ReadAllText(Path.Combine(root.FullName, "src", "Salryn.Core", "Services", "WindowsQueueReceiptPrinterAdapter.cs"));
         string printerSource = settingsPage + "\n" + settingsApi + "\n" + checkoutPage + "\n" + salesPage;
 
-        RequireContains(settingsPage, "Windows Printer", "Store Settings must expose Windows Printer mode.");
-        RequireContains(settingsPage, "Windows printer name", "Store Settings must expose Windows printer name field.");
+        RequireContains(settingsPage, "WindowsPrinter", "Store Settings must expose WindowsPrinter mode value.");
+        RequireContains(settingsPage, "Windows print queue", "Store Settings must describe Windows print queue mode.");
         RequireContains(settingsPage, "Exact Windows printer name", "Store Settings must request the exact configured Windows printer name.");
-        RequireContains(settingsPage, "Leave printing disabled if it is not configured", "Store Settings must keep unconfigured printing safely disabled.");
+        RequireContains(settingsPage, "Leave mode Disabled if the printer is not configured", "Store Settings must keep unconfigured printing safely disabled.");
         RequireContains(settingsPage, "Saved receipts remain available when printing is disabled", "Store Settings must preserve receipt access when printing is disabled.");
+        RequireContains(settingsPage, "Test print", "Store Settings must expose Test print.");
+        RequireContains(settingsPage, "testPrintReceipt", "Store Settings must call test print API.");
+        RequireContains(settingsPage, "Windows print queue only", "Store Settings must state Windows print queue only.");
         RequireContains(settingsApi, "windowsPrinterName", "Store settings API client must carry Windows printer name.");
         RequireContains(windowsAdapter, "ArgumentList.Add", "Windows adapter must pass print arguments without manual command-line concatenation.");
         RequireNotContains(windowsAdapter, "Arguments =", "Windows adapter must not concatenate caller-influenced printer names into a command line.");

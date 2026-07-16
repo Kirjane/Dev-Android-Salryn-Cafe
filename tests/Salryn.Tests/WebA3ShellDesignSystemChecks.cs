@@ -123,11 +123,14 @@ public static class WebA3ShellDesignSystemChecks
         RequireContains(storeSettingsApiText, "/api/settings/store/logo", "Store logo upload must use settings logo endpoint.");
         RequireContains(backupPageText, "Import Backup File", "Portable backup import UI must remain on Backup & Restore.");
         RequireContains(backupApiText, "importBackupFile", "Portable backup import client must remain scoped.");
-        string capabilitySourceWithoutLogoUpload = capabilitySource
-            .Replace(storeSettingsPageText, string.Empty, StringComparison.Ordinal)
-            .Replace(storeSettingsApiText, string.Empty, StringComparison.Ordinal)
-            .Replace(backupPageText, string.Empty, StringComparison.Ordinal)
-            .Replace(backupApiText, string.Empty, StringComparison.Ordinal);
+        // Path-based exclusion avoids Replace false-negatives from encoding/newline drift.
+        string capabilitySourceWithoutLogoUpload = ReadAllWebSourceExcluding(webSrc, new[]
+        {
+            Path.Combine("pages", "StoreSettingsPage.tsx"),
+            Path.Combine("api", "storeSettings.ts"),
+            Path.Combine("pages", "BackupRestorePage.tsx"),
+            Path.Combine("api", "backups.ts"),
+        }).Replace("No ESC/POS", string.Empty, StringComparison.Ordinal);
 
         string[] alwaysForbiddenTokens =
         {
@@ -179,6 +182,33 @@ public static class WebA3ShellDesignSystemChecks
                 path.EndsWith(".ts", StringComparison.OrdinalIgnoreCase) ||
                 path.EndsWith(".tsx", StringComparison.OrdinalIgnoreCase) ||
                 path.EndsWith(".css", StringComparison.OrdinalIgnoreCase));
+
+        return string.Join("\n", files.Select(File.ReadAllText));
+    }
+
+    private static string ReadAllWebSourceExcluding(string webSrc, IEnumerable<string> relativeExcludeSuffixes)
+    {
+        string[] excludes = relativeExcludeSuffixes
+            .Select(x => x.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar))
+            .ToArray();
+        IEnumerable<string> files = Directory
+            .GetFiles(webSrc, "*.*", SearchOption.AllDirectories)
+            .Where(path =>
+                path.EndsWith(".ts", StringComparison.OrdinalIgnoreCase) ||
+                path.EndsWith(".tsx", StringComparison.OrdinalIgnoreCase) ||
+                path.EndsWith(".css", StringComparison.OrdinalIgnoreCase))
+            .Where(path =>
+            {
+                foreach (string suffix in excludes)
+                {
+                    if (path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            });
 
         return string.Join("\n", files.Select(File.ReadAllText));
     }
