@@ -43,16 +43,13 @@ public sealed class LocalLicenseEnforcementService : ILocalLicenseEnforcementSer
             }
 
             if (status.LicenseType == LicenseType.Host &&
-                requiredFeature == LicenseFeatures.LanTerminals &&
-                (status.AllowedLanTerminals is null or <= 0 ||
-                 !status.EnabledFeatures.Contains(LicenseFeatures.LanTerminals, StringComparer.Ordinal)))
+                requiredFeature == LicenseFeatures.LanTerminals)
             {
-                // Host without LAN entitlement: feature not licensed (pairing count enforcement is a later branch).
-                return Deny(
+                return Allow(
                     requiredFeature,
                     status,
-                    LicenseEnforcementReason.FeatureNotLicensed,
-                    "Host license does not entitle LAN terminals for production use.");
+                    LicenseEnforcementReason.LicensedFeatureAllowed,
+                    "Valid Host license allows host-local Terminal Management; each client still requires its own signed Terminal license.");
             }
 
             return status.EnabledFeatures.Contains(requiredFeature, StringComparer.Ordinal)

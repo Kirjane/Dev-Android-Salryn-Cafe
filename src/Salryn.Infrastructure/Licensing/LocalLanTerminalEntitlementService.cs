@@ -6,7 +6,8 @@ using Salryn.Core.Services.Licensing;
 namespace Salryn.Infrastructure.Licensing;
 
 /// <summary>
-/// Evaluates Host LAN terminal commercial entitlement from the local offline license.
+/// Evaluates Host LAN availability from the local offline license and validates the
+/// separate signed Terminal license required for each remote POS device.
 /// Does not require cloud. Private signing material is never used here.
 /// Abuse hard-cap defaults mirror RemotePosCapacityPolicy (10 paired / 3 sessions).
 /// </summary>
@@ -78,40 +79,20 @@ public sealed class LocalLanTerminalEntitlementService
                 contact);
         }
 
-        if (status.Status != LicenseStatus.Development &&
-            !status.EnabledFeatures.Contains(LicenseFeatures.LanTerminals, StringComparer.Ordinal))
-        {
-            return Blocked(
-                status,
-                allowed: 0,
-                "Host license does not include LanTerminals. Contact " + contact + " to license LAN terminals.",
-                contact);
-        }
-
-        int allowed = status.AllowedLanTerminals ?? 0;
-        if (allowed <= 0)
-        {
-            return Blocked(
-                status,
-                allowed: 0,
-                "Host license allows 0 LAN terminals. Contact " + contact + " to license additional operational terminals.",
-                contact);
-        }
-
-        int effectivePaired = Math.Min(allowed, _hardCap);
+        int effectivePaired = _hardCap;
         int effectiveSessions = Math.Min(_defaultMaxActiveSessions, effectivePaired);
 
         return new LocalLanTerminalEntitlementStatus(
             HostOperationalLanAllowed: true,
-            AllowedLanTerminals: allowed,
+            AllowedLanTerminals: 0,
             EffectiveMaxPairedTerminals: effectivePaired,
             EffectiveMaxActiveSessions: Math.Max(1, effectiveSessions),
             LicenseStatus: status.Status,
             LicenseType: status.LicenseType,
             HostLicenseId: status.LicenseId,
             StoreId: status.StoreId,
-            Message: "Host license allows " + allowed + " operational LAN terminal(s). Effective max paired is "
-                + effectivePaired + " (hard cap " + _hardCap + "). Each terminal still requires its own Terminal license.",
+            Message: "Host license is valid for Terminal Management. Each LAN terminal requires its own signed Terminal license. "
+                + "The effective paired-device ceiling is the safety cap of " + effectivePaired + ".",
             ContactEmail: contact);
     }
 
@@ -119,15 +100,16 @@ public sealed class LocalLanTerminalEntitlementService
     /// Validates a terminal license document presented to the host (optional protocol field).
     /// Host license cannot satisfy terminal proof.
     /// </summary>
-    public Result ValidateTerminalLicenseProof(
+    public Result<ValidatedTerminalLicenseProof> ValidateTerminalLicenseProof(
         string? terminalLicenseJson,
+        string? terminalMachineCode,
         LocalLanTerminalEntitlementStatus hostEntitlement)
     {
         ArgumentNullException.ThrowIfNull(hostEntitlement);
 
         if (string.IsNullOrWhiteSpace(terminalLicenseJson))
         {
-            return Result.Fail(Error.Validation(
+            return Result<ValidatedTerminalLicenseProof>.Fail(Error.Validation(
                 LocalLanTerminalEntitlementCodes.TerminalProofInvalid,
                 "Terminal license proof is required for operational LAN terminal activation."));
         }
@@ -139,38 +121,43 @@ public sealed class LocalLanTerminalEntitlementService
         }
         catch (JsonException)
         {
-            return Result.Fail(Error.Validation(
+            return Result<ValidatedTerminalLicenseProof>.Fail(Error.Validation(
                 LocalLanTerminalEntitlementCodes.TerminalProofInvalid,
                 "Terminal license proof JSON is malformed."));
         }
 
         if (document is null)
         {
-            return Result.Fail(Error.Validation(
+            return Result<ValidatedTerminalLicenseProof>.Fail(Error.Validation(
                 LocalLanTerminalEntitlementCodes.TerminalProofInvalid,
                 "Terminal license proof JSON did not contain a license document."));
         }
 
         if (document.LicenseType == LicenseType.Host)
         {
-            return Result.Fail(Error.Forbidden(
+            return Result<ValidatedTerminalLicenseProof>.Fail(Error.Forbidden(
                 LocalLanTerminalEntitlementCodes.HostLicenseAsTerminal,
                 "Host license cannot be used as terminal proof. Each LAN terminal requires a separate Terminal license."));
         }
 
         if (document.LicenseType != LicenseType.Terminal)
         {
-            return Result.Fail(Error.Forbidden(
+            return Result<ValidatedTerminalLicenseProof>.Fail(Error.Forbidden(
                 LocalLanTerminalEntitlementCodes.WrongLicenseType,
                 "Terminal license proof must have LicenseType Terminal."));
         }
 
-        // Terminal machine binding is enforced on the terminal device. Host verifies commercial identity.
+        if (string.IsNullOrWhiteSpace(terminalMachineCode))
+        {
+            return Result<ValidatedTerminalLicenseProof>.Fail(Error.Validation(
+                LocalLanTerminalEntitlementCodes.TerminalMachineCodeRequired,
+                "Terminal machine code is required for Terminal license validation."));
+        }
+
+        string normalizedMachineCode = terminalMachineCode.Trim();
         LocalLicenseValidatorOptions options = new()
         {
-            MachineFingerprint = string.IsNullOrWhiteSpace(document.MachineBinding)
-                ? null
-                : document.MachineBinding.Trim(),
+            MachineFingerprint = normalizedMachineCode,
             SignatureVerifier = _signatureVerifier
         };
         LocalLicenseValidator terminalValidator = new(options);
@@ -183,8 +170,11 @@ public sealed class LocalLanTerminalEntitlementService
         LocalLicenseValidationResult validation = terminalValidator.Validate(read);
         if (validation.Status != LicenseStatus.Licensed)
         {
-            return Result.Fail(Error.Forbidden(
-                LocalLanTerminalEntitlementCodes.TerminalProofInvalid,
+            string code = validation.MachineMatched
+                ? LocalLanTerminalEntitlementCodes.TerminalProofInvalid
+                : LocalLanTerminalEntitlementCodes.TerminalMachineMismatch;
+            return Result<ValidatedTerminalLicenseProof>.Fail(Error.Forbidden(
+                code,
                 "Terminal license proof failed validation: " + validation.Message));
         }
 
@@ -194,7 +184,7 @@ public sealed class LocalLanTerminalEntitlementService
                 document.StoreId?.Trim(),
                 StringComparison.OrdinalIgnoreCase))
         {
-            return Result.Fail(Error.Forbidden(
+            return Result<ValidatedTerminalLicenseProof>.Fail(Error.Forbidden(
                 LocalLanTerminalEntitlementCodes.TerminalStoreMismatch,
                 "Terminal license StoreId does not match the Host license StoreId."));
         }
@@ -205,19 +195,26 @@ public sealed class LocalLanTerminalEntitlementService
                 document.HostLicenseId?.Trim(),
                 StringComparison.OrdinalIgnoreCase))
         {
-            return Result.Fail(Error.Forbidden(
+            return Result<ValidatedTerminalLicenseProof>.Fail(Error.Forbidden(
                 LocalLanTerminalEntitlementCodes.TerminalHostMismatch,
                 "Terminal license HostLicenseId does not match this Host LicenseId."));
         }
 
         if (string.IsNullOrWhiteSpace(document.TerminalId))
         {
-            return Result.Fail(Error.Validation(
+            return Result<ValidatedTerminalLicenseProof>.Fail(Error.Validation(
                 LocalLanTerminalEntitlementCodes.TerminalProofInvalid,
                 "Terminal license must include TerminalId."));
         }
 
-        return Result.Success();
+        return Result<ValidatedTerminalLicenseProof>.Success(new ValidatedTerminalLicenseProof(
+            LicenseId: document.LicenseId!.Trim(),
+            CustomerName: document.CustomerName!.Trim(),
+            StoreId: document.StoreId!.Trim(),
+            HostLicenseId: document.HostLicenseId!.Trim(),
+            TerminalId: document.TerminalId.Trim(),
+            MachineCode: normalizedMachineCode,
+            ExpiresAt: document.ExpiresAt));
     }
 
     private static LocalLanTerminalEntitlementStatus Blocked(

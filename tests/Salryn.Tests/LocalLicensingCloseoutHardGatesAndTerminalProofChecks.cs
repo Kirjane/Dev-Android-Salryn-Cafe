@@ -70,27 +70,27 @@ public static class LocalLicensingCloseoutHardGatesAndTerminalProofChecks
             Install(service, Host("LIC-CLOSE-HOST", allowedLan: 2, features: new[] { LicenseFeatures.LanTerminals, LicenseFeatures.Pos }));
             LocalLanTerminalEntitlementStatus hostEnt = entitlements.GetHostEntitlementAsync().GetAwaiter().GetResult();
             RequireTrue(hostEnt.HostOperationalLanAllowed, "Host LAN must be entitled.");
-            RequireTrue(entitlements.ValidateTerminalLicenseProof(null, hostEnt).IsFailure, "Missing TerminalLicenseJson must fail.");
-            RequireTrue(entitlements.ValidateTerminalLicenseProof("  ", hostEnt).IsFailure, "Blank TerminalLicenseJson must fail.");
+            RequireTrue(entitlements.ValidateTerminalLicenseProof(null, TestMachine, hostEnt).IsFailure, "Missing TerminalLicenseJson must fail.");
+            RequireTrue(entitlements.ValidateTerminalLicenseProof("  ", TestMachine, hostEnt).IsFailure, "Blank TerminalLicenseJson must fail.");
 
             string hostJson = JsonSerializer.Serialize(
                 Host("LIC-CLOSE-HOST", allowedLan: 2, features: new[] { LicenseFeatures.LanTerminals }),
                 JsonOptions);
-            RequireTrue(entitlements.ValidateTerminalLicenseProof(hostJson, hostEnt).IsFailure, "Host license as terminal proof must fail.");
+            RequireTrue(entitlements.ValidateTerminalLicenseProof(hostJson, TestMachine, hostEnt).IsFailure, "Host license as terminal proof must fail.");
 
             LocalLicenseDocument goodTerm = Terminal("LIC-CLOSE-TERM-OK", hostLicenseId: "LIC-CLOSE-HOST", terminalId: "term-ok");
             RequireTrue(
-                entitlements.ValidateTerminalLicenseProof(JsonSerializer.Serialize(goodTerm, JsonOptions), hostEnt).IsSuccess,
+                entitlements.ValidateTerminalLicenseProof(JsonSerializer.Serialize(goodTerm, JsonOptions), TestMachine, hostEnt).IsSuccess,
                 "Valid terminal proof must pass.");
 
             LocalLicenseDocument wrongStore = goodTerm with { StoreId = "other-store" };
             RequireTrue(
-                entitlements.ValidateTerminalLicenseProof(JsonSerializer.Serialize(wrongStore, JsonOptions), hostEnt).IsFailure,
+                entitlements.ValidateTerminalLicenseProof(JsonSerializer.Serialize(wrongStore, JsonOptions), TestMachine, hostEnt).IsFailure,
                 "Wrong StoreId must fail.");
 
             LocalLicenseDocument wrongHost = goodTerm with { HostLicenseId = "other-host" };
             RequireTrue(
-                entitlements.ValidateTerminalLicenseProof(JsonSerializer.Serialize(wrongHost, JsonOptions), hostEnt).IsFailure,
+                entitlements.ValidateTerminalLicenseProof(JsonSerializer.Serialize(wrongHost, JsonOptions), TestMachine, hostEnt).IsFailure,
                 "Wrong HostLicenseId must fail.");
 
             // Source guards: gates wired; proof required; license endpoints unguarded by product feature.
@@ -111,16 +111,16 @@ public static class LocalLicensingCloseoutHardGatesAndTerminalProofChecks
             RequireContains(users, "LicenseFeatures.Users", "Users write must require Users feature.");
             RequireContains(reports, "LicenseFeatures.Reports", "Reports must require Reports feature.");
             RequireContains(backup, "LicenseFeatures.Backup", "Backup must require Backup feature.");
-            RequireContains(lan, "LicenseFeatures.LanTerminals", "LAN join-code rotate must require LanTerminals.");
+            RequireNotContains(lan, "RequireLicensedFeatureAsync(\n                    LicenseFeatures.LanTerminals", "Host feature count must not gate terminal pairing.");
             RequireContains(guard, "License.FeatureDenied", "Guard must return License.FeatureDenied.");
             RequireNotContains(licenseEp, "RequireLicensedFeatureAsync", "License status/import must remain reachable without product feature gate.");
             RequireContains(pairing, "ValidateTerminalLicenseProof", "Activation must validate terminal proof.");
             RequireNotContains(pairing, "may not always send TerminalLicenseJson", "Optional terminal proof comment must be removed.");
             RequireContains(hostLan, "title=\"Terminal Management\"", "Internal host LAN UI must use Terminal Management naming.");
             RequireNotContains(hostLan, "TerminalLicenseJson", "Client copy must not expose the terminal proof field name.");
-            RequireContains(navigation, "VITE_SALRYN_INTERNAL_SURFACES", "Incomplete Terminal Management must be hidden from normal navigation.");
+            RequireContains(navigation, "{ id: \"host-lan-control\", label: \"Terminal Management\", enabled: true, group: \"Admin\" }", "Terminal Management must be normal Admin navigation.");
             RequireContains(remoteClient, "terminalLicenseJson", "Remote client must send terminalLicenseJson.");
-            RequireContains(remoteClient, "salryn.terminalLicenseJson", "Remote client must load cached terminal license proof.");
+            RequireContains(remoteClient, "readInstalledTerminalLicense", "Remote client must load explicitly installed terminal license proof.");
 
             // Optional: prove LicensingOps-generated signature against POS public key when sibling fixture exists.
             TryVerifyOpsGeneratedLicense();

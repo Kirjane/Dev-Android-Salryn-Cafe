@@ -14,7 +14,6 @@ import {
   TextInput,
   type DataTableColumn,
 } from "../components/ui";
-import { remotePosClientWarnings } from "../api/remotePosClient";
 import { useRemotePosClient } from "../hooks/useRemotePosClient";
 import type { RemotePosCartLine } from "../types/remotePosClient";
 import { clearAllLanClientDeviceState } from "../utils/lanClientStorage";
@@ -153,12 +152,9 @@ export function RemotePosClientPage() {
         subtitle="Connect to the POS host over its explicit LAN address. Pair this device first, then sign in as Cashier or Manager."
       />
 
-      <Alert tone="warning" title="This device is a Remote POS client">
-        <ul className="list-disc space-y-1 pl-5">
-          {remotePosClientWarnings.map((warning) => (
-            <li key={warning}>{warning}</li>
-          ))}
-        </ul>
+      <Alert tone="info" title="Terminal access">
+        This licensed terminal must be approved by the POS Host before a Cashier or Manager can sign in. Admin and Owner
+        accounts remain host-local.
       </Alert>
 
       {client.errorMessage ? (
@@ -170,10 +166,11 @@ export function RemotePosClientPage() {
       {client.statusMessage ? <Alert tone="info">{client.statusMessage}</Alert> : null}
 
       {client.hostAddressConfirmed ? (
-        <Card>
-          <CardBody className="text-xs text-slate-500">
+        <details className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
+          <summary className="cursor-pointer font-medium text-slate-700">Diagnostics</summary>
+          <div className="mt-3">
             <p>
-              Flow: <span className="font-mono text-slate-700">{client.flowState}</span>
+              State: <span className="font-mono text-slate-700">{client.flowState}</span>
               {" · "}
               Storage restored: <span className="font-mono text-slate-700">{client.storageRestored ? "yes" : "no"}</span>
               {" · "}
@@ -197,8 +194,8 @@ export function RemotePosClientPage() {
               {" · "}
               Host: <span className="font-mono text-slate-700">{client.hostBaseUrl.trim() || "-"}</span>
             </p>
-          </CardBody>
-        </Card>
+          </div>
+        </details>
       ) : null}
 
       {client.flowState === "S_REVOKED" ? (
@@ -225,7 +222,7 @@ export function RemotePosClientPage() {
       {!client.hostAddressConfirmed ? (
         <Card>
           <CardHeader>
-            <CardTitle>State A — Host address</CardTitle>
+            <CardTitle>Connect to POS Host</CardTitle>
           </CardHeader>
           <CardBody className="space-y-4">
             <p className="text-sm text-slate-500">
@@ -265,7 +262,7 @@ export function RemotePosClientPage() {
               <FormField label="Host join code" htmlFor="rpos-join-code">
                 <TextInput id="rpos-join-code" value={joinCode} onChange={(event) => setJoinCode(event.target.value)} autoComplete="off" />
               </FormField>
-              <FormField label="Device display name" htmlFor="rpos-device-name" hint="Display-only. The host never trusts this as identity.">
+              <FormField label="Terminal display name" htmlFor="rpos-device-name" hint="Shown to the host during approval.">
                 <TextInput id="rpos-device-name" value={deviceName} onChange={(event) => setDeviceName(event.target.value)} autoComplete="off" maxLength={40} />
               </FormField>
             </div>
@@ -398,7 +395,7 @@ export function RemotePosClientPage() {
         <>
           <Card>
             <CardHeader>
-              <CardTitle>State F — Remote POS</CardTitle>
+              <CardTitle>Remote POS</CardTitle>
             </CardHeader>
             <CardBody className="space-y-3">
               {client.operatorSessionRestored ? (

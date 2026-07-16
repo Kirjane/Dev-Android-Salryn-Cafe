@@ -347,7 +347,19 @@ public sealed class TerminalPairingActivationService : ITerminalPairingActivatio
             ? "unknown-machine"
             : request.ClientMachineName.Trim();
 
-        return "Activated by LAN-M6 remote pairing handshake from " + machine + ".";
+        string activation = "Activated by LAN-M6 remote pairing handshake from " + machine + ".";
+        if (string.IsNullOrWhiteSpace(request.TerminalLicenseId)
+            || string.IsNullOrWhiteSpace(request.LicenseTerminalId)
+            || string.IsNullOrWhiteSpace(request.LicenseMachineCode))
+        {
+            return activation;
+        }
+
+        return TerminalLicenseTrustMetadata.Build(
+            request.TerminalLicenseId,
+            request.LicenseTerminalId,
+            request.LicenseMachineCode,
+            request.TerminalLicenseExpiresAt) + " " + activation;
     }
 
     private static Result<TerminalPairingActivationResult> ActivationFailure(Error error) =>

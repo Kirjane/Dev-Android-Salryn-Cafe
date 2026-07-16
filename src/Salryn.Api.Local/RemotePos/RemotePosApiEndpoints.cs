@@ -20,6 +20,18 @@ public static class RemotePosApiEndpoints
     {
         RouteGroupBuilder group = app.MapGroup("/api/remote-pos");
 
+        group.MapPost("/terminal-license/validate", async (
+            RemotePosTerminalLicenseValidationRequest request,
+            RemotePosApiServices services,
+            CancellationToken cancellationToken) =>
+        {
+            Result<RemotePosTerminalLicenseValidationResponse> result = await services.PairingGate
+                .ValidateTerminalLicenseAsync(request, cancellationToken)
+                .ConfigureAwait(false);
+
+            return ToPairingResult(result);
+        });
+
         // ---- Pairing gate -------------------------------------------------------------------
 
         group.MapGet("/pairing/status", (

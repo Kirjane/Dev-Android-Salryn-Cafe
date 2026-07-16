@@ -8,7 +8,9 @@ import type {
   RemotePosPairingStatus,
   RemotePosSession,
   RemotePosShift,
+  RemotePosTerminalLicenseValidation,
 } from "../types/remotePosClient";
+import { getOrCreateTerminalMachineCode, readInstalledTerminalLicense } from "../utils/terminalLicenseStorage";
 
 // LAN-M16: client for the host-owned remote POS command surface (/api/remote-pos).
 //
@@ -65,17 +67,6 @@ export type RemotePosTerminalHandshakeRefresh = {
   message: string;
 };
 
-export const remotePosClientWarnings = [
-  "This device is a Remote POS client.",
-  "The host owns the database and sales.",
-  "Use the host LAN address shown on the host.",
-  "Do not use localhost from another device.",
-  "Ask the host operator for the join code.",
-  "Wait for the host to approve this device.",
-  "After pairing, sign in as Cashier or Manager.",
-  "Admin and Owner accounts are host-local only for this build.",
-] as const;
-
 function buildUrl(connection: RemotePosHostConnection, path: string): string {
   const base = connection.hostBaseUrl.trim().replace(/\/+$/, "");
   return base.length > 0 ? `${base}${path}` : path;
@@ -126,17 +117,35 @@ export async function remotePosRequestPairing(
   return postJson<RemotePosJoinResponse>(buildUrl(connection, "/api/remote-pos/pairing/request"), {}, request);
 }
 
+export async function validateRemotePosTerminalLicense(
+  connection: RemotePosHostConnection,
+  terminalLicenseJson: string,
+  terminalMachineCode: string,
+): Promise<RemotePosTerminalLicenseValidation> {
+  return postJson<RemotePosTerminalLicenseValidation>(
+    buildUrl(connection, "/api/remote-pos/terminal-license/validate"),
+    {},
+    { terminalLicenseJson, terminalMachineCode },
+  );
+}
+
 export async function remotePosActivatePairing(
   connection: RemotePosHostConnection,
-  request: { requestId: string; pairingCode: string; terminalLicenseJson?: string | null },
+  request: {
+    requestId: string;
+    pairingCode: string;
+    terminalLicenseJson?: string | null;
+    terminalMachineCode?: string | null;
+  },
 ): Promise<RemotePosPairingActivation> {
-  const terminalLicenseJson =
-    request.terminalLicenseJson?.trim() ||
-    (typeof window !== "undefined" ? window.localStorage.getItem("salryn.terminalLicenseJson") : null);
+  const installed = readInstalledTerminalLicense();
+  const terminalLicenseJson = request.terminalLicenseJson?.trim() || installed?.licenseJson || null;
+  const terminalMachineCode = request.terminalMachineCode?.trim() || installed?.machineCode || getOrCreateTerminalMachineCode();
   return postJson<RemotePosPairingActivation>(buildUrl(connection, "/api/remote-pos/pairing/activate"), {}, {
     requestId: request.requestId,
     pairingCode: request.pairingCode,
     terminalLicenseJson: terminalLicenseJson || null,
+    terminalMachineCode: terminalMachineCode || null,
   });
 }
 

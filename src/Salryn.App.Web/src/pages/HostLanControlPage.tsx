@@ -243,12 +243,6 @@ export function HostLanControlPage() {
         }
       />
 
-      {!hostLanEntitled ? (
-        <Alert tone="warning" title="Terminal activation is not ready for client use">
-          Pairing remains unavailable while the separate Terminal activation and licensing model is completed.
-        </Alert>
-      ) : null}
-
       {statusQuery.isLoading ? <LoadingState label="Loading host LAN control..." /> : null}
       {statusQuery.isError ? <ErrorState message={(statusQuery.error as Error).message} /> : null}
       {actionError ? <ErrorState message={actionError} /> : null}
@@ -409,7 +403,7 @@ export function HostLanControlPage() {
             <CardBody className="space-y-6">
               <p className="text-sm text-slate-600">{status.terminalVisibilityMessage}</p>
               <p className="text-sm font-medium text-slate-700">
-                Remaining capacity: {limits?.remainingPairingCapacity ?? 0} terminals / {limits?.remainingActiveSessionCapacity ?? 0} sessions.
+                Safety availability: {limits?.remainingPairingCapacity ?? 0} paired devices / {limits?.remainingActiveSessionCapacity ?? 0} active sessions.
               </p>
               {(["active", "blocked", "retired", "host-local"] as TerminalConnectionGroup[]).map((group) => {
                 const rows = groupedTerminals[group];
@@ -448,6 +442,10 @@ export function HostLanControlPage() {
                 <li>Tap <strong>Clear this device state</strong>.</li>
                 <li>Request access again with a fresh host join code.</li>
               </ol>
+              <p>
+                Every client device must activate with its own signed Terminal license before pairing. Host license
+                terminal-count fields do not grant or limit client licenses.
+              </p>
               <p>
                 Revoked or archived old rows are history. New pairing creates a <strong>new</strong> terminal — do not
                 try to reactivate a revoked connection.

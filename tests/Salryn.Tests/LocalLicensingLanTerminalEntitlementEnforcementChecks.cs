@@ -6,8 +6,8 @@ using Salryn.Infrastructure.Licensing;
 namespace Salryn.Tests;
 
 /// <summary>
-/// LIC-LAN: Host AllowedLanTerminals gates operational LAN pairing capacity;
-/// Terminal proof cannot be Host license; wrong store/host rejected; UI honesty.
+/// LIC-LAN: valid Host unlocks management while one signed Terminal license per
+/// terminal is the commercial truth; wrong device/store/host proof is rejected.
 /// </summary>
 public static class LocalLicensingLanTerminalEntitlementEnforcementChecks
 {
@@ -47,18 +47,18 @@ public static class LocalLicensingLanTerminalEntitlementEnforcementChecks
             RequireTrue(missing.EffectiveMaxPairedTerminals == 0, "Missing license effective paired max must be 0.");
             RequireContains(missing.Message, "salryn.info@gmail.com", "Missing entitlement message must include contact email.");
 
-            // AllowedLanTerminals = 0 blocks.
+            // Host count is not commercial truth: even a hardened zero-count Host allows management.
             Install(service, Host("LIC-LAN-ZERO", allowedLan: 0, features: new[] { LicenseFeatures.Pos, LicenseFeatures.LanTerminals }));
             LocalLanTerminalEntitlementStatus zero = entitlements.GetHostEntitlementAsync().GetAwaiter().GetResult();
-            RequireTrue(!zero.HostOperationalLanAllowed, "AllowedLanTerminals=0 must block operational LAN.");
-            RequireTrue(zero.EffectiveMaxPairedTerminals == 0, "AllowedLanTerminals=0 effective max must be 0.");
+            RequireTrue(zero.HostOperationalLanAllowed, "A valid Host must allow Terminal Management regardless of terminal-count metadata.");
+            RequireTrue(zero.EffectiveMaxPairedTerminals == 10, "Valid Host must expose the safety hard cap.");
 
-            // AllowedLanTerminals = 2 exposes limit and allows operations.
+            // A legacy Host count does not change the safety ceiling.
             Install(service, Host("LIC-LAN-HOST-2", allowedLan: 2, features: new[] { LicenseFeatures.Pos, LicenseFeatures.LanTerminals, LicenseFeatures.Licensing }));
             LocalLanTerminalEntitlementStatus allowed = entitlements.GetHostEntitlementAsync().GetAwaiter().GetResult();
             RequireTrue(allowed.HostOperationalLanAllowed, "Host with AllowedLanTerminals=2 must allow operations.");
-            RequireTrue(allowed.AllowedLanTerminals == 2, "AllowedLanTerminals must surface as 2.");
-            RequireTrue(allowed.EffectiveMaxPairedTerminals == 2, "Effective max paired must be 2.");
+            RequireTrue(allowed.AllowedLanTerminals == 0, "Host terminal count must not surface as commercial capacity.");
+            RequireTrue(allowed.EffectiveMaxPairedTerminals == 10, "Effective paired maximum must remain the safety cap.");
             RequireTrue(allowed.HostLicenseId == "LIC-LAN-HOST-2", "Host LicenseId must surface.");
             RequireTrue(allowed.StoreId == "store-lan-1", "StoreId must surface.");
 
@@ -81,7 +81,7 @@ public static class LocalLicensingLanTerminalEntitlementEnforcementChecks
             string hostJson = JsonSerializer.Serialize(
                 Host("LIC-LAN-HOST-2", allowedLan: 2, features: new[] { LicenseFeatures.LanTerminals }),
                 JsonOptions);
-            var hostAsTerm = entitlements.ValidateTerminalLicenseProof(hostJson, hostEnt);
+            var hostAsTerm = entitlements.ValidateTerminalLicenseProof(hostJson, TestMachine, hostEnt);
             RequireTrue(hostAsTerm.IsFailure, "Host license must not be accepted as terminal proof.");
             RequireTrue(
                 hostAsTerm.ErrorDetail.Code.Contains("HostLicenseAsTerminal", StringComparison.Ordinal)
@@ -95,6 +95,7 @@ public static class LocalLicensingLanTerminalEntitlementEnforcementChecks
             };
             var wrongStoreResult = entitlements.ValidateTerminalLicenseProof(
                 JsonSerializer.Serialize(wrongStore, JsonOptions),
+                TestMachine,
                 hostEnt);
             RequireTrue(wrongStoreResult.IsFailure, "Wrong StoreId must be rejected.");
             RequireContains(wrongStoreResult.ErrorDetail.Message, "StoreId", "Wrong store message must mention StoreId.");
@@ -103,6 +104,7 @@ public static class LocalLicensingLanTerminalEntitlementEnforcementChecks
             LocalLicenseDocument wrongHost = Terminal("LIC-LAN-TERM-HOST", hostLicenseId: "LIC-OTHER", terminalId: "term-2");
             var wrongHostResult = entitlements.ValidateTerminalLicenseProof(
                 JsonSerializer.Serialize(wrongHost, JsonOptions),
+                TestMachine,
                 hostEnt);
             RequireTrue(wrongHostResult.IsFailure, "Wrong HostLicenseId must be rejected.");
             RequireContains(wrongHostResult.ErrorDetail.Message, "HostLicenseId", "Wrong host message must mention HostLicenseId.");
@@ -111,12 +113,19 @@ public static class LocalLicensingLanTerminalEntitlementEnforcementChecks
             LocalLicenseDocument goodTerm = Terminal("LIC-LAN-TERM-OK", hostLicenseId: "LIC-LAN-HOST-2", terminalId: "term-ok");
             var good = entitlements.ValidateTerminalLicenseProof(
                 JsonSerializer.Serialize(goodTerm, JsonOptions),
+                TestMachine,
                 hostEnt);
             RequireTrue(good.IsSuccess, "Valid terminal proof must be accepted. " + (good.IsFailure ? good.ErrorDetail.Message : ""));
 
             // Empty proof rejected.
-            var emptyProof = entitlements.ValidateTerminalLicenseProof("  ", hostEnt);
+            var emptyProof = entitlements.ValidateTerminalLicenseProof("  ", TestMachine, hostEnt);
             RequireTrue(emptyProof.IsFailure, "Empty terminal proof must be rejected.");
+
+            var wrongMachine = entitlements.ValidateTerminalLicenseProof(
+                JsonSerializer.Serialize(goodTerm, JsonOptions),
+                "SALRYN-MC-WRONG-DEVICE-CODE",
+                hostEnt);
+            RequireTrue(wrongMachine.IsFailure, "Terminal proof bound to another machine must be rejected.");
 
             // Source / UI guards.
             string entitlementService = ReadRepo("src", "Salryn.Infrastructure", "Licensing", "LocalLanTerminalEntitlementService.cs");
@@ -129,12 +138,12 @@ public static class LocalLicensingLanTerminalEntitlementEnforcementChecks
             RequireContains(entitlementService, "ValidateTerminalLicenseProof", "Entitlement service must validate terminal proof.");
             RequireContains(entitlementService, "HostLicenseAsTerminal", "Must reject host license as terminal proof.");
             RequireContains(pairingGate, "LocalLanTerminalEntitlementService", "Pairing gate must use entitlement service.");
-            RequireContains(pairingGate, "GetEffectiveMaxPairedTerminals", "Pairing gate must use effective licensed max.");
+            RequireContains(pairingGate, "GetEffectiveMaxPairedTerminals", "Pairing gate must retain a safety maximum.");
             RequireContains(pairingGate, "PairedTerminalLimitReached", "Pairing gate must report terminal capacity overflow.");
             RequireContains(pairingGate, "ValidateTerminalLicenseProof", "Activation must require terminal license proof validation.");
             RequireContains(hostLan, "title=\"Terminal Management\"", "Internal host LAN page must use Terminal Management naming.");
-            RequireContains(hostLan, "Terminal activation is not ready for client use", "Incomplete terminal activation must be stated on the internal surface.");
-            RequireContains(navigation, "VITE_SALRYN_INTERNAL_SURFACES", "Incomplete Terminal Management must be hidden from normal navigation.");
+            RequireNotContains(hostLan, "Terminal activation is not ready for client use", "Completed terminal activation must not retain incomplete warnings.");
+            RequireContains(navigation, "group: \"Admin\"", "Terminal Management must be in normal Admin navigation.");
             RequireContains(hostLan, "hostLanEntitled", "Host LAN page must gate controls on entitlement.");
             RequireContains(contracts, "NoTerminalsPurchased", "Entitlement codes must include NoTerminalsPurchased.");
 

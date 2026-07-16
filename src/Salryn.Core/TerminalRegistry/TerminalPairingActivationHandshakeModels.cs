@@ -30,7 +30,71 @@ public sealed record TerminalPairingActivationRequest(
     string? ClientMachineName,
     string? ClientFingerprint,
     DateTimeOffset RequestedAtUtc,
-    string OriginAddress);
+    string OriginAddress,
+    string? TerminalLicenseId = null,
+    string? LicenseTerminalId = null,
+    string? LicenseMachineCode = null,
+    DateTimeOffset? TerminalLicenseExpiresAt = null);
+
+public static class TerminalLicenseTrustMetadata
+{
+    private const string Prefix = "[TerminalLicenseProof:v1;LicenseId=";
+    private const string TerminalIdMarker = ";TerminalId=";
+    private const string MachineCodeMarker = ";MachineCode=";
+    private const string ExpiresAtMarker = ";ExpiresAt=";
+    private const string Suffix = "]";
+
+    public static string Build(string licenseId, string terminalId, string machineCode, DateTimeOffset? expiresAt) =>
+        Prefix + Uri.EscapeDataString(licenseId.Trim())
+        + TerminalIdMarker + Uri.EscapeDataString(terminalId.Trim())
+        + MachineCodeMarker + Uri.EscapeDataString(machineCode.Trim())
+        + ExpiresAtMarker + Uri.EscapeDataString(expiresAt?.ToString("O") ?? "none")
+        + Suffix;
+
+    public static bool TryRead(
+        string? notes,
+        out string licenseId,
+        out string terminalId,
+        out string machineCode,
+        out DateTimeOffset? expiresAt)
+    {
+        licenseId = string.Empty;
+        terminalId = string.Empty;
+        machineCode = string.Empty;
+        expiresAt = null;
+        if (string.IsNullOrWhiteSpace(notes))
+        {
+            return false;
+        }
+
+        int start = notes.IndexOf(Prefix, StringComparison.Ordinal);
+        int terminalMarker = start < 0 ? -1 : notes.IndexOf(TerminalIdMarker, start + Prefix.Length, StringComparison.Ordinal);
+        int machineMarker = terminalMarker < 0 ? -1 : notes.IndexOf(MachineCodeMarker, terminalMarker + TerminalIdMarker.Length, StringComparison.Ordinal);
+        int expiryMarker = machineMarker < 0 ? -1 : notes.IndexOf(ExpiresAtMarker, machineMarker + MachineCodeMarker.Length, StringComparison.Ordinal);
+        int end = expiryMarker < 0 ? -1 : notes.IndexOf(Suffix, expiryMarker + ExpiresAtMarker.Length, StringComparison.Ordinal);
+        if (start < 0 || terminalMarker < 0 || machineMarker < 0 || expiryMarker < 0 || end < 0)
+        {
+            return false;
+        }
+
+        licenseId = Uri.UnescapeDataString(notes[(start + Prefix.Length)..terminalMarker]);
+        terminalId = Uri.UnescapeDataString(notes[(terminalMarker + TerminalIdMarker.Length)..machineMarker]);
+        machineCode = Uri.UnescapeDataString(notes[(machineMarker + MachineCodeMarker.Length)..expiryMarker]);
+        string expiryText = Uri.UnescapeDataString(notes[(expiryMarker + ExpiresAtMarker.Length)..end]);
+        if (!string.Equals(expiryText, "none", StringComparison.Ordinal))
+        {
+            if (!DateTimeOffset.TryParse(expiryText, out DateTimeOffset parsedExpiry))
+            {
+                return false;
+            }
+
+            expiresAt = parsedExpiry;
+        }
+        return !string.IsNullOrWhiteSpace(licenseId)
+            && !string.IsNullOrWhiteSpace(terminalId)
+            && !string.IsNullOrWhiteSpace(machineCode);
+    }
+}
 
 public sealed record TerminalPairingActivationResult(
     bool Succeeded,

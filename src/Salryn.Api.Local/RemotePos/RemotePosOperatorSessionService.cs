@@ -9,6 +9,7 @@ using Salryn.Core.ReadModels;
 using Salryn.Core.Repositories;
 using Salryn.Core.Security;
 using Salryn.Core.Services;
+using Salryn.Core.TerminalRegistry;
 
 namespace Salryn.Api.Local.RemotePos;
 
@@ -171,6 +172,26 @@ public sealed class RemotePosOperatorSessionService
         }
 
         DeploymentIdentitySnapshot identity = identityResult.Value;
+
+        TerminalRegistryActorContext terminalActor = new(
+            Guid.Parse("00000000-0000-0000-0000-000000000001"),
+            new[] { SalrynPermissions.StoreTerminalView });
+        Result<SalrynTerminalRegistration?> terminalResult = await _lanServices.TerminalRegistry
+            .GetTerminalAsync(trust.TerminalId, terminalActor, cancellationToken)
+            .ConfigureAwait(false);
+        if (terminalResult.IsFailure
+            || terminalResult.Value is null
+            || !TerminalLicenseTrustMetadata.TryRead(terminalResult.Value.Notes, out _, out _, out _, out DateTimeOffset? terminalLicenseExpiresAt))
+        {
+            return Trust(false, RemotePosSessionState.TrustRejected, "RemotePos.TerminalLicenseProofRequired",
+                "This terminal is not backed by a verified Terminal license. Re-pair it from Terminal Management.");
+        }
+
+        if (terminalLicenseExpiresAt.HasValue && terminalLicenseExpiresAt.Value <= DateTimeOffset.UtcNow)
+        {
+            return Trust(false, RemotePosSessionState.TrustRejected, "RemotePos.TerminalLicenseExpired",
+                "This Terminal license has expired. Install a renewed Terminal license and re-pair this device.");
+        }
 
         Result handshakeValidation = await _lanServices.Handshake
             .ValidateHandshakeSessionAsync(trust.TerminalId, trust.HandshakeSessionId, cancellationToken)

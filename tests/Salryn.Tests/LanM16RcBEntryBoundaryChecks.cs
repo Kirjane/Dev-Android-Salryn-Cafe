@@ -68,7 +68,7 @@ public static class LanM16RcBEntryBoundaryChecks
         }
 
         AssertNotContains(landing, "Sign in to Salryn POS", "LAN landing must not show the local POS login.");
-        AssertContains(app, "type RemoteClientMode = \"landing\" | \"remote-pos\" | \"remote-readonly\"", "Remote client modes must stay separate from host pages.");
+        AssertContains(app, "type RemoteClientMode = \"activation\" | \"landing\" | \"remote-pos\" | \"remote-readonly\"", "Remote client modes must stay separate from host pages.");
         AssertContains(app, "function RemoteClientApp()", "Remote client app must own LAN client rendering.");
         AssertContains(app, "mode === \"remote-pos\" ? <RemotePosClientPage /> : <RemoteReadOnlyClientPage />", "Remote client app must still offer Remote POS and Remote Read-Only pages.");
         AssertContains(remotePosHook, "startsFromRemoteEntry ? currentBrowserOrigin() : \"\"", "Remote POS must use current LAN host origin from remote entry.");
@@ -92,7 +92,7 @@ public static class LanM16RcBEntryBoundaryChecks
             "Host local URL",
             "Host LAN URL",
             "Remote POS runtime",
-            "Terminal activation is not ready for client use",
+            "Every client device must activate with its own signed Terminal license",
             "Capacity",
             "LAN Connection",
             "Activate LAN connection",
@@ -108,7 +108,7 @@ public static class LanM16RcBEntryBoundaryChecks
             "One-time pairing code",
             "Give this code to the client device.",
             "Terminal connections",
-            "Remaining capacity",
+            "Safety availability",
             "Terminal help",
             "Advanced diagnostics"
         })
@@ -144,8 +144,8 @@ public static class LanM16RcBEntryBoundaryChecks
         AssertNotContains(appShell, "Salryn read-only operator console", "Host shell must remove stale read-only operator label.");
         AssertNotContains(dashboardPage, "Open Host LAN Control", "Dashboard must not expose incomplete terminal controls.");
         AssertNotContains(dashboardPage, "canOpenHostLanControl", "Dashboard must not carry stale LAN-card props.");
-        AssertContains(navigation, "{ id: \"host-lan-control\", label: \"Terminal Management\", enabled: true, group: \"Advanced\" }", "Internal LAN navigation must use Terminal Management.");
-        AssertContains(navigation, "VITE_SALRYN_INTERNAL_SURFACES", "Terminal Management must be hidden without explicit internal mode.");
+        AssertContains(navigation, "{ id: \"host-lan-control\", label: \"Terminal Management\", enabled: true, group: \"Admin\" }", "Normal Admin navigation must use Terminal Management.");
+        AssertContains(navigation, "VITE_SALRYN_INTERNAL_SURFACES", "Report Artifacts must retain its internal-mode boundary.");
         AssertNotContains(navigation, "Remote POS Client", "Host navigation must not show Remote POS Client.");
         AssertNotContains(navigation, "Remote Read-Only Client", "Host navigation must not show Remote Read-Only Client.");
         AssertNotContains(navigation, "remote-pos", "Host navigation must not route to Remote POS Client.");

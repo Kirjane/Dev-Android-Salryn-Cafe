@@ -256,14 +256,9 @@ public sealed class LocalLicenseValidator
     {
         if (document.LicenseType == LicenseType.Host)
         {
-            if (document.AllowedLanTerminals is null)
-            {
-                return "Host license must include AllowedLanTerminals (use 0 when no LAN terminals are purchased).";
-            }
-
             if (document.AllowedLanTerminals < 0)
             {
-                return "Host license LAN terminal count must not be negative.";
+                return "Host license compatibility field AllowedLanTerminals must not be negative.";
             }
 
             if (!string.IsNullOrWhiteSpace(document.HostLicenseId) || !string.IsNullOrWhiteSpace(document.TerminalId))
@@ -278,7 +273,7 @@ public sealed class LocalLicenseValidator
         {
             if (document.AllowedLanTerminals is not null)
             {
-                return "Terminal license must not include AllowedLanTerminals; terminal count is controlled by the Host license.";
+                return "Terminal license must not include the reserved Host compatibility field AllowedLanTerminals; each terminal is licensed individually.";
             }
 
             if (string.IsNullOrWhiteSpace(document.HostLicenseId))

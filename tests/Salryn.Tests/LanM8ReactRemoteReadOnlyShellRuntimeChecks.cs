@@ -25,7 +25,7 @@ public static class LanM8ReactRemoteReadOnlyShellRuntimeChecks
         Require(!nav.Contains("Remote Read-Only Client", StringComparison.Ordinal), "Host navigation must not include Remote Read-Only Client.");
         Require(!nav.Contains("remote-readonly", StringComparison.Ordinal), "Host navigation must not route to remote-readonly.");
         Require(landing.Contains("Remote Read-Only Client", StringComparison.Ordinal), "Remote client landing must include Remote Read-Only Client.");
-        Require(app.Contains("type RemoteClientMode = \"landing\" | \"remote-pos\" | \"remote-readonly\"", StringComparison.Ordinal), "Remote read-only must be a remote client mode.");
+        Require(app.Contains("type RemoteClientMode = \"activation\" | \"landing\" | \"remote-pos\" | \"remote-readonly\"", StringComparison.Ordinal), "Activation, Remote POS, and remote read-only must remain remote client modes.");
         Require(app.Contains("RemoteReadOnlyClientPage", StringComparison.Ordinal), "App render entry missing.");
         Require(page.Contains("Remote Read-Only Client", StringComparison.Ordinal), "Page title missing.");
         Require(page.Contains("Connection / Session Status", StringComparison.Ordinal) || page.Contains("Pairing / Session State", StringComparison.Ordinal), "Connection/session card missing.");

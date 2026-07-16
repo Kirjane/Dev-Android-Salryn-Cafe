@@ -150,7 +150,6 @@ export type RemotePosLimits = {
   remainingPairingCapacity: number;
   remainingActiveSessionCapacity: number;
   hostLanEntitled?: boolean;
-  licensedAllowedLanTerminals?: number;
   hostLicenseId?: string | null;
   storeId?: string | null;
   licenseMessage?: string | null;

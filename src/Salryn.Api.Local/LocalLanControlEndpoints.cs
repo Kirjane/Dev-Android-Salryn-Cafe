@@ -164,13 +164,6 @@ public static class LocalLanControlEndpoints
                 return rejected;
             }
 
-            if (await ApiLicenseGuard.RequireLicensedFeatureAsync(
-                    LicenseFeatures.LanTerminals,
-                    cancellationToken).ConfigureAwait(false) is IResult licenseDenied)
-            {
-                return licenseDenied;
-            }
-
             return ToApiResult(remotePos.PairingGate.RotateJoinCode());
         });
 

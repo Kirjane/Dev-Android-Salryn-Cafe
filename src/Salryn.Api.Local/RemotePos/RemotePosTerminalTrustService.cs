@@ -130,6 +130,38 @@ public sealed class RemotePosTerminalTrustService
             return null;
         }
 
+        if (!TerminalLicenseTrustMetadata.TryRead(terminal.Notes, out _, out _, out _, out DateTimeOffset? terminalLicenseExpiresAt))
+        {
+            return TrustResponse(
+                terminalId,
+                RemotePosTerminalTrustStatuses.Revoked,
+                displayName,
+                false,
+                false,
+                "This terminal is not backed by a verified Terminal license. Re-pair it from Terminal Management.",
+                null,
+                null,
+                null,
+                terminal.StoreId,
+                terminal.HostId);
+        }
+
+        if (terminalLicenseExpiresAt.HasValue && terminalLicenseExpiresAt.Value <= DateTimeOffset.UtcNow)
+        {
+            return TrustResponse(
+                terminalId,
+                RemotePosTerminalTrustStatuses.Revoked,
+                displayName,
+                false,
+                false,
+                "This Terminal license has expired. Install a renewed Terminal license and re-pair this device.",
+                null,
+                null,
+                null,
+                terminal.StoreId,
+                terminal.HostId);
+        }
+
         if (!handshakeSessionId.HasValue)
         {
             return TrustResponse(

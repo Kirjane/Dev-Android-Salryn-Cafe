@@ -32,6 +32,17 @@ export type RemotePosPairingActivation = {
   message: string;
 };
 
+export type RemotePosTerminalLicenseValidation = {
+  licenseId: string;
+  customerName: string;
+  storeId: string;
+  hostLicenseId: string;
+  terminalId: string;
+  machineCode: string;
+  expiresAt: string | null;
+  message: string;
+};
+
 export type RemotePosSession = {
   sessionState: string;
   sessionId: string | null;

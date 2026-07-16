@@ -24,12 +24,14 @@ import { ProductionReportsPage } from "./pages/ProductionReportsPage";
 import { RemoteClientLandingPage } from "./pages/RemoteClientLandingPage";
 import { RemotePosClientPage } from "./pages/RemotePosClientPage";
 import { RemoteReadOnlyClientPage } from "./pages/RemoteReadOnlyClientPage";
+import { TerminalActivationPage } from "./pages/TerminalActivationPage";
 import { SalesHistoryPage } from "./pages/SalesHistoryPage";
 import { OfficialSetupPage } from "./pages/OfficialSetupPage";
 import { TraditionalReportingPage } from "./pages/TraditionalReportingPage";
 import { UsersPage } from "./pages/UsersPage";
 import { canAccessPage, getFirstAllowedPage } from "./security/permissions";
 import { isRemoteClientBrowserLocation } from "./utils/lanEntry";
+import { readInstalledTerminalLicense } from "./utils/terminalLicenseStorage";
 
 function FullScreenCenter({ children }: { children: ReactNode }) {
   return <div className="flex min-h-screen items-center justify-center bg-navy-900 px-4">{children}</div>;
@@ -83,11 +85,14 @@ function renderPage(page: AppPage, session: SessionState, onLogout: () => void, 
   }
 }
 
-type RemoteClientMode = "landing" | "remote-pos" | "remote-readonly";
+type RemoteClientMode = "activation" | "landing" | "remote-pos" | "remote-readonly";
 
 function RemoteClientApp() {
-  const [mode, setMode] = useState<RemoteClientMode>("landing");
-  if (mode === "landing") return <RemoteClientLandingPage onOpenRemotePos={() => setMode("remote-pos")} onOpenReadOnly={() => setMode("remote-readonly")} />;
+  const [mode, setMode] = useState<RemoteClientMode>(() =>
+    readInstalledTerminalLicense() ? "landing" : "activation",
+  );
+  if (mode === "activation") return <TerminalActivationPage onActivated={() => setMode("landing")} />;
+  if (mode === "landing") return <RemoteClientLandingPage onOpenRemotePos={() => setMode("remote-pos")} onOpenReadOnly={() => setMode("remote-readonly")} onManageTerminalLicense={() => setMode("activation")} />;
   return (
     <div className="min-h-screen bg-[#f6f7f9]"><header className="flex h-[60px] items-center justify-between bg-navy-900 px-5 text-white shadow-sm"><div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-md bg-white text-navy-900"><Layers3 aria-hidden="true" size={21} /></span><div><p className="text-sm font-bold">Salryn POS</p><p className="text-xs text-slate-400">Terminal client</p></div></div><Button variant="secondary" onClick={() => setMode("landing")}><ArrowLeft aria-hidden="true" size={16} />Back to client entry</Button></header><div className="mx-auto max-w-7xl space-y-4 p-6">{mode === "remote-pos" ? <RemotePosClientPage /> : <RemoteReadOnlyClientPage />}</div></div>
   );

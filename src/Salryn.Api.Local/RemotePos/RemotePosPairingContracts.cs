@@ -56,11 +56,27 @@ public sealed record RemotePosRejectJoinResponse(
     string PairingState,
     string Message);
 
+public sealed record RemotePosTerminalLicenseValidationRequest(
+    string? TerminalLicenseJson,
+    string? TerminalMachineCode);
+
+public sealed record RemotePosTerminalLicenseValidationResponse(
+    string LicenseId,
+    string CustomerName,
+    string StoreId,
+    string HostLicenseId,
+    string TerminalId,
+    string MachineCode,
+    string? ExpiresAt,
+    string Message);
+
 public sealed record RemotePosPairingActivationRequest(
     string RequestId,
     string PairingCode,
-    /// <summary>Optional signed Terminal license JSON presented to the host for StoreId/HostLicenseId proof.</summary>
-    string? TerminalLicenseJson = null);
+    /// <summary>Signed Terminal license JSON presented to the host for device, store, and host proof.</summary>
+    string? TerminalLicenseJson = null,
+    /// <summary>Stable machine code generated and persisted by the terminal client.</summary>
+    string? TerminalMachineCode = null);
 
 public sealed record RemotePosPairingActivationResponse(
     string PairingState,

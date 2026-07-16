@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { Button, Card, CardBody, CardHeader, CardTitle, StatusPill } from "../components/ui";
-import { isInternalSurfaceModeEnabled } from "../navigation";
 import { currentBrowserOrigin } from "../utils/lanEntry";
 import {
   clearAllLanClientDeviceState,
@@ -11,15 +10,16 @@ import {
 type RemoteClientLandingPageProps = {
   onOpenRemotePos: () => void;
   onOpenReadOnly: () => void;
+  onManageTerminalLicense: () => void;
 };
 
 export function RemoteClientLandingPage({
   onOpenRemotePos,
   onOpenReadOnly,
+  onManageTerminalLicense,
 }: RemoteClientLandingPageProps) {
   const [clearedNotice, setClearedNotice] = useState(false);
   const [hasPairingMaterial, setHasPairingMaterial] = useState(true);
-  const showInternalRemotePos = isInternalSurfaceModeEnabled();
 
   const storedRemotePosPairing = useMemo(() => {
     if (!hasPairingMaterial) {
@@ -83,7 +83,7 @@ export function RemoteClientLandingPage({
               </p>
             </div>
 
-            {showInternalRemotePos && storedRemotePosPairing ? (
+            {storedRemotePosPairing ? (
               <button
                 type="button"
                 onClick={onOpenRemotePos}
@@ -104,7 +104,7 @@ export function RemoteClientLandingPage({
             ) : null}
 
             <div className="grid gap-4 md:grid-cols-2">
-              {showInternalRemotePos ? <button
+              <button
                 type="button"
                 onClick={onOpenRemotePos}
                 className="rounded-lg border border-slate-200 bg-white px-5 py-4 text-left shadow-sm hover:border-blue-300 hover:bg-blue-50"
@@ -116,7 +116,7 @@ export function RemoteClientLandingPage({
                 <p className="mt-2 text-sm text-slate-600">
                   Request approval with the host join code and device name, enter the one-time pairing code, then sign in.
                 </p>
-              </button> : null}
+              </button>
 
               <button
                 type="button"
@@ -140,6 +140,9 @@ export function RemoteClientLandingPage({
                 stored. Then request access again.
               </p>
               <div className="flex flex-wrap gap-2">
+                <Button variant="secondary" onClick={onManageTerminalLicense}>
+                  Terminal License
+                </Button>
                 <Button variant="secondary" onClick={clearThisDeviceState}>
                   Clear this device state
                 </Button>

@@ -40,7 +40,8 @@ public static class LanM16HostClientIdentityUxChecks
     private static void AssertRemoteClientIdentity(string remotePosPage)
     {
         AssertContains(remotePosPage, "Remote POS client", "Remote POS page must identify the remote client role.");
-        AssertContains(remotePosPage, "This device is a Remote POS client", "Remote POS page must show the remote client warning banner.");
+        AssertContains(remotePosPage, "Terminal access", "Remote POS page must show concise terminal-access guidance.");
+        AssertContains(remotePosPage, "This licensed terminal must be approved by the POS Host", "Remote POS page must explain host approval without a warning wall.");
         AssertContains(remotePosPage, "Connect to the POS host over its explicit LAN address.", "Remote POS page must guide the operator to the host LAN address.");
         AssertContains(remotePosPage, "Pair this device first, then sign in as Cashier or Manager.", "Remote POS page must show the pairing-then-login flow.");
         AssertContains(remotePosPage, "Cashier / Manager login", "Remote POS page must limit the login stage to Cashier/Manager.");
@@ -52,14 +53,8 @@ public static class LanM16HostClientIdentityUxChecks
 
     private static void AssertRemoteClientWarningsAndHeaders(string remotePosClient)
     {
-        AssertContains(remotePosClient, "This device is a Remote POS client.", "Client warnings must identify the remote POS client role.");
-        AssertContains(remotePosClient, "The host owns the database and sales.", "Client warnings must state the host owns data and sales.");
-        AssertContains(remotePosClient, "Use the host LAN address shown on the host.", "Client warnings must direct the operator to the host LAN address.");
-        AssertContains(remotePosClient, "Do not use localhost from another device.", "Client warnings must clarify localhost-on-another-computer semantics.");
-        AssertContains(remotePosClient, "Ask the host operator for the join code.", "Client warnings must document the host-controlled join step.");
-        AssertContains(remotePosClient, "Wait for the host to approve this device.", "Client warnings must document the host approval step.");
-        AssertContains(remotePosClient, "After pairing, sign in as Cashier or Manager.", "Client warnings must document the login step.");
-        AssertContains(remotePosClient, "Admin and Owner accounts are host-local only for this build.", "Client warnings must preserve the host-local Admin/Owner boundary.");
+        AssertContains(remotePosClient, "/terminal-license/validate", "Client must validate its signed Terminal license before pairing.");
+        AssertContains(remotePosClient, "terminalMachineCode", "Client pairing must carry terminal-origin device proof.");
         AssertContains(remotePosClient, "X-Salryn-Terminal-Id", "Client must send the terminal identity header.");
         AssertContains(remotePosClient, "X-Salryn-Handshake-Session-Id", "Client must send the handshake proof header.");
         AssertContains(remotePosClient, "X-Salryn-Remote-Pos-Session", "Client must send the operator session header.");
@@ -77,8 +72,8 @@ public static class LanM16HostClientIdentityUxChecks
         string remoteClientApp = ExtractBlock(app, "function RemoteClientApp()", "function ConsoleApp()");
 
         AssertNotContains(navigation, "Remote POS Client", "Host navigation must not expose the Remote POS Client page.");
-        AssertContains(navigation, "VITE_SALRYN_INTERNAL_SURFACES", "Incomplete terminal surfaces must require explicit internal mode.");
-        AssertContains(navigation, "label: \"Terminal Management\"", "Internal LAN navigation must use Terminal Management.");
+        AssertContains(navigation, "VITE_SALRYN_INTERNAL_SURFACES", "Report Artifacts must retain explicit internal mode.");
+        AssertContains(navigation, "label: \"Terminal Management\"", "Admin navigation must use Terminal Management.");
         AssertNotContains(navigation, "remote-pos", "Host navigation must not route to remote-pos.");
         AssertNotContains(permissions, "\"remote-pos\"", "Remote POS Client must not be a host AppPage.");
         AssertNotContains(consoleApp, "RemotePosClientPage", "ConsoleApp must not render Remote POS Client.");

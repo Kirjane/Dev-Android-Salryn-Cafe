@@ -129,6 +129,7 @@ public static class Program
         LocalLicensingBetaManualHostTerminalActivationChecks.Run();
         LocalLicensingLanTerminalEntitlementEnforcementChecks.Run();
         LocalLicensingCloseoutHardGatesAndTerminalProofChecks.Run();
+        PreI1LanTerminalActivationManagementBetaChecks.Run();
         HardenA1A6PreBetaFoundationChecks.Run();
         ManualM1BootstrapAuthRepairChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
@@ -468,6 +469,22 @@ public static class Program
                 return;
             case "lic-closeout-hard-gates-and-terminal-proof":
                 LocalLicensingCloseoutHardGatesAndTerminalProofChecks.Run();
+                return;
+            case "pre-i1-lan-terminal-activation-management-beta":
+                LocalLicensingLanTerminalEntitlementEnforcementChecks.Run();
+                LocalLicensingCloseoutHardGatesAndTerminalProofChecks.Run();
+                PreI1LanTerminalActivationManagementBetaChecks.Run();
+                return;
+            case "lan-m16-remote-pos":
+                LanM16HostOwnedRemoteOperatorSessionChecks.Run();
+                LanM16RemotePosCommandAuthorizationChecks.Run();
+                LanM16RemoteCheckoutIdempotencyAndHostWriteChecks.Run();
+                LanM16HostClientIdentityUxChecks.Run();
+                LanM16OriginBindingChecks.Run();
+                LanM16PostCommitAuditSafetyChecks.Run();
+                LanM16FinalMultiTerminalAcceptanceChecks.Run();
+                LanM16QaBRemotePosPairingGateChecks.Run();
+                LanM16RcBEntryBoundaryChecks.Run();
                 return;
             case "harden-a1-a6-pre-beta-foundation":
                 HardenA1A6PreBetaFoundationChecks.Run();

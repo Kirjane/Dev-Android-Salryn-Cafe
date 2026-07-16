@@ -58,6 +58,42 @@ public sealed class RemotePosPairingGateService
                 : "No active Remote POS join code. Rotate a join code from the POS host before pairing a device.");
     }
 
+    public async Task<Result<RemotePosTerminalLicenseValidationResponse>> ValidateTerminalLicenseAsync(
+        RemotePosTerminalLicenseValidationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        LocalLanTerminalEntitlementStatus entitlement = await _entitlements
+            .GetHostEntitlementAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (!entitlement.HostOperationalLanAllowed)
+        {
+            return Result<RemotePosTerminalLicenseValidationResponse>.Fail(Error.Forbidden(
+                LocalLanTerminalEntitlementCodes.HostLicenseRequired,
+                entitlement.Message));
+        }
+
+        Result<ValidatedTerminalLicenseProof> proof = _entitlements.ValidateTerminalLicenseProof(
+            request.TerminalLicenseJson,
+            request.TerminalMachineCode,
+            entitlement);
+        if (proof.IsFailure)
+        {
+            return Result<RemotePosTerminalLicenseValidationResponse>.Fail(proof.ErrorDetail);
+        }
+
+        ValidatedTerminalLicenseProof value = proof.Value;
+        return Result<RemotePosTerminalLicenseValidationResponse>.Success(new(
+            value.LicenseId,
+            value.CustomerName,
+            value.StoreId,
+            value.HostLicenseId,
+            value.TerminalId,
+            value.MachineCode,
+            value.ExpiresAt?.ToString("O"),
+            "Terminal license is valid for this device and POS Host."));
+    }
+
     public Result<RemotePosJoinCodeRotateResponse> RotateJoinCode()
     {
         LocalLanTerminalEntitlementStatus entitlement = _entitlements
@@ -239,7 +275,7 @@ public sealed class RemotePosPairingGateService
         {
             return Result<RemotePosApproveJoinResponse>.Fail(Error.Conflict(
                 "RemotePosPairing.PairedTerminalLimitReached",
-                $"Licensed LAN terminal capacity is full ({reservedOrPairedCount.Value}/{maxPaired}). AllowedLanTerminals on the Host license is {entitlement.AllowedLanTerminals}. Contact {entitlement.ContactEmail} to license more terminals, or revoke an existing terminal."));
+                $"The LAN terminal safety limit is full ({reservedOrPairedCount.Value}/{maxPaired}). Revoke an unused terminal before pairing another device."));
         }
 
         Result<PairingInviteCreationResult> invite = await _lanServices.TerminalPairingPreparation
@@ -353,7 +389,10 @@ public sealed class RemotePosPairingGateService
         }
 
         // Operational terminal activation requires separate Terminal license proof (not optional).
-        Result proof = _entitlements.ValidateTerminalLicenseProof(request.TerminalLicenseJson, entitlement);
+        Result<ValidatedTerminalLicenseProof> proof = _entitlements.ValidateTerminalLicenseProof(
+            request.TerminalLicenseJson,
+            request.TerminalMachineCode,
+            entitlement);
         if (proof.IsFailure)
         {
             return Result<RemotePosPairingActivationResponse>.Fail(proof.ErrorDetail);
@@ -371,11 +410,23 @@ public sealed class RemotePosPairingGateService
             return Result<RemotePosPairingActivationResponse>.Fail(activePairedCount.ErrorDetail);
         }
 
+        Result terminalLicenseAvailable = await EnsureTerminalLicenseAvailableAsync(
+            proof.Value,
+            new TerminalRegistryActorContext(
+                state.ApprovedByUserId ?? Guid.Empty,
+                state.ApprovedActorPermissions ?? Array.Empty<string>()),
+            cancellationToken)
+            .ConfigureAwait(false);
+        if (terminalLicenseAvailable.IsFailure)
+        {
+            return Result<RemotePosPairingActivationResponse>.Fail(terminalLicenseAvailable.ErrorDetail);
+        }
+
         if (activePairedCount.Value >= maxPaired)
         {
             return Result<RemotePosPairingActivationResponse>.Fail(Error.Conflict(
                 "RemotePosPairing.PairedTerminalLimitReached",
-                $"Licensed LAN terminal capacity is full ({activePairedCount.Value}/{maxPaired}). AllowedLanTerminals on the Host license is {entitlement.AllowedLanTerminals}."));
+                $"The LAN terminal safety limit is full ({activePairedCount.Value}/{maxPaired}). Revoke an unused terminal before pairing another device."));
         }
 
         TerminalPairingActivationRequest activationRequest = new(
@@ -388,7 +439,11 @@ public sealed class RemotePosPairingGateService
             state.DeviceName,
             "remote-pos-pairing-gate",
             DateTimeOffset.UtcNow,
-            state.ObservedOrigin);
+            state.ObservedOrigin,
+            proof.Value.LicenseId,
+            proof.Value.TerminalId,
+            proof.Value.MachineCode,
+            proof.Value.ExpiresAt);
 
         Result<TerminalPairingActivationResult> activation = await _lanServices.TerminalPairingActivation
             .ActivatePairingAsync(activationRequest, cancellationToken)
@@ -512,7 +567,6 @@ public sealed class RemotePosPairingGateService
             RemainingPairingCapacity: Math.Max(0, maxPaired - currentPairedCount),
             RemainingActiveSessionCapacity: Math.Max(0, maxSessions - activeSessionCount),
             HostLanEntitled: entitlement.HostOperationalLanAllowed,
-            LicensedAllowedLanTerminals: entitlement.AllowedLanTerminals,
             HostLicenseId: entitlement.HostLicenseId,
             StoreId: entitlement.StoreId,
             LicenseMessage: entitlement.Message,
@@ -521,7 +575,8 @@ public sealed class RemotePosPairingGateService
 
     private int GetEffectiveMaxPairedTerminals(LocalLanTerminalEntitlementStatus entitlement)
     {
-        // Commercial entitlement wins over abuse default capacity; never exceed hard cap.
+        // Signed Terminal licenses are the commercial truth. This numeric limit is a
+        // defensive safety/abuse ceiling and never expands beyond the hard cap.
         if (!entitlement.HostOperationalLanAllowed)
         {
             return 0;
@@ -570,6 +625,37 @@ public sealed class RemotePosPairingGateService
         return Result<int>.Success(terminals.Value.Count(terminal =>
             terminal.TerminalRole == TerminalRegistrationRole.CashierClient
             && terminal.Status != TerminalRegistrationStatus.Revoked));
+    }
+
+    private async Task<Result> EnsureTerminalLicenseAvailableAsync(
+        ValidatedTerminalLicenseProof proof,
+        TerminalRegistryActorContext actor,
+        CancellationToken cancellationToken)
+    {
+        Result<IReadOnlyList<SalrynTerminalRegistration>> terminals = await _lanServices.TerminalRegistry
+            .ListTerminalsAsync(actor, cancellationToken)
+            .ConfigureAwait(false);
+        if (terminals.IsFailure)
+        {
+            return Result.Fail(terminals.ErrorDetail);
+        }
+
+        bool alreadyPaired = terminals.Value.Any(terminal =>
+        {
+            if (terminal.Status == TerminalRegistrationStatus.Revoked
+                || !TerminalLicenseTrustMetadata.TryRead(terminal.Notes, out _, out string terminalId, out _, out _))
+            {
+                return false;
+            }
+
+            return string.Equals(terminalId, proof.TerminalId, StringComparison.OrdinalIgnoreCase);
+        });
+
+        return alreadyPaired
+            ? Result.Fail(Error.Conflict(
+                LocalLanTerminalEntitlementCodes.TerminalLicenseAlreadyPaired,
+                "This Terminal license is already paired to another active or disabled terminal. Revoke that terminal before pairing it again."))
+            : Result.Success();
     }
 
     private void ExpireRequests()
