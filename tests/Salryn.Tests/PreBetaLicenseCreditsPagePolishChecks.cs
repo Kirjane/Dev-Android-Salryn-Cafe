@@ -2,7 +2,7 @@ namespace Salryn.Tests;
 
 /// <summary>
 /// PRE-BETA: licensing + credits two-card polish (Host LicensePage + TerminalActivationPage).
-/// Source guards only — does not change crypto or machine binding.
+/// Credits card is credits-first (no admin metadata boxes). Source guards only.
 /// </summary>
 public static class PreBetaLicenseCreditsPagePolishChecks
 {
@@ -38,12 +38,14 @@ public static class PreBetaLicenseCreditsPagePolishChecks
         RequireNotContains(terminalPage, "Include your store name, Host License ID", "Terminal must not ask for Host License ID as a task.");
         RequireNotContains(terminalPage, "RMO", "Terminal page must not expose RMO.");
 
-        RequireContains(credits, "Repository-backed beta build", "Build type must be repository-backed beta build.");
-        RequireContains(credits, "by Kirjane Labs", "Credits must show Salryn by Kirjane Labs.");
+        // Credits identity
+        RequireContains(credits, "SALRYN", "Credits must show SALRYN.");
+        RequireContains(credits, "by Kirjane Labs", "Credits must show by Kirjane Labs.");
         RequireContains(credits, "Licensing & Credits", "Credits title required.");
-        RequireContains(credits, "Publisher", "Publisher label required.");
-        RequireContains(credits, "Kirjane Labs", "Publisher name required.");
-        RequireContains(credits, "Products of Kirjane Labs", "Products list header required.");
+        RequireContains(credits, "A Kirjane Labs product", "Product identity line required.");
+        RequireContains(credits, "Credits", "Credits section heading required.");
+
+        // People / hierarchy
         RequireContains(credits, "Paul Gamayot", "Business Lead name required.");
         RequireContains(credits, "Business Lead", "Business Lead role required.");
         RequireContains(credits, "Kirch Ivan Balite", "Technology Lead name required.");
@@ -54,8 +56,16 @@ public static class PreBetaLicenseCreditsPagePolishChecks
         RequireContains(credits, "Business Development", "Business Development role required.");
         RequireContains(credits, "Osiris Kedigadash Palac", "Dev Ops Lead name required.");
         RequireContains(credits, "Dev Ops Lead", "Dev Ops Lead role required.");
+        RequireContains(credits, "salryn.info@gmail.com", "Support email required.");
         RequireContains(credits, "© 2026 Kirjane Labs", "Copyright footer required.");
-        RequireContains(credits, "Salryn is a local POS product designed for controlled client use", "Footer product statement required.");
+
+        // Build type may only appear as tiny muted footer — not as a metadata card label.
+        RequireContains(credits, "Repository-backed beta build", "Muted beta build footer line retained.");
+        RequireNotContains(credits, "Build Type", "Build Type must not be a prominent card label.");
+        RequireNotContains(credits, ">Publisher<", "Publisher must not be a large metadata label.");
+        RequireNotContains(credits, ">Product<", "Product must not be a large metadata label.");
+        // Avoid false positive on “product” in “A Kirjane Labs product”
+        RequireNotContains(credits, "Products of Kirjane Labs", "Products of Kirjane Labs list block removed.");
         RequireNotContains(credits, "mock sample", "Credits must not say mock sample.");
         RequireNotContains(credits, "Software Development", "Do not rename Technology Lead to Software Development.");
         RequireNotContains(credits, "RMO", "Credits must not expose RMO.");
