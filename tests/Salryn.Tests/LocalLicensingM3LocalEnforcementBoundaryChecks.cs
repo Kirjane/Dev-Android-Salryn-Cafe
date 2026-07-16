@@ -194,12 +194,14 @@ public static class LocalLicensingM3LocalEnforcementBoundaryChecks
             RequireContains(licenseApi, "/api/license/status", "License API client must use status endpoint.");
             RequireContains(licenseApi, "/api/license/install", "License API client must use install endpoint.");
             RequireContains(licenseApi, "licenseJson", "License import must send signed local license content only.");
-            RequireContains(licensePage, "offline signed license", "License UI must describe offline signed licensing.");
-            RequireContains(licensePage, "public-key verification", "License UI must expose public-key verification boundary.");
-            RequireContains(licensePage, "LAN terminal production use is not claimed", "License UI must not claim LAN production readiness.");
-            RequireContains(licensePage, "not cloud licensing", "License UI must reject cloud licensing claims.");
+            RequireContains(licensePage, "Activate Salryn", "License UI must present product activation title.");
+            RequireContains(licensePage, "Paste signed license JSON", "License UI must keep signed JSON import.");
+            RequireContains(licensePage, "Salryn works offline after a valid signed license is installed", "License UI must state offline-after-install.");
+            RequireNotContains(licensePage, "cloud activation ready", "License UI must not claim cloud activation readiness.");
+            RequireNotContains(licensePage, "LAN production ready", "License UI must not claim LAN production readiness.");
             RequireNotContains(licensePage, "type=\"file\"", "License UI must not expose arbitrary file upload.");
             RequireNotContains(licensePage, "private key", "License UI must not mention private key handling.");
+            RequireNotContains(licensePage, "Offline-first license boundary", "License UI must not lead with developer boundary banners.");
             RequireContains(backupPage, "local license file is stored outside this database backup package", "Backup UI must not claim license preservation.");
 
             string productionReportEndpoint = ReadRepoFile("src", "Salryn.Api.Local", "LocalProductionReportEndpoints.cs");

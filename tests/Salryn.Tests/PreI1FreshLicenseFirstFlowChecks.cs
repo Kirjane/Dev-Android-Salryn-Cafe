@@ -18,8 +18,13 @@ public static class PreI1FreshLicenseFirstFlowChecks
         RequireNotContains(bootstrapPage, "Salryn Dev General Merchandise", "Fresh bootstrap must not prefill a dev store.");
         RequireNotContains(bootstrapPage, "DEV Admin", "Fresh bootstrap must not prefill a dev admin label.");
         RequireNotContains(licensePage, "Allowed LAN terminals (Host)", "Normal License UI must not expose Host LAN count as a commercial control.");
+        RequireNotContains(licensePage, "how many LAN terminals", "Host activation must not collect terminal count.");
         RequireContains(licensePage, "Each operational LAN terminal uses its own machine-bound Terminal license", "License UI must state one machine-bound license per terminal.");
         RequireContains(licensePage, "This Terminal license cannot unlock Host first-run setup", "Terminal license must explain Host bootstrap denial.");
+        RequireContains(licensePage, "Activate Salryn", "Fresh license page must use product activation title.");
+        RequireContains(licensePage, "salryn.info@gmail.com", "Fresh license page must show support email.");
+        RequireNotContains(licensePage, "Offline-first license boundary", "Fresh license page must not lead with developer boundary banners.");
+        RequireNotContains(licensePage, "path-bearing", "Fresh license page must not expose path-bearing technical jargon.");
         RequireContains(licenseEndpoints, "RequireLoopbackOperatorRequest", "Pre-login license endpoints must stay loopback-only.");
         RequireNotContains(EndpointBlock(licenseEndpoints, "MapGet(\"/api/license/status\""), "RequireAuthenticatedSession", "License status must be reachable before login.");
         RequireNotContains(EndpointBlock(licenseEndpoints, "MapPost(\"/api/license/install\""), "RequirePermission", "License install must be reachable before login.");
