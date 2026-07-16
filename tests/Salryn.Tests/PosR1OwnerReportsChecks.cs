@@ -284,7 +284,7 @@ public static class PosR1OwnerReportsChecks
         Require(page.Contains("title=\"Reports\"", StringComparison.Ordinal), "Frontend must expose Reports page title.");
         Require(!page.Contains("Dashboard remains the owner home summary", StringComparison.Ordinal), "Reports must not show internal product-boundary copy.");
         Require(!page.Contains("Not an official or regulatory filing", StringComparison.Ordinal), "Reports must not show regulatory disclaimer walls.");
-        Require(page.Contains("read-only", StringComparison.Ordinal), "Detailed reports UI must state read-only boundary.");
+        Require(page.Contains("Read-only", StringComparison.Ordinal), "Reports UI must remain visibly read-only.");
         Require(!page.Contains("Coming soon", StringComparison.Ordinal), "Developer-only disabled nav copy must not be reintroduced to Detailed Reports.");
         Require(permissions.Contains("\"owner-reports\": [Permissions.ReportsView]", StringComparison.Ordinal), "Detailed reports direct page access must be gated by Reports.View.");
         Require(navigation.Contains("label: \"Reports\"", StringComparison.Ordinal), "Reports must be reachable from store navigation.");
