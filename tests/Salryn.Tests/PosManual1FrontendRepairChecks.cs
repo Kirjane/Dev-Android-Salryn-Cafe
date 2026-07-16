@@ -41,7 +41,10 @@ public static class PosManual1FrontendRepairChecks
         RequireContains(settings, "Printer mode", "Settings must expose the configured printer mode.");
         RequireContains(settings, "Exact Windows printer name", "Printer setup must request the exact Windows printer name.");
         RequireContains(settings, "Saved receipts remain available when printing is disabled", "Printer copy must keep receipt availability clear.");
-        RequireNotContains(settings, "type=\"file\"", "Settings must not add an unsupported logo upload.");
+        // PRE-BETA-C: store logo upload is now supported (PNG/JPEG/WebP, Settings.Manage).
+        RequireContains(settings, "Upload logo", "Settings must expose store logo upload.");
+        RequireContains(settings, "Remove logo", "Settings must expose store logo remove.");
+        RequireContains(settings, "type=\"file\"", "Settings logo upload must use a file input.");
 
         RequireContains(products, "Unit of measure", "Catalog must distinguish unit of measure from quantity.");
         RequireContains(products, "Product details do not change stock", "Catalog edit must stay stock-neutral.");

@@ -60,7 +60,8 @@ public static class DefaultDatabaseInitializationFactory
             new OfficialDocumentLifecycleCompletionSchemaMigration(),
             new OfficialDocumentLifecycleAccountingSchemaMigration(),
             new StorePrinterModeSchemaMigration(),
-            new WindowsPrinterNameSchemaMigration()
+            new WindowsPrinterNameSchemaMigration(),
+            new StoreLogoBrandingSchemaMigration()
         };
 
         MigrationRunner migrationRunner = new(connectionFactory, migrations);

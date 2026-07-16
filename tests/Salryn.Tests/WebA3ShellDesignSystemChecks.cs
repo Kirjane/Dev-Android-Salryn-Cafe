@@ -112,7 +112,20 @@ public static class WebA3ShellDesignSystemChecks
             "No ESC/POS",
             string.Empty,
             StringComparison.Ordinal);
-        string[] forbiddenTokens =
+
+        // PRE-BETA-C: store logo branding is an approved Settings.Manage surface.
+        // File input + FormData are allowed only on StoreSettings logo upload paths.
+        // Exclude those files so upload tokens do not false-fail the global capability ban.
+        string storeSettingsPageText = ReadRequiredFile(webSrc, "pages", "StoreSettingsPage.tsx");
+        string storeSettingsApiText = ReadRequiredFile(webSrc, "api", "storeSettings.ts");
+        RequireContains(storeSettingsPageText, "Upload logo", "Store logo upload UI must remain on Store Settings.");
+        RequireContains(storeSettingsApiText, "uploadStoreLogo", "Store logo API client must remain scoped.");
+        RequireContains(storeSettingsApiText, "/api/settings/store/logo", "Store logo upload must use settings logo endpoint.");
+        string capabilitySourceWithoutLogoUpload = capabilitySource
+            .Replace(storeSettingsPageText, string.Empty, StringComparison.Ordinal)
+            .Replace(storeSettingsApiText, string.Empty, StringComparison.Ordinal);
+
+        string[] alwaysForbiddenTokens =
         {
             "/api/session/handoff/register",
             "/api/session/handoff/complete",
@@ -123,11 +136,6 @@ public static class WebA3ShellDesignSystemChecks
             "ESC/POS",
             "escpos",
             "file-picker",
-            "multipart/form-data",
-            "/upload",
-            "FormData(",
-            "type=\"file\"",
-            "blob",
             "window.print",
             "PrinterSettings",
             "printerTarget",
@@ -135,9 +143,27 @@ public static class WebA3ShellDesignSystemChecks
             "photo",
         };
 
-        foreach (string token in forbiddenTokens)
+        // Upload-related tokens remain banned outside the approved logo settings surface.
+        string[] uploadForbiddenOutsideLogo =
+        {
+            "multipart/form-data",
+            "/upload",
+            "FormData(",
+            "type=\"file\"",
+            "blob",
+        };
+
+        foreach (string token in alwaysForbiddenTokens)
         {
             RequireNotContains(capabilitySource, token, $"WEB-A3 must not add forbidden capability: {token}");
+        }
+
+        foreach (string token in uploadForbiddenOutsideLogo)
+        {
+            RequireNotContains(
+                capabilitySourceWithoutLogoUpload,
+                token,
+                $"WEB-A3 must not add forbidden capability outside store logo branding: {token}");
         }
     }
 

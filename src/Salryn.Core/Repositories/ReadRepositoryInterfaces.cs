@@ -100,6 +100,9 @@ public interface IStoreSettingsReadRepository
 {
     Task<Result<StoreSettingsReadModel?>> GetCurrentAsync(
         CancellationToken cancellationToken = default);
+
+    Task<Result<StoreLogoReadModel?>> GetLogoAsync(
+        CancellationToken cancellationToken = default);
 }
 
 public interface ICashierSessionReadRepository

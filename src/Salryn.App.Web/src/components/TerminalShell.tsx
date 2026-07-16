@@ -14,6 +14,8 @@ type TerminalShellProps = {
   roleName: string;
   terminalLabel?: string | null;
   hostLabel?: string | null;
+  storeName?: string | null;
+  logoUrl?: string | null;
   activeNav: TerminalShellNavId;
   onNavigate: (nav: TerminalShellNavId) => void;
   onSignOut: () => void;
@@ -35,6 +37,8 @@ export function TerminalShell({
   roleName,
   terminalLabel,
   hostLabel,
+  storeName,
+  logoUrl,
   activeNav,
   onNavigate,
   onSignOut,
@@ -47,11 +51,15 @@ export function TerminalShell({
     <div className="flex h-screen min-w-[48rem] flex-col bg-slate-100">
       <header className="flex h-[60px] shrink-0 items-center justify-between gap-4 border-b border-white/10 bg-navy-900 px-5 text-white shadow-sm">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-white text-navy-900 shadow-sm">
-            <Layers3 aria-hidden="true" size={22} strokeWidth={2.25} />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white text-navy-900 shadow-sm">
+            {logoUrl ? (
+              <img src={logoUrl} alt="" className="h-full w-full object-contain" />
+            ) : (
+              <Layers3 aria-hidden="true" size={22} strokeWidth={2.25} />
+            )}
           </div>
           <div className="min-w-0 leading-tight">
-            <span className="block truncate text-sm font-bold">Salryn POS</span>
+            <span className="block truncate text-sm font-bold">{storeName?.trim() || "Salryn POS"}</span>
             <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-400">
               <span className="h-1.5 w-1.5 rounded-full bg-green-400" aria-hidden="true" />
               Terminal Mode

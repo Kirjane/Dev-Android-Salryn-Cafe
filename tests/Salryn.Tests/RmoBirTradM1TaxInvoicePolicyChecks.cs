@@ -48,7 +48,7 @@ public static class RmoBirTradM1TaxInvoicePolicyChecks
         string engine = File.ReadAllText(Path.Combine(projectRoot, "src", "Salryn.Core", "Services", "OfficialDocumentTaxBucketEngine.cs"));
         string invoicePolicy = File.ReadAllText(Path.Combine(projectRoot, "src", "Salryn.Core", "Services", "SalrynInvoiceDocumentPolicy.cs"));
 
-        RequireContains(catalog, "SupportedMigrationVersion = 19", "Catalog must include the additive store-settings migration.");
+        RequireContains(catalog, "SupportedMigrationVersion = 20", "Catalog must include the additive store-settings migration.");
         RequireContains(factory, "VatRegistrationModeSchemaMigration", "Factory must register v15.");
         RequireContains(migration, "Version => 15", "Migration version must be 15.");
         RequireContains(migration, "vat_registration_mode", "Migration must add vat_registration_mode.");
@@ -216,7 +216,7 @@ public static class RmoBirTradM1TaxInvoicePolicyChecks
             Result<DatabaseInitializationSummary> init =
                 DefaultDatabaseInitializationFactory.Create(paths).InitializeDatabase();
             RequireTrue(init.IsSuccess, "Init must succeed: " + (init.IsFailure ? init.ErrorDetail.Message : ""));
-            RequireTrue(ReadMaxMigration(paths.DatabasePath) == 19, "Max migration must be 19.");
+            RequireTrue(ReadMaxMigration(paths.DatabasePath) == 20, "Max migration must be 20.");
             RequireTrue(ColumnExists(paths.DatabasePath, "bir_machine_profiles", "vat_registration_mode"),
                 "vat_registration_mode column required.");
 
@@ -277,7 +277,7 @@ public static class RmoBirTradM1TaxInvoicePolicyChecks
             Result<DatabaseInitializationSummary> upgraded =
                 DefaultDatabaseInitializationFactory.Create(upgradePaths).InitializeDatabase();
             RequireTrue(upgraded.IsSuccess, "v14→v15 must succeed.");
-            RequireTrue(ReadMaxMigration(upgradePaths.DatabasePath) == 19, "After upgrade max 19.");
+            RequireTrue(ReadMaxMigration(upgradePaths.DatabasePath) == 20, "After upgrade max 20.");
             RequireTrue(ColumnExists(upgradePaths.DatabasePath, "bir_machine_profiles", "vat_registration_mode"),
                 "v15 column after upgrade.");
         }

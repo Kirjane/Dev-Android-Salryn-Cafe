@@ -92,6 +92,21 @@ async function getJson<T>(url: string, headers: Record<string, string> = {}): Pr
   return readJson<T>(response);
 }
 
+export type RemotePosStoreBranding = {
+  storeName: string;
+  hasLogo: boolean;
+  logoContentType: string | null;
+  logoUrl: string | null;
+  logoDataUrl?: string | null;
+};
+
+export function fetchRemotePosStoreBranding(connection: RemotePosAuthedConnection) {
+  return getJson<RemotePosStoreBranding>(
+    buildUrl(connection, "/api/remote-pos/branding/store"),
+    authHeaders(connection),
+  );
+}
+
 async function postJson<T>(url: string, headers: Record<string, string>, body?: unknown): Promise<T> {
   const response = await fetch(url, {
     method: "POST",

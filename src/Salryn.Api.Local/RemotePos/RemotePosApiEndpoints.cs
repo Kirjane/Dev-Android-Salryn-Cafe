@@ -213,6 +213,53 @@ public static class RemotePosApiEndpoints
             return Results.Ok(response);
         });
 
+        // PRE-BETA-C: store branding for TerminalShell (session-authenticated remote POS only).
+        group.MapGet("/branding/store", async (
+            HttpContext httpContext,
+            RemotePosApiServices services,
+            CancellationToken cancellationToken) =>
+        {
+            (IResult? rejected, RemotePosOperatorSession? _) = await RemotePosApiAuthorization
+                .AuthorizeCommandAsync(httpContext, services, RemotePosCommands.SessionRead, cancellationToken)
+                .ConfigureAwait(false);
+            if (rejected is not null)
+            {
+                return rejected;
+            }
+
+            var result = await services.StoreSettingsRead.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            if (result.IsFailure)
+            {
+                return Results.BadRequest(new { code = result.ErrorDetail.Code, error = result.ErrorDetail.Message });
+            }
+
+            var s = result.Value;
+            if (s is null)
+            {
+                return Results.NotFound();
+            }
+
+            // Embed logo as data URL so TerminalShell can render without cookie-less img auth.
+            string? logoDataUrl = null;
+            if (s.HasLogo)
+            {
+                var logo = await services.StoreSettingsRead.GetLogoAsync(cancellationToken).ConfigureAwait(false);
+                if (logo.IsSuccess && logo.Value is not null)
+                {
+                    logoDataUrl = "data:" + logo.Value.ContentType + ";base64," + Convert.ToBase64String(logo.Value.Bytes);
+                }
+            }
+
+            return Results.Ok(new
+            {
+                storeName = s.StoreName,
+                hasLogo = s.HasLogo,
+                logoContentType = s.LogoContentType,
+                logoUrl = logoDataUrl,
+                logoDataUrl
+            });
+        });
+
         // ---- Cart --------------------------------------------------------------------------
 
         group.MapPost("/cart/start", (HttpContext httpContext, RemotePosApiServices services, CancellationToken cancellationToken) =>

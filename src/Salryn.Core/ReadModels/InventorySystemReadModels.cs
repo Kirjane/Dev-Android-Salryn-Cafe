@@ -57,7 +57,13 @@ public sealed record StoreSettingsReadModel(
     string? ReceiptHeader = null,
     string? ReceiptFooter = null,
     string PrinterMode = "Disabled",
-    string? WindowsPrinterName = null);
+    string? WindowsPrinterName = null,
+    bool HasLogo = false,
+    string? LogoContentType = null);
+
+public sealed record StoreLogoReadModel(
+    string ContentType,
+    byte[] Bytes);
 
 public sealed record CashierSessionReadModel(
     Guid Id,

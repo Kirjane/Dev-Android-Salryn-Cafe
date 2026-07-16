@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { fetchRemotePosPairingHostStatus } from "../api/remoteReadOnlyClient";
 import type { SessionState } from "../api/session";
-import { fetchStoreSettings } from "../api/storeSettings";
+import { fetchStoreBranding } from "../api/storeSettings";
 import { getNavItems, type AppPage } from "../navigation";
 import { hasPermission, Permissions } from "../security/permissions";
 import { ConfirmDialog, StatusPill } from "./ui";
@@ -54,11 +54,9 @@ export function AppShell({ session, currentPage, onNavigate, onLogout, children 
   const terminalManagementVisible = visibleNavItems.some((item) => item.id === "host-lan-control");
   const canViewPendingJoinRequests =
     terminalManagementVisible && hasPermission(session, Permissions.StoreTerminalView);
-  const canReadStoreSettings = hasPermission(session, Permissions.SettingsManage);
-  const storeSettingsQuery = useQuery({
-    queryKey: ["app-shell-store-settings"],
-    queryFn: fetchStoreSettings,
-    enabled: canReadStoreSettings,
+  const brandingQuery = useQuery({
+    queryKey: ["app-shell-store-branding"],
+    queryFn: fetchStoreBranding,
     retry: false,
   });
   const pendingJoinRequestsQuery = useQuery({
@@ -69,14 +67,19 @@ export function AppShell({ session, currentPage, onNavigate, onLogout, children 
     refetchInterval: 5000,
   });
   const pendingJoinRequestCount = pendingJoinRequestsQuery.data?.pendingRequestCount ?? 0;
-  const storeName = storeSettingsQuery.data?.storeName?.trim();
+  const storeName = brandingQuery.data?.storeName?.trim();
+  const logoUrl = brandingQuery.data?.hasLogo ? brandingQuery.data.logoUrl : null;
 
   return (
     <div className="flex h-screen min-w-[48rem] flex-col bg-slate-100">
       <header className="flex h-[60px] shrink-0 items-center justify-between gap-4 border-b border-white/10 bg-navy-900 px-5 text-white shadow-sm">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-white text-navy-900 shadow-sm">
-            <Layers3 aria-hidden="true" size={22} strokeWidth={2.25} />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white text-navy-900 shadow-sm">
+            {logoUrl ? (
+              <img src={logoUrl} alt="" className="h-full w-full object-contain" />
+            ) : (
+              <Layers3 aria-hidden="true" size={22} strokeWidth={2.25} />
+            )}
           </div>
           <div className="min-w-0 leading-tight">
             <span className="block truncate text-sm font-bold">{storeName || "Salryn POS"}</span>

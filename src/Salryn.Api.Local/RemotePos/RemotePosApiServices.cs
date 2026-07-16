@@ -1,5 +1,6 @@
 using Salryn.Api.Local.Composition;
 using Salryn.Composition.Local;
+using Salryn.Core.Repositories;
 using Salryn.Core.Services;
 using Salryn.Infrastructure.Data.Repositories;
 using Salryn.Infrastructure.Licensing;
@@ -22,7 +23,8 @@ public sealed class RemotePosApiServices
         RemotePosCheckoutService checkoutService,
         RemotePosPairingGateService pairingGate,
         LanRemoteTransportApiServices lanServices,
-        RemotePosCapacityPolicy capacityPolicy)
+        RemotePosCapacityPolicy capacityPolicy,
+        IStoreSettingsReadRepository storeSettingsRead)
     {
         RuntimeGate = runtimeGate;
         SessionService = sessionService;
@@ -31,6 +33,7 @@ public sealed class RemotePosApiServices
         PairingGate = pairingGate;
         LanServices = lanServices;
         CapacityPolicy = capacityPolicy;
+        StoreSettingsRead = storeSettingsRead;
     }
 
     public RemotePosRuntimeGate RuntimeGate { get; }
@@ -46,6 +49,8 @@ public sealed class RemotePosApiServices
     public LanRemoteTransportApiServices LanServices { get; }
 
     public RemotePosCapacityPolicy CapacityPolicy { get; }
+
+    public IStoreSettingsReadRepository StoreSettingsRead { get; }
 
     public static RemotePosApiServices Create(
         SalrynLocalComposition composition,
@@ -100,6 +105,7 @@ public sealed class RemotePosApiServices
             checkoutService,
             pairingGate,
             lanServices,
-            capacityPolicy);
+            capacityPolicy,
+            repositories.CreateStoreSettingsReadRepository());
     }
 }

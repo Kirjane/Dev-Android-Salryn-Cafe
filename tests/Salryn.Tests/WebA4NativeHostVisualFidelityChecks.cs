@@ -116,7 +116,16 @@ public static class WebA4NativeHostVisualFidelityChecks
             "No ESC/POS",
             string.Empty,
             StringComparison.Ordinal);
-        string[] forbiddenTokens =
+
+        // PRE-BETA-C: store logo branding is an approved Settings.Manage surface.
+        // File input + FormData allowed only on StoreSettings logo upload paths.
+        string storeSettingsPageText = ReadRequiredFile(webSrc, "pages", "StoreSettingsPage.tsx");
+        string storeSettingsApiText = ReadRequiredFile(webSrc, "api", "storeSettings.ts");
+        string capabilitySourceWithoutLogoUpload = capabilitySource
+            .Replace(storeSettingsPageText, string.Empty, StringComparison.Ordinal)
+            .Replace(storeSettingsApiText, string.Empty, StringComparison.Ordinal);
+
+        string[] alwaysForbiddenTokens =
         {
             "/api/session/handoff/register",
             "/api/session/handoff/complete",
@@ -127,11 +136,6 @@ public static class WebA4NativeHostVisualFidelityChecks
             "ESC/POS",
             "escpos",
             "file-picker",
-            "multipart/form-data",
-            "/upload",
-            "FormData(",
-            "type=\"file\"",
-            "blob",
             "window.print",
             "PrinterSettings",
             "printerTarget",
@@ -140,7 +144,16 @@ public static class WebA4NativeHostVisualFidelityChecks
             "RMO",
         };
 
-        foreach (string token in forbiddenTokens)
+        string[] uploadForbiddenOutsideLogo =
+        {
+            "multipart/form-data",
+            "/upload",
+            "FormData(",
+            "type=\"file\"",
+            "blob",
+        };
+
+        foreach (string token in alwaysForbiddenTokens)
         {
             if (string.Equals(token, "RMO", StringComparison.Ordinal))
             {
@@ -156,6 +169,14 @@ public static class WebA4NativeHostVisualFidelityChecks
             }
 
             RequireNotContains(capabilitySource, token, $"WEB-A4 must not add forbidden capability: {token}");
+        }
+
+        foreach (string token in uploadForbiddenOutsideLogo)
+        {
+            RequireNotContains(
+                capabilitySourceWithoutLogoUpload,
+                token,
+                $"WEB-A4 must not add forbidden capability outside store logo branding: {token}");
         }
 
         // --- No fake module data copied from the visual reference screenshots ---

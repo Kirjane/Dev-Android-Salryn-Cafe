@@ -115,6 +115,16 @@ public interface IStoreSettingsWriteRepository
     Task<Result> UpdateAsync(
         StoreSettingsUpdateRequest request,
         CancellationToken cancellationToken = default);
+
+    Task<Result> SetLogoAsync(
+        Guid storeSettingsId,
+        string contentType,
+        byte[] bytes,
+        CancellationToken cancellationToken = default);
+
+    Task<Result> ClearLogoAsync(
+        Guid storeSettingsId,
+        CancellationToken cancellationToken = default);
 }
 
 public interface ICashierSessionWriteRepository

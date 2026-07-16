@@ -91,6 +91,97 @@ public sealed class SqliteStoreSettingsWriteRepository :
         }
     }
 
+    public Task<Result> SetLogoAsync(
+        Guid storeSettingsId,
+        string contentType,
+        byte[] bytes,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (storeSettingsId == Guid.Empty)
+        {
+            return Task.FromResult(Result.Fail(Error.Validation("StoreSettings.InvalidId", "Store settings ID is required.")));
+        }
+
+        if (string.IsNullOrWhiteSpace(contentType) || bytes is null || bytes.Length == 0)
+        {
+            return Task.FromResult(Result.Fail(Error.Validation("StoreSettings.LogoRequired", "Logo content is required.")));
+        }
+
+        try
+        {
+            using var connection = CreateOpenConnection();
+            using var transaction = connection.BeginTransaction();
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                UPDATE store_settings
+                SET logo_content_type = $contentType,
+                    logo_bytes = $bytes,
+                    updated_at = $updatedAt
+                WHERE id = $id;
+                """;
+            command.Parameters.AddWithValue("$id", storeSettingsId.ToString("D"));
+            command.Parameters.AddWithValue("$contentType", contentType.Trim());
+            command.Parameters.AddWithValue("$bytes", bytes);
+            command.Parameters.AddWithValue("$updatedAt", DateTimeOffset.UtcNow.ToString("O"));
+            int affected = command.ExecuteNonQuery();
+            if (affected == 0)
+            {
+                transaction.Rollback();
+                return Task.FromResult(Result.Fail(Error.NotFound("StoreSettings.NotFound", "Store settings were not found.")));
+            }
+
+            transaction.Commit();
+            return Task.FromResult(Result.Success());
+        }
+        catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
+        {
+            return Task.FromResult(Unexpected("StoreSettings.SetLogoFailed", ex));
+        }
+    }
+
+    public Task<Result> ClearLogoAsync(
+        Guid storeSettingsId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (storeSettingsId == Guid.Empty)
+        {
+            return Task.FromResult(Result.Fail(Error.Validation("StoreSettings.InvalidId", "Store settings ID is required.")));
+        }
+
+        try
+        {
+            using var connection = CreateOpenConnection();
+            using var transaction = connection.BeginTransaction();
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                UPDATE store_settings
+                SET logo_content_type = NULL,
+                    logo_bytes = NULL,
+                    updated_at = $updatedAt
+                WHERE id = $id;
+                """;
+            command.Parameters.AddWithValue("$id", storeSettingsId.ToString("D"));
+            command.Parameters.AddWithValue("$updatedAt", DateTimeOffset.UtcNow.ToString("O"));
+            int affected = command.ExecuteNonQuery();
+            if (affected == 0)
+            {
+                transaction.Rollback();
+                return Task.FromResult(Result.Fail(Error.NotFound("StoreSettings.NotFound", "Store settings were not found.")));
+            }
+
+            transaction.Commit();
+            return Task.FromResult(Result.Success());
+        }
+        catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
+        {
+            return Task.FromResult(Unexpected("StoreSettings.ClearLogoFailed", ex));
+        }
+    }
+
     private static Result Validate(StoreSettingsUpdateRequest request)
     {
         if (request.StoreSettingsId == Guid.Empty)

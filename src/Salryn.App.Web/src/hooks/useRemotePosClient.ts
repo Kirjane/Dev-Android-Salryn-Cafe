@@ -976,6 +976,7 @@ export function useRemotePosClient() {
     cart,
     lastCheckout,
     isConnected,
+    authedConnection,
     busy,
     errorMessage,
     statusMessage,

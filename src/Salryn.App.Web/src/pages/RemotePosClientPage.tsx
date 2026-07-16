@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Alert,
   Button,
@@ -15,6 +15,10 @@ import {
   type DataTableColumn,
 } from "../components/ui";
 import { TerminalEntryFrame, TerminalShell } from "../components/TerminalShell";
+import {
+  fetchRemotePosStoreBranding,
+  type RemotePosStoreBranding,
+} from "../api/remotePosClient";
 import { useRemotePosClient } from "../hooks/useRemotePosClient";
 import type { RemotePosCartLine } from "../types/remotePosClient";
 import { clearAllLanClientDeviceState } from "../utils/lanClientStorage";
@@ -79,8 +83,27 @@ export function RemotePosClientPage({ onExitToLanding }: RemotePosClientPageProp
   const [productId, setProductId] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [tenderAmount, setTenderAmount] = useState("");
+  const [branding, setBranding] = useState<RemotePosStoreBranding | null>(null);
 
   const subtotalCents = client.cart?.subtotalCents ?? 0;
+
+  useEffect(() => {
+    if (!client.isConnected || !client.authedConnection) {
+      setBranding(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchRemotePosStoreBranding(client.authedConnection)
+      .then((result) => {
+        if (!cancelled) setBranding(result);
+      })
+      .catch(() => {
+        if (!cancelled) setBranding(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client.isConnected, client.authedConnection]);
 
   const cartColumns: DataTableColumn<RemotePosCartLine>[] = [
     { key: "product", header: "Product", render: (line) => line.productName },
@@ -232,12 +255,15 @@ export function RemotePosClientPage({ onExitToLanding }: RemotePosClientPageProp
   );
 
   if (client.isConnected) {
+    const logoUrl = branding?.logoDataUrl || branding?.logoUrl || null;
     return (
       <TerminalShell
         operatorName={client.session?.displayName ?? client.session?.username ?? "Operator"}
         roleName={client.session?.roleName ?? "Cashier"}
         terminalLabel={client.pairingStatus?.deviceName ?? (client.terminalIdSuffix ? `…${client.terminalIdSuffix}` : null)}
         hostLabel={client.hostBaseUrl.trim() || null}
+        storeName={branding?.storeName ?? null}
+        logoUrl={logoUrl}
         activeNav="checkout"
         onNavigate={() => undefined}
         onSignOut={() => {

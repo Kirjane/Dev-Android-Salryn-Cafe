@@ -1,14 +1,23 @@
 import { useEffect, useState } from "react";
-import { fetchStoreSettings, saveStoreSettings, type StoreSettings } from "../api/storeSettings";
+import {
+  fetchStoreSettings,
+  removeStoreLogo,
+  saveStoreSettings,
+  uploadStoreLogo,
+  type StoreSettings,
+} from "../api/storeSettings";
 import { Alert, Button, Card, CardBody, CardHeader, CardTitle, CommandBar, ErrorState, LoadingState, TextInput } from "../components/ui";
 
 const supportedCurrencies = new Set(["PHP", "₱"]);
+const logoAccept = "image/png,image/jpeg,image/webp";
 
 export function StoreSettingsPage() {
   const [value, setValue] = useState<StoreSettings | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const [logoPreviewKey, setLogoPreviewKey] = useState(0);
 
   useEffect(() => {
     fetchStoreSettings()
@@ -40,13 +49,53 @@ export function StoreSettingsPage() {
     setBusy(true);
     setMessage(null);
     try {
-      const { id: _id, ...updateRequest } = value;
+      const { id: _id, hasLogo: _hasLogo, logoContentType: _logoType, ...updateRequest } = value;
       await saveStoreSettings({ ...updateRequest, windowsPrinterName: updateRequest.windowsPrinterName?.trim() || null });
       setMessage("Store settings saved. New receipts will use the updated store, receipt, and printer settings.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Store settings could not be saved.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function onLogoSelected(file: File | null) {
+    if (!file || !value) return;
+    if (file.size > 512 * 1024) {
+      setMessage("Logo must be 512 KB or smaller.");
+      return;
+    }
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+      setMessage("Logo must be PNG, JPEG, or WebP. SVG is not accepted.");
+      return;
+    }
+    setLogoBusy(true);
+    setMessage(null);
+    try {
+      const result = await uploadStoreLogo(file);
+      setValue({ ...value, hasLogo: result.hasLogo, logoContentType: result.logoContentType });
+      setLogoPreviewKey((k) => k + 1);
+      setMessage("Store logo saved. Host and LAN shells will show the new branding after refresh.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Logo could not be uploaded.");
+    } finally {
+      setLogoBusy(false);
+    }
+  }
+
+  async function onRemoveLogo() {
+    if (!value) return;
+    setLogoBusy(true);
+    setMessage(null);
+    try {
+      await removeStoreLogo();
+      setValue({ ...value, hasLogo: false, logoContentType: null });
+      setLogoPreviewKey((k) => k + 1);
+      setMessage("Store logo removed.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Logo could not be removed.");
+    } finally {
+      setLogoBusy(false);
     }
   }
 
@@ -85,6 +134,37 @@ export function StoreSettingsPage() {
             <div className="md:col-span-2">{field("address", "Store address")}</div>
             {field("contactNumber", "Contact number")}
             {field("tin", "TIN")}
+            <div className="md:col-span-2 space-y-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+              <p className="text-sm font-semibold text-slate-900">Store logo / branding</p>
+              <p className="text-xs text-slate-500">
+                PNG, JPEG, or WebP only · max 512 KB · shown on Host and LAN terminal shells · not official BIR output
+              </p>
+              {value.hasLogo ? (
+                <div className="flex items-center gap-3">
+                  <img
+                    key={logoPreviewKey}
+                    src={`/api/branding/store/logo?v=${logoPreviewKey}`}
+                    alt="Store logo preview"
+                    className="h-14 w-14 rounded-md border border-slate-200 bg-white object-contain"
+                  />
+                  <Button variant="secondary" size="sm" disabled={logoBusy} onClick={() => void onRemoveLogo()}>
+                    {logoBusy ? "Working…" : "Remove logo"}
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">No logo uploaded yet.</p>
+              )}
+              <label className="block text-sm font-medium text-slate-700">
+                <span>Upload logo</span>
+                <input
+                  type="file"
+                  accept={logoAccept}
+                  className="mt-1 block w-full text-xs"
+                  disabled={logoBusy}
+                  onChange={(event) => void onLogoSelected(event.target.files?.[0] ?? null)}
+                />
+              </label>
+            </div>
           </CardBody>
         </Card>
 

@@ -20,7 +20,23 @@ internal static class LocalStoreSettingsEndpoints
             var result = await reader.GetCurrentAsync(ct);
             if (result.IsFailure) return Results.BadRequest(new { code = result.ErrorDetail.Code, error = result.ErrorDetail.Message });
             var s = result.Value;
-            return s is null ? Results.NotFound() : Results.Ok(new StoreSettingsResponse(s.Id.ToString(), s.StoreName, s.BusinessName, s.Address, s.ContactNumber, s.Tin, s.CurrencyLabel, s.ReceiptWidthMm, s.ReceiptHeader, s.ReceiptFooter, s.PrinterMode, s.WindowsPrinterName));
+            return s is null
+                ? Results.NotFound()
+                : Results.Ok(new StoreSettingsResponse(
+                    s.Id.ToString(),
+                    s.StoreName,
+                    s.BusinessName,
+                    s.Address,
+                    s.ContactNumber,
+                    s.Tin,
+                    s.CurrencyLabel,
+                    s.ReceiptWidthMm,
+                    s.ReceiptHeader,
+                    s.ReceiptFooter,
+                    s.PrinterMode,
+                    s.WindowsPrinterName,
+                    s.HasLogo,
+                    s.LogoContentType));
         });
 
         app.MapPut("/api/settings/store", async (HttpContext context, LocalApiSessionService sessions, StoreSettingsUpdateApiRequest request, CancellationToken ct) =>
