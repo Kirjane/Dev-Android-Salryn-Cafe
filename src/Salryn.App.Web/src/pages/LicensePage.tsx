@@ -41,16 +41,83 @@ function needsActivation(statusLabelValue: string | null): boolean {
   return !statusLabelValue || statusLabelValue === "Unlicensed" || statusLabelValue === "Invalid" || statusLabelValue === "Expired";
 }
 
-function friendlyInstallError(raw: string | null | undefined): string {
-  if (!raw) return "License was rejected.";
-  const lower = raw.toLowerCase();
-  if (lower.includes("machine")) return "This license does not match this device. Contact " + BETA_CONTACT_EMAIL + " if you need a reissue.";
-  if (lower.includes("signature") || lower.includes("unsigned")) return "This license could not be verified. Ask Kirjane Labs for a new signed license file.";
-  if (lower.includes("expired")) return "This license has expired. Contact " + BETA_CONTACT_EMAIL + " for help.";
-  if (lower.includes("terminal") && lower.includes("host")) return "A Terminal license cannot activate Host POS setup on this device.";
-  if (lower.includes("host") && lower.includes("terminal")) return "A Host license cannot be used as a Terminal license.";
-  if (lower.includes("malformed") || lower.includes("json")) return "The license text is not valid. Paste the full signed license file you received.";
-  return "This license could not be installed. Contact " + BETA_CONTACT_EMAIL + " for help.";
+function friendlyInstallError(raw: string | null | undefined, code?: string | null): string {
+  const contact = " Contact " + BETA_CONTACT_EMAIL + " if you need a reissue.";
+  const lower = (raw ?? "").trim().toLowerCase();
+  const codeLower = (code ?? "").toLowerCase();
+
+  if (codeLower.includes("callerpath") || lower.includes("caller filesystem") || lower.includes("does not accept caller")) {
+    return "That license request is not valid. Paste only the signed license text — not a file path.";
+  }
+  if (codeLower.includes("unsupportedfield") || lower.includes("unsupported field")) {
+    return "That license file has unexpected fields. Ask Kirjane Labs for a new signed license.";
+  }
+  if (codeLower.includes("emptydocument") || lower.includes("content is required")) {
+    return "Paste the full signed license you received before installing.";
+  }
+  if (codeLower.includes("malformed") || lower.includes("malformed") || lower.includes("json did not") || lower.includes("json is")) {
+    return "The license text is not valid. Paste the full signed license file you received.";
+  }
+
+  // Empty binding before generic machine mismatch.
+  if (lower.includes("machinebinding is required") || (lower.includes("machinebinding") && lower.includes("empty"))) {
+    return "This license is missing a device binding. Ask Kirjane Labs for a new signed license.";
+  }
+  if (lower.includes("does not match this installation") || lower.includes("machine binding does not match")) {
+    return "This license does not match this device." + contact;
+  }
+
+  if (lower.includes("unsigned") || lower.includes("signature is invalid") || lower.includes("signature verifier") || lower.includes("fails closed")) {
+    return "This license could not be verified. Ask Kirjane Labs for a new signed license file.";
+  }
+  if (lower.includes("signature")) {
+    return "This license could not be verified. Ask Kirjane Labs for a new signed license file.";
+  }
+
+  if (lower.includes("expired") && !lower.includes("grace")) {
+    return "This license has expired." + contact;
+  }
+  if (lower.includes("schema")) {
+    return "This license format is not supported by this Salryn version. Ask Kirjane Labs for an updated license.";
+  }
+  if (lower.includes("applicationid")) {
+    return "This license is not for Salryn POS. Ask Kirjane Labs for the correct license.";
+  }
+  if (lower.includes("storeid") || lower.includes("identity fields")) {
+    return "This license is missing required store or customer details. Ask Kirjane Labs for a new signed license.";
+  }
+  if (lower.includes("edition is not recognized")) {
+    return "This license edition is not recognized. Ask Kirjane Labs for a new signed license.";
+  }
+
+  if (lower.includes("must not include hostlicenseid") || lower.includes("must not include terminalid")) {
+    return "This Host license has Terminal-only fields. Ask Kirjane Labs for a correct Host license.";
+  }
+  if (lower.includes("must not include allowedlanterminals")) {
+    return "This Terminal license has Host-only fields. Ask Kirjane Labs for a correct Terminal license.";
+  }
+  if (lower.includes("must include hostlicenseid") || lower.includes("must include terminalid")) {
+    return "This Terminal license is incomplete. Ask Kirjane Labs for a new Terminal license.";
+  }
+  if (lower.includes("must include allowedlanterminals") || lower.includes("lan terminal count must not be negative")) {
+    return "This Host license is incomplete. Ask Kirjane Labs for a new Host license.";
+  }
+  if (lower.includes("licensetype") && (lower.includes("missing") || lower.includes("not recognized"))) {
+    return "This license does not say whether it is for Host POS or a LAN Terminal. Ask Kirjane Labs for a new signed license.";
+  }
+  if (lower.includes("terminal license must enable") || lower.includes("does not enable any known features")) {
+    return "This license does not include the features needed for this device. Ask Kirjane Labs for a new signed license.";
+  }
+  if (lower.includes("does not unlock host") || (lower.includes("terminal license is valid") && lower.includes("host"))) {
+    return "A Terminal license cannot activate Host POS setup on this device.";
+  }
+
+  if (lower.includes("request failed") || lower.includes("failed (")) {
+    return "License install failed. Check your connection to this device and try again.";
+  }
+
+  // Never surface raw technical backend wording on the product page.
+  return "This license could not be installed." + contact;
 }
 
 export function LicensePage() {
@@ -95,11 +162,12 @@ export function LicensePage() {
         setLicenseText("");
         setReplaceConfirmed(false);
       } else {
-        setError(friendlyInstallError(result.errorMessage));
+        setError(friendlyInstallError(result.errorMessage, result.errorCode));
       }
       await statusQuery.refetch();
     } catch (e) {
-      setError(friendlyInstallError((e as Error).message));
+      const err = e as Error & { code?: string };
+      setError(friendlyInstallError(err.message, err.code));
     } finally {
       setBusy(false);
     }
