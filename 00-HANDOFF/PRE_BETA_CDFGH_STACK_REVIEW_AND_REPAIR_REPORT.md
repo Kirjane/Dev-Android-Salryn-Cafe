@@ -6,7 +6,7 @@
 | --- | --- |
 | Branch | `KIRCH-PRE-BETA-CDFGH-STACK-REVIEW-AND-REPAIR` |
 | Base | `KIRCH-PRE-BETA-H-CAPABILITY_MATRIX_SEAL` @ `4f709a5305cf3632044395e5855d00a58be15a8c` |
-| Final SHA | *(filled after commit)* |
+| Final SHA | `5d5cf27a2485cd338595abc63401f647b9ab5514` |
 | Starting stack SHA (E tip) | `541b6e5f8be42bd70bc2f1a51e5a571115af4c28` |
 | Protected SANDBOX | `1f74cd8bcaca1a5df487aa61677ee9829dd7fedb` (untouched) |
 | Protected INSTALLER-M1 | `6b9c46676390b8a86a989eca600cb02e406ce865` (untouched) |
