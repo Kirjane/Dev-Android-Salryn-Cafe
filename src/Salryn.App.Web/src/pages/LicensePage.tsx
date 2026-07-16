@@ -59,7 +59,6 @@ function friendlyInstallError(raw: string | null | undefined, code?: string | nu
     return "The license text is not valid. Paste the full signed license file you received.";
   }
 
-  // Empty binding before generic machine mismatch.
   if (lower.includes("machinebinding is required") || (lower.includes("machinebinding") && lower.includes("empty"))) {
     return "This license is missing a device binding. Ask Kirjane Labs for a new signed license.";
   }
@@ -116,7 +115,6 @@ function friendlyInstallError(raw: string | null | undefined, code?: string | nu
     return "License install failed. Check your connection to this device and try again.";
   }
 
-  // Never surface raw technical backend wording on the product page.
   return "This license could not be installed." + contact;
 }
 
@@ -169,9 +167,9 @@ export function LicensePage() {
     if (!machineCode || machineCode === "Not available") return;
     try {
       await navigator.clipboard.writeText(machineCode);
-      setMessage("Machine Code copied.");
+      setMessage("Host Machine Code copied.");
     } catch {
-      setError("Could not copy Machine Code. Select and copy it manually.");
+      setError("Could not copy Host Machine Code. Select and copy it manually.");
     }
   }
 
@@ -179,7 +177,11 @@ export function LicensePage() {
     <div className="mx-auto max-w-3xl space-y-5">
       <CommandBar
         title={showActiveSummary ? "License" : "Activate Salryn"}
-        subtitle={showActiveSummary ? "View the license installed on this device." : "Salryn needs a valid license before this device can be used."}
+        subtitle={
+          showActiveSummary
+            ? "License Active on this Host workstation."
+            : "Salryn needs a valid Host license before this device can be used."
+        }
         status={status ? <StatusPill tone={statusTone(status.status)}>{showActiveSummary ? "Active" : currentStatusLabel}</StatusPill> : null}
         actions={
           <Button variant="secondary" disabled={statusQuery.isFetching || busy} onClick={() => void statusQuery.refetch()}>
@@ -211,7 +213,7 @@ export function LicensePage() {
               <span className="font-semibold text-slate-900">Device type:</span> {deviceTypeLabel(typeLabel)}
             </p>
             <p>
-              <span className="font-semibold text-slate-900">Machine Code:</span>{" "}
+              <span className="font-semibold text-slate-900">Host Machine Code:</span>{" "}
               <span className="break-all font-mono text-xs font-semibold text-navy-900">{machineCode}</span>
             </p>
             <p>
@@ -220,18 +222,6 @@ export function LicensePage() {
             <p>
               <span className="font-semibold text-slate-900">Updates until:</span> {formatDate(status.updatesUntil)}
             </p>
-            {typeLabel === "Terminal" ? (
-              <>
-                <p>
-                  <span className="font-semibold text-slate-900">Host License ID:</span>{" "}
-                  <span className="font-mono text-xs">{status.hostLicenseId ?? "Not set"}</span>
-                </p>
-                <p>
-                  <span className="font-semibold text-slate-900">Terminal ID:</span>{" "}
-                  <span className="font-mono text-xs">{status.terminalId ?? "Not set"}</span>
-                </p>
-              </>
-            ) : null}
             <p className="text-xs text-slate-500">Works offline after activation.</p>
             <button
               type="button"
@@ -242,10 +232,16 @@ export function LicensePage() {
             </button>
             {showSupportDetails ? (
               <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                <p>License ID: <span className="font-mono">{status.licenseId ?? "Not installed"}</span></p>
-                <p>Store ID: <span className="font-mono">{status.storeId ?? "Not specified"}</span></p>
+                <p>Host License ID: <span className="font-mono">{status.licenseId ?? "Not installed"}</span></p>
+                <p>Store (internal): <span className="font-mono">{status.storeId ?? "Not specified"}</span></p>
                 <p>Application: {status.applicationId ?? "Not specified"}</p>
                 <p>Machine matched: {status.machineMatched ? "Yes" : "No"}</p>
+                {typeLabel === "Terminal" ? (
+                  <>
+                    <p>Host License ID (linked): <span className="font-mono">{status.hostLicenseId ?? "Not set"}</span></p>
+                    <p>Terminal ID: <span className="font-mono">{status.terminalId ?? "Not set"}</span></p>
+                  </>
+                ) : null}
               </div>
             ) : null}
           </CardBody>
@@ -255,43 +251,52 @@ export function LicensePage() {
       {showActivation ? (
         <Card>
           <CardHeader>
-            <CardTitle>Send this Machine Code to:</CardTitle>
+            <CardTitle>Host Machine Code</CardTitle>
           </CardHeader>
           <CardBody className="space-y-4 text-sm text-slate-700">
-            <p className="font-mono text-base font-bold text-navy-900">{BETA_CONTACT_EMAIL}</p>
+            <Alert tone="info" title="How activation works">
+              Salryn generates this Machine Code. LicensingOps signs the Host license for it. You do not invent a Store ID or Host License ID on this screen.
+            </Alert>
 
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-900">Machine Code</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-900">Host Machine Code</p>
               <p className="mt-1 break-all font-mono text-lg font-bold tracking-wide text-navy-900">{machineCode}</p>
               <div className="mt-3">
                 <Button variant="secondary" size="sm" disabled={machineCode === "Not available"} onClick={() => void copyMachineCode()}>
-                  Copy Machine Code
+                  Copy Host Machine Code
                 </Button>
               </div>
             </div>
 
             <div>
-              <p className="font-semibold text-slate-900">What to send</p>
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
-                <div className="rounded-md border border-slate-200 bg-white p-3">
-                  <p className="font-semibold text-slate-900">For Host POS activation</p>
-                  <ul className="mt-2 list-disc space-y-1 pl-5">
-                    <li>Store / business name</li>
-                    <li>Contact person</li>
-                    <li>Contact number or email</li>
-                    <li>Host Machine Code</li>
-                  </ul>
-                </div>
-                <div className="rounded-md border border-slate-200 bg-white p-3">
-                  <p className="font-semibold text-slate-900">For LAN Terminal activation</p>
-                  <ul className="mt-2 list-disc space-y-1 pl-5">
-                    <li>Store / business name</li>
-                    <li>Host License ID, if available</li>
-                    <li>Terminal name or number</li>
-                    <li>Terminal Machine Code</li>
-                  </ul>
-                </div>
-              </div>
+              <p className="font-semibold text-slate-900">For Host POS activation</p>
+              <ol className="mt-2 list-decimal space-y-1 pl-5">
+                <li>Copy the Host Machine Code above.</li>
+                <li>
+                  Open LicensingOps (or email <span className="font-mono font-semibold">{BETA_CONTACT_EMAIL}</span>).
+                </li>
+                <li>Create or select your Store (Store ID is created for you).</li>
+                <li>Paste this Host Machine Code and issue a Host license.</li>
+                <li>Paste the signed Host license JSON below.</li>
+              </ol>
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-slate-600">
+                <li>Store / business name</li>
+                <li>Contact person</li>
+                <li>Contact number or email</li>
+                <li>Host Machine Code</li>
+              </ul>
+            </div>
+
+            <div>
+              <p className="font-semibold text-slate-900">For LAN Terminal activation</p>
+              <p className="mt-1 text-slate-600">
+                On each terminal device, open Terminal Activation and copy that device&apos;s Terminal Machine Code.
+                Your store admin or Kirjane Labs issues a Terminal license from the Host license — terminal users do not need a Host License ID.
+              </p>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-slate-600">
+                <li>Terminal name or number (for example, Counter 1)</li>
+                <li>Terminal Machine Code from that device</li>
+              </ul>
             </div>
 
             <p>
@@ -307,49 +312,51 @@ export function LicensePage() {
         </div>
       ) : null}
 
-      {!showActiveSummary || showReplaceLicense ? <Card>
-        <CardHeader>
-          <CardTitle>Import License</CardTitle>
-        </CardHeader>
-        <CardBody className="space-y-4">
-          <p className="text-sm text-slate-600">
-             Importing a license replaces the current license on this device after Salryn verifies it.
-          </p>
-          <label className="space-y-1 text-sm font-medium text-slate-700">
-            <span>Paste signed license JSON</span>
-            <textarea
-              value={licenseText}
-              onChange={(event) => setLicenseText(event.target.value)}
-              className="min-h-40 w-full rounded-md border border-slate-300 bg-white px-3 py-2 font-mono text-xs text-slate-900 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
-              placeholder="Paste the signed license you received from Kirjane Labs."
-            />
-          </label>
-          <label className="flex items-start gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={replaceConfirmed}
-              onChange={(event) => setReplaceConfirmed(event.target.checked)}
-              className="mt-1"
-            />
-            <span>I understand this will replace the current license on this device.</span>
-          </label>
-          <div className="flex flex-wrap gap-2">
-            <Button disabled={!canInstall} onClick={() => void handleInstall()}>
-              {busy ? "Installing…" : "Install License"}
-            </Button>
-            <Button
-              variant="secondary"
-              disabled={busy || (!licenseText && !replaceConfirmed)}
-              onClick={() => {
-                setLicenseText("");
-                setReplaceConfirmed(false);
-              }}
-            >
-              Clear
-            </Button>
-          </div>
-        </CardBody>
-      </Card> : null}
+      {!showActiveSummary || showReplaceLicense ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Import License</CardTitle>
+          </CardHeader>
+          <CardBody className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Paste only the signed Host license JSON you received. Importing replaces the current license on this device after Salryn verifies it.
+            </p>
+            <label className="space-y-1 text-sm font-medium text-slate-700">
+              <span>Paste signed license JSON</span>
+              <textarea
+                value={licenseText}
+                onChange={(event) => setLicenseText(event.target.value)}
+                className="min-h-40 w-full rounded-md border border-slate-300 bg-white px-3 py-2 font-mono text-xs text-slate-900 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
+                placeholder="Paste the signed Host license you received from LicensingOps or Kirjane Labs."
+              />
+            </label>
+            <label className="flex items-start gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={replaceConfirmed}
+                onChange={(event) => setReplaceConfirmed(event.target.checked)}
+                className="mt-1"
+              />
+              <span>I understand this will replace the current license on this device.</span>
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <Button disabled={!canInstall} onClick={() => void handleInstall()}>
+                {busy ? "Installing…" : "Install License"}
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={busy || (!licenseText && !replaceConfirmed)}
+                onClick={() => {
+                  setLicenseText("");
+                  setReplaceConfirmed(false);
+                }}
+              >
+                Clear
+              </Button>
+            </div>
+          </CardBody>
+        </Card>
+      ) : null}
     </div>
   );
 }

@@ -26,6 +26,9 @@ public static class PreI1FreshLicenseFirstFlowChecks
         RequireContains(licensePage, "<CardTitle>Status: Active</CardTitle>", "Active license page must show Active status.");
         RequireContains(licensePage, "showReplaceLicense", "Active license replacement must be secondary and collapsed.");
         RequireContains(licensePage, "salryn.info@gmail.com", "Fresh license page must show support email.");
+        RequireContains(licensePage, "Copy Host Machine Code", "Host activation must offer copy of Host Machine Code.");
+        RequireContains(licensePage, "Salryn generates this Machine Code. LicensingOps signs", "Host activation must state machine-code rule.");
+        RequireContains(licensePage, "terminal users do not need a Host License ID", "Host page must not push Host License ID onto terminal clients.");
         RequireNotContains(licensePage, "Offline-first license boundary", "Fresh license page must not lead with developer boundary banners.");
         RequireNotContains(licensePage, "path-bearing", "Fresh license page must not expose path-bearing technical jargon.");
         RequireContains(licenseEndpoints, "RequireLoopbackOperatorRequest", "Pre-login license endpoints must stay loopback-only.");

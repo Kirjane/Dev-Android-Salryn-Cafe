@@ -31,6 +31,10 @@ public static class PreI1LanTerminalActivationManagementBetaChecks
         RequireContains(activation, "salryn.info@gmail.com", "Activation page must identify the beta issuance contact.");
         RequireContains(activation, "Import Terminal License", "Activation page must explicitly import a signed Terminal license.");
         RequireContains(activation, "Status: Active", "Activation page must show a clear active status.");
+        RequireContains(activation, "Copy Terminal Machine Code", "Activation page must copy the terminal machine code.");
+        RequireContains(activation, "do not need a Host License ID", "Terminal users must not be told to find Host License ID.");
+        RequireNotContains(activation, "Include your store name, Host License ID", "Terminal activation must not ask for Host License ID.");
+        RequireContains(activation, "Host licenses cannot activate a terminal", "Import copy must reject Host licenses.");
         RequireContains(storage, "salryn.terminalLicense.v1", "Installed Terminal license must use explicit versioned local persistence.");
         RequireContains(storage, "salryn.terminalMachineCode.v1", "Terminal machine code must persist across refresh/restart.");
         RequireContains(storage, "A Host license cannot activate a terminal", "Client must reject Host license substitution.");
@@ -41,6 +45,8 @@ public static class PreI1LanTerminalActivationManagementBetaChecks
         RequireContains(navigation, "{ id: \"host-lan-control\", label: \"Terminal Management\", enabled: true, group: \"Admin\" }", "Terminal Management must be normal Admin navigation.");
         RequireNotContains(hostManagement, "Terminal activation is not ready for client use", "Completed activation must not retain incomplete UX copy.");
         RequireContains(hostManagement, "Every client device must activate with its own signed Terminal license", "Host guidance must state one Terminal license per device.");
+        RequireContains(hostManagement, "Terminal license request (admin / support)", "Host Terminal Management must expose admin request context.");
+        RequireContains(hostManagement, "Copy Terminal License Request", "Host Terminal Management must offer a copy-ready request block.");
         int diagnosticsIndex = hostManagement.IndexOf("Advanced diagnostics", StringComparison.Ordinal);
         RequireTrue(diagnosticsIndex >= 0
             && hostManagement.IndexOf("Configured bind (raw)", StringComparison.Ordinal) > diagnosticsIndex

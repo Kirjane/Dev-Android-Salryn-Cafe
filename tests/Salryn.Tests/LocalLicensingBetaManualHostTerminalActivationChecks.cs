@@ -166,9 +166,13 @@ public static class LocalLicensingBetaManualHostTerminalActivationChecks
             RequireContains(licensePage, "For Host POS activation", "License UI must separate Host activation instructions.");
             RequireContains(licensePage, "Contact number or email", "Host activation must request contact details.");
             RequireContains(licensePage, "Host Machine Code", "Host activation must identify the Host machine code.");
+            RequireContains(licensePage, "Copy Host Machine Code", "Host activation must offer copy Host Machine Code.");
+            RequireContains(licensePage, "Salryn generates this Machine Code. LicensingOps signs", "Host activation must state machine-code rule.");
+            RequireContains(licensePage, "Create or select your Store", "Host activation must point to LicensingOps store flow.");
             RequireContains(licensePage, "For LAN Terminal activation", "License UI must separate Terminal activation instructions.");
             RequireContains(licensePage, "Terminal name or number", "Terminal activation must identify the terminal.");
             RequireContains(licensePage, "Terminal Machine Code", "Terminal activation must identify the Terminal machine code.");
+            RequireContains(licensePage, "terminal users do not need a Host License ID", "Host page must not force Host License ID onto terminal users.");
             RequireNotContains(licensePage, "how many LAN terminals", "Host activation must not collect terminal count.");
             RequireNotContains(licensePage, "Allowed LAN terminals", "Host activation must not expose Allowed LAN terminals as purchase UI.");
             RequireNotContains(licensePage, "Offline-first license boundary", "License UI must not lead with developer boundary banners.");
@@ -182,10 +186,19 @@ public static class LocalLicensingBetaManualHostTerminalActivationChecks
             RequireNotContains(licensePage, "subscription billing", "License UI must not claim subscription billing.");
             RequireNotContains(licensePage, "LAN production ready", "License UI must not claim LAN production ready.");
             RequireContains(hostLan, "title=\"Terminal Management\"", "Internal host LAN page must use Terminal Management naming.");
+            RequireContains(hostLan, "Terminal license request (admin / support)", "Host Terminal Management must expose admin request context.");
+            RequireContains(hostLan, "Copy Terminal License Request", "Host Terminal Management must offer a copy-ready request block.");
             RequireContains(navigation, "VITE_SALRYN_INTERNAL_SURFACES", "Incomplete terminal management must be hidden from normal navigation.");
             RequireNotContains(backupPage, "local license file is stored outside this database backup package", "Backup page must not show an implementation-boundary wall.");
             RequireContains(policy, "salryn.info@gmail.com", "Policy must document beta contact email.");
             RequireContains(policy, "PrivateSigningKeyAllowedInRepository = false", "Policy must forbid private keys.");
+
+            string terminalActivation = File.ReadAllText(Path.Combine(FindRoot(), "src", "Salryn.App.Web", "src", "pages", "TerminalActivationPage.tsx"));
+            RequireContains(terminalActivation, "Copy Terminal Machine Code", "Terminal activation must copy terminal machine code.");
+            RequireContains(terminalActivation, "do not need a Host License ID", "Terminal activation must not require Host License ID from end users.");
+            RequireNotContains(terminalActivation, "Include your store name, Host License ID", "Terminal activation must not ask end users for Host License ID.");
+            RequireContains(terminalActivation, "Host licenses cannot activate a terminal", "Terminal import must reject Host licenses in copy.");
+            RequireContains(terminalActivation, "Show support details", "Terminal support details must be collapsed by default.");
 
             string licensingSources = string.Join("\n", contracts, validator, fingerprint, signature, serviceSrc, enforcementSrc);
             RequireNotContains(licensingSources, "PRIVATE KEY", "Licensing sources must not include private keys.");

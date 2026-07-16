@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import {
   Alert,
@@ -14,6 +15,7 @@ import {
   StatusPill,
   TextInput,
 } from "../components/ui";
+import { fetchLicenseStatus } from "../api/license";
 import { useLocalLanControl } from "../hooks/useLocalLanControl";
 import type { LocalLanControlRuntimeStatus, LocalLanControlTerminal } from "../types/remoteReadOnlyClient";
 import { looksLikeBareIpv4, normalizeConfiguredLanBindInput } from "../utils/lanBindNormalize";
@@ -146,6 +148,8 @@ export function HostLanControlPage() {
   const [copied, setCopied] = useState(false);
   const [acceptedCodes, setAcceptedCodes] = useState<Record<string, string>>({});
   const [hiddenTerminalIds, setHiddenTerminalIds] = useState<string[]>(() => readHiddenTerminalIds());
+  const [requestCopied, setRequestCopied] = useState(false);
+  const licenseQuery = useQuery({ queryKey: ["license-status"], queryFn: fetchLicenseStatus, retry: false });
   const [showTroubleshooting, setShowTroubleshooting] = useState(false);
 
   const status = statusQuery.data;
@@ -260,6 +264,36 @@ export function HostLanControlPage() {
     writeHiddenTerminalIds([]);
   }
 
+  const hostLicense = licenseQuery.data;
+  const hostLicenseId = hostLicense?.licenseId ?? "";
+  const hostStoreId = hostLicense?.storeId ?? "";
+  const hostCustomer = hostLicense?.customerName ?? "";
+  const hostMachineCode = hostLicense?.machineCode ?? hostLicense?.machineFingerprint ?? "";
+  const pendingTerminal = (status?.terminals ?? []).find(
+    (terminal) => String(terminal.status ?? "").toLowerCase().includes("pending")
+      || String(terminal.status ?? "").toLowerCase().includes("request"),
+  );
+  const requestBlock = [
+    "Terminal License Request",
+    "Store: " + (hostCustomer || "(set after Host license)"),
+    "Store ID (internal): " + (hostStoreId || "(from Host license)"),
+    "Host License ID (internal): " + (hostLicenseId || "(from Host license)"),
+    "Host Machine Code: " + (hostMachineCode || "(from Host license)"),
+    "Terminal name/location: " + (pendingTerminal?.terminalName || pendingTerminal?.terminalId || "(e.g. Counter 1)"),
+    "Terminal Machine Code: (copy from terminal device activation screen)",
+    "",
+    "Salryn generates Machine Codes. LicensingOps signs Terminal licenses from the Host license.",
+  ].join("\n");
+
+  async function copyTerminalRequest() {
+    try {
+      await navigator.clipboard.writeText(requestBlock);
+      setRequestCopied(true);
+    } catch {
+      setRequestCopied(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <CommandBar
@@ -273,6 +307,45 @@ export function HostLanControlPage() {
           </Button>
         }
       />
+
+      <Alert tone="info" title="One Terminal license per device">
+        Every client device must activate with its own signed Terminal license. Terminal users only send a Terminal Machine Code and a name/location — they do not need a Host License ID. Use the support request block below when issuing Terminal licenses in LicensingOps.
+      </Alert>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Terminal license request (admin / support)</CardTitle>
+        </CardHeader>
+        <CardBody className="space-y-3 text-sm text-slate-700">
+          <p className="text-slate-600">
+            Internal details for store admin or Kirjane Labs. Not shown on the terminal activation screen.
+          </p>
+          <dl className="grid gap-2 sm:grid-cols-2">
+            <div>
+              <dt className="text-xs text-slate-500">Store name</dt>
+              <dd className="font-medium">{hostCustomer || "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-500">Store ID (internal)</dt>
+              <dd className="break-all font-mono text-xs">{hostStoreId || "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-500">Host License ID (internal)</dt>
+              <dd className="break-all font-mono text-xs">{hostLicenseId || "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-500">Host Machine Code</dt>
+              <dd className="break-all font-mono text-xs">{hostMachineCode || "—"}</dd>
+            </div>
+          </dl>
+          <pre className="overflow-auto rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-800 whitespace-pre-wrap">
+            {requestBlock}
+          </pre>
+          <Button variant="secondary" size="sm" onClick={() => void copyTerminalRequest()}>
+            {requestCopied ? "Copied request block" : "Copy Terminal License Request"}
+          </Button>
+        </CardBody>
+      </Card>
 
       {statusQuery.isLoading ? <LoadingState label="Loading host LAN control..." /> : null}
       {statusQuery.isError ? <ErrorState message={(statusQuery.error as Error).message} /> : null}

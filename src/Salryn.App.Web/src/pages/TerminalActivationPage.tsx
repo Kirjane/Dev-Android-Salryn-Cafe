@@ -24,6 +24,7 @@ export function TerminalActivationPage({ onActivated }: TerminalActivationPagePr
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [showSupportDetails, setShowSupportDetails] = useState(false);
 
   async function copyMachineCode() {
     await navigator.clipboard.writeText(machineCode);
@@ -84,14 +85,22 @@ export function TerminalActivationPage({ onActivated }: TerminalActivationPagePr
           <Card>
             <CardHeader><CardTitle>This Terminal Machine Code</CardTitle></CardHeader>
             <CardBody className="space-y-4">
+              <Alert tone="info" title="Simple terminal request">
+                Salryn generates this Machine Code. Your store admin or Kirjane Labs will issue a Terminal license from the Host license. You do not need a Host License ID or Store ID.
+              </Alert>
               <p className="break-all rounded-md bg-slate-100 px-4 py-3 font-mono text-sm font-semibold text-slate-900">
                 {machineCode}
               </p>
-              <Button variant="secondary" onClick={() => void copyMachineCode()}>{copied ? "Copied" : "Copy Machine Code"}</Button>
+              <Button variant="secondary" onClick={() => void copyMachineCode()}>
+                {copied ? "Copied" : "Copy Terminal Machine Code"}
+              </Button>
               <div className="space-y-2 text-sm text-slate-600">
-                <p>Send this code to <strong className="text-slate-900">{ACTIVATION_CONTACT}</strong>.</p>
-                <p>Include your store name, Host License ID, and terminal name or number.</p>
-                <p>Each LAN terminal needs its own signed Terminal license.</p>
+                <p>
+                  Send this Terminal Machine Code to your store admin or{" "}
+                  <strong className="text-slate-900">{ACTIVATION_CONTACT}</strong>.
+                </p>
+                <p>Include only a terminal name or location, for example Counter 1 or Cashier desk.</p>
+                <p>Each LAN terminal needs its own signed Terminal license for this device.</p>
               </div>
             </CardBody>
           </Card>
@@ -105,20 +114,53 @@ export function TerminalActivationPage({ onActivated }: TerminalActivationPagePr
                     This signed Terminal license was verified by the Host and matches this terminal device.
                   </Alert>
                   <dl className="grid gap-3 text-sm sm:grid-cols-2">
-                    <div><dt className="text-slate-500">Licensed to</dt><dd className="font-medium text-slate-900">{installed.customerName}</dd></div>
-                    <div><dt className="text-slate-500">Terminal ID</dt><dd className="font-medium text-slate-900">{installed.terminalId}</dd></div>
-                    <div><dt className="text-slate-500">Store ID</dt><dd className="font-medium text-slate-900">{installed.storeId}</dd></div>
-                    <div><dt className="text-slate-500">Host License ID</dt><dd className="break-all font-medium text-slate-900">{installed.hostLicenseId}</dd></div>
+                    <div>
+                      <dt className="text-slate-500">Licensed to</dt>
+                      <dd className="font-medium text-slate-900">{installed.customerName}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-slate-500">Terminal ID</dt>
+                      <dd className="font-medium text-slate-900">{installed.terminalId}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-slate-500">Store</dt>
+                      <dd className="font-medium text-slate-900">{installed.customerName}</dd>
+                    </div>
                   </dl>
+                  <button
+                    type="button"
+                    className="text-xs font-semibold text-blue-700 underline-offset-2 hover:underline"
+                    onClick={() => setShowSupportDetails((value) => !value)}
+                  >
+                    {showSupportDetails ? "Hide support details" : "Show support details"}
+                  </button>
+                  {showSupportDetails ? (
+                    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                      <p>
+                        Store (internal): <span className="font-mono">{installed.storeId}</span>
+                      </p>
+                      <p>
+                        Host License ID: <span className="break-all font-mono">{installed.hostLicenseId}</span>
+                      </p>
+                      <p>
+                        Terminal License ID: <span className="break-all font-mono">{installed.licenseId}</span>
+                      </p>
+                      <p>
+                        Terminal Machine Code: <span className="break-all font-mono">{installed.machineCode}</span>
+                      </p>
+                    </div>
+                  ) : null}
                   <div className="flex flex-wrap gap-2">
                     <Button onClick={onActivated}>Continue to Terminal Setup</Button>
-                    <Button variant="secondary" onClick={replaceLicense}>Replace Terminal License</Button>
+                    <Button variant="secondary" onClick={replaceLicense}>
+                      Replace Terminal License
+                    </Button>
                   </div>
                 </>
               ) : (
                 <>
                   <p className="text-sm text-slate-600">
-                    Paste only the signed Terminal license JSON. Host licenses are rejected and cannot activate this device.
+                    Paste the signed Terminal license JSON you received. Host licenses cannot activate a terminal.
                   </p>
                   <label className="space-y-2 text-sm font-medium text-slate-700">
                     <span>Signed Terminal license JSON</span>
