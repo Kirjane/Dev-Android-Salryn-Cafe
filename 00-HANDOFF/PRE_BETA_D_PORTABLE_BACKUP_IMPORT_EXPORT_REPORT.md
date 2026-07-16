@@ -6,7 +6,7 @@
 | --- | --- |
 | Branch | `KIRCH-PRE-BETA-D-PORTABLE-BACKUP-IMPORT-EXPORT` |
 | Base | `KIRCH-PRE-BETA-C-STORE-LOGO-BRANDING` @ `ffdf968d5ef143a25f9ef6e9c543b16eabd5b2ad` |
-| Final SHA | *(branch tip after push)* |
+| Final SHA | `6f40eaa1b3a03e7ab7632be6e38a917b870046d1` |
 | Protected SANDBOX | untouched |
 | Protected INSTALLER-M1 | untouched |
 

@@ -6,7 +6,7 @@
 | --- | --- |
 | Branch | `KIRCH-PRE-BETA-F-SCANNER-FIRST-CHECKOUT` |
 | Base | `KIRCH-PRE-BETA-D-PORTABLE-BACKUP-IMPORT-EXPORT` @ `6f40eaa1b3a03e7ab7632be6e38a917b870046d1` |
-| Final SHA | *(branch tip after push)* |
+| Final SHA | `6ae2255feb2c9a8e54b363aecc2e0a98c6949f42` |
 
 ## 2. Decision
 

@@ -6,6 +6,7 @@
 | --- | --- |
 | Branch | `KIRCH-PRE-BETA-H-CAPABILITY_MATRIX_SEAL` |
 | Base | `KIRCH-PRE-BETA-G-PRINTER_HARDENING` @ `b1956500e230b64bbd31bb85127f92901d07d50a` |
+| Final SHA | `4f709a5305cf3632044395e5855d00a58be15a8c` |
 
 ## 2. Decision
 
@@ -21,7 +22,12 @@
 
 ## 4. Gates
 
-Recorded after final stack gates on H tip.
+| Gate | Result (on H tip `4f709a5…`) |
+| --- | --- |
+| `dotnet build Salryn.sln` | PASS |
+| full CoreSmoke | PASS |
+| web build | PASS |
+| `git diff --check` | PASS |
 
 ## 5. Non-claims
 

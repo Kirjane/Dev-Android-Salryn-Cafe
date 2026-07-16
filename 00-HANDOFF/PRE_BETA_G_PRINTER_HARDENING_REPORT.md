@@ -6,6 +6,7 @@
 | --- | --- |
 | Branch | `KIRCH-PRE-BETA-G-PRINTER_HARDENING` |
 | Base | `KIRCH-PRE-BETA-F-SCANNER-FIRST-CHECKOUT` @ `6ae2255feb2c9a8e54b363aecc2e0a98c6949f42` |
+| Final SHA | `b1956500e230b64bbd31bb85127f92901d07d50a` |
 
 ## 2. Decision
 
