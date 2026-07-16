@@ -219,6 +219,7 @@ Not claimed:
 3. Remote POS cannot be called a reliable beta until a real Terminal license is activated on the terminal origin and the full pairing/login path is manually proven.
 4. The production bundle retains a non-blocking Vite chunk-size warning (`538.53 kB` minified main JS).
 5. Large formatting-only portions of the Product Catalog, Stock Movements, and Dashboard diffs should be recognized during review.
+6. Final hygiene inspection found 30 accumulated `salryn-coresmoke-devdb-*` roots in `%TEMP%` from prior and failed smoke runs. They were not deleted in this lane; the restored project `.salryn-dev` database remained separate and the final full suite passed.
 
 ## 17. Final decision
 
