@@ -274,6 +274,11 @@ public static class RemotePosApiEndpoints
             ExecuteCartAsync(httpContext, services, RemotePosCommands.CartAddLine, cancellationToken,
                 (svc, session) => svc.CheckoutService.AddLineAsync(session, request.ProductId, request.QuantityX1000, cancellationToken)));
 
+        // PRE-BETA-F: keyboard-wedge barcode path (host lookup by barcode; no GUID required for cashiers).
+        group.MapPost("/cart/add-line-by-barcode", (RemotePosCartAddLineByBarcodeRequest request, HttpContext httpContext, RemotePosApiServices services, CancellationToken cancellationToken) =>
+            ExecuteCartAsync(httpContext, services, RemotePosCommands.CartAddLineByBarcode, cancellationToken,
+                (svc, session) => svc.CheckoutService.AddLineByBarcodeAsync(session, request.Barcode, request.QuantityX1000, cancellationToken)));
+
         group.MapPost("/cart/update-line", (RemotePosCartUpdateLineRequest request, HttpContext httpContext, RemotePosApiServices services, CancellationToken cancellationToken) =>
             ExecuteCartAsync(httpContext, services, RemotePosCommands.CartUpdateLine, cancellationToken,
                 (svc, session) => svc.CheckoutService.UpdateLineAsync(session, request.ProductId, request.QuantityX1000, cancellationToken)));

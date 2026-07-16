@@ -22,7 +22,8 @@ public static class PosM3BarcodeScannerCashierFlowChecks
         RequireContains(checkoutPage, "fetchProducts({ search: barcode, isActive: true", "Barcode enter must use existing product catalog GET lookup.");
         RequireContains(checkoutPage, "pageSize: 50", "Barcode lookup must fetch enough active catalog candidates for exact matching.");
         RequireContains(checkoutPage, "event.key === \"Enter\"", "Keyboard-wedge Enter suffix must trigger barcode add attempt.");
-        RequireContains(checkoutPage, "void handleBarcodeEnter();", "Scan/search input Enter must call barcode add flow.");
+        RequireContains(checkoutPage, "event.key === \"Tab\"", "Keyboard-wedge Tab suffix must trigger barcode add attempt.");
+        RequireContains(checkoutPage, "void handleBarcodeSubmit();", "Scan/search input Enter/Tab must call barcode add flow.");
         RequireContains(checkoutPage, "addProduct(match)", "Exact barcode match must reuse existing cart add path.");
         RequireContains(checkoutPage, "Scan barcode or search product name", "Scan/search input must remain visible and product-name search usable.");
         RequireContains(checkoutPage, "Product-name search remains available", "Product-name search regression proof must remain in UI copy.");

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import {
   Alert,
   Button,
@@ -81,9 +81,13 @@ export function RemotePosClientPage({ onExitToLanding }: RemotePosClientPageProp
   const [rememberOperatorSession, setRememberOperatorSession] = useState(true);
   const [openingCash, setOpeningCash] = useState("0.00");
   const [productId, setProductId] = useState("");
+  const [scanSearch, setScanSearch] = useState("");
+  const [scanStatus, setScanStatus] = useState<string | null>(null);
+  const [isScanAdding, setIsScanAdding] = useState(false);
   const [quantity, setQuantity] = useState("1");
   const [tenderAmount, setTenderAmount] = useState("");
   const [branding, setBranding] = useState<RemotePosStoreBranding | null>(null);
+  const scanInputRef = useRef<HTMLInputElement | null>(null);
 
   const subtotalCents = client.cart?.subtotalCents ?? 0;
 
@@ -144,6 +148,39 @@ export function RemotePosClientPage({ onExitToLanding }: RemotePosClientPageProp
     setQuantity("1");
   }
 
+  async function handleScanSubmit() {
+    const barcode = scanSearch.trim();
+    if (!barcode || isScanAdding || client.busy !== "idle") return;
+    if (!client.cart) {
+      setScanStatus("Start a cart before scanning.");
+      return;
+    }
+    setIsScanAdding(true);
+    setScanStatus(`Looking up barcode ${barcode}…`);
+    try {
+      const qtyX1000 = Math.round(Number.parseFloat(quantity || "1") * 1000);
+      const qty = Number.isFinite(qtyX1000) && qtyX1000 > 0 ? qtyX1000 : 1000;
+      const ok = await client.addLineByBarcode(barcode, qty);
+      if (ok) {
+        setScanStatus(`Barcode ${barcode} added to cart.`);
+        setScanSearch("");
+      } else {
+        setScanStatus(client.errorMessage ?? "Barcode was not added.");
+      }
+    } finally {
+      setIsScanAdding(false);
+      window.setTimeout(() => scanInputRef.current?.focus(), 0);
+    }
+  }
+
+  function handleScanKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter" || event.key === "Tab") {
+      event.preventDefault();
+      event.stopPropagation();
+      void handleScanSubmit();
+    }
+  }
+
   function handleOpenShift() {
     const cents = Math.round(Number.parseFloat(openingCash || "0") * 100);
     void client.openShift(Number.isFinite(cents) && cents > 0 ? cents : 0);
@@ -199,15 +236,51 @@ export function RemotePosClientPage({ onExitToLanding }: RemotePosClientPageProp
             {client.cart ? <Button variant="ghost" onClick={() => void client.clearCart()} disabled={client.busy !== "idle"}>Clear cart</Button> : null}
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-[2fr,1fr,auto] sm:items-end">
-            <FormField label="Product ID" htmlFor="rpos-product" hint="Host validates product reference and pricing">
-              <TextInput id="rpos-product" value={productId} onChange={(event) => setProductId(event.target.value)} placeholder="product guid" autoComplete="off" />
+          <div className="space-y-2">
+            <FormField
+              label="Scan / search"
+              htmlFor="rpos-scan"
+              hint="Keyboard-wedge barcode input. Press Enter or Tab to add. Host validates the barcode."
+            >
+              <TextInput
+                ref={scanInputRef}
+                id="rpos-scan"
+                className="min-h-12 text-base"
+                value={scanSearch}
+                onChange={(event) => {
+                  setScanSearch(event.target.value);
+                  setScanStatus(null);
+                }}
+                onKeyDown={handleScanKeyDown}
+                placeholder="Scan barcode or type barcode…"
+                autoComplete="off"
+                autoFocus
+                inputMode="search"
+              />
             </FormField>
-            <FormField label="Quantity" htmlFor="rpos-qty">
-              <TextInput id="rpos-qty" value={quantity} onChange={(event) => setQuantity(event.target.value)} inputMode="decimal" />
-            </FormField>
-            <Button onClick={handleAddLine} disabled={client.busy !== "idle" || !client.cart}>Add line</Button>
+            {scanStatus ? <p className="text-xs text-slate-600">{scanStatus}</p> : null}
+            <div className="grid gap-3 sm:grid-cols-[1fr,auto] sm:items-end">
+              <FormField label="Quantity" htmlFor="rpos-qty">
+                <TextInput id="rpos-qty" value={quantity} onChange={(event) => setQuantity(event.target.value)} inputMode="decimal" />
+              </FormField>
+              <Button onClick={() => void handleScanSubmit()} disabled={client.busy !== "idle" || !client.cart || isScanAdding || !scanSearch.trim()}>
+                {isScanAdding ? "Adding…" : "Add from barcode"}
+              </Button>
+            </div>
           </div>
+
+          <details className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            <summary className="cursor-pointer font-medium text-slate-700">Advanced: add by product ID</summary>
+            <div className="mt-3 grid gap-3 sm:grid-cols-[2fr,1fr,auto] sm:items-end">
+              <FormField label="Product ID" htmlFor="rpos-product" hint="Support/debug path only — not the normal cashier flow">
+                <TextInput id="rpos-product" value={productId} onChange={(event) => setProductId(event.target.value)} placeholder="product guid" autoComplete="off" />
+              </FormField>
+              <FormField label="Quantity" htmlFor="rpos-qty-id">
+                <TextInput id="rpos-qty-id" value={quantity} onChange={(event) => setQuantity(event.target.value)} inputMode="decimal" />
+              </FormField>
+              <Button onClick={handleAddLine} disabled={client.busy !== "idle" || !client.cart}>Add line</Button>
+            </div>
+          </details>
 
           {client.cart && client.cart.lines.length > 0 ? (
             <div className="space-y-3">

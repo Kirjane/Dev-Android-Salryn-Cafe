@@ -238,6 +238,18 @@ export async function remotePosAddLine(
   return postJson<RemotePosCart>(buildUrl(connection, "/api/remote-pos/cart/add-line"), authHeaders(connection), line);
 }
 
+/** PRE-BETA-F: host barcode lookup + cart add (keyboard-wedge path). */
+export async function remotePosAddLineByBarcode(
+  connection: RemotePosAuthedConnection,
+  line: { barcode: string; quantityX1000: number },
+): Promise<RemotePosCart> {
+  return postJson<RemotePosCart>(
+    buildUrl(connection, "/api/remote-pos/cart/add-line-by-barcode"),
+    authHeaders(connection),
+    line,
+  );
+}
+
 export async function remotePosUpdateLine(
   connection: RemotePosAuthedConnection,
   line: { productId: string; quantityX1000: number },

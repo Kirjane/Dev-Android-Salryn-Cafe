@@ -127,6 +127,48 @@ public sealed class RemotePosCheckoutService
         return Ok(BuildCartResponse(session, cart, "Cart line added."));
     }
 
+    /// <summary>
+    /// PRE-BETA-F: add cart line by keyboard-wedge barcode (exact barcode match on host).
+    /// Unknown barcodes return ProductUnavailable without inventing products on the LAN terminal.
+    /// </summary>
+    public async Task<RemotePosCartOperationResult> AddLineByBarcodeAsync(
+        RemotePosOperatorSession session,
+        string barcode,
+        long quantityX1000,
+        CancellationToken cancellationToken = default)
+    {
+        if (quantityX1000 <= 0)
+        {
+            return Fail(RemotePosCheckoutStatus.ValidationFailed, "RemotePos.Cart.InvalidQuantity",
+                "Cart line quantity must be greater than zero.");
+        }
+
+        Result<Barcode> barcodeResult = Barcode.Create(barcode);
+        if (barcodeResult.IsFailure)
+        {
+            return Fail(RemotePosCheckoutStatus.ValidationFailed, "RemotePos.Cart.BarcodeRequired",
+                barcodeResult.ErrorDetail.Message);
+        }
+
+        Result<ProductLookupReadModel?> productResult =
+            await _productReadRepository.FindByBarcodeAsync(barcodeResult.Value, cancellationToken).ConfigureAwait(false);
+
+        if (productResult.IsFailure)
+        {
+            return Fail(RemotePosCheckoutStatus.RetryableUnknown, "RemotePos.Cart.ProductLookupFailed",
+                "Product lookup failed on the host.");
+        }
+
+        ProductLookupReadModel? product = productResult.Value;
+        if (product is null || !product.IsActive)
+        {
+            return Fail(RemotePosCheckoutStatus.ProductUnavailable, "RemotePos.Cart.UnknownBarcode",
+                "Unknown barcode. No product was added. Create or activate the product on the Host, then scan again.");
+        }
+
+        return await AddLineAsync(session, product.Id, quantityX1000, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<RemotePosCartOperationResult> UpdateLineAsync(
         RemotePosOperatorSession session,
         Guid productId,

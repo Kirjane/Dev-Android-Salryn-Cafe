@@ -7,6 +7,7 @@ import {
   fetchRemotePosTerminalTrust,
   remotePosActivatePairing,
   remotePosAddLine,
+  remotePosAddLineByBarcode,
   remotePosClearCart,
   remotePosLogin,
   remotePosLogout,
@@ -882,6 +883,21 @@ export function useRemotePosClient() {
     [authedConnection, run],
   );
 
+  const addLineByBarcode = useCallback(
+    async (barcode: string, quantityX1000: number) => {
+      if (!authedConnection) return false;
+      const result = await run("cart", () =>
+        remotePosAddLineByBarcode(authedConnection, { barcode, quantityX1000 }),
+      );
+      if (result) {
+        setCart(result);
+        return true;
+      }
+      return false;
+    },
+    [authedConnection, run],
+  );
+
   const updateLine = useCallback(
     async (productId: string, quantityX1000: number) => {
       if (!authedConnection) return;
@@ -988,6 +1004,7 @@ export function useRemotePosClient() {
     logout,
     startCart,
     addLine,
+    addLineByBarcode,
     updateLine,
     removeLine,
     clearCart,

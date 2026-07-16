@@ -29,6 +29,7 @@ public static class RemotePosCommands
     public const string CartStart = "remote-pos.cart.start";
     public const string CartView = "remote-pos.cart.view";
     public const string CartAddLine = "remote-pos.cart.add-line";
+    public const string CartAddLineByBarcode = "remote-pos.cart.add-line-by-barcode";
     public const string CartUpdateLine = "remote-pos.cart.update-line";
     public const string CartRemoveLine = "remote-pos.cart.remove-line";
     public const string CartClear = "remote-pos.cart.clear";
@@ -111,6 +112,9 @@ public sealed record RemotePosCartResponse(
     string Message);
 
 public sealed record RemotePosCartAddLineRequest(Guid ProductId, long QuantityX1000);
+
+/// <summary>PRE-BETA-F: keyboard-wedge barcode cart add (host validates barcode → product).</summary>
+public sealed record RemotePosCartAddLineByBarcodeRequest(string Barcode, long QuantityX1000);
 
 public sealed record RemotePosCartUpdateLineRequest(Guid ProductId, long QuantityX1000);
 

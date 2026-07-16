@@ -133,6 +133,7 @@ public static class Program
         PreBetaELanClientShellParityChecks.Run();
         PreBetaCStoreLogoBrandingChecks.Run();
         PreBetaDPortableBackupImportExportChecks.Run();
+        PreBetaFScannerFirstCheckoutChecks.Run();
         HardenA1A6PreBetaFoundationChecks.Run();
         ManualM1BootstrapAuthRepairChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
@@ -486,6 +487,9 @@ public static class Program
                 return;
             case "pre-beta-d-portable-backup-import-export":
                 PreBetaDPortableBackupImportExportChecks.Run();
+                return;
+            case "pre-beta-f-scanner-first-checkout":
+                PreBetaFScannerFirstCheckoutChecks.Run();
                 return;
             case "lan-m16-remote-pos":
                 LanM16HostOwnedRemoteOperatorSessionChecks.Run();

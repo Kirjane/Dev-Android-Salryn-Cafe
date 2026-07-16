@@ -41,6 +41,7 @@ public static class RemotePosAuthorizationMatrix
 
         RemotePosCommands.CartStart => RemotePosCommandCategory.CartWrite,
         RemotePosCommands.CartAddLine => RemotePosCommandCategory.CartWrite,
+        RemotePosCommands.CartAddLineByBarcode => RemotePosCommandCategory.CartWrite,
         RemotePosCommands.CartUpdateLine => RemotePosCommandCategory.CartWrite,
         RemotePosCommands.CartRemoveLine => RemotePosCommandCategory.CartWrite,
         RemotePosCommands.CartClear => RemotePosCommandCategory.CartWrite,
