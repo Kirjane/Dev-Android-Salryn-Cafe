@@ -117,13 +117,16 @@ public static class WebA4NativeHostVisualFidelityChecks
             string.Empty,
             StringComparison.Ordinal);
 
-        // PRE-BETA-C: store logo branding is an approved Settings.Manage surface.
-        // File input + FormData allowed only on StoreSettings logo upload paths.
+        // PRE-BETA-C/D: approved file surfaces — store logo + portable backup import only.
         string storeSettingsPageText = ReadRequiredFile(webSrc, "pages", "StoreSettingsPage.tsx");
         string storeSettingsApiText = ReadRequiredFile(webSrc, "api", "storeSettings.ts");
+        string backupPageText = ReadRequiredFile(webSrc, "pages", "BackupRestorePage.tsx");
+        string backupApiText = ReadRequiredFile(webSrc, "api", "backups.ts");
         string capabilitySourceWithoutLogoUpload = capabilitySource
             .Replace(storeSettingsPageText, string.Empty, StringComparison.Ordinal)
-            .Replace(storeSettingsApiText, string.Empty, StringComparison.Ordinal);
+            .Replace(storeSettingsApiText, string.Empty, StringComparison.Ordinal)
+            .Replace(backupPageText, string.Empty, StringComparison.Ordinal)
+            .Replace(backupApiText, string.Empty, StringComparison.Ordinal);
 
         string[] alwaysForbiddenTokens =
         {

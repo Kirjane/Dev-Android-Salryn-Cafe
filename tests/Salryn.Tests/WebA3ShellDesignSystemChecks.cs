@@ -113,17 +113,21 @@ public static class WebA3ShellDesignSystemChecks
             string.Empty,
             StringComparison.Ordinal);
 
-        // PRE-BETA-C: store logo branding is an approved Settings.Manage surface.
-        // File input + FormData are allowed only on StoreSettings logo upload paths.
-        // Exclude those files so upload tokens do not false-fail the global capability ban.
+        // PRE-BETA-C/D: approved file surfaces only —
+        // store logo (Settings.Manage) and portable backup package import (Backup.Manage).
         string storeSettingsPageText = ReadRequiredFile(webSrc, "pages", "StoreSettingsPage.tsx");
         string storeSettingsApiText = ReadRequiredFile(webSrc, "api", "storeSettings.ts");
+        string backupApiText = ReadRequiredFile(webSrc, "api", "backups.ts");
         RequireContains(storeSettingsPageText, "Upload logo", "Store logo upload UI must remain on Store Settings.");
         RequireContains(storeSettingsApiText, "uploadStoreLogo", "Store logo API client must remain scoped.");
         RequireContains(storeSettingsApiText, "/api/settings/store/logo", "Store logo upload must use settings logo endpoint.");
+        RequireContains(backupPageText, "Import Backup File", "Portable backup import UI must remain on Backup & Restore.");
+        RequireContains(backupApiText, "importBackupFile", "Portable backup import client must remain scoped.");
         string capabilitySourceWithoutLogoUpload = capabilitySource
             .Replace(storeSettingsPageText, string.Empty, StringComparison.Ordinal)
-            .Replace(storeSettingsApiText, string.Empty, StringComparison.Ordinal);
+            .Replace(storeSettingsApiText, string.Empty, StringComparison.Ordinal)
+            .Replace(backupPageText, string.Empty, StringComparison.Ordinal)
+            .Replace(backupApiText, string.Empty, StringComparison.Ordinal);
 
         string[] alwaysForbiddenTokens =
         {

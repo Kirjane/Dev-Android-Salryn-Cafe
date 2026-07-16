@@ -90,12 +90,18 @@ public static class PosB1BackupRestoreSafetyChecks
         Require(backupApi.Contains("RESTORE SALRYN BACKUP"), "Backup UI API client must send backend confirmation text only after UI confirmation.");
         Require(backupPage.Contains("Create Backup"), "Backup UI must expose create action.");
         Require(backupPage.Contains("Known backup packages"), "Backup UI must list known backup IDs.");
-        Require(backupPage.Contains("Verify"), "Backup UI must expose verify action.");
+        Require(backupPage.Contains("Verify Backup"), "Backup UI must expose verify action.");
+        Require(backupPage.Contains("Download Backup File"), "Backup UI must expose portable download.");
+        Require(backupPage.Contains("Import Backup File"), "Backup UI must expose portable import.");
         Require(backupPage.Contains("Type RESTORE"), "Backup UI restore must require typed confirmation.");
         Require(backupPage.Contains("Restore replaces the current local database"), "Backup UI must warn destructive restore replacement.");
         Require(!backupPage.Contains("not cloud backup"), "Backup UI must not show a cloud disclaimer wall.");
         Require(!backupPage.Contains("installer migration proof"), "Backup UI must not show an installer disclaimer wall.");
-        Require(!backupPage.Contains("type=\"file\""), "Backup UI must not expose raw file upload.");
+        // PRE-BETA-D: portable import uses a single package file input (not arbitrary path browsing).
+        Require(backupPage.Contains("type=\"file\""), "Backup UI must expose portable package import input.");
+        Require(backupApi.Contains("importBackupFile"), "Backup API client must support portable import.");
+        Require(backupApi.Contains("/api/backups/import"), "Backup API client must call import endpoint.");
+        Require(backupApi.Contains("downloadBackupFileUrl"), "Backup API client must support portable download URL.");
         Require(!backupPage.Contains("FilePath"), "Backup UI must not display raw backup file paths.");
         Require(!backupPage.Contains("RestoredBackupPath"), "Backup UI must not display restored backup file paths.");
         Require(!backupPage.Contains("SafetyBackupPath"), "Backup UI must not display safety backup file paths.");

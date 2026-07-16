@@ -41,6 +41,8 @@ export type BackupVerification = {
   backupId: string;
   manifest: BackupManifest;
   database: BackupDatabaseVerification;
+  storeName?: string | null;
+  hasLogo?: boolean | null;
 };
 
 export type BackupRestoreResult = {
@@ -70,4 +72,21 @@ export function restoreBackup(backupId: string) {
     credentials: "include",
     body: JSON.stringify({ confirmation: BACKEND_RESTORE_CONFIRMATION }),
   }).then(readJson<BackupRestoreResult>);
+}
+
+/** Client-friendly download of a portable .salryn-backup.zip package. */
+export function downloadBackupFileUrl(backupId: string): string {
+  return `/api/backups/${encodeURIComponent(backupId)}/download`;
+}
+
+/** Import a portable .salryn-backup.zip package; returns verified package summary. */
+export async function importBackupFile(file: File) {
+  const body = new FormData();
+  body.append("package", file);
+  const response = await fetch("/api/backups/import", {
+    method: "POST",
+    credentials: "include",
+    body,
+  });
+  return readJson<BackupVerification>(response);
 }
