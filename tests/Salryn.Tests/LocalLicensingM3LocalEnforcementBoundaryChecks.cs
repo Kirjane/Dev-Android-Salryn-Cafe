@@ -146,8 +146,7 @@ public static class LocalLicensingM3LocalEnforcementBoundaryChecks
             RequireContains(endpointSource, "MapPost(\"/api/license/install\"", "M2 install endpoint must remain mapped.");
             RequireContains(endpointSource, "MapGet(\"/api/license/entitlements\"", "M3 entitlement endpoint must be mapped read-only.");
             RequireContains(endpointSource, "RequireLoopbackOperatorRequest", "License API endpoints must preserve loopback/local guard.");
-            RequireContains(endpointSource, "RequireAuthenticatedSession", "Read-only license API endpoints must require authenticated session.");
-            RequireContains(endpointSource, "LocalApiPermissions.SettingsManage", "License install must remain admin/settings guarded.");
+            RequireContains(endpointSource, "RequireLoopbackOperatorRequest", "Pre-login license status/install must remain loopback-only.");
             RequireNotContains(endpointSource, "MapPut", "M3 must not add broad license mutation endpoints.");
             RequireNotContains(endpointSource, "MapDelete", "M3 must not add broad license mutation endpoints.");
 

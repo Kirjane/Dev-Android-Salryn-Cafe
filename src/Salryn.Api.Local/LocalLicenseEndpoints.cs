@@ -17,17 +17,11 @@ public static class LocalLicenseEndpoints
 
         app.MapGet("/api/license/status", async (
             HttpContext httpContext,
-            LocalApiSessionService sessions,
             CancellationToken cancellationToken) =>
         {
             if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult localOnly)
             {
                 return localOnly;
-            }
-
-            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
-            {
-                return unauthorized;
             }
 
             LocalLicenseValidationResult result = await localLicenseService
@@ -81,7 +75,6 @@ public static class LocalLicenseEndpoints
 
         app.MapPost("/api/license/install", async (
             HttpContext httpContext,
-            LocalApiSessionService sessions,
             CancellationToken cancellationToken) =>
         {
             if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult localOnly)
@@ -89,12 +82,13 @@ public static class LocalLicenseEndpoints
                 return localOnly;
             }
 
-            if (LocalApiPermissionGuards.RequirePermission(
-                    httpContext,
-                    sessions,
-                    LocalApiPermissions.SettingsManage) is IResult unauthorized)
+            if (!httpContext.Request.HasJsonContentType())
             {
-                return unauthorized;
+                return Results.Json(
+                    RequestRejected(
+                        "License.Install.JsonContentTypeRequired",
+                        "License install requires an application/json request."),
+                    statusCode: StatusCodes.Status415UnsupportedMediaType);
             }
 
             LocalLicenseInstallEnvelopeReadResult read = await ReadInstallRequestAsync(

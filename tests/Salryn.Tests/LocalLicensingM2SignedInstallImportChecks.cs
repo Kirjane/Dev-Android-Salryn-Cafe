@@ -138,8 +138,7 @@ public static class LocalLicensingM2SignedInstallImportChecks
             RequireContains(endpointSource, "MapGet(\"/api/license/status\"", "M1 status endpoint must remain mapped.");
             RequireContains(endpointSource, "MapPost(\"/api/license/install\"", "M2 install endpoint must be mapped narrowly.");
             RequireContains(endpointSource, "RequireLoopbackOperatorRequest", "Install endpoint must preserve loopback guard.");
-            RequireContains(endpointSource, "RequirePermission", "Install endpoint must require authenticated permission guard.");
-            RequireContains(endpointSource, "LocalApiPermissions.SettingsManage", "Install endpoint must use the existing Settings.Manage permission.");
+            RequireContains(endpointSource, "HasJsonContentType", "Pre-login install must reject simple cross-origin form posts.");
             RequireNotContains(endpointSource, "LicensePath", "Endpoint contract must not accept caller license path fields.");
             RequireNotContains(endpointSource, "OutputPath", "Endpoint contract must not accept caller output path fields.");
 

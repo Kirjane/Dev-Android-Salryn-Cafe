@@ -9,14 +9,14 @@ type BootstrapSetupPageProps = {
 };
 
 export function BootstrapSetupPage({ status, onCompleted }: BootstrapSetupPageProps) {
-  const [storeName, setStoreName] = useState("Salryn Dev General Merchandise");
+  const [storeName, setStoreName] = useState("");
   const [businessName, setBusinessName] = useState("");
   const [address, setAddress] = useState("");
   const [contactNumber, setContactNumber] = useState("");
   const [tin, setTin] = useState("");
   const [receiptWidthMm, setReceiptWidthMm] = useState<58 | 80>(80);
   const [adminUsername, setAdminUsername] = useState("admin");
-  const [adminDisplayName, setAdminDisplayName] = useState("DEV Admin");
+  const [adminDisplayName, setAdminDisplayName] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);

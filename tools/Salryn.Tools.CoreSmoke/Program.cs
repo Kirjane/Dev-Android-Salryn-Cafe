@@ -85,6 +85,7 @@ public static class Program
         WebA3ShellDesignSystemChecks.Run();
         WebA4NativeHostVisualFidelityChecks.Run();
         WebB0ReadOnlyOperatorSurfacesChecks.Run();
+        PreI1FreshLicenseFirstFlowChecks.Run();
         RoleM1OperatorRolePermissionUxCompileChecks.Run();
         RoleM2BackendPermissionEnforcementChecks.Run();
         RoleM3HttpApiPermissionRuntimeChecks.RunAsync().GetAwaiter().GetResult();
@@ -331,6 +332,9 @@ public static class Program
                 return;
             case "web-b0-read-only-operator-surfaces":
                 WebB0ReadOnlyOperatorSurfacesChecks.Run();
+                return;
+            case "pre-i1-fresh-license-first-flow":
+                PreI1FreshLicenseFirstFlowChecks.Run();
                 return;
             case "pos-b1-backup-restore-safety":
                 PosB1BackupRestoreSafetyChecks.Run();

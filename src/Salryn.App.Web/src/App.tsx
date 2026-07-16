@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Layers3 } from "lucide-react";
 import { fetchBootstrapStatus, type BootstrapStatus } from "./api/bootstrap";
+import { fetchLicenseStatus, type LocalLicenseStatus } from "./api/license";
 import { logout, type SessionState } from "./api/session";
 import { AppShell } from "./components/AppShell";
 import { Button, Card, CardBody, CommandBar } from "./components/ui";
@@ -95,6 +96,7 @@ function RemoteClientApp() {
 function ConsoleApp() {
   const queryClient = useQueryClient();
   const sessionQuery = useAppSession();
+  const licenseStatusQuery = useQuery({ queryKey: ["license-status"], queryFn: fetchLicenseStatus, retry: false });
   const [currentPage, setCurrentPage] = useState<AppPage>("dashboard");
   const [bootstrapStatus, setBootstrapStatus] = useState<BootstrapStatus | null>(null);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
@@ -119,8 +121,9 @@ function ConsoleApp() {
 
   async function handleLogout() { try { await logout(); } catch {} queryClient.removeQueries(); void sessionQuery.refetch(); }
 
-  if (isBootstrapLoading || sessionQuery.isLoading) return <FullScreenCenter><p className="text-sm text-slate-300">Connecting to the Salryn local API...</p></FullScreenCenter>;
-  if (bootstrapError || sessionQuery.isError) return <FullScreenCenter><div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-8 shadow-xl"><h1 className="text-xl font-semibold text-slate-900">Salryn local API unavailable</h1><p className="mt-2 text-sm text-slate-500">{bootstrapError || "The console could not reach the Salryn local API on this device."}</p><div className="mt-6"><Button onClick={() => void refreshBootstrapStatus()}>Try again</Button></div></div></FullScreenCenter>;
+  if (isBootstrapLoading || sessionQuery.isLoading || licenseStatusQuery.isLoading) return <FullScreenCenter><p className="text-sm text-slate-300">Connecting to the Salryn local API...</p></FullScreenCenter>;
+  if (bootstrapError || sessionQuery.isError || licenseStatusQuery.isError) return <FullScreenCenter><div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-8 shadow-xl"><h1 className="text-xl font-semibold text-slate-900">Salryn local API unavailable</h1><p className="mt-2 text-sm text-slate-500">{bootstrapError || (licenseStatusQuery.error as Error | null)?.message || "The console could not reach the Salryn local API on this device."}</p><div className="mt-6"><Button onClick={() => { void refreshBootstrapStatus(); void licenseStatusQuery.refetch(); }}>Try again</Button></div></div></FullScreenCenter>;
+  if (!isHostLicenseReady(licenseStatusQuery.data)) return <div className="min-h-screen bg-[#f6f7f9] p-6"><div className="mx-auto max-w-6xl"><LicensePage /></div></div>;
   if (bootstrapStatus?.firstRunRequired) return <BootstrapSetupPage status={bootstrapStatus} onCompleted={() => { void refreshBootstrapStatus(); void queryClient.invalidateQueries({ queryKey: ["session"] }); }} />;
   if (!sessionQuery.data?.isAuthenticated) return <LoginPage onLoggedIn={() => void queryClient.invalidateQueries({ queryKey: ["session"] })} />;
 
@@ -128,6 +131,14 @@ function ConsoleApp() {
   const firstAllowedPage = getFirstAllowedPage(session);
   const pageContent = canAccessPage(session, currentPage) ? renderPage(currentPage, session, () => void handleLogout(), setCurrentPage) : <AccessDenied currentPage={currentPage} onGoHome={() => firstAllowedPage && setCurrentPage(firstAllowedPage)} />;
   return <AppShell session={session} currentPage={currentPage} onNavigate={setCurrentPage} onLogout={() => void handleLogout()}>{pageContent}</AppShell>;
+}
+
+function isHostLicenseReady(status: LocalLicenseStatus | undefined): boolean {
+  if (!status?.machineMatched) return false;
+  if (status.status === "Development" || status.status === 5) return true;
+  const licensed = status.status === "Licensed" || status.status === 1;
+  const host = status.licenseType === "Host" || status.licenseType === 0;
+  return licensed && host;
 }
 
 export default function App() {

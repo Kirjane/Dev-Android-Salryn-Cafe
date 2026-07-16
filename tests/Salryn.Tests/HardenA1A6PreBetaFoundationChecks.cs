@@ -113,12 +113,11 @@ public static class HardenA1A6PreBetaFoundationChecks
         string apiLicenseGuard = ReadRepoFile("src/Salryn.Api.Local/Auth/ApiLicenseGuard.cs");
 
         RequireEndpointGuard(licenseEndpoints, "MapGet(\"/api/license/status\"", "RequireLoopbackOperatorRequest");
-        RequireEndpointGuard(licenseEndpoints, "MapGet(\"/api/license/status\"", "RequireAuthenticatedSession");
+        RequireEndpointDoesNotContain(licenseEndpoints, "MapGet(\"/api/license/status\"", "RequireAuthenticatedSession");
         RequireEndpointGuard(licenseEndpoints, "MapGet(\"/api/license/entitlements\"", "RequireLoopbackOperatorRequest");
         RequireEndpointGuard(licenseEndpoints, "MapGet(\"/api/license/entitlements\"", "RequireAuthenticatedSession");
         RequireEndpointGuard(licenseEndpoints, "MapPost(\"/api/license/install\"", "RequireLoopbackOperatorRequest");
-        RequireEndpointGuard(licenseEndpoints, "MapPost(\"/api/license/install\"", "RequirePermission");
-        RequireEndpointGuard(licenseEndpoints, "MapPost(\"/api/license/install\"", "LocalApiPermissions.SettingsManage");
+        RequireEndpointDoesNotContain(licenseEndpoints, "MapPost(\"/api/license/install\"", "RequirePermission");
 
         Require(
             permissionGuards.Contains("public const string SettingsManage = \"Settings.Manage\";", StringComparison.Ordinal),
@@ -177,6 +176,19 @@ public static class HardenA1A6PreBetaFoundationChecks
 
         int guardIndex = source.IndexOf(guardMarker, endpointIndex, StringComparison.Ordinal);
         Require(guardIndex >= 0, "Expected guard marker after endpoint " + endpointMarker + ": " + guardMarker);
+    }
+
+    private static void RequireEndpointDoesNotContain(string source, string endpointMarker, string forbiddenMarker)
+    {
+        int endpointIndex = source.IndexOf(endpointMarker, StringComparison.Ordinal);
+        Require(endpointIndex >= 0, "Endpoint marker missing: " + endpointMarker);
+        int nextEndpointIndex = source.IndexOf("app.Map", endpointIndex + endpointMarker.Length, StringComparison.Ordinal);
+        string endpointBlock = nextEndpointIndex < 0
+            ? source[endpointIndex..]
+            : source[endpointIndex..nextEndpointIndex];
+        Require(
+            !endpointBlock.Contains(forbiddenMarker, StringComparison.Ordinal),
+            "Forbidden guard marker after endpoint " + endpointMarker + ": " + forbiddenMarker);
     }
 
     private static string ReadRepoFile(string relativePath)

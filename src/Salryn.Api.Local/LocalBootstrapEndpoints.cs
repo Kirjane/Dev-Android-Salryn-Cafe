@@ -1,8 +1,10 @@
 using Salryn.Api.Local.Auth;
 using Salryn.Composition.Local;
 using Salryn.Core.Common;
+using Salryn.Core.Services.Licensing;
 using Salryn.Infrastructure.Data.Bootstrap;
 using Salryn.Infrastructure.Data.Initialization;
+using Salryn.Infrastructure.Licensing;
 
 namespace Salryn.Api.Local;
 
@@ -10,8 +12,10 @@ internal static class LocalBootstrapEndpoints
 {
     public static WebApplication MapLocalBootstrapEndpoints(
         this WebApplication app,
-        SalrynLocalComposition composition)
+        SalrynLocalComposition composition,
+        ILocalLicenseService? licenseService = null)
     {
+        ILocalLicenseService localLicenseService = licenseService ?? new LocalLicenseService();
         app.MapGet("/api/bootstrap/status", (HttpContext httpContext) =>
         {
             if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult localOnly)
@@ -28,13 +32,33 @@ internal static class LocalBootstrapEndpoints
             return Results.Ok(ToStatusResponse(status.Value));
         });
 
-        app.MapPost("/api/bootstrap/first-admin", (
+        app.MapPost("/api/bootstrap/first-admin", async (
             FirstAdminBootstrapApiRequest request,
-            HttpContext httpContext) =>
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
         {
             if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult localOnly)
             {
                 return localOnly;
+            }
+
+            LocalLicenseValidationResult license = await localLicenseService
+                .GetStatusAsync(cancellationToken)
+                .ConfigureAwait(false);
+            bool validHost = license.Status == LicenseStatus.Licensed &&
+                license.LicenseType == LicenseType.Host &&
+                license.MachineMatched;
+            bool explicitDevelopment = license.Status == LicenseStatus.Development &&
+                LocalLicenseService.IsExplicitDevelopmentLicenseMode();
+            if (!validHost && !explicitDevelopment)
+            {
+                return Results.Json(
+                    new
+                    {
+                        error = "A valid signed Host license for this machine is required before first-run setup.",
+                        code = "Bootstrap.HostLicenseRequired"
+                    },
+                    statusCode: StatusCodes.Status403Forbidden);
             }
 
             Result<AdminBootstrapSummary> result = composition.DatabaseInitialization.CreateFirstAdmin(

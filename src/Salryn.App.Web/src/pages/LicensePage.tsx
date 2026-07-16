@@ -45,11 +45,11 @@ export function LicensePage() {
 
   const status = statusQuery.data;
   const canInstall = licenseText.trim().length > 0 && replaceConfirmed && !busy;
-  const lanCount = status?.allowedLanTerminals;
   const currentStatusLabel = status ? statusLabel(status.status) : null;
   const typeLabel = licenseTypeLabel(status?.licenseType);
   const machineCode = status?.machineCode ?? status?.machineFingerprint ?? "Not available";
-  const showActivation = needsActivation(currentStatusLabel) || !status?.machineMatched;
+  const showActivation = needsActivation(currentStatusLabel) || !status?.machineMatched || typeLabel !== "Host";
+  const hostSetupBlocked = currentStatusLabel === "Licensed" && typeLabel !== "Host";
 
   async function handleInstall() {
     if (!canInstall) return;
@@ -102,6 +102,7 @@ export function LicensePage() {
       {statusQuery.isError ? <Alert tone="danger">{(statusQuery.error as Error).message}</Alert> : null}
       {message ? <Alert tone="success">{message}</Alert> : null}
       {error ? <Alert tone="danger">{error}</Alert> : null}
+      {hostSetupBlocked ? <Alert tone="danger" title="Host license required">This Terminal license cannot unlock Host first-run setup or the full Host application. Install a valid machine-bound Host license on this workstation.</Alert> : null}
 
       {showActivation ? (
         <Card>
@@ -174,11 +175,7 @@ export function LicensePage() {
             <CardHeader><CardTitle>Entitlements</CardTitle></CardHeader>
             <CardBody className="space-y-2 text-sm text-slate-700">
               <p><span className="font-semibold">Features:</span> {status.enabledFeatures.length > 0 ? status.enabledFeatures.join(", ") : "None"}</p>
-              {typeLabel === "Host" ? (
-                <p><span className="font-semibold">Allowed LAN terminals (Host):</span> {typeof lanCount === "number" ? lanCount : "Not set"}</p>
-              ) : (
-                <p><span className="font-semibold">LAN terminals:</span> Terminal licenses do not carry host terminal counts.</p>
-              )}
+              <p><span className="font-semibold">LAN licensing:</span> Each operational LAN terminal uses its own machine-bound Terminal license.</p>
               {typeLabel === "Terminal" ? (
                 <p className="text-xs text-amber-800">Terminal mode does not unlock full host POS, reports admin, backup host controls, or user management as host features.</p>
               ) : null}
