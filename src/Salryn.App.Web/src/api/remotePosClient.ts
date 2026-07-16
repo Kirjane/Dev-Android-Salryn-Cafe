@@ -43,6 +43,7 @@ export type RemotePosTerminalTrustStatus =
   | "Trusted"
   | "Revoked"
   | "Disabled"
+  | "RuntimeDisabled"
   | "HandshakeExpired";
 
 export type RemotePosTerminalTrust = {

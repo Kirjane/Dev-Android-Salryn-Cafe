@@ -215,6 +215,17 @@ export function RemotePosClientPage() {
         </Alert>
       ) : null}
 
+      {client.flowState === "S_HOST_PAUSED" ? (
+        <Alert tone="warning" title="Remote POS is paused on the Host">
+          <p>Your trusted terminal pairing is still saved. Ask a Host Admin to enable Remote POS in Terminal Management.</p>
+          <div className="mt-3">
+            <Button variant="secondary" onClick={client.retryHostConnection} disabled={client.busy !== "idle"}>
+              Retry Host connection
+            </Button>
+          </div>
+        </Alert>
+      ) : null}
+
       {client.flowState === "S_RESTORING" ? (
         <Alert tone="info">Restoring saved terminal state from this device...</Alert>
       ) : null}

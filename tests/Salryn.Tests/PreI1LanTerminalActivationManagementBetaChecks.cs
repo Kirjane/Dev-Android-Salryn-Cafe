@@ -41,6 +41,11 @@ public static class PreI1LanTerminalActivationManagementBetaChecks
         RequireContains(navigation, "{ id: \"host-lan-control\", label: \"Terminal Management\", enabled: true, group: \"Admin\" }", "Terminal Management must be normal Admin navigation.");
         RequireNotContains(hostManagement, "Terminal activation is not ready for client use", "Completed activation must not retain incomplete UX copy.");
         RequireContains(hostManagement, "Every client device must activate with its own signed Terminal license", "Host guidance must state one Terminal license per device.");
+        int diagnosticsIndex = hostManagement.IndexOf("Advanced diagnostics", StringComparison.Ordinal);
+        RequireTrue(diagnosticsIndex >= 0
+            && hostManagement.IndexOf("Configured bind (raw)", StringComparison.Ordinal) > diagnosticsIndex
+            && hostManagement.IndexOf("actualListenUrls", StringComparison.Ordinal) > diagnosticsIndex,
+            "Raw bind and listener details must stay under collapsed diagnostics.");
 
         RequireContains(apiEndpoints, "/terminal-license/validate", "Host must validate a Terminal license before pairing.");
         RequireContains(apiClient, "terminalMachineCode", "Pairing activation must submit the terminal-origin machine code.");
@@ -51,6 +56,9 @@ public static class PreI1LanTerminalActivationManagementBetaChecks
         RequireContains(activationService, "TerminalLicenseTrustMetadata.Build", "Verified Terminal-license identity must persist with registry trust.");
         RequireContains(sessions, "TerminalLicenseTrustMetadata.TryRead", "Every remote POS login/command trust check must require persisted license proof.");
         RequireContains(trust, "verified Terminal license", "Trust restoration must fail closed for legacy unlicensed pairings.");
+        RequireContains(trust, "RemotePosTerminalTrustStatuses.RuntimeDisabled", "A Host runtime restart must pause access without classifying durable terminal trust as revoked.");
+        RequireContains(remotePos, "Remote POS is paused on the Host", "A paired terminal must explain that Host runtime pause keeps its trusted pairing.");
+        RequireContains(Read(root, "src", "Salryn.App.Web", "src", "hooks", "useRemotePosClient.ts"), "This terminal was disabled on the Host", "Disabled terminal guidance must not mislabel the lifecycle state as revoked.");
 
         RequireContains(sessions, "{ \"Cashier\", \"Manager\" }", "Remote POS login must allow only Cashier and Manager roles.");
         RequireContains(sessions, "Admin and Owner accounts are host-local", "Remote role rejection must explain the host-local boundary.");

@@ -78,6 +78,37 @@ function readinessTitle(state: string): string {
   }
 }
 
+function readinessBadge(state: string): string {
+  switch (state) {
+    case "Ready":
+      return "Ready";
+    case "LoopbackOnly":
+      return "Restart required";
+    case "BindIpNotOnHost":
+    case "Misconfigured":
+      return "Needs repair";
+    case "Disabled":
+      return "Off";
+    default:
+      return "Check setup";
+  }
+}
+
+function readinessGuidance(state: string): string {
+  switch (state) {
+    case "LoopbackOnly":
+      return "Restart Salryn to apply the selected LAN address.";
+    case "BindIpNotOnHost":
+      return "Choose a LAN address detected on this host, then repair the saved address.";
+    case "Misconfigured":
+      return "Repair the saved LAN address before connecting terminal devices.";
+    case "Disabled":
+      return "Enter this host's LAN IPv4 address, then activate the LAN connection.";
+    default:
+      return "Review the LAN setup and try again.";
+  }
+}
+
 function readHiddenTerminalIds(): string[] {
   if (typeof window === "undefined") return [];
   try {
@@ -254,7 +285,7 @@ export function HostLanControlPage() {
               title="LAN connection"
               value={readinessTitle(runtime?.readinessState ?? "Disabled")}
               tone={readinessTone(runtime?.readinessState ?? "Disabled")}
-              badge={runtime?.readinessState ?? "Disabled"}
+              badge={readinessBadge(runtime?.readinessState ?? "Disabled")}
               subtitle={runtime?.clientUrl || status.hostLocalUrl}
             />
             <MetricCard
@@ -578,9 +609,9 @@ function LanConnectionCard({
           </Alert>
         ) : null}
 
-        {runtime?.remediation ? (
-          <Alert tone={canCopyClientUrl ? "info" : "warning"} title={runtime.problem ?? "LAN status"}>
-            {runtime.remediation}
+        {readiness !== "Ready" ? (
+          <Alert tone={canCopyClientUrl ? "info" : "warning"} title={canCopyClientUrl ? "LAN status" : "LAN setup needed"}>
+            {readinessGuidance(readiness)}
           </Alert>
         ) : null}
 
@@ -588,10 +619,6 @@ function LanConnectionCard({
           <Row label="Host local URL" value={hostLocalUrl} />
           <Row label="Host LAN URL" value={hostLanUrl} />
           <Row label="Configured bind (safe display)" value={configuredDisplay} />
-          <Row label="Configured bind (raw)" value={runtime?.configuredBindAddressRaw ?? "-"} />
-          <Row label="Normalized bind IP" value={runtime?.configuredBindAddressNormalized ?? runtime?.configuredBindAddress ?? "-"} />
-          <Row label="Detected LAN listeners" value={runtime?.detectedLanListenIps?.join(", ") || "-"} />
-          <Row label="Actual listen URLs" value={runtime?.actualListenUrls?.join(", ") || "unknown"} />
           <Row label="Client URL ready" value={canCopyClientUrl ? "Yes" : "No"} />
           <Row label="Capacity" value={capacitySummary} />
         </dl>

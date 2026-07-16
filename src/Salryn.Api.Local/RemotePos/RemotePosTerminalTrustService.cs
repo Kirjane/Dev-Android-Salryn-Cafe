@@ -190,6 +190,23 @@ public sealed class RemotePosTerminalTrustService
 
         if (!trustResult.Ok)
         {
+            if (string.Equals(trustResult.Code, "RemotePos.RuntimeDisabled", StringComparison.Ordinal)
+                || string.Equals(trustResult.Code, "RemotePos.RemoteTransportDisabled", StringComparison.Ordinal))
+            {
+                return TrustResponse(
+                    terminalId,
+                    RemotePosTerminalTrustStatuses.RuntimeDisabled,
+                    displayName,
+                    false,
+                    false,
+                    trustResult.Message,
+                    handshakeSessionId.Value.ToString("D"),
+                    null,
+                    null,
+                    terminal.StoreId,
+                    terminal.HostId);
+            }
+
             if (string.Equals(trustResult.Code, "RemotePos.HandshakeInvalid", StringComparison.Ordinal))
             {
                 return TrustResponse(
@@ -368,6 +385,7 @@ public static class RemotePosTerminalTrustStatuses
     public const string Trusted = "Trusted";
     public const string Revoked = "Revoked";
     public const string Disabled = "Disabled";
+    public const string RuntimeDisabled = "RuntimeDisabled";
     public const string HandshakeExpired = "HandshakeExpired";
 }
 

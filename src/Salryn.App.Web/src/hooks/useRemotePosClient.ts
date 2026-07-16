@@ -83,6 +83,7 @@ export type RemotePosFlowState =
   | "S5_REMOTE_POS_OPERATOR_AUTH"
   | "S6_REMOTE_POS_READY"
   | "S_REVOKED"
+  | "S_HOST_PAUSED"
   | "S_OFFLINE"
   | "S_RESTORING";
 
@@ -104,7 +105,8 @@ function isRevokedTrustStatus(status: string): boolean {
 
 export type RemotePosPairingNotice =
   | "Pairing expired or reset. Request access again."
-  | "Previous pairing was revoked. Request access again.";
+  | "Previous pairing was revoked. Request access again."
+  | "This terminal was disabled on the Host. Request access again.";
 
 export function shouldProbeTerminalTrust(stored: LanClientPairingRecord | null): boolean {
   return hasPairedTerminalMaterial(stored);
@@ -135,6 +137,9 @@ export function resolveRestoreFlowState(
   }
   if (trustStatus === "Trusted" || trustStatus === "HandshakeExpired") {
     return "S4_TERMINAL_TRUSTED";
+  }
+  if (trustStatus === "RuntimeDisabled") {
+    return "S_HOST_PAUSED";
   }
   if (trustStatus === "Approved") {
     return "S3_HOST_APPROVED_NEEDS_ACTIVATION";
@@ -444,6 +449,15 @@ export function useRemotePosClient() {
         setTrustProbeResult(`${trust.status} (handshake refreshed)`);
       }
 
+      if (trust.status === "RuntimeDisabled") {
+        setTerminalId(trust.terminalId ?? stored.terminalId ?? "");
+        setHandshakeSessionId(trust.handshakeSessionId ?? stored.handshakeSessionId ?? "");
+        setPairingRestored(true);
+        setFlowState("S_HOST_PAUSED");
+        setStatusMessage(trust.message);
+        return;
+      }
+
       if (trust.status === "Trusted") {
         const trustedTerminalId = trust.terminalId ?? stored.terminalId ?? "";
         const trustedHandshakeSessionId = trust.handshakeSessionId ?? stored.handshakeSessionId ?? "";
@@ -533,6 +547,9 @@ export function useRemotePosClient() {
       }
 
       if (isRevokedTrustStatus(trust.status)) {
+        const blockedNotice: RemotePosPairingNotice = trust.status === "Disabled"
+          ? "This terminal was disabled on the Host. Request access again."
+          : "Previous pairing was revoked. Request access again.";
         clearLanClientPairing();
         clearRemotePosOperatorSessionToken();
         setStorageRestored(false);
@@ -546,9 +563,9 @@ export function useRemotePosClient() {
         setHasOperatorSessionToken(false);
         setOperatorSessionValid("no");
         setOperatorSessionRestored(false);
-        setLastPairingNotice("Previous pairing was revoked. Request access again.");
+        setLastPairingNotice(blockedNotice);
         setFlowState("S1_UNPAIRED");
-        setStatusMessage("Previous pairing was revoked. Request access again.");
+        setStatusMessage(blockedNotice);
         return;
       }
 
@@ -716,6 +733,17 @@ export function useRemotePosClient() {
     setHostAddressConfirmed(true);
     setStatusMessage("Use the host LAN address shown on the host. Do not use localhost from another device.");
   }, [clearPairing]);
+
+  const retryHostConnection = useCallback(() => {
+    const normalizedHost = normalizeLanHostBaseUrl(hostBaseUrl);
+    if (!normalizedHost) {
+      return;
+    }
+
+    const stored = readLanClientPairing("remote-pos", normalizedHost);
+    setStorageRestored(Boolean(stored));
+    void restorePairingState(stored);
+  }, [hostBaseUrl, restorePairingState]);
 
   const requestJoin = useCallback(
     async (joinCode: string, deviceName: string) => {
@@ -951,6 +979,7 @@ export function useRemotePosClient() {
     busy,
     errorMessage,
     statusMessage,
+    retryHostConnection,
     requestJoin,
     refreshPairingStatus,
     activatePairing,
