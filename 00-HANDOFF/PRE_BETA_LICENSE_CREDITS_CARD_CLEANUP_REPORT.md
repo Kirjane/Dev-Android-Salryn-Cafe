@@ -6,7 +6,7 @@
 | --- | --- |
 | Branch | `KIRCH-PRE-BETA-LICENSE-CREDITS-CARD-CLEANUP` |
 | Base | `KIRCH-PRE-BETA-LICENSE-CREDITS-PAGE-POLISH` @ `b2483c7abcfa36cd259dfadb0009fb9e2d93be42` |
-| Final SHA | *(branch tip after push)* |
+| Final SHA | `1a4964acc556113b47c8e5b6d898b81b6a295e6a` |
 | Protected refs | Untouched |
 
 ## 2. Manual QA issue
@@ -58,7 +58,13 @@ Remains hidden/internal; no BIR/eSales/cloud/installer claims.
 
 ## 9. Tests / gates
 
-Recorded at commit time.
+| Gate | Result |
+| --- | --- |
+| pre-beta-license-credits-page-polish | PASS |
+| lic-beta / pre-i1 host+terminal | PASS |
+| web-a3 / web-a4 | PASS |
+| full CoreSmoke | PASS |
+| web build | PASS |
 
 ## 10. Manual visual check
 
