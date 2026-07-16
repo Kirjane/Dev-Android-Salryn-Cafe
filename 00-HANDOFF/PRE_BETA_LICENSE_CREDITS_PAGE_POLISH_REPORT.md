@@ -6,7 +6,7 @@
 | --- | --- |
 | Branch | `KIRCH-PRE-BETA-LICENSE-CREDITS-PAGE-POLISH` |
 | Base | `KIRCH-PRE-BETA-CDFGH-STACK-REVIEW-AND-REPAIR` @ `dee4f230595d0abdf72d8a84b4962da23192b5a9` |
-| Final SHA | *(branch tip after push)* |
+| Final SHA | `f2552a3e11314d0c5680d2fe39de4e22fb886246` |
 | Protected SANDBOX | untouched |
 | Protected INSTALLER-M1 | untouched |
 
