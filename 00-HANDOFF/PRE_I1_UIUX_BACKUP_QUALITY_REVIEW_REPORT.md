@@ -6,7 +6,8 @@
 - Verified base branch: `KIRCH-LIC-CLOSEOUT-HARD-GATES-AND-TERMINAL-PROOF`
 - Verified base and origin SHA: `7ea485d43e9be449402fe41b65f96f8ef279050f`
 - Base origin parity (`HEAD...origin`): `0 0`
-- Final reviewed content SHA: `REVIEW_CONTENT_SHA`
+- Final reviewed content SHA: `70cc413a3d85a8ac3a964e573db76b12e713234f`
+- Report SHA stamp is the follow-up branch-tip commit; it changes documentation only.
 - Protected ref `KIRCH-SANDBOX`: `1f74cd8bcaca1a5df487aa61677ee9829dd7fedb`
 - Protected ref `KIRCH-INSTALLER-M1`: `6b9c46676390b8a86a989eca600cb02e406ce865`
 - Protected refs unchanged: yes
