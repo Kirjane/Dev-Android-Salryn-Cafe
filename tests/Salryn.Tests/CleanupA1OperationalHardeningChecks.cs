@@ -35,6 +35,13 @@ public static class CleanupA1OperationalHardeningChecks
         RequireContains(factory, "WebDistDiagnostics.ApplyIndexHtmlNoCacheHeaders", "SPA fallback must apply index.html no-cache headers.");
         RequireContains(factory, "/api/system/web-dist", "Loopback-only web dist diagnostic endpoint must be mapped.");
         RequireContains(factory, "LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest", "Web dist diagnostic endpoint must require loopback.");
+        // I1 package layout: published exe must resolve dist beside itself without repo-shaped source tree.
+        RequireContains(factory, "AppContext.BaseDirectory", "Package layout must resolve web dist from AppContext.BaseDirectory.");
+        RequireContains(factory, "WebDistCandidatePaths", "Web dist resolution must enumerate package and repo candidate paths.");
+        RequireTrue(
+            factory.Contains("Path.Combine(AppContext.BaseDirectory, \"dist\")", StringComparison.Ordinal) ||
+            factory.Contains("Path.Combine(AppContext.BaseDirectory, \"wwwroot\")", StringComparison.Ordinal),
+            "Package layout must include BaseDirectory/dist or BaseDirectory/wwwroot web dist candidate.");
 
         RequireContains(diagnostics, "salryn-build-stamp.txt", "Diagnostics must read the frontend build stamp.");
         RequireContains(diagnostics, NoCacheControl, "Diagnostics must define index.html no-cache headers.");

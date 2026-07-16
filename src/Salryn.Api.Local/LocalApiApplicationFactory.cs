@@ -347,19 +347,38 @@ public static class LocalApiApplicationFactory
         };
     }
 
+    /// <summary>
+    /// Resolves React static dist for host page and SPA fallback.
+    /// Package/install layout: dist\ (or wwwroot\) beside Salryn.Api.Local.exe.
+    /// Dev layout: repo root with Salryn.sln → src\Salryn.App.Web\dist.
+    /// </summary>
     private static string? ResolveWebDistPath()
     {
-        foreach (string root in WebDistCandidateRoots())
+        foreach (string candidate in WebDistCandidatePaths())
         {
-            string distPath = Path.Combine(root, "src", "Salryn.App.Web", "dist");
-
-            if (File.Exists(Path.Combine(distPath, "index.html")))
+            if (File.Exists(Path.Combine(candidate, "index.html")))
             {
-                return distPath;
+                return candidate;
             }
         }
 
         return null;
+    }
+
+    private static IEnumerable<string> WebDistCandidatePaths()
+    {
+        // Package/publish layout: static assets next to the published executable.
+        yield return Path.Combine(AppContext.BaseDirectory, "dist");
+        yield return Path.Combine(AppContext.BaseDirectory, "wwwroot");
+
+        // Staging layout that mirrors repo shape (optional package shape).
+        yield return Path.Combine(AppContext.BaseDirectory, "src", "Salryn.App.Web", "dist");
+
+        foreach (string root in WebDistCandidateRoots())
+        {
+            yield return Path.Combine(root, "src", "Salryn.App.Web", "dist");
+            yield return Path.Combine(root, "dist");
+        }
     }
 
     private static IEnumerable<string> WebDistCandidateRoots()
