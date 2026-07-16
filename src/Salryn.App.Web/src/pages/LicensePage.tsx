@@ -95,7 +95,7 @@ export function LicensePage() {
         Salryn uses a local signed license file with public-key verification. Salryn works offline after a valid signed license is installed. This page is not cloud licensing, not subscription billing, not payment processing, not installer proof, not BIR/RMO compliance, not official receipt/invoice readiness, and not eSales readiness.
       </Alert>
       <Alert tone="warning" title="LAN entitlement boundary">
-        LAN terminal production use is not claimed here. Host and Terminal licenses are separate. A Host license is not valid as a terminal license. Each LAN operational terminal requires its own Terminal license bound to that machine. Full terminal-count enforcement is a separate LAN licensing lane.
+        LAN terminal production use is not claimed here. Host and Terminal licenses are separate. A Host license is not valid as a terminal license. Each LAN operational terminal requires its own Terminal license bound to that machine, and the Host enforces its licensed LAN entitlement.
       </Alert>
 
       {statusQuery.isLoading ? <LoadingState label="Loading license status…" /> : null}
@@ -108,20 +108,28 @@ export function LicensePage() {
           <CardHeader><CardTitle>Activation required</CardTitle></CardHeader>
           <CardBody className="space-y-3 text-sm text-slate-700">
             <p className="font-semibold text-slate-900">Manual beta activation (no cloud activation server)</p>
-            <ol className="list-decimal space-y-1 pl-5">
-              <li>Copy the machine code below.</li>
-              <li>
-                Email <span className="font-mono font-semibold">{BETA_CONTACT_EMAIL}</span> with:
+            <p>Email <span className="font-mono font-semibold">{BETA_CONTACT_EMAIL}</span> with the details for this device:</p>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-md border border-slate-200 p-3">
+                <p className="font-semibold text-slate-900">Host activation</p>
                 <ul className="mt-1 list-disc space-y-0.5 pl-5">
-                  <li>Store name</li>
-                  <li>Owner / contact person</li>
-                  <li>Machine code</li>
-                  <li>Whether this device is the Host POS workstation or a LAN Terminal</li>
+                  <li>Store/business name</li>
+                  <li>Contact person</li>
+                  <li>Contact number/email</li>
+                  <li>Host Machine Code</li>
                 </ul>
-              </li>
-              <li>Kirjane Labs will generate a signed Host or Terminal license file outside this app. Each LAN terminal uses a separate Terminal license (not a count field on Host activation).</li>
-              <li>Paste the signed license JSON below to import and verify offline.</li>
-            </ol>
+              </div>
+              <div className="rounded-md border border-slate-200 p-3">
+                <p className="font-semibold text-slate-900">Terminal activation</p>
+                <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                  <li>Store/business name</li>
+                  <li>Host License ID, if available</li>
+                  <li>Terminal name/number</li>
+                  <li>Terminal Machine Code</li>
+                </ul>
+              </div>
+            </div>
+            <p>Kirjane Labs will generate the matching signed license outside this app. Each LAN terminal uses one separate Terminal license. Paste the signed license JSON below to import and verify offline.</p>
             <p>
               <span className="font-semibold">Machine code:</span>{" "}
               <span className="break-all font-mono text-base font-bold tracking-wide text-navy-900">{machineCode}</span>

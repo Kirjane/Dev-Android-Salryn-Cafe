@@ -142,6 +142,9 @@ public static class LocalLicensingBetaManualHostTerminalActivationChecks
             string serviceSrc = ReadRepoFile("src", "Salryn.Infrastructure", "Licensing", "LocalLicenseService.cs");
             string enforcementSrc = ReadRepoFile("src", "Salryn.Infrastructure", "Licensing", "LocalLicenseEnforcementService.cs");
             string licensePage = File.ReadAllText(Path.Combine(FindRoot(), "src", "Salryn.App.Web", "src", "pages", "LicensePage.tsx"));
+            string dashboardPage = File.ReadAllText(Path.Combine(FindRoot(), "src", "Salryn.App.Web", "src", "pages", "DashboardPage.tsx"));
+            string appShell = File.ReadAllText(Path.Combine(FindRoot(), "src", "Salryn.App.Web", "src", "components", "AppShell.tsx"));
+            string storeSettingsPage = File.ReadAllText(Path.Combine(FindRoot(), "src", "Salryn.App.Web", "src", "pages", "StoreSettingsPage.tsx"));
             string hostLan = File.ReadAllText(Path.Combine(FindRoot(), "src", "Salryn.App.Web", "src", "pages", "HostLanControlPage.tsx"));
             string backupPage = File.ReadAllText(Path.Combine(FindRoot(), "src", "Salryn.App.Web", "src", "pages", "BackupRestorePage.tsx"));
             string policy = ReadRepoFile("src", "Salryn.Core", "Services", "Licensing", "LocalLicenseContractPolicy.cs");
@@ -158,6 +161,16 @@ public static class LocalLicensingBetaManualHostTerminalActivationChecks
             RequireContains(enforcementSrc, "WrongLicenseType", "Enforcement must reject host features for Terminal.");
             RequireContains(licensePage, "salryn.info@gmail.com", "License UI must show beta contact email.");
             RequireContains(licensePage, "Machine code", "License UI must show machine code.");
+            RequireContains(licensePage, "Host activation", "License UI must separate Host activation instructions.");
+            RequireContains(licensePage, "Contact number/email", "Host activation must request contact details.");
+            RequireContains(licensePage, "Host Machine Code", "Host activation must identify the Host machine code.");
+            RequireContains(licensePage, "Terminal activation", "License UI must separate Terminal activation instructions.");
+            RequireContains(licensePage, "Terminal name/number", "Terminal activation must identify the terminal.");
+            RequireContains(licensePage, "Terminal Machine Code", "Terminal activation must identify the Terminal machine code.");
+            RequireNotContains(licensePage, "Full terminal-count enforcement is a separate LAN licensing lane", "License UI must not describe completed entitlement enforcement as future work.");
+            RequireNotContains(dashboardPage, "licensing entitlement, and client deployment remain deferred", "Dashboard must not describe completed license enforcement as deferred.");
+            RequireNotContains(appShell, "LAN terminal licensing and entitlement remain deferred", "Navigation must not describe completed license enforcement as deferred.");
+            RequireNotContains(storeSettingsPage, "Controlled backup and licensing controls will be added", "Settings must not describe implemented Admin pages as future work.");
             RequireContains(licensePage, "Salryn works offline after a valid signed license is installed", "License UI must state offline-after-install.");
             RequireContains(licensePage, "not cloud licensing", "License UI must not claim cloud activation.");
             RequireContains(licensePage, "not subscription billing", "License UI must reject subscription billing claims.");

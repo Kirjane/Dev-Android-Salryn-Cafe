@@ -326,6 +326,12 @@ public static class Program
             case "web-a3-shell-design-system":
                 WebA3ShellDesignSystemChecks.Run();
                 return;
+            case "web-a4-native-host-visual-fidelity":
+                WebA4NativeHostVisualFidelityChecks.Run();
+                return;
+            case "web-b0-read-only-operator-surfaces":
+                WebB0ReadOnlyOperatorSurfacesChecks.Run();
+                return;
             case "pos-b1-backup-restore-safety":
                 PosB1BackupRestoreSafetyChecks.Run();
                 return;

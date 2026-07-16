@@ -150,8 +150,8 @@ export function StoreSettingsPage() {
         </Card>
       </div>
 
-      <Alert tone="neutral" title="Planned administration surfaces">
-        Controlled backup and licensing controls will be added in their own approved lanes. This page does not expose raw backup paths or license files.
+      <Alert tone="neutral" title="Separate administration surfaces">
+        Backup & Restore and License controls are available on their separate Admin pages. Store Settings does not expose raw backup paths or license files.
       </Alert>
     </div>
   );
