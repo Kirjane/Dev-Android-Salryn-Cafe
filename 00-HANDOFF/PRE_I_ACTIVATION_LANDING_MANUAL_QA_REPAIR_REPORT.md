@@ -7,7 +7,7 @@
 | Branch | `KIRCH-PRE-I-ACTIVATION-LANDING-MANUAL-QA-REPAIR` |
 | Base branch | `KIRCH-PRE-BETA-LICENSE-CREDITS-LAN-SCOPE-REPAIR` |
 | Base SHA | `5ef674dedb6361fe6fc6fb9ceadb364464310c64` |
-| Final SHA | `f1d29d564782d9854f0effa8f8633e14ee79d0c5` |
+| Final SHA | `b7ca537ba69d7b94a63e15bc7987d22375a17244` |
 | Protected refs | Untouched (`KIRCH-SANDBOX` @ `1f74cd8…`, `KIRCH-INSTALLER-M1` @ `6b9c466…`) |
 
 ## 2. Repo study summary
