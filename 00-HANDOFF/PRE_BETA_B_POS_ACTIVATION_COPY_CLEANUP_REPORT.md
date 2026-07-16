@@ -6,7 +6,7 @@
 | --- | --- |
 | Branch | `KIRCH-PRE-BETA-B-POS-ACTIVATION-COPY-CLEANUP` |
 | Base | `KIRCH-BETA-READINESS-R1-MASTER-PLAN` @ `ce7ae7d841a39b8c8ef42d0a879c7a941b26d6b1` |
-| Final SHA | (branch tip after commit) |
+| Final SHA | `a90a98ec7b8f506999a392f88be3340c26c9cbf3` |
 | Protected `KIRCH-SANDBOX` | `1f74cd8bcaca1a5df487aa61677ee9829dd7fedb` (unchanged) |
 | Protected `KIRCH-INSTALLER-M1` | `6b9c46676390b8a86a989eca600cb02e406ce865` (unchanged) |
 
