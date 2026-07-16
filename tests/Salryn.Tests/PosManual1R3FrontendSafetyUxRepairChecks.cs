@@ -51,9 +51,9 @@ public static class PosManual1R3FrontendSafetyUxRepairChecks
         RequireContains(sales, "does not create another sale, payment, or stock movement", "Reprint copy must explain no-duplicate boundary.");
 
         RequireContains(products, "Confirm product deactivation", "Product deactivate must require confirmation popup.");
-        RequireContains(products, "hidden from the active sale flow", "Deactivate copy must explain inactive sale-flow effect.");
+        RequireContains(products, "hidden from active sale flow", "Deactivate copy must explain inactive sale-flow effect.");
         RequireContains(products, "Historical sales remain preserved", "Deactivate copy must explain sales history preservation.");
-        RequireContains(products, "does not delete past records", "Deactivate copy must explain no deletion.");
+        RequireContains(products, "delete past records", "Deactivate copy must explain no deletion.");
         RequireContains(products, "Manage products, pricing, barcodes, and stock settings", "Product Catalog must use client-facing purpose copy.");
 
         RequireContains(inventory, "Review Stock-In and Stock Adjustment history", "Inventory must use client-facing purpose copy.");

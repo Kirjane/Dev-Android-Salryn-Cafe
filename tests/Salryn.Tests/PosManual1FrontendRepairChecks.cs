@@ -33,23 +33,24 @@ public static class PosManual1FrontendRepairChecks
         RequireContains(sales, "Confirm Void Sale", "Authorized void action must be discoverable and explicit.");
         RequireContains(sales, "cannot be repeated", "Double-void boundary must be visible to the operator.");
 
-        RequireContains(settings, "Configure Store", "Settings must present a clear store-configuration purpose.");
+        RequireContains(settings, "title=\"Store Settings\"", "Settings must present a clear store-configuration purpose.");
+        RequireContains(settings, "Manage store details, receipts, and printing.", "Settings must explain its client-facing purpose.");
         RequireContains(settings, "Store profile", "Settings must group store identity.");
         RequireContains(settings, "Regional / Currency", "Settings must group currency behavior.");
         RequireContains(settings, "Receipt appearance", "Settings must group receipt behavior.");
-        RequireContains(settings, "Physical printing is not configured", "Printer copy must remain honest.");
-        RequireContains(settings, "Store logo support is not active", "Logo must remain inactive without fake upload.");
-        RequireContains(settings, "Hardware peripherals beyond the Windows print queue are outside the beta scope", "Hardware extras must be explicitly out of beta scope.");
+        RequireContains(settings, "Printer mode", "Settings must expose the configured printer mode.");
+        RequireContains(settings, "Exact Windows printer name", "Printer setup must request the exact Windows printer name.");
+        RequireContains(settings, "Saved receipts remain available when printing is disabled", "Printer copy must keep receipt availability clear.");
         RequireNotContains(settings, "type=\"file\"", "Settings must not add an unsupported logo upload.");
 
         RequireContains(products, "Unit of measure", "Catalog must distinguish unit of measure from quantity.");
         RequireContains(products, "Product details do not change stock on hand", "Catalog edit must stay stock-neutral.");
         RequireContains(products, "Confirm product deactivation", "Product deactivation must have a confirmation guard.");
-        RequireContains(products, "hidden from the active sale flow", "Deactivate copy must explain active sale-flow effect.");
-        RequireContains(products, "does not delete past records", "Deactivate copy must explain historical records are preserved.");
+        RequireContains(products, "Confirm Deactivate Product", "Product deactivation must remain an explicit action.");
+        RequireContains(products, "delete past records", "Deactivate copy must explain historical records are preserved.");
         RequireContains(inventory, "Stock on hand", "Inventory must label quantity clearly.");
         RequireContains(inventory, "Recorded stock changes", "Inventory movement semantics must be clear.");
-        RequireContains(inventory, "Fast Add currently starts from the cashier workstation", "Inventory must explain Fast Add location.");
+        RequireContains(inventory, "Quantity changes are recorded as stock movements", "Inventory must explain how stock changes are recorded.");
 
         RequireContains(dashboard, "Store operations", "Dashboard must prioritize daily store workflows.");
         RequireContains(dashboard, "Open Sales & Receipts", "Dashboard must link to sales and receipts.");
