@@ -48,7 +48,7 @@ export function TerminalShell({
   const [confirmLogout, setConfirmLogout] = useState(false);
 
   return (
-    <div className="flex h-screen min-w-[48rem] flex-col bg-slate-100">
+    <div className="flex h-screen min-w-0 flex-col bg-slate-100">
       <header className="flex h-[60px] shrink-0 items-center justify-between gap-4 border-b border-white/10 bg-navy-900 px-5 text-white shadow-sm">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white text-navy-900 shadow-sm">

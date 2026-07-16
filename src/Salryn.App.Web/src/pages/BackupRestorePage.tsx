@@ -11,7 +11,7 @@ import {
   type BackupSummary,
   type BackupVerification,
 } from "../api/backups";
-import { Alert, Button, Card, CardBody, CardHeader, CardTitle, CommandBar, LoadingState, StatusPill, TextInput } from "../components/ui";
+import { Alert, Button, Card, CardBody, CardHeader, CardTitle, CommandBar, Dialog, LoadingState, StatusPill, TextInput } from "../components/ui";
 
 function formatBytes(value: number | null | undefined): string {
   if (value === null || value === undefined) return "Not available";
@@ -61,6 +61,9 @@ export function BackupRestorePage() {
   const [restoreText, setRestoreText] = useState("");
   const [restoring, setRestoring] = useState(false);
   const [verifications, setVerifications] = useState<Record<string, BackupVerification>>({});
+  const [createSuccessId, setCreateSuccessId] = useState<string | null>(null);
+  const [verifySuccessId, setVerifySuccessId] = useState<string | null>(null);
+  const [restoreSuccessAt, setRestoreSuccessAt] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
 
   const backups = useMemo(() => backupsQuery.data ?? [], [backupsQuery.data]);
@@ -74,6 +77,7 @@ export function BackupRestorePage() {
     try {
       const created = await createBackup();
       setMessage(`Backup created: ${created.backupId}`);
+      setCreateSuccessId(created.backupId);
       await backupsQuery.refetch();
     } catch (e) {
       setError((e as Error).message);
@@ -90,6 +94,9 @@ export function BackupRestorePage() {
       const verification = await verifyBackup(backupId);
       setVerifications((current) => ({ ...current, [backupId]: verification }));
       setMessage(verification.database.isRestorable ? `Backup verified: ${backupId}` : `Backup is not restorable: ${backupId}`);
+      if (verification.database.isRestorable) {
+        setVerifySuccessId(backupId);
+      }
     } catch (e) {
       setError((e as Error).message);
       setVerifications((current) => {
@@ -131,7 +138,9 @@ export function BackupRestorePage() {
     setError(null);
     try {
       const result = await restoreBackup(restoreTarget);
+      const when = result.completedAt ? formatDate(result.completedAt) : new Date().toLocaleString();
       setMessage(`Restore completed from ${restoreTarget}${result.completedAt ? ` at ${formatDate(result.completedAt)}` : ""}. Restart the app if the local API reports stale data.`);
+      setRestoreSuccessAt(when);
       setRestoreText("");
       setRestoreTarget(null);
       await backupsQuery.refetch();
@@ -250,26 +259,74 @@ export function BackupRestorePage() {
         </CardBody>
       </Card>
 
-      {restoreTarget ? (
-        <Card>
-          <CardHeader><CardTitle>Confirm restore</CardTitle></CardHeader>
-          <CardBody className="space-y-4">
-            <Alert tone="danger" title="Destructive database replacement">
-              Restore replaces the current local database from verified backup ID <span className="font-mono">{restoreTarget}</span>. The current database is archived before restore. Continue only if you already created a current backup or accept the risk.
-            </Alert>
-            {!isVerifiedRestorable(selectedVerification) ? <Alert tone="danger">This backup must be verified and restorable before restore is enabled.</Alert> : null}
-            {selectedVerification ? <VerificationSummary verification={selectedVerification} /> : null}
-            <label className="space-y-1 text-sm font-medium text-slate-700">
-              <span>Type RESTORE to enable restore</span>
-              <TextInput value={restoreText} onChange={(event) => setRestoreText(event.target.value)} placeholder="RESTORE" />
-            </label>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="danger" disabled={!restoreReady} onClick={() => void handleRestore()}>{restoring ? "Restoring…" : "Restore Backup"}</Button>
-              <Button variant="secondary" disabled={restoring} onClick={() => { setRestoreTarget(null); setRestoreText(""); }}>Cancel</Button>
-            </div>
-          </CardBody>
-        </Card>
-      ) : null}
+      <Dialog
+        open={Boolean(restoreTarget)}
+        title="Confirm restore"
+        description="Destructive database replacement. Type RESTORE to continue."
+        onClose={() => {
+          if (!restoring) {
+            setRestoreTarget(null);
+            setRestoreText("");
+          }
+        }}
+        footer={(
+          <>
+            <Button variant="secondary" disabled={restoring} onClick={() => { setRestoreTarget(null); setRestoreText(""); }}>Cancel</Button>
+            <Button variant="danger" disabled={!restoreReady} onClick={() => void handleRestore()}>{restoring ? "Restoring…" : "Restore Backup"}</Button>
+          </>
+        )}
+      >
+        <div className="space-y-4 text-sm">
+          <Alert tone="danger" title="Restore replaces the current local database">
+            Restore replaces the current local database from verified backup ID <span className="font-mono">{restoreTarget}</span>. The current database is archived before restore. Continue only if you already created a current backup or accept the risk.
+          </Alert>
+          {!isVerifiedRestorable(selectedVerification) ? <Alert tone="danger">This backup must be verified and restorable before restore is enabled.</Alert> : null}
+          {selectedVerification ? <VerificationSummary verification={selectedVerification} /> : null}
+          <label className="space-y-1 text-sm font-medium text-slate-700">
+            <span>Type RESTORE to enable restore</span>
+            <TextInput value={restoreText} onChange={(event) => setRestoreText(event.target.value)} placeholder="RESTORE" />
+          </label>
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(createSuccessId)}
+        title="Backup created"
+        onClose={() => setCreateSuccessId(null)}
+        footer={<Button onClick={() => setCreateSuccessId(null)}>OK</Button>}
+      >
+        <div className="space-y-2 text-center text-sm">
+          <p className="text-base font-semibold text-navy-900">Backup created successfully</p>
+          <p className="break-all font-mono text-xs text-slate-700">{createSuccessId}</p>
+          <p className="text-slate-600">You can Download Backup File or Verify Backup from the list below.</p>
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(verifySuccessId)}
+        title="Backup verified"
+        onClose={() => setVerifySuccessId(null)}
+        footer={<Button onClick={() => setVerifySuccessId(null)}>OK</Button>}
+      >
+        <div className="space-y-2 text-center text-sm">
+          <p className="text-base font-semibold text-navy-900">Backup verified and restorable</p>
+          <p className="break-all font-mono text-xs text-slate-700">{verifySuccessId}</p>
+          <p className="text-slate-600">You may Restore Backup after typing RESTORE in the confirmation dialog.</p>
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(restoreSuccessAt)}
+        title="Restore completed"
+        onClose={() => setRestoreSuccessAt(null)}
+        footer={<Button onClick={() => setRestoreSuccessAt(null)}>OK</Button>}
+      >
+        <div className="space-y-2 text-center text-sm">
+          <p className="text-base font-semibold text-navy-900">Restore completed</p>
+          <p className="text-slate-600">Completed at {restoreSuccessAt}. Restart the app if the local API reports stale data.</p>
+          <p className="text-xs text-slate-500">The previous database was archived automatically before restore.</p>
+        </div>
+      </Dialog>
     </div>
   );
 }

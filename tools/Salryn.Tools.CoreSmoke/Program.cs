@@ -137,6 +137,7 @@ public static class Program
         PreBetaGPrinterHardeningChecks.Run();
         PreBetaHCapabilityMatrixSealChecks.Run();
         PreBetaLicenseCreditsPagePolishChecks.Run();
+        PreIActivationLandingManualQaRepairChecks.Run();
         HardenA1A6PreBetaFoundationChecks.Run();
         ManualM1BootstrapAuthRepairChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
@@ -502,6 +503,9 @@ public static class Program
                 return;
             case "pre-beta-license-credits-page-polish":
                 PreBetaLicenseCreditsPagePolishChecks.Run();
+                return;
+            case "pre-i-activation-landing-manual-qa-repair":
+                PreIActivationLandingManualQaRepairChecks.Run();
                 return;
             case "lan-m16-remote-pos":
                 LanM16HostOwnedRemoteOperatorSessionChecks.Run();

@@ -1,5 +1,5 @@
 /**
- * PRE-BETA: clean Salryn credits / product identity card for licensing screens.
+ * PRE-BETA: product website–style credits / identity rail for activation landing.
  * Credits-first — no admin-style metadata boxes.
  */
 export function ProductCreditsCard() {
@@ -8,17 +8,20 @@ export function ProductCreditsCard() {
       className="flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-md shadow-slate-200/60"
       aria-label="Licensing and Credits"
     >
-      <div className="border-b border-slate-100 bg-gradient-to-br from-navy-900 via-navy-800 to-blue-900 px-6 py-7 text-white">
-        <h2 className="text-3xl font-bold tracking-tight">SALRYN</h2>
-        <p className="mt-1 text-sm font-medium text-blue-100">by Kirjane Labs</p>
-        <p className="mt-4 text-sm font-semibold tracking-wide text-emerald-200">{"Licensing & Credits"}</p>
-        <p className="mt-3 text-xs font-medium text-white/75">A Kirjane Labs product</p>
+      <div className="relative overflow-hidden border-b border-slate-100 bg-gradient-to-br from-navy-900 via-navy-800 to-blue-900 px-6 py-8 text-white">
+        <div className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full border border-white/10" aria-hidden />
+        <div className="pointer-events-none absolute -bottom-10 left-8 h-24 w-24 rounded-full border border-emerald-400/20" aria-hidden />
+        <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-emerald-300">Kirjane Labs</p>
+        <h2 className="mt-3 text-4xl font-black tracking-[0.16em]">SALRYN</h2>
+        <p className="mt-2 text-sm font-medium text-blue-100">by Kirjane Labs</p>
+        <p className="mt-5 text-sm font-semibold tracking-wide text-emerald-200">{"Licensing & Credits"}</p>
+        <p className="mt-2 text-xs font-medium text-white/75">A Kirjane Labs product</p>
       </div>
 
       <div className="flex flex-1 flex-col gap-5 px-5 py-5 sm:px-6">
         <div>
-          <h3 className="text-center text-xs font-bold uppercase tracking-[0.2em] text-navy-900">Credits</h3>
-          <p className="mt-1 text-center text-[11px] text-slate-500">Kirjane Labs</p>
+          <h3 className="text-center text-xs font-bold uppercase tracking-[0.22em] text-navy-900">Credits</h3>
+          <p className="mt-1 text-center text-[11px] font-semibold tracking-wide text-slate-500">Kirjane Labs</p>
           <div className="mx-auto mt-2 h-3 w-px bg-slate-300" aria-hidden />
           <div className="mx-auto h-px w-[85%] max-w-sm bg-slate-300" aria-hidden />
 

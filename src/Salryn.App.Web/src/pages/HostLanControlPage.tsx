@@ -443,7 +443,7 @@ export function HostLanControlPage() {
               {pairingStatusQuery.isError ? <ErrorState message={(pairingStatusQuery.error as Error).message} /> : null}
               <p className="my-4 text-sm text-slate-600">
                 Pairing sequence: (1) rotate join code, (2) client requests access, (3) accept here, (4) client
-                enters one-time pairing code once, (5) terminal stays trusted across refresh. Revoke only when a
+                enters one-time pairing code once, (5) terminal stays trusted across refresh. Remove (revoke) only when a
                 device must re-pair.
               </p>
               <div className="mb-4">
@@ -572,8 +572,8 @@ export function HostLanControlPage() {
                   <li>Client only holds terminal pairing plus an optional cashier session token.</li>
                   <li>Password is never stored on the client.</li>
                   <li>Host validates any saved token before resuming Remote POS.</li>
-                  <li>Revoked means re-pair, not reactivate.</li>
-                  <li>Disabled means blocked; restore is not supported in this build.</li>
+                  <li>Revoked means re-pair — do not reactivate the same trust row. Remove (revoke) is permanent leave.</li>
+                  <li>Disable blocks access; Enable restores access when the terminal is only disabled (not revoked).</li>
                 </ul>
               </Alert>
             </CardBody>
