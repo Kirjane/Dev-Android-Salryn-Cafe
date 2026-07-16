@@ -1,4 +1,4 @@
-﻿# PRE-I â€” Activation Landing + Manual QA Repair Report
+# PRE-I - Activation Landing + Manual QA Repair Report
 
 ## 1. Branch / base / final SHA
 
@@ -7,21 +7,21 @@
 | Branch | `KIRCH-PRE-I-ACTIVATION-LANDING-MANUAL-QA-REPAIR` |
 | Base branch | `KIRCH-PRE-BETA-LICENSE-CREDITS-LAN-SCOPE-REPAIR` |
 | Base SHA | `5ef674dedb6361fe6fc6fb9ceadb364464310c64` |
-| Final SHA | `d03f67ae2c0970f42ec0f79061a1a4c9d7079a31` (branch tip; report SHA self-ref of prior tip) |
-| Protected refs | Untouched (`KIRCH-SANDBOX` @ `1f74cd8â€¦`, `KIRCH-INSTALLER-M1` @ `6b9c466â€¦`) |
+| Final SHA | branch tip of `KIRCH-PRE-I-ACTIVATION-LANDING-MANUAL-QA-REPAIR` (implementation @ `b7ca537ba69d7b94a63e15bc7987d22375a17244` + report cleanup) |
+| Protected refs | Untouched (`KIRCH-SANDBOX` @ `1f74cd8bcaca1a5df487aa61677ee9829dd7fedb`, `KIRCH-INSTALLER-M1` @ `6b9c46676390b8a86a989eca600cb02e406ce865`) |
 
 ## 2. Repo study summary
 
 Confirmed before coding:
 
-1. **LicensePage** â€” direct activation/import cards; not a product landing/wizard.
-2. **TerminalActivationPage** â€” same direct import style.
-3. **ProductCreditsCard** â€” cleaned but still limited as a landing showcase rail.
-4. **BackupRestorePage** â€” inline strings / plain cards for create/verify/restore.
-5. **navigation.ts** â€” Manager order had Reports after Product Catalog / Stock.
-6. **AppShell / TerminalShell** â€” `min-w-[48rem]` forced desktop width (phone overflow risk).
-7. **HostLanControlPage** â€” request block improved in prior lane; lifecycle wording still needed polish while preserving gate strings.
-8. **Store Settings** â€” schema 19 DBs missing `logo_content_type` / `logo_bytes` could crash reads when v20 was recorded without columns or skipped.
+1. **LicensePage** - direct activation/import cards; not a product landing/wizard.
+2. **TerminalActivationPage** - same direct import style.
+3. **ProductCreditsCard** - cleaned but still limited as a landing showcase rail.
+4. **BackupRestorePage** - inline strings / plain cards for create/verify/restore.
+5. **navigation.ts** - Manager order had Reports after Product Catalog / Stock.
+6. **AppShell / TerminalShell** - `min-w-[48rem]` forced desktop width (phone overflow risk).
+7. **HostLanControlPage** - request block improved in prior lane; lifecycle wording still needed polish while preserving gate strings.
+8. **Store Settings** - schema 19 DBs missing `logo_content_type` / `logo_bytes` could crash reads when v20 was recorded without columns or skipped.
 
 No Lane I, packaging, promotion, cloud activation, or BIR/eSales production claims added.
 
@@ -30,9 +30,9 @@ No Lane I, packaging, promotion, cloud activation, or BIR/eSales production clai
 | Finding | Resolution |
 | --- | --- |
 | Store Settings `logo_content_type` crash | Idempotent v20 + startup `EnsureStoreLogoColumns` |
-| Backup & Restore UX plain | Centered Dialog success/confirm flows + RESTORE gate retained |
-| Reports nav order | Manager: Dashboard â†’ Reports â†’ Product Catalog â†’ â€¦ |
-| Terminal Management request/lifecycle | Product request wording retained; lifecycle â€œRevoked means re-pairâ€ preserved |
+| Backup and Restore UX plain | Centered Dialog success/confirm flows + RESTORE gate retained |
+| Reports nav order | Manager: Dashboard, Reports, Product Catalog, Stock Movements |
+| Terminal Management request/lifecycle | Product request wording retained; lifecycle "Revoked means re-pair" preserved |
 | LAN terminal mobile overflow | Shells use `min-w-0`; no `min-w-[48rem]` |
 | License landing dull | Host/Terminal product landing + 3-step wizard with terms |
 
@@ -53,49 +53,49 @@ Bounds copy avoids forbidden gate substrings (`cloud activation`, `eSales`, `RMO
 
 Modal/wizard steps:
 
-1. **Welcome / request license** â€” Host Machine Code, copy, support email, checklist, Next: Terms  
-2. **Salryn Activation Terms** â€” 10 plain-language terms + checkbox  
-3. **Import Signed Host License JSON** â€” install disabled until `termsAccepted` + non-empty text  
+1. **Welcome / request license** - Host Machine Code, copy, support email, checklist, Next: Terms
+2. **Salryn Activation Terms** - 10 plain-language terms + checkbox
+3. **Import Signed Host License JSON** - install disabled until `termsAccepted` + non-empty text
 
-Import/install API behavior unchanged. Success: â€œHost license activeâ€ + summary.
+Import/install API behavior unchanged. Success: "Host license active" + summary.
 
 ## 6. Terminal activation wizard
 
 **TerminalActivationPage.tsx** mirrors Host pattern:
 
-- **SALRYN Terminal** landing + feature cards  
-- CTA **Activate this Terminal**  
-- Step 1: Terminal Machine Code only (no Host License ID / Store ID tasks)  
-- Step 2: Terminal-specific terms  
-- Step 3: Import Signed Terminal License JSON; Host licenses rejected  
-- Active: Terminal License Active + Continue / Replace  
+- **SALRYN Terminal** landing + feature cards
+- CTA **Activate this Terminal**
+- Step 1: Terminal Machine Code only (no Host License ID / Store ID tasks)
+- Step 2: Terminal-specific terms
+- Step 3: Import Signed Terminal License JSON; Host licenses rejected
+- Active: Terminal License Active + Continue / Replace
 
 Desktop layout: `lg:grid-cols-2` with `ProductCreditsCard` rail.
 
-## 7. Terms & Conditions / activation acknowledgement
+## 7. Terms and Conditions / activation acknowledgement
 
-- Host and Terminal wizards require checkbox acceptance before import.  
-- Local React state (`termsAccepted`); no permanent legal ledger.  
+- Host and Terminal wizards require checkbox acceptance before import.
+- Local React state (`termsAccepted`); no permanent legal ledger.
 - CoreSmoke `pre-i-activation-landing-manual-qa-repair` asserts terms strings + `termsAccepted` gating in source.
 
 ## 8. Product showcase / Kirjane Labs wordmark / credits
 
 `ProductCreditsCard.tsx` upgraded to website-style rail:
 
-- SALRYN wordmark, Kirjane Labs hierarchy  
-- Credits org tree (Business / Technology / Marketing + reports)  
-- Support email  
-- Tiny muted â€œRepository-backed beta buildâ€ footer only  
-- No Publisher / Product / Build Type / Products of Kirjane Labs blocks  
+- SALRYN wordmark, Kirjane Labs hierarchy
+- Credits org tree (Business / Technology / Marketing + reports)
+- Support email
+- Tiny muted "Repository-backed beta build" footer only
+- No Publisher / Product / Build Type / Products of Kirjane Labs blocks
 
 ## 9. Stale licensing copy cleanup
 
 Searched and kept clean on Host/Terminal/credits activation paths:
 
-- no mock sample, Publisher/Product/Build Type cards, Products of Kirjane Labs  
-- no Host License ID / Store ID as terminal-user tasks  
-- no cloud activation / eSales / RMO / BIR-approved claims in activation UI  
-- technical IDs under collapsed support details  
+- no mock sample, Publisher/Product/Build Type cards, Products of Kirjane Labs
+- no Host License ID / Store ID as terminal-user tasks
+- no cloud activation / eSales / RMO / BIR-approved claims in activation UI
+- technical IDs under collapsed support details
 
 ## 10. Store Settings migration repair
 
@@ -107,36 +107,36 @@ Searched and kept clean on Host/Terminal/credits activation paths:
 
 Does **not** require DB reset.
 
-## 11. Backup & Restore UX repair
+## 11. Backup and Restore UX repair
 
 `BackupRestorePage.tsx`:
 
-- Create â†’ Dialog â€œBackup created successfullyâ€  
-- Verify â†’ success Dialog  
-- Restore â†’ Dialog requires typing **RESTORE**  
-- Restore complete â†’ success Dialog  
+- Create -> Dialog "Backup created successfully"
+- Verify -> success Dialog
+- Restore -> Dialog requires typing **RESTORE**
+- Restore complete -> success Dialog
 - Safety copy retained (replace local database warning)
 
 ## 12. Reports nav order repair
 
 Manager nav order in `navigation.ts`:
 
-1. Dashboard  
-2. **Reports**  
-3. Product Catalog  
-4. Stock Movements  
+1. Dashboard
+2. **Reports**
+3. Product Catalog
+4. Stock Movements
 
 ## 13. Terminal Management request/lifecycle repair
 
-- Request card: Host-context issuance, Copy Terminal License Request, LicensingOps wording, one license per terminal.  
-- Connection behavior: **Revoked means re-pair** retained (v2-host-lan-control-ux).  
-- Disable / Revoke / Hide visibility unchanged via lifecycle helpers.  
+- Request card: Host-context issuance, Copy Terminal License Request, LicensingOps wording, one license per terminal.
+- Connection behavior: **Revoked means re-pair** retained (v2-host-lan-control-ux).
+- Disable / Revoke / Hide visibility unchanged via lifecycle helpers.
 - Advanced diagnostics remain collapsed.
 
 ## 14. LAN terminal responsive repair
 
-- `AppShell` / `TerminalShell`: removed `min-w-[48rem]`; use `min-w-0` for flex shrink.  
-- Remote POS diagnostics stay collapsed by default (existing guards).  
+- `AppShell` / `TerminalShell`: removed `min-w-[48rem]`; use `min-w-0` for flex shrink.
+- Remote POS diagnostics stay collapsed by default (existing guards).
 - Host admin pages remain Host-only (no remote CheckoutPage exposure).
 
 ## 15. Files changed
@@ -180,22 +180,22 @@ No crypto/licensing validation changes. Import still requires accepted terms in 
 
 Source-verified + build green. Live screenshot QA deferred to Kirch:
 
-- Host `/license` unlicensed â†’ wizard â†’ terms â†’ import â†’ active  
-- Terminal `/terminal-activation` same  
-- Store Settings (existing DB)  
-- Backup create/verify/restore modals  
-- Manager nav order  
-- Terminal Management  
-- Narrow-width terminal shell  
+- Host `/license` unlicensed -> wizard -> terms -> import -> active
+- Terminal `/terminal-activation` same
+- Store Settings (existing DB)
+- Backup create/verify/restore modals
+- Manager nav order
+- Terminal Management
+- Narrow-width terminal shell
 
 Optional: `dotnet run --project src\Salryn.Api.Local -- --dev`
 
 ## 18. Remaining risks
 
-- Visual polish is CSS/typography-only (no logo assets yet).  
-- Terms acceptance is session/UI state only (not a durable legal ledger).  
-- Phone overflow: shells no longer force desktop min-width; residual component-level overflow may still appear on complex tables.  
-- Restore still destructive by design â€” RESTORE typing gate unchanged.  
+- Visual polish is CSS/typography-only (no logo assets yet).
+- Terms acceptance is session/UI state only (not a durable legal ledger).
+- Phone overflow: shells no longer force desktop min-width; residual component-level overflow may still appear on complex tables.
+- Restore still destructive by design - RESTORE typing gate unchanged.
 - No live screenshot proof in this agent run.
 
 ## 19. Final decision
