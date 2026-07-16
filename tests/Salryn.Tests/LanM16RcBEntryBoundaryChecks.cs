@@ -92,7 +92,7 @@ public static class LanM16RcBEntryBoundaryChecks
             "Host local URL",
             "Host LAN URL",
             "Remote POS runtime",
-            "Host control is local-only",
+            "Terminal activation is not ready for client use",
             "Capacity",
             "LAN Connection",
             "Activate LAN connection",
