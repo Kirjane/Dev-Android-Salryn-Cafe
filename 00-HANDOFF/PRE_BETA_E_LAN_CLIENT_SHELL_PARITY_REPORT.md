@@ -6,7 +6,7 @@
 | --- | --- |
 | Branch | `KIRCH-PRE-BETA-E-LAN-CLIENT-SHELL-PARITY` |
 | Base | `KIRCH-PRE-BETA-B-POS-ACTIVATION-COPY-CLEANUP` @ `dcf08417362f8e158af671807a5632ce3ddde32a` |
-| Final SHA | (branch tip after commit) |
+| Final SHA | `af9774189cabdaf5d6b2f8bced911dea8f50ca1e` |
 | Protected SANDBOX | `1f74cd8bcaca1a5df487aa61677ee9829dd7fedb` |
 | Protected INSTALLER-M1 | `6b9c46676390b8a86a989eca600cb02e406ce865` |
 
