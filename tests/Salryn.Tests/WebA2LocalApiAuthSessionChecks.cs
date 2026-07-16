@@ -79,8 +79,8 @@ public static class WebA2LocalApiAuthSessionChecks
         RequireContains(webSessionApiText, "/api/auth/login", "Web app must call /api/auth/login.");
         RequireContains(webSessionApiText, "credentials: \"include\"", "Web session client must send cookies.");
         RequireContains(webAppText, "LoginPage", "Web app must include login page.");
-        RequireContains(webLoginPageText, "Sign in to Salryn Ledger Console", "Web login copy must match web auth direction.");
-        RequireContains(webLoginPageText, "connects to the Salryn local API on this device", "Web login copy must describe local API connection.");
+        RequireContains(webLoginPageText, "Sign in to Salryn POS", "Web login copy must use client-facing POS branding.");
+        RequireNotContains(webLoginPageText, "local API", "Web login copy must not expose API diagnostics.");
         RequireNotContains(webLoginPageText, "WinForms login first", "Web login copy must not describe native login-first flow.");
         RequireNotContains(webLoginPageText, "Chromium shell handoff", "Web login copy must not describe native handoff.");
         RequireNotContains(webLoginPageText, "native login handoff", "Web login copy must not describe native login handoff.");

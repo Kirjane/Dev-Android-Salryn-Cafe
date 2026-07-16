@@ -47,7 +47,7 @@ function AccessDenied({ currentPage, onGoHome }: { currentPage: AppPage; onGoHom
 function renderPage(page: AppPage, session: SessionState, onLogout: () => void, onNavigate: (page: AppPage) => void) {
   switch (page) {
     case "dashboard":
-      return <DashboardPage session={session} onLogout={onLogout} onOpenSales={() => onNavigate("sales")} onOpenInventory={() => onNavigate("inventory")} onOpenReports={() => onNavigate("owner-reports")} canOpenReports={canAccessPage(session, "owner-reports")} canOpenHostLanControl={canAccessPage(session, "host-lan-control")} onOpenHostLanControl={() => onNavigate("host-lan-control")} />;
+      return <DashboardPage session={session} onLogout={onLogout} onOpenSales={() => onNavigate("sales")} onOpenInventory={() => onNavigate("inventory")} onOpenReports={() => onNavigate("owner-reports")} canOpenReports={canAccessPage(session, "owner-reports")} />;
     case "checkout":
       return <CheckoutPage />;
     case "host-lan-control":
@@ -89,7 +89,7 @@ function RemoteClientApp() {
   const [mode, setMode] = useState<RemoteClientMode>("landing");
   if (mode === "landing") return <RemoteClientLandingPage onOpenRemotePos={() => setMode("remote-pos")} onOpenReadOnly={() => setMode("remote-readonly")} />;
   return (
-    <div className="min-h-screen bg-[#f6f7f9]"><header className="flex h-[60px] items-center justify-between bg-navy-900 px-5 text-white shadow-sm"><div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-md bg-white text-navy-900"><Layers3 aria-hidden="true" size={21} /></span><div><p className="text-sm font-bold">SALRYN LEDGER CONSOLE</p><p className="text-xs text-slate-400">Remote client</p></div></div><Button variant="secondary" onClick={() => setMode("landing")}><ArrowLeft aria-hidden="true" size={16} />Back to client entry</Button></header><div className="mx-auto max-w-7xl space-y-4 p-6">{mode === "remote-pos" ? <RemotePosClientPage /> : <RemoteReadOnlyClientPage />}</div></div>
+    <div className="min-h-screen bg-[#f6f7f9]"><header className="flex h-[60px] items-center justify-between bg-navy-900 px-5 text-white shadow-sm"><div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-md bg-white text-navy-900"><Layers3 aria-hidden="true" size={21} /></span><div><p className="text-sm font-bold">Salryn POS</p><p className="text-xs text-slate-400">Terminal client</p></div></div><Button variant="secondary" onClick={() => setMode("landing")}><ArrowLeft aria-hidden="true" size={16} />Back to client entry</Button></header><div className="mx-auto max-w-7xl space-y-4 p-6">{mode === "remote-pos" ? <RemotePosClientPage /> : <RemoteReadOnlyClientPage />}</div></div>
   );
 }
 
@@ -121,8 +121,8 @@ function ConsoleApp() {
 
   async function handleLogout() { try { await logout(); } catch {} queryClient.removeQueries(); void sessionQuery.refetch(); }
 
-  if (isBootstrapLoading || sessionQuery.isLoading || licenseStatusQuery.isLoading) return <FullScreenCenter><p className="text-sm text-slate-300">Connecting to the Salryn local API...</p></FullScreenCenter>;
-  if (bootstrapError || sessionQuery.isError || licenseStatusQuery.isError) return <FullScreenCenter><div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-8 shadow-xl"><h1 className="text-xl font-semibold text-slate-900">Salryn local API unavailable</h1><p className="mt-2 text-sm text-slate-500">{bootstrapError || (licenseStatusQuery.error as Error | null)?.message || "The console could not reach the Salryn local API on this device."}</p><div className="mt-6"><Button onClick={() => { void refreshBootstrapStatus(); void licenseStatusQuery.refetch(); }}>Try again</Button></div></div></FullScreenCenter>;
+  if (isBootstrapLoading || sessionQuery.isLoading || licenseStatusQuery.isLoading) return <FullScreenCenter><p className="text-sm text-slate-300">Starting Salryn POS...</p></FullScreenCenter>;
+  if (bootstrapError || sessionQuery.isError || licenseStatusQuery.isError) return <FullScreenCenter><div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-8 shadow-xl"><h1 className="text-xl font-semibold text-slate-900">Salryn POS unavailable</h1><p className="mt-2 text-sm text-slate-500">{bootstrapError || (licenseStatusQuery.error as Error | null)?.message || "Salryn could not start on this device."}</p><div className="mt-6"><Button onClick={() => { void refreshBootstrapStatus(); void licenseStatusQuery.refetch(); }}>Try again</Button></div></div></FullScreenCenter>;
   if (!isHostLicenseReady(licenseStatusQuery.data)) return <div className="min-h-screen bg-[#f6f7f9] p-6"><div className="mx-auto max-w-6xl"><LicensePage /></div></div>;
   if (bootstrapStatus?.firstRunRequired) return <BootstrapSetupPage status={bootstrapStatus} onCompleted={() => { void refreshBootstrapStatus(); void queryClient.invalidateQueries({ queryKey: ["session"] }); }} />;
   if (!sessionQuery.data?.isAuthenticated) return <LoginPage onLoggedIn={() => void queryClient.invalidateQueries({ queryKey: ["session"] })} />;

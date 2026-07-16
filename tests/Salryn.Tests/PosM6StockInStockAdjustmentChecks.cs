@@ -80,8 +80,8 @@ public static class PosM6StockInStockAdjustmentChecks
         RequireContains(inventoryPage, "does not create sales, payments, receipts", "Stock UI must explain side-effect boundary.");
 
         RequireContains(productsPage, "Product Catalog", "POS-M5 Product Catalog must remain available.");
-        RequireContains(productsPage, "Product writes do not change inventory quantity", "Product edit stock boundary must remain documented.");
-        RequireContains(productsPage, "Create one product record. Add quantity through Stock-In after saving.", "Product create must explain one product record and stock-in after save.");
+        RequireContains(productsPage, "Add stock through Stock-In after saving a product", "Product Catalog must direct stock entry through Stock-In.");
+        RequireContains(productsPage, "Save the product first, then use Stock-In", "Product create must explain stock-in after save.");
         RequireContains(productsPage, "Category (optional)", "Product create must make category visibly optional.");
         RequireContains(productsPage, "Brand (optional)", "Product create must make brand visibly optional.");
         RequireContains(productsPage, "No category", "Product create must allow no category.");

@@ -202,7 +202,7 @@ public static class LocalLicensingM3LocalEnforcementBoundaryChecks
             RequireNotContains(licensePage, "type=\"file\"", "License UI must not expose arbitrary file upload.");
             RequireNotContains(licensePage, "private key", "License UI must not mention private key handling.");
             RequireNotContains(licensePage, "Offline-first license boundary", "License UI must not lead with developer boundary banners.");
-            RequireContains(backupPage, "local license file is stored outside this database backup package", "Backup UI must not claim license preservation.");
+            RequireNotContains(backupPage, "local license file is stored outside this database backup package", "Backup UI must not show a license-storage implementation wall.");
 
             string productionReportEndpoint = ReadRepoFile("src", "Salryn.Api.Local", "LocalProductionReportEndpoints.cs");
             RequireNotContains(productionReportEndpoint, "LocalLicense", "Licensing M3 must not alter reporting endpoint behavior.");

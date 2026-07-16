@@ -32,8 +32,8 @@ public static class WebA3ShellDesignSystemChecks
         RequireContains(dashboardPageText, "fetchDashboardSummary", "Dashboard must read the dashboard summary.");
         RequireContains(webAppText, "AppShell", "Authenticated app must render through AppShell.");
         RequireContains(webAppText, "useAppSession", "App must remain session-aware.");
-        RequireContains(loginPageText, "Sign in to Salryn Ledger Console", "Login must keep Ledger Console branding.");
-        RequireContains(loginPageText, "connects to the Salryn local API on this device", "Login must describe local API connection.");
+        RequireContains(loginPageText, "Sign in to Salryn POS", "Login must use client-facing Salryn POS branding.");
+        RequireNotContains(loginPageText, "local API", "Login must not expose local API diagnostics.");
 
         // Guard wired into CoreSmoke.
         RequireContains(coreSmokeText, "WebA3ShellDesignSystemChecks.Run();", "CoreSmoke must run WEB-A3 checks.");
@@ -85,20 +85,26 @@ public static class WebA3ShellDesignSystemChecks
             }
         }
 
-        // Backup UI1 must remain an admin-gated local safety surface with honest non-claims.
+        // Backup UI1 must remain an admin-gated local safety surface without client-facing disclaimer walls.
         string navigationText = ReadRequiredFile(webSrc, "navigation.ts");
         string permissionsText = ReadRequiredFile(webSrc, "security", "permissions.ts");
         string appShellText = ReadRequiredFile(webSrc, "components", "AppShell.tsx");
         string backupPageText = ReadRequiredFile(webSrc, "pages", "BackupRestorePage.tsx");
         RequireContains(navigationText, "id: \"backup-restore\", label: \"Backup & Restore\"", "BackupRestorePage must remain an Admin nav item.");
         RequireContains(permissionsText, "\"backup-restore\": [Permissions.BackupManage]", "BackupRestorePage must require Backup.Manage.");
-        RequireContains(appShellText, "item.id === \"backup-restore\"", "AppShell must mark Backup & Restore as admin-gated.");
+        RequireNotContains(appShellText, "item.id === \"backup-restore\"", "AppShell must not show an Admin badge on Backup & Restore.");
         RequireContains(webAppText, "BackupRestorePage", "App must render the approved BackupRestorePage.");
-        RequireContains(backupPageText, "not cloud backup", "BackupRestorePage must reject cloud backup claims.");
-        RequireContains(backupPageText, "installer migration proof", "BackupRestorePage must reject installer migration claims.");
-        RequireContains(backupPageText, "BIR archive", "BackupRestorePage must reject BIR archive claims.");
-        RequireContains(backupPageText, "legal archive", "BackupRestorePage must reject legal archive claims.");
-        RequireContains(backupPageText, "local license file is stored outside this database backup package", "BackupRestorePage must keep license outside DB backup boundary.");
+        RequireContains(backupPageText, "Restore replaces the current local database", "BackupRestorePage must keep the destructive restore warning.");
+        RequireContains(backupPageText, "Type RESTORE", "BackupRestorePage must keep typed restore confirmation.");
+        RequireNotContains(backupPageText, "not cloud backup", "BackupRestorePage must not show cloud disclaimer copy.");
+        RequireNotContains(backupPageText, "installer migration proof", "BackupRestorePage must not show installer disclaimer copy.");
+        RequireNotContains(backupPageText, "BIR archive", "BackupRestorePage must not show regulatory disclaimer copy.");
+        RequireContains(navigationText, "VITE_SALRYN_INTERNAL_SURFACES", "Internal navigation must require an explicit build flag.");
+        RequireContains(navigationText, "label: \"Terminal Management\"", "Internal LAN navigation must use Terminal Management.");
+        RequireContains(navigationText, "label: \"Report Artifacts\"", "Report Artifacts must remain explicitly internal-gated.");
+        RequireNotContains(appShellText, "SALRYN LEDGER CONSOLE", "AppShell must not use engineering-console branding.");
+        RequireNotContains(appShellText, "Local API", "AppShell must not expose local API diagnostics.");
+        RequireNotContains(appShellText, "Host-local API surfaces", "AppShell footer must not expose API surfaces.");
 
         // Broad scan of web source for clearly-unique forbidden capabilities.
         string combinedWebSource = ReadAllWebSource(webSrc);

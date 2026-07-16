@@ -36,18 +36,16 @@ export function LoginPage({ onLoggedIn }: LoginPageProps) {
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-md bg-white text-navy-900 shadow-lg">
             <Layers3 aria-hidden="true" size={26} />
           </div>
-          <p className="text-sm font-bold text-white">SALRYN LEDGER CONSOLE</p>
-          <p className="mt-1 text-xs text-slate-400">Local operator access</p>
+          <p className="text-sm font-bold text-white">Salryn POS</p>
+          <p className="mt-1 text-xs text-slate-400">Store operator sign in</p>
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-white p-8 shadow-xl">
           <div className="mb-4 flex h-9 w-9 items-center justify-center rounded-md bg-blue-50 text-blue-700">
             <LockKeyhole aria-hidden="true" size={19} />
           </div>
-          <h1 className="text-xl font-bold text-slate-950">Sign in to Salryn Ledger Console</h1>
-          <p className="mt-2 text-sm text-slate-500">
-            This local web console connects to the Salryn local API on this device.
-          </p>
+          <h1 className="text-xl font-bold text-slate-950">Sign in to Salryn POS</h1>
+          <p className="mt-2 text-sm text-slate-500">Use your store operator account to continue.</p>
 
           <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
             <FormField label="Username" htmlFor="login-username" required>
@@ -77,9 +75,7 @@ export function LoginPage({ onLoggedIn }: LoginPageProps) {
           </form>
         </div>
 
-        <p className="mt-4 text-center text-xs text-slate-400">
-          Local API | 127.0.0.1 | Authorized operators only
-        </p>
+        <p className="mt-4 text-center text-xs text-slate-400">Authorized operators only</p>
       </div>
     </div>
   );

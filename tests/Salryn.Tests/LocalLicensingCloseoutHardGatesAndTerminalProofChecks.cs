@@ -103,6 +103,7 @@ public static class LocalLicensingCloseoutHardGatesAndTerminalProofChecks
             string pairing = Read("src", "Salryn.Api.Local", "RemotePos", "RemotePosPairingGateService.cs");
             string guard = Read("src", "Salryn.Api.Local", "Auth", "ApiLicenseGuard.cs");
             string hostLan = File.ReadAllText(Path.Combine(FindRoot(), "src", "Salryn.App.Web", "src", "pages", "HostLanControlPage.tsx"));
+            string navigation = File.ReadAllText(Path.Combine(FindRoot(), "src", "Salryn.App.Web", "src", "navigation.ts"));
             string remoteClient = File.ReadAllText(Path.Combine(FindRoot(), "src", "Salryn.App.Web", "src", "api", "remotePosClient.ts"));
 
             RequireContains(checkout, "RequireLicensedFeatureAsync", "Checkout must call license guard.");
@@ -115,7 +116,9 @@ public static class LocalLicensingCloseoutHardGatesAndTerminalProofChecks
             RequireNotContains(licenseEp, "RequireLicensedFeatureAsync", "License status/import must remain reachable without product feature gate.");
             RequireContains(pairing, "ValidateTerminalLicenseProof", "Activation must validate terminal proof.");
             RequireNotContains(pairing, "may not always send TerminalLicenseJson", "Optional terminal proof comment must be removed.");
-            RequireContains(hostLan, "Terminal license proof", "Host LAN UI must mention terminal license proof.");
+            RequireContains(hostLan, "title=\"Terminal Management\"", "Internal host LAN UI must use Terminal Management naming.");
+            RequireNotContains(hostLan, "TerminalLicenseJson", "Client copy must not expose the terminal proof field name.");
+            RequireContains(navigation, "VITE_SALRYN_INTERNAL_SURFACES", "Incomplete Terminal Management must be hidden from normal navigation.");
             RequireContains(remoteClient, "terminalLicenseJson", "Remote client must send terminalLicenseJson.");
             RequireContains(remoteClient, "salryn.terminalLicenseJson", "Remote client must load cached terminal license proof.");
 

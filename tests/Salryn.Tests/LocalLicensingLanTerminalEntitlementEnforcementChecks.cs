@@ -122,6 +122,7 @@ public static class LocalLicensingLanTerminalEntitlementEnforcementChecks
             string entitlementService = ReadRepo("src", "Salryn.Infrastructure", "Licensing", "LocalLanTerminalEntitlementService.cs");
             string pairingGate = ReadRepo("src", "Salryn.Api.Local", "RemotePos", "RemotePosPairingGateService.cs");
             string hostLan = File.ReadAllText(Path.Combine(FindRoot(), "src", "Salryn.App.Web", "src", "pages", "HostLanControlPage.tsx"));
+            string navigation = File.ReadAllText(Path.Combine(FindRoot(), "src", "Salryn.App.Web", "src", "navigation.ts"));
             string contracts = ReadRepo("src", "Salryn.Core", "Services", "Licensing", "LocalLanTerminalEntitlementContracts.cs");
 
             RequireContains(entitlementService, "GetHostEntitlementAsync", "Entitlement service must evaluate host LAN entitlement.");
@@ -131,10 +132,9 @@ public static class LocalLicensingLanTerminalEntitlementEnforcementChecks
             RequireContains(pairingGate, "GetEffectiveMaxPairedTerminals", "Pairing gate must use effective licensed max.");
             RequireContains(pairingGate, "PairedTerminalLimitReached", "Pairing gate must report terminal capacity overflow.");
             RequireContains(pairingGate, "ValidateTerminalLicenseProof", "Activation must require terminal license proof validation.");
-            RequireContains(hostLan, "salryn.info@gmail.com", "Host LAN page must show contact email.");
-            RequireContains(hostLan, "licensed per additional operational terminal", "Host LAN page must state per-terminal licensing.");
-            RequireContains(hostLan, "separate Terminal license", "Host LAN page must require separate terminal license.");
-            RequireContains(hostLan, "does not claim LAN production-ready", "Host LAN page must not overclaim production readiness.");
+            RequireContains(hostLan, "title=\"Terminal Management\"", "Internal host LAN page must use Terminal Management naming.");
+            RequireContains(hostLan, "Terminal activation is not ready for client use", "Incomplete terminal activation must be stated on the internal surface.");
+            RequireContains(navigation, "VITE_SALRYN_INTERNAL_SURFACES", "Incomplete Terminal Management must be hidden from normal navigation.");
             RequireContains(hostLan, "hostLanEntitled", "Host LAN page must gate controls on entitlement.");
             RequireContains(contracts, "NoTerminalsPurchased", "Entitlement codes must include NoTerminalsPurchased.");
 

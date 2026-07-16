@@ -112,8 +112,8 @@ export function BackupRestorePage() {
     <div className="space-y-6">
       <CommandBar
         title="Backup & Restore"
-        subtitle="Admin-only local backup package controls for this installation."
-        status={<StatusPill tone="warning">Destructive restore guarded</StatusPill>}
+        subtitle="Create, verify, and restore local backups."
+        status={<StatusPill tone="warning">Restore requires confirmation</StatusPill>}
         actions={(
           <Button variant="secondary" onClick={() => void backupsQuery.refetch()} disabled={backupsQuery.isFetching || creating || restoring}>
             Refresh
@@ -121,26 +121,23 @@ export function BackupRestorePage() {
         )}
       />
 
-      <Alert tone="warning" title="Local safety copy boundary">
-        Backups are local safety copies for this installation. Keep copies outside this computer if you need disaster recovery. Restore replaces the current local database from a verified backup.
-      </Alert>
-      <Alert tone="neutral" title="Not a release/compliance archive">
-        This page is not cloud backup, installer migration proof, legal archive, BIR archive, eSales submission, or official output retention. The local license file is stored outside this database backup package unless a separate license process says otherwise.
+      <Alert tone="warning" title="Restore replaces the current database">
+        Verify a backup before restoring it. Keep a recent copy before you continue.
       </Alert>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card>
           <CardHeader><CardTitle>Create backup</CardTitle></CardHeader>
           <CardBody className="space-y-3">
-            <p className="text-sm text-slate-600">Creates a controlled local backup package using the existing backup backend. No path input is accepted.</p>
+            <p className="text-sm text-slate-600">Create a backup of the current local database.</p>
             <Button onClick={() => void handleCreateBackup()} disabled={creating || restoring}>{creating ? "Creating…" : "Create Backup"}</Button>
           </CardBody>
         </Card>
         <Card>
           <CardHeader><CardTitle>Verify before restore</CardTitle></CardHeader>
           <CardBody className="space-y-3">
-            <p className="text-sm text-slate-600">Verify checks the manifest, hash, schema version, and database shape by backup ID. Invalid backups cannot be restored from this UI.</p>
-            <StatusPill tone="info">ID-based</StatusPill>
+            <p className="text-sm text-slate-600">Verify a backup before using it for restore.</p>
+            <StatusPill tone="info">Verification required</StatusPill>
           </CardBody>
         </Card>
         <Card>
@@ -162,7 +159,7 @@ export function BackupRestorePage() {
         <CardBody className="space-y-4">
           {backups.length === 0 && !backupsQuery.isLoading ? (
             <Alert tone="info" title="No backups found">
-              Create a backup before testing verify or restore. The backend returns known controlled backup IDs only.
+              Create a backup to begin.
             </Alert>
           ) : null}
 

@@ -18,7 +18,7 @@ public static class PosManual1FrontendRepairChecks
         string users = Read(web, "pages", "UsersPage.tsx");
 
         RequireContains(navigation, "Sales & Receipts", "Navigation must make saved receipts discoverable.");
-        RequireContains(navigation, "Detailed Reports", "Navigation must expose detailed report drilldown.");
+        RequireContains(navigation, "label: \"Reports\"", "Navigation must expose Reports.");
         RequireNotContains(navigation, "label: \"Owner Reports\"", "Navigation must not keep the old Owner Reports label.");
         RequireContains(checkout, "Saved under Sales & Receipts", "Completed checkout must keep Sales & Receipts discoverable without route-away button.");
         RequireNotContains(checkout, "View Sales & Receipts", "Checkout completion must not offer the route-away button that resets completion state.");
@@ -54,8 +54,8 @@ public static class PosManual1FrontendRepairChecks
         RequireContains(dashboard, "Store operations", "Dashboard must prioritize daily store workflows.");
         RequireContains(dashboard, "Open Sales & Receipts", "Dashboard must link to sales and receipts.");
         RequireContains(dashboard, "Owner home summary", "Dashboard must act as owner home summary.");
-        RequireContains(dashboard, "Open Detailed Reports", "Dashboard must link to detailed report drilldown.");
-        RequireContains(reports, "Detailed Reports", "Report drilldown page must use the Detailed Reports label.");
+        RequireContains(dashboard, "Open Reports", "Dashboard must link to Reports.");
+        RequireContains(reports, "title=\"Reports\"", "Report page must use the Reports label.");
         RequireContains(reports, "max-h-80 overflow-y-auto", "Large detailed-report tables must have bounded scrolling.");
         RequireContains(users, "Role access guide", "Users page must explain manual role expectations.");
         RequireContains(users, "An Auditor role is not available", "Missing Auditor role must not be implied.");

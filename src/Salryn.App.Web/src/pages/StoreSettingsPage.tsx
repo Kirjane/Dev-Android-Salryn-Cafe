@@ -69,8 +69,8 @@ export function StoreSettingsPage() {
   return (
     <div className="space-y-4">
       <CommandBar
-        title="Configure Store"
-        subtitle="Manage store identity and receipt appearance. Completed receipt snapshots remain unchanged."
+        title="Store Settings"
+        subtitle="Manage store details, receipts, and printing."
         actions={<Button onClick={() => void save()} disabled={busy}>{busy ? "Saving..." : "Save settings"}</Button>}
       />
 
@@ -81,10 +81,10 @@ export function StoreSettingsPage() {
           <CardHeader><CardTitle>Store profile</CardTitle></CardHeader>
           <CardBody className="grid gap-4 md:grid-cols-2">
             {field("storeName", "Store name", "The customer-facing store identity used on new receipts.")}
-            {field("businessName", "Registered business name", "Optional legal business name; this does not claim regulatory approval.")}
+            {field("businessName", "Registered business name", "Optional business name shown on new receipts.")}
             <div className="md:col-span-2">{field("address", "Store address")}</div>
             {field("contactNumber", "Contact number")}
-            {field("tin", "TIN", "Stored as identity text only. Salryn does not validate tax registration here.")}
+            {field("tin", "TIN")}
           </CardBody>
         </Card>
 
@@ -109,14 +109,8 @@ export function StoreSettingsPage() {
           <CardBody className="grid gap-4 md:grid-cols-2">
             {field("receiptHeader", "Receipt header", "Optional message shown near the top of new receipts.")}
             {field("receiptFooter", "Receipt footer", "Optional message shown at the bottom of new receipts.")}
-            <Alert tone="info" title="Historical receipts stay unchanged">
-              Store identity, header, footer, and internal text layout changes apply to newly completed receipts only. Saved receipts keep their original snapshot.
-            </Alert>
-            <Alert tone="warning" title="Receipt hardware profile out of beta scope">
-              Hardware receipt width/profile support is outside beta scope. This release uses stored internal receipt text only, not a hardware-specific profile.
-            </Alert>
-            <Alert tone="neutral" title="Store logo deferred">
-              Store logo support is not active in this build. No upload or placeholder image is stored.
+            <Alert tone="info" title="Saved receipts stay unchanged">
+              Changes apply to new receipts. Saved receipts keep their original details.
             </Alert>
           </CardBody>
         </Card>
@@ -136,23 +130,14 @@ export function StoreSettingsPage() {
               <TextInput value={value.windowsPrinterName ?? ""} onChange={(event) => update("windowsPrinterName", event.target.value)} placeholder="Exact Windows printer name" />
               <span className="block text-xs font-normal text-slate-500">Use the exact printer name shown in Windows. Leave disabled mode selected if the printer is not ready.</span>
             </label>
-            <Alert tone={value.printerMode === "WindowsPrinter" ? "info" : "warning"} title="Windows print queue only">
-              Windows Printer mode submits saved internal receipt text through the Windows print queue. Hardware peripherals beyond the Windows print queue are outside the beta scope.
+            <Alert tone={value.printerMode === "WindowsPrinter" ? "info" : "warning"} title="Windows printer">
+              Enter the printer name exactly as it appears in Windows. Leave printing disabled if it is not configured.
             </Alert>
-            <Alert tone="warning" title="Hardware scope ban">
-              No ESC/POS, no cutter, no cash drawer, no thermal receipt profile, and no hardware bundle/support claim. This release is Windows print queue only.
-            </Alert>
-            <Alert tone="warning" title="Physical printing is not configured">
-              Treat paper output as unproven until Kirch completes the manual Windows printer test. Disabled and unavailable printer paths keep sales saved and unchanged.
-            </Alert>
-            <p className="text-xs text-slate-500">Receipt text files and saved receipt snapshots continue to work when Windows printing is disabled or unavailable.</p>
+            <p className="text-xs text-slate-500">Saved receipts remain available when printing is disabled.</p>
           </CardBody>
         </Card>
       </div>
 
-      <Alert tone="neutral" title="Separate administration surfaces">
-        Backup & Restore and License controls are available on their separate Admin pages. Store Settings does not expose raw backup paths or license files.
-      </Alert>
     </div>
   );
 }

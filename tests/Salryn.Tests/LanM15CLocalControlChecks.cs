@@ -120,8 +120,8 @@ public static class LanM15CLocalControlChecks
 
         AssertNotContains(remoteReadOnlyEndpoints, ".MapPost(", "Remote-readonly endpoints must remain GET-only; local control lives in a separate module.");
 
-        AssertContains(hostPage, "Host LAN Control", "Dedicated host LAN control page must exist.");
-        AssertContains(hostPage, "Host control is local-only", "Host LAN control page must show local-only safety.");
+        AssertContains(hostPage, "Terminal Management", "Dedicated terminal management page must exist.");
+        AssertContains(hostPage, "Available on this host", "Terminal management page must remain host-only.");
         AssertNotContains(page, "Local LAN Control (Operator-Only)", "Remote read-only page must not expose host LAN controls.");
         AssertContains(page, "No catalog mutation controls are present", "Remote read-only page must keep catalog mutation controls absent.");
         AssertContains(api, "/api/lan-control/status", "Web API client must call the local control status endpoint.");

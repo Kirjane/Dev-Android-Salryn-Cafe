@@ -27,10 +27,10 @@ public static class V2HostLanControlUxChecks
         AssertContains(page, "LAN Connection", "Host page must lead with LAN Connection section.");
         AssertContains(page, "Repair LAN address", "Host page must expose bind repair.");
         AssertContains(page, "Activate LAN connection", "Host page must expose activate action.");
-        AssertContains(page, "Client troubleshooting guide", "Host page must include client troubleshooting.");
-        AssertContains(page, "Repo truth", "Host page must show repo truth guide.");
-        AssertContains(page, "Password is never stored", "Repo truth must say password is never stored.");
-        AssertContains(page, "Revoked means re-pair", "Repo truth must say revoked requires re-pair.");
+        AssertContains(page, "Terminal help", "Internal Terminal Management must include terminal help.");
+        AssertContains(page, "Connection behavior", "Internal Terminal Management must explain connection behavior.");
+        AssertContains(page, "Password is never stored", "Connection behavior must say password is never stored.");
+        AssertContains(page, "Revoked means re-pair", "Connection behavior must say revoked requires re-pair.");
         AssertContains(page, "canCopyClientUrl", "Copy client URL must be gated.");
         AssertNotContains(page, "http://http://", "Host page must not invent double-scheme URLs.");
         AssertNotContains(page, "0.0.0.0", "Host page must not display wildcard bind.");

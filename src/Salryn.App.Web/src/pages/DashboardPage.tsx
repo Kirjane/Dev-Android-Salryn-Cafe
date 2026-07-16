@@ -3,21 +3,260 @@ import { fetchDashboardSummary } from "../api/dashboard";
 import { ApiError } from "../api/http";
 import { fetchOwnerReportsSummary } from "../api/ownerReports";
 import type { SessionState } from "../api/session";
-import { Alert, Button, Card, CardBody, CardHeader, CardTitle, CommandBar, Dialog, ErrorState, LoadingState, MetricCard, StatusPill } from "../components/ui";
+import {
+  Alert,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  CardTitle,
+  CommandBar,
+  Dialog,
+  ErrorState,
+  LoadingState,
+  MetricCard,
+  StatusPill,
+} from "../components/ui";
 import { formatMoney } from "../utils/format";
 
-type DashboardPageProps = { session: SessionState; onLogout: () => void; onOpenSales: () => void; onOpenInventory: () => void; onOpenReports: () => void; canOpenReports: boolean; canOpenHostLanControl: boolean; onOpenHostLanControl: () => void };
+type DashboardPageProps = {
+  session: SessionState;
+  onLogout: () => void;
+  onOpenSales: () => void;
+  onOpenInventory: () => void;
+  onOpenReports: () => void;
+  canOpenReports: boolean;
+};
 
-export function DashboardPage({ session, onLogout, onOpenSales, onOpenInventory, onOpenReports, canOpenReports, canOpenHostLanControl, onOpenHostLanControl }: DashboardPageProps) {
-  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({ queryKey: ["dashboard-summary"], queryFn: fetchDashboardSummary, enabled: session.isAuthenticated, retry: false });
-  const ownerReportsQuery = useQuery({ queryKey: ["dashboard-owner-report-summary"], queryFn: fetchOwnerReportsSummary, enabled: session.isAuthenticated && canOpenReports, retry: false });
-  const sessionExpired = isError && error instanceof ApiError && error.status === 401;
+export function DashboardPage({
+  session,
+  onLogout,
+  onOpenSales,
+  onOpenInventory,
+  onOpenReports,
+  canOpenReports,
+}: DashboardPageProps) {
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
+    queryKey: ["dashboard-summary"],
+    queryFn: fetchDashboardSummary,
+    enabled: session.isAuthenticated,
+    retry: false,
+  });
+  const ownerReportsQuery = useQuery({
+    queryKey: ["dashboard-owner-report-summary"],
+    queryFn: fetchOwnerReportsSummary,
+    enabled: session.isAuthenticated && canOpenReports,
+    retry: false,
+  });
+  const sessionExpired =
+    isError && error instanceof ApiError && error.status === 401;
   const hasWarnings = data ? data.warnings.length > 0 : false;
-  const lowStock = ownerReportsQuery.data?.lowStock.length ?? data?.lowStockCount ?? 0;
-  const todaySalesCents = ownerReportsQuery.data?.daily.salesAmountCents ?? null;
-  const todaySales = todaySalesCents === null ? data?.todaySalesTotal ?? 0 : todaySalesCents / 100;
-  const todayTransactions = ownerReportsQuery.data?.daily.salesCount ?? data?.todayTransactionCount ?? 0;
+  const lowStock =
+    ownerReportsQuery.data?.lowStock.length ?? data?.lowStockCount ?? 0;
+  const todaySalesCents =
+    ownerReportsQuery.data?.daily.salesAmountCents ?? null;
+  const todaySales =
+    todaySalesCents === null
+      ? (data?.todaySalesTotal ?? 0)
+      : todaySalesCents / 100;
+  const todayTransactions =
+    ownerReportsQuery.data?.daily.salesCount ??
+    data?.todayTransactionCount ??
+    0;
   const voidedToday = ownerReportsQuery.data?.daily.voidedCount ?? 0;
 
-  return <><div className="space-y-6"><CommandBar title="Dashboard" subtitle={`Signed in as ${session.user?.displayName ?? ""} (${session.user?.roleName ?? ""}).`} status={data ? <StatusPill tone={data.status === "ok" ? "success" : "warning"}>{data.status === "ok" ? "All reads healthy" : "Read warnings present"}</StatusPill> : null} actions={<Button variant="secondary" onClick={() => { void refetch(); if (canOpenReports) void ownerReportsQuery.refetch(); }} disabled={isFetching || ownerReportsQuery.isFetching}>{isFetching || ownerReportsQuery.isFetching ? "Refreshing..." : "Refresh"}</Button>} />{isLoading ? <LoadingState label="Loading dashboard..." /> : null}{isError && !sessionExpired ? <ErrorState message={(error as Error).message || "Failed to load dashboard summary."} action={<Button variant="secondary" size="sm" onClick={() => refetch()}>Try again</Button>} /> : null}{data ? <><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><MetricCard title="Today Sales" value={formatMoney(todaySales)} subtitle="Completed non-voided sales" /><MetricCard title="Transactions" value={todayTransactions.toLocaleString()} subtitle="Completed today" /><MetricCard title="Low Stock" value={lowStock.toLocaleString()} subtitle="Needs attention" tone={lowStock > 0 ? "warning" : "success"} badge={lowStock > 0 ? "Review" : "OK"} emphasis={lowStock > 0} /><MetricCard title="Voided Today" value={voidedToday.toLocaleString()} subtitle="Shown separately from sales" tone={voidedToday > 0 ? "warning" : "success"} /></div>{ownerReportsQuery.isLoading && canOpenReports ? <LoadingState label="Loading owner report summary..." /> : null}{ownerReportsQuery.data ? <Card><CardHeader><div className="flex items-center justify-between gap-3"><CardTitle>Owner home summary</CardTitle><StatusPill tone="info">Read-only</StatusPill></div></CardHeader><CardBody className="grid gap-3 md:grid-cols-4"><div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Today</p><p className="mt-1 text-lg font-bold text-slate-950">{formatMoney(ownerReportsQuery.data.daily.salesAmountCents / 100)}</p><p className="text-xs text-slate-500">{ownerReportsQuery.data.daily.salesCount} transaction(s)</p></div><div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">This week</p><p className="mt-1 text-lg font-bold text-slate-950">{formatMoney(ownerReportsQuery.data.weekly.salesAmountCents / 100)}</p><p className="text-xs text-slate-500">{ownerReportsQuery.data.weekly.salesCount} transaction(s)</p></div><div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">This month</p><p className="mt-1 text-lg font-bold text-slate-950">{formatMoney(ownerReportsQuery.data.monthly.salesAmountCents / 100)}</p><p className="text-xs text-slate-500">{ownerReportsQuery.data.monthly.salesCount} transaction(s)</p></div><div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Low stock</p><p className="mt-1 text-lg font-bold text-slate-950">{ownerReportsQuery.data.lowStock.length}</p><p className="text-xs text-slate-500">Detailed tables stay in Detailed Reports.</p></div></CardBody></Card> : ownerReportsQuery.isError ? <Alert tone="warning" title="Owner home summary unavailable">Dashboard core metrics loaded. Open Detailed Reports or refresh after report access is available.</Alert> : null}<Card><CardHeader><CardTitle>Store operations</CardTitle></CardHeader><CardBody className="flex flex-wrap gap-3"><Button onClick={onOpenSales}>Open Sales & Receipts</Button><Button variant="secondary" onClick={onOpenInventory}>Review Stock Movements</Button>{canOpenReports ? <Button variant="secondary" onClick={onOpenReports}>Open Detailed Reports</Button> : null}</CardBody></Card><Card><CardHeader><div className="flex items-center justify-between gap-3"><CardTitle>Backend status</CardTitle><StatusPill tone={hasWarnings ? "warning" : "success"}>{hasWarnings ? "Warnings" : "Healthy"}</StatusPill></div></CardHeader><CardBody><p className="text-sm text-slate-600">{data.status === "ok" ? `Dashboard refreshed ${new Date(data.refreshedAt).toLocaleString()}.` : "Dashboard loaded with one or more repository warnings."}</p>{hasWarnings ? <div className="mt-3 space-y-2">{data.warnings.map((warning) => <Alert key={warning} tone="warning">{warning}</Alert>)}</div> : null}</CardBody></Card>{canOpenHostLanControl ? <Card><CardHeader><div className="flex flex-wrap items-center justify-between gap-3"><CardTitle>LAN terminals</CardTitle><StatusPill tone="warning">Coming Soon / internal preview</StatusPill></div></CardHeader><CardBody className="flex flex-wrap items-center justify-between gap-4"><div className="max-w-3xl space-y-1"><p className="text-sm text-slate-600">LAN terminal control is not part of the current client-ready release. Use only for internal verification on this host.</p><p className="text-xs text-slate-500">LAN sync, multi-terminal production use, and client deployment remain deferred. License boundaries are enforced, but a second computer running Salryn is still an independent host; installing the same app does not mean sync.</p></div><Button variant="secondary" onClick={onOpenHostLanControl}>Open Host LAN Control</Button></CardBody></Card> : null}</> : null}</div><Dialog open={sessionExpired} title="Session expired" description="Your session is no longer valid. Please sign in again to continue." onClose={() => onLogout()} footer={<Button onClick={() => onLogout()}>Sign in again</Button>} /></>;
+  return (
+    <>
+      <div className="space-y-6">
+        <CommandBar
+          title="Dashboard"
+          subtitle={`Signed in as ${session.user?.displayName ?? ""} (${session.user?.roleName ?? ""}).`}
+          status={
+            data ? (
+              <StatusPill tone={data.status === "ok" ? "success" : "warning"}>
+                {data.status === "ok"
+                  ? "All reads healthy"
+                  : "Read warnings present"}
+              </StatusPill>
+            ) : null
+          }
+          actions={
+            <Button
+              variant="secondary"
+              onClick={() => {
+                void refetch();
+                if (canOpenReports) void ownerReportsQuery.refetch();
+              }}
+              disabled={isFetching || ownerReportsQuery.isFetching}
+            >
+              {isFetching || ownerReportsQuery.isFetching
+                ? "Refreshing..."
+                : "Refresh"}
+            </Button>
+          }
+        />
+        {isLoading ? <LoadingState label="Loading dashboard..." /> : null}
+        {isError && !sessionExpired ? (
+          <ErrorState
+            message={
+              (error as Error).message || "Failed to load dashboard summary."
+            }
+            action={
+              <Button variant="secondary" size="sm" onClick={() => refetch()}>
+                Try again
+              </Button>
+            }
+          />
+        ) : null}
+        {data ? (
+          <>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <MetricCard
+                title="Today Sales"
+                value={formatMoney(todaySales)}
+                subtitle="Completed non-voided sales"
+              />
+              <MetricCard
+                title="Transactions"
+                value={todayTransactions.toLocaleString()}
+                subtitle="Completed today"
+              />
+              <MetricCard
+                title="Low Stock"
+                value={lowStock.toLocaleString()}
+                subtitle="Needs attention"
+                tone={lowStock > 0 ? "warning" : "success"}
+                badge={lowStock > 0 ? "Review" : "OK"}
+                emphasis={lowStock > 0}
+              />
+              <MetricCard
+                title="Voided Today"
+                value={voidedToday.toLocaleString()}
+                subtitle="Shown separately from sales"
+                tone={voidedToday > 0 ? "warning" : "success"}
+              />
+            </div>
+            {ownerReportsQuery.isLoading && canOpenReports ? (
+              <LoadingState label="Loading owner report summary..." />
+            ) : null}
+            {ownerReportsQuery.data ? (
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between gap-3">
+                    <CardTitle>Owner home summary</CardTitle>
+                    <StatusPill tone="info">Read-only</StatusPill>
+                  </div>
+                </CardHeader>
+                <CardBody className="grid gap-3 md:grid-cols-4">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Today
+                    </p>
+                    <p className="mt-1 text-lg font-bold text-slate-950">
+                      {formatMoney(
+                        ownerReportsQuery.data.daily.salesAmountCents / 100,
+                      )}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {ownerReportsQuery.data.daily.salesCount} transaction(s)
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      This week
+                    </p>
+                    <p className="mt-1 text-lg font-bold text-slate-950">
+                      {formatMoney(
+                        ownerReportsQuery.data.weekly.salesAmountCents / 100,
+                      )}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {ownerReportsQuery.data.weekly.salesCount} transaction(s)
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      This month
+                    </p>
+                    <p className="mt-1 text-lg font-bold text-slate-950">
+                      {formatMoney(
+                        ownerReportsQuery.data.monthly.salesAmountCents / 100,
+                      )}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {ownerReportsQuery.data.monthly.salesCount} transaction(s)
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Low stock
+                    </p>
+                    <p className="mt-1 text-lg font-bold text-slate-950">
+                      {ownerReportsQuery.data.lowStock.length}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      Review items that need attention.
+                    </p>
+                  </div>
+                </CardBody>
+              </Card>
+            ) : ownerReportsQuery.isError ? (
+              <Alert tone="warning" title="Owner home summary unavailable">
+                Dashboard metrics loaded. Open Reports or refresh to try again.
+              </Alert>
+            ) : null}
+            <Card>
+              <CardHeader>
+                <CardTitle>Store operations</CardTitle>
+              </CardHeader>
+              <CardBody className="flex flex-wrap gap-3">
+                <Button onClick={onOpenSales}>Open Sales & Receipts</Button>
+                <Button variant="secondary" onClick={onOpenInventory}>
+                  Review Stock Movements
+                </Button>
+                {canOpenReports ? (
+                  <Button variant="secondary" onClick={onOpenReports}>
+                    Open Reports
+                  </Button>
+                ) : null}
+              </CardBody>
+            </Card>
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle>System status</CardTitle>
+                  <StatusPill tone={hasWarnings ? "warning" : "success"}>
+                    {hasWarnings ? "Warnings" : "Healthy"}
+                  </StatusPill>
+                </div>
+              </CardHeader>
+              <CardBody>
+                <p className="text-sm text-slate-600">
+                  {data.status === "ok"
+                    ? `Dashboard refreshed ${new Date(data.refreshedAt).toLocaleString()}.`
+                    : "Dashboard loaded with one or more system warnings."}
+                </p>
+                {hasWarnings ? (
+                  <div className="mt-3 space-y-2">
+                    {data.warnings.map((warning) => (
+                      <Alert key={warning} tone="warning">
+                        {warning}
+                      </Alert>
+                    ))}
+                  </div>
+                ) : null}
+              </CardBody>
+            </Card>
+          </>
+        ) : null}
+      </div>
+      <Dialog
+        open={sessionExpired}
+        title="Session expired"
+        description="Your session is no longer valid. Please sign in again to continue."
+        onClose={() => onLogout()}
+        footer={<Button onClick={() => onLogout()}>Sign in again</Button>}
+      />
+    </>
+  );
 }

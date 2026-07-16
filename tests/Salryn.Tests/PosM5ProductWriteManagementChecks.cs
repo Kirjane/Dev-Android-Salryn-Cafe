@@ -75,9 +75,9 @@ public static class PosM5ProductWriteManagementChecks
         RequireContains(productsPage, "Selling price must be greater than zero.", "Product Catalog must validate price.");
         RequireContains(productsPage, "Duplicate barcode", "Product Catalog must surface duplicate barcode failures.");
         RequireContains(productsPage, "Reactivation unavailable", "Reactivate must remain unavailable when repository support is absent.");
-        RequireContains(productsPage, "Product writes do not change inventory quantity", "Product create/edit/deactivate must remain stock-neutral even when POS-M6 stock actions are visible.");
-        RequireContains(productsPage, "never set stock quantity", "Product create/edit UI must explain that product writes do not directly set stock quantity.");
-        RequireContains(productsPage, "Existing sales and receipt snapshots stay immutable", "Product Catalog must state snapshot boundary.");
+        RequireContains(productsPage, "Add stock through Stock-In after saving a product", "Product Catalog must direct quantity entry through Stock-In.");
+        RequireContains(productsPage, "Save the product first, then use Stock-In", "Product create UI must keep product save and stock entry separate.");
+        RequireContains(productsPage, "rewrite historical receipt or sale item snapshots", "Product Catalog must preserve the snapshot boundary.");
 
         RequireContains(checkoutPage, "fetchProducts({ search: barcode, isActive: true", "Checkout barcode lookup must ignore inactive products.");
         RequireContains(checkoutPage, "addProduct(match)", "POS-M3 exact barcode add must remain wired.");

@@ -54,13 +54,11 @@ public static class PosManual1R3FrontendSafetyUxRepairChecks
         RequireContains(products, "hidden from the active sale flow", "Deactivate copy must explain inactive sale-flow effect.");
         RequireContains(products, "Historical sales remain preserved", "Deactivate copy must explain sales history preservation.");
         RequireContains(products, "does not delete past records", "Deactivate copy must explain no deletion.");
-        RequireContains(products, "Product barcode fields accept manual barcode entry", "Product form must explain manual barcode entry.");
+        RequireContains(products, "Manage products, pricing, barcodes, and stock settings", "Product Catalog must use client-facing purpose copy.");
 
-        RequireContains(inventory, "Fast Add currently starts from the cashier workstation", "Inventory must explain Fast Add location.");
-        RequireContains(inventory, "keyboard-wedge barcode input", "Inventory must explain cashier scanner support.");
-        RequireContains(inventory, "Inventory Fast Add or barcode-driven receiving", "Inventory must mark scanner receiving deferred.");
-        RequireContains(inventory, "Inventory scans do not silently create products", "Inventory must not imply silent product creation.");
-        RequireContains(inventory, "does not move the ledger search layout", "Stock movement filters must have stable-layout copy.");
+        RequireContains(inventory, "Review Stock-In and Stock Adjustment history", "Inventory must use client-facing purpose copy.");
+        RequireContains(inventory, "Quantity changes are recorded as stock movements", "Inventory must explain recorded movements concisely.");
+        RequireNotContains(inventory, "Barcode and Fast Add boundaries", "Inventory must not show a deferred-feature wall.");
         RequireContains(inventory, "Product lookup and quantity remain in the same fixed area", "Stock write dialog must stabilize lookup and quantity layout.");
 
         RequireContains(dashboard, "fetchOwnerReportsSummary", "Dashboard must use existing owner-report summary data when available.");
@@ -68,34 +66,31 @@ public static class PosManual1R3FrontendSafetyUxRepairChecks
         RequireContains(dashboard, "Loading owner report summary", "Dashboard must show owner-summary loading state.");
         RequireContains(dashboard, "Owner home summary", "Dashboard must present owner home summary section.");
         RequireContains(dashboard, "Voided Today", "Dashboard must surface voided count when available.");
-        RequireContains(dashboard, "Open Detailed Reports", "Dashboard must keep detailed reports discoverable.");
-        RequireContains(reports, "Detailed Reports", "Detailed report drilldown page must use renamed label.");
-        RequireContains(reports, "Dashboard remains the owner home summary", "Detailed Reports must not compete with Dashboard as owner home.");
-        RequireContains(navigation, "Detailed Reports", "Navigation must expose Detailed Reports.");
+        RequireContains(dashboard, "Open Reports", "Dashboard must keep Reports discoverable.");
+        RequireContains(reports, "title=\"Reports\"", "Report drilldown page must use Reports label.");
+        RequireNotContains(reports, "Dashboard remains the owner home summary", "Reports must not show internal product-boundary copy.");
+        RequireContains(navigation, "label: \"Reports\"", "Navigation must expose Reports.");
         RequireNotContains(navigation, "label: \"Owner Reports\"", "Navigation must not expose old Owner Reports label.");
         RequireNotContains(navigation, "label: \"Official Setup\"", "Official Setup must be hidden from standard navigation.");
         RequireNotContains(navigation, "label: \"Traditional Reporting\"", "Traditional Reporting must be hidden from standard navigation.");
         RequireContains(navigation, "Report Artifacts", "Production report route must be relabeled as Report Artifacts in nav.");
         RequireNotContains(navigation, "label: \"Production Reports\"", "Production Reports nav label must be removed.");
 
-        RequireContains(appShell, "Advanced contains internal host tools only", "Advanced section must be internal-only framed.");
-        RequireContains(appShell, "Host LAN Control is Coming Soon / internal preview only", "LAN must remain coming soon/internal preview.");
-        RequireContains(appShell, "Report Artifacts are internal export proof only", "Report Artifacts must not look production-ready.");
-        RequireContains(appShell, "not client-ready", "LAN Advanced copy must not claim client-ready / production-ready LAN.");
+        RequireContains(navigation, "VITE_SALRYN_INTERNAL_SURFACES", "Advanced surfaces must require explicit internal mode.");
+        RequireContains(navigation, "label: \"Terminal Management\"", "Internal LAN navigation must use Terminal Management.");
+        RequireNotContains(appShell, "Advanced contains internal host tools only", "Normal shell must not show an Advanced warning wall.");
 
         // Backup UI1: Backup & Restore is implemented and admin-gated (stale "planned" deferral copy is obsolete).
         string backupPage = Read(web, "pages", "BackupRestorePage.tsx");
         RequireContains(navigation, "id: \"backup-restore\", label: \"Backup & Restore\"", "Backup & Restore must appear as an implemented admin nav item.");
         RequireContains(navigation, "group: \"Admin\"", "Backup & Restore must remain under Admin tools.");
         RequireContains(appShell, "\"Backup & Restore\":", "AppShell must map the Backup & Restore nav label.");
-        RequireContains(appShell, "item.id === \"backup-restore\"", "AppShell must mark Backup & Restore as an admin-gated surface.");
+        RequireNotContains(appShell, "item.id === \"backup-restore\"", "AppShell must not show an Admin badge on Backup & Restore.");
         RequireNotContains(appShell, "Backup & Restore UI planned", "Stale Backup UI deferral copy must not remain after Backup UI1.");
         RequireNotContains(appShell, "No restore/create/list controls are exposed here", "Stale Backup UI absence copy must not remain after Backup UI1.");
-        RequireContains(backupPage, "not cloud backup", "Backup page must reject cloud backup claims.");
-        RequireContains(backupPage, "installer migration proof", "Backup page must reject installer migration proof claims.");
-        RequireContains(backupPage, "legal archive", "Backup page must reject legal archive claims.");
-        RequireContains(backupPage, "BIR archive", "Backup page must reject BIR archive claims.");
-        RequireContains(backupPage, "local license file is stored outside this database backup package", "Backup page must not claim license preservation via DB backup.");
+        RequireNotContains(backupPage, "not cloud backup", "Backup page must not show a cloud disclaimer wall.");
+        RequireNotContains(backupPage, "installer migration proof", "Backup page must not show an installer disclaimer wall.");
+        RequireContains(backupPage, "Restore replaces the current local database", "Backup page must keep the real restore warning.");
 
         string operatorSource = string.Join("\n", app, appShell, navigation, checkout, sales, products, inventory, dashboard, reports, settings, users, backupPage);
         foreach (string token in new[]

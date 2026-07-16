@@ -32,10 +32,9 @@ public static class LanM16HostClientIdentityUxChecks
 
     private static void AssertHostBanner(string dashboard)
     {
-        AssertContains(dashboard, "LAN terminal control is not part of the current client-ready release", "Dashboard must preserve the host LAN boundary guidance.");
-        AssertContains(dashboard, "Open Host LAN Control", "Dashboard must retain access to host LAN controls.");
-        AssertContains(dashboard, "independent host", "Dashboard must warn a second computer's localhost is its own host.");
-        AssertContains(dashboard, "does not mean sync", "Dashboard must warn same-app-installed does not mean sync.");
+        AssertNotContains(dashboard, "LAN terminal control", "Dashboard must not show an incomplete LAN surface.");
+        AssertNotContains(dashboard, "Open Host LAN Control", "Dashboard must not link to internal terminal controls.");
+        AssertNotContains(dashboard, "independent host", "Dashboard must not show LAN implementation guidance.");
     }
 
     private static void AssertRemoteClientIdentity(string remotePosPage)
@@ -78,6 +77,8 @@ public static class LanM16HostClientIdentityUxChecks
         string remoteClientApp = ExtractBlock(app, "function RemoteClientApp()", "function ConsoleApp()");
 
         AssertNotContains(navigation, "Remote POS Client", "Host navigation must not expose the Remote POS Client page.");
+        AssertContains(navigation, "VITE_SALRYN_INTERNAL_SURFACES", "Incomplete terminal surfaces must require explicit internal mode.");
+        AssertContains(navigation, "label: \"Terminal Management\"", "Internal LAN navigation must use Terminal Management.");
         AssertNotContains(navigation, "remote-pos", "Host navigation must not route to remote-pos.");
         AssertNotContains(permissions, "\"remote-pos\"", "Remote POS Client must not be a host AppPage.");
         AssertNotContains(consoleApp, "RemotePosClientPage", "ConsoleApp must not render Remote POS Client.");

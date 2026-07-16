@@ -281,13 +281,13 @@ public static class PosR1OwnerReportsChecks
         Require(service.Contains("WHERE s.status = $completedStatus", StringComparison.Ordinal), "Detailed reports totals must filter active completed sales.");
         Require(service.Contains("$voidedStatus", StringComparison.Ordinal), "Detailed reports must track voided sales separately.");
         Require(!api.Contains("method: \"POST\"", StringComparison.Ordinal), "Detailed reports web API client must remain read-only.");
-        Require(page.Contains("Detailed Reports", StringComparison.Ordinal), "Frontend must expose Detailed Reports page title.");
-        Require(page.Contains("Dashboard remains the owner home summary", StringComparison.Ordinal), "Detailed Reports must not compete with Dashboard as owner home.");
-        Require(page.Contains("Not an official or regulatory filing", StringComparison.Ordinal), "Detailed reports page must state non-official boundary.");
+        Require(page.Contains("title=\"Reports\"", StringComparison.Ordinal), "Frontend must expose Reports page title.");
+        Require(!page.Contains("Dashboard remains the owner home summary", StringComparison.Ordinal), "Reports must not show internal product-boundary copy.");
+        Require(!page.Contains("Not an official or regulatory filing", StringComparison.Ordinal), "Reports must not show regulatory disclaimer walls.");
         Require(page.Contains("read-only", StringComparison.Ordinal), "Detailed reports UI must state read-only boundary.");
         Require(!page.Contains("Coming soon", StringComparison.Ordinal), "Developer-only disabled nav copy must not be reintroduced to Detailed Reports.");
         Require(permissions.Contains("\"owner-reports\": [Permissions.ReportsView]", StringComparison.Ordinal), "Detailed reports direct page access must be gated by Reports.View.");
-        Require(navigation.Contains("Detailed Reports", StringComparison.Ordinal), "Detailed Reports must be reachable from store navigation.");
+        Require(navigation.Contains("label: \"Reports\"", StringComparison.Ordinal), "Reports must be reachable from store navigation.");
         Require(!navigation.Contains("label: \"Owner Reports\"", StringComparison.Ordinal), "Old Owner Reports nav label must not remain.");
     }
 

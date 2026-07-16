@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchAuditLogs, fetchErrorLogs, type AuditLog, type ErrorLog } from "../api/audit";
 import {
-  Alert,
   Button,
   Card,
   CardBody,
@@ -76,17 +75,13 @@ export function AuditPage() {
     <div className="space-y-6">
       <CommandBar
         title="Audit"
-        subtitle="Read-only audit and error records from approved audit endpoints."
+        subtitle="Review important system and operator activity."
         actions={
           <Button variant="secondary" onClick={() => void activeQuery.refetch()} disabled={activeQuery.isFetching}>
             {activeQuery.isFetching ? "Refreshing..." : "Refresh"}
           </Button>
         }
       />
-
-      <Alert tone="info" title="Read-only audit lane">
-        This page fetches real audit/error records only. It does not create, edit, export, or fabricate audit rows.
-      </Alert>
 
       <Card>
         <CardBody className="space-y-4">

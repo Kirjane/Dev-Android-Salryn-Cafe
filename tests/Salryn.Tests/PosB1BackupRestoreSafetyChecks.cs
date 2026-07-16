@@ -83,7 +83,7 @@ public static class PosB1BackupRestoreSafetyChecks
         Require(!permissions.Contains("managerPages") || !permissions.Contains("\"backup-restore\", \"audit\""), "Manager allowlist must not include Backup & Restore.");
         Require(app.Contains("BackupRestorePage"), "App must render the Backup & Restore page.");
         Require(shell.Contains("\"Backup & Restore\""), "Shell icon mapping must include Backup & Restore.");
-        Require(shell.Contains("item.id === \"backup-restore\""), "Shell must mark Backup & Restore as admin-only surface.");
+        Require(!shell.Contains("item.id === \"backup-restore\""), "Shell must not show an Admin badge on Backup & Restore.");
 
         Require(backupApi.Contains("/api/backups"), "Backup UI API client must use existing backend backup endpoints.");
         Require(backupApi.Contains("encodeURIComponent(backupId)"), "Backup UI API client must call verify/restore by encoded backup ID.");
@@ -93,9 +93,8 @@ public static class PosB1BackupRestoreSafetyChecks
         Require(backupPage.Contains("Verify"), "Backup UI must expose verify action.");
         Require(backupPage.Contains("Type RESTORE"), "Backup UI restore must require typed confirmation.");
         Require(backupPage.Contains("Restore replaces the current local database"), "Backup UI must warn destructive restore replacement.");
-        Require(backupPage.Contains("Keep copies outside this computer"), "Backup UI must explain off-device disaster recovery boundary without claiming cloud backup.");
-        Require(backupPage.Contains("not cloud backup"), "Backup UI must reject cloud backup claims.");
-        Require(backupPage.Contains("local license file is stored outside this database backup package"), "Backup UI must not claim license preservation.");
+        Require(!backupPage.Contains("not cloud backup"), "Backup UI must not show a cloud disclaimer wall.");
+        Require(!backupPage.Contains("installer migration proof"), "Backup UI must not show an installer disclaimer wall.");
         Require(!backupPage.Contains("type=\"file\""), "Backup UI must not expose raw file upload.");
         Require(!backupPage.Contains("FilePath"), "Backup UI must not display raw backup file paths.");
         Require(!backupPage.Contains("RestoredBackupPath"), "Backup UI must not display restored backup file paths.");

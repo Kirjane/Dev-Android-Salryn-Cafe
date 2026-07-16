@@ -150,7 +150,7 @@ export function UsersPage() {
     <div className="space-y-6">
       <CommandBar
         title="Users"
-        subtitle="Create host-local Manager and Cashier accounts and review their assigned access."
+        subtitle="Create Manager and Cashier accounts and review their assigned access."
         actions={
           <Button variant="secondary" onClick={() => void usersQuery.refetch()}>
             Refresh

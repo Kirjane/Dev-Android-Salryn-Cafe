@@ -124,9 +124,7 @@ export function HostLanControlPage() {
   const pendingRequests = pairing?.pendingRequests ?? [];
   const pendingRequestCount = pairing?.pendingRequestCount ?? pendingRequests.length;
   const hostLanEntitled = limits?.hostLanEntitled === true && (limits?.maxPairedTerminals ?? 0) > 0;
-  const licensedTerminals = limits?.licensedAllowedLanTerminals ?? limits?.maxPairedTerminals ?? 0;
   const capacitySummary = `${limits?.currentPairedCount ?? 0} / ${limits?.maxPairedTerminals ?? 0} paired, ${limits?.currentActiveSessions ?? 0} / ${limits?.maxActiveSessions ?? 0} active`;
-  const licenseContact = limits?.licenseContactEmail ?? "salryn.info@gmail.com";
 
   const repairIp =
     runtime?.configuredBindAddressRepairSuggestion?.trim() ||
@@ -234,9 +232,9 @@ export function HostLanControlPage() {
   return (
     <div className="space-y-6">
       <CommandBar
-        title="Host LAN Control"
-        subtitle="Simple host-local controls for LAN connection, pairing, and terminal trust. Remote clients cannot open this page."
-        status={<StatusPill tone="success">Host control is local-only</StatusPill>}
+        title="Terminal Management"
+        subtitle="Manage LAN connection, pairing requests, and terminal access."
+        status={<StatusPill tone="success">Available on this host</StatusPill>}
         actions={
           <Button variant="secondary" onClick={refreshAll}>
             <RefreshCw aria-hidden="true" size={16} />
@@ -245,21 +243,9 @@ export function HostLanControlPage() {
         }
       />
 
-      <Alert tone="warning" title="LAN terminal license boundary">
-        LAN is licensed per additional operational terminal. Terminal production access requires a separate Terminal license per device. A Host license is not valid as a terminal license and must not be copied to LAN terminals. Contact {licenseContact} to license additional terminals.
-        {typeof licensedTerminals === "number" ? (
-          <span className="mt-1 block font-medium">
-            Current host license allows {licensedTerminals} LAN terminal{licensedTerminals === 1 ? "" : "s"}
-            {hostLanEntitled ? "" : " (operational pairing disabled until Host LAN entitlement is present)"}.
-          </span>
-        ) : null}
-        {limits?.licenseMessage ? <span className="mt-1 block text-xs">{limits.licenseMessage}</span> : null}
-        <span className="mt-1 block text-xs">Operational terminal activation requires a separate signed Terminal license proof (TerminalLicenseJson). Host cannot re-fingerprint remote hardware independently; terminal machines must self-bind their machine code.</span>
-        <span className="mt-1 block text-xs">This page does not claim LAN production-ready, cloud activation, installer readiness, BIR/eSales, or hardware support.</span>
-      </Alert>
       {!hostLanEntitled ? (
-        <Alert tone="danger" title="Host LAN terminal entitlement missing">
-          Pairing join-code rotation and terminal approval stay disabled until a valid Host license with AllowedLanTerminals greater than zero is installed. Email {licenseContact} for Host or Terminal licenses.
+        <Alert tone="warning" title="Terminal activation is not ready for client use">
+          Pairing remains unavailable while the separate Terminal activation and licensing model is completed.
         </Alert>
       ) : null}
 
@@ -355,7 +341,7 @@ export function HostLanControlPage() {
                   Rotate/show host join code
                 </Button>
                 {!hostLanEntitled ? (
-                  <p className="text-xs text-amber-800">Join codes require Host LAN terminal entitlement (AllowedLanTerminals &gt; 0).</p>
+                  <p className="text-xs text-amber-800">Join codes are unavailable for the current license.</p>
                 ) : null}
               </div>
               {rotateJoinCodeMutation.data ? (
@@ -453,7 +439,7 @@ export function HostLanControlPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Client troubleshooting guide</CardTitle>
+              <CardTitle>Terminal help</CardTitle>
             </CardHeader>
             <CardBody className="space-y-3 text-sm text-slate-700">
               <p className="font-medium text-slate-900">If a phone is stuck after a new build or DB reset:</p>
@@ -466,7 +452,7 @@ export function HostLanControlPage() {
                 Revoked or archived old rows are history. New pairing creates a <strong>new</strong> terminal — do not
                 try to reactivate a revoked connection.
               </p>
-              <Alert tone="info" title="Repo truth">
+              <Alert tone="info" title="Connection behavior">
                 <ul className="list-disc space-y-1 pl-5">
                   <li>Host owns the database and approvals.</li>
                   <li>Client only holds terminal pairing plus an optional cashier session token.</li>

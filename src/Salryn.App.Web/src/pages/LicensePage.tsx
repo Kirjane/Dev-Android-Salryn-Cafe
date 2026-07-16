@@ -124,6 +124,7 @@ export function LicensePage() {
   const statusQuery = useQuery({ queryKey: ["license-status"], queryFn: fetchLicenseStatus, retry: false });
   const [licenseText, setLicenseText] = useState("");
   const [replaceConfirmed, setReplaceConfirmed] = useState(false);
+  const [showReplaceLicense, setShowReplaceLicense] = useState(false);
   const [showSupportDetails, setShowSupportDetails] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -149,18 +150,9 @@ export function LicensePage() {
       const result = await installLicense(payload);
       if (result.installStatus === "Installed") {
         setMessage("License installed. Salryn works offline after a valid signed license is installed.");
-        try {
-          const parsed = JSON.parse(payload) as { licenseType?: string | number; LicenseType?: string | number };
-          const typeValue = parsed.licenseType ?? parsed.LicenseType;
-          const isTerminal = typeValue === "Terminal" || typeValue === 1;
-          if (isTerminal && typeof window !== "undefined") {
-            window.localStorage.setItem("salryn.terminalLicenseJson", payload);
-          }
-        } catch {
-          /* ignore parse for local cache */
-        }
         setLicenseText("");
         setReplaceConfirmed(false);
+        setShowReplaceLicense(false);
       } else {
         setError(friendlyInstallError(result.errorMessage, result.errorCode));
       }
@@ -186,9 +178,9 @@ export function LicensePage() {
   return (
     <div className="mx-auto max-w-3xl space-y-5">
       <CommandBar
-        title="Activate Salryn"
-        subtitle="Salryn needs a valid license before this device can be used."
-        status={status ? <StatusPill tone={statusTone(status.status)}>{showActiveSummary ? "Licensed" : currentStatusLabel}</StatusPill> : null}
+        title={showActiveSummary ? "License" : "Activate Salryn"}
+        subtitle={showActiveSummary ? "View the license installed on this device." : "Salryn needs a valid license before this device can be used."}
+        status={status ? <StatusPill tone={statusTone(status.status)}>{showActiveSummary ? "Active" : currentStatusLabel}</StatusPill> : null}
         actions={
           <Button variant="secondary" disabled={statusQuery.isFetching || busy} onClick={() => void statusQuery.refetch()}>
             Refresh
@@ -209,7 +201,7 @@ export function LicensePage() {
       {showActiveSummary && status ? (
         <Card>
           <CardHeader>
-            <CardTitle>License Active</CardTitle>
+            <CardTitle>Status: Active</CardTitle>
           </CardHeader>
           <CardBody className="space-y-3 text-sm text-slate-700">
             <p>
@@ -240,9 +232,7 @@ export function LicensePage() {
                 </p>
               </>
             ) : null}
-            <p className="text-xs text-slate-500">
-              Salryn works offline after a valid signed license is installed. Each operational LAN terminal uses its own machine-bound Terminal license.
-            </p>
+            <p className="text-xs text-slate-500">Works offline after activation.</p>
             <button
               type="button"
               className="text-xs font-semibold text-blue-700 underline-offset-2 hover:underline"
@@ -311,13 +301,19 @@ export function LicensePage() {
         </Card>
       ) : null}
 
-      <Card>
+      {showActiveSummary && !showReplaceLicense ? (
+        <div>
+          <Button variant="secondary" onClick={() => setShowReplaceLicense(true)}>Replace License</Button>
+        </div>
+      ) : null}
+
+      {!showActiveSummary || showReplaceLicense ? <Card>
         <CardHeader>
           <CardTitle>Import License</CardTitle>
         </CardHeader>
         <CardBody className="space-y-4">
           <p className="text-sm text-slate-600">
-            Importing a license replaces the current license on this device only after Salryn verifies it.
+             Importing a license replaces the current license on this device after Salryn verifies it.
           </p>
           <label className="space-y-1 text-sm font-medium text-slate-700">
             <span>Paste signed license JSON</span>
@@ -353,7 +349,7 @@ export function LicensePage() {
             </Button>
           </div>
         </CardBody>
-      </Card>
+      </Card> : null}
     </div>
   );
 }

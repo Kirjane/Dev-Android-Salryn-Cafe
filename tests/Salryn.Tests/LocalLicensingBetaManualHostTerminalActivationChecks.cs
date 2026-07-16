@@ -147,6 +147,7 @@ public static class LocalLicensingBetaManualHostTerminalActivationChecks
             string storeSettingsPage = File.ReadAllText(Path.Combine(FindRoot(), "src", "Salryn.App.Web", "src", "pages", "StoreSettingsPage.tsx"));
             string hostLan = File.ReadAllText(Path.Combine(FindRoot(), "src", "Salryn.App.Web", "src", "pages", "HostLanControlPage.tsx"));
             string backupPage = File.ReadAllText(Path.Combine(FindRoot(), "src", "Salryn.App.Web", "src", "pages", "BackupRestorePage.tsx"));
+            string navigation = File.ReadAllText(Path.Combine(FindRoot(), "src", "Salryn.App.Web", "src", "navigation.ts"));
             string policy = ReadRepoFile("src", "Salryn.Core", "Services", "Licensing", "LocalLicenseContractPolicy.cs");
 
             RequireContains(contracts, "enum LicenseType", "LicenseType enum must exist.");
@@ -180,9 +181,9 @@ public static class LocalLicensingBetaManualHostTerminalActivationChecks
             RequireNotContains(licensePage, "cloud activation ready", "License UI must not claim cloud activation.");
             RequireNotContains(licensePage, "subscription billing", "License UI must not claim subscription billing.");
             RequireNotContains(licensePage, "LAN production ready", "License UI must not claim LAN production ready.");
-            RequireContains(hostLan, "separate Terminal license", "Host LAN page must state terminal license requirement.");
-            RequireContains(hostLan, "Host license is not valid as a terminal license", "Host LAN page must reject host-as-terminal copy.");
-            RequireContains(backupPage, "local license file is stored outside this database backup package", "Backup boundary must remain.");
+            RequireContains(hostLan, "title=\"Terminal Management\"", "Internal host LAN page must use Terminal Management naming.");
+            RequireContains(navigation, "VITE_SALRYN_INTERNAL_SURFACES", "Incomplete terminal management must be hidden from normal navigation.");
+            RequireNotContains(backupPage, "local license file is stored outside this database backup package", "Backup page must not show an implementation-boundary wall.");
             RequireContains(policy, "salryn.info@gmail.com", "Policy must document beta contact email.");
             RequireContains(policy, "PrivateSigningKeyAllowedInRepository = false", "Policy must forbid private keys.");
 

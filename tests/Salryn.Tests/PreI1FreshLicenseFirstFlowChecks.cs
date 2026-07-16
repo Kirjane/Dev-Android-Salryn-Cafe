@@ -19,9 +19,12 @@ public static class PreI1FreshLicenseFirstFlowChecks
         RequireNotContains(bootstrapPage, "DEV Admin", "Fresh bootstrap must not prefill a dev admin label.");
         RequireNotContains(licensePage, "Allowed LAN terminals (Host)", "Normal License UI must not expose Host LAN count as a commercial control.");
         RequireNotContains(licensePage, "how many LAN terminals", "Host activation must not collect terminal count.");
-        RequireContains(licensePage, "Each operational LAN terminal uses its own machine-bound Terminal license", "License UI must state one machine-bound license per terminal.");
+        RequireContains(licensePage, "Each LAN terminal needs its own Terminal license", "Activation instructions must state one license per terminal.");
         RequireContains(licensePage, "This Terminal license cannot unlock Host first-run setup", "Terminal license must explain Host bootstrap denial.");
         RequireContains(licensePage, "Activate Salryn", "Fresh license page must use product activation title.");
+        RequireContains(licensePage, "title={showActiveSummary ? \"License\" : \"Activate Salryn\"}", "Active license page must switch away from the activation title.");
+        RequireContains(licensePage, "<CardTitle>Status: Active</CardTitle>", "Active license page must show Active status.");
+        RequireContains(licensePage, "showReplaceLicense", "Active license replacement must be secondary and collapsed.");
         RequireContains(licensePage, "salryn.info@gmail.com", "Fresh license page must show support email.");
         RequireNotContains(licensePage, "Offline-first license boundary", "Fresh license page must not lead with developer boundary banners.");
         RequireNotContains(licensePage, "path-bearing", "Fresh license page must not expose path-bearing technical jargon.");

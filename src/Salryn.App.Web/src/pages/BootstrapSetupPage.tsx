@@ -101,15 +101,15 @@ export function BootstrapSetupPage({ status, onCompleted }: BootstrapSetupPagePr
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-md bg-white text-navy-900 shadow-lg">
             <Layers3 aria-hidden="true" size={26} />
           </div>
-          <p className="text-sm font-bold text-white">SALRYN LEDGER CONSOLE</p>
-          <p className="mt-1 text-xs text-slate-400">First-run local setup</p>
+          <p className="text-sm font-bold text-white">Salryn POS</p>
+          <p className="mt-1 text-xs text-slate-400">Store setup</p>
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-white p-8 shadow-xl">
           <div className="mb-6">
             <h1 className="text-xl font-bold text-slate-950">Create the first store admin</h1>
             <p className="mt-2 text-sm text-slate-500">
-              This setup appears only while the local database has no completed first-run admin/store setup.
+              Add your store details and create the first administrator account.
             </p>
           </div>
 

@@ -18,16 +18,26 @@ export const navItems: NavItemConfig[] = [
   { id: "dashboard", label: "Dashboard", enabled: true, group: "Manager" },
   { id: "products", label: "Product Catalog", enabled: true, group: "Manager" },
   { id: "inventory", label: "Stock Movements", enabled: true, group: "Manager" },
-  { id: "owner-reports", label: "Detailed Reports", enabled: true, group: "Manager" },
+  { id: "owner-reports", label: "Reports", enabled: true, group: "Manager" },
   { id: "users", label: "Users", enabled: true, group: "Admin" },
   { id: "audit", label: "Audit", enabled: true, group: "Admin" },
   { id: "settings", label: "Store Settings", enabled: true, group: "Admin" },
   { id: "license", label: "License", enabled: true, group: "Admin" },
   { id: "backup-restore", label: "Backup & Restore", enabled: true, group: "Admin" },
-  { id: "host-lan-control", label: "Host LAN Control", enabled: true, group: "Advanced" },
+];
+
+const internalNavItems: NavItemConfig[] = [
+  { id: "host-lan-control", label: "Terminal Management", enabled: true, group: "Advanced" },
   { id: "production-reports", label: "Report Artifacts", enabled: true, group: "Advanced" },
 ];
 
+export function isInternalSurfaceModeEnabled(): boolean {
+  return import.meta.env.VITE_SALRYN_INTERNAL_SURFACES === "true";
+}
+
 export function getNavItems(session: SessionState): NavItemConfig[] {
-  return navItems.filter((item) => canAccessPage(session, item.id));
+  const configuredItems = isInternalSurfaceModeEnabled()
+    ? [...navItems, ...internalNavItems]
+    : navItems;
+  return configuredItems.filter((item) => canAccessPage(session, item.id));
 }
