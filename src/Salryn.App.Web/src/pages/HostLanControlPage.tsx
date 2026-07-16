@@ -274,13 +274,18 @@ export function HostLanControlPage() {
       || String(terminal.status ?? "").toLowerCase().includes("request"),
   );
   const requestBlock = [
-    "Terminal License Request",
+    "Salryn — Terminal License Request",
+    "",
+    "Terminal licenses are issued from the Host license context.",
+    "Copy this request for LicensingOps.",
+    "Each LAN terminal needs its own Terminal license.",
+    "",
     "Store: " + (hostCustomer || "(set after Host license)"),
-    "Store ID (internal): " + (hostStoreId || "(from Host license)"),
-    "Host License ID (internal): " + (hostLicenseId || "(from Host license)"),
+    "Store ID: " + (hostStoreId || "(from Host license)"),
+    "Host License ID: " + (hostLicenseId || "(from Host license)"),
     "Host Machine Code: " + (hostMachineCode || "(from Host license)"),
     "Terminal name/location: " + (pendingTerminal?.terminalName || pendingTerminal?.terminalId || "(e.g. Counter 1)"),
-    "Terminal Machine Code: (copy from terminal device activation screen)",
+    "Terminal Machine Code: (copy from that terminal device activation screen)",
     "",
     "Salryn generates Machine Codes. LicensingOps signs Terminal licenses from the Host license.",
   ].join("\n");
@@ -309,38 +314,45 @@ export function HostLanControlPage() {
       />
 
       <Alert tone="info" title="One Terminal license per device">
-        Every client device must activate with its own signed Terminal license. Terminal users only send a Terminal Machine Code and a name/location — they do not need a Host License ID. Use the support request block below when issuing Terminal licenses in LicensingOps.
+        Terminal licenses are issued from the Host license context. Each LAN terminal needs its own Terminal license.
+        Terminal users only send a Terminal Machine Code and a name/location — they do not need a Host License ID.
+        Use the request block below when issuing Terminal licenses in LicensingOps.
       </Alert>
 
-      <Card>
-        <CardHeader>
+      <Card className="overflow-hidden border-slate-200 shadow-sm">
+        <CardHeader className="border-b border-slate-100 bg-white">
           <CardTitle>Terminal license request (admin / support)</CardTitle>
         </CardHeader>
-        <CardBody className="space-y-3 text-sm text-slate-700">
+        <CardBody className="space-y-4 text-sm text-slate-700">
           <p className="text-slate-600">
-            Internal details for store admin or Kirjane Labs. Not shown on the terminal activation screen.
+            Terminal licenses are issued from the Host license context. Copy this request for LicensingOps.
+            Each LAN terminal needs its own Terminal license. These Host/admin IDs are for support issuance only —
+            they are not shown as tasks on the terminal activation screen.
           </p>
-          <dl className="grid gap-2 sm:grid-cols-2">
+          <dl className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3 sm:grid-cols-2">
             <div>
-              <dt className="text-xs text-slate-500">Store name</dt>
-              <dd className="font-medium">{hostCustomer || "—"}</dd>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Store</dt>
+              <dd className="mt-0.5 font-medium text-navy-900">{hostCustomer || "—"}</dd>
             </div>
             <div>
-              <dt className="text-xs text-slate-500">Store ID (internal)</dt>
-              <dd className="break-all font-mono text-xs">{hostStoreId || "—"}</dd>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Store ID</dt>
+              <dd className="mt-0.5 break-all font-mono text-xs text-slate-800">{hostStoreId || "—"}</dd>
             </div>
             <div>
-              <dt className="text-xs text-slate-500">Host License ID (internal)</dt>
-              <dd className="break-all font-mono text-xs">{hostLicenseId || "—"}</dd>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Host License ID</dt>
+              <dd className="mt-0.5 break-all font-mono text-xs text-slate-800">{hostLicenseId || "—"}</dd>
             </div>
             <div>
-              <dt className="text-xs text-slate-500">Host Machine Code</dt>
-              <dd className="break-all font-mono text-xs">{hostMachineCode || "—"}</dd>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Host Machine Code</dt>
+              <dd className="mt-0.5 break-all font-mono text-xs text-slate-800">{hostMachineCode || "—"}</dd>
             </div>
           </dl>
-          <pre className="overflow-auto rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-800 whitespace-pre-wrap">
-            {requestBlock}
-          </pre>
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Copy for LicensingOps</p>
+            <pre className="overflow-auto rounded-xl border border-slate-200 bg-white p-3 text-xs leading-relaxed text-slate-800 whitespace-pre-wrap">
+              {requestBlock}
+            </pre>
+          </div>
           <Button variant="secondary" size="sm" onClick={() => void copyTerminalRequest()}>
             {requestCopied ? "Copied request block" : "Copy Terminal License Request"}
           </Button>

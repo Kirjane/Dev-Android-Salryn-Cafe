@@ -44,9 +44,11 @@ public static class PreI1LanTerminalActivationManagementBetaChecks
         RequireContains(landing, "Terminal License", "Client entry must allow review/replacement of its Terminal license.");
         RequireContains(navigation, "{ id: \"host-lan-control\", label: \"Terminal Management\", enabled: true, group: \"Admin\" }", "Terminal Management must be normal Admin navigation.");
         RequireNotContains(hostManagement, "Terminal activation is not ready for client use", "Completed activation must not retain incomplete UX copy.");
-        RequireContains(hostManagement, "Every client device must activate with its own signed Terminal license", "Host guidance must state one Terminal license per device.");
+        RequireContains(hostManagement, "Each LAN terminal needs its own Terminal license", "Host guidance must state one Terminal license per device.");
+        RequireContains(hostManagement, "Terminal licenses are issued from the Host license context", "Host guidance must state Host-context issuance.");
         RequireContains(hostManagement, "Terminal license request (admin / support)", "Host Terminal Management must expose admin request context.");
         RequireContains(hostManagement, "Copy Terminal License Request", "Host Terminal Management must offer a copy-ready request block.");
+        RequireContains(hostManagement, "Copy this request for LicensingOps", "Host Terminal Management must use product request wording.");
         int diagnosticsIndex = hostManagement.IndexOf("Advanced diagnostics", StringComparison.Ordinal);
         RequireTrue(diagnosticsIndex >= 0
             && hostManagement.IndexOf("Configured bind (raw)", StringComparison.Ordinal) > diagnosticsIndex

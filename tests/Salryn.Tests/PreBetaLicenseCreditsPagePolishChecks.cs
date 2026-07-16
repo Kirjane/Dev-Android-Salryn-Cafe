@@ -37,8 +37,15 @@ public static class PreBetaLicenseCreditsPagePolishChecks
         RequireContains(terminalPage, "Show support details", "Terminal support details collapsed by default.");
         RequireNotContains(terminalPage, "Include your store name, Host License ID", "Terminal must not ask for Host License ID as a task.");
         RequireNotContains(terminalPage, "RMO", "Terminal page must not expose RMO.");
+        // LAN end-user path: no large metadata labels, no Store ID / Host License ID as tasks
+        RequireNotContains(terminalPage, "Products of Kirjane Labs", "Terminal page must not show Products list metadata.");
+        RequireNotContains(terminalPage, "Build Type", "Terminal page must not show Build Type card.");
+        RequireNotContains(terminalPage, "find Host License ID", "Terminal users must not be asked to find Host License ID.");
+        RequireNotContains(terminalPage, "find Store ID", "Terminal users must not be asked to find Store ID.");
+        RequireNotContains(terminalPage, "you need a Host License ID", "Terminal path must not require Host License ID.");
+        RequireNotContains(terminalPage, "you need a Store ID", "Terminal path must not require Store ID.");
 
-        // Credits identity
+        // Credits identity (shared card — Host + Terminal)
         RequireContains(credits, "SALRYN", "Credits must show SALRYN.");
         RequireContains(credits, "by Kirjane Labs", "Credits must show by Kirjane Labs.");
         RequireContains(credits, "Licensing & Credits", "Credits title required.");
@@ -64,12 +71,25 @@ public static class PreBetaLicenseCreditsPagePolishChecks
         RequireNotContains(credits, "Build Type", "Build Type must not be a prominent card label.");
         RequireNotContains(credits, ">Publisher<", "Publisher must not be a large metadata label.");
         RequireNotContains(credits, ">Product<", "Product must not be a large metadata label.");
-        // Avoid false positive on “product” in “A Kirjane Labs product”
         RequireNotContains(credits, "Products of Kirjane Labs", "Products of Kirjane Labs list block removed.");
         RequireNotContains(credits, "mock sample", "Credits must not say mock sample.");
         RequireNotContains(credits, "Software Development", "Do not rename Technology Lead to Software Development.");
         RequireNotContains(credits, "RMO", "Credits must not expose RMO.");
         RequireNotContains(credits, "eSales", "Credits must not expose eSales.");
+
+        // Host Terminal Management — cleaned request language (admin IDs allowed)
+        string hostLan = File.ReadAllText(Path.Combine(root, "src", "Salryn.App.Web", "src", "pages", "HostLanControlPage.tsx"));
+        RequireContains(hostLan, "Terminal license request (admin / support)", "Terminal Management request card required.");
+        RequireContains(hostLan, "Copy Terminal License Request", "Terminal Management copy request button required.");
+        RequireContains(hostLan, "Terminal licenses are issued from the Host license context", "Terminal Management must state Host-context issuance.");
+        RequireContains(hostLan, "Copy this request for LicensingOps", "Terminal Management must direct copy for LicensingOps.");
+        RequireContains(hostLan, "Each LAN terminal needs its own Terminal license", "Terminal Management must state one license per terminal.");
+        RequireContains(hostLan, "Host License ID", "Admin request block may show Host License ID.");
+        RequireContains(hostLan, "Host Machine Code", "Admin request block must show Host Machine Code.");
+        RequireNotContains(hostLan, "RMO", "Terminal Management must not expose RMO.");
+        RequireNotContains(hostLan, "eSales", "Terminal Management must not expose eSales.");
+        RequireNotContains(hostLan, "BIR-approved", "Terminal Management must not claim BIR-approved.");
+        RequireNotContains(hostLan, "Products of Kirjane Labs", "Terminal Management must not duplicate credits products list.");
     }
 
     private static string FindRoot()
