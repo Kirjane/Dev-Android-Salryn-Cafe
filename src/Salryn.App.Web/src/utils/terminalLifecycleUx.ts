@@ -24,7 +24,8 @@ export function formatTerminalStatusLabel(status: TerminalLifecycleStatus): stri
     case "Disabled":
       return "Disabled";
     case "Revoked":
-      return "Revoked";
+      // Operator-facing label; internal status enum remains Revoked.
+      return "Removed";
     case "PendingPairing":
       return "Pending pairing";
     default:
@@ -50,7 +51,7 @@ export function terminalStatusTone(status: TerminalLifecycleStatus): "success" |
 export function terminalLifecycleExplanation(status: TerminalLifecycleStatus): string | null {
   switch (status) {
     case "Revoked":
-      return "This device is no longer trusted. The client must request access again to open a new pending request.";
+      return "This terminal was removed. The client must request access again to open a new pending request.";
     case "Disabled":
       return "This terminal is temporarily blocked. Enable terminal restores access without re-pairing, or Remove terminal ends trust permanently.";
     default:
@@ -131,7 +132,7 @@ export function terminalGroupTitle(group: TerminalConnectionGroup): string {
     case "blocked":
       return "Blocked terminals";
     case "retired":
-      return "Retired / revoked terminals";
+      return "Retired / removed terminals";
     case "host-local":
       return "Local host / admin clients";
     default:

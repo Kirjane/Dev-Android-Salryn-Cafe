@@ -157,6 +157,7 @@ export function HostLanControlPage() {
   const [pendingDisableTerminal, setPendingDisableTerminal] = useState<LocalLanControlTerminal | null>(null);
   const [pendingEnableTerminal, setPendingEnableTerminal] = useState<LocalLanControlTerminal | null>(null);
   const [pendingRemoveTerminal, setPendingRemoveTerminal] = useState<LocalLanControlTerminal | null>(null);
+  const [pendingClearSessionsTerminal, setPendingClearSessionsTerminal] = useState<LocalLanControlTerminal | null>(null);
 
   const status = statusQuery.data;
   const runtime = runtimeStatusQuery.data;
@@ -281,11 +282,14 @@ export function HostLanControlPage() {
     (terminal) => String(terminal.status ?? "").toLowerCase().includes("pending")
       || String(terminal.status ?? "").toLowerCase().includes("request"),
   );
+  // Admin/support request block for license desk issuance (collapsed admin card).
+  // "Copy this request for LicensingOps" retained for support desk tooling compatibility.
   const requestBlock = [
     "Salryn — Terminal License Request",
     "",
     "Terminal licenses are issued from the Host license context.",
     "Copy this request for LicensingOps.",
+    "Send to Kirjane Labs / Salryn Infodesk (salryn.info@gmail.com) or your license desk.",
     "Each LAN terminal needs its own Terminal license.",
     "",
     "Store: " + (hostCustomer || "(set after Host license)"),
@@ -295,7 +299,7 @@ export function HostLanControlPage() {
     "Terminal name/location: " + (pendingTerminal?.terminalName || pendingTerminal?.terminalId || "(e.g. Counter 1)"),
     "Terminal Machine Code: (copy from that terminal device activation screen)",
     "",
-    "Salryn generates Machine Codes. LicensingOps signs Terminal licenses from the Host license.",
+    "Salryn generates Machine Codes. Kirjane Labs / Salryn Infodesk issues Terminal licenses from the Host license.",
   ].join("\n");
 
   async function copyTerminalRequest() {
@@ -324,7 +328,7 @@ export function HostLanControlPage() {
       <Alert tone="info" title="One Terminal license per device">
         Terminal licenses are issued from the Host license context. Each LAN terminal needs its own Terminal license.
         Terminal users only send a Terminal Machine Code and a name/location — they do not need a Host License ID.
-        Use the request block below when issuing Terminal licenses in LicensingOps.
+        Use the admin request block below for Kirjane Labs / Salryn Infodesk or your license desk.
       </Alert>
 
       <Card className="overflow-hidden border-slate-200 shadow-sm">
@@ -333,7 +337,8 @@ export function HostLanControlPage() {
         </CardHeader>
         <CardBody className="space-y-4 text-sm text-slate-700">
           <p className="text-slate-600">
-            Terminal licenses are issued from the Host license context. Copy this request for LicensingOps.
+            Terminal licenses are issued from the Host license context. Copy this request for LicensingOps
+            or send it to Kirjane Labs / Salryn Infodesk at salryn.info@gmail.com.
             Each LAN terminal needs its own Terminal license. These Host/admin IDs are for support issuance only —
             they are not shown as tasks on the terminal activation screen.
           </p>
@@ -356,7 +361,7 @@ export function HostLanControlPage() {
             </div>
           </dl>
           <div>
-            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Copy for LicensingOps</p>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Copy for license desk / support</p>
             <pre className="overflow-auto rounded-xl border border-slate-200 bg-white p-3 text-xs leading-relaxed text-slate-800 whitespace-pre-wrap">
               {requestBlock}
             </pre>
@@ -451,7 +456,7 @@ export function HostLanControlPage() {
               {pairingStatusQuery.isError ? <ErrorState message={(pairingStatusQuery.error as Error).message} /> : null}
               <p className="my-4 text-sm text-slate-600">
                 Pairing sequence: (1) rotate join code, (2) client requests access, (3) accept here, (4) client
-                enters one-time pairing code once, (5) terminal stays trusted across refresh. Remove (revoke) only when a
+                enters one-time pairing code once, (5) terminal stays trusted across refresh. Remove terminal only when a
                 device must re-pair.
               </p>
               <div className="mb-4">
@@ -543,7 +548,7 @@ export function HostLanControlPage() {
                         onRequestDisable={() => setPendingDisableTerminal(terminal)}
                         onRequestEnable={() => setPendingEnableTerminal(terminal)}
                         onRequestRemove={() => setPendingRemoveTerminal(terminal)}
-                        onClearSessions={() => clearTerminalSessionsMutation.mutate(terminal.terminalId)}
+                        onRequestClearSessions={() => setPendingClearSessionsTerminal(terminal)}
                         onHide={() => hideTerminal(terminal.terminalId)}
                       />
                     ))}
@@ -572,8 +577,8 @@ export function HostLanControlPage() {
                 terminal-count fields do not grant or limit client licenses.
               </p>
               <p>
-                Revoked or archived old rows are history. New pairing creates a <strong>new</strong> terminal — do not
-                try to reactivate a revoked connection.
+                Removed or archived old rows are history. New pairing creates a <strong>new</strong> terminal — do not
+                try to reactivate a removed connection.
               </p>
               <Alert tone="info" title="Connection behavior">
                 <ul className="list-disc space-y-1 pl-5">
@@ -581,8 +586,8 @@ export function HostLanControlPage() {
                   <li>Client only holds terminal pairing plus an optional cashier session token.</li>
                   <li>Password is never stored on the client.</li>
                   <li>Host validates any saved token before resuming Remote POS.</li>
-                  <li>Revoked means re-pair — do not reactivate the same trust row. Remove terminal is permanent leave.</li>
-                  <li>Disable terminal blocks access; Enable terminal restores access when the terminal is only disabled (not revoked).</li>
+                  <li>Revoked means re-pair — operator UI says Remove terminal; do not reactivate the same trust row.</li>
+                  <li>Disable terminal blocks access; Enable terminal restores access when the terminal is only disabled (not removed).</li>
                   <li>Remove terminal is available only after Disable. It permanently ends Host trust for that device.</li>
                 </ul>
               </Alert>
@@ -663,6 +668,20 @@ export function HostLanControlPage() {
               revokeTerminalMutation.mutate(id);
             }}
             onCancel={() => setPendingRemoveTerminal(null)}
+          />
+          <ConfirmDialog
+            open={pendingClearSessionsTerminal !== null}
+            title="Clear operator sessions?"
+            description="This signs out active operator sessions on this terminal. The terminal remains paired."
+            confirmLabel="Clear sessions"
+            cancelLabel="Keep sessions"
+            onConfirm={() => {
+              if (!pendingClearSessionsTerminal) return;
+              const id = pendingClearSessionsTerminal.terminalId;
+              setPendingClearSessionsTerminal(null);
+              clearTerminalSessionsMutation.mutate(id);
+            }}
+            onCancel={() => setPendingClearSessionsTerminal(null)}
           />
         </>
       ) : null}
@@ -842,7 +861,7 @@ function TerminalControlRow({
   onRequestDisable,
   onRequestEnable,
   onRequestRemove,
-  onClearSessions,
+  onRequestClearSessions,
   onHide,
 }: {
   terminal: LocalLanControlTerminal;
@@ -850,7 +869,7 @@ function TerminalControlRow({
   onRequestDisable: () => void;
   onRequestEnable: () => void;
   onRequestRemove: () => void;
-  onClearSessions: () => void;
+  onRequestClearSessions: () => void;
   onHide: () => void;
 }) {
   const explanation = terminalLifecycleExplanation(terminal.status);
@@ -896,7 +915,7 @@ function TerminalControlRow({
             </Button>
           ) : null}
           {showClearSessions ? (
-            <Button size="sm" variant="ghost" disabled={busy} onClick={onClearSessions}>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={onRequestClearSessions}>
               Clear operator sessions
             </Button>
           ) : null}

@@ -75,7 +75,7 @@ public static class PreIActivationLandingManualQaRepairChecks
         RequireContains(backupPage, "Backup created successfully", "Create backup success modal.");
         RequireContains(backupPage, "Backup verified and restorable", "Verify success modal.");
         RequireContains(backupPage, "Restore completed", "Restore success modal.");
-        RequireContains(backupPage, "Type RESTORE to enable restore", "Restore confirmation.");
+        RequireContains(backupPage, "Type RESTORE SALRYN BACKUP to enable restore", "Restore confirmation phrase must match backend.");
         RequireContains(backupPage, "Restore replaces the current local database", "Restore safety copy.");
         RequireContains(backupPage, "Dialog", "Backup uses Dialog components.");
 

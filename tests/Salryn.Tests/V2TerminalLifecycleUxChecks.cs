@@ -42,7 +42,7 @@ public static class V2TerminalLifecycleUxChecks
         AssertContains(hostPage, "terminalGroupTitle", "Host LAN Control must render grouped terminal section titles.");
         AssertContains(lifecycleUx, "Active terminals", "Lifecycle UX must define active terminal group title.");
         AssertContains(lifecycleUx, "Blocked terminals", "Lifecycle UX must define blocked terminal group title.");
-        AssertContains(lifecycleUx, "Retired / revoked terminals", "Lifecycle UX must define retired terminal group title.");
+        AssertContains(lifecycleUx, "Retired / removed terminals", "Lifecycle UX must define retired terminal group title.");
         AssertContains(lifecycleUx, "Local host / admin clients", "Lifecycle UX must define host-local group title.");
         AssertContains(hostPage, "Hide from list", "Host LAN Control must allow hide for retired/blocked rows.");
         AssertContains(hostPage, "Clear operator sessions", "Host LAN Control must offer clear sessions when supported.");

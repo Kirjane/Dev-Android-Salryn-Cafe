@@ -49,8 +49,8 @@ export type BackupRestoreResult = {
   completedAt: string;
 };
 
-export const RESTORE_CONFIRMATION_INPUT = "RESTORE";
-const BACKEND_RESTORE_CONFIRMATION = "RESTORE SALRYN BACKUP";
+/** Exact phrase operators type in UI and send to the restore API (must match backend). */
+export const RESTORE_CONFIRMATION_INPUT = "RESTORE SALRYN BACKUP";
 
 export function listBackups() {
   return fetch("/api/backups", { credentials: "include" }).then(readJson<BackupSummary[]>);
@@ -65,12 +65,12 @@ export function verifyBackup(backupId: string) {
     .then(readJson<BackupVerification>);
 }
 
-export function restoreBackup(backupId: string) {
+export function restoreBackup(backupId: string, confirmation: string = RESTORE_CONFIRMATION_INPUT) {
   return fetch(`/api/backups/${encodeURIComponent(backupId)}/restore`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
-    body: JSON.stringify({ confirmation: BACKEND_RESTORE_CONFIRMATION }),
+    body: JSON.stringify({ confirmation }),
   }).then(readJson<BackupRestoreResult>);
 }
 

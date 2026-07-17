@@ -215,7 +215,8 @@ export function LicensePage() {
 
   const wizardOpen = wizardStep !== "closed";
   const canInstallWizard = licenseText.trim().length > 0 && termsAccepted && !busy;
-  const canInstallReplace = licenseText.trim().length > 0 && replaceConfirmed && !busy;
+  // Replace path requires re-acknowledgement of terms + explicit replace confirm (P1-006).
+  const canInstallReplace = licenseText.trim().length > 0 && replaceConfirmed && termsAccepted && !busy;
   const canInstall = showReplaceLicense ? canInstallReplace : canInstallWizard;
 
   async function handleInstall() {
@@ -519,16 +520,20 @@ export function LicensePage() {
                       value={licenseText}
                       onChange={(event) => setLicenseText(event.target.value)}
                       className="min-h-40 w-full rounded-xl border border-white/15 bg-[#050815]/70 px-4 py-3 font-mono text-xs text-white shadow-inner focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
-                      placeholder="Paste the signed Host license you received from LicensingOps or Kirjane Labs."
+                      placeholder="Paste the signed Host license you received from Kirjane Labs / Salryn Infodesk."
                     />
                   </label>
                   <label className="mt-4 flex items-start gap-2 text-sm text-slate-300">
+                    <input type="checkbox" checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)} className="mt-1" />
+                    <span>I have re-read and accept the Salryn Activation Terms for this replacement.</span>
+                  </label>
+                  <label className="mt-3 flex items-start gap-2 text-sm text-slate-300">
                     <input type="checkbox" checked={replaceConfirmed} onChange={(event) => setReplaceConfirmed(event.target.checked)} className="mt-1" />
-                    <span>I understand this will replace the current license on this device.</span>
+                    <span>I understand this replaces the active local license for this device.</span>
                   </label>
                   <div className="mt-5 flex flex-wrap gap-2">
                     <Button disabled={!canInstallReplace} onClick={() => void handleInstall()}>{busy ? "Installing..." : "Install License"}</Button>
-                    <Button variant="secondary" disabled={busy} onClick={() => { setLicenseText(""); setReplaceConfirmed(false); setShowReplaceLicense(false); }}>Cancel</Button>
+                    <Button variant="secondary" disabled={busy} onClick={() => { setLicenseText(""); setReplaceConfirmed(false); setTermsAccepted(false); setShowReplaceLicense(false); }}>Cancel</Button>
                   </div>
                 </div>
               </section>
@@ -583,7 +588,7 @@ export function LicensePage() {
             <div>
               <p className="font-semibold text-slate-900">What happens next</p>
               <p className="mt-2 text-slate-600">
-                Salryn generates this Machine Code. LicensingOps signs the Host license. Kirjane Labs sends the signed license back for import here.
+                Salryn generates this Machine Code. LicensingOps signs the Host license. Kirjane Labs sends the signed license back for import here (Salryn Infodesk: salryn.info@gmail.com).
               </p>
             </div>
           </div>
@@ -633,7 +638,7 @@ export function LicensePage() {
               value={licenseText}
               onChange={(event) => setLicenseText(event.target.value)}
               className="min-h-48 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 font-mono text-xs text-slate-900 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-              placeholder="Paste the signed Host license you received from LicensingOps or Kirjane Labs."
+              placeholder="Paste the signed Host license you received from Kirjane Labs / Salryn Infodesk."
             />
           </label>
         </WizardShell>

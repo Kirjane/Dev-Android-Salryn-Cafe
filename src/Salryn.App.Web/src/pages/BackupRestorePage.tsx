@@ -40,7 +40,7 @@ function VerificationSummary({ verification }: { verification: BackupVerificatio
     <div className="mt-2 grid gap-2 text-xs text-slate-600 md:grid-cols-3">
       <span>Store: {verification.storeName?.trim() || "n/a"}</span>
       <span>Created: {formatDate(verification.manifest.createdAt)}</span>
-      <span>Schema / app migration: {verification.manifest.schemaVersion} · {verification.database.backupMigrationVersion ?? "n/a"} / {verification.database.supportedMigrationVersion}</span>
+      <span>Backup format version: {verification.manifest.schemaVersion} · {verification.database.backupMigrationVersion ?? "n/a"} / {verification.database.supportedMigrationVersion}</span>
       <span>Users: {verification.database.userCount ?? "n/a"}</span>
       <span>Products: {verification.database.productCount ?? "n/a"}</span>
       <span>Sales: {verification.database.saleCount ?? "n/a"}</span>
@@ -137,7 +137,7 @@ export function BackupRestorePage() {
     setMessage(null);
     setError(null);
     try {
-      const result = await restoreBackup(restoreTarget);
+      const result = await restoreBackup(restoreTarget, restoreText);
       const when = result.completedAt ? formatDate(result.completedAt) : new Date().toLocaleString();
       setMessage(`Restore completed from ${restoreTarget}${result.completedAt ? ` at ${formatDate(result.completedAt)}` : ""}. Restart the app if the local API reports stale data.`);
       setRestoreSuccessAt(when);
@@ -205,7 +205,7 @@ export function BackupRestorePage() {
           <CardHeader><CardTitle>Restore warning</CardTitle></CardHeader>
           <CardBody className="space-y-3">
             <p className="text-sm text-slate-600">Restore replaces the current local database. The current database is archived automatically before restore. Continue only if you already created a current backup or accept the risk.</p>
-            <StatusPill tone="danger">Type RESTORE to confirm</StatusPill>
+            <StatusPill tone="danger">Type RESTORE SALRYN BACKUP to confirm</StatusPill>
           </CardBody>
         </Card>
       </div>
@@ -262,7 +262,7 @@ export function BackupRestorePage() {
       <Dialog
         open={Boolean(restoreTarget)}
         title="Confirm restore"
-        description="Destructive database replacement. Type RESTORE to continue."
+        description="Destructive database replacement. Type RESTORE SALRYN BACKUP to continue."
         onClose={() => {
           if (!restoring) {
             setRestoreTarget(null);
@@ -283,8 +283,8 @@ export function BackupRestorePage() {
           {!isVerifiedRestorable(selectedVerification) ? <Alert tone="danger">This backup must be verified and restorable before restore is enabled.</Alert> : null}
           {selectedVerification ? <VerificationSummary verification={selectedVerification} /> : null}
           <label className="space-y-1 text-sm font-medium text-slate-700">
-            <span>Type RESTORE to enable restore</span>
-            <TextInput value={restoreText} onChange={(event) => setRestoreText(event.target.value)} placeholder="RESTORE" />
+            <span>Type RESTORE SALRYN BACKUP to enable restore</span>
+            <TextInput value={restoreText} onChange={(event) => setRestoreText(event.target.value)} placeholder="RESTORE SALRYN BACKUP" />
           </label>
         </div>
       </Dialog>
@@ -311,7 +311,7 @@ export function BackupRestorePage() {
         <div className="space-y-2 text-center text-sm">
           <p className="text-base font-semibold text-navy-900">Backup verified and restorable</p>
           <p className="break-all font-mono text-xs text-slate-700">{verifySuccessId}</p>
-          <p className="text-slate-600">You may Restore Backup after typing RESTORE in the confirmation dialog.</p>
+          <p className="text-slate-600">You may Restore Backup after typing RESTORE SALRYN BACKUP in the confirmation dialog.</p>
         </div>
       </Dialog>
 

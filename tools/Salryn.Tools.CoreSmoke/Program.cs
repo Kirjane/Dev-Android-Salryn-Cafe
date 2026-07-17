@@ -140,6 +140,7 @@ public static class Program
         PreIActivationLandingManualQaRepairChecks.Run();
         PreILicenseLandingSellUpgradeChecks.Run();
         PreITerminalLifecycleUxRepairChecks.Run();
+        PreIP1CopyGuardHonestyChecks.Run();
         HardenA1A6PreBetaFoundationChecks.Run();
         ManualM1BootstrapAuthRepairChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
@@ -514,6 +515,9 @@ public static class Program
                 return;
             case "pre-i-terminal-lifecycle-ux-repair":
                 PreITerminalLifecycleUxRepairChecks.Run();
+                return;
+            case "pre-i-p1-copy-guard-honesty":
+                PreIP1CopyGuardHonestyChecks.Run();
                 return;
             case "lan-m16-remote-pos":
                 LanM16HostOwnedRemoteOperatorSessionChecks.Run();

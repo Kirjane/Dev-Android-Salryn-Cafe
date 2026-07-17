@@ -272,7 +272,7 @@ export function RemotePosClientPage({ onExitToLanding }: RemotePosClientPageProp
           <details className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
             <summary className="cursor-pointer font-medium text-slate-700">Advanced: add by product ID</summary>
             <div className="mt-3 grid gap-3 sm:grid-cols-[2fr,1fr,auto] sm:items-end">
-              <FormField label="Product ID" htmlFor="rpos-product" hint="Support/debug path only — not the normal cashier flow">
+              <FormField label="Product ID" htmlFor="rpos-product" hint="Advanced support only — not the normal cashier flow">
                 <TextInput id="rpos-product" value={productId} onChange={(event) => setProductId(event.target.value)} placeholder="product guid" autoComplete="off" />
               </FormField>
               <FormField label="Quantity" htmlFor="rpos-qty-id">

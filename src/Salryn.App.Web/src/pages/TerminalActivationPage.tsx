@@ -247,11 +247,6 @@ export function TerminalActivationPage({ onActivated }: TerminalActivationPagePr
               </Card>
             )}
 
-            <div className="sr-only" aria-hidden>
-              This Terminal Machine Code. Copy Terminal Machine Code. do not need a Host License ID.
-              Import Signed Terminal License JSON. Host licenses cannot activate a terminal.
-              Salryn generates this Machine Code. Your store admin or Kirjane Labs will issue a Terminal license from the Host license.
-            </div>
           </div>
 
           <div className="lg:sticky lg:top-4">
