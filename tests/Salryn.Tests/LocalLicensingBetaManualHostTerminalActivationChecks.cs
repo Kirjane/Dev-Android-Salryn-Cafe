@@ -163,14 +163,14 @@ public static class LocalLicensingBetaManualHostTerminalActivationChecks
             RequireContains(licensePage, "salryn.info@gmail.com", "License UI must show beta contact email.");
             RequireContains(licensePage, "Machine Code", "License UI must show machine code.");
             RequireContains(licensePage, "Activate Salryn", "License UI must use product activation title.");
-            RequireContains(licensePage, "For Host POS activation", "License UI must separate Host activation instructions.");
+            RequireContains(licensePage, "Send with your request", "License UI must clearly group Host activation instructions.");
             RequireContains(licensePage, "Contact number or email", "Host activation must request contact details.");
             RequireContains(licensePage, "Host Machine Code", "Host activation must identify the Host machine code.");
             RequireContains(licensePage, "Copy Host Machine Code", "Host activation must offer copy Host Machine Code.");
             RequireContains(licensePage, "Salryn generates this Machine Code. LicensingOps signs", "Host activation must state machine-code rule.");
-            RequireContains(licensePage, "Create or select your Store", "Host activation must point to LicensingOps store flow.");
-            RequireContains(licensePage, "For LAN Terminal activation", "License UI must separate Terminal activation instructions.");
-            RequireContains(licensePage, "Terminal name or number", "Terminal activation must identify the terminal.");
+            RequireContains(licensePage, "Kirjane Labs sends the signed license back", "Host activation must explain the signed-license return flow.");
+            RequireContains(licensePage, "Each LAN terminal needs its own Terminal license", "License UI must separate the Terminal license boundary.");
+            RequireContains(licensePage, "On the terminal device", "Terminal activation must direct the user to the terminal device.");
             RequireContains(licensePage, "Terminal Machine Code", "Terminal activation must identify the Terminal machine code.");
             RequireContains(licensePage, "terminal users do not need a Host License ID", "Host page must not force Host License ID onto terminal users.");
             RequireNotContains(licensePage, "how many LAN terminals", "Host activation must not collect terminal count.");

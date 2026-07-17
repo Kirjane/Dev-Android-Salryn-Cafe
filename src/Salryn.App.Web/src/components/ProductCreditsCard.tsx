@@ -2,7 +2,15 @@
  * PRE-BETA: product website–style credits / identity rail for activation landing.
  * Credits-first — no admin-style metadata boxes.
  */
-export function ProductCreditsCard() {
+type ProductCreditsCardProps = {
+  variant?: "card" | "integrated";
+};
+
+export function ProductCreditsCard({ variant = "card" }: ProductCreditsCardProps) {
+  if (variant === "integrated") {
+    return <IntegratedCredits />;
+  }
+
   return (
     <section
       className="flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-md shadow-slate-200/60"
@@ -54,6 +62,81 @@ export function ProductCreditsCard() {
         </footer>
       </div>
     </section>
+  );
+}
+
+function IntegratedCredits() {
+  return (
+    <section className="relative overflow-hidden border-t border-white/10 py-14 sm:py-16" aria-label="Licensing and Credits">
+      <div className="absolute -right-20 top-8 h-52 w-52 rounded-full border border-violet-300/10" aria-hidden />
+      <div className="absolute -right-8 top-20 h-36 w-36 rounded-full border border-cyan-300/10" aria-hidden />
+
+      <div className="relative grid gap-10 lg:grid-cols-[0.7fr_1.3fr] lg:gap-16">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.26em] text-cyan-300">Licensing & Credits</p>
+          <h2 className="mt-4 text-3xl font-semibold tracking-[-0.03em] text-white sm:text-4xl">Built by Kirjane Labs.</h2>
+          <p className="mt-4 max-w-md text-sm leading-7 text-slate-400">
+            SALRYN is a Kirjane Labs product shaped around clear local operations, controlled deployment, and direct support.
+          </p>
+          <div className="mt-6">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Salryn Infodesk</p>
+            <p className="mt-2 break-all font-mono text-sm font-semibold text-cyan-200">salryn.info@gmail.com</p>
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Credits</p>
+            <p className="text-[10px] font-semibold tracking-[0.16em] text-slate-600">A Kirjane Labs product</p>
+          </div>
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            <IntegratedOrgNode
+              role="Business Lead"
+              name="Paul Gamayot"
+              reportRole="Business Development"
+              reportName="James Karl Tara"
+            />
+            <IntegratedOrgNode
+              role="Technology Lead"
+              name="Kirch Ivan Balite"
+              reportRole="Dev Ops Lead"
+              reportName="Osiris Kedigadash Palac"
+            />
+            <IntegratedOrgNode role="Marketing Lead" name="Jesse Edwin Culas" />
+          </div>
+        </div>
+      </div>
+
+      <footer className="relative mt-12 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.07] pt-5 text-[10px] text-slate-600">
+        <p>© 2026 Kirjane Labs. All rights reserved.</p>
+        <p>Repository-backed beta build</p>
+      </footer>
+    </section>
+  );
+}
+
+function IntegratedOrgNode({
+  role,
+  name,
+  reportRole,
+  reportName,
+}: {
+  role: string;
+  name: string;
+  reportRole?: string;
+  reportName?: string;
+}) {
+  return (
+    <div className="min-w-0 border-l border-white/10 pl-4">
+      <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-violet-300">{role}</p>
+      <p className="mt-1.5 text-sm font-semibold text-slate-200">{name}</p>
+      {reportRole && reportName ? (
+        <div className="mt-4 border-l border-cyan-300/15 pl-3">
+          <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500">{reportRole}</p>
+          <p className="mt-1 text-xs font-medium text-slate-400">{reportName}</p>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

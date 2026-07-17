@@ -22,8 +22,8 @@ public static class PreI1FreshLicenseFirstFlowChecks
         RequireContains(licensePage, "Each LAN terminal needs its own Terminal license", "Activation instructions must state one license per terminal.");
         RequireContains(licensePage, "This Terminal license cannot unlock Host first-run setup", "Terminal license must explain Host bootstrap denial.");
         RequireContains(licensePage, "Activate Salryn", "Fresh license page must use product activation title.");
-        RequireContains(licensePage, "title={showActiveSummary ? \"License\" : \"Activate Salryn\"}", "Active license page must switch away from the activation title.");
-        RequireContains(licensePage, "<CardTitle>Status: Active</CardTitle>", "Active license page must show Active status.");
+        RequireContains(licensePage, "title=\"Activate Salryn\"", "Unlicensed landing must retain its activation title.");
+        RequireContains(licensePage, "License Active", "Active license page must show Active status.");
         RequireContains(licensePage, "showReplaceLicense", "Active license replacement must be secondary and collapsed.");
         RequireContains(licensePage, "salryn.info@gmail.com", "Fresh license page must show support email.");
         RequireContains(licensePage, "Copy Host Machine Code", "Host activation must offer copy of Host Machine Code.");

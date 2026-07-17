@@ -138,6 +138,7 @@ public static class Program
         PreBetaHCapabilityMatrixSealChecks.Run();
         PreBetaLicenseCreditsPagePolishChecks.Run();
         PreIActivationLandingManualQaRepairChecks.Run();
+        PreILicenseLandingSellUpgradeChecks.Run();
         HardenA1A6PreBetaFoundationChecks.Run();
         ManualM1BootstrapAuthRepairChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
@@ -506,6 +507,9 @@ public static class Program
                 return;
             case "pre-i-activation-landing-manual-qa-repair":
                 PreIActivationLandingManualQaRepairChecks.Run();
+                return;
+            case "pre-i-license-landing-sell-upgrade":
+                PreILicenseLandingSellUpgradeChecks.Run();
                 return;
             case "lan-m16-remote-pos":
                 LanM16HostOwnedRemoteOperatorSessionChecks.Run();

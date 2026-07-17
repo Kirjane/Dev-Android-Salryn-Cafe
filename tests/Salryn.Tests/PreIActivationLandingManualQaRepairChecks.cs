@@ -31,7 +31,7 @@ public static class PreIActivationLandingManualQaRepairChecks
         RequireContains(licensePage, "What Salryn offers", "Host landing feature showcase.");
         RequireContains(licensePage, "Offline Host POS", "Feature card Offline Host POS.");
         RequireContains(licensePage, "Activate Salryn", "Primary Activate Salryn CTA.");
-        RequireContains(licensePage, "Already have a license? Import license", "Secondary import CTA.");
+        RequireContains(licensePage, "Import existing license", "Secondary import CTA.");
         RequireContains(licensePage, "Activate your Salryn Host POS", "Wizard step 1 title.");
         RequireContains(licensePage, "Copy Host Machine Code", "Host machine code copy.");
         RequireContains(licensePage, "Salryn Activation Terms", "Terms step present.");
