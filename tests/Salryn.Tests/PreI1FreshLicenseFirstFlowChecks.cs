@@ -23,12 +23,12 @@ public static class PreI1FreshLicenseFirstFlowChecks
         RequireContains(licensePage, "This Terminal license cannot unlock Host first-run setup", "Terminal license must explain Host bootstrap denial.");
         RequireContains(licensePage, "Activate Salryn", "Fresh license page must use product activation title.");
         RequireContains(licensePage, "title=\"Activate Salryn\"", "Unlicensed landing must retain its activation title.");
-        RequireContains(licensePage, "License Active", "Active license page must show Active status.");
+        RequireContains(licensePage, "Salryn is activated", "Active license page must show activated status.");
         RequireContains(licensePage, "showReplaceLicense", "Active license replacement must be secondary and collapsed.");
         RequireContains(licensePage, "salryn.info@gmail.com", "Fresh license page must show support email.");
-        RequireContains(licensePage, "Copy Host Machine Code", "Host activation must offer copy of Host Machine Code.");
-        RequireContains(licensePage, "Salryn generates this Machine Code. LicensingOps signs", "Host activation must state machine-code rule.");
-        RequireContains(licensePage, "terminal users do not need a Host License ID", "Host page must not push Host License ID onto terminal clients.");
+        RequireContains(licensePage, "Copy Machine Code", "Host activation must offer copy of Machine Code.");
+        RequireContains(licensePage, "Salryn generates this Machine Code", "Host activation must state machine-code rule.");
+        RequireContains(licensePage, "Terminal users do not need a Host License ID", "Host page must not push Host License ID onto terminal clients.");
         RequireNotContains(licensePage, "Offline-first license boundary", "Fresh license page must not lead with developer boundary banners.");
         RequireNotContains(licensePage, "path-bearing", "Fresh license page must not expose path-bearing technical jargon.");
         RequireContains(licenseEndpoints, "RequireLoopbackOperatorRequest", "Pre-login license endpoints must stay loopback-only.");

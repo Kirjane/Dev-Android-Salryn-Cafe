@@ -58,12 +58,12 @@ public static class PreIAutomatedQaProofChecks
 
     private static void AssertLicenseLandingContract(string license)
     {
-        RequireContains(license, "SALRYN", "Fresh SALRYN wordmark.");
+        RequireContains(license, "Salryn", "Fresh Salryn wordmark.");
         RequireContains(license, "by Kirjane Labs", "Fresh Kirjane Labs identity.");
         RequireContains(license, "Activate Salryn", "Fresh activation CTA.");
-        RequireContains(license, "Import existing license", "Fresh import CTA.");
+        RequireContains(license, "Import license", "Fresh import CTA.");
         RequireContains(license, "salryn.info@gmail.com", "Fresh support email.");
-        RequireContains(license, "Copy Host Machine Code", "Fresh machine-code action.");
+        RequireContains(license, "Copy Machine Code", "Fresh machine-code action.");
         RequireNotContains(license, "sr-only", "License page must not carry a hidden source-guard dump.");
         RequireNotContains(license, "find Host License ID", "Fresh user must not be assigned a Host License ID task.");
         RequireNotContains(license, "find Store ID", "Fresh user must not be assigned a Store ID task.");

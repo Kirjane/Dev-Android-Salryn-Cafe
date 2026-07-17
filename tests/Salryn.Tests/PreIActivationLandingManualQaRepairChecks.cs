@@ -25,22 +25,22 @@ public static class PreIActivationLandingManualQaRepairChecks
         string orchestrator = File.ReadAllText(Path.Combine(root, "src", "Salryn.Infrastructure", "Data", "Initialization", "DatabaseInitializationOrchestrator.cs"));
         string logoMigration = File.ReadAllText(Path.Combine(root, "src", "Salryn.Infrastructure", "Data", "Migrations", "StoreLogoBrandingSchemaMigration.cs"));
 
-        // Host landing
-        RequireContains(licensePage, "SALRYN", "Host landing hero wordmark.");
+        // Host landing — minimalist rebuild (see pre-i-license-page-minimalist-rebuild)
+        RequireContains(licensePage, "Salryn", "Host landing wordmark.");
         RequireContains(licensePage, "by Kirjane Labs", "Host landing Kirjane Labs.");
-        RequireContains(licensePage, "What Salryn offers", "Host landing feature showcase.");
-        RequireContains(licensePage, "Offline Host POS", "Feature card Offline Host POS.");
-        RequireContains(licensePage, "Activate Salryn", "Primary Activate Salryn CTA.");
-        RequireContains(licensePage, "Import existing license", "Secondary import CTA.");
-        RequireContains(licensePage, "Activate your Salryn Host POS", "Wizard step 1 title.");
-        RequireContains(licensePage, "Copy Host Machine Code", "Host machine code copy.");
-        RequireContains(licensePage, "Salryn Activation Terms", "Terms step present.");
-        RequireContains(licensePage, "I have read and accept the Salryn Activation Terms", "Terms checkbox.");
+        RequireContains(licensePage, "Activate Salryn", "Primary Activate Salryn title.");
+        RequireContains(licensePage, "Import license", "Primary import CTA.");
+        RequireContains(licensePage, "Machine Code", "Wizard step 1 Machine Code.");
+        RequireContains(licensePage, "Copy Machine Code", "Host machine code copy.");
+        RequireContains(licensePage, "Beta License Terms", "Terms step present.");
+        RequireContains(licensePage, "I understand and accept these beta license terms.", "Terms checkbox.");
         RequireContains(licensePage, "termsAccepted", "Import gated on termsAccepted.");
         RequireContains(licensePage, "Import Signed Host License JSON", "Import step title.");
         RequireContains(licensePage, "Status: Active", "Active status.");
+        RequireContains(licensePage, "Salryn is activated", "Active title.");
         RequireContains(licensePage, "Host license active", "Success wording.");
-        RequireContains(licensePage, "Show support details", "Support collapsed.");
+        RequireContains(licensePage, "Show technical details", "Technical details collapsed.");
+        RequireNotContains(licensePage, "What Salryn offers", "No marketing feature wall.");
         RequireNotContains(licensePage, "Products of Kirjane Labs", "No products metadata block.");
         RequireNotContains(licensePage, "mock sample", "No mock sample.");
         RequireNotContains(licensePage, "cloud activation ready", "No cloud activation claim.");

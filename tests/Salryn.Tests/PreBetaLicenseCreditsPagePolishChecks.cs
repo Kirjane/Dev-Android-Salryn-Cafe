@@ -13,14 +13,14 @@ public static class PreBetaLicenseCreditsPagePolishChecks
         string terminalPage = File.ReadAllText(Path.Combine(root, "src", "Salryn.App.Web", "src", "pages", "TerminalActivationPage.tsx"));
         string credits = File.ReadAllText(Path.Combine(root, "src", "Salryn.App.Web", "src", "components", "ProductCreditsCard.tsx"));
 
-        RequireContains(licensePage, "ProductCreditsCard", "Host license page must render product credits card.");
+        RequireContains(licensePage, "Technology Lead: Kirch Ivan Balite", "Host license page uses quiet footer credit.");
         RequireContains(licensePage, "lg:grid-cols-2", "Host license page must use two-column desktop layout.");
         RequireContains(licensePage, "Import Signed Host License JSON", "Host import card title required.");
-        RequireContains(licensePage, "Copy Host Machine Code", "Host Machine Code copy required.");
-        RequireContains(licensePage, "Salryn generates this Machine Code. LicensingOps signs", "Lane B machine-code rule retained.");
-        RequireContains(licensePage, "terminal users do not need a Host License ID", "Terminal users must not be asked for Host License ID.");
+        RequireContains(licensePage, "Copy Machine Code", "Host Machine Code copy required.");
+        RequireContains(licensePage, "Salryn generates this Machine Code", "Lane B machine-code rule retained.");
+        RequireContains(licensePage, "Terminal users do not need a Host License ID", "Terminal users must not be asked for Host License ID.");
         RequireContains(licensePage, "Status: Active", "Active license status retained.");
-        RequireContains(licensePage, "Show support details", "Host support details must stay collapsed by default.");
+        RequireContains(licensePage, "Show technical details", "Host technical details must stay collapsed by default.");
         RequireNotContains(licensePage, "how many LAN terminals", "No terminal count copy.");
         RequireNotContains(licensePage, "cloud activation", "No cloud activation claim.");
         RequireNotContains(licensePage, "mock sample", "Build type must not say mock sample.");

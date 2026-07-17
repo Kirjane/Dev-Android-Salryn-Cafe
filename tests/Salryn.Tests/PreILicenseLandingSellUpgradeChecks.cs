@@ -1,8 +1,8 @@
 namespace Salryn.Tests;
 
 /// <summary>
-/// PRE-I: premium Host license landing, honest product copy, preserved activation gates, and integrated credits.
-/// Source guard only; licensing runtime behavior remains covered by the existing licensing checks.
+/// PRE-I Host license landing: points at minimalist rebuild contract (obsolete dark SaaS markers removed).
+/// Detailed design lock coverage lives in pre-i-license-page-minimalist-rebuild.
 /// </summary>
 public static class PreILicenseLandingSellUpgradeChecks
 {
@@ -13,30 +13,28 @@ public static class PreILicenseLandingSellUpgradeChecks
         string terminalPage = File.ReadAllText(Path.Combine(root, "src", "Salryn.App.Web", "src", "pages", "TerminalActivationPage.tsx"));
         string credits = File.ReadAllText(Path.Combine(root, "src", "Salryn.App.Web", "src", "components", "ProductCreditsCard.tsx"));
 
-        RequireContains(licensePage, "SALRYN", "Host landing wordmark.");
+        // Minimalist Host landing (design lock)
+        RequireContains(licensePage, "Salryn", "Host landing wordmark.");
         RequireContains(licensePage, "by Kirjane Labs", "Host landing identity.");
-        RequireContains(licensePage, "Offline-first local POS", "Bounded local POS positioning.");
-        RequireContains(licensePage, "Less manual store work", "Product-facing hero value.");
-        RequireContains(licensePage, "What Salryn offers", "Product value section.");
-        RequireContains(licensePage, "Checkout and receipts", "Checkout feature chip.");
-        RequireContains(licensePage, "Portable backup files", "Backup feature chip.");
-        RequireContains(licensePage, "LAN Cashier/Manager terminals", "LAN feature chip.");
-        RequireContains(licensePage, "Keyboard-wedge barcode workflow", "Bounded barcode feature chip.");
-        RequireContains(licensePage, "Windows print queue receipts", "Bounded receipt feature chip.");
-        RequireContains(licensePage, "Activate Salryn", "Primary activation CTA.");
-        RequireContains(licensePage, "Import existing license", "Secondary import CTA.");
-        RequireContains(licensePage, "Refresh license status", "Integrated utility action.");
-        RequireContains(licensePage, "Ready in three steps", "Activation guidance.");
-        RequireContains(licensePage, "Copy Host Machine Code", "Machine code action.");
+        RequireContains(licensePage, "Activate Salryn", "Primary activation title.");
+        RequireContains(licensePage, "Import license", "Primary import CTA.");
+        RequireContains(licensePage, "Copy Machine Code", "Machine code action.");
+        RequireContains(licensePage, "This device needs a signed local license before setup can continue.", "Fresh subtitle.");
+        RequireContains(licensePage, "Salryn runs locally on this device.", "Local-first body.");
+        RequireContains(licensePage, "Salryn is activated", "Active title.");
         RequireContains(licensePage, "salryn.info@gmail.com", "Infodesk contact.");
-        RequireContains(licensePage, "I have read and accept the Salryn Activation Terms", "Terms acceptance copy.");
+        RequireContains(licensePage, "I understand and accept these beta license terms.", "Terms acceptance.");
         RequireContains(licensePage, "licenseText.trim().length > 0 && termsAccepted", "Install remains terms and document gated.");
         RequireContains(licensePage, "Import Signed Host License JSON", "Signed Host import step.");
-        RequireContains(licensePage, "License Active", "Premium active state.");
-        RequireContains(licensePage, "Show support details", "Support details collapsed.");
-        RequireContains(licensePage, "ProductCreditsCard variant=\"integrated\"", "Credits integrated into landing rhythm.");
-        RequireContains(licensePage, "bg-[radial-gradient", "CSS-only landing artwork.");
+        RequireContains(licensePage, "Show technical details", "Technical details collapsed.");
+        RequireContains(licensePage, "Technology Lead: Kirch Ivan Balite", "Quiet footer credit.");
+        RequireContains(licensePage, "bg-[#F4F5F7]", "Light minimalist page background.");
 
+        // Rejected design must stay gone
+        RequireNotContains(licensePage, "What Salryn offers", "No product marketing wall.");
+        RequireNotContains(licensePage, "Sell clearly", "No value-column marketing.");
+        RequireNotContains(licensePage, "bg-[radial-gradient", "No CSS radial launch artwork.");
+        RequireNotContains(licensePage, "Sparkles", "No sparkles.");
         RequireNotContains(licensePage, "Already have a license? Import license", "Old CTA removed.");
         RequireNotContains(licensePage, "mock sample", "No sample-build copy.");
         RequireNotContains(licensePage, "Products of Kirjane Labs", "No products metadata block.");
@@ -44,13 +42,10 @@ public static class PreILicenseLandingSellUpgradeChecks
         RequireNotContains(licensePage, "cloud activation", "No online activation claim.");
         RequireNotContains(licensePage, "BIR-ready", "No tax readiness claim.");
         RequireNotContains(licensePage, "official receipt accreditation", "No receipt accreditation claim.");
-        RequireNotContains(licensePage, "ESC/POS", "No protocol support claim in normal activation copy.");
-        RequireNotContains(licensePage, "cash drawer", "No drawer support claim.");
-        RequireNotContains(licensePage, "cutter", "No cutter support claim.");
-        RequireNotContains(licensePage, "hardware bundle", "No bundle claim.");
         RequireNotContains(licensePage, "find Store ID", "No Store ID task.");
         RequireNotContains(licensePage, "find Host License ID", "No Host License ID task.");
 
+        // Shared credits component still exists for Terminal (not required on Host minimalist page)
         RequireContains(credits, "Licensing & Credits", "Integrated trust section heading.");
         RequireContains(credits, "A Kirjane Labs product", "Product identity line.");
         RequireContains(credits, "Paul Gamayot", "Business Lead credit.");
