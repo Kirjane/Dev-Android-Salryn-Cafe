@@ -143,6 +143,7 @@ public static class Program
         PreIP1CopyGuardHonestyChecks.Run();
         PreIAutomatedQaProofChecks.Run();
         PreICodeProvenQaHardeningChecks.Run();
+        PreIDevStateResetTruthChecks.Run();
         HardenA1A6PreBetaFoundationChecks.Run();
         ManualM1BootstrapAuthRepairChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
@@ -526,6 +527,9 @@ public static class Program
                 return;
             case "pre-i-code-proven-qa-hardening":
                 PreICodeProvenQaHardeningChecks.Run();
+                return;
+            case "pre-i-dev-state-reset-truth":
+                PreIDevStateResetTruthChecks.Run();
                 return;
             case "lan-m16-remote-pos":
                 LanM16HostOwnedRemoteOperatorSessionChecks.Run();

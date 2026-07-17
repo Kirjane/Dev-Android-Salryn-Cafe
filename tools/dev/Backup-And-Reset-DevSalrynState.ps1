@@ -1,40 +1,47 @@
 # Backup-And-Reset-DevSalrynState.ps1
-# SAFE fresh-state helper for local QA only.
-# Renames %LOCALAPPDATA%\Salryn to a timestamped backup folder. Does NOT delete data.
-# After reset: launch Salryn; expect License landing (no license, no users, no login).
-# Restore: rename the backup folder back to Salryn after stopping the app.
+# COMPATIBILITY WRAPPER for local --dev QA.
+#
+# This resets BOTH:
+#   - {repo}\.salryn-dev              (--dev SQLite: users, store, audit, LAN)
+#   - %LOCALAPPDATA%\Salryn           (license / installation id / local reports)
+#
+# Historical note:
+# The previous LocalAppData-only version misled operators who launched with --dev
+# and still saw DEVKIRCH store/users/audit because SQLite lives under .salryn-dev.
+#
+# Prefer calling Backup-And-Reset-AllDevState.ps1 directly.
+# Does NOT delete data. Uses Rename-Item via companion scripts.
 
 [CmdletBinding()]
 param(
-    [switch]$WhatIf
+    [switch]$WhatIf,
+    [string]$ProjectRoot
 )
 
 $ErrorActionPreference = "Stop"
-$source = Join-Path $env:LOCALAPPDATA "Salryn"
-if (-not (Test-Path -LiteralPath $source)) {
-    Write-Host "No local Salryn state at $source — already fresh (or never launched)."
-    exit 0
+
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$allScript = Join-Path $scriptDir "Backup-And-Reset-AllDevState.ps1"
+
+if (-not (Test-Path -LiteralPath $allScript)) {
+    throw "Missing companion script: $allScript"
 }
 
-$stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$backup = Join-Path $env:LOCALAPPDATA ("Salryn.backup-" + $stamp)
-
-Write-Host "=== Salryn fresh-state backup/reset ==="
-Write-Host "Source: $source"
-Write-Host "Backup: $backup"
-Write-Host "Stop Salryn.Api.Local / Host processes first if running."
+Write-Host "=== Compatibility wrapper: Backup-And-Reset-DevSalrynState.ps1 ==="
+Write-Host "This resets BOTH .salryn-dev and LocalAppData for local --dev QA."
+Write-Host "Delegating to Backup-And-Reset-AllDevState.ps1"
+Write-Host ""
 
 if ($WhatIf) {
-    Write-Host "WhatIf: would rename source -> backup."
-    exit 0
+    if (-not [string]::IsNullOrWhiteSpace($ProjectRoot)) {
+        & $allScript -WhatIf -ProjectRoot $ProjectRoot
+    } else {
+        & $allScript -WhatIf
+    }
+} else {
+    if (-not [string]::IsNullOrWhiteSpace($ProjectRoot)) {
+        & $allScript -ProjectRoot $ProjectRoot
+    } else {
+        & $allScript
+    }
 }
-
-$running = Get-Process -Name "Salryn.Api.Local","Salryn.App.WinForms" -ErrorAction SilentlyContinue
-if ($running) {
-    throw "Stop Salryn processes first: $($running.Name -join ', ')"
-}
-
-Rename-Item -LiteralPath $source -NewName (Split-Path $backup -Leaf)
-Write-Host "Done. Local state moved to: $backup"
-Write-Host "Launch app and open /license — expect fresh activation landing."
-Write-Host "To restore later (app stopped): Rename-Item '$backup' 'Salryn'"

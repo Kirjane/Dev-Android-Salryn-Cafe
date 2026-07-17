@@ -161,11 +161,12 @@ public static class PreIAutomatedQaProofChecks
 
     private static void AssertSafeResetHelper(string helper)
     {
+        // Compat wrapper: must reset BOTH .salryn-dev and LocalAppData for --dev QA (not LocalAppData-only).
         RequireContains(helper, "[switch]$WhatIf", "Fresh-state helper supports dry run.");
-        RequireContains(helper, "Salryn.backup-", "Fresh-state helper creates timestamped backup path.");
-        RequireContains(helper, "Rename-Item -LiteralPath $source", "Fresh-state helper moves state instead of deleting it.");
-        RequireContains(helper, "Local state moved to", "Fresh-state helper prints backup location.");
-        RequireContains(helper, "Stop Salryn processes first", "Fresh-state helper warns about running processes.");
+        RequireContains(helper, "BOTH", "Fresh-state helper must state BOTH .salryn-dev and LocalAppData.");
+        RequireContains(helper, ".salryn-dev", "Fresh-state helper must include project --dev root.");
+        RequireContains(helper, "LocalAppData", "Fresh-state helper must include LocalAppData.");
+        RequireContains(helper, "Backup-And-Reset-AllDevState.ps1", "Fresh-state helper delegates to AllDevState.");
         RequireNotContains(helper, "Remove-Item", "Fresh-state helper must not delete local state.");
     }
 
