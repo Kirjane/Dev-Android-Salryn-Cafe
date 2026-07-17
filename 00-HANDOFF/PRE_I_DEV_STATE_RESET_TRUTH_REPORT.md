@@ -7,7 +7,7 @@
 | Branch | `KIRCH-PRE-I-DEV-STATE-RESET-TRUTH` |
 | Base branch | `KIRCH-PRE-I-SURGICAL-STATE-LICENSE-UX-REVIEW` |
 | Base SHA | `e01d52616da2943dbe4ce91f2b5ab48a82792710` |
-| Final tip SHA | *(after commit)* |
+| Final tip SHA | `d9104198adccd20b2b5eec13d8bcd985d22d6aec` |
 | Protected | `KIRCH-SANDBOX`, `KIRCH-INSTALLER-M1` not modified |
 
 ## 2. Problem proven by Kirch screenshot / run
