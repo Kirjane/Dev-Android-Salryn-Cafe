@@ -185,6 +185,16 @@ export async function disableLocalLanControlTerminal(
   return readJson<LocalLanControlTerminalAction>(response);
 }
 
+export async function enableLocalLanControlDisabledTerminal(
+  terminalId: string,
+): Promise<LocalLanControlTerminalAction> {
+  const response = await fetch(`/api/lan-control/terminals/${encodeURIComponent(terminalId)}/enable`, {
+    method: "POST",
+    credentials: "include",
+  });
+  return readJson<LocalLanControlTerminalAction>(response);
+}
+
 export async function revokeLocalLanControlTerminal(
   terminalId: string,
 ): Promise<LocalLanControlTerminalAction> {

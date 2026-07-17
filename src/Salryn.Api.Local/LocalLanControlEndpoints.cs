@@ -269,6 +269,35 @@ public static class LocalLanControlEndpoints
             return ToApiResult(result);
         });
 
+        group.MapPost("/terminals/{terminalId}/enable", async (
+            string terminalId,
+            HttpContext httpContext,
+            LocalApiSessionService sessions,
+            LocalLanControlService control,
+            CancellationToken cancellationToken) =>
+        {
+            IResult? rejected = LocalLanControlAuthorization.RequireLocalOperator(
+                httpContext,
+                sessions,
+                LocalApiPermissions.StoreTerminalManage);
+            if (rejected is not null)
+            {
+                return rejected;
+            }
+
+            if (!Guid.TryParse(terminalId, out Guid parsedTerminalId))
+            {
+                return InvalidTerminalId();
+            }
+
+            TerminalRegistryActorContext actor = ResolveActor(httpContext, sessions);
+            Result<LocalLanControlTerminalActionResponse> result = await control
+                .EnableTerminalAsync(parsedTerminalId, actor, cancellationToken)
+                .ConfigureAwait(false);
+
+            return ToApiResult(result);
+        });
+
         group.MapPost("/terminals/{terminalId}/revoke", async (
             string terminalId,
             HttpContext httpContext,

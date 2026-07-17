@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
   CommandBar,
+  ConfirmDialog,
   ErrorState,
   LoadingState,
   MetricCard,
@@ -22,8 +23,9 @@ import { looksLikeBareIpv4, normalizeConfiguredLanBindInput } from "../utils/lan
 import {
   canClearTerminalOperatorSessions,
   canDisableTerminal,
+  canEnableDisabledTerminal,
   canHideTerminalFromList,
-  canRestoreDisabledTerminal,
+  canRemoveTerminal,
   canRevokeTerminal,
   formatTerminalRoleLabel,
   formatTerminalStatusLabel,
@@ -137,6 +139,7 @@ export function HostLanControlPage() {
     repairBindMutation,
     remotePosRuntimeMutation,
     disableTerminalMutation,
+    enableDisabledTerminalMutation,
     revokeTerminalMutation,
     clearTerminalSessionsMutation,
     rotateJoinCodeMutation,
@@ -151,6 +154,9 @@ export function HostLanControlPage() {
   const [requestCopied, setRequestCopied] = useState(false);
   const licenseQuery = useQuery({ queryKey: ["license-status"], queryFn: fetchLicenseStatus, retry: false });
   const [showTroubleshooting, setShowTroubleshooting] = useState(false);
+  const [pendingDisableTerminal, setPendingDisableTerminal] = useState<LocalLanControlTerminal | null>(null);
+  const [pendingEnableTerminal, setPendingEnableTerminal] = useState<LocalLanControlTerminal | null>(null);
+  const [pendingRemoveTerminal, setPendingRemoveTerminal] = useState<LocalLanControlTerminal | null>(null);
 
   const status = statusQuery.data;
   const runtime = runtimeStatusQuery.data;
@@ -180,6 +186,7 @@ export function HostLanControlPage() {
     repairBindMutation.isPending ||
     remotePosRuntimeMutation.isPending ||
     disableTerminalMutation.isPending ||
+    enableDisabledTerminalMutation.isPending ||
     revokeTerminalMutation.isPending ||
     clearTerminalSessionsMutation.isPending ||
     rotateJoinCodeMutation.isPending ||
@@ -190,6 +197,7 @@ export function HostLanControlPage() {
     (repairBindMutation.error as Error | null)?.message ??
     (remotePosRuntimeMutation.error as Error | null)?.message ??
     (disableTerminalMutation.error as Error | null)?.message ??
+    (enableDisabledTerminalMutation.error as Error | null)?.message ??
     (revokeTerminalMutation.error as Error | null)?.message ??
     (clearTerminalSessionsMutation.error as Error | null)?.message ??
     (rotateJoinCodeMutation.error as Error | null)?.message ??
@@ -532,8 +540,9 @@ export function HostLanControlPage() {
                         key={terminal.terminalId}
                         terminal={terminal}
                         busy={busy}
-                        onDisable={() => disableTerminalMutation.mutate(terminal.terminalId)}
-                        onRevoke={() => revokeTerminalMutation.mutate(terminal.terminalId)}
+                        onRequestDisable={() => setPendingDisableTerminal(terminal)}
+                        onRequestEnable={() => setPendingEnableTerminal(terminal)}
+                        onRequestRemove={() => setPendingRemoveTerminal(terminal)}
                         onClearSessions={() => clearTerminalSessionsMutation.mutate(terminal.terminalId)}
                         onHide={() => hideTerminal(terminal.terminalId)}
                       />
@@ -572,8 +581,9 @@ export function HostLanControlPage() {
                   <li>Client only holds terminal pairing plus an optional cashier session token.</li>
                   <li>Password is never stored on the client.</li>
                   <li>Host validates any saved token before resuming Remote POS.</li>
-                  <li>Revoked means re-pair — do not reactivate the same trust row. Remove (revoke) is permanent leave.</li>
-                  <li>Disable blocks access; Enable restores access when the terminal is only disabled (not revoked).</li>
+                  <li>Revoked means re-pair — do not reactivate the same trust row. Remove terminal is permanent leave.</li>
+                  <li>Disable terminal blocks access; Enable terminal restores access when the terminal is only disabled (not revoked).</li>
+                  <li>Remove terminal is available only after Disable. It permanently ends Host trust for that device.</li>
                 </ul>
               </Alert>
             </CardBody>
@@ -610,6 +620,50 @@ export function HostLanControlPage() {
               </div>
             </div>
           </details>
+
+          <ConfirmDialog
+            open={pendingDisableTerminal !== null}
+            title="Disable terminal?"
+            description="This blocks this terminal from using Remote POS. The terminal can be enabled again later from this Host."
+            confirmLabel="Disable terminal"
+            cancelLabel="Keep active"
+            onConfirm={() => {
+              if (!pendingDisableTerminal) return;
+              const id = pendingDisableTerminal.terminalId;
+              setPendingDisableTerminal(null);
+              disableTerminalMutation.mutate(id);
+            }}
+            onCancel={() => setPendingDisableTerminal(null)}
+          />
+          <ConfirmDialog
+            open={pendingEnableTerminal !== null}
+            title="Enable terminal?"
+            description="This restores Remote POS access for this paired terminal without re-pairing. Only use this if the terminal was disabled, not removed."
+            confirmLabel="Enable terminal"
+            cancelLabel="Keep disabled"
+            onConfirm={() => {
+              if (!pendingEnableTerminal) return;
+              const id = pendingEnableTerminal.terminalId;
+              setPendingEnableTerminal(null);
+              enableDisabledTerminalMutation.mutate(id);
+            }}
+            onCancel={() => setPendingEnableTerminal(null)}
+          />
+          <ConfirmDialog
+            open={pendingRemoveTerminal !== null}
+            title="Remove terminal?"
+            description="This permanently removes this terminal trust from the Host. The device must request access again before it can be used."
+            confirmLabel="Remove terminal"
+            cancelLabel="Keep disabled"
+            destructive
+            onConfirm={() => {
+              if (!pendingRemoveTerminal) return;
+              const id = pendingRemoveTerminal.terminalId;
+              setPendingRemoveTerminal(null);
+              revokeTerminalMutation.mutate(id);
+            }}
+            onCancel={() => setPendingRemoveTerminal(null)}
+          />
         </>
       ) : null}
     </div>
@@ -785,22 +839,25 @@ function LanConnectionCard({
 function TerminalControlRow({
   terminal,
   busy,
-  onDisable,
-  onRevoke,
+  onRequestDisable,
+  onRequestEnable,
+  onRequestRemove,
   onClearSessions,
   onHide,
 }: {
   terminal: LocalLanControlTerminal;
   busy: boolean;
-  onDisable: () => void;
-  onRevoke: () => void;
+  onRequestDisable: () => void;
+  onRequestEnable: () => void;
+  onRequestRemove: () => void;
   onClearSessions: () => void;
   onHide: () => void;
 }) {
   const explanation = terminalLifecycleExplanation(terminal.status);
   const showDisable = canDisableTerminal(terminal.status, terminal.terminalRole);
-  const showRevoke = canRevokeTerminal(terminal.status, terminal.terminalRole);
-  const showRestore = canRestoreDisabledTerminal(terminal.status, terminal.terminalRole);
+  const showEnable = canEnableDisabledTerminal(terminal.status, terminal.terminalRole);
+  // canRevokeTerminal is an alias of canRemoveTerminal (permanent trust removal via revoke API).
+  const showRemove = canRemoveTerminal(terminal.status, terminal.terminalRole) || canRevokeTerminal(terminal.status, terminal.terminalRole);
   const showClearSessions = canClearTerminalOperatorSessions(terminal.status, terminal.terminalRole);
   const showHide = canHideTerminalFromList(terminal.status, terminal.terminalRole);
   const readOnlyRevoked = isRevokedTerminalReadOnly(terminal.status);
@@ -815,7 +872,7 @@ function TerminalControlRow({
           <p className="text-slate-600">Status: {formatTerminalStatusLabel(terminal.status)}</p>
           <p className="text-slate-500">Last seen: {formatDate(terminal.lastSeenAtUtc)}</p>
           {terminal.revokedAtUtc ? (
-            <p className="text-slate-500">Revoked: {formatDate(terminal.revokedAtUtc)}</p>
+            <p className="text-slate-500">Removed: {formatDate(terminal.revokedAtUtc)}</p>
           ) : null}
           {terminal.disabledAtUtc ? (
             <p className="text-slate-500">Disabled: {formatDate(terminal.disabledAtUtc)}</p>
@@ -824,13 +881,18 @@ function TerminalControlRow({
         <div className="flex flex-wrap items-center gap-2">
           <StatusPill tone={terminalStatusTone(terminal.status)}>{formatTerminalStatusLabel(terminal.status)}</StatusPill>
           {showDisable ? (
-            <Button size="sm" variant="secondary" disabled={busy} onClick={onDisable}>
-              Disable
+            <Button size="sm" variant="secondary" disabled={busy} onClick={onRequestDisable}>
+              Disable terminal
             </Button>
           ) : null}
-          {showRevoke ? (
-            <Button size="sm" variant="secondary" disabled={busy} onClick={onRevoke}>
-              Revoke
+          {showEnable ? (
+            <Button size="sm" variant="secondary" disabled={busy} onClick={onRequestEnable}>
+              Enable terminal
+            </Button>
+          ) : null}
+          {showRemove ? (
+            <Button size="sm" variant="danger" disabled={busy} onClick={onRequestRemove}>
+              Remove terminal
             </Button>
           ) : null}
           {showClearSessions ? (
@@ -843,11 +905,6 @@ function TerminalControlRow({
               Hide from list
             </Button>
           ) : null}
-          {showRestore ? (
-            <Button size="sm" variant="secondary" disabled>
-              Restore (not supported)
-            </Button>
-          ) : null}
         </div>
       </div>
       {hostLocal ? (
@@ -857,18 +914,13 @@ function TerminalControlRow({
       ) : null}
       {readOnlyRevoked ? (
         <Alert tone="warning" className="mt-3">
-          Revoked connection. Client must request access again. Hide removes it from this host list only (no hard
+          Removed connection. Client must request access again. Hide removes it from this host list only (no hard
           delete of audit or sales history).
         </Alert>
       ) : null}
       {explanation && !readOnlyRevoked ? (
         <Alert tone="info" className="mt-3">
           {explanation}
-        </Alert>
-      ) : null}
-      {terminal.status === "Disabled" ? (
-        <Alert tone="info" className="mt-3">
-          Re-enable is not supported in this build. Revoke if the device should re-pair, or hide this row from the list.
         </Alert>
       ) : null}
     </div>

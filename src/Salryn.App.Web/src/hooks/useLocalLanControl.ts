@@ -3,6 +3,7 @@ import {
   acceptRemotePosJoinRequest,
   clearLocalLanControlTerminalSessions,
   disableLocalLanControlTerminal,
+  enableLocalLanControlDisabledTerminal,
   fetchLocalLanControlRuntimeStatus,
   fetchLocalLanControlStatus,
   fetchRemotePosPairingHostStatus,
@@ -73,6 +74,13 @@ export function useLocalLanControl() {
     },
   });
 
+  const enableDisabledTerminalMutation = useMutation({
+    mutationFn: (terminalId: string) => enableLocalLanControlDisabledTerminal(terminalId),
+    onSuccess: () => {
+      void statusQuery.refetch();
+    },
+  });
+
   const revokeTerminalMutation = useMutation({
     mutationFn: (terminalId: string) => revokeLocalLanControlTerminal(terminalId),
     onSuccess: () => {
@@ -117,6 +125,7 @@ export function useLocalLanControl() {
     repairBindMutation,
     remotePosRuntimeMutation,
     disableTerminalMutation,
+    enableDisabledTerminalMutation,
     revokeTerminalMutation,
     clearTerminalSessionsMutation,
     rotateJoinCodeMutation,

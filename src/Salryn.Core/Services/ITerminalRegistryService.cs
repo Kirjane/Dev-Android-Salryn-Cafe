@@ -23,6 +23,14 @@ public interface ITerminalRegistryService
         TerminalRegistryActorContext actor,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Re-enable a Disabled terminal only (not Revoked). Restores Active trust without re-pairing.
+    /// </summary>
+    Task<Result<SalrynTerminalRegistration>> EnableTerminalAsync(
+        Guid terminalId,
+        TerminalRegistryActorContext actor,
+        CancellationToken cancellationToken = default);
+
     Task<Result<SalrynTerminalRegistration>> RevokeTerminalAsync(
         Guid terminalId,
         TerminalRegistryActorContext actor,

@@ -104,6 +104,7 @@ public static class LanM15CLocalControlChecks
 
         AssertContains(service, "SetRemoteTransportAsync", "Local control service must support enable/disable transport.");
         AssertContains(service, "DisableTerminalAsync", "Local control service must support disable terminal.");
+        AssertContains(service, "EnableTerminalAsync", "Local control service must support enable disabled terminal.");
         AssertContains(service, "RevokeTerminalAsync", "Local control service must support revoke terminal.");
         AssertContains(service, "ExplicitLanAddress", "Local control service must enable only explicit LAN address binds.");
         AssertContains(service, "Wildcard bind is never allowed", "Local control service must reject wildcard bind in messaging.");

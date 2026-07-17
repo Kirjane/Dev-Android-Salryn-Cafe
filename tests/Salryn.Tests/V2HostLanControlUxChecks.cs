@@ -41,10 +41,12 @@ public static class V2HostLanControlUxChecks
         AssertContains(endpoints, "/bind/repair", "Bind repair endpoint required.");
         AssertContains(endpoints, "/clear-sessions", "Clear-sessions endpoint required.");
 
-        AssertContains(lifecycle, "canRestoreDisabledTerminal", "Restore gate required.");
-        AssertContains(lifecycle, "return false", "Restore must stay disabled without backend support.");
-        AssertNotContains(registry, "EnableTerminalAsync", "Registry must not fake re-enable.");
+        AssertContains(lifecycle, "canEnableDisabledTerminal", "Enable gate for Disabled terminals required.");
+        AssertContains(lifecycle, "canRemoveTerminal", "Remove terminal gate required.");
+        AssertContains(registry, "EnableTerminalAsync", "Registry must support real enable for Disabled terminals.");
+        AssertContains(registry, "CannotEnableRevoked", "Enable must refuse revoked terminals.");
         AssertNotContains(registry, "DeleteTerminalAsync", "Registry must not hard-delete terminals without design.");
+        AssertContains(endpoints, "/terminals/{terminalId}/enable", "LAN control enable endpoint required.");
 
         AssertContains(landing, "Clear this device state", "Landing clear-state required.");
         AssertContains(storage, "clearAllLanClientDeviceState", "Storage full clear required.");

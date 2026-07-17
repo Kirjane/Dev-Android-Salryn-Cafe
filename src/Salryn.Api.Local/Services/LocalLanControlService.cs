@@ -262,7 +262,28 @@ public sealed class LocalLanControlService
             .DisableTerminalAsync(terminalId, actor, cancellationToken)
             .ConfigureAwait(false);
 
-        return MapTerminalActionResult(result, "Terminal disabled. It can no longer perform remote read-only reads until re-enabled locally.");
+        return MapTerminalActionResult(result, "Terminal disabled. It can no longer perform remote POS until enabled again from this Host.");
+    }
+
+    public async Task<Result<LocalLanControlTerminalActionResponse>> EnableTerminalAsync(
+        Guid terminalId,
+        TerminalRegistryActorContext actor,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+
+        if (terminalId == Guid.Empty)
+        {
+            return Result<LocalLanControlTerminalActionResponse>.Fail(Error.Validation(
+                "LocalLanControl.TerminalIdRequired",
+                "A valid terminal id is required."));
+        }
+
+        Result<SalrynTerminalRegistration> result = await _lanServices.TerminalRegistry
+            .EnableTerminalAsync(terminalId, actor, cancellationToken)
+            .ConfigureAwait(false);
+
+        return MapTerminalActionResult(result, "Terminal enabled. Remote POS access is restored for this paired device without re-pairing.");
     }
 
     public async Task<Result<LocalLanControlTerminalActionResponse>> RevokeTerminalAsync(
@@ -283,7 +304,7 @@ public sealed class LocalLanControlService
             .RevokeTerminalAsync(terminalId, actor, cancellationToken)
             .ConfigureAwait(false);
 
-        return MapTerminalActionResult(result, "Terminal revoked. Its trust is permanently withdrawn for remote read-only LAN reads.");
+        return MapTerminalActionResult(result, "Terminal removed. Its trust is permanently withdrawn; the device must request access again before use.");
     }
 
     private static Result<LocalLanControlTerminalActionResponse> MapTerminalActionResult(

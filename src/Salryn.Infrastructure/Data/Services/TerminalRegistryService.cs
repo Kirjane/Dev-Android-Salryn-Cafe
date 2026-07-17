@@ -129,6 +129,57 @@ public sealed class TerminalRegistryService : ITerminalRegistryService
             cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<Result<SalrynTerminalRegistration>> EnableTerminalAsync(
+        Guid terminalId,
+        TerminalRegistryActorContext actor,
+        CancellationToken cancellationToken = default)
+    {
+        Result access = RequireManageAccess(actor);
+        if (access.IsFailure)
+        {
+            return Result<SalrynTerminalRegistration>.Fail(access.ErrorDetail);
+        }
+
+        Result<SalrynTerminalRegistration?> current = await _repository
+            .GetByIdAsync(terminalId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (current.IsFailure)
+        {
+            return Result<SalrynTerminalRegistration>.Fail(current.ErrorDetail);
+        }
+
+        if (current.Value is null)
+        {
+            return Result<SalrynTerminalRegistration>.Fail(Error.NotFound(
+                "TerminalRegistry.TerminalNotFound",
+                "Terminal registration was not found."));
+        }
+
+        if (current.Value.Status == TerminalRegistrationStatus.Revoked)
+        {
+            return Result<SalrynTerminalRegistration>.Fail(Error.Conflict(
+                "TerminalRegistry.CannotEnableRevoked",
+                "A revoked terminal cannot be enabled. The device must request access again and pair as a new terminal."));
+        }
+
+        if (current.Value.Status != TerminalRegistrationStatus.Disabled)
+        {
+            return Result<SalrynTerminalRegistration>.Fail(Error.Validation(
+                "TerminalRegistry.EnableRequiresDisabled",
+                "Only a disabled terminal can be enabled without re-pairing."));
+        }
+
+        // Clear disabled timestamp explicitly (UpdateStatusAsync coalesces null to prior value).
+        SalrynTerminalRegistration updated = current.Value with
+        {
+            Status = TerminalRegistrationStatus.Active,
+            DisabledAtUtc = null
+        };
+
+        return await _repository.UpsertAsync(updated, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<Result<SalrynTerminalRegistration>> RevokeTerminalAsync(
         Guid terminalId,
         TerminalRegistryActorContext actor,

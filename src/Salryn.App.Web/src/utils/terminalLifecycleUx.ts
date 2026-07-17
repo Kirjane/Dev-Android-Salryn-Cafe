@@ -52,7 +52,7 @@ export function terminalLifecycleExplanation(status: TerminalLifecycleStatus): s
     case "Revoked":
       return "This device is no longer trusted. The client must request access again to open a new pending request.";
     case "Disabled":
-      return "This terminal is temporarily blocked. Re-enable is not supported in this build.";
+      return "This terminal is temporarily blocked. Enable terminal restores access without re-pairing, or Remove terminal ends trust permanently.";
     default:
       return null;
   }
@@ -66,8 +66,14 @@ export function canDisableTerminal(status: TerminalLifecycleStatus, role: string
   return status === "Active" && isManagedRemoteLanTerminal(role);
 }
 
+/** Permanent trust removal (API: revoke). Visible only after the terminal is Disabled. */
+export function canRemoveTerminal(status: TerminalLifecycleStatus, role: string): boolean {
+  return status === "Disabled" && isManagedRemoteLanTerminal(role);
+}
+
+/** @deprecated Prefer canRemoveTerminal — kept for existing source-guard names. */
 export function canRevokeTerminal(status: TerminalLifecycleStatus, role: string): boolean {
-  return (status === "Active" || status === "Disabled") && isManagedRemoteLanTerminal(role);
+  return canRemoveTerminal(status, role);
 }
 
 export function isRevokedTerminalReadOnly(status: TerminalLifecycleStatus): boolean {
@@ -78,9 +84,14 @@ export function isHostLocalTerminalRole(role: string): boolean {
   return role === "HostConsole" || role === "AllInOneLocalTerminal" || role === "AdminClient";
 }
 
-export function canRestoreDisabledTerminal(_status: TerminalLifecycleStatus, _role: string): boolean {
-  // Backend has no EnableTerminalAsync in this build — never offer a fake restore.
-  return false;
+/** Enable a Disabled terminal (not Revoked) without re-pairing. */
+export function canEnableDisabledTerminal(status: TerminalLifecycleStatus, role: string): boolean {
+  return status === "Disabled" && isManagedRemoteLanTerminal(role);
+}
+
+/** Alias used by older guards; same as canEnableDisabledTerminal. */
+export function canRestoreDisabledTerminal(status: TerminalLifecycleStatus, role: string): boolean {
+  return canEnableDisabledTerminal(status, role);
 }
 
 export function canClearTerminalOperatorSessions(status: TerminalLifecycleStatus, role: string): boolean {
