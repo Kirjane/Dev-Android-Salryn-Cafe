@@ -7,7 +7,7 @@
 | Branch | `KIRCH-PRE-I-LICENSE-PAGE-MINIMALIST-REBUILD` |
 | Base branch | `KIRCH-PRE-I-DEV-STATE-RESET-TRUTH` |
 | Base SHA | `f965a02b976076ec51c67afe3947bc94111ba82f` |
-| Final tip SHA | *(after commit)* |
+| Final tip SHA | `59aab66d4bb04e058f685180f25557f1790951a3` |
 | Protected | `KIRCH-SANDBOX`, `KIRCH-INSTALLER-M1` not modified |
 
 ## 2. Design lock implemented
