@@ -7,7 +7,7 @@
 | Branch | `KIRCH-PRE-I-TERMINAL-LIFECYCLE-UX-REPAIR` |
 | Base branch | `KIRCH-PRE-I-LICENSE-LANDING-SELL-UPGRADE` |
 | Base SHA | `b0ab67ba0c44cc388fe85dc074ca430cd458a5d8` |
-| Final SHA | branch tip after push (see git log -1) |
+| Final SHA | `64867ae9bd62ab932f8f118d41b1ace0acbfb18a` |
 | Protected refs | Untouched |
 
 ## 2. Manual QA issue
