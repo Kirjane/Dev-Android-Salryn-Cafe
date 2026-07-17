@@ -13,7 +13,7 @@ Review type: **report + design only**. No product code changes. No package/I1. N
 | Branch | `KIRCH-PRE-I-SURGICAL-STATE-LICENSE-UX-REVIEW` |
 | Base branch | `KIRCH-PRE-I-CODE-PROVEN-QA-HARDENING` |
 | Base SHA | `fed5ec23e9cb064af7d887e5411a661282b06625` |
-| Final tip SHA | *(after docs commit)* |
+| Final tip SHA | `8f75f059e8350bb91fca4699f93ab255d05bcb91` |
 | Protected | Do not touch `KIRCH-SANDBOX`, `KIRCH-INSTALLER-M1` |
 
 ---
