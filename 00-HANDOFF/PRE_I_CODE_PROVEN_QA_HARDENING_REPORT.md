@@ -7,7 +7,8 @@
 | Branch | `KIRCH-PRE-I-CODE-PROVEN-QA-HARDENING` |
 | Base branch | `KIRCH-PRE-I-AUTOMATED-QA-PROOF` |
 | Base SHA | `f3b4bdf705890806a86bec729bb7b43ad689d666` |
-| Final SHA | `0f2c5ea6887aee43c8f551ce49689debc3cdd698` |
+| Implementation SHA | `0f2c5ea6887aee43c8f551ce49689debc3cdd698` |
+| Final tip SHA | `8c3eb615f64acb5338c13bcfafa00cd59000e75d` |
 
 Protected refs (`KIRCH-SANDBOX`, production tags) were not promoted, merged, or reset.
 
