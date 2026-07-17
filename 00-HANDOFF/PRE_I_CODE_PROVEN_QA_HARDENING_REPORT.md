@@ -7,7 +7,7 @@
 | Branch | `KIRCH-PRE-I-CODE-PROVEN-QA-HARDENING` |
 | Base branch | `KIRCH-PRE-I-AUTOMATED-QA-PROOF` |
 | Base SHA | `f3b4bdf705890806a86bec729bb7b43ad689d666` |
-| Final SHA | *(filled after commit/push)* |
+| Final SHA | `0f2c5ea6887aee43c8f551ce49689debc3cdd698` |
 
 Protected refs (`KIRCH-SANDBOX`, production tags) were not promoted, merged, or reset.
 
@@ -158,7 +158,7 @@ No `debug` wording on the normal Checkout page source.
 | `--only pre-beta-d-portable-backup-import-export` | PASS |
 | `--only pre-i1-fresh-license-first-flow` | PASS |
 | `--only pre-i1-lan-terminal-activation-management-beta` | PASS |
-| Full CoreSmoke | *(recorded in final handoff if green)* |
+| Full CoreSmoke | PASS |
 | `npm --prefix src\Salryn.App.Web run build` | PASS (bundle-size advisory only) |
 | `git diff --check` | PASS |
 
