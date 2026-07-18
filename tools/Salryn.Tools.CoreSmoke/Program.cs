@@ -8,10 +8,24 @@ public static class Program
     // Kirch: Executes the Host/client boundary smoke checks that dotnet test only compiles today.
     public static void Main(string[] args)
     {
-        if (args.Length == 2 &&
+        if (args.Length >= 2 &&
             string.Equals(args[0], "--only", StringComparison.OrdinalIgnoreCase))
         {
-            RunOnly(args[1]);
+            string? priorManifest = Environment.GetEnvironmentVariable("SALRYN_CANONICAL_LICENSE_PROOF_MANIFEST");
+            int manifestIndex = Array.FindIndex(args, value => string.Equals(value, "--proof-manifest", StringComparison.OrdinalIgnoreCase));
+            if (manifestIndex >= 0)
+            {
+                if (manifestIndex + 1 >= args.Length) throw new InvalidOperationException("--proof-manifest requires a path.");
+                Environment.SetEnvironmentVariable("SALRYN_CANONICAL_LICENSE_PROOF_MANIFEST", Path.GetFullPath(args[manifestIndex + 1]));
+            }
+            try
+            {
+                RunOnly(args[1]);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("SALRYN_CANONICAL_LICENSE_PROOF_MANIFEST", priorManifest);
+            }
             Console.WriteLine("SALRYN Core smoke checks passed.");
             CoreSmokeDevelopmentDatabaseIsolation.Cleanup();
             return;
@@ -151,6 +165,7 @@ public static class Program
         PreIAuditTrailCoverageChecks.Run();
         PreIAuditCsvExportChecks.RunAsync().GetAwaiter().GetResult();
         PreILicenseKeyRotationCanonicalBetaChecks.Run();
+        PreICanonicalLicenseActivationProofChecks.Run();
         HardenA1A6PreBetaFoundationChecks.Run();
         ManualM1BootstrapAuthRepairChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
@@ -558,6 +573,9 @@ public static class Program
                 return;
             case "pre-i-license-key-rotation-canonical-beta":
                 PreILicenseKeyRotationCanonicalBetaChecks.Run();
+                return;
+            case "pre-i-canonical-license-activation-proof":
+                PreICanonicalLicenseActivationProofChecks.Run();
                 return;
             case "lan-m16-remote-pos":
                 LanM16HostOwnedRemoteOperatorSessionChecks.Run();
