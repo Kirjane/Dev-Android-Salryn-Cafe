@@ -7,7 +7,7 @@
 | Branch | `KIRCH-PRE-I-AUDIT-CSV-EXPORT` |
 | Base branch | `KIRCH-PRE-I-AUDIT-TRAIL-COVERAGE` |
 | Base SHA | `d5b45317541f77e7e1dd8888a513f3581859d398` |
-| Final tip SHA | *(set at commit)* |
+| Final tip SHA | `c46bab9a012191d4b4c2ec0fb69f9a2b2273a139` |
 | Protected | No promotion; `KIRCH-SANDBOX` / `KIRCH-INSTALLER-M1` untouched |
 
 ## 2. Export endpoint added
