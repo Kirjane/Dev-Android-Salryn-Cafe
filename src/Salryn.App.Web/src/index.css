@@ -25,10 +25,13 @@ html,
 body,
 #root {
   height: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 body {
   margin: 0;
+  min-width: 0;
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
   background: var(--salryn-workspace-bg);
   color: var(--salryn-text);
@@ -85,4 +88,10 @@ textarea:disabled {
 * {
   scrollbar-color: #94a3b8 #f1f5f9;
   scrollbar-width: thin;
+}
+
+img,
+video,
+canvas {
+  max-width: 100%;
 }

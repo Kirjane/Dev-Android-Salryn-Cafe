@@ -468,9 +468,9 @@ export function InventoryPage() {
           </CardHeader>
           <CardBody className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
             <div className="min-h-[5.25rem] shrink-0 rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <div className="grid gap-3 md:grid-cols-[minmax(12rem,1fr)_minmax(11rem,0.8fr)_minmax(11rem,0.8fr)_auto]">
+              <div className="flex flex-wrap gap-3">
                 <select
-                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="w-auto min-w-0 flex-[1_1_12rem] rounded-lg border border-slate-300 px-3 py-2 text-sm"
                   value={movementType}
                   onChange={(event) => {
                     setPage(1);
@@ -485,6 +485,7 @@ export function InventoryPage() {
                   ))}
                 </select>
                 <TextInput
+                  className="min-w-0 flex-[1_1_11rem]"
                   type="date"
                   aria-label="From date"
                   value={from}
@@ -494,6 +495,7 @@ export function InventoryPage() {
                   }}
                 />
                 <TextInput
+                  className="min-w-0 flex-[1_1_11rem]"
                   type="date"
                   aria-label="To date"
                   value={to}
@@ -503,6 +505,7 @@ export function InventoryPage() {
                   }}
                 />
                 <Button
+                  className="flex-none"
                   variant="secondary"
                   onClick={resetStockFilters}
                   disabled={!movementType && !from && !to}

@@ -196,8 +196,9 @@ export function AuditPage() {
             <p className="text-sm text-slate-500">Error log CSV export is not included in this release.</p>
           )}
 
-          <div className="grid gap-3 lg:grid-cols-[minmax(14rem,1fr)_minmax(11rem,0.8fr)_minmax(11rem,0.8fr)_auto]">
+          <div className="flex flex-wrap gap-3">
             <TextInput
+              className="min-w-0 flex-[2_1_14rem]"
               placeholder="Search logs..."
               value={search}
               onChange={(event) => {
@@ -206,6 +207,7 @@ export function AuditPage() {
               }}
             />
             <TextInput
+              className="min-w-0 flex-[1_1_11rem]"
               placeholder="From ISO/date"
               value={from}
               onChange={(event) => {
@@ -214,6 +216,7 @@ export function AuditPage() {
               }}
             />
             <TextInput
+              className="min-w-0 flex-[1_1_11rem]"
               placeholder="To ISO/date"
               value={to}
               onChange={(event) => {
@@ -221,7 +224,7 @@ export function AuditPage() {
                 setTo(event.target.value);
               }}
             />
-            <Button variant="secondary" onClick={clearFilters} disabled={!search && !from && !to}>
+            <Button className="flex-none" variant="secondary" onClick={clearFilters} disabled={!search && !from && !to}>
               Clear
             </Button>
           </div>

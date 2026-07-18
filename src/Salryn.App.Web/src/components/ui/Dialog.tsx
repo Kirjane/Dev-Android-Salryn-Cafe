@@ -27,7 +27,7 @@ export function Dialog({ open, title, description, children, onClose, footer }: 
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="relative z-10 w-full max-w-lg overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xl"
+        className="relative z-10 max-h-[calc(100vh-2rem)] w-full min-w-0 max-w-lg overflow-x-hidden overflow-y-auto rounded-lg border border-slate-300 bg-white shadow-xl"
       >
         <div className="flex min-h-13 items-center justify-between gap-4 bg-navy-900 px-5 py-3 text-white">
           <h3 className="text-base font-semibold">{title}</h3>
@@ -41,12 +41,12 @@ export function Dialog({ open, title, description, children, onClose, footer }: 
           </button>
         </div>
         {description || children ? (
-          <div className="space-y-4 px-6 py-5">
+          <div className="min-w-0 space-y-4 px-4 py-5 sm:px-6">
             {description ? <div className="text-sm leading-6 text-slate-600">{description}</div> : null}
             {children}
           </div>
         ) : null}
-        <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3.5">
+        <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3.5 sm:px-5">
           {footer ?? (
             <Button variant="secondary" onClick={onClose}>
               Close

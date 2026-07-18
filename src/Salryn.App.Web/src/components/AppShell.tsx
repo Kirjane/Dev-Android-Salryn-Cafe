@@ -9,6 +9,8 @@ import {
   LayoutDashboard,
   LogOut,
   Network,
+  PanelLeftClose,
+  PanelLeftOpen,
   ShieldCheck,
   ShoppingCart,
   Store,
@@ -48,8 +50,22 @@ type AppShellProps = {
   children: ReactNode;
 };
 
+const sidebarStorageKey = "salryn.sidebar.collapsed";
+
+function readInitialSidebarState(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const saved = window.localStorage.getItem(sidebarStorageKey);
+    if (saved !== null) return saved === "true";
+  } catch {
+    // Storage can be unavailable in hardened browser contexts; responsive fallback remains safe.
+  }
+  return window.matchMedia("(max-width: 1023px)").matches;
+}
+
 export function AppShell({ session, currentPage, onNavigate, onLogout, children }: AppShellProps) {
   const [confirmLogout, setConfirmLogout] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(readInitialSidebarState);
   const visibleNavItems = getNavItems(session);
   const terminalManagementVisible = visibleNavItems.some((item) => item.id === "host-lan-control");
   const canViewPendingJoinRequests =
@@ -70,9 +86,21 @@ export function AppShell({ session, currentPage, onNavigate, onLogout, children 
   const storeName = brandingQuery.data?.storeName?.trim();
   const logoUrl = brandingQuery.data?.hasLogo ? brandingQuery.data.logoUrl : null;
 
+  function toggleSidebar() {
+    setSidebarCollapsed((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem(sidebarStorageKey, String(next));
+      } catch {
+        // Keep the in-memory control usable even when browser storage is unavailable.
+      }
+      return next;
+    });
+  }
+
   return (
-    <div className="flex h-screen min-w-0 flex-col bg-slate-100">
-      <header className="flex h-[60px] shrink-0 items-center justify-between gap-4 border-b border-white/10 bg-navy-900 px-5 text-white shadow-sm">
+    <div className="flex h-screen min-w-0 max-w-full flex-col overflow-hidden bg-slate-100">
+      <header className="flex h-[60px] min-w-0 shrink-0 items-center justify-between gap-2 border-b border-white/10 bg-navy-900 px-3 text-white shadow-sm sm:gap-4 sm:px-5">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white text-navy-900 shadow-sm">
             {logoUrl ? (
@@ -89,13 +117,13 @@ export function AppShell({ session, currentPage, onNavigate, onLogout, children 
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 text-right leading-tight">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-4">
+          <div className="flex min-w-0 items-center gap-2 text-right leading-tight">
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-700 text-slate-200">
               <UserRound aria-hidden="true" size={17} />
             </span>
-            <div>
-              <p className="text-sm font-medium text-slate-100">Signed in as {session.user?.displayName}</p>
+            <div className="hidden min-w-0 sm:block">
+              <p className="max-w-52 truncate text-sm font-medium text-slate-100">Signed in as {session.user?.displayName}</p>
               <p className="text-xs text-slate-400">{session.user?.roleName}</p>
             </div>
           </div>
@@ -109,9 +137,24 @@ export function AppShell({ session, currentPage, onNavigate, onLogout, children 
           </button>
         </div>
       </header>
-      <div className="flex min-h-0 flex-1">
-        <aside className="flex w-60 shrink-0 flex-col border-r border-white/5 bg-navy-800 text-slate-200 shadow-rail">
-          <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3">
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <aside
+          className={`flex shrink-0 flex-col border-r border-white/5 bg-navy-800 text-slate-200 shadow-rail transition-[width] duration-200 ${sidebarCollapsed ? "w-16" : "w-60"}`}
+          aria-label="Primary navigation"
+        >
+          <div className={`flex shrink-0 border-b border-white/5 p-2 ${sidebarCollapsed ? "justify-center" : "justify-end"}`}>
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              aria-expanded={!sidebarCollapsed}
+              aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              className="flex h-9 w-9 items-center justify-center rounded-md text-slate-400 hover:bg-white/10 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+            >
+              {sidebarCollapsed ? <PanelLeftOpen aria-hidden="true" size={18} /> : <PanelLeftClose aria-hidden="true" size={18} />}
+            </button>
+          </div>
+          <nav className="flex-1 space-y-1 overflow-y-auto overflow-x-hidden px-2 py-2">
             {visibleNavItems.map((item) => {
               const Icon = navIcons[item.label] ?? FileText;
               const isActive = item.id === currentPage;
@@ -122,26 +165,32 @@ export function AppShell({ session, currentPage, onNavigate, onLogout, children 
               return (
                 <div key={item.label}>
                   {isFirstInGroup ? (
-                    <div className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase text-slate-500">
-                      {item.group}
-                    </div>
+                    sidebarCollapsed ? (
+                      <div className="mx-2 my-2 border-t border-white/10" aria-hidden="true" />
+                    ) : (
+                      <div className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase text-slate-500">
+                        {item.group}
+                      </div>
+                    )
                   ) : null}
                   <button
                     type="button"
                     onClick={() => onNavigate(item.id)}
-                    className={`flex min-h-10 w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                    aria-label={item.label}
+                    title={sidebarCollapsed ? item.label : undefined}
+                    className={`relative flex min-h-10 w-full items-center rounded-md py-2 text-left text-sm transition-colors ${sidebarCollapsed ? "justify-center px-2" : "justify-between px-3"} ${
                       isActive
                         ? "bg-blue-600 font-semibold text-white shadow-sm"
                         : "text-slate-300 hover:bg-white/5 hover:text-white"
                     }`}
                   >
-                    <span className="flex items-center gap-3">
-                      <Icon aria-hidden="true" size={17} />
-                      {item.label}
+                    <span className="flex min-w-0 items-center gap-3">
+                      <Icon className="shrink-0" aria-hidden="true" size={17} />
+                      {!sidebarCollapsed ? <span className="truncate">{item.label}</span> : null}
                     </span>
                     {showPendingJoinBadge ? (
-                      <span className="rounded bg-amber-300 px-2 py-0.5 text-[0.65rem] font-semibold text-amber-950">
-                        {pendingJoinRequestCount}
+                      <span className={sidebarCollapsed ? "absolute right-1 top-1 h-2 w-2 rounded-full bg-amber-300" : "rounded bg-amber-300 px-2 py-0.5 text-[0.65rem] font-semibold text-amber-950"}>
+                        {!sidebarCollapsed ? pendingJoinRequestCount : null}
                       </span>
                     ) : null}
                   </button>
@@ -150,8 +199,8 @@ export function AppShell({ session, currentPage, onNavigate, onLogout, children 
             })}
           </nav>
         </aside>
-        <div className="flex min-w-0 flex-1 flex-col">
-          <main className="flex-1 overflow-y-auto bg-[#f6f7f9] p-6">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-[#f6f7f9] p-4 sm:p-6">
             {pendingJoinRequestCount > 0 ? (
               <button
                 type="button"
@@ -167,7 +216,7 @@ export function AppShell({ session, currentPage, onNavigate, onLogout, children 
             ) : null}
             {children}
           </main>
-          <footer className="flex min-h-10 items-center border-t border-slate-200 bg-white px-6 py-2 text-xs text-slate-500">
+          <footer className="flex min-h-10 min-w-0 items-center border-t border-slate-200 bg-white px-4 py-2 text-xs text-slate-500 sm:px-6">
             <span className="flex items-center gap-2">
               <StatusPill tone="success">System Ready</StatusPill>
               Salryn POS

@@ -626,15 +626,16 @@ export function ProductsPage() {
           </CardHeader>
           <CardBody className="space-y-3">
             <div className="shrink-0 rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <div className="grid gap-3 lg:grid-cols-[minmax(16rem,1fr)_12rem_12rem_10rem]">
+              <div className="flex flex-wrap gap-3">
                 <TextInput
+                  className="min-w-0 flex-[2_1_16rem]"
                   placeholder="Search barcode or product name..."
                   value={search}
                   onChange={(event) => updateSearch(event.target.value)}
                   autoComplete="off"
                 />
                 <select
-                  className="min-h-9 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                  className="min-h-9 w-auto min-w-0 flex-[1_1_10rem] rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                   value={categoryId}
                   onChange={(event) => {
                     setPage(1);
@@ -649,7 +650,7 @@ export function ProductsPage() {
                   ))}
                 </select>
                 <select
-                  className="min-h-9 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                  className="min-h-9 w-auto min-w-0 flex-[1_1_10rem] rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                   value={brandId}
                   onChange={(event) => {
                     setPage(1);
@@ -664,7 +665,7 @@ export function ProductsPage() {
                   ))}
                 </select>
                 <select
-                  className="min-h-9 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                  className="min-h-9 w-auto min-w-0 flex-[1_1_9rem] rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                   value={statusFilter}
                   onChange={(event) => {
                     setPage(1);
