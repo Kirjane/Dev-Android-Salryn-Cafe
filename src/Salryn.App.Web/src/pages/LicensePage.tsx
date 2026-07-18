@@ -143,36 +143,46 @@ function WizardShell({
 function TermsBody() {
   return (
     <div className="max-h-80 space-y-3 overflow-y-auto rounded-lg border border-[#E5E7EB] bg-white p-4 text-sm leading-relaxed text-[#4B5563]">
-      <p className="font-semibold text-[#111827]">Beta License Terms</p>
+      <p className="font-semibold text-[#111827]">Terms &amp; Conditions</p>
+      <p>These terms apply to the current Salryn beta and explain the product, license, operator, and support boundaries.</p>
       <p>
-        These terms apply to this Salryn beta license. They are written for product use and support clarity, not as a full legal contract.
+        <strong className="text-[#111827]">1. Product use.</strong> Salryn is an offline-first POS and ledger console for store operations. Use it only for lawful store operations and within the features enabled by your license.
       </p>
       <p>
-        <strong className="text-[#111827]">1. Local license.</strong> Salryn runs locally on this device. A signed license file is required before the Host can be used.
+        <strong className="text-[#111827]">2. Local license.</strong> Current beta status: cloud activation is not required. Salryn uses signed local license files, and a valid Host license is required before Host use.
       </p>
       <p>
-        <strong className="text-[#111827]">2. Device binding.</strong> This license is bound to this device’s Machine Code. Reinstalling Windows, replacing hardware, or moving the database to another device may require a new license file.
+        <strong className="text-[#111827]">3. Device binding.</strong> A license is bound to this device's Machine Code. Reinstalling Windows, replacing hardware, or moving to another device may require a replacement license.
       </p>
       <p>
-        <strong className="text-[#111827]">3. Data ownership.</strong> Your store data remains on your device unless you choose to export, back up, or send it for support.
+        <strong className="text-[#111827]">4. Data ownership.</strong> Your store data remains on your device unless you choose to export, back up, or send it for support.
       </p>
       <p>
-        <strong className="text-[#111827]">4. Backups.</strong> You are responsible for keeping backup copies of your Salryn data. Use the built-in backup tools before repair, migration, or major changes.
+        <strong className="text-[#111827]">5. Backup responsibility.</strong> You are responsible for keeping verified backup copies of your Salryn data, especially before repair, migration, restore, or major changes.
       </p>
       <p>
-        <strong className="text-[#111827]">5. Hardware limits.</strong> This beta supports standard Windows print queue receipts and keyboard-wedge barcode input. It does not certify specialized printer command sets, till peripherals, paper cutters, or universal barcode-device SDKs.
+        <strong className="text-[#111827]">6. Hardware limits.</strong> Current beta status: ESC/POS commands, paper cutters, cash drawers, dedicated thermal-printer control, hardware bundles, and hardware warranties are not included. Client-supplied hardware is used unless separately agreed. Windows print queue internal receipts are available only when configured and verified.
       </p>
       <p>
-        <strong className="text-[#111827]">6. Receipts and compliance.</strong> This beta does not claim tax-authority production accreditation or official receipt approval. Use Salryn beta receipts only within the stated beta scope.
+        <strong className="text-[#111827]">7. Receipts and compliance.</strong> BIR accreditation: current beta status: not included; target: a future compliance lane. eSales transmission: current beta status: not included; target: a future compliance lane. Current receipts are internal operational receipts, not a representation of accreditation or approval.
       </p>
       <p>
-        <strong className="text-[#111827]">7. LAN terminals.</strong> Each LAN terminal requires its own signed Terminal license. Terminals connect to the Host; they do not hold the store database. Each LAN terminal needs its own Terminal license.
+        <strong className="text-[#111827]">8. LAN terminals.</strong> Each LAN terminal requires its own signed Terminal license and connects to the Host over the local network. Terminal availability depends on the Host, network, license, and configured access.
       </p>
       <p>
-        <strong className="text-[#111827]">8. Support boundaries.</strong> Kirjane Labs may request your Machine Code, license file, logs, screenshots, or backup files to help resolve issues. Do not send signing secrets or unrelated personal data. Contact {BETA_CONTACT_EMAIL}.
+        <strong className="text-[#111827]">9. Account and operator responsibility.</strong> You are responsible for operator accounts, passwords, permissions, device access, transaction review, and correcting operator-entered data through the supported workflows.
       </p>
       <p>
-        <strong className="text-[#111827]">9. Beta acceptance.</strong> By installing this license, you accept that this is a controlled beta build. Some features may require manual verification before client release.
+        <strong className="text-[#111827]">10. Support boundaries.</strong> Kirjane Labs may request your Machine Code, license file, logs, screenshots, or backup files to investigate an issue. Do not send signing secrets or unrelated personal data. Contact {BETA_CONTACT_EMAIL}.
+      </p>
+      <p>
+        <strong className="text-[#111827]">11. Beta limitations.</strong> Current beta status: ongoing. Features and operating procedures may change, and client deployment requires the stated manual verification. Not included: guarantees for unsupported hardware, continuous network availability, or features outside the documented beta scope.
+      </p>
+      <p>
+        <strong className="text-[#111827]">12. Rights reservation.</strong> Salryn and its related product materials are products of Kirjane Labs. © 2026 Kirjane Labs. All rights reserved. Rights not expressly granted remain reserved.
+      </p>
+      <p>
+        <strong className="text-[#111827]">13. Acceptance.</strong> By installing or replacing a license, you confirm that you have read and accept these Terms &amp; Conditions and the current beta boundaries.
       </p>
     </div>
   );
@@ -207,7 +217,7 @@ export function LicensePage() {
 
   async function handleInstall() {
     if (!termsAccepted) {
-      notify.warning("Terms required", "Accept the beta license terms before installing a license.");
+      notify.warning("Terms required", "Accept the Terms & Conditions before installing a license.");
       return;
     }
     if (!canInstall) return;
@@ -431,7 +441,7 @@ export function LicensePage() {
                 </label>
                 <label className="mt-4 flex items-start gap-2 text-sm text-[#4B5563]">
                   <input type="checkbox" checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)} className="mt-1" />
-                  <span>I have re-read and accept the Salryn Activation Terms for this replacement.</span>
+                  <span>I have re-read and accept the Salryn Terms &amp; Conditions for this replacement.</span>
                 </label>
                 <label className="mt-3 flex items-start gap-2 text-sm text-[#4B5563]">
                   <input type="checkbox" checked={replaceConfirmed} onChange={(event) => setReplaceConfirmed(event.target.checked)} className="mt-1" />
@@ -459,10 +469,36 @@ export function LicensePage() {
           </main>
         ) : null}
 
-        <footer className="mt-10 border-t border-[#E5E7EB] pt-4 text-xs leading-5 text-[#6B7280]">
-          <p>Salryn by Kirjane Labs</p>
-          <p className="mt-1">Technology Lead: Kirch Ivan Balite</p>
-        </footer>
+        <section className="mt-10 rounded-xl border border-[#E5E7EB] bg-white p-5 sm:p-6" aria-labelledby="licensing-credits-title">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[#1F4B7A]">Salryn</p>
+          <p className="mt-1 text-sm font-medium text-[#6B7280]">by Kirjane Labs</p>
+          <h2 id="licensing-credits-title" className="mt-4 text-xl font-semibold text-[#111827]">Licensing &amp; Credits</h2>
+          <p className="mt-3 text-sm font-semibold text-[#111827]">
+            Salryn is an offline-first POS and ledger console for store operations.
+          </p>
+          <p className="mt-1 text-sm leading-6 text-[#4B5563]">
+            Built by Kirjane Labs. Designed for local sales, inventory movement tracking, reports, backups, and LAN terminals.
+          </p>
+          <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-[#6B7280]">Products of Kirjane Labs: Salryn</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              ["Paul Gamayot", "Business Lead"],
+              ["Kirch Ivan Balite", "Technology Lead"],
+              ["Jesse Edwin Culas", "Marketing Lead"],
+              ["James Karl Tara", "Business Development"],
+              ["Osiris Kedigadash Palac", "DevOps Lead"],
+            ].map(([name, role]) => (
+              <div key={name} className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3">
+                <p className="font-semibold text-[#111827]">{name}</p>
+                <p className="mt-1 text-xs text-[#6B7280]">{role}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-5 border-t border-[#E5E7EB] pt-4 text-xs text-[#6B7280]">
+            <p>Salryn by Kirjane Labs</p>
+            <p className="mt-1">© 2026 Kirjane Labs. All rights reserved.</p>
+          </div>
+        </section>
       </div>
 
       {wizardStep === "request" ? (
@@ -507,7 +543,7 @@ export function LicensePage() {
 
       {wizardStep === "terms" ? (
         <WizardShell
-          title="Beta License Terms"
+          title="Terms & Conditions"
           stepLabel="Step 2 of 3"
           onClose={closeWizard}
           footer={
@@ -524,7 +560,7 @@ export function LicensePage() {
           <TermsBody />
           <label className="mt-4 flex items-start gap-3 rounded-lg border border-[#E5E7EB] bg-white px-4 py-3 text-sm font-medium text-[#111827]">
             <input type="checkbox" className="mt-1" checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)} />
-            <span>I understand and accept these beta license terms.</span>
+            <span>I understand and accept these Terms &amp; Conditions.</span>
           </label>
         </WizardShell>
       ) : null}
@@ -551,7 +587,7 @@ export function LicensePage() {
           {error ? <Alert tone="danger">{error}</Alert> : null}
           {!termsAccepted ? (
             <Alert tone="warning" title="Terms required">
-              Accept the beta license terms before installing a license.
+              Accept the Terms &amp; Conditions before installing a license.
             </Alert>
           ) : null}
           <p className="mt-3">Paste the signed Host license JSON you received from Kirjane Labs.</p>

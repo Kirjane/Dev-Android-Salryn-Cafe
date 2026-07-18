@@ -43,15 +43,14 @@ public static class PreICodeProvenClientSurfaceGuards
 
         string[] forbidden =
         {
-            "cloud activation",
+            "cloud activation is required",
             "BIR-ready",
             "official receipt accreditation",
             "ESC/POS supported",
             "cash drawer supported",
             "drawer kick",
             "cutter supported",
-            "hardware bundle",
-            "Products of Kirjane Labs",
+            "hardware bundle included",
             "mock sample"
         };
 
@@ -174,7 +173,7 @@ public static class PreICodeProvenClientSurfaceGuards
             "Replace install cannot be enabled by license text alone.");
         PreICodeProvenCheckSupport.RequireContains(
             license,
-            "I have re-read and accept the Salryn Activation Terms for this replacement.",
+            "I have re-read and accept the Salryn Terms &amp; Conditions for this replacement.",
             "Replace terms re-ack copy.");
         PreICodeProvenCheckSupport.RequireContains(
             license,

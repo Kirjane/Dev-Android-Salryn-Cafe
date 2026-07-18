@@ -175,11 +175,16 @@ export function HostLanControlPage() {
   const pendingRequestCount = pairing?.pendingRequestCount ?? pendingRequests.length;
   const hostLanEntitled = limits?.hostLanEntitled === true && (limits?.maxPairedTerminals ?? 0) > 0;
   const capacitySummary = `${limits?.currentPairedCount ?? 0} / ${limits?.maxPairedTerminals ?? 0} paired, ${limits?.currentActiveSessions ?? 0} / ${limits?.maxActiveSessions ?? 0} active`;
+  const detectedHostIps = useMemo(
+    () => Array.from(new Set((runtime?.detectedLanListenIps ?? []).filter(looksLikeBareIpv4))),
+    [runtime?.detectedLanListenIps],
+  );
+  const recommendedHostIp = detectedHostIps[0] ?? "";
 
   const repairIp =
     runtime?.configuredBindAddressRepairSuggestion?.trim() ||
     runtime?.configuredBindAddressNormalized?.trim() ||
-    runtime?.detectedLanListenIps?.[0] ||
+    recommendedHostIp ||
     "";
 
   const configuredHostIp = looksLikeBareIpv4(status?.configuredBindAddress)
@@ -431,6 +436,8 @@ export function HostLanControlPage() {
             onDisableRemotePos={() => setPendingStopTerminalPos(true)}
             capacitySummary={capacitySummary}
             repairIp={repairIp}
+            detectedHostIps={detectedHostIps}
+            recommendedHostIp={recommendedHostIp}
           />
 
           <Alert tone="info" title="One Terminal license per terminal device">
@@ -855,6 +862,8 @@ function LanConnectionCard({
   onDisableRemotePos,
   capacitySummary,
   repairIp,
+  detectedHostIps,
+  recommendedHostIp,
 }: {
   runtime: LocalLanControlRuntimeStatus | undefined;
   hostPcAddress: string;
@@ -875,6 +884,8 @@ function LanConnectionCard({
   onDisableRemotePos: () => void;
   capacitySummary: string;
   repairIp: string;
+  detectedHostIps: string[];
+  recommendedHostIp: string;
 }) {
   const readiness = runtime?.readinessState ?? "Disabled";
   const malformed = Boolean(runtime?.configuredBindMalformed);
@@ -902,14 +913,48 @@ function LanConnectionCard({
           {malformed ? <StatusPill tone="danger">Saved address needs repair</StatusPill> : null}
         </div>
 
+        {recommendedHostIp ? (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Recommended Host PC address</p>
+            <p className="mt-1 font-mono text-base font-semibold text-slate-950">{recommendedHostIp}</p>
+          </div>
+        ) : (
+          <Alert tone="warning" title="Host PC address not detected">
+            Ask support to check this Host PC’s network address.
+          </Alert>
+        )}
+
+        {detectedHostIps.length > 1 ? (
+          <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <p className="text-sm font-semibold text-slate-900">Detected addresses</p>
+            <p className="text-xs text-slate-500">Choose the address used by devices on the same local network.</p>
+            <div className="flex flex-wrap gap-2">
+              {detectedHostIps.map((ip) => (
+                <Button
+                  key={ip}
+                  type="button"
+                  size="sm"
+                  variant={bindAddressInput.trim() === ip ? "primary" : "secondary"}
+                  onClick={() => onBindAddressChange(ip)}
+                  disabled={busy}
+                >
+                  {ip}{ip === recommendedHostIp ? " (recommended)" : ""}
+                </Button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         {readiness === "Ready" && terminalLink ? (
           <Alert tone="success" title="Terminal devices can open this link">
+            <p>Use this terminal link on other devices:</p>
             <p className="mt-1 break-all font-mono text-base font-semibold">{terminalLink}</p>
           </Alert>
         ) : null}
 
         {readiness !== "Ready" && terminalLink ? (
           <Alert tone="warning" title="After starting LAN access, open this link on the terminal device">
+            <p>Use this terminal link on other devices:</p>
             <p className="mt-1 break-all font-mono text-base font-semibold">{terminalLink}</p>
           </Alert>
         ) : null}
@@ -938,7 +983,7 @@ function LanConnectionCard({
           <label htmlFor="host-lan-control-bind-address" className="block text-sm font-medium text-slate-700">
             Host PC LAN address
           </label>
-          <p className="text-xs text-slate-500">Enter only the IPv4 address, for example 192.168.1.161.</p>
+          <p className="text-xs text-slate-500">Use a detected address above, or enter the IPv4 address used by devices on the same network.</p>
           <TextInput
             id="host-lan-control-bind-address"
             value={bindAddressInput}

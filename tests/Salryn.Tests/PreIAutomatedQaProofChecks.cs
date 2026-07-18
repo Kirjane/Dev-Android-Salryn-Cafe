@@ -121,7 +121,7 @@ public static class PreIAutomatedQaProofChecks
         RequireContains(license, "canInstallWizard = licenseText.trim().length > 0 && termsAccepted && !busy", "First activation requires terms plus document.");
         RequireContains(license, "canInstallReplace = licenseText.trim().length > 0 && replaceConfirmed && termsAccepted && !busy", "Replacement requires text plus both re-acknowledgements.");
         RequireContains(license, "step === \"import\" ? \"terms\" : step", "Direct import cannot skip terms.");
-        RequireContains(license, "I have re-read and accept the Salryn Activation Terms for this replacement.", "Replacement terms re-ack copy.");
+        RequireContains(license, "I have re-read and accept the Salryn Terms &amp; Conditions for this replacement.", "Replacement terms re-ack copy.");
         RequireContains(license, "I understand this replaces the active local license for this device.", "Replacement consequence re-ack copy.");
         RequireContains(license, "disabled={!canInstallReplace}", "Replacement install button uses the full gate.");
     }
@@ -139,15 +139,14 @@ public static class PreIAutomatedQaProofChecks
         string joined = string.Join("\n", clientSources);
         string[] forbidden =
         {
-            "cloud activation",
+            "cloud activation is required",
             "BIR-ready",
             "official receipt accreditation",
             "ESC/POS supported",
             "cash drawer supported",
             "drawer kick",
             "cutter supported",
-            "hardware bundle",
-            "Products of Kirjane Labs",
+            "hardware bundle included",
             "mock sample",
             "Build Type",
             ">Publisher<"

@@ -147,6 +147,7 @@ public static class Program
         PreICodeProvenQaHardeningChecks.Run();
         PreIDevStateResetTruthChecks.Run();
         PreILicensePageMinimalistRebuildChecks.Run();
+        PreIClientFacingProductPolishChecks.Run();
         HardenA1A6PreBetaFoundationChecks.Run();
         ManualM1BootstrapAuthRepairChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
@@ -542,6 +543,9 @@ public static class Program
                 return;
             case "pre-i-license-page-minimalist-rebuild":
                 PreILicensePageMinimalistRebuildChecks.Run();
+                return;
+            case "pre-i-client-facing-product-polish":
+                PreIClientFacingProductPolishChecks.Run();
                 return;
             case "lan-m16-remote-pos":
                 LanM16HostOwnedRemoteOperatorSessionChecks.Run();

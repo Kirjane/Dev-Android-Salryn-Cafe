@@ -138,8 +138,6 @@ public static class WebA4NativeHostVisualFidelityChecks
             "CrystalDecisions",
             "SAPBusinessObjects",
             ".rpt",
-            "ESC/POS",
-            "escpos",
             "file-picker",
             "window.print",
             "PrinterSettings",
@@ -175,6 +173,10 @@ public static class WebA4NativeHostVisualFidelityChecks
 
             RequireNotContains(capabilitySource, token, $"WEB-A4 must not add forbidden capability: {token}");
         }
+
+        // Client terms may name unsupported hardware explicitly, but must not advertise the capability.
+        RequireNotContains(capabilitySource, "ESC/POS supported", "WEB-A4 must not claim ESC/POS support.");
+        RequireNotContains(capabilitySource, "escpos", "WEB-A4 must not introduce an ESC/POS implementation identifier.");
 
         foreach (string token in uploadForbiddenOutsideLogo)
         {

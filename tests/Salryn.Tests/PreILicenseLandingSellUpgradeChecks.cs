@@ -23,11 +23,11 @@ public static class PreILicenseLandingSellUpgradeChecks
         RequireContains(licensePage, "Salryn runs locally on this device.", "Local-first body.");
         RequireContains(licensePage, "Salryn is activated", "Active title.");
         RequireContains(licensePage, "salryn.info@gmail.com", "Infodesk contact.");
-        RequireContains(licensePage, "I understand and accept these beta license terms.", "Terms acceptance.");
+        RequireContains(licensePage, "I understand and accept these Terms &amp; Conditions.", "Terms acceptance.");
         RequireContains(licensePage, "licenseText.trim().length > 0 && termsAccepted", "Install remains terms and document gated.");
         RequireContains(licensePage, "Import Signed Host License JSON", "Signed Host import step.");
         RequireContains(licensePage, "Show technical details", "Technical details collapsed.");
-        RequireContains(licensePage, "Technology Lead: Kirch Ivan Balite", "Quiet footer credit.");
+        RequireContains(licensePage, "Licensing &amp; Credits", "Credits section.");
         RequireContains(licensePage, "bg-[#F4F5F7]", "Light minimalist page background.");
 
         // Rejected design must stay gone
@@ -37,9 +37,10 @@ public static class PreILicenseLandingSellUpgradeChecks
         RequireNotContains(licensePage, "Sparkles", "No sparkles.");
         RequireNotContains(licensePage, "Already have a license? Import license", "Old CTA removed.");
         RequireNotContains(licensePage, "mock sample", "No sample-build copy.");
-        RequireNotContains(licensePage, "Products of Kirjane Labs", "No products metadata block.");
+        RequireContains(licensePage, "Products of Kirjane Labs: Salryn", "Product identity line.");
         RequireNotContains(licensePage, "Build Type", "No prominent build metadata.");
-        RequireNotContains(licensePage, "cloud activation", "No online activation claim.");
+        RequireContains(licensePage, "cloud activation is not required", "Local license boundary.");
+        RequireNotContains(licensePage, "cloud activation is required", "No online activation requirement.");
         RequireNotContains(licensePage, "BIR-ready", "No tax readiness claim.");
         RequireNotContains(licensePage, "official receipt accreditation", "No receipt accreditation claim.");
         RequireNotContains(licensePage, "find Store ID", "No Store ID task.");
@@ -47,13 +48,13 @@ public static class PreILicenseLandingSellUpgradeChecks
 
         // Shared credits component still exists for Terminal (not required on Host minimalist page)
         RequireContains(credits, "Licensing & Credits", "Integrated trust section heading.");
-        RequireContains(credits, "A Kirjane Labs product", "Product identity line.");
+        RequireContains(credits, "Products of Kirjane Labs: Salryn", "Product identity line.");
         RequireContains(credits, "Paul Gamayot", "Business Lead credit.");
         RequireContains(credits, "James Karl Tara", "Business Development credit.");
         RequireContains(credits, "Kirch Ivan Balite", "Technology Lead credit.");
         RequireContains(credits, "Osiris Kedigadash Palac", "Dev Ops Lead credit.");
         RequireContains(credits, "Jesse Edwin Culas", "Marketing Lead credit.");
-        RequireNotContains(credits, "Products of Kirjane Labs", "Credits stay free of product metadata boxes.");
+        RequireContains(credits, "DevOps Lead", "Exact DevOps role.");
 
         RequireContains(terminalPage, "<ProductCreditsCard />", "Terminal keeps the compatible default shared credits card.");
         RequireContains(terminalPage, "Import Signed Terminal License JSON", "Terminal import behavior remains present.");

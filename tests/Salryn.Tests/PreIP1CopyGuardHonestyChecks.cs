@@ -54,7 +54,7 @@ public static class PreIP1CopyGuardHonestyChecks
 
         // P1-006 replace re-ack
         RequireContains(licensePage, "canInstallReplace = licenseText.trim().length > 0 && replaceConfirmed && termsAccepted", "Replace requires terms + replace confirm.");
-        RequireContains(licensePage, "I have re-read and accept the Salryn Activation Terms for this replacement.", "Replace terms re-ack copy.");
+        RequireContains(licensePage, "I have re-read and accept the Salryn Terms &amp; Conditions for this replacement.", "Replace terms re-ack copy.");
         RequireContains(licensePage, "I understand this replaces the active local license for this device.", "Replace device-local re-ack.");
 
         // P1-007 LicensingOps softened in primary operator surfaces (allowed in request block)

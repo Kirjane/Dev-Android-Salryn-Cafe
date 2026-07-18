@@ -379,7 +379,7 @@ export function InventoryPage() {
     <div className="space-y-4 overflow-hidden">
       <CommandBar
         title="Stock Movements"
-        subtitle="Review Stock-In and Stock Adjustment history."
+        subtitle="Change product quantity through a ledger entry."
         status={
           <div className="flex flex-wrap gap-2">
             <StatusPill
@@ -590,7 +590,8 @@ export function InventoryPage() {
               tone="warning"
               title="Confirm stock change"
             >
-              Every Stock-In or Stock Adjustment is recorded in movement history.
+              Product Catalog defines the product. Stock Movements changes the quantity. Use Stock-In, adjustments, and
+              corrections here so every quantity change is recorded in movement history.
             </Alert>
             {formError ? (
               <Alert tone="danger" title="Stock write validation">
@@ -601,14 +602,14 @@ export function InventoryPage() {
               <div className="grid gap-3 md:grid-cols-[1fr_12rem]">
                 <div>
                   <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Product lookup
+                    Scan or enter barcode/SKU
                   </label>
                   <TextInput
                     value={form.productSearch}
                     onChange={(event) =>
                       updateForm("productSearch", event.target.value)
                     }
-                    placeholder="Search name, barcode, or SKU"
+                    placeholder="Scan or enter barcode/SKU"
                     autoComplete="off"
                   />
                 </div>
@@ -627,8 +628,7 @@ export function InventoryPage() {
                 </div>
               </div>
               <p className="mt-2 text-xs text-slate-500">
-                Product lookup and quantity remain in the same fixed area for
-                both Stock-In and Stock Adjustment.
+                Scan or enter the product barcode/SKU to select the product.
               </p>
             </div>
             {dialogMode === "adjustment" ? (

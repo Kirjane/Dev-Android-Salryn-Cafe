@@ -32,8 +32,8 @@ public static class PreIActivationLandingManualQaRepairChecks
         RequireContains(licensePage, "Import license", "Primary import CTA.");
         RequireContains(licensePage, "Machine Code", "Wizard step 1 Machine Code.");
         RequireContains(licensePage, "Copy Machine Code", "Host machine code copy.");
-        RequireContains(licensePage, "Beta License Terms", "Terms step present.");
-        RequireContains(licensePage, "I understand and accept these beta license terms.", "Terms checkbox.");
+        RequireContains(licensePage, "Terms & Conditions", "Terms step present.");
+        RequireContains(licensePage, "I understand and accept these Terms &amp; Conditions.", "Terms checkbox.");
         RequireContains(licensePage, "termsAccepted", "Import gated on termsAccepted.");
         RequireContains(licensePage, "Import Signed Host License JSON", "Import step title.");
         RequireContains(licensePage, "Status: Active", "Active status.");
@@ -41,7 +41,7 @@ public static class PreIActivationLandingManualQaRepairChecks
         RequireContains(licensePage, "Host license active", "Success wording.");
         RequireContains(licensePage, "Show technical details", "Technical details collapsed.");
         RequireNotContains(licensePage, "What Salryn offers", "No marketing feature wall.");
-        RequireNotContains(licensePage, "Products of Kirjane Labs", "No products metadata block.");
+        RequireContains(licensePage, "Products of Kirjane Labs: Salryn", "Product credits identity.");
         RequireNotContains(licensePage, "mock sample", "No mock sample.");
         RequireNotContains(licensePage, "cloud activation ready", "No cloud activation claim.");
 
@@ -68,7 +68,8 @@ public static class PreIActivationLandingManualQaRepairChecks
         RequireContains(credits, "Jesse Edwin Culas", "Marketing Lead.");
         RequireContains(credits, "James Karl Tara", "Business Development.");
         RequireContains(credits, "Osiris Kedigadash Palac", "Dev Ops Lead.");
-        RequireNotContains(credits, "Products of Kirjane Labs", "Credits no products list.");
+        RequireContains(credits, "Products of Kirjane Labs: Salryn", "Credits product identity.");
+        RequireContains(credits, "DevOps Lead", "DevOps Lead role.");
         RequireNotContains(credits, "Build Type", "Credits no Build Type card.");
 
         // Backup modals

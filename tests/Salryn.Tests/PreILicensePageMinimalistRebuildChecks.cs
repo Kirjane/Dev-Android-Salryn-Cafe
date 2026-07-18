@@ -38,7 +38,7 @@ public static class PreILicensePageMinimalistRebuildChecks
         RequireContains(license, "machineCode", "Machine code binding present.");
         RequireContains(license, "salryn.info@gmail.com", "Support email retained.");
         RequireContains(license, "Salryn by Kirjane Labs", "Footer product line.");
-        RequireContains(license, "Technology Lead: Kirch Ivan Balite", "Footer technology lead.");
+        RequireContains(license, "Licensing &amp; Credits", "Credits page title.");
         RequireContains(license, "Show technical details", "Technical IDs collapsed by default.");
         RequireContains(license, "showSupportDetails", "Collapsed technical details state.");
 
@@ -46,20 +46,23 @@ public static class PreILicensePageMinimalistRebuildChecks
         RequireContains(license, "Local license", "Terms: Local license.");
         RequireContains(license, "Device binding", "Terms: Device binding.");
         RequireContains(license, "Data ownership", "Terms: Data ownership.");
-        RequireContains(license, "Backups", "Terms: Backups.");
+        RequireContains(license, "Backup responsibility", "Terms: Backup responsibility.");
         RequireContains(license, "Hardware limits", "Terms: Hardware limits.");
         RequireContains(license, "Receipts and compliance", "Terms: Receipts and compliance.");
         RequireContains(license, "LAN terminals", "Terms: LAN terminals.");
         RequireContains(license, "Support boundaries", "Terms: Support boundaries.");
-        RequireContains(license, "Beta acceptance", "Terms: Beta acceptance.");
-        RequireContains(license, "I understand and accept these beta license terms.", "Terms checkbox.");
+        RequireContains(license, "Account and operator responsibility", "Terms: operator responsibility.");
+        RequireContains(license, "Beta limitations", "Terms: Beta limitations.");
+        RequireContains(license, "Rights reservation", "Terms: Rights reservation.");
+        RequireContains(license, "13. Acceptance", "Terms: Acceptance.");
+        RequireContains(license, "I understand and accept these Terms &amp; Conditions.", "Terms checkbox.");
 
         // Behavior gates
         RequireContains(license, "canInstallWizard = licenseText.trim().length > 0 && termsAccepted && !busy", "First install terms gate.");
         RequireContains(license, "canInstallReplace = licenseText.trim().length > 0 && replaceConfirmed && termsAccepted && !busy", "Replace gate.");
         RequireContains(license, "step === \"import\" ? \"terms\" : step", "Import routes through terms.");
         RequireContains(license, "disabled={!canInstallReplace}", "Replace install disabled without full gate.");
-        RequireContains(license, "I have re-read and accept the Salryn Activation Terms for this replacement.", "Replace terms re-ack.");
+        RequireContains(license, "I have re-read and accept the Salryn Terms &amp; Conditions for this replacement.", "Replace terms re-ack.");
         RequireContains(license, "I understand this replaces the active local license for this device.", "Replace consequence.");
         RequireContains(license, "Import Signed Host License JSON", "Host import title retained.");
         RequireContains(license, "This Terminal license cannot unlock Host first-run setup", "Host vs Terminal separation.");
@@ -67,7 +70,8 @@ public static class PreILicensePageMinimalistRebuildChecks
 
         RequireNotContains(license, "find Host License ID", "No Host License ID task.");
         RequireNotContains(license, "find Store ID", "No Store ID task.");
-        RequireNotContains(license, "cloud activation", "No cloud activation.");
+        RequireContains(license, "cloud activation is not required", "Local-license cloud boundary must be explicit.");
+        RequireNotContains(license, "cloud activation is required", "No cloud activation requirement.");
         RequireNotContains(license, "BIR-ready", "No BIR-ready claim.");
         RequireNotContains(license, "official receipt accreditation", "No accreditation claim.");
         RequireNotContains(license, "ProductCreditsCard", "Host page uses quiet footer, not competing credits card.");

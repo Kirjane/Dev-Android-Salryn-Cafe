@@ -23,10 +23,19 @@ export function ProductCreditsCard({ variant = "card" }: ProductCreditsCardProps
         <h2 className="mt-3 text-4xl font-black tracking-[0.16em]">SALRYN</h2>
         <p className="mt-2 text-sm font-medium text-blue-100">by Kirjane Labs</p>
         <p className="mt-5 text-sm font-semibold tracking-wide text-emerald-200">{"Licensing & Credits"}</p>
-        <p className="mt-2 text-xs font-medium text-white/75">A Kirjane Labs product</p>
+        <p className="mt-2 text-xs font-medium text-white/75">Products of Kirjane Labs: Salryn</p>
       </div>
 
       <div className="flex flex-1 flex-col gap-5 px-5 py-5 sm:px-6">
+        <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-4 text-center">
+          <p className="text-sm font-semibold text-navy-900">
+            Salryn is an offline-first POS and ledger console for store operations.
+          </p>
+          <p className="mt-2 text-xs leading-relaxed text-slate-600">
+            Built by Kirjane Labs. Designed for local sales, inventory movement tracking, reports, backups, and LAN terminals.
+          </p>
+        </div>
+
         <div>
           <h3 className="text-center text-xs font-bold uppercase tracking-[0.22em] text-navy-900">Credits</h3>
           <p className="mt-1 text-center text-[11px] font-semibold tracking-wide text-slate-500">Kirjane Labs</p>
@@ -42,7 +51,7 @@ export function ProductCreditsCard({ variant = "card" }: ProductCreditsCardProps
             <OrgNode
               role="Technology Lead"
               name="Kirch Ivan Balite"
-              reports={[{ role: "Dev Ops Lead", name: "Osiris Kedigadash Palac" }]}
+              reports={[{ role: "DevOps Lead", name: "Osiris Kedigadash Palac" }]}
             />
             <OrgNode role="Marketing Lead" name="Jesse Edwin Culas" />
           </div>
@@ -58,7 +67,7 @@ export function ProductCreditsCard({ variant = "card" }: ProductCreditsCardProps
 
         <footer className="mt-auto border-t border-slate-100 pt-4 text-center text-[11px] leading-relaxed text-slate-500">
           <p>© 2026 Kirjane Labs. All rights reserved.</p>
-          <p className="mt-1 text-[10px] text-slate-400">Repository-backed beta build</p>
+          <p className="mt-1 text-[10px] text-slate-400">Salryn by Kirjane Labs</p>
         </footer>
       </div>
     </section>
@@ -76,7 +85,8 @@ function IntegratedCredits() {
           <p className="text-[10px] font-bold uppercase tracking-[0.26em] text-cyan-300">Licensing & Credits</p>
           <h2 className="mt-4 text-3xl font-semibold tracking-[-0.03em] text-white sm:text-4xl">Built by Kirjane Labs.</h2>
           <p className="mt-4 max-w-md text-sm leading-7 text-slate-400">
-            SALRYN is a Kirjane Labs product shaped around clear local operations, controlled deployment, and direct support.
+            Salryn is an offline-first POS and ledger console for store operations. Built by Kirjane Labs. Designed for local sales,
+            inventory movement tracking, reports, backups, and LAN terminals.
           </p>
           <div className="mt-6">
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Salryn Infodesk</p>
@@ -87,7 +97,7 @@ function IntegratedCredits() {
         <div>
           <div className="flex items-center justify-between gap-4">
             <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Credits</p>
-            <p className="text-[10px] font-semibold tracking-[0.16em] text-slate-600">A Kirjane Labs product</p>
+            <p className="text-[10px] font-semibold tracking-[0.16em] text-slate-600">Products of Kirjane Labs: Salryn</p>
           </div>
           <div className="mt-5 grid gap-3 sm:grid-cols-3">
             <IntegratedOrgNode
@@ -99,7 +109,7 @@ function IntegratedCredits() {
             <IntegratedOrgNode
               role="Technology Lead"
               name="Kirch Ivan Balite"
-              reportRole="Dev Ops Lead"
+              reportRole="DevOps Lead"
               reportName="Osiris Kedigadash Palac"
             />
             <IntegratedOrgNode role="Marketing Lead" name="Jesse Edwin Culas" />
@@ -109,7 +119,7 @@ function IntegratedCredits() {
 
       <footer className="relative mt-12 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.07] pt-5 text-[10px] text-slate-600">
         <p>© 2026 Kirjane Labs. All rights reserved.</p>
-        <p>Repository-backed beta build</p>
+        <p>Salryn by Kirjane Labs</p>
       </footer>
     </section>
   );

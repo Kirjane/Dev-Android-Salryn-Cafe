@@ -13,7 +13,7 @@ public static class PreBetaLicenseCreditsPagePolishChecks
         string terminalPage = File.ReadAllText(Path.Combine(root, "src", "Salryn.App.Web", "src", "pages", "TerminalActivationPage.tsx"));
         string credits = File.ReadAllText(Path.Combine(root, "src", "Salryn.App.Web", "src", "components", "ProductCreditsCard.tsx"));
 
-        RequireContains(licensePage, "Technology Lead: Kirch Ivan Balite", "Host license page uses quiet footer credit.");
+        RequireContains(licensePage, "Licensing &amp; Credits", "Host license page exposes credits.");
         RequireContains(licensePage, "lg:grid-cols-2", "Host license page must use two-column desktop layout.");
         RequireContains(licensePage, "Import Signed Host License JSON", "Host import card title required.");
         RequireContains(licensePage, "Copy Machine Code", "Host Machine Code copy required.");
@@ -22,10 +22,10 @@ public static class PreBetaLicenseCreditsPagePolishChecks
         RequireContains(licensePage, "Status: Active", "Active license status retained.");
         RequireContains(licensePage, "Show technical details", "Host technical details must stay collapsed by default.");
         RequireNotContains(licensePage, "how many LAN terminals", "No terminal count copy.");
-        RequireNotContains(licensePage, "cloud activation", "No cloud activation claim.");
+        RequireContains(licensePage, "cloud activation is not required", "Cloud activation boundary.");
         RequireNotContains(licensePage, "mock sample", "Build type must not say mock sample.");
         RequireNotContains(licensePage, "RMO", "Host license page must not expose RMO.");
-        RequireNotContains(licensePage, "eSales", "Host license page must not expose eSales.");
+        RequireContains(licensePage, "eSales transmission: current beta status: not included", "eSales beta boundary.");
         RequireNotContains(licensePage, "BIR-approved", "Host license page must not claim BIR-approved.");
 
         RequireContains(terminalPage, "ProductCreditsCard", "Terminal activation must render product credits card.");
@@ -49,7 +49,7 @@ public static class PreBetaLicenseCreditsPagePolishChecks
         RequireContains(credits, "SALRYN", "Credits must show SALRYN.");
         RequireContains(credits, "by Kirjane Labs", "Credits must show by Kirjane Labs.");
         RequireContains(credits, "Licensing & Credits", "Credits title required.");
-        RequireContains(credits, "A Kirjane Labs product", "Product identity line required.");
+        RequireContains(credits, "Products of Kirjane Labs: Salryn", "Product identity line required.");
         RequireContains(credits, "Credits", "Credits section heading required.");
 
         // People / hierarchy
@@ -62,16 +62,16 @@ public static class PreBetaLicenseCreditsPagePolishChecks
         RequireContains(credits, "James Karl Tara", "Business Development name required.");
         RequireContains(credits, "Business Development", "Business Development role required.");
         RequireContains(credits, "Osiris Kedigadash Palac", "Dev Ops Lead name required.");
-        RequireContains(credits, "Dev Ops Lead", "Dev Ops Lead role required.");
+        RequireContains(credits, "DevOps Lead", "DevOps Lead role required.");
         RequireContains(credits, "salryn.info@gmail.com", "Support email required.");
         RequireContains(credits, "© 2026 Kirjane Labs", "Copyright footer required.");
 
-        // Build type may only appear as tiny muted footer — not as a metadata card label.
-        RequireContains(credits, "Repository-backed beta build", "Muted beta build footer line retained.");
+        // Product identity stays client-facing without repository/build metadata.
+        RequireContains(credits, "Salryn by Kirjane Labs", "Client-facing product footer retained.");
         RequireNotContains(credits, "Build Type", "Build Type must not be a prominent card label.");
         RequireNotContains(credits, ">Publisher<", "Publisher must not be a large metadata label.");
         RequireNotContains(credits, ">Product<", "Product must not be a large metadata label.");
-        RequireNotContains(credits, "Products of Kirjane Labs", "Products of Kirjane Labs list block removed.");
+        RequireNotContains(credits, "Repository-backed beta build", "Repository build wording removed.");
         RequireNotContains(credits, "mock sample", "Credits must not say mock sample.");
         RequireNotContains(credits, "Software Development", "Do not rename Technology Lead to Software Development.");
         RequireNotContains(credits, "RMO", "Credits must not expose RMO.");

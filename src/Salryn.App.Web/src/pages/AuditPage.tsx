@@ -75,7 +75,7 @@ export function AuditPage() {
     <div className="space-y-6">
       <CommandBar
         title="Audit"
-        subtitle="Review important system and operator activity."
+        subtitle="Audit trail records important system and operator actions for review and investigation."
         actions={
           <Button variant="secondary" onClick={() => void activeQuery.refetch()} disabled={activeQuery.isFetching}>
             {activeQuery.isFetching ? "Refreshing..." : "Refresh"}

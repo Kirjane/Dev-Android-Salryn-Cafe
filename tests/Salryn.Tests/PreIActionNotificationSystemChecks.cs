@@ -163,7 +163,7 @@ public static class PreIActionNotificationSystemChecks
         {
             "notify.debug",
             "stack trace",
-            "cloud activation",
+            "cloud activation is required",
             "BIR-ready",
             "eSales production",
             "ESC/POS supported",

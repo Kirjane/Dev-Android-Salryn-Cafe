@@ -95,6 +95,14 @@ function toNumber(value: string): number {
 function optionalNumber(value: string): number | null {
   return value.trim() === "" ? null : toNumber(value);
 }
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
+      <dd className="mt-0.5 break-words font-medium text-slate-900">{value}</dd>
+    </div>
+  );
+}
 function describeProductWriteError(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.status === 401) return "Session expired or login required.";
@@ -558,7 +566,7 @@ export function ProductsPage() {
       <div className="shrink-0">
         <CommandBar
           title="Product Catalog"
-          subtitle="Manage products, pricing, barcodes, and stock settings."
+          subtitle="Create and manage product identity."
           status={
             <div className="flex flex-wrap gap-2">
               <StatusPill tone="info">
@@ -593,8 +601,10 @@ export function ProductsPage() {
         />
       </div>
       <div className="shrink-0">
-        <Alert tone="info" title="Adding stock">
-          Add stock through Stock-In after saving a product.
+        <Alert tone="info" title="Products and quantity have separate jobs">
+          Product Catalog defines the product. Stock Movements changes the quantity. Use the catalog for name, barcode,
+          SKU, price, unit, category, brand, stock tracking, and reorder details. Add stock through Stock-In after saving a product;
+          use Stock Adjustment for corrections.
         </Alert>
       </div>
       {writeMessage ? (
@@ -610,7 +620,7 @@ export function ProductsPage() {
           {writeMessage}
         </Alert>
       ) : null}
-      <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(10rem,0.45fr)] gap-3 overflow-hidden xl:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)] xl:grid-rows-none">
+      <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(18rem,0.85fr)] gap-3 overflow-hidden xl:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)] xl:grid-rows-none">
         <Card className="flex min-h-0 min-w-0 flex-col overflow-hidden">
           <CardHeader className="shrink-0">
             <CardTitle>Catalog search</CardTitle>
@@ -807,41 +817,36 @@ export function ProductsPage() {
                     commit.
                   </p>
                 </div>
-                <div className="grid gap-2">
-                  <p>SKU: {detailQuery.data.sku ?? "—"}</p>
-                  <p>Barcode: {detailQuery.data.barcode ?? "—"}</p>
-                  <p>
-                    Category: {detailQuery.data.categoryName ?? "No category"}
-                  </p>
-                  <p>Brand: {detailQuery.data.brandName ?? "No brand"}</p>
-                  <p>Unit: {detailQuery.data.unitName}</p>
-                  <p>Supplier: {detailQuery.data.supplierName ?? "—"}</p>
-                  <p>Selling: {formatMoney(detailQuery.data.sellingPrice)}</p>
-                  <p>
-                    Cost:{" "}
-                    {detailQuery.data.costPrice === null
-                      ? "—"
-                      : formatMoney(detailQuery.data.costPrice)}
-                  </p>
-                  <p>
-                    Wholesale:{" "}
-                    {detailQuery.data.wholesalePrice === null
-                      ? "—"
-                      : formatMoney(detailQuery.data.wholesalePrice)}
-                  </p>
-                  <p>
-                    Updated:{" "}
-                    {detailQuery.data.updatedAt
-                      ? formatDateTime(detailQuery.data.updatedAt)
-                      : "—"}
-                  </p>
-                </div>
-                {detailQuery.data.description ? (
-                  <p>{detailQuery.data.description}</p>
-                ) : null}
-                {detailQuery.data.notes ? (
-                  <p>Notes: {detailQuery.data.notes}</p>
-                ) : null}
+                <dl className="grid gap-2 rounded-lg bg-slate-50 p-3 sm:grid-cols-2">
+                  <Row label="Selling price" value={formatMoney(detailQuery.data.sellingPrice)} />
+                  <Row label="Barcode" value={detailQuery.data.barcode ?? "—"} />
+                  <Row label="SKU / internal code" value={detailQuery.data.sku ?? "—"} />
+                  <Row label="Reorder level" value={formatQuantity(detailQuery.data.reorderLevel)} />
+                </dl>
+                <details className="rounded-lg border border-slate-200 bg-white p-3">
+                  <summary className="cursor-pointer font-semibold text-slate-900">More details</summary>
+                  <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <Row label="Category" value={detailQuery.data.categoryName ?? "No category"} />
+                    <Row label="Brand" value={detailQuery.data.brandName ?? "No brand"} />
+                    <Row label="Unit" value={detailQuery.data.unitName} />
+                    <Row label="Track stock" value={detailQuery.data.trackStock ? "Yes" : "No"} />
+                    <Row label="Supplier" value={detailQuery.data.supplierName ?? "—"} />
+                    <Row
+                      label="Cost price"
+                      value={detailQuery.data.costPrice === null ? "—" : formatMoney(detailQuery.data.costPrice)}
+                    />
+                    <Row
+                      label="Wholesale price"
+                      value={detailQuery.data.wholesalePrice === null ? "—" : formatMoney(detailQuery.data.wholesalePrice)}
+                    />
+                    <Row
+                      label="Updated"
+                      value={detailQuery.data.updatedAt ? formatDateTime(detailQuery.data.updatedAt) : "—"}
+                    />
+                  </dl>
+                  {detailQuery.data.description ? <p className="mt-3">{detailQuery.data.description}</p> : null}
+                  {detailQuery.data.notes ? <p className="mt-2">Notes: {detailQuery.data.notes}</p> : null}
+                </details>
                 {detailQuery.data.isActive ? (
                   <div className="space-y-3 border-t border-slate-100 pt-3">
                     <div className="flex flex-wrap gap-2">
@@ -980,6 +985,10 @@ export function ProductsPage() {
                   }
                   placeholder="Barcode"
                 />
+                <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                  Use the barcode printed on the item or package you sell. Different package sizes or bundles should be
+                  separate product records if they are sold separately.
+                </p>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -1083,8 +1092,11 @@ export function ProductsPage() {
               </div>
             </div>
             <p className="rounded-md bg-slate-100 p-3 text-xs text-slate-600">
-              Duplicate active barcodes are rejected. Editing a product does not
-              rewrite historical receipt or sale item snapshots.
+              Barcode identifies the sellable product/package. Use a different product record when a different package is
+              sold separately. For example, create separate records for 500 ml and 1.5 L sizes or for a separately sold
+              6-pack. If an item has no printed barcode, use its internal SKU/code for lookup. Automatic multi-pack conversion
+              is not included in this flow; packaging and variant support remains a future product lane. Editing a product does
+              not rewrite historical receipt or sale item snapshots.
             </p>
             <Alert tone="info" title="Unit of measure and stock are separate">
               Unit of measure describes how the item is sold or counted, such as

@@ -54,12 +54,12 @@ public static class PosManual1R3FrontendSafetyUxRepairChecks
         RequireContains(products, "hidden from active sale flow", "Deactivate copy must explain inactive sale-flow effect.");
         RequireContains(products, "Historical sales remain preserved", "Deactivate copy must explain sales history preservation.");
         RequireContains(products, "delete past records", "Deactivate copy must explain no deletion.");
-        RequireContains(products, "Manage products, pricing, barcodes, and stock settings", "Product Catalog must use client-facing purpose copy.");
+        RequireContains(products, "Create and manage product identity", "Product Catalog must use client-facing purpose copy.");
 
-        RequireContains(inventory, "Review Stock-In and Stock Adjustment history", "Inventory must use client-facing purpose copy.");
-        RequireContains(inventory, "Quantity changes are recorded as stock movements", "Inventory must explain recorded movements concisely.");
+        RequireContains(inventory, "Change product quantity through a ledger entry", "Inventory must use client-facing purpose copy.");
+        RequireContains(inventory, "Product Catalog defines the product. Stock Movements changes the quantity", "Inventory must explain recorded movements concisely.");
         RequireNotContains(inventory, "Barcode and Fast Add boundaries", "Inventory must not show a deferred-feature wall.");
-        RequireContains(inventory, "Product lookup and quantity remain in the same fixed area", "Stock write dialog must stabilize lookup and quantity layout.");
+        RequireContains(inventory, "Scan or enter the product barcode/SKU to select the product", "Stock write dialog must guide lookup clearly.");
 
         RequireContains(dashboard, "fetchOwnerReportsSummary", "Dashboard must use existing owner-report summary data when available.");
         RequireContains(dashboard, "session.isAuthenticated && canOpenReports", "Dashboard owner-report query must honor the existing report permission.");
