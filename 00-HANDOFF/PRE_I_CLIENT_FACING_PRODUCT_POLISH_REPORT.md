@@ -5,7 +5,7 @@
 - Branch: `KIRCH-PRE-I-CLIENT-FACING-PRODUCT-POLISH`
 - Accepted base branch: `KIRCH-PRE-I-ACTION-NOTIFICATION-SYSTEM`
 - Accepted base SHA: `0106ee40a2b6d8cd812703612e8039807905dc48`
-- Final implementation SHA: pending final commit after gate completion.
+- Final implementation SHA: `19569f9c18f049adf2581b7270f4d5f46c4e28dc`
 - Promotion: not performed.
 
 ## 2. Credits and team truth
