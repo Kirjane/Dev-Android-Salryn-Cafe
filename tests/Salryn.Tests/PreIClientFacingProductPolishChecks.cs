@@ -83,13 +83,13 @@ public static class PreIClientFacingProductPolishChecks
         {
             RequireContains(source, "Product Catalog defines the product. Stock Movements changes the quantity.", "Catalog/movement separation.");
         }
-        RequireContains(products, "Barcode identifies the sellable product/package.", "Barcode identity guidance.");
-        RequireContains(products, "Different package sizes or bundles should be", "Package record guidance.");
-        RequireContains(products, "500 ml and 1.5 L", "Package-size example.");
+        RequireContains(products, "One barcode identifies one sellable item or package.", "Barcode identity guidance.");
+        RequireContains(products, "separate product record for different package sizes", "Package record guidance.");
+        RequireContains(products, "500 ml item, a 1.5 L", "Package-size example.");
         RequireContains(products, "6-pack", "Bundle example.");
-        RequireContains(products, "future product lane", "Future packaging boundary.");
-        RequireContains(inventory, "Scan or enter barcode/SKU", "Stock lookup label.");
-        RequireContains(inventory, "Scan or enter the product barcode/SKU to select the product.", "Stock lookup helper.");
+        RequireContains(products, "variant automation are not", "Packaging automation boundary.");
+        RequireContains(inventory, "Product barcode", "Stock lookup label.");
+        RequireContains(inventory, "Scan or enter the product barcode to select the product, then record the quantity movement.", "Stock lookup helper.");
     }
 
     private static void AssertProductProfile(string products)
@@ -97,7 +97,7 @@ public static class PreIClientFacingProductPolishChecks
         RequireContains(products, "Selected product", "Product profile exists.");
         RequireContains(products, "Current stock", "Current stock priority.");
         RequireContains(products, "Selling price", "Selling price priority.");
-        RequireContains(products, "SKU / internal code", "SKU label clarity.");
+        RequireContains(products, "Existing SKU (read-only)", "Legacy SKU truthfulness.");
         RequireContains(products, "More details", "Secondary details disclosure.");
         RequireContains(products, "minmax(22rem,0.8fr)", "Desktop product profile width guard.");
         RequireOrder(products, "Current stock", "More details", "Core product facts must precede secondary details.");

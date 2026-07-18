@@ -160,7 +160,7 @@ public sealed class FastAddProductApiService
         return duplicate
             ? Result.Fail(Error.Conflict(
                 "Products.DuplicateBarcode",
-                "An active product with the same barcode already exists."))
+                "Barcode is already assigned to another active product."))
             : Result.Success();
     }
 

@@ -95,7 +95,7 @@ public sealed class SqliteProductWriteRepository :
         {
             return Task.FromResult(Result.Fail(Error.Conflict(
                 "Products.DuplicateBarcode",
-                "An active product with the same barcode already exists.")));
+                "Barcode is already assigned to another active product.")));
         }
         catch (SqliteException ex) when (IsForeignKeyConstraintViolation(ex))
         {
@@ -180,7 +180,7 @@ public sealed class SqliteProductWriteRepository :
         {
             return Task.FromResult(Result.Fail(Error.Conflict(
                 "Products.DuplicateBarcode",
-                "An active product with the same barcode already exists.")));
+                "Barcode is already assigned to another active product.")));
         }
         catch (SqliteException ex) when (IsForeignKeyConstraintViolation(ex))
         {

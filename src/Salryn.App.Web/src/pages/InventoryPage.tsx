@@ -602,14 +602,14 @@ export function InventoryPage() {
               <div className="grid gap-3 md:grid-cols-[1fr_12rem]">
                 <div>
                   <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Scan or enter barcode/SKU
+                    Product barcode
                   </label>
                   <TextInput
                     value={form.productSearch}
                     onChange={(event) =>
                       updateForm("productSearch", event.target.value)
                     }
-                    placeholder="Scan or enter barcode/SKU"
+                    placeholder="Scan or enter product barcode"
                     autoComplete="off"
                   />
                 </div>
@@ -628,7 +628,7 @@ export function InventoryPage() {
                 </div>
               </div>
               <p className="mt-2 text-xs text-slate-500">
-                Scan or enter the product barcode/SKU to select the product.
+                Scan or enter the product barcode to select the product, then record the quantity movement.
               </p>
             </div>
             {dialogMode === "adjustment" ? (
@@ -694,7 +694,7 @@ export function InventoryPage() {
                 ) : null}
                 {productLookupQuery.data?.items.length === 0 ? (
                   <p className="p-3 text-sm text-slate-500">
-                    No active products found.
+                    No active product was found for that barcode.
                   </p>
                 ) : null}
                 {(productLookupQuery.data?.items ?? []).map((product) => (

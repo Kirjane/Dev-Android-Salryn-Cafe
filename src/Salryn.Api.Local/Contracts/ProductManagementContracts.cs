@@ -2,7 +2,7 @@ namespace Salryn.Api.Local.Contracts;
 
 public sealed record ProductManagementWriteRequest(
     string ProductName,
-    string Barcode,
+    string? Barcode,
     Guid UnitId,
     Guid? CategoryId,
     Guid? BrandId,

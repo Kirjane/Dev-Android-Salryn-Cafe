@@ -297,14 +297,19 @@ public sealed class ProductManagementApiService
     }
 
     private async Task<Result> EnsureBarcodeIsNotActiveDuplicateAsync(
-        Barcode barcode,
+        Barcode? barcode,
         Guid? excludeProductId,
         CancellationToken cancellationToken)
     {
+        if (barcode is null)
+        {
+            return Result.Success();
+        }
+
         Result<PagedResult<ProductListItemReadModel>> searchResult = await _composition.ProductReadRepository
             .SearchAsync(
                 new ProductSearchFilter(
-                    barcode.Value,
+                    barcode.Value.Value,
                     CategoryId: null,
                     BrandId: null,
                     IsActive: true,
@@ -321,12 +326,12 @@ public sealed class ProductManagementApiService
         bool duplicate = searchResult.Value.Items.Any(product =>
             product.IsActive &&
             (!excludeProductId.HasValue || product.Id != excludeProductId.Value) &&
-            string.Equals(product.Barcode, barcode.Value, StringComparison.Ordinal));
+            string.Equals(product.Barcode, barcode.Value.Value, StringComparison.Ordinal));
 
         return duplicate
             ? Result.Fail(Error.Conflict(
                 "Products.DuplicateBarcode",
-                "An active product with the same barcode already exists."))
+                "Barcode is already assigned to another active product."))
             : Result.Success();
     }
 
@@ -340,12 +345,18 @@ public sealed class ProductManagementApiService
                 "Product name is required."));
         }
 
-        Result<Barcode> barcodeResult = Barcode.Create(request.Barcode);
-        if (barcodeResult.IsFailure)
+        Barcode? barcode = null;
+        if (!string.IsNullOrWhiteSpace(request.Barcode))
         {
-            return Result<ProductManagementInput>.Fail(Error.Validation(
-                "Products.BarcodeRequired",
-                barcodeResult.Error));
+            Result<Barcode> barcodeResult = Barcode.Create(request.Barcode);
+            if (barcodeResult.IsFailure)
+            {
+                return Result<ProductManagementInput>.Fail(Error.Validation(
+                    "Products.InvalidBarcode",
+                    "Enter a valid barcode or leave it blank if this product does not use one."));
+            }
+
+            barcode = barcodeResult.Value;
         }
 
         if (request.UnitId == Guid.Empty)
@@ -392,7 +403,7 @@ public sealed class ProductManagementApiService
 
         return Result<ProductManagementInput>.Success(new ProductManagementInput(
             productName,
-            barcodeResult.Value,
+            barcode,
             request.UnitId,
             NormalizeOptionalGuid(request.CategoryId),
             NormalizeOptionalGuid(request.BrandId),
@@ -408,7 +419,7 @@ public sealed class ProductManagementApiService
 
     private sealed record ProductManagementInput(
         string ProductName,
-        Barcode Barcode,
+        Barcode? Barcode,
         Guid UnitId,
         Guid? CategoryId,
         Guid? BrandId,

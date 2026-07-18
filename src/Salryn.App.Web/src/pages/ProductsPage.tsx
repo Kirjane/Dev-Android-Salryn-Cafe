@@ -109,7 +109,7 @@ function describeProductWriteError(error: unknown): string {
     if (error.status === 403)
       return "Permission denied. Product management requires Products.Manage.";
     if (error.code === "Products.DuplicateBarcode")
-      return "Duplicate barcode. An active product already uses this barcode.";
+      return "Barcode is already assigned to another active product.";
     return error.message;
   }
   return error instanceof Error
@@ -273,7 +273,7 @@ export function ProductsPage() {
         <div>
           <p className="font-semibold text-slate-900">{row.name}</p>
           <p className="mt-1 text-xs text-slate-500">
-            SKU {row.sku ?? "—"} · Barcode {row.barcode ?? "—"}
+            Barcode {row.barcode ?? "Not assigned"}
           </p>
         </div>
       ),
@@ -383,7 +383,6 @@ export function ProductsPage() {
   }
   function validateForm(): string | null {
     if (!form.productName.trim()) return "Product name is required.";
-    if (!form.barcode.trim()) return "Barcode is required.";
     if (!form.unitId) return "Unit is required.";
     if (toNumber(form.sellingPrice) <= 0)
       return "Selling price must be greater than zero.";
@@ -562,7 +561,7 @@ export function ProductsPage() {
     : false;
 
   return (
-    <div className="flex h-[calc(100vh-9rem)] max-h-[calc(100vh-9rem)] min-h-0 flex-col gap-3 overflow-hidden">
+    <div className="space-y-3">
       <div className="shrink-0">
         <CommandBar
           title="Product Catalog"
@@ -603,7 +602,7 @@ export function ProductsPage() {
       <div className="shrink-0">
         <Alert tone="info" title="Products and quantity have separate jobs">
           Product Catalog defines the product. Stock Movements changes the quantity. Use the catalog for name, barcode,
-          SKU, price, unit, category, brand, stock tracking, and reorder details. Add stock through Stock-In after saving a product;
+          price, unit, category, brand, stock tracking, and reorder details. Add stock through Stock-In after saving a product;
           use Stock Adjustment for corrections.
         </Alert>
       </div>
@@ -620,16 +619,16 @@ export function ProductsPage() {
           {writeMessage}
         </Alert>
       ) : null}
-      <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(18rem,0.85fr)] gap-3 overflow-hidden xl:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)] xl:grid-rows-none">
-        <Card className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)]">
+        <Card className="min-w-0">
           <CardHeader className="shrink-0">
             <CardTitle>Catalog search</CardTitle>
           </CardHeader>
-          <CardBody className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+          <CardBody className="space-y-3">
             <div className="shrink-0 rounded-lg border border-slate-200 bg-slate-50 p-3">
               <div className="grid gap-3 lg:grid-cols-[minmax(16rem,1fr)_12rem_12rem_10rem]">
                 <TextInput
-                  placeholder="Search SKU, barcode, or name..."
+                  placeholder="Search barcode or product name..."
                   value={search}
                   onChange={(event) => updateSearch(event.target.value)}
                   autoComplete="off"
@@ -686,7 +685,7 @@ export function ProductsPage() {
                 </span>
               </div>
             </div>
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200">
+            <div className="flex max-h-[36rem] min-h-[24rem] flex-col overflow-hidden rounded-lg border border-slate-200">
               <div className="flex h-10 shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-3 text-xs text-slate-500">
                 <span>
                   {productsQuery.isLoading
@@ -748,7 +747,7 @@ export function ProductsPage() {
             </div>
           </CardBody>
         </Card>
-        <Card className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+        <Card className="min-w-0">
           <CardHeader className="shrink-0">
             <div className="flex items-center justify-between gap-3">
               <CardTitle>Selected product</CardTitle>
@@ -763,7 +762,7 @@ export function ProductsPage() {
               ) : null}
             </div>
           </CardHeader>
-          <CardBody className="min-h-0 flex-1 overflow-y-auto overscroll-contain text-sm text-slate-600">
+          <CardBody className="text-sm text-slate-600">
             {!selectedId ? (
               <div className="rounded-lg border border-dashed border-slate-300 p-6 text-slate-500">
                 Select a product row to edit product metadata, deactivate,
@@ -820,7 +819,6 @@ export function ProductsPage() {
                 <dl className="grid gap-2 rounded-lg bg-slate-50 p-3 sm:grid-cols-2">
                   <Row label="Selling price" value={formatMoney(detailQuery.data.sellingPrice)} />
                   <Row label="Barcode" value={detailQuery.data.barcode ?? "—"} />
-                  <Row label="SKU / internal code" value={detailQuery.data.sku ?? "—"} />
                   <Row label="Reorder level" value={formatQuantity(detailQuery.data.reorderLevel)} />
                 </dl>
                 <details className="rounded-lg border border-slate-200 bg-white p-3">
@@ -829,6 +827,7 @@ export function ProductsPage() {
                     <Row label="Category" value={detailQuery.data.categoryName ?? "No category"} />
                     <Row label="Brand" value={detailQuery.data.brandName ?? "No brand"} />
                     <Row label="Unit" value={detailQuery.data.unitName} />
+                    <Row label="Existing SKU (read-only)" value={detailQuery.data.sku ?? "Not assigned"} />
                     <Row label="Track stock" value={detailQuery.data.trackStock ? "Yes" : "No"} />
                     <Row label="Supplier" value={detailQuery.data.supplierName ?? "—"} />
                     <Row
@@ -846,6 +845,9 @@ export function ProductsPage() {
                   </dl>
                   {detailQuery.data.description ? <p className="mt-3">{detailQuery.data.description}</p> : null}
                   {detailQuery.data.notes ? <p className="mt-2">Notes: {detailQuery.data.notes}</p> : null}
+                  <p className="mt-3 text-xs text-slate-500">
+                    Internal SKU/code creation and editing are deferred in this beta.
+                  </p>
                 </details>
                 {detailQuery.data.isActive ? (
                   <div className="space-y-3 border-t border-slate-100 pt-3">
@@ -976,18 +978,18 @@ export function ProductsPage() {
               </div>
               <div>
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Barcode
+                  Barcode (optional)
                 </label>
                 <TextInput
                   value={form.barcode}
                   onChange={(event) =>
                     updateForm("barcode", event.target.value)
                   }
-                  placeholder="Barcode"
+                  placeholder="Printed barcode, if available"
                 />
                 <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                  Use the barcode printed on the item or package you sell. Different package sizes or bundles should be
-                  separate product records if they are sold separately.
+                  Barcode identifies the sellable item or package. Use a separate product record for different package sizes
+                  or bundles sold separately. Leave blank when the product has no printed barcode.
                 </p>
               </div>
               <div>
@@ -1092,11 +1094,10 @@ export function ProductsPage() {
               </div>
             </div>
             <p className="rounded-md bg-slate-100 p-3 text-xs text-slate-600">
-              Barcode identifies the sellable product/package. Use a different product record when a different package is
-              sold separately. For example, create separate records for 500 ml and 1.5 L sizes or for a separately sold
-              6-pack. If an item has no printed barcode, use its internal SKU/code for lookup. Automatic multi-pack conversion
-              is not included in this flow; packaging and variant support remains a future product lane. Editing a product does
-              not rewrite historical receipt or sale item snapshots.
+              One barcode identifies one sellable item or package. Create separate product records for a 500 ml item, a 1.5 L
+              item, and a separately sold 6-pack. A barcode may be left blank when no printed barcode exists. Internal SKU/code
+              creation and editing are deferred in this beta. Automatic multi-pack conversion and variant automation are not
+              included. Editing a product does not rewrite historical receipt or sale item snapshots.
             </p>
             <Alert tone="info" title="Unit of measure and stock are separate">
               Unit of measure describes how the item is sold or counted, such as

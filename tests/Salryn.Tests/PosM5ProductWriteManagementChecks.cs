@@ -70,10 +70,10 @@ public static class PosM5ProductWriteManagementChecks
         RequireContains(productsPage, "Edit Product", "Product Catalog must expose edit flow.");
         RequireContains(productsPage, "Deactivate Product", "Product Catalog must expose deactivate flow.");
         RequireContains(productsPage, "Product name is required.", "Product Catalog must validate required name.");
-        RequireContains(productsPage, "Barcode is required.", "Product Catalog must validate required barcode.");
+        RequireContains(productsPage, "Barcode (optional)", "Product Catalog must state optional barcode behavior.");
         RequireContains(productsPage, "Unit is required.", "Product Catalog must validate required unit.");
         RequireContains(productsPage, "Selling price must be greater than zero.", "Product Catalog must validate price.");
-        RequireContains(productsPage, "Duplicate barcode", "Product Catalog must surface duplicate barcode failures.");
+        RequireContains(productsPage, "Barcode is already assigned to another active product.", "Product Catalog must surface duplicate barcode failures.");
         RequireContains(productsPage, "Reactivation unavailable", "Reactivate must remain unavailable when repository support is absent.");
         RequireContains(productsPage, "Add stock through Stock-In after saving a product", "Product Catalog must direct quantity entry through Stock-In.");
         RequireContains(productsPage, "Save the product first, then use Stock-In", "Product create UI must keep product save and stock entry separate.");
