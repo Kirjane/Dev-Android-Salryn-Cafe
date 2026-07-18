@@ -15,6 +15,7 @@ import {
   MetricCard,
   StatusPill,
   TextInput,
+  useNotifications,
 } from "../components/ui";
 import { fetchLicenseStatus } from "../api/license";
 import { useLocalLanControl } from "../hooks/useLocalLanControl";
@@ -37,6 +38,7 @@ import {
   terminalStatusTone,
   type TerminalConnectionGroup,
 } from "../utils/terminalLifecycleUx";
+import { safeNotificationDescription } from "../utils/notificationError";
 
 const HIDDEN_TERMINALS_KEY = "salryn.hostLan.hiddenTerminals.v1";
 
@@ -131,6 +133,7 @@ function writeHiddenTerminalIds(ids: string[]): void {
 }
 
 export function HostLanControlPage() {
+  const { notify } = useNotifications();
   const {
     statusQuery,
     runtimeStatusQuery,
@@ -239,17 +242,25 @@ export function HostLanControlPage() {
     void pairingStatusQuery.refetch();
   }
 
-  function copyTerminalLink() {
+  async function copyTerminalLink() {
     if (!canCopyTerminalLink || !runtime?.clientUrl) return;
     setCopied(false);
-    void navigator.clipboard?.writeText(runtime.clientUrl).then(() => setCopied(true));
+    try {
+      await navigator.clipboard.writeText(runtime.clientUrl);
+      setCopied(true);
+      notify.info("Terminal link copied", "Open it on the terminal device.");
+    } catch (error) {
+      notify.error("Terminal link was not copied", safeNotificationDescription(error, "Select the terminal link and copy it manually."));
+    }
   }
 
   function acceptRequest(requestId: string) {
     acceptJoinRequestMutation.mutate(requestId, {
       onSuccess: (response) => {
         setAcceptedCodes((current) => ({ ...current, [response.requestId]: response.pairingCode }));
+        notify.success("Pairing request accepted", "Enter the one-time pairing code on the terminal device.");
       },
+      onError: (error) => notify.error("Pairing request was not accepted", safeNotificationDescription(error, "The request remains pending.")),
     });
   }
 
@@ -261,14 +272,24 @@ export function HostLanControlPage() {
       "";
     const normalized = normalizeConfiguredLanBindInput(preferred);
     if (!normalized.ok || !normalized.ip) {
+      notify.warning("LAN access is not ready", normalized.error || "Enter a valid Host PC LAN address.");
       return;
     }
-    remoteTransportMutation.mutate({ enable: true, bindAddress: normalized.ip });
+    remoteTransportMutation.mutate(
+      { enable: true, bindAddress: normalized.ip },
+      {
+        onSuccess: () => notify.success("LAN access started", "Terminal devices can use the terminal link."),
+        onError: (error) => notify.error("LAN access was not started", safeNotificationDescription(error, "Review the Host PC LAN address and try again.")),
+      },
+    );
   }
 
   function repairLanAddress() {
     const target = repairIp || bindAddressInput.trim();
-    repairBindMutation.mutate(target || null);
+    repairBindMutation.mutate(target || null, {
+      onSuccess: () => notify.success("LAN address repaired", "Use the updated terminal link on terminal devices."),
+      onError: (error) => notify.error("LAN address was not repaired", safeNotificationDescription(error, "Review the detected Host PC address and try again.")),
+    });
   }
 
   function requestRepairLanAddress() {
@@ -325,8 +346,10 @@ export function HostLanControlPage() {
     try {
       await navigator.clipboard.writeText(requestBlock);
       setRequestCopied(true);
-    } catch {
+      notify.info("Terminal license request copied", "Send it to the license desk or Kirjane Labs support.");
+    } catch (error) {
       setRequestCopied(false);
+      notify.error("License request was not copied", safeNotificationDescription(error, "Select the request details and copy them manually."));
     }
   }
 
@@ -391,14 +414,20 @@ export function HostLanControlPage() {
             canCopyTerminalLink={canCopyTerminalLink}
             terminalLink={terminalLink}
             copied={copied}
-            onCopyTerminalLink={copyTerminalLink}
+            onCopyTerminalLink={() => void copyTerminalLink()}
             onActivate={activateLanConnection}
             onRepair={requestRepairLanAddress}
             onDisableLan={() => setPendingStopLan(true)}
             onToggleTroubleshooting={() => setShowTroubleshooting((value) => !value)}
             showTroubleshooting={showTroubleshooting}
             remotePosRuntimeEnabled={status.remotePosRuntimeEnabled}
-            onEnableRemotePos={() => remotePosRuntimeMutation.mutate({ enable: true })}
+            onEnableRemotePos={() => remotePosRuntimeMutation.mutate(
+              { enable: true },
+              {
+                onSuccess: () => notify.success("Terminal POS access allowed", "Paired terminal devices can use POS."),
+                onError: (error) => notify.error("Terminal POS access was not allowed", safeNotificationDescription(error, "Review LAN status and try again.")),
+              },
+            )}
             onDisableRemotePos={() => setPendingStopTerminalPos(true)}
             capacitySummary={capacitySummary}
             repairIp={repairIp}
@@ -657,7 +686,13 @@ export function HostLanControlPage() {
             destructive
             onConfirm={() => {
               setPendingStopLan(false);
-              remoteTransportMutation.mutate({ enable: false, bindAddress: null });
+              remoteTransportMutation.mutate(
+                { enable: false, bindAddress: null },
+                {
+                  onSuccess: () => notify.warning("LAN access stopped", "Terminal devices can no longer connect."),
+                  onError: (error) => notify.error("LAN access was not stopped", safeNotificationDescription(error, "LAN access remains in its previous state.")),
+                },
+              );
             }}
             onCancel={() => setPendingStopLan(false)}
           />
@@ -670,7 +705,13 @@ export function HostLanControlPage() {
             destructive
             onConfirm={() => {
               setPendingStopTerminalPos(false);
-              remotePosRuntimeMutation.mutate({ enable: false });
+              remotePosRuntimeMutation.mutate(
+                { enable: false },
+                {
+                  onSuccess: () => notify.warning("Terminal POS access stopped", "Paired terminals remain registered but cannot use POS."),
+                  onError: (error) => notify.error("Terminal POS access was not stopped", safeNotificationDescription(error, "Terminal POS access remains in its previous state.")),
+                },
+              );
             }}
             onCancel={() => setPendingStopTerminalPos(false)}
           />
@@ -685,7 +726,10 @@ export function HostLanControlPage() {
               if (!pendingRejectRequestId) return;
               const requestId = pendingRejectRequestId;
               setPendingRejectRequestId(null);
-              rejectJoinRequestMutation.mutate(requestId);
+              rejectJoinRequestMutation.mutate(requestId, {
+                onSuccess: () => notify.info("Pairing request rejected", "The terminal device must request access again if needed."),
+                onError: (error) => notify.error("Pairing request was not rejected", safeNotificationDescription(error, "The request remains pending.")),
+              });
             }}
             onCancel={() => setPendingRejectRequestId(null)}
           />
@@ -697,7 +741,10 @@ export function HostLanControlPage() {
             cancelLabel="Cancel"
             onConfirm={() => {
               setPendingCreateJoinCode(false);
-              rotateJoinCodeMutation.mutate();
+              rotateJoinCodeMutation.mutate(undefined, {
+                onSuccess: () => notify.success("Host join code created", "Use the latest code shown when pairing a terminal device."),
+                onError: (error) => notify.error("Join code was not created", safeNotificationDescription(error, "Check LAN access and try again.")),
+              });
             }}
             onCancel={() => setPendingCreateJoinCode(false)}
           />
@@ -723,7 +770,10 @@ export function HostLanControlPage() {
               if (!pendingDisableTerminal) return;
               const id = pendingDisableTerminal.terminalId;
               setPendingDisableTerminal(null);
-              disableTerminalMutation.mutate(id);
+              disableTerminalMutation.mutate(id, {
+                onSuccess: () => notify.warning("Terminal disabled", "This terminal cannot use POS until it is enabled again."),
+                onError: (error) => notify.error("Terminal was not disabled", safeNotificationDescription(error, "The terminal remains in its previous state.")),
+              });
             }}
             onCancel={() => setPendingDisableTerminal(null)}
           />
@@ -737,7 +787,10 @@ export function HostLanControlPage() {
               if (!pendingEnableTerminal) return;
               const id = pendingEnableTerminal.terminalId;
               setPendingEnableTerminal(null);
-              enableDisabledTerminalMutation.mutate(id);
+              enableDisabledTerminalMutation.mutate(id, {
+                onSuccess: () => notify.success("Terminal enabled", "This paired terminal can use POS again."),
+                onError: (error) => notify.error("Terminal was not enabled", safeNotificationDescription(error, "The terminal remains disabled.")),
+              });
             }}
             onCancel={() => setPendingEnableTerminal(null)}
           />
@@ -752,7 +805,10 @@ export function HostLanControlPage() {
               if (!pendingRemoveTerminal) return;
               const id = pendingRemoveTerminal.terminalId;
               setPendingRemoveTerminal(null);
-              revokeTerminalMutation.mutate(id);
+              revokeTerminalMutation.mutate(id, {
+                onSuccess: () => notify.success("Terminal removed", "This device must request access again."),
+                onError: (error) => notify.error("Terminal was not removed", safeNotificationDescription(error, "The terminal remains registered.")),
+              });
             }}
             onCancel={() => setPendingRemoveTerminal(null)}
           />
@@ -766,7 +822,10 @@ export function HostLanControlPage() {
               if (!pendingClearSessionsTerminal) return;
               const id = pendingClearSessionsTerminal.terminalId;
               setPendingClearSessionsTerminal(null);
-              clearTerminalSessionsMutation.mutate(id);
+              clearTerminalSessionsMutation.mutate(id, {
+                onSuccess: () => notify.info("Operator sessions cleared", "The terminal remains paired."),
+                onError: (error) => notify.error("Operator sessions were not cleared", safeNotificationDescription(error, "The existing sessions remain unchanged.")),
+              });
             }}
             onCancel={() => setPendingClearSessionsTerminal(null)}
           />

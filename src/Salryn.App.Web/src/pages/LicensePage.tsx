@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchLicenseStatus, installLicense, type LicenseStatusValue, type LicenseTypeValue } from "../api/license";
-import { Alert, Button, LoadingState, StatusPill } from "../components/ui";
+import { Alert, Button, LoadingState, StatusPill, useNotifications } from "../components/ui";
 
 const BETA_CONTACT_EMAIL = "salryn.info@gmail.com";
 
@@ -179,6 +179,7 @@ function TermsBody() {
 }
 
 export function LicensePage() {
+  const { notify } = useNotifications();
   const statusQuery = useQuery({ queryKey: ["license-status"], queryFn: fetchLicenseStatus, retry: false });
   const [licenseText, setLicenseText] = useState("");
   const [replaceConfirmed, setReplaceConfirmed] = useState(false);
@@ -205,7 +206,12 @@ export function LicensePage() {
   const canInstall = showReplaceLicense ? canInstallReplace : canInstallWizard;
 
   async function handleInstall() {
+    if (!termsAccepted) {
+      notify.warning("Terms required", "Accept the beta license terms before installing a license.");
+      return;
+    }
     if (!canInstall) return;
+    const replacingLicense = showReplaceLicense;
     setBusy(true);
     setMessage(null);
     setError(null);
@@ -214,18 +220,26 @@ export function LicensePage() {
       const result = await installLicense(licenseDocument);
       if (result.installStatus === "Installed") {
         setMessage("License installed. Host license active. Salryn works offline after a valid signed license is installed.");
+        notify.success(
+          replacingLicense ? "License replaced" : "License installed",
+          "The signed Host license is active on this device.",
+        );
         setLicenseText("");
         setReplaceConfirmed(false);
         setShowReplaceLicense(false);
         setWizardStep("closed");
         setTermsAccepted(false);
       } else {
-        setError(friendlyInstallError(result.errorMessage, result.errorCode));
+        const friendlyError = friendlyInstallError(result.errorMessage, result.errorCode);
+        setError(friendlyError);
+        notify.error("License was rejected", friendlyError);
       }
       await statusQuery.refetch();
     } catch (e) {
       const err = e as Error & { code?: string };
-      setError(friendlyInstallError(err.message, err.code));
+      const friendlyError = friendlyInstallError(err.message, err.code);
+      setError(friendlyError);
+      notify.error("License was not installed", friendlyError);
     } finally {
       setBusy(false);
     }
@@ -236,8 +250,10 @@ export function LicensePage() {
     try {
       await navigator.clipboard.writeText(machineCode);
       setMessage("Machine Code copied.");
+      notify.info("Machine Code copied", "Send it to Kirjane Labs support.");
     } catch {
       setError("Could not copy Machine Code. Select and copy it manually.");
+      notify.error("Machine Code was not copied", "Select the code and copy it manually.");
     }
   }
 

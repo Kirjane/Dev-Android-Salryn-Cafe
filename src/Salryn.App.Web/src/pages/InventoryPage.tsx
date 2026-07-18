@@ -25,8 +25,10 @@ import {
   LoadingState,
   StatusPill,
   TextInput,
+  useNotifications,
 } from "../components/ui";
 import { formatDateTime, formatQuantity } from "../utils/format";
+import { safeNotificationDescription } from "../utils/notificationError";
 
 const movementTypeOptions = [
   "Sale",
@@ -138,6 +140,7 @@ function Dialog({
 }
 
 export function InventoryPage() {
+  const { notify } = useNotifications();
   const [page, setPage] = useState(1);
   const [movementType, setMovementType] = useState("");
   const [from, setFrom] = useState("");
@@ -249,6 +252,7 @@ export function InventoryPage() {
     const validation = validateStockForm();
     if (validation) {
       setFormError(validation);
+      notify.warning("Stock movement was not saved", validation);
       return;
     }
     setIsSavingStock(true);
@@ -273,12 +277,18 @@ export function InventoryPage() {
       setWriteMessage(
         `${result.message} ${result.product.name} is now at ${formatQuantity(result.product.stockOnHand)}.`,
       );
+      notify.success(
+        dialogMode === "stock-in" ? "Stock-In completed" : "Stock adjustment completed",
+        `${result.product.name} is now at ${formatQuantity(result.product.stockOnHand)}.`,
+      );
       setShowStockDialog(false);
       setMovementType(result.movementType);
       setPage(1);
       refreshAll();
     } catch (error) {
-      setFormError(describeInventoryWriteError(error));
+      const description = describeInventoryWriteError(error);
+      setFormError(description);
+      notify.error("Stock movement failed", safeNotificationDescription(new Error(description), "No stock movement was recorded."));
     } finally {
       setIsSavingStock(false);
     }

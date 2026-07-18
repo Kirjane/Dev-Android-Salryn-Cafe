@@ -5,7 +5,7 @@ import { fetchBootstrapStatus, type BootstrapStatus } from "./api/bootstrap";
 import { fetchLicenseStatus, type LocalLicenseStatus } from "./api/license";
 import { logout, type SessionState } from "./api/session";
 import { AppShell } from "./components/AppShell";
-import { Button, Card, CardBody, CommandBar } from "./components/ui";
+import { Button, Card, CardBody, CommandBar, NotificationProvider } from "./components/ui";
 import { useAppSession } from "./hooks/useAppSession";
 import { type AppPage } from "./navigation";
 import { AuditPage } from "./pages/AuditPage";
@@ -179,6 +179,9 @@ function isHostLicenseReady(status: LocalLicenseStatus | undefined): boolean {
 }
 
 export default function App() {
-  if (isRemoteClientBrowserLocation()) return <RemoteClientApp />;
-  return <ConsoleApp />;
+  return (
+    <NotificationProvider>
+      {isRemoteClientBrowserLocation() ? <RemoteClientApp /> : <ConsoleApp />}
+    </NotificationProvider>
+  );
 }

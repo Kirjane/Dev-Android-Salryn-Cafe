@@ -31,8 +31,10 @@ import {
   DataTable,
   StatusPill,
   TextInput,
+  useNotifications,
 } from "../components/ui";
 import { formatDateTime, formatMoney, formatQuantity } from "../utils/format";
+import { safeNotificationDescription } from "../utils/notificationError";
 
 type ProductFormMode = "create" | "edit";
 type CatalogStockMode = "stock-in" | "adjustment";
@@ -163,6 +165,7 @@ function Dialog({
 }
 
 export function ProductsPage() {
+  const { notify } = useNotifications();
   const [search, setSearch] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [brandId, setBrandId] = useState("");
@@ -354,12 +357,14 @@ export function ProductsPage() {
   ) {
     if (!detail.isActive) {
       setWriteMessage("Inactive products cannot receive stock movements.");
+      notify.warning("Stock movement unavailable", "Inactive products cannot receive stock movements.");
       return;
     }
     if (!detail.trackStock) {
       setWriteMessage(
         "This product is not stock-tracked. Stock-In and Adjustment are unavailable.",
       );
+      notify.warning("Stock movement unavailable", "This product is not stock-tracked.");
       return;
     }
     setStockMode(mode);
@@ -426,10 +431,12 @@ export function ProductsPage() {
     const validation = validateForm();
     if (validation) {
       setFormError(validation);
+      notify.warning("Product was not saved", validation);
       return;
     }
     if (formMode === "edit" && !formProductId) {
       setFormError("Product ID is missing for edit.");
+      notify.error("Product was not saved", "Select the product again and retry the edit.");
       return;
     }
     setIsSavingProduct(true);
@@ -443,9 +450,15 @@ export function ProductsPage() {
       setWriteMessage(result.message);
       setShowProductForm(false);
       setSelectedId(result.product.id);
+      notify.success(
+        formMode === "create" ? "Product created" : "Product updated",
+        formMode === "create" ? "Use Stock-In to add starting quantity." : "The catalog changes were saved.",
+      );
       await refreshCatalog(result.product.id);
     } catch (error) {
-      setFormError(describeProductWriteError(error));
+      const description = describeProductWriteError(error);
+      setFormError(description);
+      notify.error("Product was not saved", safeNotificationDescription(new Error(description), "Check the required fields and try again."));
     } finally {
       setIsSavingProduct(false);
     }
@@ -454,11 +467,13 @@ export function ProductsPage() {
     const detail = detailQuery.data;
     if (!detail) {
       setStockError("Select a product before recording stock movement.");
+      notify.warning("Stock movement was not saved", "Select a product first.");
       return;
     }
     const validation = validateStockForm(detail);
     if (validation) {
       setStockError(validation);
+      notify.warning("Stock movement was not saved", validation);
       return;
     }
     setIsSavingStock(true);
@@ -483,10 +498,16 @@ export function ProductsPage() {
       setWriteMessage(
         `${result.message} ${result.product.name} current stock is ${formatQuantity(result.product.stockOnHand)}.`,
       );
+      notify.success(
+        stockMode === "stock-in" ? "Stock-In completed" : "Stock adjustment completed",
+        `${result.product.name} is now at ${formatQuantity(result.product.stockOnHand)}.`,
+      );
       setShowStockDialog(false);
       await refreshCatalog(detail.id);
     } catch (error) {
-      setStockError(describeCatalogStockError(error));
+      const description = describeCatalogStockError(error);
+      setStockError(description);
+      notify.error("Stock movement failed", safeNotificationDescription(new Error(description), "No stock movement was recorded."));
     } finally {
       setIsSavingStock(false);
     }
@@ -507,11 +528,14 @@ export function ProductsPage() {
       setWriteMessage(
         `${result.message} Product is inactive and hidden from active sale flow. Historical sales remain preserved.`,
       );
+      notify.success("Product deactivated", "The product is hidden from active sale flow.");
       setShowDeactivateConfirm(false);
       await productsQuery.refetch();
       await detailQuery.refetch();
     } catch (error) {
-      setWriteMessage(describeProductWriteError(error));
+      const description = describeProductWriteError(error);
+      setWriteMessage(description);
+      notify.error("Product was not deactivated", safeNotificationDescription(new Error(description), "The product remains active."));
     } finally {
       setIsDeactivating(false);
     }

@@ -6,8 +6,9 @@ import { fastAddUnknownBarcode } from "../api/fastAddProduct";
 import { fetchProducts, fetchProductUnits, type ProductListItem } from "../api/products";
 import { printReceiptForSale, type ReceiptPrintResult } from "../api/receiptPrint";
 import { fetchSession } from "../api/session";
-import { Alert, Button, Card, CardBody, CardHeader, CardTitle, CommandBar, ErrorState, LoadingState, StatusPill, TextInput } from "../components/ui";
+import { Alert, Button, Card, CardBody, CardHeader, CardTitle, CommandBar, ErrorState, LoadingState, StatusPill, TextInput, useNotifications } from "../components/ui";
 import { formatDateTime, formatMoney, formatQuantity } from "../utils/format";
+import { safeNotificationDescription } from "../utils/notificationError";
 
 type CartLine = { product: ProductListItem; quantity: number };
 type CheckoutAttemptState = { httpStatus: number | null; backendCode: string | null; checkoutStatus: string | null; receiptNumber: string | null; saleId: string | null };
@@ -81,6 +82,7 @@ function Dialog({ title, children, footer, onClose }: { title: string; children:
 }
 
 export function CheckoutPage() {
+  const { notify } = useNotifications();
   const [search, setSearch] = useState("");
   const [productPage, setProductPage] = useState(1);
   const [cartLines, setCartLines] = useState<CartLine[]>([]);
@@ -154,9 +156,9 @@ export function CheckoutPage() {
   function handleSearchChange(value: string) { setSearch(value); setProductPage(1); setBarcodeStatus(null); }
 
   function addProduct(product: ProductListItem) {
-    if (!shiftOpen) { setBackendMessage("Open a shift before adding products."); return; }
+    if (!shiftOpen) { setBackendMessage("Open a shift before adding products."); notify.warning("Shift required", "Open a shift before adding products."); return; }
     const state = stockState(product);
-    if (!state.canAdd) { setBackendMessage(`${product.name} cannot be added: ${state.helper}`); return; }
+    if (!state.canAdd) { setBackendMessage(`${product.name} cannot be added: ${state.helper}`); notify.warning("Product was not added", state.helper); return; }
     setCheckoutResult(null); setCompletedSale(null); setPrintResult(null); setBackendMessage(null);
     setCartLines((current) => {
       const existing = current.find((line) => line.product.id === product.id);
@@ -196,12 +198,12 @@ export function CheckoutPage() {
 
   async function handleSubmitFastAdd() {
     if (isFastAdding) return;
-    const validation = validateFastAdd(); if (validation) { setFastAddError(validation); return; }
+    const validation = validateFastAdd(); if (validation) { setFastAddError(validation); notify.warning("Product was not created", validation); return; }
     setIsFastAdding(true); setFastAddError(null);
     try {
       const result = await fastAddUnknownBarcode({ productName: fastAddProductName.trim(), barcode: normalizeBarcode(fastAddBarcode), unitId: fastAddUnitId, sellingPrice: toNumber(fastAddSellingPrice), initialStockQuantity: toNumber(fastAddInitialStock) });
-      addProduct(result.product); setBarcodeStatus(`${result.product.name} created by Fast Add and added to cart.`); setShowFastAdd(false); setSearch(""); setProductPage(1); await productsQuery.refetch();
-    } catch (error) { setFastAddError(describeCheckoutBackendError(error)); }
+      addProduct(result.product); setBarcodeStatus(`${result.product.name} created by Fast Add and added to cart.`); setShowFastAdd(false); setSearch(""); setProductPage(1); notify.success("Product created", "The product was added to the active cart."); await productsQuery.refetch();
+    } catch (error) { const description = describeCheckoutBackendError(error); setFastAddError(description); notify.error("Product was not created", safeNotificationDescription(new Error(description), "Check the required fields and try again.")); }
     finally { setIsFastAdding(false); focusScanField(); }
   }
 
@@ -219,9 +221,9 @@ export function CheckoutPage() {
   function clearCart() { setCartLines([]); setCashAmount(""); setCheckoutResult(null); setCompletedSale(null); setPrintResult(null); setBarcodeStatus(null); setShowConfirmCheckout(false); setAttemptState(initialAttemptState); setBackendMessage(null); }
   async function startNewSale() { clearCart(); await refreshShiftAndProducts(); }
   async function refreshShiftAndProducts() { setBackendMessage(null); await Promise.all([sessionQuery.refetch(), shiftQuery.refetch(), productsQuery.refetch(), unitsQuery.refetch()]); setLastRefreshAt(new Date().toISOString()); }
-  async function handleOpenShift() { setBackendMessage(null); setIsOpeningShift(true); try { const result = await openHostShift({ openingCashCents: toCents(openingCash) }); setBackendMessage(result.message); await Promise.all([shiftQuery.refetch(), productsQuery.refetch(), unitsQuery.refetch()]); setLastRefreshAt(new Date().toISOString()); } catch (error) { setBackendMessage(describeCheckoutBackendError(error)); } finally { setIsOpeningShift(false); } }
-  async function handleCloseShift() { setBackendMessage(null); setIsClosingShift(true); try { const result = await closeHostShift(); clearCart(); setBackendMessage(result.message); await shiftQuery.refetch(); setLastRefreshAt(new Date().toISOString()); } catch (error) { setBackendMessage(describeCheckoutBackendError(error)); } finally { setIsClosingShift(false); } }
-  function reviewCheckout() { if (!canReviewCheckout) { setBackendMessage(cartValidationMessage ?? "Checkout is not ready."); return; } setBackendMessage(null); setShowConfirmCheckout(true); }
+  async function handleOpenShift() { setBackendMessage(null); setIsOpeningShift(true); try { const result = await openHostShift({ openingCashCents: toCents(openingCash) }); setBackendMessage(result.message); notify.success("Shift opened", "Checkout is ready for sales."); await Promise.all([shiftQuery.refetch(), productsQuery.refetch(), unitsQuery.refetch()]); setLastRefreshAt(new Date().toISOString()); } catch (error) { const description = describeCheckoutBackendError(error); setBackendMessage(description); notify.error("Shift was not opened", safeNotificationDescription(new Error(description), "Review the opening cash and try again.")); } finally { setIsOpeningShift(false); } }
+  async function handleCloseShift() { setBackendMessage(null); setIsClosingShift(true); try { const result = await closeHostShift(); clearCart(); setBackendMessage(result.message); notify.success("Shift closed", "The cashier shift is closed."); await shiftQuery.refetch(); setLastRefreshAt(new Date().toISOString()); } catch (error) { const description = describeCheckoutBackendError(error); setBackendMessage(description); notify.error("Shift was not closed", safeNotificationDescription(new Error(description), "Review the current shift and try again.")); } finally { setIsClosingShift(false); } }
+  function reviewCheckout() { if (!canReviewCheckout) { const description = cartValidationMessage ?? "Checkout is not ready."; setBackendMessage(description); notify.warning("Sale is not ready", description); return; } setBackendMessage(null); setShowConfirmCheckout(true); }
 
   async function handleSubmitCheckout() {
     if (!canReviewCheckout || isSubmittingCheckout) return;
@@ -233,18 +235,34 @@ export function CheckoutPage() {
       setCompletedSale({ receiptNumber: result.checkout.receiptNumber, saleId: result.checkout.saleId, totalCents: result.checkout.totalCents, amountPaidCents: cashCents, changeCents: result.checkout.changeCents, fileReceiptStatus: receiptMetadata.fileReceiptStatus ?? null, fileReceiptPath: receiptMetadata.fileReceiptPath ?? null, fileReceiptError: receiptMetadata.fileReceiptError ?? null });
       setShowConfirmCheckout(false); setBackendMessage(result.message);
       setAttemptState({ httpStatus: 200, backendCode: result.code, checkoutStatus: result.checkout.status, receiptNumber: result.checkout.receiptNumber, saleId: result.checkout.saleId });
+      notify.success("Sale completed", "Receipt was saved.");
       await productsQuery.refetch();
     } catch (error) {
       if (error instanceof ApiError) setAttemptState({ httpStatus: error.status, backendCode: error.code ?? null, checkoutStatus: error.checkoutStatus ?? null, receiptNumber: null, saleId: null });
-      setBackendMessage(describeCheckoutBackendError(error));
+      const description = describeCheckoutBackendError(error);
+      setBackendMessage(description);
+      notify.error("Sale failed", safeNotificationDescription(new Error(description), "No stock or payment record was changed."));
     } finally { setIsSubmittingCheckout(false); }
   }
 
   async function handlePrintCompletedReceipt() {
     if (!completedSale?.saleId || isPrintingReceipt) return;
     setIsPrintingReceipt(true); setPrintResult(null);
-    try { const result = await printReceiptForSale(completedSale.saleId); setPrintResult(result.print); }
-    catch (error) { setPrintResult({ succeeded: false, status: "Failed", saleId: completedSale.saleId, receiptNumber: completedSale.receiptNumber, source: "PersistedReceiptSnapshot", adapterName: "Unknown", message: "Receipt print request failed. Sale remains committed.", errorMessage: error instanceof Error ? error.message : "Unknown print error.", printedAtUtc: null }); }
+    try {
+      const result = await printReceiptForSale(completedSale.saleId);
+      setPrintResult(result.print);
+      if (result.print.succeeded || result.print.status === "Succeeded") {
+        notify.success("Receipt printed", "Sent to the selected Windows printer.");
+      } else if (result.print.status === "Disabled/Unavailable") {
+        notify.warning("Receipt was not printed", "Printing is disabled or the selected printer is unavailable.");
+      } else {
+        notify.error("Print failed", safeNotificationDescription(new Error(result.print.errorMessage || result.print.message), "Check printer settings or use reprint later."));
+      }
+    }
+    catch (error) {
+      setPrintResult({ succeeded: false, status: "Failed", saleId: completedSale.saleId, receiptNumber: completedSale.receiptNumber, source: "PersistedReceiptSnapshot", adapterName: "Unknown", message: "Receipt print request failed. Sale remains committed.", errorMessage: error instanceof Error ? error.message : "Unknown print error.", printedAtUtc: null });
+      notify.error("Print failed", safeNotificationDescription(error, "Check printer settings or use reprint later."));
+    }
     finally { setIsPrintingReceipt(false); }
   }
 

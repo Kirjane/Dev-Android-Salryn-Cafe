@@ -1,9 +1,10 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchSaleDetail, fetchSalesHistory, printReceiptForSale, type ReceiptPrintResult, type SaleHistoryItem } from "../api/sales";
-import { Alert, Button, Card, CardBody, CardHeader, CardTitle, CommandBar, DataTable, ErrorState, LoadingState, StatusPill, TextInput } from "../components/ui";
+import { Alert, Button, Card, CardBody, CardHeader, CardTitle, CommandBar, DataTable, ErrorState, LoadingState, StatusPill, TextInput, useNotifications } from "../components/ui";
 import { formatDateTime, formatMoney, formatQuantity } from "../utils/format";
 import { voidSale } from "../api/saleVoid";
+import { safeNotificationDescription } from "../utils/notificationError";
 
 function Dialog({ title, children, footer, onClose }: { title: string; children: ReactNode; footer: ReactNode; onClose: () => void }) {
   useEffect(() => {
@@ -19,6 +20,7 @@ function printTone(status: string | null | undefined): "success" | "warning" | "
 }
 
 export function SalesHistoryPage({ canVoid = false }: { canVoid?: boolean }) {
+  const { notify } = useNotifications();
   const [receiptNo, setReceiptNo] = useState("");
   const [status, setStatus] = useState("");
   const [from, setFrom] = useState("");
@@ -44,16 +46,29 @@ export function SalesHistoryPage({ canVoid = false }: { canVoid?: boolean }) {
   async function handleReprint() {
     if (!detailQuery.data?.id || isReprinting) return;
     setIsReprinting(true); setReprintResult(null);
-    try { const result = await printReceiptForSale(detailQuery.data.id); setReprintResult(result.print); }
-    catch (error) { setReprintResult({ succeeded: false, status: "Failed", saleId: detailQuery.data.id, receiptNumber: detailQuery.data.receiptNo, source: "PersistedReceiptSnapshot", adapterName: "Unknown", message: "Reprint request failed. Sale, stock, payments, and receipt identity remain unchanged.", errorMessage: error instanceof Error ? error.message : "Unknown reprint error.", printedAtUtc: null }); }
+    try {
+      const result = await printReceiptForSale(detailQuery.data.id);
+      setReprintResult(result.print);
+      if (result.print.succeeded || result.print.status === "Succeeded") {
+        notify.success("Receipt reprinted", "The saved receipt was sent to the selected Windows printer.");
+      } else if (result.print.status === "Disabled/Unavailable") {
+        notify.warning("Receipt was not reprinted", "Printing is disabled or the selected printer is unavailable.");
+      } else {
+        notify.error("Reprint failed", safeNotificationDescription(new Error(result.print.errorMessage || result.print.message), "Check printer settings and try again."));
+      }
+    }
+    catch (error) {
+      setReprintResult({ succeeded: false, status: "Failed", saleId: detailQuery.data.id, receiptNumber: detailQuery.data.receiptNo, source: "PersistedReceiptSnapshot", adapterName: "Unknown", message: "Reprint request failed. Sale, stock, payments, and receipt identity remain unchanged.", errorMessage: error instanceof Error ? error.message : "Unknown reprint error.", printedAtUtc: null });
+      notify.error("Reprint failed", safeNotificationDescription(error, "Check printer settings and try again."));
+    }
     finally { setIsReprinting(false); }
   }
 
   async function handleVoid() {
     if (!detailQuery.data?.id || !voidReason.trim() || !voidConfirmed || isVoiding) return;
     setIsVoiding(true); setVoidMessage(null);
-    try { const result = await voidSale(detailQuery.data.id, voidReason.trim()); setVoidMessage(`${result.message} Reversal movements: ${result.reversalMovementCount}.`); setVoidReason(""); setVoidConfirmed(false); await Promise.all([detailQuery.refetch(), salesQuery.refetch()]); }
-    catch (error) { setVoidMessage(error instanceof Error ? error.message : "Sale void failed."); }
+    try { const result = await voidSale(detailQuery.data.id, voidReason.trim()); setVoidMessage(`${result.message} Reversal movements: ${result.reversalMovementCount}.`); setVoidReason(""); setVoidConfirmed(false); notify.success("Sale voided", "Stock was restored through recorded reversal movements."); await Promise.all([detailQuery.refetch(), salesQuery.refetch()]); }
+    catch (error) { setVoidMessage(error instanceof Error ? error.message : "Sale void failed."); notify.error("Void failed", safeNotificationDescription(error, "The sale was not voided.")); }
     finally { setIsVoiding(false); }
   }
 

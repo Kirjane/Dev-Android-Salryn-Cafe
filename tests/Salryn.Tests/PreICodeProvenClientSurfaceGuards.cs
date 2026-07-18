@@ -117,10 +117,10 @@ public static class PreICodeProvenClientSurfaceGuards
             "onClearSessions={() => clearTerminalSessionsMutation.mutate",
             "Clear sessions must not fire immediately from row.");
 
-        PreICodeProvenCheckSupport.RequireContains(hostLan, "disableTerminalMutation.mutate(id)", "Confirm Disable calls disable mutation.");
-        PreICodeProvenCheckSupport.RequireContains(hostLan, "enableDisabledTerminalMutation.mutate(id)", "Confirm Enable calls enable mutation.");
-        PreICodeProvenCheckSupport.RequireContains(hostLan, "revokeTerminalMutation.mutate(id)", "Confirm Remove uses revoke mutation.");
-        PreICodeProvenCheckSupport.RequireContains(hostLan, "clearTerminalSessionsMutation.mutate(id)", "Confirm Clear sessions calls clear mutation.");
+        PreICodeProvenCheckSupport.RequireContains(hostLan, "disableTerminalMutation.mutate(id,", "Confirm Disable calls disable mutation.");
+        PreICodeProvenCheckSupport.RequireContains(hostLan, "enableDisabledTerminalMutation.mutate(id,", "Confirm Enable calls enable mutation.");
+        PreICodeProvenCheckSupport.RequireContains(hostLan, "revokeTerminalMutation.mutate(id,", "Confirm Remove uses revoke mutation.");
+        PreICodeProvenCheckSupport.RequireContains(hostLan, "clearTerminalSessionsMutation.mutate(id,", "Confirm Clear sessions calls clear mutation.");
 
         PreICodeProvenCheckSupport.RequireContains(hostLan, "const showDisable = canDisableTerminal", "Active row Disable visibility gate.");
         PreICodeProvenCheckSupport.RequireContains(hostLan, "const showEnable = canEnableDisabledTerminal", "Disabled row Enable visibility gate.");

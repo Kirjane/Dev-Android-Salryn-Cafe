@@ -11,7 +11,8 @@ import {
   type BackupSummary,
   type BackupVerification,
 } from "../api/backups";
-import { Alert, Button, Card, CardBody, CardHeader, CardTitle, CommandBar, Dialog, LoadingState, StatusPill, TextInput } from "../components/ui";
+import { Alert, Button, Card, CardBody, CardHeader, CardTitle, CommandBar, Dialog, LoadingState, StatusPill, TextInput, useNotifications } from "../components/ui";
+import { safeNotificationDescription } from "../utils/notificationError";
 
 function formatBytes(value: number | null | undefined): string {
   if (value === null || value === undefined) return "Not available";
@@ -51,6 +52,7 @@ function VerificationSummary({ verification }: { verification: BackupVerificatio
 }
 
 export function BackupRestorePage() {
+  const { notify } = useNotifications();
   const backupsQuery = useQuery({ queryKey: ["backup-packages"], queryFn: listBackups });
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -68,7 +70,7 @@ export function BackupRestorePage() {
 
   const backups = useMemo(() => backupsQuery.data ?? [], [backupsQuery.data]);
   const selectedVerification = restoreTarget ? verifications[restoreTarget] ?? null : null;
-  const restoreReady = Boolean(restoreTarget && isVerifiedRestorable(selectedVerification) && restoreText === RESTORE_CONFIRMATION_INPUT && !restoring);
+  const restoreReady = Boolean(restoreTarget && isVerifiedRestorable(selectedVerification) && restoreText.trim().length > 0 && !restoring);
 
   async function handleCreateBackup() {
     setCreating(true);
@@ -78,9 +80,11 @@ export function BackupRestorePage() {
       const created = await createBackup();
       setMessage(`Backup created: ${created.backupId}`);
       setCreateSuccessId(created.backupId);
+      notify.success("Backup created", "Keep a copy outside this computer.");
       await backupsQuery.refetch();
     } catch (e) {
       setError((e as Error).message);
+      notify.error("Backup was not created", safeNotificationDescription(e, "The backup was not created. Try again."));
     } finally {
       setCreating(false);
     }
@@ -96,9 +100,13 @@ export function BackupRestorePage() {
       setMessage(verification.database.isRestorable ? `Backup verified: ${backupId}` : `Backup is not restorable: ${backupId}`);
       if (verification.database.isRestorable) {
         setVerifySuccessId(backupId);
+        notify.success("Backup verified", "This backup is restorable.");
+      } else {
+        notify.error("Backup verification failed", "This backup is not restorable.");
       }
     } catch (e) {
       setError((e as Error).message);
+      notify.error("Backup verification failed", safeNotificationDescription(e, "The backup could not be verified."));
       setVerifications((current) => {
         const next = { ...current };
         delete next[backupId];
@@ -118,6 +126,7 @@ export function BackupRestorePage() {
       const verification = await importBackupFile(file);
       setVerifications((current) => ({ ...current, [verification.backupId]: verification }));
       setMessage(`Backup imported and verified: ${verification.backupId}`);
+      notify.success("Backup imported", isVerifiedRestorable(verification) ? "The backup is verified and ready for restore review." : "The backup was imported but is not restorable.");
       await backupsQuery.refetch();
       if (isVerifiedRestorable(verification)) {
         setRestoreTarget(verification.backupId);
@@ -125,6 +134,7 @@ export function BackupRestorePage() {
       }
     } catch (e) {
       setError((e as Error).message);
+      notify.error("Backup was not imported", safeNotificationDescription(e, "Choose a valid Salryn backup file and try again."));
     } finally {
       setImporting(false);
       if (importInputRef.current) importInputRef.current.value = "";
@@ -133,6 +143,12 @@ export function BackupRestorePage() {
 
   async function handleRestore() {
     if (!restoreTarget || !restoreReady) return;
+    if (restoreText !== RESTORE_CONFIRMATION_INPUT) {
+      const description = `Type ${RESTORE_CONFIRMATION_INPUT} exactly to continue.`;
+      setError(description);
+      notify.error("Restore phrase incorrect", description);
+      return;
+    }
     setRestoring(true);
     setMessage(null);
     setError(null);
@@ -143,9 +159,11 @@ export function BackupRestorePage() {
       setRestoreSuccessAt(when);
       setRestoreText("");
       setRestoreTarget(null);
+      notify.success("Restore completed", "The active database was replaced from the verified backup.");
       await backupsQuery.refetch();
     } catch (e) {
       setError((e as Error).message);
+      notify.error("Restore failed", safeNotificationDescription(e, "The active database was not replaced."));
     } finally {
       setRestoring(false);
     }

@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { Layers3, ShieldCheck } from "lucide-react";
 import { createFirstAdmin, type BootstrapStatus } from "../api/bootstrap";
-import { Alert, Button, FormField, PasswordInput, TextInput } from "../components/ui";
+import { Alert, Button, FormField, PasswordInput, TextInput, useNotifications } from "../components/ui";
+import { safeNotificationDescription } from "../utils/notificationError";
 
 type BootstrapSetupPageProps = {
   status: BootstrapStatus;
@@ -9,6 +10,7 @@ type BootstrapSetupPageProps = {
 };
 
 export function BootstrapSetupPage({ status, onCompleted }: BootstrapSetupPageProps) {
+  const { notify } = useNotifications();
   const [storeName, setStoreName] = useState("");
   const [businessName, setBusinessName] = useState("");
   const [address, setAddress] = useState("");
@@ -30,26 +32,31 @@ export function BootstrapSetupPage({ status, onCompleted }: BootstrapSetupPagePr
 
     if (!storeName.trim()) {
       setError("Store name is required.");
+      notify.warning("Setup is not ready", "Store name is required.");
       return;
     }
 
     if (!adminUsername.trim()) {
       setError("Admin username is required.");
+      notify.warning("Setup is not ready", "Admin username is required.");
       return;
     }
 
     if (!adminDisplayName.trim()) {
       setError("Admin display name is required.");
+      notify.warning("Setup is not ready", "Admin display name is required.");
       return;
     }
 
     if (adminPassword.length < 8) {
       setError("Admin password must be at least 8 characters.");
+      notify.warning("Setup is not ready", "Admin password must be at least 8 characters.");
       return;
     }
 
     if (adminPassword !== confirmPassword) {
       setError("Password confirmation does not match.");
+      notify.warning("Setup is not ready", "Password confirmation does not match.");
       return;
     }
 
@@ -70,10 +77,12 @@ export function BootstrapSetupPage({ status, onCompleted }: BootstrapSetupPagePr
       setAdminPassword("");
       setConfirmPassword("");
       setSuccess("First-run setup completed. Sign in with the admin account you created.");
+      notify.success("First-run setup completed", "Sign in with the admin account you created.");
       window.history.replaceState(null, "", "/");
       onCompleted();
     } catch (submitError) {
       setError((submitError as Error).message || "First-run setup failed.");
+      notify.error("Setup failed", safeNotificationDescription(submitError, "The first admin was not created."));
     } finally {
       setIsSubmitting(false);
     }

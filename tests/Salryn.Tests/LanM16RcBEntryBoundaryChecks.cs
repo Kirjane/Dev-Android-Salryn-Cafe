@@ -48,8 +48,7 @@ public static class LanM16RcBEntryBoundaryChecks
         string remotePosHook)
     {
         AssertContains(app, "isRemoteClientBrowserLocation()", "App must classify non-loopback browser locations.");
-        AssertContains(app, "return <RemoteClientApp />;", "LAN/non-loopback root must render remote client entry before console auth.");
-        AssertContains(app, "return <ConsoleApp />;", "Loopback root must still render the local console path.");
+        AssertContains(app, "isRemoteClientBrowserLocation() ? <RemoteClientApp /> : <ConsoleApp />", "LAN/non-loopback root must render remote client entry before console auth while loopback keeps the local console path.");
         AssertContains(login, "Sign in to Salryn POS", "Local loopback login page must remain available.");
 
         // PRE-BETA-E: primary path is Salryn terminal shell; Remote Read-Only is support-only.

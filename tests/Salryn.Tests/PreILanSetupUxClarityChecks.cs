@@ -94,11 +94,13 @@ public static class PreILanSetupUxClarityChecks
         RequireNotContains(page, "LicensingOps", "Normal product source must use license desk/support wording.");
 
         // E. Same underlying API mutations remain after confirmation.
-        RequireContains(page, "remoteTransportMutation.mutate({ enable: false, bindAddress: null })", "Stop LAN must retain the existing API mutation.");
-        RequireContains(page, "remotePosRuntimeMutation.mutate({ enable: false })", "Stop Terminal POS must retain the existing API mutation.");
-        RequireContains(page, "rejectJoinRequestMutation.mutate(requestId)", "Reject must retain the existing API mutation.");
-        RequireContains(page, "rotateJoinCodeMutation.mutate()", "Create join code must retain the existing rotation mutation.");
-        RequireContains(page, "repairBindMutation.mutate(target || null)", "Repair must retain the existing API mutation.");
+        RequireContains(page, "remoteTransportMutation.mutate(", "Stop LAN must retain the existing API mutation.");
+        RequireContains(page, "{ enable: false, bindAddress: null }", "Stop LAN must retain the existing disable payload.");
+        RequireContains(page, "remotePosRuntimeMutation.mutate(", "Stop Terminal POS must retain the existing API mutation.");
+        RequireContains(page, "{ enable: false }", "Stop Terminal POS must retain the existing disable payload.");
+        RequireContains(page, "rejectJoinRequestMutation.mutate(requestId,", "Reject must retain the existing API mutation.");
+        RequireContains(page, "rotateJoinCodeMutation.mutate(undefined,", "Create join code must retain the existing rotation mutation.");
+        RequireContains(page, "repairBindMutation.mutate(target || null,", "Repair must retain the existing API mutation.");
     }
 
     private static int RequireIndex(string source, string value)
