@@ -183,7 +183,7 @@ public static class LocalLicensingBetaManualHostTerminalActivationChecks
             RequireNotContains(licensePage, "subscription billing", "License UI must not claim subscription billing.");
             RequireNotContains(licensePage, "LAN production ready", "License UI must not claim LAN production ready.");
             RequireContains(hostLan, "title=\"Terminal Management\"", "Internal host LAN page must use Terminal Management naming.");
-            RequireContains(hostLan, "Terminal license request (admin / support)", "Host Terminal Management must expose admin request context.");
+            RequireContains(hostLan, "License desk details", "Host Terminal Management must keep support issuance details collapsed.");
             RequireContains(hostLan, "Copy Terminal License Request", "Host Terminal Management must offer a copy-ready request block.");
             RequireContains(navigation, "VITE_SALRYN_INTERNAL_SURFACES", "Incomplete terminal management must be hidden from normal navigation.");
             RequireNotContains(backupPage, "local license file is stored outside this database backup package", "Backup page must not show an implementation-boundary wall.");

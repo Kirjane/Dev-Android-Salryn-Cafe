@@ -132,7 +132,7 @@ public static class PreICodeProvenClientSurfaceGuards
         PreICodeProvenCheckSupport.RequireNotContains(hostLan, ">Revoke<", "No primary Revoke label.");
         PreICodeProvenCheckSupport.RequireContains(
             hostLan,
-            "Remove terminal only when a",
+            "Remove terminal is available only after Disable",
             "Help copy uses Remove terminal language.");
 
         // Pure helper contracts as source-level unit proofs for Active/Disabled/Revoked/host-local.

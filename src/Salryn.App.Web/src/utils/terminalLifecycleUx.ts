@@ -3,15 +3,15 @@ export type TerminalLifecycleStatus = "PendingPairing" | "Active" | "Disabled" |
 export function formatTerminalRoleLabel(role: string): string {
   switch (role) {
     case "CashierClient":
-      return "Remote POS terminal";
+      return "Terminal POS device";
     case "FutureMobileDashboardReadOnly":
-      return "Remote Read-Only terminal";
+      return "Read-only terminal device";
     case "HostConsole":
       return "Host console";
     case "AllInOneLocalTerminal":
       return "Local POS terminal";
     case "AdminClient":
-      return "Admin client";
+      return "Admin connection";
     default:
       return role;
   }
@@ -51,9 +51,9 @@ export function terminalStatusTone(status: TerminalLifecycleStatus): "success" |
 export function terminalLifecycleExplanation(status: TerminalLifecycleStatus): string | null {
   switch (status) {
     case "Revoked":
-      return "This terminal was removed. The client must request access again to open a new pending request.";
+      return "This terminal was removed. The terminal device must request access again to open a new pending request.";
     case "Disabled":
-      return "This terminal is temporarily blocked. Enable terminal restores access without re-pairing, or Remove terminal ends trust permanently.";
+      return "This terminal is temporarily blocked. Enable terminal restores access without re-pairing, or Remove terminal ends access permanently.";
     default:
       return null;
   }
@@ -134,7 +134,7 @@ export function terminalGroupTitle(group: TerminalConnectionGroup): string {
     case "retired":
       return "Retired / removed terminals";
     case "host-local":
-      return "Local host / admin clients";
+      return "Host PC / admin connections";
     default:
       return "Terminals";
   }

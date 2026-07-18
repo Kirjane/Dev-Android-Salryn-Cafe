@@ -68,15 +68,15 @@ function readinessTone(state: string): "success" | "warning" | "danger" | "info"
 function readinessTitle(state: string): string {
   switch (state) {
     case "Ready":
-      return "Ready";
+      return "LAN ready";
     case "LoopbackOnly":
-      return "Offline / loopback only — restart required";
+      return "Restart required";
     case "BindIpNotOnHost":
-      return "Misconfigured — bind IP not on this host";
+      return "Address needs repair";
     case "Misconfigured":
-      return "Misconfigured — repair LAN address";
+      return "Address needs repair";
     case "Disabled":
-      return "Offline — LAN transport disabled";
+      return "LAN not started";
     default:
       return state;
   }
@@ -107,7 +107,7 @@ function readinessGuidance(state: string): string {
     case "Misconfigured":
       return "Repair the saved LAN address before connecting terminal devices.";
     case "Disabled":
-      return "Enter this host's LAN IPv4 address, then activate the LAN connection.";
+      return "Enter this Host PC's LAN address, then start LAN access.";
     default:
       return "Review the LAN setup and try again.";
   }
@@ -158,6 +158,11 @@ export function HostLanControlPage() {
   const [pendingEnableTerminal, setPendingEnableTerminal] = useState<LocalLanControlTerminal | null>(null);
   const [pendingRemoveTerminal, setPendingRemoveTerminal] = useState<LocalLanControlTerminal | null>(null);
   const [pendingClearSessionsTerminal, setPendingClearSessionsTerminal] = useState<LocalLanControlTerminal | null>(null);
+  const [pendingStopLan, setPendingStopLan] = useState(false);
+  const [pendingStopTerminalPos, setPendingStopTerminalPos] = useState(false);
+  const [pendingRejectRequestId, setPendingRejectRequestId] = useState<string | null>(null);
+  const [pendingCreateJoinCode, setPendingCreateJoinCode] = useState(false);
+  const [pendingRepairLanAddress, setPendingRepairLanAddress] = useState(false);
 
   const status = statusQuery.data;
   const runtime = runtimeStatusQuery.data;
@@ -174,14 +179,18 @@ export function HostLanControlPage() {
     runtime?.detectedLanListenIps?.[0] ||
     "";
 
-  const clientUrl =
+  const configuredHostIp = looksLikeBareIpv4(status?.configuredBindAddress)
+    ? status?.configuredBindAddress.trim() ?? ""
+    : "";
+  const terminalIp = repairIp || configuredHostIp;
+  const terminalLink =
     runtime?.clientUrlReady && runtime.clientUrl
       ? runtime.clientUrl
-      : repairIp && looksLikeBareIpv4(repairIp) && runtime?.port
-        ? `http://${repairIp}:${runtime.port}/remote-client`
+      : terminalIp && looksLikeBareIpv4(terminalIp) && runtime?.port
+        ? `http://${terminalIp}:${runtime.port}/remote-client`
         : "";
 
-  const canCopyClientUrl = Boolean(runtime?.clientUrlReady && runtime.clientUrl);
+  const canCopyTerminalLink = Boolean(runtime?.clientUrlReady && runtime.clientUrl);
   const busy =
     remoteTransportMutation.isPending ||
     repairBindMutation.isPending ||
@@ -230,8 +239,8 @@ export function HostLanControlPage() {
     void pairingStatusQuery.refetch();
   }
 
-  function copyClientUrl() {
-    if (!canCopyClientUrl || !runtime?.clientUrl) return;
+  function copyTerminalLink() {
+    if (!canCopyTerminalLink || !runtime?.clientUrl) return;
     setCopied(false);
     void navigator.clipboard?.writeText(runtime.clientUrl).then(() => setCopied(true));
   }
@@ -262,6 +271,17 @@ export function HostLanControlPage() {
     repairBindMutation.mutate(target || null);
   }
 
+  function requestRepairLanAddress() {
+    const target = repairIp || bindAddressInput.trim();
+    const currentRaw = runtime?.configuredBindAddressRaw?.trim() || status?.configuredBindAddress?.trim() || "";
+    const current = normalizeConfiguredLanBindInput(currentRaw);
+    if (currentRaw && (!current.ok || current.ip !== target)) {
+      setPendingRepairLanAddress(true);
+      return;
+    }
+    repairLanAddress();
+  }
+
   function hideTerminal(terminalId: string) {
     const next = Array.from(new Set([...hiddenTerminalIds, terminalId]));
     setHiddenTerminalIds(next);
@@ -282,13 +302,12 @@ export function HostLanControlPage() {
     (terminal) => String(terminal.status ?? "").toLowerCase().includes("pending")
       || String(terminal.status ?? "").toLowerCase().includes("request"),
   );
-  // Admin/support request block for license desk issuance (collapsed admin card).
-  // "Copy this request for LicensingOps" retained for support desk tooling compatibility.
+  // Admin/support request block for license desk issuance (collapsed by default).
   const requestBlock = [
     "Salryn — Terminal License Request",
     "",
     "Terminal licenses are issued from the Host license context.",
-    "Copy this request for LicensingOps.",
+    "Copy this request for the license desk.",
     "Send to Kirjane Labs / Salryn Infodesk (salryn.info@gmail.com) or your license desk.",
     "Each LAN terminal needs its own Terminal license.",
     "",
@@ -315,7 +334,7 @@ export function HostLanControlPage() {
     <div className="space-y-6">
       <CommandBar
         title="Terminal Management"
-        subtitle="Manage LAN connection, pairing requests, and terminal access."
+        subtitle="Connect terminal devices to this Host PC over the same local network."
         status={<StatusPill tone="success">Available on this host</StatusPill>}
         actions={
           <Button variant="secondary" onClick={refreshAll}>
@@ -325,53 +344,6 @@ export function HostLanControlPage() {
         }
       />
 
-      <Alert tone="info" title="One Terminal license per device">
-        Terminal licenses are issued from the Host license context. Each LAN terminal needs its own Terminal license.
-        Terminal users only send a Terminal Machine Code and a name/location — they do not need a Host License ID.
-        Use the admin request block below for Kirjane Labs / Salryn Infodesk or your license desk.
-      </Alert>
-
-      <Card className="overflow-hidden border-slate-200 shadow-sm">
-        <CardHeader className="border-b border-slate-100 bg-white">
-          <CardTitle>Terminal license request (admin / support)</CardTitle>
-        </CardHeader>
-        <CardBody className="space-y-4 text-sm text-slate-700">
-          <p className="text-slate-600">
-            Terminal licenses are issued from the Host license context. Copy this request for LicensingOps
-            or send it to Kirjane Labs / Salryn Infodesk at salryn.info@gmail.com.
-            Each LAN terminal needs its own Terminal license. These Host/admin IDs are for support issuance only —
-            they are not shown as tasks on the terminal activation screen.
-          </p>
-          <dl className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3 sm:grid-cols-2">
-            <div>
-              <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Store</dt>
-              <dd className="mt-0.5 font-medium text-navy-900">{hostCustomer || "—"}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Store ID</dt>
-              <dd className="mt-0.5 break-all font-mono text-xs text-slate-800">{hostStoreId || "—"}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Host License ID</dt>
-              <dd className="mt-0.5 break-all font-mono text-xs text-slate-800">{hostLicenseId || "—"}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Host Machine Code</dt>
-              <dd className="mt-0.5 break-all font-mono text-xs text-slate-800">{hostMachineCode || "—"}</dd>
-            </div>
-          </dl>
-          <div>
-            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Copy for license desk / support</p>
-            <pre className="overflow-auto rounded-xl border border-slate-200 bg-white p-3 text-xs leading-relaxed text-slate-800 whitespace-pre-wrap">
-              {requestBlock}
-            </pre>
-          </div>
-          <Button variant="secondary" size="sm" onClick={() => void copyTerminalRequest()}>
-            {requestCopied ? "Copied request block" : "Copy Terminal License Request"}
-          </Button>
-        </CardBody>
-      </Card>
-
       {statusQuery.isLoading ? <LoadingState label="Loading host LAN control..." /> : null}
       {statusQuery.isError ? <ErrorState message={(statusQuery.error as Error).message} /> : null}
       {actionError ? <ErrorState message={actionError} /> : null}
@@ -380,18 +352,18 @@ export function HostLanControlPage() {
         <>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <MetricCard
-              title="LAN connection"
+              title="LAN status"
               value={readinessTitle(runtime?.readinessState ?? "Disabled")}
               tone={readinessTone(runtime?.readinessState ?? "Disabled")}
               badge={readinessBadge(runtime?.readinessState ?? "Disabled")}
-              subtitle={runtime?.clientUrl || status.hostLocalUrl}
+              subtitle={terminalLink || "Enter a Host PC LAN address to create the terminal link."}
             />
             <MetricCard
-              title="Remote POS runtime"
-              value={status.remotePosRuntimeEnabled ? "Enabled" : "Disabled"}
+              title="Terminal POS access"
+              value={status.remotePosRuntimeEnabled ? "Allowed" : "Stopped"}
               tone={status.remotePosRuntimeEnabled ? "success" : "neutral"}
               badge={status.remotePosRuntimeEnabled ? "Ready" : "Off"}
-              subtitle="Host-controlled runtime state"
+              subtitle="Controls operator access on paired terminal devices"
             />
             <MetricCard
               title="Pending requests"
@@ -402,43 +374,82 @@ export function HostLanControlPage() {
               emphasis={pendingRequestCount > 0}
             />
             <MetricCard
-              title="Visible terminals"
+              title="Terminal devices"
               value={visibleTerminals.length.toLocaleString()}
               tone="info"
-              badge="Host view"
+              badge="This Host PC"
               subtitle={capacitySummary}
             />
           </div>
 
           <LanConnectionCard
             runtime={runtime}
-            hostLocalUrl={status.hostLocalUrl}
-            hostLanUrl={status.hostLanUrl}
-            configuredDisplay={status.configuredBindAddress}
+            hostPcAddress={terminalIp}
             bindAddressInput={bindAddressInput}
             onBindAddressChange={setBindAddressInput}
             busy={busy}
-            canCopyClientUrl={canCopyClientUrl}
-            clientUrl={runtime?.clientUrl ?? ""}
-            suggestedClientUrl={clientUrl}
+            canCopyTerminalLink={canCopyTerminalLink}
+            terminalLink={terminalLink}
             copied={copied}
-            onCopyClientUrl={copyClientUrl}
+            onCopyTerminalLink={copyTerminalLink}
             onActivate={activateLanConnection}
-            onRepair={repairLanAddress}
-            onDisableLan={() => remoteTransportMutation.mutate({ enable: false, bindAddress: null })}
+            onRepair={requestRepairLanAddress}
+            onDisableLan={() => setPendingStopLan(true)}
             onToggleTroubleshooting={() => setShowTroubleshooting((value) => !value)}
             showTroubleshooting={showTroubleshooting}
             remotePosRuntimeEnabled={status.remotePosRuntimeEnabled}
             onEnableRemotePos={() => remotePosRuntimeMutation.mutate({ enable: true })}
-            onDisableRemotePos={() => remotePosRuntimeMutation.mutate({ enable: false })}
+            onDisableRemotePos={() => setPendingStopTerminalPos(true)}
             capacitySummary={capacitySummary}
             repairIp={repairIp}
           />
 
+          <Alert tone="info" title="One Terminal license per terminal device">
+            Each terminal device needs its own Terminal license. The terminal device only needs to send its Terminal
+            Machine Code and a name/location.
+          </Alert>
+
+          <details className="rounded-lg border border-slate-200 bg-white px-5 py-4 text-sm">
+            <summary className="cursor-pointer font-medium text-slate-900">License desk details</summary>
+            <div className="mt-4 space-y-4 text-slate-700">
+              <p className="text-slate-600">
+                Send this support request to the license desk or Kirjane Labs support at salryn.info@gmail.com. The
+                technical IDs below are support details, not operator tasks.
+              </p>
+              <dl className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3 sm:grid-cols-2">
+                <div>
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Store</dt>
+                  <dd className="mt-0.5 font-medium text-navy-900">{hostCustomer || "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Store ID</dt>
+                  <dd className="mt-0.5 break-all font-mono text-xs text-slate-800">{hostStoreId || "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Host License ID</dt>
+                  <dd className="mt-0.5 break-all font-mono text-xs text-slate-800">{hostLicenseId || "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Host Machine Code</dt>
+                  <dd className="mt-0.5 break-all font-mono text-xs text-slate-800">{hostMachineCode || "—"}</dd>
+                </div>
+              </dl>
+              <div>
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Copy for license desk / support</p>
+                <pre className="overflow-auto rounded-xl border border-slate-200 bg-white p-3 text-xs leading-relaxed text-slate-800 whitespace-pre-wrap">
+                  {requestBlock}
+                </pre>
+              </div>
+              <Button variant="secondary" size="sm" onClick={() => void copyTerminalRequest()}>
+                {requestCopied ? "Copied request block" : "Copy Terminal License Request"}
+              </Button>
+            </div>
+          </details>
+
           <Card>
             <CardHeader>
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <CardTitle>Pairing Control</CardTitle>
+                <CardTitle>Pair a terminal device</CardTitle>
                 {pendingRequestCount > 0 ? (
                   <StatusPill tone="warning">{pendingRequestCount} pending</StatusPill>
                 ) : (
@@ -449,19 +460,24 @@ export function HostLanControlPage() {
             <CardBody>
               {pendingRequestCount > 0 ? (
                 <Alert tone="warning" title="Device wants to join">
-                  Review the pending device request here, then accept or reject it from this host PC.
+                  Review the terminal device request here, then accept or reject it from this Host PC.
                 </Alert>
               ) : null}
               {pairingStatusQuery.isLoading ? <LoadingState label="Loading pending device requests..." /> : null}
               {pairingStatusQuery.isError ? <ErrorState message={(pairingStatusQuery.error as Error).message} /> : null}
-              <p className="my-4 text-sm text-slate-600">
-                Pairing sequence: (1) rotate join code, (2) client requests access, (3) accept here, (4) client
-                enters one-time pairing code once, (5) terminal stays trusted across refresh. Remove terminal only when a
-                device must re-pair.
-              </p>
+              <div className="my-4 text-sm text-slate-600">
+                <p className="font-medium text-slate-800">Pair a terminal device:</p>
+                <ol className="mt-2 list-decimal space-y-1 pl-5">
+                  <li>Create a Host join code.</li>
+                  <li>Open the terminal link on the terminal device.</li>
+                  <li>The terminal requests access.</li>
+                  <li>Approve the request on this Host PC.</li>
+                  <li>Enter the one-time pairing code on the terminal device.</li>
+                </ol>
+              </div>
               <div className="mb-4">
-                <Button variant="secondary" disabled={busy || !hostLanEntitled} onClick={() => rotateJoinCodeMutation.mutate()}>
-                  Rotate/show host join code
+                <Button variant="secondary" disabled={busy || !hostLanEntitled} onClick={() => setPendingCreateJoinCode(true)}>
+                  Create Host join code
                 </Button>
                 {!hostLanEntitled ? (
                   <p className="text-xs text-amber-800">Join codes are unavailable for the current license.</p>
@@ -481,14 +497,17 @@ export function HostLanControlPage() {
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <p className="font-medium text-slate-900">{request.deviceName}</p>
-                          <p className="text-slate-600">Observed origin/IP: {request.observedOrigin || "Unavailable"}</p>
                           <p className="text-slate-600">Requested: {formatDate(request.requestedAtUtc)}</p>
+                          <details className="mt-1 text-xs text-slate-500">
+                            <summary className="cursor-pointer">Request details</summary>
+                            <p className="mt-1">Observed origin/IP: {request.observedOrigin || "Unavailable"}</p>
+                          </details>
                         </div>
                         <StatusPill tone={request.pairingState === "Pending" ? "warning" : request.pairingState === "Accepted" ? "success" : "info"}>
                           {request.pairingState === "Pending"
                             ? "Pending approval"
                             : request.pairingState === "Accepted"
-                              ? "Accepted — awaiting client activation"
+                              ? "Accepted — awaiting terminal activation"
                               : request.pairingState}
                         </StatusPill>
                       </div>
@@ -496,7 +515,7 @@ export function HostLanControlPage() {
                         <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-950">
                           <p className="font-medium">One-time pairing code</p>
                           <p className="font-mono text-lg">{acceptedCodes[request.requestId]}</p>
-                          <p className="mt-1">Give this code to the client device.</p>
+                          <p className="mt-1">Enter this code on the terminal device.</p>
                         </div>
                       ) : null}
                       {request.pairingState === "Pending" ? (
@@ -504,7 +523,7 @@ export function HostLanControlPage() {
                           <Button size="sm" disabled={busy || !hostLanEntitled} onClick={() => acceptRequest(request.requestId)}>
                             Accept
                           </Button>
-                          <Button size="sm" variant="secondary" disabled={busy} onClick={() => rejectJoinRequestMutation.mutate(request.requestId)}>
+                          <Button size="sm" variant="secondary" disabled={busy} onClick={() => setPendingRejectRequestId(request.requestId)}>
                             Reject
                           </Button>
                         </div>
@@ -568,13 +587,13 @@ export function HostLanControlPage() {
             <CardBody className="space-y-3 text-sm text-slate-700">
               <p className="font-medium text-slate-900">If a phone is stuck after a new build or DB reset:</p>
               <ol className="list-decimal space-y-1 pl-5">
-                <li>Open the host client URL on the phone (/remote-client).</li>
+                <li>Open the terminal link on the phone.</li>
                 <li>Tap <strong>Clear this device state</strong>.</li>
                 <li>Request access again with a fresh host join code.</li>
               </ol>
               <p>
-                Every client device must activate with its own signed Terminal license before pairing. Host license
-                terminal-count fields do not grant or limit client licenses.
+                Every terminal device must activate with its own signed Terminal license before pairing. Host license
+                terminal-count fields do not grant or limit Terminal licenses.
               </p>
               <p>
                 Removed or archived old rows are history. New pairing creates a <strong>new</strong> terminal — do not
@@ -582,10 +601,10 @@ export function HostLanControlPage() {
               </p>
               <Alert tone="info" title="Connection behavior">
                 <ul className="list-disc space-y-1 pl-5">
-                  <li>Host owns the database and approvals.</li>
-                  <li>Client only holds terminal pairing plus an optional cashier session token.</li>
-                  <li>Password is never stored on the client.</li>
-                  <li>Host validates any saved token before resuming Remote POS.</li>
+                  <li>This Host PC owns the database and approvals.</li>
+                  <li>The terminal device only holds pairing plus an optional operator session token.</li>
+                  <li>Password is never stored on the terminal device.</li>
+                  <li>This Host PC validates any saved token before resuming Terminal POS.</li>
                   <li>Revoked means re-pair — operator UI says Remove terminal; do not reactivate the same trust row.</li>
                   <li>Disable terminal blocks access; Enable terminal restores access when the terminal is only disabled (not removed).</li>
                   <li>Remove terminal is available only after Disable. It permanently ends Host trust for that device.</li>
@@ -598,6 +617,9 @@ export function HostLanControlPage() {
             <summary className="cursor-pointer font-medium text-slate-900">Advanced diagnostics</summary>
             <div className="mt-4 space-y-4">
               <dl className="grid gap-3 md:grid-cols-2">
+                <Row label="Host local URL" value={status.hostLocalUrl} />
+                <Row label="Host LAN URL" value={status.hostLanUrl} />
+                <Row label="Client URL ready" value={runtime?.clientUrlReady ? "Yes" : "No"} />
                 <Row label="Bind mode" value={status.bindMode} />
                 <Row label="Configured bind (display)" value={status.configuredBindAddress} />
                 <Row label="Configured bind (raw)" value={runtime?.configuredBindAddressRaw ?? "-"} />
@@ -627,9 +649,74 @@ export function HostLanControlPage() {
           </details>
 
           <ConfirmDialog
+            open={pendingStopLan}
+            title="Stop LAN access?"
+            description="Terminal devices will no longer be able to connect to this Host PC until LAN access is started again."
+            confirmLabel="Stop LAN access"
+            cancelLabel="Keep LAN access on"
+            destructive
+            onConfirm={() => {
+              setPendingStopLan(false);
+              remoteTransportMutation.mutate({ enable: false, bindAddress: null });
+            }}
+            onCancel={() => setPendingStopLan(false)}
+          />
+          <ConfirmDialog
+            open={pendingStopTerminalPos}
+            title="Stop terminal POS access?"
+            description="Paired terminal devices will remain registered, but operators cannot use Terminal POS until access is allowed again."
+            confirmLabel="Stop terminal POS access"
+            cancelLabel="Keep terminal POS access on"
+            destructive
+            onConfirm={() => {
+              setPendingStopTerminalPos(false);
+              remotePosRuntimeMutation.mutate({ enable: false });
+            }}
+            onCancel={() => setPendingStopTerminalPos(false)}
+          />
+          <ConfirmDialog
+            open={pendingRejectRequestId !== null}
+            title="Reject pairing request?"
+            description="This device request will be rejected. The terminal must request access again if needed."
+            confirmLabel="Reject request"
+            cancelLabel="Keep request pending"
+            destructive
+            onConfirm={() => {
+              if (!pendingRejectRequestId) return;
+              const requestId = pendingRejectRequestId;
+              setPendingRejectRequestId(null);
+              rejectJoinRequestMutation.mutate(requestId);
+            }}
+            onCancel={() => setPendingRejectRequestId(null)}
+          />
+          <ConfirmDialog
+            open={pendingCreateJoinCode}
+            title="Create a new join code?"
+            description="Use this when pairing a terminal device. If an older join code exists, use the latest code shown here."
+            confirmLabel="Create join code"
+            cancelLabel="Cancel"
+            onConfirm={() => {
+              setPendingCreateJoinCode(false);
+              rotateJoinCodeMutation.mutate();
+            }}
+            onCancel={() => setPendingCreateJoinCode(false)}
+          />
+          <ConfirmDialog
+            open={pendingRepairLanAddress}
+            title="Repair LAN address?"
+            description="Salryn will save the detected Host PC address. Terminal devices may need the updated terminal link."
+            confirmLabel="Repair address"
+            cancelLabel="Keep current address"
+            onConfirm={() => {
+              setPendingRepairLanAddress(false);
+              repairLanAddress();
+            }}
+            onCancel={() => setPendingRepairLanAddress(false)}
+          />
+          <ConfirmDialog
             open={pendingDisableTerminal !== null}
             title="Disable terminal?"
-            description="This blocks this terminal from using Remote POS. The terminal can be enabled again later from this Host."
+            description="This blocks this terminal from using Terminal POS. The terminal can be enabled again later from this Host PC."
             confirmLabel="Disable terminal"
             cancelLabel="Keep active"
             onConfirm={() => {
@@ -643,7 +730,7 @@ export function HostLanControlPage() {
           <ConfirmDialog
             open={pendingEnableTerminal !== null}
             title="Enable terminal?"
-            description="This restores Remote POS access for this paired terminal without re-pairing. Only use this if the terminal was disabled, not removed."
+            description="This restores Terminal POS access for this paired terminal without re-pairing. Only use this if the terminal was disabled, not removed."
             confirmLabel="Enable terminal"
             cancelLabel="Keep disabled"
             onConfirm={() => {
@@ -691,17 +778,14 @@ export function HostLanControlPage() {
 
 function LanConnectionCard({
   runtime,
-  hostLocalUrl,
-  hostLanUrl,
-  configuredDisplay,
+  hostPcAddress,
   bindAddressInput,
   onBindAddressChange,
   busy,
-  canCopyClientUrl,
-  clientUrl,
-  suggestedClientUrl,
+  canCopyTerminalLink,
+  terminalLink,
   copied,
-  onCopyClientUrl,
+  onCopyTerminalLink,
   onActivate,
   onRepair,
   onDisableLan,
@@ -714,17 +798,14 @@ function LanConnectionCard({
   repairIp,
 }: {
   runtime: LocalLanControlRuntimeStatus | undefined;
-  hostLocalUrl: string;
-  hostLanUrl: string;
-  configuredDisplay: string;
+  hostPcAddress: string;
   bindAddressInput: string;
   onBindAddressChange: (value: string) => void;
   busy: boolean;
-  canCopyClientUrl: boolean;
-  clientUrl: string;
-  suggestedClientUrl: string;
+  canCopyTerminalLink: boolean;
+  terminalLink: string;
   copied: boolean;
-  onCopyClientUrl: () => void;
+  onCopyTerminalLink: () => void;
   onActivate: () => void;
   onRepair: () => void;
   onDisableLan: () => void;
@@ -745,47 +826,60 @@ function LanConnectionCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>LAN Connection</CardTitle>
+        <CardTitle>Connect terminals over LAN</CardTitle>
       </CardHeader>
       <CardBody className="space-y-4">
+        <ol className="list-decimal space-y-2 pl-5 text-sm text-slate-700">
+          <li>Enter this Host PC's LAN address. Example: 192.168.1.161.</li>
+          <li>Start LAN access.</li>
+          <li>Open the terminal link below on each terminal device.</li>
+          <li>Pair the terminal from this Host PC.</li>
+          <li>Each terminal device still needs its own Terminal license.</li>
+        </ol>
+
         <div className="flex flex-wrap items-center gap-2">
           <StatusPill tone={readinessTone(readiness)}>{readinessTitle(readiness)}</StatusPill>
-          {runtime?.restartRequired ? <StatusPill tone="warning">Restart may be required</StatusPill> : null}
-          {malformed ? <StatusPill tone="danger">Configured bind malformed</StatusPill> : null}
+          {runtime?.restartRequired ? <StatusPill tone="warning">Restart required</StatusPill> : null}
+          {malformed ? <StatusPill tone="danger">Saved address needs repair</StatusPill> : null}
         </div>
 
-        {readiness === "Ready" && canCopyClientUrl ? (
-          <Alert tone="success" title="LAN is ready">
-            Clients can open: <span className="font-mono">{clientUrl}</span>
+        {readiness === "Ready" && terminalLink ? (
+          <Alert tone="success" title="Terminal devices can open this link">
+            <p className="mt-1 break-all font-mono text-base font-semibold">{terminalLink}</p>
+          </Alert>
+        ) : null}
+
+        {readiness !== "Ready" && terminalLink ? (
+          <Alert tone="warning" title="After starting LAN access, open this link on the terminal device">
+            <p className="mt-1 break-all font-mono text-base font-semibold">{terminalLink}</p>
           </Alert>
         ) : null}
 
         {malformed ? (
-          <Alert tone="danger" title="Configured LAN address is malformed">
-            Stored value looks like a URL or otherwise invalid bind. Repair to a bare IPv4
-            {repairIp ? ` such as ${repairIp}` : ""}. Never paste a full URL into the bind field.
+          <Alert tone="danger" title="Saved Host PC address needs repair">
+            The saved value is not a valid Host PC LAN address. Repair it to an IPv4 address
+            {repairIp ? ` such as ${repairIp}` : ""}.
           </Alert>
         ) : null}
 
-        {readiness !== "Ready" ? (
-          <Alert tone={canCopyClientUrl ? "info" : "warning"} title={canCopyClientUrl ? "LAN status" : "LAN setup needed"}>
+        {readiness !== "Ready" && !terminalLink ? (
+          <Alert tone="warning" title="LAN setup needed">
             {readinessGuidance(readiness)}
           </Alert>
         ) : null}
 
         <dl className="grid gap-3 text-sm sm:grid-cols-2">
-          <Row label="Host local URL" value={hostLocalUrl} />
-          <Row label="Host LAN URL" value={hostLanUrl} />
-          <Row label="Configured bind (safe display)" value={configuredDisplay} />
-          <Row label="Client URL ready" value={canCopyClientUrl ? "Yes" : "No"} />
+          <Row label="Host PC address" value={hostPcAddress || "Not set"} />
+          <Row label="Terminal link" value={terminalLink || "Enter a valid address to create the link"} />
+          <Row label="Status" value={readinessTitle(readiness)} />
           <Row label="Capacity" value={capacitySummary} />
         </dl>
 
         <div className="space-y-2">
           <label htmlFor="host-lan-control-bind-address" className="block text-sm font-medium text-slate-700">
-            Explicit LAN IPv4 only (example: 192.168.1.161)
+            Host PC LAN address
           </label>
-          <p className="text-xs text-slate-500">Do not paste a full URL. Scheme and port are not allowed in this field.</p>
+          <p className="text-xs text-slate-500">Enter only the IPv4 address, for example 192.168.1.161.</p>
           <TextInput
             id="host-lan-control-bind-address"
             value={bindAddressInput}
@@ -797,52 +891,58 @@ function LanConnectionCard({
             <p className="text-xs text-rose-600">{activateNormalized.error}</p>
           ) : null}
           {activateNormalized.ok && activateNormalized.wasRepaired ? (
-            <p className="text-xs text-amber-700">Will save repaired bare IP: {activateNormalized.ip}</p>
+            <p className="text-xs text-amber-700">Salryn will save the Host PC address as {activateNormalized.ip}.</p>
           ) : null}
         </div>
 
         <div className="flex flex-wrap gap-2">
           <Button disabled={busy || !activateNormalized.ok} onClick={onActivate}>
-            Activate LAN connection
+            Start LAN access
           </Button>
           {malformed || runtime?.problem === "ConfiguredBindMalformed" || runtime?.problem === "BindIpNotOnHost" ? (
             <Button variant="secondary" disabled={busy || !repairIp} onClick={onRepair}>
               Repair LAN address{repairIp ? ` to ${repairIp}` : ""}
             </Button>
           ) : null}
-          <Button variant="secondary" disabled={!canCopyClientUrl || busy} onClick={onCopyClientUrl}>
-            Copy client URL
+          <Button variant="secondary" disabled={!canCopyTerminalLink || busy} onClick={onCopyTerminalLink}>
+            Copy terminal link
           </Button>
-          <Button variant="secondary" disabled={busy} onClick={onDisableLan}>
-            Disable LAN connection
+          <Button variant="secondary" disabled={busy || !runtime?.lanTransportEnabled} onClick={onDisableLan}>
+            Stop LAN access
           </Button>
           <Button variant="ghost" onClick={onToggleTroubleshooting}>
-            {showTroubleshooting ? "Hide troubleshooting" : "Show troubleshooting"}
+            {showTroubleshooting ? "Hide connection help" : "Show connection help"}
           </Button>
         </div>
-        {copied ? <p className="text-xs text-slate-500">Client URL copied.</p> : null}
-        {!canCopyClientUrl && suggestedClientUrl ? (
+        {copied ? <p className="text-xs text-slate-500">Terminal link copied.</p> : null}
+        {!canCopyTerminalLink && terminalLink ? (
           <p className="text-xs text-slate-500">
-            Suggested client URL after repair/restart: <span className="font-mono">{suggestedClientUrl}</span> (copy
-            stays disabled until runtime reports Ready with a clean bind).
+            Copy becomes available after LAN access is ready. The terminal link above is the link to use after
+            starting or restarting Salryn.
           </p>
         ) : null}
 
-        <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-4">
-          <Button
-            variant="secondary"
-            disabled={busy || remotePosRuntimeEnabled}
-            onClick={onEnableRemotePos}
-          >
-            Enable Remote POS runtime
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={busy || !remotePosRuntimeEnabled}
-            onClick={onDisableRemotePos}
-          >
-            Disable Remote POS runtime
-          </Button>
+        <div className="space-y-3 border-t border-slate-200 pt-4">
+          <div>
+            <p className="text-sm font-medium text-slate-900">Terminal POS access</p>
+            <p className="text-xs text-slate-500">Allow or stop operator use on paired terminal devices.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              disabled={busy || remotePosRuntimeEnabled}
+              onClick={onEnableRemotePos}
+            >
+              Allow terminal POS access
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={busy || !remotePosRuntimeEnabled}
+              onClick={onDisableRemotePos}
+            >
+              Stop terminal POS access
+            </Button>
+          </div>
         </div>
 
         {showTroubleshooting && runtime?.firewallGuidance ? (
@@ -928,12 +1028,12 @@ function TerminalControlRow({
       </div>
       {hostLocal ? (
         <Alert tone="info" className="mt-3">
-          Host-local admin/console row is read-only. It is not a Remote POS client connection.
+          This Host PC/admin connection is read-only here. It is not a terminal device connection.
         </Alert>
       ) : null}
       {readOnlyRevoked ? (
         <Alert tone="warning" className="mt-3">
-          Removed connection. Client must request access again. Hide removes it from this host list only (no hard
+          Removed connection. The terminal device must request access again. Hide removes it from this Host PC list only (no hard
           delete of audit or sales history).
         </Alert>
       ) : null}

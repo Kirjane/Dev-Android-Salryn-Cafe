@@ -24,14 +24,14 @@ public static class V2HostLanControlUxChecks
         string coreSmoke = ReadRequiredFile(Path.Combine(projectRoot, "tools", "Salryn.Tools.CoreSmoke", "Program.cs"));
         string app = ReadRequiredFile(Path.Combine(webRoot, "App.tsx"));
 
-        AssertContains(page, "LAN Connection", "Host page must lead with LAN Connection section.");
+        AssertContains(page, "Connect terminals over LAN", "Host page must lead with clear terminal setup wording.");
         AssertContains(page, "Repair LAN address", "Host page must expose bind repair.");
-        AssertContains(page, "Activate LAN connection", "Host page must expose activate action.");
+        AssertContains(page, "Start LAN access", "Host page must expose a clear start action.");
         AssertContains(page, "Terminal help", "Internal Terminal Management must include terminal help.");
         AssertContains(page, "Connection behavior", "Internal Terminal Management must explain connection behavior.");
         AssertContains(page, "Password is never stored", "Connection behavior must say password is never stored.");
         AssertContains(page, "Revoked means re-pair", "Connection behavior must say revoked requires re-pair.");
-        AssertContains(page, "canCopyClientUrl", "Copy client URL must be gated.");
+        AssertContains(page, "canCopyTerminalLink", "Copy terminal link must be gated.");
         AssertNotContains(page, "http://http://", "Host page must not invent double-scheme URLs.");
         AssertNotContains(page, "0.0.0.0", "Host page must not display wildcard bind.");
 

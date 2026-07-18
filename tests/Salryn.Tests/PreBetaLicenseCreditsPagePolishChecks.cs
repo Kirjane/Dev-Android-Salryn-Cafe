@@ -79,11 +79,11 @@ public static class PreBetaLicenseCreditsPagePolishChecks
 
         // Host Terminal Management — cleaned request language (admin IDs allowed)
         string hostLan = File.ReadAllText(Path.Combine(root, "src", "Salryn.App.Web", "src", "pages", "HostLanControlPage.tsx"));
-        RequireContains(hostLan, "Terminal license request (admin / support)", "Terminal Management request card required.");
+        RequireContains(hostLan, "License desk details", "Terminal Management collapsed support details required.");
         RequireContains(hostLan, "Copy Terminal License Request", "Terminal Management copy request button required.");
         RequireContains(hostLan, "Terminal licenses are issued from the Host license context", "Terminal Management must state Host-context issuance.");
-        RequireContains(hostLan, "Copy this request for LicensingOps", "Terminal Management must direct copy for LicensingOps.");
-        RequireContains(hostLan, "Each LAN terminal needs its own Terminal license", "Terminal Management must state one license per terminal.");
+        RequireContains(hostLan, "Copy this request for the license desk", "Terminal Management must direct the request to the license desk.");
+        RequireContains(hostLan, "Each terminal device needs its own Terminal license", "Terminal Management must state one license per terminal device.");
         RequireContains(hostLan, "Host License ID", "Admin request block may show Host License ID.");
         RequireContains(hostLan, "Host Machine Code", "Admin request block must show Host Machine Code.");
         RequireNotContains(hostLan, "RMO", "Terminal Management must not expose RMO.");

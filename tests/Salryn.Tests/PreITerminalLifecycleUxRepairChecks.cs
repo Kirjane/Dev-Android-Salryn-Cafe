@@ -29,7 +29,7 @@ public static class PreITerminalLifecycleUxRepairChecks
         // 3 Disable confirmation
         RequireContains(hostPage, "pendingDisableTerminal", "Disable confirmation state.");
         RequireContains(hostPage, "Disable terminal?", "Disable confirmation title.");
-        RequireContains(hostPage, "This blocks this terminal from using Remote POS", "Disable confirmation body.");
+        RequireContains(hostPage, "This blocks this terminal from using Terminal POS", "Disable confirmation body.");
         RequireContains(hostPage, "Keep active", "Disable cancel label.");
         RequireNotContains(hostPage, "onClick={() => disableTerminalMutation.mutate(terminal.terminalId)}", "Disable does not mutate immediately from row.");
 

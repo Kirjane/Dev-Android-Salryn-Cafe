@@ -140,6 +140,7 @@ public static class Program
         PreIActivationLandingManualQaRepairChecks.Run();
         PreILicenseLandingSellUpgradeChecks.Run();
         PreITerminalLifecycleUxRepairChecks.Run();
+        PreILanSetupUxClarityChecks.Run();
         PreIP1CopyGuardHonestyChecks.Run();
         PreIAutomatedQaProofChecks.Run();
         PreICodeProvenQaHardeningChecks.Run();
@@ -519,6 +520,9 @@ public static class Program
                 return;
             case "pre-i-terminal-lifecycle-ux-repair":
                 PreITerminalLifecycleUxRepairChecks.Run();
+                return;
+            case "pre-i-lan-setup-ux-clarity":
+                PreILanSetupUxClarityChecks.Run();
                 return;
             case "pre-i-p1-copy-guard-honesty":
                 PreIP1CopyGuardHonestyChecks.Run();

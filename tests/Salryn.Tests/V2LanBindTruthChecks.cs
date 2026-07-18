@@ -77,9 +77,9 @@ public static class V2LanBindTruthChecks
         AssertContains(page, "LoopbackOnly", "Host LAN Control must show loopback-only readiness state.");
         AssertContains(page, "runtimeStatusQuery", "Host LAN Control must query runtime status.");
         AssertContains(page, "Repair LAN address", "Host LAN Control must offer repair action for malformed bind.");
-        AssertContains(page, "Activate LAN connection", "Host LAN Control must offer activate action.");
-        AssertContains(page, "canCopyClientUrl", "Host LAN Control must disable copy unless client URL is ready.");
-        AssertContains(page, "LAN Connection", "Host LAN Control must present a LAN Connection wizard section.");
+        AssertContains(page, "Start LAN access", "Terminal Management must offer a clear start action.");
+        AssertContains(page, "canCopyTerminalLink", "Terminal-link copy must remain readiness-gated.");
+        AssertContains(page, "Connect terminals over LAN", "Terminal Management must present an operator LAN setup section.");
         AssertNotContains(page, "0.0.0.0", "Host LAN Control must not show wildcard bind.");
         AssertNotContains(page, "http://http://", "Host LAN Control must not construct double-scheme URLs.");
 

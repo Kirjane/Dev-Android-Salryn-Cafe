@@ -43,7 +43,7 @@ public static class V2TerminalLifecycleUxChecks
         AssertContains(lifecycleUx, "Active terminals", "Lifecycle UX must define active terminal group title.");
         AssertContains(lifecycleUx, "Blocked terminals", "Lifecycle UX must define blocked terminal group title.");
         AssertContains(lifecycleUx, "Retired / removed terminals", "Lifecycle UX must define retired terminal group title.");
-        AssertContains(lifecycleUx, "Local host / admin clients", "Lifecycle UX must define host-local group title.");
+        AssertContains(lifecycleUx, "Host PC / admin connections", "Lifecycle UX must define the host-local group clearly.");
         AssertContains(hostPage, "Hide from list", "Host LAN Control must allow hide for retired/blocked rows.");
         AssertContains(hostPage, "Clear operator sessions", "Host LAN Control must offer clear sessions when supported.");
         AssertContains(hostPage, "Disable terminal", "Active path must label Disable terminal.");
@@ -55,7 +55,7 @@ public static class V2TerminalLifecycleUxChecks
         AssertContains(hostPage, "Disable terminal?", "Disable confirmation title required.");
         AssertContains(hostPage, "Remove terminal?", "Remove confirmation title required.");
         AssertContains(hostPage, "ConfirmDialog", "Lifecycle actions must use ConfirmDialog.");
-        AssertContains(hostPage, "Host-local admin/console row is read-only", "Host-local admin row must be read-only.");
+        AssertContains(hostPage, "This Host PC/admin connection is read-only here", "Host-local admin row must be read-only.");
         AssertNotContains(hostPage, "onClick={() => disableTerminalMutation.mutate(terminal.terminalId)}", "Disable must not fire immediately from row button.");
         AssertNotContains(hostPage, "Restore (not supported)", "Must not show fake Restore not supported control.");
         AssertNotContains(hostPage, "Re-enable is not supported", "Must not claim re-enable unsupported.");

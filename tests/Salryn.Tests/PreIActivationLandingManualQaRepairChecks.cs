@@ -93,8 +93,8 @@ public static class PreIActivationLandingManualQaRepairChecks
 
         // Terminal Management product copy
         RequireContains(hostLan, "Terminal licenses are issued from the Host license context", "Host-context issuance.");
-        RequireContains(hostLan, "Copy this request for LicensingOps", "LicensingOps copy wording.");
-        RequireContains(hostLan, "Each LAN terminal needs its own Terminal license", "One license per terminal.");
+        RequireContains(hostLan, "Copy this request for the license desk", "License desk copy wording.");
+        RequireContains(hostLan, "Each terminal device needs its own Terminal license", "One license per terminal device.");
 
         // Migration repair
         RequireContains(logoMigration, "EnsureLogoColumnsPresent", "Idempotent logo column repair.");
