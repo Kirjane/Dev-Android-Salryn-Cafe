@@ -150,6 +150,7 @@ public static class Program
         PreIClientFacingProductPolishChecks.Run();
         PreIAuditTrailCoverageChecks.Run();
         PreIAuditCsvExportChecks.RunAsync().GetAwaiter().GetResult();
+        PreILicenseKeyRotationCanonicalBetaChecks.Run();
         HardenA1A6PreBetaFoundationChecks.Run();
         ManualM1BootstrapAuthRepairChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
@@ -554,6 +555,9 @@ public static class Program
                 return;
             case "pre-i-audit-csv-export":
                 PreIAuditCsvExportChecks.RunAsync().GetAwaiter().GetResult();
+                return;
+            case "pre-i-license-key-rotation-canonical-beta":
+                PreILicenseKeyRotationCanonicalBetaChecks.Run();
                 return;
             case "lan-m16-remote-pos":
                 LanM16HostOwnedRemoteOperatorSessionChecks.Run();

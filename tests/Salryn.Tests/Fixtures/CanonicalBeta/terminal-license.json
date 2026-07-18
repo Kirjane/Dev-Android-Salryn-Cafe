@@ -1,0 +1,19 @@
+{
+  "LicenseId": "lic_term_20260718151539_dc2b8b38",
+  "CustomerName": "Canonical Beta Fixture",
+  "Edition": "Local",
+  "IssuedAt": "2026-07-18T15:15:39+00:00",
+  "ExpiresAt": null,
+  "MachineBinding": "SALRYN-MC-CB01-0000-0000-0002",
+  "Features": ["LanTerminals"],
+  "Signature": "zaqJieYEsc1g0d0Sz3KBbHHDk6CRLqCa7Nl8GamJpTX8CT0fdy0WzYP7W/h+l08TzHI+3JawRBghf5eD7PI0TPdum+lTUL0YCjc5WfexnoBwZZQTh+/PdFlXO4awDr/UptW+ukoC0uiz+pPmSUD3IObOAy057zSXBnjroC67kFJhiED0V5nmLKzFoZRIFE+59iE6X1NO8JBdklN1WH78e9a+Mjs1KcDPb1SOHIWCfWWMMT3fyIzDfd235xuVwvjHy5Ein0YrWB1GCdE72COKdKsgnnhGxs6GpKbQq5jC8es0dHSfBfRy8kL8xmNlyurJBmqrijZ+gBuWMhg6iL3Heg==",
+  "SchemaVersion": 2,
+  "ApplicationId": "Salryn.POS",
+  "StoreId": "store_canonical_beta_fixture",
+  "AllowedLanTerminals": null,
+  "SupportExpiresAt": null,
+  "UpdatesUntil": null,
+  "LicenseType": "Terminal",
+  "HostLicenseId": "lic_host_20260718151522_6846bbec",
+  "TerminalId": "TERM-CANONICAL-001"
+}

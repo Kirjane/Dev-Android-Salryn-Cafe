@@ -8,16 +8,19 @@ namespace Salryn.Infrastructure.Licensing;
 
 public static class LocalLicenseSignatureVerifier
 {
-    // Beta key alignment (LIC-CLOSEOUT): public verification material only.
+    // Canonical PRE-I beta verification key. Public verification material only.
     // Signing material stays outside the POS repository (LicensingOps secrets).
+    public const string TrustedPublicKeySpkiSha256 =
+        "97bd9399360ec1bb95e52abf7b02acf9c195852afa8dd837ffa454d735d36a59";
+
     private const string PublicKeyPem = "-----BEGIN PUBLIC KEY-----\n" +
-        "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsBeocMHSZe36naBP98g7\n" +
-        "qE38392z4QMEUSSqUs/Xgch2JnTixxaGqA/ZbyenNw33WCU5C2Ya4LP4e7W0NmmU\n" +
-        "8NJ4b9RGrocSRKctiJoqgg+fG0/5LojjYl+GxyO2fuyKbYifoyieqkhKF83lrhhV\n" +
-        "xi0ekIrkloD/t/QSkXH7im9aI6UmSEGQd9QIFjWUkpf1MR70/KKyYZ/8Z9DJrUQ5\n" +
-        "VbCooi7lYZHDoIh8KJwUGBFReVf/N3KBnCAwhapMRXNekNj8DVtTNdUmUHM0+GZk\n" +
-        "D3PJAaQAqdGFsdopky+JnH6h2CXQx6YwsrXpxJGYEQna9XNH0iKSbP5jVMM72DpV\n" +
-        "EwIDAQAB\n" +
+        "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA/EF2fGqnPKhCmwOkv8Ib\n" +
+        "jUdYycma6PcdCxJfEQZCqxeJLi6qbabtqVsRUUvnd0HXN0tHqQTrtTjHEOKfYW0R\n" +
+        "tWm/ZM/yADyQrTpqjsif+z1CNmYldNe+lECVIWFj7ZKF5adYwEZQENQW+5WIeId+\n" +
+        "ooqwHJvMgCGouYSzgzZcLrEEUfAIwosW/q6/M4HDDcB2z40AbjvJ37+DI86sZv20\n" +
+        "sJDA0mYOQY/LwXJfVN7Jaj5FZzUalqTaN7VT8EOhHVubGzt0E769fIOSt9n0JbRv\n" +
+        "V+qlbweAo1ZuR6tmA5v6e3KkYK7PKs5B8DPdPRoNUvCDJhiql4fZjYI56s0Gy9ZB\n" +
+        "bwIDAQAB\n" +
         "-----END PUBLIC KEY-----";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -46,6 +49,13 @@ public static class LocalLicenseSignatureVerifier
         {
             return false;
         }
+    }
+
+    public static string GetTrustedPublicKeySpkiSha256()
+    {
+        using RSA rsa = RSA.Create();
+        rsa.ImportFromPem(PublicKeyPem.AsSpan());
+        return Convert.ToHexString(SHA256.HashData(rsa.ExportSubjectPublicKeyInfo())).ToLowerInvariant();
     }
 
     public static string BuildSigningPayload(LocalLicenseDocument document)
