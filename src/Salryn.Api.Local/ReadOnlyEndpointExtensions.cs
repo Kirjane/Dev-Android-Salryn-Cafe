@@ -321,6 +321,44 @@ internal static class ReadOnlyEndpointExtensions
             return result.IsSuccess ? Results.Ok(result.Value) : ApiAuthExtensions.ToErrorResult(result);
         });
 
+        app.MapGet("/api/audit/logs/export", async (
+            HttpContext httpContext,
+            LocalApiSessionService sessions,
+            OperatorReadService reads,
+            DateTimeOffset? from,
+            DateTimeOffset? to,
+            string? search,
+            CancellationToken cancellationToken = default) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    LocalApiPermissions.AuditView) is IResult unauthorized)
+            {
+                return unauthorized;
+            }
+
+            Result<Services.AuditCsvExportResult> export =
+                await reads.ExportAuditLogsCsvAsync(from, to, search, cancellationToken)
+                    .ConfigureAwait(false);
+
+            if (export.IsFailure)
+            {
+                return ApiAuthExtensions.ToErrorResult(export);
+            }
+
+            Services.AuditCsvExportResult value = export.Value;
+            httpContext.Response.Headers["X-Salryn-Audit-Export-Count"] = value.ExportedRowCount.ToString();
+            httpContext.Response.Headers["X-Salryn-Audit-Export-Total-Matching"] = value.TotalMatchingCount.ToString();
+            httpContext.Response.Headers["X-Salryn-Audit-Export-Truncated"] = value.Truncated ? "1" : "0";
+            httpContext.Response.Headers["X-Salryn-Audit-Export-Max-Rows"] = value.MaxRows.ToString();
+
+            return Results.File(
+                value.Content,
+                contentType: "text/csv; charset=utf-8",
+                fileDownloadName: value.FileName);
+        });
+
         app.MapGet("/api/audit/errors", async (
             HttpContext httpContext,
             LocalApiSessionService sessions,

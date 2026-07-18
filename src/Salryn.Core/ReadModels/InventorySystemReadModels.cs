@@ -88,6 +88,24 @@ public sealed record AuditLogReadModel(
     string? Reason,
     DateTimeOffset CreatedAt);
 
+/// <summary>
+/// Export row for server-side audit CSV. Details is optional safe metadata (never secrets).
+/// </summary>
+public sealed record AuditLogExportRow(
+    DateTimeOffset CreatedAt,
+    string? UserDisplayName,
+    string Action,
+    string EntityType,
+    string? EntityId,
+    string? Reason,
+    string? Details);
+
+public sealed record AuditLogExportFilter(
+    DateTimeOffset? From,
+    DateTimeOffset? To,
+    SearchText Search,
+    int MaxRows);
+
 public sealed record ErrorLogReadModel(
     Guid Id,
     Guid? UserId,

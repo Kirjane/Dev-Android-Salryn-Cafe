@@ -113,16 +113,22 @@ public static class WebA3ShellDesignSystemChecks
             string.Empty,
             StringComparison.Ordinal);
 
-        // PRE-BETA-C/D: approved file surfaces only —
-        // store logo (Settings.Manage) and portable backup package import (Backup.Manage).
+        // PRE-BETA-C/D + PRE-I audit CSV: approved file surfaces only —
+        // store logo (Settings.Manage), portable backup package import (Backup.Manage),
+        // and filtered audit CSV download (Audit.View).
         string storeSettingsPageText = ReadRequiredFile(webSrc, "pages", "StoreSettingsPage.tsx");
         string storeSettingsApiText = ReadRequiredFile(webSrc, "api", "storeSettings.ts");
         string backupApiText = ReadRequiredFile(webSrc, "api", "backups.ts");
+        string auditApiText = ReadRequiredFile(webSrc, "api", "audit.ts");
+        string auditPageText = ReadRequiredFile(webSrc, "pages", "AuditPage.tsx");
         RequireContains(storeSettingsPageText, "Upload logo", "Store logo upload UI must remain on Store Settings.");
         RequireContains(storeSettingsApiText, "uploadStoreLogo", "Store logo API client must remain scoped.");
         RequireContains(storeSettingsApiText, "/api/settings/store/logo", "Store logo upload must use settings logo endpoint.");
         RequireContains(backupPageText, "Import Backup File", "Portable backup import UI must remain on Backup & Restore.");
         RequireContains(backupApiText, "importBackupFile", "Portable backup import client must remain scoped.");
+        RequireContains(auditPageText, "Download audit CSV", "Audit CSV export UI must remain on Audit page.");
+        RequireContains(auditApiText, "downloadAuditCsv", "Audit CSV export client must remain scoped.");
+        RequireContains(auditApiText, "/api/audit/logs/export", "Audit CSV export must use audit export endpoint.");
         // Path-based exclusion avoids Replace false-negatives from encoding/newline drift.
         string capabilitySourceWithoutLogoUpload = ReadAllWebSourceExcluding(webSrc, new[]
         {
@@ -130,6 +136,8 @@ public static class WebA3ShellDesignSystemChecks
             Path.Combine("api", "storeSettings.ts"),
             Path.Combine("pages", "BackupRestorePage.tsx"),
             Path.Combine("api", "backups.ts"),
+            Path.Combine("pages", "AuditPage.tsx"),
+            Path.Combine("api", "audit.ts"),
         }).Replace("No ESC/POS", string.Empty, StringComparison.Ordinal);
 
         string[] alwaysForbiddenTokens =

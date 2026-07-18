@@ -121,6 +121,13 @@ public interface IAuditReadRepository
     Task<Result<PagedResult<AuditLogReadModel>>> SearchAuditLogsAsync(
         AuditLogSearchFilter filter,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Exports filtered audit rows for CSV (complete filter match up to MaxRows, newest first).
+    /// </summary>
+    Task<Result<IReadOnlyList<AuditLogExportRow>>> ExportAuditLogsAsync(
+        AuditLogExportFilter filter,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IErrorLogReadRepository

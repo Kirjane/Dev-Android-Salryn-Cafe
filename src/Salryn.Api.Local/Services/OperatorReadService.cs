@@ -310,6 +310,52 @@ public sealed class OperatorReadService
             ReadModelMapper.ToPaged(result.Value, ReadModelMapper.ToAuditLog));
     }
 
+    public async Task<Result<AuditCsvExportResult>> ExportAuditLogsCsvAsync(
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        string? search,
+        CancellationToken cancellationToken = default)
+    {
+        Result<IReadOnlyList<AuditLogExportRow>> export = await _composition.AuditReadRepository
+            .ExportAuditLogsAsync(
+                new AuditLogExportFilter(
+                    from,
+                    to,
+                    new SearchText(search),
+                    AuditCsvFormatter.ExportMaxRows),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (export.IsFailure)
+        {
+            return Result<AuditCsvExportResult>.Fail(export.ErrorDetail);
+        }
+
+        // Count full matches for truncation disclosure (page size 1, we only need totalCount).
+        Result<PagedResult<AuditLogReadModel>> countProbe = await _composition.AuditReadRepository
+            .SearchAuditLogsAsync(
+                new AuditLogSearchFilter(
+                    ReadModelMapper.ToPageRequest(1, 1),
+                    from,
+                    to,
+                    new SearchText(search)),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        int totalMatching = countProbe.IsSuccess ? countProbe.Value.TotalCount : export.Value.Count;
+        bool truncated = totalMatching > export.Value.Count;
+        byte[] csv = AuditCsvFormatter.BuildCsv(export.Value);
+        string fileName = AuditCsvFormatter.BuildFileName(DateTimeOffset.Now);
+
+        return Result<AuditCsvExportResult>.Success(new AuditCsvExportResult(
+            csv,
+            fileName,
+            export.Value.Count,
+            totalMatching,
+            truncated,
+            AuditCsvFormatter.ExportMaxRows));
+    }
+
     public async Task<Result<PagedApiResponse<ErrorLogResponse>>> SearchErrorLogsAsync(
         DateTimeOffset? from,
         DateTimeOffset? to,
@@ -337,3 +383,11 @@ public sealed class OperatorReadService
             ReadModelMapper.ToPaged(result.Value, ReadModelMapper.ToErrorLog));
     }
 }
+
+public sealed record AuditCsvExportResult(
+    byte[] Content,
+    string FileName,
+    int ExportedRowCount,
+    int TotalMatchingCount,
+    bool Truncated,
+    int MaxRows);

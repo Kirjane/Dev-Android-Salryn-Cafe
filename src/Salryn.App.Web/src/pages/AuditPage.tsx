@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { fetchAuditLogs, fetchErrorLogs, type AuditLog, type ErrorLog } from "../api/audit";
+import {
+  downloadAuditCsv,
+  fetchAuditLogs,
+  fetchErrorLogs,
+  type AuditLog,
+  type ErrorLog,
+} from "../api/audit";
 import {
   Button,
   Card,
@@ -10,25 +16,45 @@ import {
   ErrorState,
   LoadingState,
   TextInput,
+  useNotifications,
 } from "../components/ui";
 import { formatDateTime } from "../utils/format";
+import { safeNotificationDescription } from "../utils/notificationError";
+
+const AUDIT_EXPORT_MAX_ROWS = 25000;
 
 export function AuditPage() {
+  const { notify } = useNotifications();
   const [tab, setTab] = useState<"audit" | "errors">("audit");
   const [search, setSearch] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [page, setPage] = useState(1);
+  const [isExporting, setIsExporting] = useState(false);
 
   const auditQuery = useQuery({
     queryKey: ["audit-logs", search, from, to, page],
-    queryFn: () => fetchAuditLogs({ search: search.trim() || undefined, from: from.trim() || undefined, to: to.trim() || undefined, page, pageSize: 25 }),
+    queryFn: () =>
+      fetchAuditLogs({
+        search: search.trim() || undefined,
+        from: from.trim() || undefined,
+        to: to.trim() || undefined,
+        page,
+        pageSize: 25,
+      }),
     enabled: tab === "audit",
   });
 
   const errorQuery = useQuery({
     queryKey: ["error-logs", search, from, to, page],
-    queryFn: () => fetchErrorLogs({ search: search.trim() || undefined, from: from.trim() || undefined, to: to.trim() || undefined, page, pageSize: 25 }),
+    queryFn: () =>
+      fetchErrorLogs({
+        search: search.trim() || undefined,
+        from: from.trim() || undefined,
+        to: to.trim() || undefined,
+        page,
+        pageSize: 25,
+      }),
     enabled: tab === "errors",
   });
 
@@ -48,6 +74,48 @@ export function AuditPage() {
     setTo("");
   }
 
+  async function handleDownloadAuditCsv() {
+    setIsExporting(true);
+    try {
+      const result = await downloadAuditCsv({
+        search: search.trim() || undefined,
+        from: from.trim() || undefined,
+        to: to.trim() || undefined,
+      });
+
+      const file = new File([result.fileBytes], result.fileName, {
+        type: "text/csv;charset=utf-8",
+      });
+      const url = URL.createObjectURL(file);
+      try {
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = result.fileName;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+
+      if (result.truncated) {
+        notify.warning(
+          "Audit CSV downloaded",
+          `Exported ${result.exportedRowCount.toLocaleString()} of ${result.totalMatchingCount.toLocaleString()} matching records (limit ${result.maxRows.toLocaleString()}).`,
+        );
+      } else {
+        notify.success(
+          "Audit CSV downloaded",
+          `Exported ${result.exportedRowCount.toLocaleString()} matching record(s) for the current filters.`,
+        );
+      }
+    } catch (error) {
+      notify.error("Audit export failed", safeNotificationDescription(error, "The CSV was not downloaded."));
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
   const auditColumns = [
     {
       key: "when",
@@ -56,7 +124,11 @@ export function AuditPage() {
     },
     { key: "user", header: "User", render: (row: AuditLog) => row.userDisplayName ?? "—" },
     { key: "action", header: "Action", render: (row: AuditLog) => row.action },
-    { key: "entity", header: "Entity", render: (row: AuditLog) => row.entityId ? `${row.entityType} · ${row.entityId}` : row.entityType },
+    {
+      key: "entity",
+      header: "Entity",
+      render: (row: AuditLog) => (row.entityId ? `${row.entityType} · ${row.entityId}` : row.entityType),
+    },
     { key: "reason", header: "Reason", render: (row: AuditLog) => row.reason ?? "—" },
   ];
 
@@ -77,9 +149,16 @@ export function AuditPage() {
         title="Audit"
         subtitle="Audit trail records committed operator and system actions (sales, catalog, stock, terminals, backups, license, settings, login) for review and investigation."
         actions={
-          <Button variant="secondary" onClick={() => void activeQuery.refetch()} disabled={activeQuery.isFetching}>
-            {activeQuery.isFetching ? "Refreshing..." : "Refresh"}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {tab === "audit" ? (
+              <Button variant="secondary" onClick={() => void handleDownloadAuditCsv()} disabled={isExporting}>
+                {isExporting ? "Exporting..." : "Download audit CSV"}
+              </Button>
+            ) : null}
+            <Button variant="secondary" onClick={() => void activeQuery.refetch()} disabled={activeQuery.isFetching}>
+              {activeQuery.isFetching ? "Refreshing..." : "Refresh"}
+            </Button>
+          </div>
         }
       />
 
@@ -107,6 +186,15 @@ export function AuditPage() {
               Error logs
             </Button>
           </div>
+
+          {tab === "audit" ? (
+            <p className="text-sm text-slate-500">
+              Download audit CSV exports the current filtered audit trail, not only the visible page. Exports up to{" "}
+              {AUDIT_EXPORT_MAX_ROWS.toLocaleString()} matching records.
+            </p>
+          ) : (
+            <p className="text-sm text-slate-500">Error log CSV export is not included in this release.</p>
+          )}
 
           <div className="grid gap-3 lg:grid-cols-[minmax(14rem,1fr)_minmax(11rem,0.8fr)_minmax(11rem,0.8fr)_auto]">
             <TextInput
@@ -150,7 +238,12 @@ export function AuditPage() {
                 emptyTitle="No audit logs"
                 emptyDescription="Audit activity will appear here when records exist."
               />
-              <Pagination page={page} totalPages={auditQuery.data.totalPages} totalCount={auditQuery.data.totalCount} onPageChange={setPage} />
+              <Pagination
+                page={page}
+                totalPages={auditQuery.data.totalPages}
+                totalCount={auditQuery.data.totalCount}
+                onPageChange={setPage}
+              />
             </>
           ) : null}
 
@@ -163,7 +256,12 @@ export function AuditPage() {
                 emptyTitle="No error logs"
                 emptyDescription="Error records will appear here when they exist."
               />
-              <Pagination page={page} totalPages={errorQuery.data.totalPages} totalCount={errorQuery.data.totalCount} onPageChange={setPage} />
+              <Pagination
+                page={page}
+                totalPages={errorQuery.data.totalPages}
+                totalCount={errorQuery.data.totalCount}
+                onPageChange={setPage}
+              />
             </>
           ) : null}
         </CardBody>

@@ -106,8 +106,8 @@ public static class PreIClientFacingProductPolishChecks
     private static void AssertAuditPositioning(string audit, string report)
     {
         RequireContains(audit, "Audit trail records committed operator and system actions", "Audit positioning.");
-        RequireNotContains(audit, "Download audit CSV", "Paged UI must not imply a complete filtered export.");
-        RequireContains(report, "Audit CSV export remains required before beta seal.", "Audit export deferral must be explicit.");
+        RequireContains(audit, "Download audit CSV", "Audit page must expose server-side CSV export.");
+        RequireContains(audit, "current filtered audit trail, not only the visible page", "Export helper must state filtered completeness.");
         RequireContains(report, "Logged now", "Audit coverage table missing Logged now.");
         RequireContains(report, "Missing", "Audit coverage table missing Missing.");
         RequireContains(report, "Recommended next", "Audit coverage table missing recommendation.");
