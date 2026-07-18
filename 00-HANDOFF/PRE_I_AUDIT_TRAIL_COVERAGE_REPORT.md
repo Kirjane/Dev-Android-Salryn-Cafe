@@ -7,7 +7,7 @@
 | Branch | `KIRCH-PRE-I-AUDIT-TRAIL-COVERAGE` |
 | Base branch | `KIRCH-PRE-I-CLIENT-FACING-PRODUCT-POLISH` |
 | Base SHA | `7bcb88a8811f91f62a9446723468fec823631b96` |
-| Final tip SHA | *(after commit)* |
+| Final tip SHA | `6935b917c590e993d7b357ff665357fc489ea167` |
 | Protected | No promotion |
 
 ## 2. Audit categories implemented
