@@ -190,6 +190,7 @@ public static class LocalLanControlEndpoints
             HttpContext httpContext,
             LocalApiSessionService sessions,
             RemotePosApiServices remotePos,
+            Composition.LanRemoteTransportApiServices lanServices,
             CancellationToken cancellationToken) =>
         {
             _ = request;
@@ -211,6 +212,24 @@ public static class LocalLanControlEndpoints
             Result<RemotePosApproveJoinResponse> result = await remotePos.PairingGate
                 .AcceptAsync(parsedRequestId, actor, cancellationToken)
                 .ConfigureAwait(false);
+
+            if (result.IsSuccess)
+            {
+                await OperatorAuditTrail.TryWriteAsync(
+                        lanServices.AuditWriteRepository,
+                        actor.ActorUserId,
+                        Core.Services.OperatorAuditActions.TerminalPaired,
+                        "TerminalPairing",
+                        result.Value.RequestId,
+                        new
+                        {
+                            requestId = result.Value.RequestId,
+                            deviceName = result.Value.DeviceName
+                        },
+                        reason: "Terminal pairing approved.",
+                        cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
             return ToApiResult(result);
         });

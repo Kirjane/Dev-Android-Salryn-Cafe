@@ -4,6 +4,7 @@ using Salryn.Composition.Local;
 using Salryn.Core.Common;
 using Salryn.Core.Models;
 using Salryn.Core.ReadModels;
+using Salryn.Core.Services;
 using Salryn.Core.ValueObjects;
 
 namespace Salryn.Api.Local.Services;
@@ -75,6 +76,22 @@ public sealed class ProductManagementApiService
         {
             return Result<ProductManagementWriteResponse>.Fail(addResult.ErrorDetail);
         }
+
+        await OperatorAuditTrail.TryWriteAsync(
+                _composition.ConnectionFactory,
+                userId: null,
+                OperatorAuditActions.ProductCreated,
+                "Product",
+                productId.ToString("D"),
+                new
+                {
+                    productId = productId.ToString("D"),
+                    name = product.Name,
+                    barcode = product.Barcode?.Value ?? string.Empty
+                },
+                reason: "Product catalog create committed.",
+                cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
 
         return await ReadProductWriteResponseAsync(
                 productId,
@@ -172,6 +189,28 @@ public sealed class ProductManagementApiService
             return Result<ProductManagementWriteResponse>.Fail(updateResult.ErrorDetail);
         }
 
+        await OperatorAuditTrail.TryWriteAsync(
+                _composition.ConnectionFactory,
+                userId: null,
+                OperatorAuditActions.ProductUpdated,
+                "Product",
+                productId.ToString("D"),
+                new
+                {
+                    productId = productId.ToString("D"),
+                    name = product.Name,
+                    barcode = product.Barcode?.Value ?? string.Empty
+                },
+                oldValue: new
+                {
+                    productId = productId.ToString("D"),
+                    name = existing.Name,
+                    barcode = existing.Barcode
+                },
+                reason: "Product catalog update committed.",
+                cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
         return await ReadProductWriteResponseAsync(
                 productId,
                 "POS_M5_PRODUCT_UPDATED",
@@ -212,6 +251,17 @@ public sealed class ProductManagementApiService
         {
             return Result<ProductDeactivateResponse>.Fail(result.ErrorDetail);
         }
+
+        await OperatorAuditTrail.TryWriteAsync(
+                _composition.ConnectionFactory,
+                session.UserId,
+                OperatorAuditActions.ProductDeactivated,
+                "Product",
+                productId.ToString("D"),
+                new { productId = productId.ToString("D"), reason },
+                reason: reason,
+                cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
 
         return Result<ProductDeactivateResponse>.Success(new ProductDeactivateResponse(
             "POS_M5_PRODUCT_DEACTIVATED",

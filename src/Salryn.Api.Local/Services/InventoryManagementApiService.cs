@@ -4,6 +4,7 @@ using Salryn.Composition.Local;
 using Salryn.Core.Common;
 using Salryn.Core.Models;
 using Salryn.Core.ReadModels;
+using Salryn.Core.Services;
 using Salryn.Core.ValueObjects;
 
 namespace Salryn.Api.Local.Services;
@@ -63,6 +64,25 @@ public sealed class InventoryManagementApiService
         {
             return Result<StockWriteResponse>.Fail(result.ErrorDetail);
         }
+
+        await OperatorAuditTrail.TryWriteAsync(
+                _composition.ConnectionFactory,
+                session.UserId,
+                OperatorAuditActions.StockInRecorded,
+                "StockMovement",
+                movement.Id.ToString("D"),
+                new
+                {
+                    movementId = movement.Id.ToString("D"),
+                    productId = input.Product.Id.ToString("D"),
+                    productName = input.Product.Name,
+                    barcode = input.Product.Barcode,
+                    quantity = input.Quantity.ToUnits(),
+                    reference = request.Reference
+                },
+                reason: movement.Reason,
+                cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
 
         return await ReadStockWriteResponseAsync(
                 input.Product.Id,
@@ -147,6 +167,26 @@ public sealed class InventoryManagementApiService
         decimal signedQuantity = movementType == StockMovementType.AdjustmentRemove
             ? -input.Quantity.ToUnits()
             : input.Quantity.ToUnits();
+
+        await OperatorAuditTrail.TryWriteAsync(
+                _composition.ConnectionFactory,
+                session.UserId,
+                OperatorAuditActions.StockAdjustmentRecorded,
+                "StockMovement",
+                movement.Id.ToString("D"),
+                new
+                {
+                    movementId = movement.Id.ToString("D"),
+                    productId = input.Product.Id.ToString("D"),
+                    productName = input.Product.Name,
+                    barcode = input.Product.Barcode,
+                    direction,
+                    quantityDelta = signedQuantity,
+                    reference = request.Reference
+                },
+                reason: movement.Reason,
+                cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
 
         return await ReadStockWriteResponseAsync(
                 input.Product.Id,

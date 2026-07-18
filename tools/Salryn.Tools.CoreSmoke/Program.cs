@@ -148,6 +148,7 @@ public static class Program
         PreIDevStateResetTruthChecks.Run();
         PreILicensePageMinimalistRebuildChecks.Run();
         PreIClientFacingProductPolishChecks.Run();
+        PreIAuditTrailCoverageChecks.Run();
         HardenA1A6PreBetaFoundationChecks.Run();
         ManualM1BootstrapAuthRepairChecks.Run();
         UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
@@ -546,6 +547,9 @@ public static class Program
                 return;
             case "pre-i-client-facing-product-polish":
                 PreIClientFacingProductPolishChecks.Run();
+                return;
+            case "pre-i-audit-trail-coverage":
+                PreIAuditTrailCoverageChecks.Run();
                 return;
             case "lan-m16-remote-pos":
                 LanM16HostOwnedRemoteOperatorSessionChecks.Run();

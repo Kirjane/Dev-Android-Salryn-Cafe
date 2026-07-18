@@ -56,7 +56,8 @@ public sealed class HostOperatorApiServices
             cashierSessionService,
             composition.SaleReadRepository,
             new HostOperatorReceiptNumberAllocator(),
-            fileReceiptWriter);
+            fileReceiptWriter,
+            repositories.CreateAuditWriteRepository());
 
         PosReceiptPrintService receiptPrintService = new(
             composition.SaleReadRepository,

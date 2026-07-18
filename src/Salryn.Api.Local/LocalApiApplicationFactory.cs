@@ -209,12 +209,28 @@ public static class LocalApiApplicationFactory
             }
 
             AppendSessionCookie(httpContext, loginResult.Value.SessionId);
+            await Services.OperatorAuditTrail.TryWriteAsync(
+                    composition.ConnectionFactory,
+                    loginResult.Value.UserId,
+                    Core.Services.OperatorAuditActions.UserLogin,
+                    "User",
+                    loginResult.Value.UserId.ToString("D"),
+                    new
+                    {
+                        userId = loginResult.Value.UserId.ToString("D"),
+                        username = loginResult.Value.Username,
+                        roleName = loginResult.Value.RoleName
+                    },
+                    reason: "Host operator login succeeded.",
+                    cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
             return Results.Ok(LocalApiSessionService.ToSessionResponse(loginResult.Value));
         });
 
-        app.MapPost("/api/auth/logout", (
+        app.MapPost("/api/auth/logout", async (
             HttpContext httpContext,
-            LocalApiSessionService sessions) =>
+            LocalApiSessionService sessions,
+            CancellationToken cancellationToken) =>
         {
             if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult localOnly)
             {
@@ -222,8 +238,27 @@ public static class LocalApiApplicationFactory
             }
 
             string? sessionId = httpContext.Request.Cookies[LocalApiSessionService.SessionCookieName];
+            LocalApiSession? existing = sessions.GetRequiredSession(sessionId);
             sessions.Logout(sessionId);
             httpContext.Response.Cookies.Delete(LocalApiSessionService.SessionCookieName);
+            if (existing is not null)
+            {
+                await Services.OperatorAuditTrail.TryWriteAsync(
+                        composition.ConnectionFactory,
+                        existing.UserId,
+                        Core.Services.OperatorAuditActions.UserLogout,
+                        "User",
+                        existing.UserId.ToString("D"),
+                        new
+                        {
+                            userId = existing.UserId.ToString("D"),
+                            username = existing.Username
+                        },
+                        reason: "Host operator logout succeeded.",
+                        cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             return Results.Ok(new { status = "logged_out" });
         });
 
@@ -241,7 +276,7 @@ public static class LocalApiApplicationFactory
         });
 
         app.MapLocalBootstrapEndpoints(composition);
-        app.MapLocalLicenseEndpoints();
+        app.MapLocalLicenseEndpoints(composition: composition);
 
         app.MapGet("/api/dashboard/summary", async (
             HttpContext httpContext,

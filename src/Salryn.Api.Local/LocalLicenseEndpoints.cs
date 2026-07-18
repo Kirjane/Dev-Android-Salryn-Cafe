@@ -1,5 +1,8 @@
 using System.Text.Json;
 using Salryn.Api.Local.Auth;
+using Salryn.Api.Local.Services;
+using Salryn.Composition.Local;
+using Salryn.Core.Services;
 using Salryn.Core.Services.Licensing;
 using Salryn.Infrastructure.Licensing;
 
@@ -10,7 +13,8 @@ public static class LocalLicenseEndpoints
     public static void MapLocalLicenseEndpoints(
         this WebApplication app,
         ILocalLicenseService? licenseService = null,
-        ILocalLicenseEnforcementService? enforcementService = null)
+        ILocalLicenseEnforcementService? enforcementService = null,
+        SalrynLocalComposition? composition = null)
     {
         ILocalLicenseService localLicenseService = licenseService ?? new LocalLicenseService();
         ILocalLicenseEnforcementService localLicenseEnforcementService = enforcementService ?? new LocalLicenseEnforcementService(localLicenseService);
@@ -101,6 +105,11 @@ public static class LocalLicenseEndpoints
                 return Results.Json(read.Error, statusCode: StatusCodes.Status400BadRequest);
             }
 
+            LocalLicenseValidationResult before = await localLicenseService
+                .GetStatusAsync(cancellationToken)
+                .ConfigureAwait(false);
+            bool hadLicense = before.Status is LicenseStatus.Licensed or LicenseStatus.Grace or LicenseStatus.Development;
+
             LocalLicenseInstallResponse result = await localLicenseService
                 .InstallAsync(read.Request!, cancellationToken)
                 .ConfigureAwait(false);
@@ -108,6 +117,34 @@ public static class LocalLicenseEndpoints
             int statusCode = string.Equals(result.InstallStatus, "Installed", StringComparison.Ordinal)
                 ? StatusCodes.Status200OK
                 : StatusCodes.Status400BadRequest;
+
+            if (statusCode == StatusCodes.Status200OK && composition is not null)
+            {
+                LocalLicenseValidationResult after = await localLicenseService
+                    .GetStatusAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                string action = hadLicense || !string.IsNullOrWhiteSpace(result.BackupPath)
+                    ? OperatorAuditActions.LicenseReplaced
+                    : OperatorAuditActions.LicenseInstalled;
+
+                await OperatorAuditTrail.TryWriteAsync(
+                        composition.ConnectionFactory,
+                        userId: null,
+                        action,
+                        "License",
+                        after.LicenseId,
+                        new
+                        {
+                            licenseId = after.LicenseId,
+                            licenseType = after.LicenseType?.ToString(),
+                            customerName = after.CustomerName,
+                            storeId = after.StoreId,
+                            status = after.Status.ToString()
+                        },
+                        reason: hadLicense ? "Signed local license replaced." : "Signed local license installed.",
+                        cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
             return Results.Json(result, statusCode: statusCode);
         });

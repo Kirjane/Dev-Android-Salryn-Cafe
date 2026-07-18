@@ -32,6 +32,7 @@ public sealed class HostOperatorCheckoutApiService
     private readonly ISaleReadRepository _saleReadRepository;
     private readonly HostOperatorReceiptNumberAllocator _receiptAllocator;
     private readonly IFileReceiptWriter _fileReceiptWriter;
+    private readonly IAuditWriteRepository _auditWriteRepository;
 
     public HostOperatorCheckoutApiService(
         IProductReadRepository productReadRepository,
@@ -39,7 +40,8 @@ public sealed class HostOperatorCheckoutApiService
         ICashierSessionService cashierSessionService,
         ISaleReadRepository saleReadRepository,
         HostOperatorReceiptNumberAllocator receiptAllocator,
-        IFileReceiptWriter fileReceiptWriter)
+        IFileReceiptWriter fileReceiptWriter,
+        IAuditWriteRepository auditWriteRepository)
     {
         _productReadRepository = productReadRepository
             ?? throw new ArgumentNullException(nameof(productReadRepository));
@@ -53,6 +55,8 @@ public sealed class HostOperatorCheckoutApiService
             ?? throw new ArgumentNullException(nameof(receiptAllocator));
         _fileReceiptWriter = fileReceiptWriter
             ?? throw new ArgumentNullException(nameof(fileReceiptWriter));
+        _auditWriteRepository = auditWriteRepository
+            ?? throw new ArgumentNullException(nameof(auditWriteRepository));
     }
 
     public async Task<HostOperatorCheckoutOperationResult> SubmitAsync(
@@ -212,6 +216,23 @@ public sealed class HostOperatorCheckoutApiService
             .ConfigureAwait(false);
 
         string message = BuildCompletedMessage(fileReceipt);
+
+        await OperatorAuditTrail.TryWriteAsync(
+                _auditWriteRepository,
+                userId,
+                OperatorAuditActions.SaleCompleted,
+                "Sale",
+                sale?.Id.ToString() ?? receiptNumber,
+                new
+                {
+                    receiptNumber,
+                    saleId = sale?.Id.ToString(),
+                    totalCents = sale?.Total.Cents,
+                    lineCount = request.Lines.Count
+                },
+                reason: "Host operator checkout committed.",
+                cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
 
         return new HostOperatorCheckoutOperationResult(
             true,

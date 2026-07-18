@@ -235,6 +235,15 @@ public sealed class LocalLanControlService
         }
 
         int revoked = _remotePosServices.SessionService.RevokeSessionsForTerminal(terminalId);
+        _ = OperatorAuditTrail.TryWriteAsync(
+            _lanServices.AuditWriteRepository,
+            actor.ActorUserId,
+            OperatorAuditActions.TerminalSessionsCleared,
+            "Terminal",
+            terminalId.ToString("D"),
+            new { terminalId = terminalId.ToString("D"), sessionsRevoked = revoked },
+            reason: "Remote POS operator sessions cleared for terminal.",
+            cancellationToken: cancellationToken);
         return Task.FromResult(Result<LocalLanControlTerminalActionResponse>.Success(new LocalLanControlTerminalActionResponse(
             TerminalId: terminalId.ToString("D"),
             Status: "SessionsCleared",
@@ -262,6 +271,25 @@ public sealed class LocalLanControlService
             .DisableTerminalAsync(terminalId, actor, cancellationToken)
             .ConfigureAwait(false);
 
+        if (result.IsSuccess)
+        {
+            await OperatorAuditTrail.TryWriteAsync(
+                    _lanServices.AuditWriteRepository,
+                    actor.ActorUserId,
+                    OperatorAuditActions.TerminalDisabled,
+                    "Terminal",
+                    terminalId.ToString("D"),
+                    new
+                    {
+                        terminalId = terminalId.ToString("D"),
+                        terminalName = result.Value.TerminalName,
+                        status = result.Value.Status.ToString()
+                    },
+                    reason: "Terminal disabled.",
+                    cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         return MapTerminalActionResult(result, "Terminal disabled. It can no longer perform remote POS until enabled again from this Host.");
     }
 
@@ -283,6 +311,25 @@ public sealed class LocalLanControlService
             .EnableTerminalAsync(terminalId, actor, cancellationToken)
             .ConfigureAwait(false);
 
+        if (result.IsSuccess)
+        {
+            await OperatorAuditTrail.TryWriteAsync(
+                    _lanServices.AuditWriteRepository,
+                    actor.ActorUserId,
+                    OperatorAuditActions.TerminalEnabled,
+                    "Terminal",
+                    terminalId.ToString("D"),
+                    new
+                    {
+                        terminalId = terminalId.ToString("D"),
+                        terminalName = result.Value.TerminalName,
+                        status = result.Value.Status.ToString()
+                    },
+                    reason: "Terminal enabled.",
+                    cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         return MapTerminalActionResult(result, "Terminal enabled. Remote POS access is restored for this paired device without re-pairing.");
     }
 
@@ -303,6 +350,25 @@ public sealed class LocalLanControlService
         Result<SalrynTerminalRegistration> result = await _lanServices.TerminalRegistry
             .RevokeTerminalAsync(terminalId, actor, cancellationToken)
             .ConfigureAwait(false);
+
+        if (result.IsSuccess)
+        {
+            await OperatorAuditTrail.TryWriteAsync(
+                    _lanServices.AuditWriteRepository,
+                    actor.ActorUserId,
+                    OperatorAuditActions.TerminalRemoved,
+                    "Terminal",
+                    terminalId.ToString("D"),
+                    new
+                    {
+                        terminalId = terminalId.ToString("D"),
+                        terminalName = result.Value.TerminalName,
+                        status = result.Value.Status.ToString()
+                    },
+                    reason: "Terminal removed (revoked).",
+                    cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         return MapTerminalActionResult(result, "Terminal removed. Its trust is permanently withdrawn; the device must request access again before use.");
     }

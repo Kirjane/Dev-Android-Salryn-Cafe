@@ -1,5 +1,7 @@
 using Salryn.Api.Local.Auth;
+using Salryn.Api.Local.Services;
 using Salryn.Composition.Local;
+using Salryn.Core.Services;
 using Salryn.Core.Services.Licensing;
 using Salryn.Infrastructure.Data.Services;
 
@@ -22,14 +24,71 @@ internal static class LocalBackupPackageEndpoints
             return await ApiLicenseGuard.RequireLicensedFeatureAsync(LicenseFeatures.Backup, ct).ConfigureAwait(false);
         }
 
+        static Guid? UserId(HttpContext c, LocalApiSessionService s)
+        {
+            string? sessionId = c.Request.Cookies[LocalApiSessionService.SessionCookieName];
+            return s.GetRequiredSession(sessionId)?.UserId;
+        }
+
         app.MapPost("/api/backups", async (HttpContext c, LocalApiSessionService s, CancellationToken ct) =>
-            await GuardAsync(c, s, ct).ConfigureAwait(false) ?? Map(service.Create()));
+        {
+            IResult? denied = await GuardAsync(c, s, ct).ConfigureAwait(false);
+            if (denied is not null)
+            {
+                return denied;
+            }
+
+            var created = service.Create();
+            if (created.IsSuccess)
+            {
+                await OperatorAuditTrail.TryWriteAsync(
+                        composition.ConnectionFactory,
+                        UserId(c, s),
+                        OperatorAuditActions.BackupCreated,
+                        "Backup",
+                        created.Value.BackupId,
+                        new
+                        {
+                            backupId = created.Value.BackupId,
+                            sizeBytes = created.Value.SizeBytes,
+                            createdAt = created.Value.CreatedAt
+                        },
+                        reason: "Controlled backup package created.",
+                        cancellationToken: ct)
+                    .ConfigureAwait(false);
+            }
+
+            return Map(created);
+        });
         app.MapGet("/api/backups", async (HttpContext c, LocalApiSessionService s, CancellationToken ct) =>
             await GuardAsync(c, s, ct).ConfigureAwait(false) ?? Map(service.List()));
         app.MapPost("/api/backups/{id}/verify", async (string id, HttpContext c, LocalApiSessionService s, CancellationToken ct) =>
             await GuardAsync(c, s, ct).ConfigureAwait(false) ?? Map(service.Verify(id)));
         app.MapPost("/api/backups/{id}/restore", async (string id, RestoreRequest r, HttpContext c, LocalApiSessionService s, CancellationToken ct) =>
-            await GuardAsync(c, s, ct).ConfigureAwait(false) ?? Map(service.Restore(id, r.Confirmation)));
+        {
+            IResult? denied = await GuardAsync(c, s, ct).ConfigureAwait(false);
+            if (denied is not null)
+            {
+                return denied;
+            }
+
+            var restored = service.Restore(id, r.Confirmation);
+            if (restored.IsSuccess)
+            {
+                await OperatorAuditTrail.TryWriteAsync(
+                        composition.ConnectionFactory,
+                        UserId(c, s),
+                        OperatorAuditActions.BackupRestored,
+                        "Backup",
+                        id,
+                        new { backupId = id },
+                        reason: "Controlled backup package restored.",
+                        cancellationToken: ct)
+                    .ConfigureAwait(false);
+            }
+
+            return Map(restored);
+        });
 
         // PRE-BETA-D: portable download of a verified package as .salryn-backup.zip
         app.MapGet("/api/backups/{id}/download", async (string id, HttpContext c, LocalApiSessionService s, CancellationToken ct) =>
