@@ -4,12 +4,12 @@ Maintainer: Kirch Ivan Balite
 
 ## Current PRE-I stack truth
 
-Current Salryn PRE-I candidate:
+Final Salryn PRE-I candidate:
 
 ```text
 Repository: Kirch-Nairu/Salryn
-Branch: KIRCH-PRE-I-LAN-REACHABILITY-AND-TERMINAL-COPY-REPAIR
-SHA: 373280da909a77277315364a7fa02d814af87291
+Branch: KIRCH-PRE-I-STALE-DOC-REPAIR-FOR-SEAL
+SHA: 1a173994dd23f46c62c13fc7b54ca44a6cdf65c0
 ```
 
 Current LicensingOps candidate:
@@ -20,15 +20,18 @@ Branch: KIRCH-LICOPS-M6-CROSS-REPO-ACTIVATION-PROOF
 SHA: f73bf74a6e68f835640d0ea3942f979f8fc823d9
 ```
 
-Current next step:
+Seal documentation branch and decision:
 
 ```text
-stale-doc repair + full local gates + final stack seal
+Branch: KIRCH-PRE-I-FINAL-STACK-SEAL
+Decision: PRE_I_FINAL_STACK_SEAL_PASSED
 ```
 
 This file supersedes older current-state wording that pointed to `KIRCH-SANDBOX`, `89e55b61748309d0d68d8d05627a01ef101649f2`, or `SANDBOX-RMO-FOUNDATION-09D` as the active lane. Those references are historical only when found in archived handoffs or older reports.
 
-No package/I1, desktop shortcut/WebView2, installer, production activation, BIR/eSales work, or branch promotion is part of the current next step.
+The final evidence is in `PRE_I_FINAL_STACK_SEAL_REPORT.md`; the bounded product truth is in `PRE_I_FINAL_CAPABILITY_MATRIX.md`.
+
+No package/I1, desktop shortcut/WebView2, installer, production activation, BIR/eSales readiness, or branch promotion is claimed by this seal.
 
 ## Documentation policy going forward
 
@@ -191,14 +194,10 @@ The stale-doc repair and final-stack-seal lane must not add or claim:
 - unlimited terminals,
 - branch promotion.
 
-## Current best next step
+## Recommended next
 
 ```text
-1. Repair stale current-state documentation.
-2. Run the full local Salryn gates against the repaired branch.
-3. Run the full local LicensingOps gates against the accepted LicensingOps candidate.
-4. If clean, create KIRCH-PRE-I-FINAL-STACK-SEAL.
-5. Add final stack seal report and final capability matrix.
+KIRCH-I1-PACKAGE-REFRESH-PRE-BETA
 ```
 
 ## Required local gate baseline for seal
@@ -245,4 +244,4 @@ git status
 
 ## Stability rule
 
-Do not create the final stack seal unless stale-doc repair is committed, local gates are clean, protected refs are unchanged, and P0/P1 blockers are absent.
+The final stack seal was authorized only after stale-doc repair was committed, both repositories' local gates passed, protected refs remained unchanged, and no P0/P1 blockers remained. Promotion was not performed.

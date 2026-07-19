@@ -10,12 +10,14 @@ The current project state is maintained in:
 
 Older per-phase handoff documents remain archive history. The current development policy is to update documentation only at stable certainty points, not after every small implementation move.
 
-## Current PRE-I candidate
+## Sealed PRE-I candidate
 
 ```text
 Repository: Kirch-Nairu/Salryn
-Current Salryn PRE-I candidate branch: KIRCH-PRE-I-LAN-REACHABILITY-AND-TERMINAL-COPY-REPAIR
-Current Salryn PRE-I candidate SHA: 373280da909a77277315364a7fa02d814af87291
+Final Salryn PRE-I candidate branch: KIRCH-PRE-I-STALE-DOC-REPAIR-FOR-SEAL
+Final Salryn PRE-I candidate SHA: 1a173994dd23f46c62c13fc7b54ca44a6cdf65c0
+Seal documentation branch: KIRCH-PRE-I-FINAL-STACK-SEAL
+Seal decision: PRE_I_FINAL_STACK_SEAL_PASSED
 ```
 
 ## Current LicensingOps candidate
@@ -26,13 +28,15 @@ Current LicensingOps candidate branch: KIRCH-LICOPS-M6-CROSS-REPO-ACTIVATION-PRO
 Current LicensingOps candidate SHA: f73bf74a6e68f835640d0ea3942f979f8fc823d9
 ```
 
-## Current next step
+The final seal evidence is recorded in `00-HANDOFF/PRE_I_FINAL_STACK_SEAL_REPORT.md`, with the bounded product truth in `00-HANDOFF/PRE_I_FINAL_CAPABILITY_MATRIX.md`.
+
+## Recommended next
 
 ```text
-stale-doc repair + full local gates + final stack seal
+KIRCH-I1-PACKAGE-REFRESH-PRE-BETA
 ```
 
-No package/I1, desktop shortcut/WebView2, installer, production activation, BIR/eSales submission, or branch promotion is part of the current next step.
+The PRE-I seal does not claim package/I1 proof, a desktop shortcut/WebView2 app shell, installer proof, production activation, BIR/eSales readiness, or branch promotion. Those boundaries remain explicit in the seal report.
 
 ## Project shape
 
