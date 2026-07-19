@@ -18,11 +18,9 @@ The inspected base is the PRE-I final stack seal. The seal report states `PRE_I_
 
 ## 3. Audit method
 
-This audit was performed from the GitHub-connected repository source at the requested base branch/SHA. Local filesystem access to `C:\Users\kirch\Salryn` was not available from this session.
+The static audit was performed from the GitHub-connected repository source at the requested base branch/SHA. The required local build and regression gates were subsequently run against audit-branch SHA `41115d9a971c31dcfe884511fe7e5ce0e38275a9` and passed, as recorded in `PRE_I_CODE_QUALITY_RELIABILITY_AUDIT_GATE_APPENDIX.md`.
 
-Therefore, this report does not claim execution of local `rg`, `dir /s`, `git ls-files`, `dotnet build`, CoreSmoke, npm build, `git diff --check`, or `git status`. The required local gate stack remains blocked until run on Kirch's local checkout.
-
-Decision is process-blocked because gates could not be run here, even though no P0 corruption path was found during source inspection.
+The original verification-only process blocker is therefore cleared. No P0 or P1 blocker remains; the known P2 limitations remain accepted for controlled beta.
 
 ## 4. Files / areas inspected
 
@@ -216,13 +214,7 @@ None found in static source review.
 
 ## 12. P1 beta blockers
 
-### P1-1 — Required local gates were not run in this environment
-
-Classification: `P1 process blocker`.
-
-The requested post-report local gates were not executable from this session. This prevents a clean audit decision.
-
-This is not a code P1 found by source review; it is a verification blocker.
+None remaining. The required local gates passed on the audit branch; see `PRE_I_CODE_QUALITY_RELIABILITY_AUDIT_GATE_APPENDIX.md`.
 
 ## 13. P2 known limitations
 
@@ -252,20 +244,20 @@ This is not a code P1 found by source review; it is a verification blocker.
 
 ## 15. Safe for I1 package refresh
 
-`NO`
+`YES`
 
-Reason: the audit branch has not passed the required local post-report gates in this session.
+The static audit found no P0/P1 code blocker and the required local gate stack passed. Known P2 limitations remain accepted for controlled beta.
 
 ## 16. Required next action
 
-Run the required local gate stack on `KIRCH-PRE-I-CODE-QUALITY-RELIABILITY-AUDIT` from the actual local checkout. If clean, add a short gate appendix commit and change the decision to:
+Proceed to:
+
+```text
+KIRCH-I1-PACKAGE-REFRESH-PRE-BETA
+```
+
+Decision:
 
 ```text
 PRE_I_CODE_QUALITY_RELIABILITY_AUDIT_P2_ONLY
-```
-
-Current decision:
-
-```text
-PRE_I_CODE_QUALITY_RELIABILITY_AUDIT_P1_BLOCKED
 ```
