@@ -24,7 +24,8 @@ public sealed record PosReceiptSnapshotDraft(
     string? Address = null,
     string? ContactNumber = null,
     string? ReceiptHeader = null,
-    string? ReceiptFooter = null);
+    string? ReceiptFooter = null,
+    string? CashierDisplayName = null);
 
 public static class PosReceiptTextRenderer
 {
@@ -66,12 +67,17 @@ public static class PosReceiptTextRenderer
         if (!string.IsNullOrWhiteSpace(draft.Address)) AppendCentered(builder, draft.Address);
         if (!string.IsNullOrWhiteSpace(draft.ContactNumber)) AppendCentered(builder, draft.ContactNumber);
         if (!string.IsNullOrWhiteSpace(draft.ReceiptHeader)) AppendCentered(builder, draft.ReceiptHeader);
-        AppendCentered(builder, "RECEIPT SNAPSHOT");
+
+        AppendCentered(builder, "SALES RECEIPT");
         builder.AppendLine(new string('-', ReceiptWidth));
-        builder.AppendLine("Receipt : " + Safe(draft.ReceiptNumber));
-        builder.AppendLine("Date UTC: " + draft.SaleDate.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture));
-        builder.AppendLine("Cashier : " + draft.CashierUserId.ToString("D"));
-        builder.AppendLine("Status  : " + draft.Status);
+        builder.AppendLine("Receipt No: " + Safe(draft.ReceiptNumber));
+        builder.AppendLine("Date      : " + draft.SaleDate.ToLocalTime().ToString("yyyy-MM-dd hh:mm tt", CultureInfo.InvariantCulture));
+        builder.AppendLine("Cashier   : " + ResolveCashierText(draft.CashierDisplayName));
+        if (draft.Status != SaleStatus.Completed)
+        {
+            builder.AppendLine("Status    : " + draft.Status);
+        }
+
         builder.AppendLine(new string('-', ReceiptWidth));
         builder.AppendLine("ITEMS");
 
@@ -84,23 +90,14 @@ public static class PosReceiptTextRenderer
             foreach (SaleItem item in draft.Items)
             {
                 builder.AppendLine(Safe(item.ProductNameSnapshot));
-
-                if (!string.IsNullOrWhiteSpace(item.BarcodeSnapshot))
-                {
-                    builder.AppendLine("  Barcode: " + Safe(item.BarcodeSnapshot));
-                }
-
-                string quantity = FormatQuantity(item.Quantity);
-                string unitPrice = FormatMoney(item.UnitPrice);
-                string lineTotal = FormatMoney(item.LineTotal);
-                builder.AppendLine($"  {quantity} {Safe(item.UnitNameSnapshot)} x {unitPrice}");
+                builder.AppendLine($"  {FormatQuantity(item.Quantity)} {Safe(item.UnitNameSnapshot)} x {FormatMoney(item.UnitPrice)}");
 
                 if (item.Discount.Cents > 0)
                 {
                     builder.AppendLine("  Line discount: " + FormatMoney(item.Discount));
                 }
 
-                builder.AppendLine("  Line total:    " + lineTotal);
+                builder.AppendLine("  Line total: " + FormatMoney(item.LineTotal));
             }
         }
 
@@ -118,64 +115,18 @@ public static class PosReceiptTextRenderer
         }
 
         builder.AppendLine("TOTAL   : " + FormatMoney(draft.Total));
-        builder.AppendLine("Paid    : " + FormatMoney(draft.AmountPaid));
+        builder.AppendLine("Cash    : " + FormatMoney(draft.AmountPaid));
         builder.AppendLine("Change  : " + FormatMoney(draft.Change));
+        builder.AppendLine("Payment : " + FormatPaymentMethods(draft.Payments));
         builder.AppendLine(new string('-', ReceiptWidth));
-        builder.AppendLine("PAYMENTS");
-
-        foreach (Payment payment in draft.Payments)
-        {
-            builder.AppendLine($"  {payment.Method}: {FormatMoney(payment.Amount)} @ {payment.PaidAt.ToUniversalTime():yyyy-MM-dd HH:mm:ss}");
-        }
-
-        builder.AppendLine(new string('-', ReceiptWidth));
-        builder.AppendLine("Snapshot source: persisted sale_items and payments.");
-        builder.AppendLine("This is not a physical printer output.");
-        if (!string.IsNullOrWhiteSpace(draft.ReceiptFooter)) AppendCentered(builder, draft.ReceiptFooter);
+        AppendCentered(builder, string.IsNullOrWhiteSpace(draft.ReceiptFooter) ? "Thank you!" : draft.ReceiptFooter);
         return builder.ToString();
     }
 
     public static string Render(SaleDetailReadModel sale)
     {
         ArgumentNullException.ThrowIfNull(sale);
-
-        IReadOnlyList<SaleItem> items = sale.Items.Select(item => new SaleItem
-        {
-            Id = item.Id,
-            SaleId = sale.Id,
-            ProductId = item.ProductId,
-            ProductNameSnapshot = item.ProductNameSnapshot,
-            BarcodeSnapshot = item.BarcodeSnapshot,
-            UnitNameSnapshot = item.UnitNameSnapshot,
-            Quantity = item.Quantity,
-            UnitPrice = item.UnitPrice,
-            CostPrice = item.CostPrice,
-            Discount = item.Discount,
-            LineTotal = item.LineTotal
-        }).ToList();
-
-        IReadOnlyList<Payment> payments = sale.Payments.Select(payment => new Payment
-        {
-            Id = payment.Id,
-            SaleId = sale.Id,
-            Method = payment.Method,
-            Amount = payment.Amount,
-            PaidAt = payment.PaidAt
-        }).ToList();
-
-        return Render(new PosReceiptSnapshotDraft(
-            sale.ReceiptNo,
-            sale.SaleDate,
-            Guid.Empty,
-            sale.Subtotal,
-            sale.Discount,
-            sale.Tax,
-            sale.Total,
-            sale.AmountPaid,
-            sale.Change,
-            sale.Status,
-            items,
-            payments));
+        return RenderClientReceipt(sale);
     }
 
     public static string RenderClientReceipt(SaleDetailReadModel sale)
@@ -187,7 +138,7 @@ public static class PosReceiptTextRenderer
         builder.AppendLine(new string('-', ReceiptWidth));
         builder.AppendLine("Receipt No: " + Safe(sale.ReceiptNo));
         builder.AppendLine("Date      : " + sale.SaleDate.ToLocalTime().ToString("yyyy-MM-dd hh:mm tt", CultureInfo.InvariantCulture));
-        builder.AppendLine("Cashier   : " + Safe(sale.CashierDisplayName));
+        builder.AppendLine("Cashier   : " + ResolveCashierText(sale.CashierDisplayName));
         builder.AppendLine(new string('-', ReceiptWidth));
         builder.AppendLine("ITEMS");
 
@@ -205,9 +156,7 @@ public static class PosReceiptTextRenderer
         builder.AppendLine("TOTAL   : " + FormatMoney(sale.Total));
         builder.AppendLine("Cash    : " + FormatMoney(sale.AmountPaid));
         builder.AppendLine("Change  : " + FormatMoney(sale.Change));
-        builder.AppendLine("Payment : " + (sale.Payments.Count == 0
-            ? "Not recorded"
-            : string.Join(", ", sale.Payments.Select(payment => payment.Method.ToString()))));
+        builder.AppendLine("Payment : " + FormatPaymentMethods(sale.Payments));
         builder.AppendLine(new string('-', ReceiptWidth));
         AppendCentered(builder, "Thank you!");
         return builder.ToString();
@@ -228,6 +177,31 @@ public static class PosReceiptTextRenderer
     private static string FormatQuantity(Quantity quantity)
     {
         return quantity.ToUnits().ToString("0.###", CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatPaymentMethods(IReadOnlyList<Payment> payments)
+    {
+        return payments.Count == 0
+            ? "Not recorded"
+            : string.Join(", ", payments.Select(payment => payment.Method.ToString()).Distinct(StringComparer.Ordinal));
+    }
+
+    private static string FormatPaymentMethods(IReadOnlyList<PaymentReadModel> payments)
+    {
+        return payments.Count == 0
+            ? "Not recorded"
+            : string.Join(", ", payments.Select(payment => payment.Method.ToString()).Distinct(StringComparer.Ordinal));
+    }
+
+    private static string ResolveCashierText(string? cashierDisplayName)
+    {
+        if (string.IsNullOrWhiteSpace(cashierDisplayName))
+        {
+            return "Cashier";
+        }
+
+        string trimmed = cashierDisplayName.Trim();
+        return Guid.TryParse(trimmed, out _) ? "Cashier" : trimmed;
     }
 
     private static string Safe(string? value)
