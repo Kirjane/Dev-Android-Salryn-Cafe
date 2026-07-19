@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
@@ -22,6 +23,7 @@ public sealed class LocalApiLanRuntimeStatusService
     {
         IReadOnlyList<string> actualListenUrls = ReadActualListenUrls();
         IReadOnlyList<string> detectedLanListenIps = DetectLanListenIps(actualListenUrls);
+        IReadOnlyList<string> detectedHostIpv4Addresses = DetectHostIpv4Addresses();
         int port = _hostUrls.Port;
         string hostLocalUrl = _hostUrls.LocalUrl;
         bool lanTransportEnabled = config.RemoteTransportEnabled
@@ -53,7 +55,7 @@ public sealed class LocalApiLanRuntimeStatusService
                 && !SalrynHostCommandLoopbackRules.IsForbiddenBindAddress(rawConfigured))
             {
                 configuredBindMalformed = true;
-                repairSuggestion = detectedLanListenIps.FirstOrDefault();
+                repairSuggestion = detectedLanListenIps.FirstOrDefault() ?? detectedHostIpv4Addresses.FirstOrDefault();
             }
         }
 
@@ -92,19 +94,22 @@ public sealed class LocalApiLanRuntimeStatusService
         {
             readinessState = "Misconfigured";
             problem = "ConfiguredBindMalformed";
-            string suggestion = repairSuggestion ?? detectedLanListenIps.FirstOrDefault() ?? "YOUR_LAN_IP";
+            string suggestion = repairSuggestion
+                ?? detectedLanListenIps.FirstOrDefault()
+                ?? detectedHostIpv4Addresses.FirstOrDefault()
+                ?? "YOUR_LAN_IP";
             remediation =
                 $"Configured LAN address is malformed ({rawConfigured}). Repair to a bare IPv4 such as {suggestion}, then restart if the API is not already listening on that IP.";
-            if (string.IsNullOrWhiteSpace(repairSuggestion) && detectedLanListenIps.Count > 0)
+            if (string.IsNullOrWhiteSpace(repairSuggestion) && detectedHostIpv4Addresses.Count > 0)
             {
-                repairSuggestion = detectedLanListenIps[0];
+                repairSuggestion = detectedHostIpv4Addresses[0];
             }
         }
         else if (configuredBindAddress is null)
         {
             readinessState = "LoopbackOnly";
             problem = "ExplicitBindMissing";
-            remediation = BuildRestartCommand("YOUR_LAN_IP", port);
+            remediation = BuildRestartGuidance("the Host PC LAN address");
         }
         else if (configuredBindMalformed)
         {
@@ -126,17 +131,17 @@ public sealed class LocalApiLanRuntimeStatusService
             readinessState = "BindIpNotOnHost";
             problem = "BindIpNotOnHost";
             remediation = $"Choose a LAN IPv4 address assigned to this host. Current configured bind: {configuredBindAddress}.";
-            if (detectedLanListenIps.Count > 0)
+            if (detectedHostIpv4Addresses.Count > 0)
             {
-                repairSuggestion = detectedLanListenIps[0];
-                remediation += $" Detected LAN listener IP: {detectedLanListenIps[0]}.";
+                repairSuggestion = detectedHostIpv4Addresses[0];
+                remediation += $" Detected Host PC address: {detectedHostIpv4Addresses[0]}.";
             }
         }
         else if (loopbackOnly)
         {
             readinessState = "LoopbackOnly";
             problem = "ApiLoopbackOnly";
-            remediation = BuildRestartCommand(configuredBindAddress, port);
+            remediation = BuildRestartGuidance(configuredBindAddress);
             restartRequired = true;
         }
         else
@@ -146,10 +151,10 @@ public sealed class LocalApiLanRuntimeStatusService
             clientUrlReady = true;
         }
 
-        // When listeners include LAN but config is wrong, prefer detected LAN as repair suggestion.
-        if (repairSuggestion is null && detectedLanListenIps.Count > 0)
+        // Keep a real assigned Host PC address available for setup and repair without claiming it is already listening.
+        if (repairSuggestion is null && detectedHostIpv4Addresses.Count > 0)
         {
-            repairSuggestion = detectedLanListenIps[0];
+            repairSuggestion = detectedHostIpv4Addresses[0];
         }
 
         return new LocalLanControlRuntimeStatusResponse(
@@ -170,7 +175,8 @@ public sealed class LocalApiLanRuntimeStatusService
             ConfiguredBindAddressNormalized: normalizedBind,
             ConfiguredBindAddressRepairSuggestion: repairSuggestion,
             DetectedLanListenIps: detectedLanListenIps,
-            ConfiguredBindMalformed: configuredBindMalformed);
+            ConfiguredBindMalformed: configuredBindMalformed,
+            DetectedHostIpv4Addresses: detectedHostIpv4Addresses);
     }
 
     private IReadOnlyList<string> ReadActualListenUrls()
@@ -216,6 +222,20 @@ public sealed class LocalApiLanRuntimeStatusService
         return ips;
     }
 
+    private static IReadOnlyList<string> DetectHostIpv4Addresses()
+    {
+        return NetworkInterface.GetAllNetworkInterfaces()
+            .Where(network => network.OperationalStatus == OperationalStatus.Up)
+            .SelectMany(network => network.GetIPProperties().UnicastAddresses)
+            .Select(address => address.Address)
+            .Where(address => address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(address))
+            .Select(address => address.ToString())
+            .Where(LocalApiNetworkInterfaceValidator.IsAssignedToLocalInterface)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(address => address, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
     private static bool UrlMatchesHostAndPort(string listenUrl, string host, int port)
     {
         if (!Uri.TryCreate(listenUrl, UriKind.Absolute, out Uri? uri))
@@ -227,15 +247,14 @@ public sealed class LocalApiLanRuntimeStatusService
             && string.Equals(uri.Host, host, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string BuildRestartCommand(string bindAddress, int port)
+    private static string BuildRestartGuidance(string bindAddress)
     {
-        return $"Restart with: .\\tools\\dev\\Start-SalrynLanDev.ps1 -BindIp {bindAddress} -Port {port} -StopStale";
+        return $"Restart Salryn after saving {bindAddress}. After restart, wait for LAN status to show Ready before connecting terminal devices.";
     }
 
     private static string BuildFirewallGuidance(int port)
     {
-        return $"If LAN clients still time out, allow inbound TCP {port} on Private profile: "
-            + $"New-NetFirewallRule -DisplayName \"Salryn Dev LAN {port}\" -Direction Inbound -Action Allow "
-            + $"-Protocol TCP -LocalPort {port} -Profile Private";
+        return $"Allow Salryn inbound access on TCP port {port} for Private networks. "
+            + "Do not enable access on Public networks; ask your network administrator or Salryn support if assistance is needed.";
     }
 }

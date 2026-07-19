@@ -115,8 +115,8 @@ public static class PreIClientFacingProductPolishChecks
 
     private static void AssertTerminalAddressClarity(string hostLan)
     {
-        RequireContains(hostLan, "detectedLanListenIps", "Runtime-detected addresses must be used.");
-        RequireContains(hostLan, "Recommended Host PC address", "Recommended address label.");
+        RequireContains(hostLan, "detectedHostIpv4Addresses", "Runtime-detected Host PC addresses must be used.");
+        RequireContains(hostLan, "Detected Host PC address", "Detected address label.");
         RequireContains(hostLan, "Detected addresses", "Multiple-address chooser.");
         RequireContains(hostLan, "Use this terminal link on other devices:", "Terminal link instruction.");
         RequireContains(hostLan, "Ask support to check this Host PC’s network address.", "No-address fallback.");

@@ -89,7 +89,7 @@ function readinessBadge(state: string): string {
     case "Ready":
       return "Ready";
     case "LoopbackOnly":
-      return "Restart required";
+      return "Action needed";
     case "BindIpNotOnHost":
     case "Misconfigured":
       return "Needs repair";
@@ -176,8 +176,8 @@ export function HostLanControlPage() {
   const hostLanEntitled = limits?.hostLanEntitled === true && (limits?.maxPairedTerminals ?? 0) > 0;
   const capacitySummary = `${limits?.currentPairedCount ?? 0} / ${limits?.maxPairedTerminals ?? 0} paired, ${limits?.currentActiveSessions ?? 0} / ${limits?.maxActiveSessions ?? 0} active`;
   const detectedHostIps = useMemo(
-    () => Array.from(new Set((runtime?.detectedLanListenIps ?? []).filter(looksLikeBareIpv4))),
-    [runtime?.detectedLanListenIps],
+    () => Array.from(new Set((runtime?.detectedHostIpv4Addresses ?? runtime?.detectedLanListenIps ?? []).filter(looksLikeBareIpv4))),
+    [runtime?.detectedHostIpv4Addresses, runtime?.detectedLanListenIps],
   );
   const recommendedHostIp = detectedHostIps[0] ?? "";
 
@@ -191,12 +191,7 @@ export function HostLanControlPage() {
     ? status?.configuredBindAddress.trim() ?? ""
     : "";
   const terminalIp = repairIp || configuredHostIp;
-  const terminalLink =
-    runtime?.clientUrlReady && runtime.clientUrl
-      ? runtime.clientUrl
-      : terminalIp && looksLikeBareIpv4(terminalIp) && runtime?.port
-        ? `http://${terminalIp}:${runtime.port}/remote-client`
-        : "";
+  const terminalLink = runtime?.clientUrlReady && runtime.clientUrl ? runtime.clientUrl : "";
 
   const canCopyTerminalLink = Boolean(runtime?.clientUrlReady && runtime.clientUrl);
   const busy =
@@ -273,6 +268,7 @@ export function HostLanControlPage() {
     const preferred =
       bindAddressInput.trim() ||
       repairIp ||
+      runtime?.detectedHostIpv4Addresses?.[0] ||
       runtime?.detectedLanListenIps?.[0] ||
       "";
     const normalized = normalizeConfiguredLanBindInput(preferred);
@@ -283,7 +279,16 @@ export function HostLanControlPage() {
     remoteTransportMutation.mutate(
       { enable: true, bindAddress: normalized.ip },
       {
-        onSuccess: () => notify.success("LAN access started", "Terminal devices can use the terminal link."),
+        onSuccess: async () => {
+          const refreshed = await runtimeStatusQuery.refetch();
+          if (refreshed.data?.clientUrlReady && refreshed.data.clientUrl) {
+            notify.success("LAN access is ready", "Terminal devices can open the terminal link.");
+          } else if (refreshed.data?.restartRequired) {
+            notify.warning("Restart required", "Restart Salryn to make the saved LAN address reachable from terminal devices.");
+          } else {
+            notify.info("LAN settings saved", "Check LAN status before connecting terminal devices.");
+          }
+        },
         onError: (error) => notify.error("LAN access was not started", safeNotificationDescription(error, "Review the Host PC LAN address and try again.")),
       },
     );
@@ -292,7 +297,16 @@ export function HostLanControlPage() {
   function repairLanAddress() {
     const target = repairIp || bindAddressInput.trim();
     repairBindMutation.mutate(target || null, {
-      onSuccess: () => notify.success("LAN address repaired", "Use the updated terminal link on terminal devices."),
+      onSuccess: async () => {
+        const refreshed = await runtimeStatusQuery.refetch();
+        if (refreshed.data?.clientUrlReady && refreshed.data.clientUrl) {
+          notify.success("LAN address repaired", "Terminal devices can use the updated terminal link.");
+        } else if (refreshed.data?.restartRequired) {
+          notify.warning("LAN address saved — restart required", "Restart Salryn before terminal devices try to connect.");
+        } else {
+          notify.info("LAN address saved", "Check LAN status before connecting terminal devices.");
+        }
+      },
       onError: (error) => notify.error("LAN address was not repaired", safeNotificationDescription(error, "Review the detected Host PC address and try again.")),
     });
   }
@@ -384,7 +398,7 @@ export function HostLanControlPage() {
               value={readinessTitle(runtime?.readinessState ?? "Disabled")}
               tone={readinessTone(runtime?.readinessState ?? "Disabled")}
               badge={readinessBadge(runtime?.readinessState ?? "Disabled")}
-              subtitle={terminalLink || "Enter a Host PC LAN address to create the terminal link."}
+              subtitle={terminalLink || (runtime?.restartRequired ? "Restart Salryn before connecting terminals." : "Enter a Host PC LAN address to start LAN access.")}
             />
             <MetricCard
               title="Terminal POS access"
@@ -621,9 +635,9 @@ export function HostLanControlPage() {
               <CardTitle>Terminal help</CardTitle>
             </CardHeader>
             <CardBody className="space-y-3 text-sm text-slate-700">
-              <p className="font-medium text-slate-900">If a phone is stuck after a new build or DB reset:</p>
+              <p className="font-medium text-slate-900">If a terminal device needs to reconnect:</p>
               <ol className="list-decimal space-y-1 pl-5">
-                <li>Open the terminal link on the phone.</li>
+                <li>Open the terminal link on the terminal device.</li>
                 <li>Tap <strong>Clear this device state</strong>.</li>
                 <li>Request access again with a fresh host join code.</li>
               </ol>
@@ -674,6 +688,9 @@ export function HostLanControlPage() {
                   {runtime?.actualListenUrls?.length ? runtime.actualListenUrls.join(", ") : "unknown"}
                 </span>
               </p>
+              {runtime?.firewallGuidance ? (
+                <p className="text-slate-600">Firewall detail: {runtime.firewallGuidance}</p>
+              ) : null}
               <div className="space-y-2">
                 {status.warnings.map((warning) => (
                   <Alert key={warning} tone="warning">
@@ -909,14 +926,15 @@ function LanConnectionCard({
 
         <div className="flex flex-wrap items-center gap-2">
           <StatusPill tone={readinessTone(readiness)}>{readinessTitle(readiness)}</StatusPill>
-          {runtime?.restartRequired ? <StatusPill tone="warning">Restart required</StatusPill> : null}
           {malformed ? <StatusPill tone="danger">Saved address needs repair</StatusPill> : null}
         </div>
 
-        {recommendedHostIp ? (
+        {recommendedHostIp || hostPcAddress ? (
           <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Recommended Host PC address</p>
-            <p className="mt-1 font-mono text-base font-semibold text-slate-950">{recommendedHostIp}</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+              {recommendedHostIp ? "Detected Host PC address" : "Saved Host PC address"}
+            </p>
+            <p className="mt-1 font-mono text-base font-semibold text-slate-950">{recommendedHostIp || hostPcAddress}</p>
           </div>
         ) : (
           <Alert tone="warning" title="Host PC address not detected">
@@ -952,10 +970,10 @@ function LanConnectionCard({
           </Alert>
         ) : null}
 
-        {readiness !== "Ready" && terminalLink ? (
-          <Alert tone="warning" title="After starting LAN access, open this link on the terminal device">
-            <p>Use this terminal link on other devices:</p>
-            <p className="mt-1 break-all font-mono text-base font-semibold">{terminalLink}</p>
+        {runtime?.restartRequired ? (
+          <Alert tone="warning" title="Restart Salryn before connecting terminals">
+            The LAN address is saved, but this running session is not listening on it yet. Restart Salryn, then return
+            here and wait for LAN status to show Ready before copying the terminal link.
           </Alert>
         ) : null}
 
@@ -966,7 +984,7 @@ function LanConnectionCard({
           </Alert>
         ) : null}
 
-        {readiness !== "Ready" && !terminalLink ? (
+        {readiness !== "Ready" && !terminalLink && !runtime?.restartRequired ? (
           <Alert tone="warning" title="LAN setup needed">
             {readinessGuidance(readiness)}
           </Alert>
@@ -974,7 +992,7 @@ function LanConnectionCard({
 
         <dl className="grid gap-3 text-sm sm:grid-cols-2">
           <Row label="Host PC address" value={hostPcAddress || "Not set"} />
-          <Row label="Terminal link" value={terminalLink || "Enter a valid address to create the link"} />
+          <Row label="Terminal link" value={terminalLink || "Available after LAN access is ready"} />
           <Row label="Status" value={readinessTitle(readiness)} />
           <Row label="Capacity" value={capacitySummary} />
         </dl>
@@ -1019,10 +1037,9 @@ function LanConnectionCard({
           </Button>
         </div>
         {copied ? <p className="text-xs text-slate-500">Terminal link copied.</p> : null}
-        {!canCopyTerminalLink && terminalLink ? (
+        {!canCopyTerminalLink && runtime?.restartRequired ? (
           <p className="text-xs text-slate-500">
-            Copy becomes available after LAN access is ready. The terminal link above is the link to use after
-            starting or restarting Salryn.
+            Copy becomes available after restart, when LAN status confirms that terminal devices can reach this Host PC.
           </p>
         ) : null}
 
@@ -1049,9 +1066,10 @@ function LanConnectionCard({
           </div>
         </div>
 
-        {showTroubleshooting && runtime?.firewallGuidance ? (
-          <Alert tone="info" title="Firewall guidance (manual only)">
-            {runtime.firewallGuidance}
+        {showTroubleshooting ? (
+          <Alert tone="info" title="Windows Firewall help">
+            If another device cannot open the terminal link while LAN status is Ready, allow Salryn on Private
+            networks in Windows Firewall. Your network administrator or Salryn support can help with this setting.
           </Alert>
         ) : null}
       </CardBody>

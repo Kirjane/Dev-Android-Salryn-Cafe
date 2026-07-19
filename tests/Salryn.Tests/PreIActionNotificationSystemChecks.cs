@@ -69,7 +69,7 @@ public static class PreIActionNotificationSystemChecks
         foreach (string title in new[]
         {
             "Terminal link copied",
-            "LAN access started",
+            "LAN access is ready",
             "LAN access stopped",
             "Terminal POS access allowed",
             "Terminal POS access stopped",

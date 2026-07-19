@@ -39,11 +39,11 @@ public static class PreILanSetupUxClarityChecks
         RequireAfter(page, "Remote POS runtime", advancedIndex, "Runtime state must stay under Advanced diagnostics.");
 
         // B. Exact terminal link behavior.
-        RequireContains(page, "`http://${terminalIp}:${runtime.port}/remote-client`", "Terminal link must use the exact IP/port remote-client route.");
+        RequireContains(page, "runtime?.clientUrlReady && runtime.clientUrl ? runtime.clientUrl : \"\"", "Terminal link must come only from runtime-confirmed reachability.");
         RequireContains(page, "readiness === \"Ready\" && terminalLink", "Ready state must visibly render the terminal link.");
-        RequireContains(page, "readiness !== \"Ready\" && terminalLink", "Valid preview must remain visible before start/restart.");
+        RequireNotContains(page, "readiness !== \"Ready\" && terminalLink", "Pre-ready terminal-link previews must not imply reachability.");
         RequireContains(page, "Terminal devices can open this link", "Ready instruction must be explicit.");
-        RequireContains(page, "After starting LAN access, open this link on the terminal device", "Pre-ready instruction must be explicit.");
+        RequireContains(page, "Restart Salryn before connecting terminals", "Restart-required instruction must be explicit.");
         RequireContains(page, "disabled={!canCopyTerminalLink || busy}", "Copy may remain readiness-gated.");
 
         // C. LAN-level confirmation guards.

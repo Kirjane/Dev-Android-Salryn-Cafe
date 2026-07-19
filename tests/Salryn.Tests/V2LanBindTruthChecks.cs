@@ -54,6 +54,7 @@ public static class V2LanBindTruthChecks
         AssertContains(runtimeStatus, "ConfiguredBindMalformed", "Runtime status must detect malformed configured bind.");
         AssertContains(runtimeStatus, "ConfiguredBindAddressRepairSuggestion", "Runtime status must expose repair suggestion.");
         AssertContains(runtimeStatus, "DetectedLanListenIps", "Runtime status must expose detected LAN listener IPs.");
+        AssertContains(runtimeStatus, "DetectedHostIpv4Addresses", "Runtime status must separately expose assigned Host PC addresses.");
         AssertContains(hostUrls, "BuildClientUrl", "Host control URLs must build remote client URL.");
         AssertContains(hostUrls, "/remote-client", "Client URL must target remote client entry.");
         AssertContains(hostUrls, "LocalApiLanBindNormalizer", "Host URL helper must refuse double-scheme URL construction.");
@@ -70,6 +71,7 @@ public static class V2LanBindTruthChecks
         AssertContains(endpoints, "/bind/repair", "LAN control must expose bind repair endpoint.");
         AssertContains(contracts, "LocalLanControlRuntimeStatusResponse", "Contracts must include runtime status response.");
         AssertContains(contracts, "ConfiguredBindAddressRepairSuggestion", "Contracts must include bind repair suggestion.");
+        AssertContains(contracts, "DetectedHostIpv4Addresses", "Contracts must include assigned Host PC addresses.");
         AssertContains(contracts, "LocalLanControlBindRepairRequest", "Contracts must include bind repair request.");
 
         AssertContains(page, "LAN server is actually listening on", "Host LAN Control must show actual listen URLs.");

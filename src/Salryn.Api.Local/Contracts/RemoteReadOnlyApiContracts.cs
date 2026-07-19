@@ -154,7 +154,8 @@ public sealed record LocalLanControlRuntimeStatusResponse(
     string? ConfiguredBindAddressNormalized = null,
     string? ConfiguredBindAddressRepairSuggestion = null,
     IReadOnlyList<string>? DetectedLanListenIps = null,
-    bool ConfiguredBindMalformed = false);
+    bool ConfiguredBindMalformed = false,
+    IReadOnlyList<string>? DetectedHostIpv4Addresses = null);
 
 public sealed record LocalLanControlRemoteTransportRequest(
     bool Enable,

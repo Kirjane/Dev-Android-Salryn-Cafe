@@ -175,6 +175,7 @@ export type LocalLanControlRuntimeStatus = {
   configuredBindAddressRepairSuggestion?: string | null;
   detectedLanListenIps?: string[] | null;
   configuredBindMalformed?: boolean;
+  detectedHostIpv4Addresses?: string[] | null;
 };
 
 export type LocalLanControlStatus = {
