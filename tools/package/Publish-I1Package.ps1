@@ -23,6 +23,8 @@ if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
 $webProject = Join-Path $repoRoot "src\Salryn.App.Web"
 $apiProject = Join-Path $repoRoot "src\Salryn.Api.Local\Salryn.Api.Local.csproj"
 $webDistSource = Join-Path $webProject "dist"
+$runbookSource = Join-Path $repoRoot "00-HANDOFF\I1_PACKAGE_RUNBOOK.md"
+$limitationsSource = Join-Path $repoRoot "00-HANDOFF\I1_PACKAGE_KNOWN_LIMITATIONS.md"
 
 Write-Host "=== Salryn I1 package publish ==="
 Write-Host "Repo:    $repoRoot"
@@ -64,6 +66,16 @@ if (Test-Path -LiteralPath $packageDist) {
 }
 Copy-Item -LiteralPath $webDistSource -Destination $packageDist -Recurse
 
+if (-not (Test-Path -LiteralPath $runbookSource)) {
+    throw "I1 package runbook is missing: $runbookSource"
+}
+if (-not (Test-Path -LiteralPath $limitationsSource)) {
+    throw "I1 package known-limitations file is missing: $limitationsSource"
+}
+
+Copy-Item -LiteralPath $runbookSource -Destination (Join-Path $OutputRoot "PACKAGE-RUNBOOK.md")
+Copy-Item -LiteralPath $limitationsSource -Destination (Join-Path $OutputRoot "KNOWN-LIMITATIONS.md")
+
 $stampPath = Join-Path $OutputRoot "salryn-i1-package-stamp.txt"
 $gitSha = ""
 try {
@@ -76,7 +88,7 @@ finally {
 
 @(
     "Product=Salryn POS"
-    "Lane=I1-PACKAGE-INSTALL-PROOF"
+    "Lane=I1-PACKAGE-REFRESH-PRE-BETA"
     "StagedUtc=$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ')"
     "Configuration=$Configuration"
     "PublishMode=framework-dependent"
@@ -87,6 +99,8 @@ finally {
     "NotPublicInstaller=true"
     "NotAutoUpdater=true"
     "NotCloudActivation=true"
+    "BrowserPackageOnly=true"
+    "DesktopAppShell=Deferred"
 ) | Set-Content -LiteralPath $stampPath -Encoding UTF8
 
 $exe = Join-Path $OutputRoot "Salryn.Api.Local.exe"
@@ -98,6 +112,19 @@ if (-not (Test-Path -LiteralPath $index)) {
     throw "Package missing dist\index.html"
 }
 
+$archivePath = Join-Path (Split-Path -Parent $OutputRoot) "Salryn-I1-PRE-BETA.zip"
+$checksumPath = $archivePath + ".sha256"
+if (Test-Path -LiteralPath $archivePath) {
+    Remove-Item -LiteralPath $archivePath -Force
+}
+if (Test-Path -LiteralPath $checksumPath) {
+    Remove-Item -LiteralPath $checksumPath -Force
+}
+
+Compress-Archive -Path (Join-Path $OutputRoot "*") -DestinationPath $archivePath -CompressionLevel Optimal
+$archiveHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash
+"$archiveHash  $(Split-Path -Leaf $archivePath)" | Set-Content -LiteralPath $checksumPath -Encoding ASCII
+
 Write-Host ""
 Write-Host "I1 package ready:"
 Write-Host "  $OutputRoot"
@@ -105,4 +132,8 @@ Write-Host "Launch (dev data isolation for proof):"
 Write-Host "  cd `"$OutputRoot`""
 Write-Host "  .\Salryn.Api.Local.exe --dev"
 Write-Host "Then open http://127.0.0.1:5299/"
+Write-Host "Archive:"
+Write-Host "  $archivePath"
+Write-Host "SHA-256:"
+Write-Host "  $archiveHash"
 Write-Host "Done."
