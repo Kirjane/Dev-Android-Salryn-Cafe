@@ -8,7 +8,15 @@ The package contains the published `Salryn.Api.Local.exe` host and the productio
 
 ## Launch
 
-From PowerShell:
+Before the first normal launch on a client PC, open PowerShell in the extracted package folder and run:
+
+```powershell
+.\Prepare-Salryn-PortableBeta.ps1
+```
+
+An Administrator PowerShell may be required to create `C:\ProgramData\Salryn` and grant the current Windows user Modify access. The script creates the required `backups`, `config`, `data`, `exports`, `logs`, and `receipts` folders, verifies that the data folder is writable, and reports a clear success or failure. It does not delete store data, alter the active license, or enable development mode.
+
+After preparation succeeds, launch from PowerShell:
 
 ```powershell
 cd C:\Users\kirch\Salryn\artifacts\i1-package\Salryn

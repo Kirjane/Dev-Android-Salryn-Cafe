@@ -286,7 +286,7 @@ export function ProductsPage() {
     {
       key: "category",
       header: "Category",
-      render: (row: ProductListItem) => row.categoryName ?? "No category",
+      render: (row: ProductListItem) => row.categoryName ?? "Uncategorized",
     },
     {
       key: "brand",
@@ -825,11 +825,11 @@ export function ProductsPage() {
                 <details className="rounded-lg border border-slate-200 bg-white p-3">
                   <summary className="cursor-pointer font-semibold text-slate-900">More details</summary>
                   <dl className="mt-3 grid gap-2 sm:grid-cols-2">
-                    <Row label="Category" value={detailQuery.data.categoryName ?? "No category"} />
+                    <Row label="Category" value={detailQuery.data.categoryName ?? "Uncategorized"} />
                     <Row label="Brand" value={detailQuery.data.brandName ?? "No brand"} />
                     <Row label="Unit" value={detailQuery.data.unitName} />
                     <Row label="Existing SKU (read-only)" value={detailQuery.data.sku ?? "Not assigned"} />
-                    <Row label="Track stock" value={detailQuery.data.trackStock ? "Yes" : "No"} />
+                    <Row label="Track stock" value={detailQuery.data.trackStock ? "ON — stock-in, adjustments, and sales update quantity" : "OFF — quantity is not tracked for this product"} />
                     <Row label="Supplier" value={detailQuery.data.supplierName ?? "—"} />
                     <Row
                       label="Cost price"
@@ -844,6 +844,9 @@ export function ProductsPage() {
                       value={detailQuery.data.updatedAt ? formatDateTime(detailQuery.data.updatedAt) : "—"}
                     />
                   </dl>
+                  <p className="mt-3 rounded-md bg-slate-100 p-3 text-xs text-slate-600">
+                    Track stock means Salryn counts inventory quantity for this product. ON: checkout decreases quantity and Stock-In or Adjustment can change it. OFF: the item can still be sold, but inventory quantity is not counted.
+                  </p>
                   {detailQuery.data.description ? <p className="mt-3">{detailQuery.data.description}</p> : null}
                   {detailQuery.data.notes ? <p className="mt-2">Notes: {detailQuery.data.notes}</p> : null}
                   <p className="mt-3 text-xs text-slate-500">
@@ -1034,7 +1037,7 @@ export function ProductsPage() {
                     updateForm("categoryId", event.target.value)
                   }
                 >
-                  <option value="">No category</option>
+                  <option value="">Uncategorized (No category)</option>
                   {(categoriesQuery.data ?? []).map((category) => (
                     <option key={category.id} value={category.id}>
                       {category.name}
@@ -1042,7 +1045,7 @@ export function ProductsPage() {
                   ))}
                 </select>
                 <p className="mt-1 text-xs text-slate-500">
-                  Optional. No category is accepted.
+                  Choose from the available categories. Use General Merchandise when available, or Uncategorized when none fits; category management is not included in this beta.
                 </p>
               </div>
               <div>
@@ -1064,7 +1067,7 @@ export function ProductsPage() {
                   ))}
                 </select>
                 <p className="mt-1 text-xs text-slate-500">
-                  Optional. No brand is accepted.
+                  Choose from the available brands. Use No Brand when none fits; brand management is not included in this beta.
                 </p>
               </div>
               <div>

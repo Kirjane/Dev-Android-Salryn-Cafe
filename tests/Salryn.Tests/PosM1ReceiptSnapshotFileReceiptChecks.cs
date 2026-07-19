@@ -29,7 +29,18 @@ public static class PosM1ReceiptSnapshotFileReceiptChecks
             Require(written.Succeeded, "File receipt writer must report success for writable path.");
             Require(string.Equals(written.Status, "Written", StringComparison.Ordinal), "File receipt writer must return Written status.");
             Require(written.FilePath is not null && File.Exists(written.FilePath), "File receipt must exist on disk.");
-            Require(File.ReadAllText(written.FilePath).Contains("Snapshot Name", StringComparison.Ordinal), "File receipt must contain snapshot text.");
+            string receiptFile = File.ReadAllText(written.FilePath);
+            Require(receiptFile.Contains("SALES RECEIPT", StringComparison.Ordinal), "File receipt must use the client-facing title.");
+            Require(receiptFile.Contains("Receipt No: POS-M1-000001", StringComparison.Ordinal), "File receipt must contain the receipt number.");
+            Require(receiptFile.Contains("Cashier   : POS-M1 Cashier", StringComparison.Ordinal), "File receipt must contain the human-readable cashier name.");
+            Require(receiptFile.Contains("Snapshot Name", StringComparison.Ordinal), "File receipt must contain saved sale item text.");
+            Require(receiptFile.Contains("Payment : Cash", StringComparison.Ordinal), "File receipt must contain payment method.");
+            Require(receiptFile.Contains("Thank you!", StringComparison.Ordinal), "File receipt must contain the customer closing.");
+            Require(!receiptFile.Contains("RECEIPT SNAPSHOT", StringComparison.Ordinal), "File receipt must not use internal snapshot wording.");
+            Require(!receiptFile.Contains("Date UTC", StringComparison.Ordinal), "File receipt must not expose an internal UTC label.");
+            Require(!receiptFile.Contains(sale.CashierUserId.ToString("D"), StringComparison.OrdinalIgnoreCase), "File receipt must not expose the cashier GUID.");
+            Require(!receiptFile.Contains("Snapshot source", StringComparison.Ordinal), "File receipt must not contain internal snapshot provenance.");
+            Require(!receiptFile.Contains("not a physical printer output", StringComparison.OrdinalIgnoreCase), "File receipt must not contain developer-facing printer copy.");
         }
         finally
         {

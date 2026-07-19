@@ -1,5 +1,6 @@
 using System.Text;
 using Salryn.Core.ReadModels;
+using Salryn.Core.Services;
 
 namespace Salryn.Api.Local.Services;
 
@@ -65,7 +66,7 @@ public sealed class FileReceiptWriter : IFileReceiptWriter
 
             await File.WriteAllTextAsync(
                     filePath,
-                    sale.ReceiptSnapshot,
+                    PosReceiptTextRenderer.RenderClientReceipt(sale),
                     Encoding.UTF8,
                     cancellationToken)
                 .ConfigureAwait(false);

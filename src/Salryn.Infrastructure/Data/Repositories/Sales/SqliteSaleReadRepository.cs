@@ -136,7 +136,10 @@ public sealed class SqliteSaleReadRepository :
                 s.id,
                 s.receipt_no,
                 s.sale_date,
-                u.display_name AS cashier_display_name,
+                COALESCE(
+                    NULLIF(TRIM(u.display_name), ''),
+                    NULLIF(TRIM(u.username), ''),
+                    'Cashier') AS cashier_display_name,
                 s.subtotal_cents,
                 s.discount_cents,
                 s.tax_cents,

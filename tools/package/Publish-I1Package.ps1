@@ -25,6 +25,7 @@ $apiProject = Join-Path $repoRoot "src\Salryn.Api.Local\Salryn.Api.Local.csproj"
 $webDistSource = Join-Path $webProject "dist"
 $runbookSource = Join-Path $repoRoot "00-HANDOFF\I1_PACKAGE_RUNBOOK.md"
 $limitationsSource = Join-Path $repoRoot "00-HANDOFF\I1_PACKAGE_KNOWN_LIMITATIONS.md"
+$prepScriptSource = Join-Path $repoRoot "tools\release\Prepare-Salryn-PortableBeta.ps1"
 
 Write-Host "=== Salryn I1 package publish ==="
 Write-Host "Repo:    $repoRoot"
@@ -72,9 +73,13 @@ if (-not (Test-Path -LiteralPath $runbookSource)) {
 if (-not (Test-Path -LiteralPath $limitationsSource)) {
     throw "I1 package known-limitations file is missing: $limitationsSource"
 }
+if (-not (Test-Path -LiteralPath $prepScriptSource)) {
+    throw "Portable beta preparation script is missing: $prepScriptSource"
+}
 
 Copy-Item -LiteralPath $runbookSource -Destination (Join-Path $OutputRoot "PACKAGE-RUNBOOK.md")
 Copy-Item -LiteralPath $limitationsSource -Destination (Join-Path $OutputRoot "KNOWN-LIMITATIONS.md")
+Copy-Item -LiteralPath $prepScriptSource -Destination (Join-Path $OutputRoot "Prepare-Salryn-PortableBeta.ps1")
 
 $stampPath = Join-Path $OutputRoot "salryn-i1-package-stamp.txt"
 $gitSha = ""
@@ -88,7 +93,7 @@ finally {
 
 @(
     "Product=Salryn POS"
-    "Lane=I1-PACKAGE-REFRESH-PRE-BETA"
+    "Lane=I1A-CLIENT-HANDOFF-REPAIR"
     "StagedUtc=$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.fffZ')"
     "Configuration=$Configuration"
     "PublishMode=framework-dependent"
@@ -112,7 +117,7 @@ if (-not (Test-Path -LiteralPath $index)) {
     throw "Package missing dist\index.html"
 }
 
-$archivePath = Join-Path (Split-Path -Parent $OutputRoot) "Salryn-I1-PRE-BETA.zip"
+$archivePath = Join-Path (Split-Path -Parent $OutputRoot) "Salryn-I1A-PRE-BETA.zip"
 $checksumPath = $archivePath + ".sha256"
 if (Test-Path -LiteralPath $archivePath) {
     Remove-Item -LiteralPath $archivePath -Force
@@ -128,9 +133,11 @@ $archiveHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash
 Write-Host ""
 Write-Host "I1 package ready:"
 Write-Host "  $OutputRoot"
-Write-Host "Launch (dev data isolation for proof):"
+Write-Host "Prepare once (Administrator PowerShell may be required):"
+Write-Host "  .\Prepare-Salryn-PortableBeta.ps1"
+Write-Host "Launch:"
 Write-Host "  cd `"$OutputRoot`""
-Write-Host "  .\Salryn.Api.Local.exe --dev"
+Write-Host "  .\Salryn.Api.Local.exe"
 Write-Host "Then open http://127.0.0.1:5299/"
 Write-Host "Archive:"
 Write-Host "  $archivePath"

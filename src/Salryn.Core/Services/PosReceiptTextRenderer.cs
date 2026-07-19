@@ -178,6 +178,41 @@ public static class PosReceiptTextRenderer
             payments));
     }
 
+    public static string RenderClientReceipt(SaleDetailReadModel sale)
+    {
+        ArgumentNullException.ThrowIfNull(sale);
+
+        var builder = new StringBuilder();
+        AppendCentered(builder, "SALES RECEIPT");
+        builder.AppendLine(new string('-', ReceiptWidth));
+        builder.AppendLine("Receipt No: " + Safe(sale.ReceiptNo));
+        builder.AppendLine("Date      : " + sale.SaleDate.ToLocalTime().ToString("yyyy-MM-dd hh:mm tt", CultureInfo.InvariantCulture));
+        builder.AppendLine("Cashier   : " + Safe(sale.CashierDisplayName));
+        builder.AppendLine(new string('-', ReceiptWidth));
+        builder.AppendLine("ITEMS");
+
+        foreach (SaleItemDetailReadModel item in sale.Items)
+        {
+            builder.AppendLine(Safe(item.ProductNameSnapshot));
+            builder.AppendLine($"  {FormatQuantity(item.Quantity)} {Safe(item.UnitNameSnapshot)} x {FormatMoney(item.UnitPrice)}");
+            builder.AppendLine("  Line total: " + FormatMoney(item.LineTotal));
+        }
+
+        builder.AppendLine(new string('-', ReceiptWidth));
+        builder.AppendLine("Subtotal: " + FormatMoney(sale.Subtotal));
+        if (sale.Discount.Cents > 0) builder.AppendLine("Discount: " + FormatMoney(sale.Discount));
+        if (sale.Tax.Cents > 0) builder.AppendLine("Tax     : " + FormatMoney(sale.Tax));
+        builder.AppendLine("TOTAL   : " + FormatMoney(sale.Total));
+        builder.AppendLine("Cash    : " + FormatMoney(sale.AmountPaid));
+        builder.AppendLine("Change  : " + FormatMoney(sale.Change));
+        builder.AppendLine("Payment : " + (sale.Payments.Count == 0
+            ? "Not recorded"
+            : string.Join(", ", sale.Payments.Select(payment => payment.Method.ToString()))));
+        builder.AppendLine(new string('-', ReceiptWidth));
+        AppendCentered(builder, "Thank you!");
+        return builder.ToString();
+    }
+
     private static void AppendCentered(StringBuilder builder, string value)
     {
         string safe = Safe(value);
