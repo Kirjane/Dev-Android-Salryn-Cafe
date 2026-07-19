@@ -15,10 +15,16 @@ public static class PosM1ReceiptSnapshotFileReceiptChecks
         IReadOnlyList<Payment> payments = CreatePayments(sale.Id);
 
         string snapshot = PosReceiptTextRenderer.Render(sale, items, payments);
-        Require(snapshot.Contains("Snapshot Name", StringComparison.Ordinal), "Receipt text must contain sale item snapshot name.");
-        Require(!snapshot.Contains("Edited Live Product Name", StringComparison.Ordinal), "Receipt text must not depend on later live product names.");
-        Require(snapshot.Contains("PHP 120.00", StringComparison.Ordinal), "Receipt text must contain readable money values.");
-        Require(snapshot.Contains("This is not a physical printer output.", StringComparison.Ordinal), "Receipt text must not claim physical printer output.");
+        Require(snapshot.Contains("SALES RECEIPT", StringComparison.Ordinal), "Persisted receipt snapshot must use the client-facing title.");
+        Require(snapshot.Contains("Receipt No: POS-M1-000001", StringComparison.Ordinal), "Persisted receipt snapshot must contain the receipt number.");
+        Require(snapshot.Contains("Snapshot Name", StringComparison.Ordinal), "Persisted receipt snapshot must contain sale item snapshot name.");
+        Require(!snapshot.Contains("Edited Live Product Name", StringComparison.Ordinal), "Persisted receipt snapshot must not depend on later live product names.");
+        Require(snapshot.Contains("PHP 120.00", StringComparison.Ordinal), "Persisted receipt snapshot must contain readable money values.");
+        Require(!snapshot.Contains("RECEIPT SNAPSHOT", StringComparison.Ordinal), "Persisted receipt snapshot must not use internal snapshot wording.");
+        Require(!snapshot.Contains("Date UTC", StringComparison.Ordinal), "Persisted receipt snapshot must not expose an internal UTC label.");
+        Require(!snapshot.Contains(sale.CashierUserId.ToString("D"), StringComparison.OrdinalIgnoreCase), "Persisted receipt snapshot must not expose the cashier GUID.");
+        Require(!snapshot.Contains("Snapshot source", StringComparison.Ordinal), "Persisted receipt snapshot must not contain internal snapshot provenance.");
+        Require(!snapshot.Contains("not a physical printer output", StringComparison.OrdinalIgnoreCase), "Persisted receipt snapshot must not contain developer-facing printer copy.");
 
         string tempDirectory = Path.Combine(Path.GetTempPath(), "salryn-pos-m1-receipts-" + Guid.NewGuid().ToString("N"));
         try
