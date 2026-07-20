@@ -14,9 +14,10 @@ public static class PosM1ReceiptSnapshotFileReceiptChecks
         IReadOnlyList<SaleItem> items = CreateItems(sale.Id);
         IReadOnlyList<Payment> payments = CreatePayments(sale.Id);
 
-        string snapshot = PosReceiptTextRenderer.Render(sale, items, payments);
+        string snapshot = PosReceiptTextRenderer.Render(CreateSnapshotDraft(sale, items, payments, "POS-M1 Cashier"));
         Require(snapshot.Contains("SALES RECEIPT", StringComparison.Ordinal), "Persisted receipt snapshot must use the client-facing title.");
         Require(snapshot.Contains("Receipt No: POS-M1-000001", StringComparison.Ordinal), "Persisted receipt snapshot must contain the receipt number.");
+        Require(snapshot.Contains("Cashier   : POS-M1 Cashier", StringComparison.Ordinal), "Persisted receipt snapshot must contain the human-readable cashier name.");
         Require(snapshot.Contains("Snapshot Name", StringComparison.Ordinal), "Persisted receipt snapshot must contain sale item snapshot name.");
         Require(!snapshot.Contains("Edited Live Product Name", StringComparison.Ordinal), "Persisted receipt snapshot must not depend on later live product names.");
         Require(snapshot.Contains("PHP 120.00", StringComparison.Ordinal), "Persisted receipt snapshot must contain readable money values.");
@@ -131,6 +132,28 @@ public static class PosM1ReceiptSnapshotFileReceiptChecks
                 PaidAt = new DateTimeOffset(2026, 7, 12, 8, 31, 0, TimeSpan.Zero)
             }
         };
+    }
+
+    private static PosReceiptSnapshotDraft CreateSnapshotDraft(
+        Sale sale,
+        IReadOnlyList<SaleItem> items,
+        IReadOnlyList<Payment> payments,
+        string cashierDisplayName)
+    {
+        return new PosReceiptSnapshotDraft(
+            sale.ReceiptNumber,
+            sale.SaleDate,
+            sale.CashierUserId,
+            sale.Subtotal,
+            sale.Discount,
+            sale.Tax,
+            sale.Total,
+            sale.AmountPaid,
+            sale.Change,
+            sale.Status,
+            items,
+            payments,
+            CashierDisplayName: cashierDisplayName);
     }
 
     private static SaleDetailReadModel CreateSaleDetail(
