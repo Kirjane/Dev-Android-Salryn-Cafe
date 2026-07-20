@@ -61,6 +61,7 @@ public sealed class HostOperatorCheckoutApiService
 
     public async Task<HostOperatorCheckoutOperationResult> SubmitAsync(
         Guid userId,
+        string? cashierDisplayName,
         HostOperatorCheckoutRequest request,
         CancellationToken cancellationToken = default)
     {
@@ -195,7 +196,8 @@ public sealed class HostOperatorCheckoutApiService
             payments,
             SaleDiscountCents: 0,
             TaxCents: 0,
-            ReceiptSnapshot: null);
+            ReceiptSnapshot: null,
+            CashierDisplayName: cashierDisplayName);
 
         Result completion = await _checkoutApplicationService
             .CompleteSaleAsync(applicationRequest, cancellationToken)
