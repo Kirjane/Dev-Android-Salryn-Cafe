@@ -12,6 +12,15 @@
 | Installer script | `installer/SalrynSetup.iss` |
 | Build script | `tools/installer/Build-SalrynBetaRc1Installer.ps1` |
 
+## Compiled setup EXE (verified)
+
+| Property | Value |
+|---|---|
+| Path | `artifacts\installer\setup\Salryn-POS-BetaRC1-Setup.exe` |
+| Compiled | Yes |
+| SHA-256 | `a764b47fcade1e1465860c00167e93fca670402f7fcfd90ff8a71457769acb1c` |
+| Decision | `BETA_RC1_INSTALLER_APP_SHELL_REPAIRED_AND_PASSED_WEBVIEW2_LOADER` |
+
 ## Paths installed
 
 | Path | Description |
@@ -19,17 +28,18 @@
 | `C:\Program Files\Kirjane Labs\Salryn POS\` | Application install root |
 | `C:\Program Files\Kirjane Labs\Salryn POS\Salryn.Desktop.WebView.exe` | WebView2 app shell — user entry point |
 | `C:\Program Files\Kirjane Labs\Salryn POS\Salryn.Api.Local.exe` | Local API host |
+| `C:\Program Files\Kirjane Labs\Salryn POS\WebView2Loader.dll` | Native WebView2 loader (required; verified present after install) |
 | `C:\Program Files\Kirjane Labs\Salryn POS\dist\` | React production build |
 | `C:\Program Files\Kirjane Labs\Salryn POS\assets\branding\` | Icon and banner assets |
 | `C:\ProgramData\Salryn\` | Production data root (preserved on upgrade/uninstall) |
-| `C:\ProgramData\Salryn\data\salryn.db` | Production database |
+| `C:\ProgramData\Salryn\data\salryn.db` | Production database (runtime only — **never** shipped in installer/staging) |
 | `%LOCALAPPDATA%\Salryn\Licensing\license.json` | Host license file |
 
-## Shortcuts
+## Shortcuts (verified)
 
-| Surface | Name | Target |
+| Surface | Name | Target / proof |
 |---|---|---|
-| Desktop (optional, offered at install) | Salryn POS | `Salryn.Desktop.WebView.exe` |
+| Desktop | Salryn POS | `C:\Users\Public\Desktop\Salryn POS.lnk` → `Salryn.Desktop.WebView.exe` |
 | Start Menu | `Kirjane Labs\Salryn POS\Salryn POS` | `Salryn.Desktop.WebView.exe` |
 
 Icon for all shortcuts: `assets\branding\salryn-icon.ico`
@@ -38,7 +48,7 @@ Icon for all shortcuts: `assets\branding\salryn-icon.ico`
 
 | Property | Value |
 |---|---|
-| Strategy | Microsoft Edge WebView2 **Evergreen Bootstrapper** |
+| Strategy | Microsoft Edge WebView2 **Evergreen Bootstrapper** + ship native `WebView2Loader.dll` |
 | Packaged file | `installer/redist/MicrosoftEdgeWebview2Setup.exe` |
 | Official source | `https://go.microsoft.com/fwlink/p/?LinkId=2124703` |
 | Silent flags | `/silent /install` |
@@ -46,6 +56,7 @@ Icon for all shortcuts: `assets\branding\salryn-icon.ico`
 | Client action | None — Salryn setup installs WebView2 when missing |
 | Internet | Required during install if runtime must be downloaded |
 | Offline standalone bundling | Deferred |
+| Prior false “missing” dialog | Caused by missing packaged `WebView2Loader.dll`, not missing OS runtime — **repaired** |
 
 ## Staged content (packed into installer)
 
@@ -61,6 +72,8 @@ Icon for all shortcuts: `assets\branding\salryn-icon.ico`
 | `installer/redist/MicrosoftEdgeWebview2Setup.exe` | `{tmp}` only (deleteafterinstall; not left in `{app}`) |
 | `WebView2Loader.dll` | `{app}\WebView2Loader.dll` (required native loader) |
 | `runtimes\win-*\native\WebView2Loader.dll` | `{app}\runtimes\win-*\native\WebView2Loader.dll` |
+
+**Forbidden:** `salryn.db` must not appear in staging or the install package. Forbidden scan: PASS.
 
 ## Build prerequisites (build machine only)
 
@@ -88,3 +101,16 @@ ISCC discovery order:
 | `artifacts/installer/shell-publish/` | WebView2 publish temp |
 | `artifacts/installer/setup/Salryn-POS-BetaRC1-Setup.exe` | Compiled setup EXE |
 | `artifacts/installer/setup/Salryn-POS-BetaRC1-Setup.exe.sha256.txt` | SHA-256 of setup EXE |
+
+## Installed-app QA summary (verified)
+
+| Gate | Result |
+|---|---|
+| Desktop window launch (no browser / no localhost typing) | PASS |
+| WebView2 missing dialog | Fixed |
+| Health (`status: ok`, `service: Salryn.Api.Local`) | PASS |
+| Login / dashboard / checkout | PASS |
+| Receipt client-facing SALES RECEIPT format | PASS |
+| Crash during installed-app QA | None observed |
+
+**QA data note:** Dashboard totals during QA came from existing local QA DB at `C:\ProgramData\Salryn\data\salryn.db` — not shipped seed data.

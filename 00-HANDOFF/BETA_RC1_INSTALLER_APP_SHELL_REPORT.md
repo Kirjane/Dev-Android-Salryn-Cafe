@@ -6,7 +6,7 @@
 
 ## Decision
 
-`BETA_RC1_INSTALLER_APP_SHELL_REPAIRED_AND_PASSED`
+`BETA_RC1_INSTALLER_APP_SHELL_REPAIRED_AND_PASSED_WEBVIEW2_LOADER`
 
 ---
 
@@ -20,6 +20,8 @@ The system **already had** Microsoft Edge WebView2 Runtime:
 | `CoreWebView2Environment.GetAvailableBrowserVersionString()` (probe) | `143.0.3650.139` |
 
 The installed Salryn shell still showed the missing-runtime dialog because **`WebView2Loader.dll` was not packaged** into the installer staging/install folder.
+
+**Root cause:** missing `WebView2Loader.dll` in installed shell files — **not** a missing OS WebView2 runtime.
 
 Cause in `Build-SalrynBetaRc1Installer.ps1`:
 
@@ -59,32 +61,56 @@ Without `WebView2Loader.dll`, `GetAvailableBrowserVersionString()` throws (e.g. 
 | Property | Value |
 |---|---|
 | Path | `artifacts\installer\setup\Salryn-POS-BetaRC1-Setup.exe` |
+| Compiled | Yes |
 | SHA-256 | `a764b47fcade1e1465860c00167e93fca670402f7fcfd90ff8a71457769acb1c` |
 | ISCC | `C:\Users\kirch\AppData\Local\Programs\Inno Setup 6\ISCC.exe` |
 
 ---
 
-## Proof
+## Verified installed-app QA proof
 
-### Install proof (Program Files)
-
-Agent session could not complete an elevated silent reinstall (UAC canceled: "operation was canceled by the user").
-**Kirch must run the new `Salryn-POS-BetaRC1-Setup.exe` as administrator** to replace the previous Program Files install that lacked `WebView2Loader.dll`.
-
-### Launch proof (staging layout = packaged payload)
-
-From `artifacts\installer\staging\Salryn` (includes `WebView2Loader.dll`, shell, API, `dist\`):
+### Install / launch
 
 | Check | Result |
 |---|---|
-| Launch `Salryn.Desktop.WebView.exe` | Started |
-| No early exit / no WebView2 missing dialog path | PASS |
-| `http://127.0.0.1:5299/health` | `200 {"status":"ok","service":"Salryn.Api.Local"}` within ~1s |
-| `http://127.0.0.1:5299/` | `200` (Salryn UI) |
+| Setup EXE compiled | PASS |
+| Install path | `C:\Program Files\Kirjane Labs\Salryn POS` |
+| Desktop shortcut | `C:\Users\Public\Desktop\Salryn POS.lnk` exists |
+| Launch | Opens as **Salryn POS** desktop window |
+| Browser required | No — Firefox/Chrome not required |
+| Localhost typing required | No |
+| WebView2 missing dialog | Fixed (no longer shown) |
+| Crash during QA | None observed |
+
+### WebView2Loader proof
+
+| Check | Result |
+|---|---|
+| `WebView2Loader.dll` under install root | Present under `C:\Program Files\Kirjane Labs\Salryn POS` |
+| Root cause class | Packaging (loader missing), not OS runtime missing |
 
 ### Health proof
 
-PASS — see above.
+| Check | Result |
+|---|---|
+| Health endpoint | `status: ok`, `service: Salryn.Api.Local` |
+
+### Login / dashboard / checkout
+
+| Check | Result |
+|---|---|
+| Login | Works from installed app |
+| Dashboard | Works from installed app |
+| Checkout | Works from installed app |
+
+**Note:** Dashboard totals observed during QA came from the existing local QA database at `C:\ProgramData\Salryn\data\salryn.db`. Those totals are **not** shipped seed data. The installer forbidden scan already passed; `salryn.db` must not be shipped in staging/install package.
+
+### Receipt proof
+
+| Check | Result |
+|---|---|
+| Receipt file format | Client-facing **SALES RECEIPT** format |
+| GUID / developer receipt text | Not exposed |
 
 ---
 
@@ -92,18 +118,21 @@ PASS — see above.
 
 | Gate | Result |
 |---|---|
-| `dotnet build Salryn.sln` | PASS (run at end of lane) |
+| `dotnet build Salryn.sln` | PASS |
 | `npm --prefix src\Salryn.App.Web run build` | PASS |
 | `git diff --check` | PASS |
 | ISCC compile (`-BuildInstaller`) | PASS |
-| Forbidden scan on staging | PASS |
+| Forbidden scan on staging | PASS (`salryn.db` not shipped) |
 | Staging launch + health | PASS |
+| Installed-app launch + health | PASS |
+| Installed-app login / dashboard / checkout | PASS |
+| Installed-app receipt (SALES RECEIPT) | PASS |
 
 ---
 
 ## Known P2
 
-- Program Files reinstall requires admin/UAC; agent could not elevate in this session.
+- Receipt cashier display may still show generic **"Cashier"** instead of the display name on some installed receipt paths. Acceptable for Beta RC1: does not expose a GUID and no longer shows developer receipt text.
 - Offline WebView2 **standalone** bundling still deferred (Evergreen Bootstrapper needs internet when runtime absent).
 - Setup EXE remains unsigned (SmartScreen).
 - Framework-dependent publish still needs .NET 10 on the client machine.

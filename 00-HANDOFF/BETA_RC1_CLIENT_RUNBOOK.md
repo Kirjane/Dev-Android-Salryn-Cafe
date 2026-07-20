@@ -8,6 +8,7 @@ and wants to install, launch, and operate it.  No technical expertise is require
 ## What you receive
 
 - `Salryn-POS-BetaRC1-Setup.exe` — the Windows installer.
+- Verified setup SHA-256 (build machine): `a764b47fcade1e1465860c00167e93fca670402f7fcfd90ff8a71457769acb1c`
 
 ---
 
@@ -20,6 +21,9 @@ and wants to install, launch, and operate it.  No technical expertise is require
 
 You do **not** need to install Microsoft Edge WebView2 Runtime yourself.
 Salryn setup installs or confirms it automatically.
+
+You do **not** need Firefox, Chrome, or any other browser.
+You do **not** need to type `localhost` or open a web address.
 
 ---
 
@@ -40,6 +44,8 @@ Salryn setup installs or confirms it automatically.
 ## Launching Salryn POS
 
 - **Desktop shortcut**: double-click **Salryn POS** on the desktop (if created).
+  Verified public desktop shortcut path on a successful install:
+  `C:\Users\Public\Desktop\Salryn POS.lnk`
 - **Start Menu**: open Start → search "Salryn" → click **Salryn POS** under
   _Kirjane Labs\Salryn POS_.
 
@@ -71,6 +77,9 @@ C:\ProgramData\Salryn\
 
 This folder is **never deleted** by the uninstaller or by an upgrade.
 Back up this folder regularly using the Backup & Restore page inside Salryn POS.
+
+The installer does **not** ship a store database. Any products or sales totals you see
+after install come from data already on that machine (or from use after install).
 
 ---
 

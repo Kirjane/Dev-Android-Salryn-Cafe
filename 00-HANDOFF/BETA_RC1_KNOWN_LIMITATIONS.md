@@ -9,6 +9,12 @@
 | Installer staging pipeline | Working |
 | Setup EXE compile | Working (requires Inno Setup 6 on build machine) |
 | WebView2 Runtime | Handled by Salryn setup via Evergreen Bootstrapper |
+| Native `WebView2Loader.dll` packaging | Repaired and verified on installed app |
+| Forbidden scan (`salryn.db` not shipped) | PASS |
+
+## Decision (installer app-shell lane)
+
+`BETA_RC1_INSTALLER_APP_SHELL_REPAIRED_AND_PASSED_WEBVIEW2_LOADER`
 
 ## Runtime / product limitations
 
@@ -23,7 +29,8 @@
 - **Native `WebView2Loader.dll` must ship with the app.** Salryn setup packages it beside
   `Salryn.Desktop.WebView.exe` and under `runtimes\win-*\native\`. A prior packaging bug
   omitted this file and caused a false “WebView2 missing” dialog even when the OS runtime
-  was installed.
+  was installed. **Fixed and verified** on installed layout under
+  `C:\Program Files\Kirjane Labs\Salryn POS`.
 - **No firewall rules**: the installer does not add Windows Firewall rules.  The local
   API binds to `127.0.0.1` only and is not reachable from other machines on the network
   via the app-shell path.
@@ -34,6 +41,16 @@
 - **Framework-dependent publish**: the installed application requires .NET 10 to be
   present on the machine.  A future release may use a self-contained publish to
   eliminate this dependency.
+- **Installer does not ship `salryn.db`.** Production/runtime DB lives under
+  `C:\ProgramData\Salryn\data\`. Dashboard totals seen during QA came from an existing
+  local QA database and must not be treated as shipped seed data.
+
+## P2 — acceptable for Beta RC1
+
+- **Receipt cashier display fallback remains generic** in some installed receipt paths
+  (may show **"Cashier"** instead of the operator display name). Acceptable for Beta RC1
+  because it does not expose a GUID and no longer shows developer receipt text.
+  Client-facing **SALES RECEIPT** format is verified.
 
 ## Branding
 
