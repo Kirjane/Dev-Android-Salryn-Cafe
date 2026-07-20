@@ -208,7 +208,8 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
                     settings?.Address,
                     settings?.ContactNumber,
                     settings?.ReceiptHeader,
-                    settings?.ReceiptFooter))
+                    settings?.ReceiptFooter,
+                    request.CashierDisplayName))
                 : request.ReceiptSnapshot.Trim();
 
             Sale sale = new()
