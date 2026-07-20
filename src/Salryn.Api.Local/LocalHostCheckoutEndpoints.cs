@@ -37,7 +37,11 @@ internal static class LocalHostCheckoutEndpoints
             }
 
             HostOperatorCheckoutOperationResult result = await hostOperator.CheckoutService
-                .SubmitAsync(session.UserId, request, cancellationToken)
+                .SubmitAsync(
+                    session.UserId,
+                    ResolveCashierDisplayName(session),
+                    request,
+                    cancellationToken)
                 .ConfigureAwait(false);
 
             return ToCheckoutResult(result);
@@ -52,6 +56,18 @@ internal static class LocalHostCheckoutEndpoints
     {
         string? sessionId = httpContext.Request.Cookies[LocalApiSessionService.SessionCookieName];
         return sessions.GetRequiredSession(sessionId);
+    }
+
+    private static string ResolveCashierDisplayName(LocalApiSession session)
+    {
+        if (!string.IsNullOrWhiteSpace(session.DisplayName))
+        {
+            return session.DisplayName.Trim();
+        }
+
+        return string.IsNullOrWhiteSpace(session.Username)
+            ? "Cashier"
+            : session.Username.Trim();
     }
 
     private static IResult AuthenticationRequired()
