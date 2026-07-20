@@ -121,9 +121,12 @@ public static class PosT1FullStoreRuntimeTortureChecks
 
     private static HostOperatorCheckoutResponse Checkout(HostOperatorApiServices host, Guid userId, Guid productId, long quantityX1000, long cashCents)
     {
-        HostOperatorCheckoutOperationResult result = host.CheckoutService.SubmitAsync(userId, new HostOperatorCheckoutRequest(
-            new[] { new HostOperatorCheckoutLineRequest(productId, quantityX1000) },
-            new[] { new HostOperatorCheckoutPaymentRequest("Cash", cashCents) })).GetAwaiter().GetResult();
+        HostOperatorCheckoutOperationResult result = host.CheckoutService.SubmitAsync(
+            userId,
+            "Torture Test Cashier",
+            new HostOperatorCheckoutRequest(
+                new[] { new HostOperatorCheckoutLineRequest(productId, quantityX1000) },
+                new[] { new HostOperatorCheckoutPaymentRequest("Cash", cashCents) })).GetAwaiter().GetResult();
         Require(result.Ok && result.Checkout?.Status == HostOperatorCheckoutStatus.Completed, "Checkout must complete.");
         Require(result.Checkout!.ReceiptSnapshotSaved, "Checkout must persist a receipt snapshot.");
         return result.Checkout;

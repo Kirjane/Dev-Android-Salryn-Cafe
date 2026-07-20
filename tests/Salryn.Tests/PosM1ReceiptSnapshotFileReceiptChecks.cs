@@ -18,6 +18,7 @@ public static class PosM1ReceiptSnapshotFileReceiptChecks
         Require(snapshot.Contains("SALES RECEIPT", StringComparison.Ordinal), "Persisted receipt snapshot must use the client-facing title.");
         Require(snapshot.Contains("Receipt No: POS-M1-000001", StringComparison.Ordinal), "Persisted receipt snapshot must contain the receipt number.");
         Require(snapshot.Contains("Cashier   : POS-M1 Cashier", StringComparison.Ordinal), "Persisted receipt snapshot must contain the human-readable cashier name.");
+        Require(!snapshot.Contains("Cashier   : Cashier", StringComparison.Ordinal), "Persisted receipt snapshot must not fall back to generic Cashier when a display name was supplied.");
         Require(snapshot.Contains("Snapshot Name", StringComparison.Ordinal), "Persisted receipt snapshot must contain sale item snapshot name.");
         Require(!snapshot.Contains("Edited Live Product Name", StringComparison.Ordinal), "Persisted receipt snapshot must not depend on later live product names.");
         Require(snapshot.Contains("PHP 120.00", StringComparison.Ordinal), "Persisted receipt snapshot must contain readable money values.");
@@ -40,6 +41,7 @@ public static class PosM1ReceiptSnapshotFileReceiptChecks
             Require(receiptFile.Contains("SALES RECEIPT", StringComparison.Ordinal), "File receipt must use the client-facing title.");
             Require(receiptFile.Contains("Receipt No: POS-M1-000001", StringComparison.Ordinal), "File receipt must contain the receipt number.");
             Require(receiptFile.Contains("Cashier   : POS-M1 Cashier", StringComparison.Ordinal), "File receipt must contain the human-readable cashier name.");
+            Require(!receiptFile.Contains("Cashier   : Cashier", StringComparison.Ordinal), "File receipt must not fall back to generic Cashier when a display name was supplied.");
             Require(receiptFile.Contains("Snapshot Name", StringComparison.Ordinal), "File receipt must contain saved sale item text.");
             Require(receiptFile.Contains("Payment : Cash", StringComparison.Ordinal), "File receipt must contain payment method.");
             Require(receiptFile.Contains("Thank you!", StringComparison.Ordinal), "File receipt must contain the customer closing.");

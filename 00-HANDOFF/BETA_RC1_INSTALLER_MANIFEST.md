@@ -18,8 +18,8 @@
 |---|---|
 | Path | `artifacts\installer\setup\Salryn-POS-BetaRC1-Setup.exe` |
 | Compiled | Yes |
-| SHA-256 | `a764b47fcade1e1465860c00167e93fca670402f7fcfd90ff8a71457769acb1c` |
-| Decision | `BETA_RC1_INSTALLER_APP_SHELL_REPAIRED_AND_PASSED_WEBVIEW2_LOADER` |
+| SHA-256 | `9f6e583ca5d3d8a4754b476849ed9590595535fc93aba19054d44ac278834d6c` |
+| Decision | `BETA_RC1_CASHIER_FALLBACK_FIXED_AND_INSTALLER_REBUILT` |
 
 ## Paths installed
 
@@ -34,6 +34,7 @@
 | `C:\ProgramData\Salryn\` | Production data root (preserved on upgrade/uninstall) |
 | `C:\ProgramData\Salryn\data\salryn.db` | Production database (runtime only — **never** shipped in installer/staging) |
 | `%LOCALAPPDATA%\Salryn\Licensing\license.json` | Host license file |
+| QA reset script | `tools/qa/Reset-SalrynLocalState.ps1` (DB + license/config; backup first) |
 
 ## Shortcuts (verified)
 

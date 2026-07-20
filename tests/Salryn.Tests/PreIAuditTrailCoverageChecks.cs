@@ -157,6 +157,7 @@ public static class PreIAuditTrailCoverageChecks
             RequireTrue(host.ShiftService.OpenShiftAsync(admin.UserId, 10000).GetAwaiter().GetResult().Ok, "open shift");
             var sale = host.CheckoutService.SubmitAsync(
                 admin.UserId,
+                "Audit Trail Cashier",
                 new HostOperatorCheckoutRequest(
                     new[] { new HostOperatorCheckoutLineRequest(productId, 1000) },
                     new[] { new HostOperatorCheckoutPaymentRequest("Cash", 5000) }),

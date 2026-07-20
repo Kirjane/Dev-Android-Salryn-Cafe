@@ -8,7 +8,7 @@ and wants to install, launch, and operate it.  No technical expertise is require
 ## What you receive
 
 - `Salryn-POS-BetaRC1-Setup.exe` — the Windows installer.
-- Verified setup SHA-256 (build machine): `a764b47fcade1e1465860c00167e93fca670402f7fcfd90ff8a71457769acb1c`
+- Verified setup SHA-256 (build machine): `9f6e583ca5d3d8a4754b476849ed9590595535fc93aba19054d44ac278834d6c`
 
 ---
 
@@ -102,3 +102,16 @@ Your production data in `C:\ProgramData\Salryn` will **not** be deleted.
 Beta support: **salryn.info@gmail.com**
 
 Please include your Machine Code, a description of the issue, and any screenshots.
+
+---
+
+## Maintainer only — local QA state reset
+
+Clients do **not** run this. Kirjane Labs / Kirch use it to wipe local QA DB + license
+while keeping a timestamped backup:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\qa\Reset-SalrynLocalState.ps1 -Force
+```
+
+Then launch **Salryn POS** from the desktop shortcut for a fresh license/bootstrap session.

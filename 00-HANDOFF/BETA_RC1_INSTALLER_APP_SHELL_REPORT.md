@@ -6,7 +6,41 @@
 
 ## Decision
 
-`BETA_RC1_INSTALLER_APP_SHELL_REPAIRED_AND_PASSED_WEBVIEW2_LOADER`
+`BETA_RC1_CASHIER_FALLBACK_FIXED_AND_INSTALLER_REBUILT`
+
+---
+
+## Cashier display-name fix (build repair)
+
+`HostOperatorCheckoutApiService.SubmitAsync` gained `string? cashierDisplayName`. Call sites in:
+
+- `tests/Salryn.Tests/PreIAuditTrailCoverageChecks.cs` → `"Audit Trail Cashier"`
+- `tests/Salryn.Tests/PosT1FullStoreRuntimeTortureChecks.cs` → `"Torture Test Cashier"`
+
+were updated to the new signature. Endpoint already passes session display name / username via `LocalHostCheckoutEndpoints.ResolveCashierDisplayName`.
+
+POS-M1 receipt smoke asserts human cashier name, rejects generic `Cashier   : Cashier` when a display name was supplied, and rejects GUID / developer receipt wording.
+
+---
+
+## Local QA state reset
+
+| Item | Value |
+|---|---|
+| Script | `tools/qa/Reset-SalrynLocalState.ps1` |
+| Default | Stop Salryn processes; backup; reset DB + license/config |
+| License path | `%LOCALAPPDATA%\Salryn\Licensing\` (moved into backup, not deleted) |
+| DB path | `C:\ProgramData\Salryn\data\salryn.db` |
+| Proof backup | `C:\ProgramData\Salryn\qa-state-backups\20260720-233751` |
+| License reset | PASS (license.json + bak + installation-id moved) |
+| Write test | PASS |
+| Live `salryn.db` at run time | Already absent (prior QA backup copies only under `data\`) |
+
+Usage:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\qa\Reset-SalrynLocalState.ps1 -Force
+```
 
 ---
 
@@ -61,8 +95,8 @@ Without `WebView2Loader.dll`, `GetAvailableBrowserVersionString()` throws (e.g. 
 | Property | Value |
 |---|---|
 | Path | `artifacts\installer\setup\Salryn-POS-BetaRC1-Setup.exe` |
-| Compiled | Yes |
-| SHA-256 | `a764b47fcade1e1465860c00167e93fca670402f7fcfd90ff8a71457769acb1c` |
+| Compiled | Yes (rebuilt after cashier + reset script lane) |
+| SHA-256 | `9f6e583ca5d3d8a4754b476849ed9590595535fc93aba19054d44ac278834d6c` |
 | ISCC | `C:\Users\kirch\AppData\Local\Programs\Inno Setup 6\ISCC.exe` |
 
 ---
@@ -103,7 +137,7 @@ Without `WebView2Loader.dll`, `GetAvailableBrowserVersionString()` throws (e.g. 
 | Dashboard | Works from installed app |
 | Checkout | Works from installed app |
 
-**Note:** Dashboard totals observed during QA came from the existing local QA database at `C:\ProgramData\Salryn\data\salryn.db`. Those totals are **not** shipped seed data. The installer forbidden scan already passed; `salryn.db` must not be shipped in staging/install package.
+**Note:** Dashboard totals observed during earlier QA came from the existing local QA database at `C:\ProgramData\Salryn\data\salryn.db`. Those totals are **not** shipped seed data. The installer forbidden scan already passed; `salryn.db` must not be shipped in staging/install package.
 
 ### Receipt proof
 
@@ -111,6 +145,10 @@ Without `WebView2Loader.dll`, `GetAvailableBrowserVersionString()` throws (e.g. 
 |---|---|
 | Receipt file format | Client-facing **SALES RECEIPT** format |
 | GUID / developer receipt text | Not exposed |
+| Human cashier name | Proven via POS-M1 CoreSmoke (`POS-M1 Cashier`); session display name wired through host checkout |
+| Generic `Cashier   : Cashier` when name supplied | Rejected by smoke asserts |
+
+**Installed-app re-QA after this rebuild:** run elevated upgrade of the new setup EXE, then after `Reset-SalrynLocalState.ps1 -Force`, launch from desktop shortcut and confirm license/bootstrap + checkout receipt name.
 
 ---
 
@@ -119,23 +157,26 @@ Without `WebView2Loader.dll`, `GetAvailableBrowserVersionString()` throws (e.g. 
 | Gate | Result |
 |---|---|
 | `dotnet build Salryn.sln` | PASS |
+| `dotnet run --project tools\Salryn.Tools.CoreSmoke -- --only pos-m1-receipt-snapshot-file-receipt` | PASS |
+| `dotnet run --project tools\Salryn.Tools.CoreSmoke` | PASS |
 | `npm --prefix src\Salryn.App.Web run build` | PASS |
 | `git diff --check` | PASS |
 | ISCC compile (`-BuildInstaller`) | PASS |
-| Forbidden scan on staging | PASS (`salryn.db` not shipped) |
-| Staging launch + health | PASS |
-| Installed-app launch + health | PASS |
-| Installed-app login / dashboard / checkout | PASS |
-| Installed-app receipt (SALES RECEIPT) | PASS |
+| Forbidden scan on staging | PASS (`salryn.db` not shipped; `WebView2Loader.dll` present) |
+| QA reset script | PASS (license moved; write test PASS) |
+| Staging launch + health | PASS (prior) |
+| Installed-app launch + health | PASS (prior) |
+| Installed-app login / dashboard / checkout | PASS (prior) |
+| Installed-app receipt (SALES RECEIPT) | PASS (prior) |
 
 ---
 
 ## Known P2
 
-- Receipt cashier display may still show generic **"Cashier"** instead of the display name on some installed receipt paths. Acceptable for Beta RC1: does not expose a GUID and no longer shows developer receipt text.
 - Offline WebView2 **standalone** bundling still deferred (Evergreen Bootstrapper needs internet when runtime absent).
 - Setup EXE remains unsigned (SmartScreen).
 - Framework-dependent publish still needs .NET 10 on the client machine.
+- Elevated reinstall of the newly rebuilt setup EXE on Kirch’s machine is the remaining manual step after this commit.
 
 ---
 

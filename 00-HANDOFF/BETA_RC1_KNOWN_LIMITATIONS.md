@@ -14,7 +14,7 @@
 
 ## Decision (installer app-shell lane)
 
-`BETA_RC1_INSTALLER_APP_SHELL_REPAIRED_AND_PASSED_WEBVIEW2_LOADER`
+`BETA_RC1_CASHIER_FALLBACK_FIXED_AND_INSTALLER_REBUILT`
 
 ## Runtime / product limitations
 
@@ -45,12 +45,19 @@
   `C:\ProgramData\Salryn\data\`. Dashboard totals seen during QA came from an existing
   local QA database and must not be treated as shipped seed data.
 
-## P2 — acceptable for Beta RC1
+## Cashier receipt name
 
-- **Receipt cashier display fallback remains generic** in some installed receipt paths
-  (may show **"Cashier"** instead of the operator display name). Acceptable for Beta RC1
-  because it does not expose a GUID and no longer shows developer receipt text.
-  Client-facing **SALES RECEIPT** format is verified.
+- Host checkout now carries session display name / username into the persisted receipt.
+- POS-M1 CoreSmoke asserts human cashier name and rejects generic `Cashier   : Cashier`
+  when a display name was supplied.
+- After elevating the rebuilt setup EXE, confirm on installed checkout that the receipt
+  shows the logged-in operator name.
+
+## Maintainer QA reset
+
+- Script: `tools/qa/Reset-SalrynLocalState.ps1`
+- Backs up then resets ProgramData DB/config and `%LOCALAPPDATA%\Salryn\Licensing`
+- Clients never run this
 
 ## Branding
 
