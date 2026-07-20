@@ -7,8 +7,9 @@
 #   1. -InnoSetupCompilerPath parameter
 #   2. INNO_SETUP_ISCC environment variable
 #   3. ISCC.exe on the system PATH
-#   4. C:\Program Files (x86)\Inno Setup 6\ISCC.exe
-#   5. C:\Program Files\Inno Setup 6\ISCC.exe
+#   4. %LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe  (per-user install)
+#   5. C:\Program Files (x86)\Inno Setup 6\ISCC.exe
+#   6. C:\Program Files\Inno Setup 6\ISCC.exe
 #
 # If -BuildInstaller is passed and ISCC.exe is not found the script fails with a
 # clear actionable message.  Running without -BuildInstaller stages the app only.
@@ -58,8 +59,9 @@ ISCC discovery order (when -BuildInstaller is set):
   1. -InnoSetupCompilerPath parameter
   2. INNO_SETUP_ISCC environment variable
   3. ISCC.exe on the system PATH
-  4. C:\Program Files (x86)\Inno Setup 6\ISCC.exe
-  5. C:\Program Files\Inno Setup 6\ISCC.exe
+  4. %LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe
+  5. C:\Program Files (x86)\Inno Setup 6\ISCC.exe
+  6. C:\Program Files\Inno Setup 6\ISCC.exe
 
 If Inno Setup 6 is not installed:
   Download and install the official Inno Setup 6 installer from https://jrsoftware.org/isinfo.php
@@ -101,8 +103,9 @@ function Resolve-IsccPath {
     $fromPath = Get-Command "ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue
     if ($fromPath -and (Test-Path -LiteralPath $fromPath)) { return $fromPath }
 
-    # 4-5. Standard Inno Setup 6 installation directories
+    # 4-6. Standard Inno Setup 6 installation directories
     $standardPaths = @(
+        (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe"),
         "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
         "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
     )

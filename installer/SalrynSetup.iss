@@ -4,7 +4,8 @@
 ; and React production dist.
 ;
 ; Production data lives under %ProgramData%\Salryn and is NEVER removed
-; by uninstall.  Upgrade preserves production data.
+; by uninstall or upgrade.  Reinstalling over the same AppId replaces
+; application files under {app} only.
 ;
 ; Prerequisites (build machine only, not end-user machine):
 ;   Inno Setup 6  https://jrsoftware.org/isinfo.php
@@ -19,7 +20,9 @@
 #define MyAppPublisher "Kirjane Labs"
 #define MyAppExeName   "Salryn.Desktop.WebView.exe"
 #define MyAppIcon      "..\assets\branding\salryn-icon.ico"
-#define MyAppVersion   "0.1.0-rc1"
+#define MyAppVersion   "0.1.0-beta-rc1"
+; Stable AppId — must not change between Salryn POS installer builds.
+; Inno Setup uses this to recognize upgrades of the same installed product.
 #define MyAppGuid      "A4E2B8C1-7D3F-4A91-9C2E-5F6A8B1C0D3E"
 
 [Setup]
@@ -36,11 +39,12 @@ DefaultDirName={autopf}\Kirjane Labs\Salryn POS
 ; Start Menu: Kirjane Labs\Salryn POS
 DefaultGroupName={#MyAppPublisher}\{#MyAppName}
 DisableProgramGroupPage=no
+UsePreviousAppDir=yes
 
 OutputDir=..\artifacts\installer\setup
 OutputBaseFilename=Salryn-POS-BetaRC1-Setup
 SetupIconFile={#MyAppIcon}
-UninstallDisplayIcon={app}\assets\branding\salryn-icon.ico
+UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName}
 
 Compression=lzma2/ultra64
@@ -50,9 +54,6 @@ PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 
-; Upgrade: remove old files, install new ones, keep ProgramData untouched
-MajorUpgrade=no
-
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
@@ -60,7 +61,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
 
 [Files]
-; Harvest everything from the staging folder (exe, DLLs, dist\, assets\, config)
+; Harvest everything from the staging folder (exe, DLLs, dist\, assets\, config).
+; ignoreversion replaces existing app files on upgrade without touching ProgramData.
 Source: "..\artifacts\installer\staging\Salryn\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
@@ -76,13 +78,6 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChang
 
 [UninstallDelete]
 ; Remove the installed app folder on uninstall.
-; %ProgramData%\Salryn (production data, backups, receipts, logs) is intentionally
-; NOT listed here and will be preserved across uninstall and upgrade.
+; C:\ProgramData\Salryn (production data, backups, receipts, logs) is intentionally
+; NOT listed here and will be preserved across uninstall, upgrade, and reinstall.
 Type: filesandordirs; Name: "{app}"
-
-[Code]
-// Guard: warn the user if they are about to downgrade.
-function InitializeSetup(): Boolean;
-begin
-  Result := True;
-end;

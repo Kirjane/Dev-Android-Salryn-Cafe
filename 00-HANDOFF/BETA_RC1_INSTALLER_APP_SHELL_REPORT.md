@@ -54,15 +54,53 @@ Generation tool: `tools/branding/Generate-SalrynBrandingAssets.ps1`
   - Icon: `assets\branding\salryn-icon.ico`
   - ProgramData preserved on uninstall
   - Output: `Salryn-POS-BetaRC1-Setup.exe`
+  - Stable AppId: `A4E2B8C1-7D3F-4A91-9C2E-5F6A8B1C0D3E` (Inno-compatible upgrade recognition)
+  - `UsePreviousAppDir=yes` for upgrade path reuse
 
 - `tools/installer/Build-SalrynBetaRc1Installer.ps1` — hardened build script
-  - ISCC discovery: parameter → env var → PATH → standard dirs
+  - ISCC discovery: parameter → env var → PATH → `%LOCALAPPDATA%\Programs\Inno Setup 6\` → Program Files paths
   - Fails clearly if `-BuildInstaller` requested and ISCC missing
   - Staging-only mode when `-BuildInstaller` not passed
   - SHA-256 file written beside setup EXE
 
-- `tools/Salryn.Tools.BrandingAssets/` — small .NET tool for cross-machine PNG/ICO generation
-- `tools/branding/Generate-SalrynBrandingAssets.ps1` — invokes the generation tool
+---
+
+## Installer compile fix (2026-07-20)
+
+### Previous compile blocker
+
+```
+Error on line 54 in installer\SalrynSetup.iss:
+Unrecognized [Setup] section directive "MajorUpgrade"
+```
+
+`MajorUpgrade` is a WiX/MSI directive and is not valid in Inno Setup 6.7.3.
+
+### Fix applied
+
+- Removed invalid `MajorUpgrade=no` from `[Setup]`
+- Retained stable `AppId` (`A4E2B8C1-7D3F-4A91-9C2E-5F6A8B1C0D3E`) for Inno-compatible upgrade recognition
+- Added `UsePreviousAppDir=yes` so upgrades reuse the prior install directory
+- File replacement on upgrade handled by `ignoreversion` on `[Files]` entries
+- `C:\ProgramData\Salryn` remains outside `[UninstallDelete]` — client data survives upgrade, uninstall, and reinstall
+
+### ISCC path found
+
+```
+C:\Users\kirch\AppData\Local\Programs\Inno Setup 6\ISCC.exe
+```
+
+(Inno Setup 6.7.3, per-user install under `%LOCALAPPDATA%\Programs\`)
+
+---
+
+## Installer EXE
+
+| Property | Value |
+|---|---|
+| Setup EXE path | `artifacts\installer\setup\Salryn-POS-BetaRC1-Setup.exe` |
+| SHA-256 | `32c3c4e3d31f5bf8248d1e72d99a5a340f4edf2ffb1a59536e99103db916f92e` |
+| SHA file | `artifacts\installer\setup\Salryn-POS-BetaRC1-Setup.exe.sha256.txt` |
 
 ---
 
@@ -74,30 +112,11 @@ Generation tool: `tools/branding/Generate-SalrynBrandingAssets.ps1`
 | `npm --prefix src\Salryn.App.Web run build` | PASS |
 | `git diff --check` | PASS |
 | Installer staging (`Build-SalrynBetaRc1Installer.ps1 -SkipWebBuild`) | PASS |
+| ISCC compile (`-BuildInstaller`) | PASS |
 | Forbidden scan on `artifacts/installer/staging/Salryn` | PASS |
-| ISCC compile (`-BuildInstaller`) | BLOCKED — Inno Setup 6 not installed on build machine |
-
----
-
-## Installer EXE status
-
-`BLOCKED_INSTALLER_EXE_COMPILE_INNO_SETUP_MISSING`
-
-Inno Setup 6 is not installed on this machine.  The staging pipeline, script hardening,
-and all source-code changes are complete and gated.  The setup EXE itself cannot be produced
-until Inno Setup 6 is installed.
-
-Install from: <https://jrsoftware.org/isinfo.php>
-
-Then run:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\installer\Build-SalrynBetaRc1Installer.ps1 -BuildInstaller
-```
 
 ---
 
 ## Decision
 
-`BETA_RC1_INSTALLER_SCRIPT_HARDENED_INNO_REQUIRED`
-`BLOCKED_INSTALLER_EXE_COMPILE_INNO_SETUP_MISSING`
+`BETA_RC1_INSTALLER_EXE_COMPILED`
