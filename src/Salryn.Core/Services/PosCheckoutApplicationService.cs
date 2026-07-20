@@ -1,4 +1,4 @@
-﻿using Salryn.Core.Common;
+using Salryn.Core.Common;
 using Salryn.Core.Models;
 using Salryn.Core.Repositories;
 
@@ -29,7 +29,8 @@ public sealed record PosCheckoutApplicationRequest(
     long SaleDiscountCents,
     long TaxCents,
     string? ReceiptSnapshot,
-    DateTimeOffset? SaleDate = null);
+    DateTimeOffset? SaleDate = null,
+    string? CashierDisplayName = null);
 
 public interface IPosCheckoutApplicationService
 {
@@ -90,4 +91,3 @@ public sealed class PosCheckoutApplicationService : IPosCheckoutApplicationServi
             cancellationToken).ConfigureAwait(false);
     }
 }
-
