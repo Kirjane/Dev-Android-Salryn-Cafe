@@ -12,9 +12,9 @@ internal static class Program
         if (!IsWebView2RuntimeAvailable())
         {
             MessageBox.Show(
-                "Microsoft Edge WebView2 Runtime is required to run Salryn Web Console.\n" +
+                "Microsoft Edge WebView2 Runtime is required to run Salryn POS.\n" +
                 "Install the runtime, then restart Salryn.",
-                "Salryn Ledger Console",
+                "Salryn POS",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
             return;
@@ -42,7 +42,7 @@ internal static class Program
                 "Start it manually with:\n" +
                 "dotnet run --project .\\src\\Salryn.Api.Local\\Salryn.Api.Local.csproj -- --dev\n\n" +
                 "Open the web view anyway?",
-                "Salryn Ledger Console",
+                "Salryn POS",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Warning);
 
@@ -59,7 +59,7 @@ internal static class Program
         {
             MessageBox.Show(
                 configurationRejection + "\n\nFalling back to " + DevHostConfig.DefaultViteUrl + ".",
-                "Salryn Ledger Console",
+                "Salryn POS",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
         }

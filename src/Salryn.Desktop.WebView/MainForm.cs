@@ -18,11 +18,12 @@ internal sealed class MainForm : Form
         _webUrl = webUrl;
         _apiManager = apiManager;
 
-        Text = "Salryn Ledger Console";
+        Text = "Salryn POS";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(1100, 720);
         ClientSize = new Size(1366, 850);
         BackColor = Color.FromArgb(15, 27, 45);
+        Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
 
         _webView = new WebView2
         {
@@ -61,7 +62,7 @@ internal sealed class MainForm : Form
             MessageBox.Show(
                 this,
                 $"Failed to start the Salryn web view.\n\n{ex.Message}",
-                "Salryn Ledger Console",
+                "Salryn POS",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
 
