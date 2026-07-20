@@ -7,13 +7,8 @@
 | Installer script (`installer/SalrynSetup.iss`) | Complete |
 | Build script (`tools/installer/Build-SalrynBetaRc1Installer.ps1`) | Complete |
 | Installer staging pipeline | Working |
-| Setup EXE compile | **Blocked — Inno Setup 6 not yet installed on build machine** |
-
-To unblock: install Inno Setup 6 from <https://jrsoftware.org/isinfo.php>, then run:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\installer\Build-SalrynBetaRc1Installer.ps1 -BuildInstaller
-```
+| Setup EXE compile | Working (requires Inno Setup 6 on build machine) |
+| WebView2 Runtime | Handled by Salryn setup via Evergreen Bootstrapper |
 
 ## Runtime / product limitations
 
@@ -22,9 +17,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\installer\Build-Salryn
 - **Unsigned installer**: the setup EXE is not code-signed for Beta RC1.  Windows may
   show a SmartScreen warning ("Windows protected your PC").  The client must click
   "More info → Run anyway".
-- **WebView2 runtime required**: if the client machine does not have Microsoft Edge
-  WebView2 Runtime installed, Salryn POS will show a prompt to install it.  This is
-  expected and the runtime is free.
+- **WebView2 Evergreen Bootstrapper requires internet during install** when the runtime
+  is not already present. Offline bundling of the larger standalone WebView2 installer
+  is deferred. Clients still do **not** install WebView2 manually.
+- **Native `WebView2Loader.dll` must ship with the app.** Salryn setup packages it beside
+  `Salryn.Desktop.WebView.exe` and under `runtimes\win-*\native\`. A prior packaging bug
+  omitted this file and caused a false “WebView2 missing” dialog even when the OS runtime
+  was installed.
 - **No firewall rules**: the installer does not add Windows Firewall rules.  The local
   API binds to `127.0.0.1` only and is not reachable from other machines on the network
   via the app-shell path.
@@ -49,3 +48,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\installer\Build-Salryn
 - RMO / BIR / eSales production behaviour
 - Hardware (receipt printers, barcode scanners, cash drawers) proof
 - Automated update channel
+- Offline WebView2 standalone installer bundling

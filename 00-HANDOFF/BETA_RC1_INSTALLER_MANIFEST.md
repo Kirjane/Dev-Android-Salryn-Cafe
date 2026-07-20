@@ -6,7 +6,7 @@
 |---|---|
 | Display name | Salryn POS |
 | Publisher | Kirjane Labs |
-| Version | 0.1.0-rc1 |
+| Version | 0.1.0-beta-rc1 |
 | AppId (Inno Setup GUID) | A4E2B8C1-7D3F-4A91-9C2E-5F6A8B1C0D3E |
 | Output filename | `Salryn-POS-BetaRC1-Setup.exe` |
 | Installer script | `installer/SalrynSetup.iss` |
@@ -34,6 +34,19 @@
 
 Icon for all shortcuts: `assets\branding\salryn-icon.ico`
 
+## WebView2 Runtime (installer-managed)
+
+| Property | Value |
+|---|---|
+| Strategy | Microsoft Edge WebView2 **Evergreen Bootstrapper** |
+| Packaged file | `installer/redist/MicrosoftEdgeWebview2Setup.exe` |
+| Official source | `https://go.microsoft.com/fwlink/p/?LinkId=2124703` |
+| Silent flags | `/silent /install` |
+| Detection | Registry `pv` under EdgeUpdate Clients `{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}` (HKLM WOW6432Node + HKCU) |
+| Client action | None — Salryn setup installs WebView2 when missing |
+| Internet | Required during install if runtime must be downloaded |
+| Offline standalone bundling | Deferred |
+
 ## Staged content (packed into installer)
 
 | Source path | Installed as |
@@ -45,6 +58,9 @@ Icon for all shortcuts: `assets\branding\salryn-icon.ico`
 | `assets\branding\salryn-icon.ico` | `{app}\assets\branding\salryn-icon.ico` |
 | `assets\branding\salryn-icon.png` | `{app}\assets\branding\salryn-icon.png` |
 | `assets\branding\salryn-banner-*.png` | `{app}\assets\branding\salryn-banner-*.png` |
+| `installer/redist/MicrosoftEdgeWebview2Setup.exe` | `{tmp}` only (deleteafterinstall; not left in `{app}`) |
+| `WebView2Loader.dll` | `{app}\WebView2Loader.dll` (required native loader) |
+| `runtimes\win-*\native\WebView2Loader.dll` | `{app}\runtimes\win-*\native\WebView2Loader.dll` |
 
 ## Build prerequisites (build machine only)
 
@@ -54,13 +70,15 @@ Icon for all shortcuts: `assets\branding\salryn-icon.ico`
 | Node.js / npm | Build React dist | No |
 | Branding assets in `assets/branding/` | Icon files | No |
 | **Inno Setup 6** | **Compile setup EXE** | **No** |
+| WebView2 Evergreen Bootstrapper | Packaged into setup | No (installer handles on client) |
 
 ISCC discovery order:
 1. `-InnoSetupCompilerPath` parameter
 2. `INNO_SETUP_ISCC` environment variable
 3. `ISCC.exe` on PATH
-4. `C:\Program Files (x86)\Inno Setup 6\ISCC.exe`
-5. `C:\Program Files\Inno Setup 6\ISCC.exe`
+4. `%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe`
+5. `C:\Program Files (x86)\Inno Setup 6\ISCC.exe`
+6. `C:\Program Files\Inno Setup 6\ISCC.exe`
 
 ## Staging artefacts (not shipped to clients)
 

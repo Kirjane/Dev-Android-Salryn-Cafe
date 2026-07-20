@@ -153,12 +153,48 @@ $webDistSrc   = Join-Path $repoRoot "src\Salryn.App.Web\dist"
 $stagedDist   = Join-Path $publishDir "dist"
 $iconSource   = Join-Path $repoRoot "assets\branding\salryn-icon.ico"
 $issScript    = Join-Path $repoRoot "installer\SalrynSetup.iss"
+$webview2RedistDir = Join-Path $repoRoot "installer\redist"
+$webview2Bootstrapper = Join-Path $webview2RedistDir "MicrosoftEdgeWebview2Setup.exe"
+# Official Microsoft Evergreen Bootstrapper redirect (see installer/redist/README.md)
+$webview2BootstrapperUrl = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
 
-New-Item -ItemType Directory -Force -Path $stagingRoot, $setupDir | Out-Null
+New-Item -ItemType Directory -Force -Path $stagingRoot, $setupDir, $webview2RedistDir | Out-Null
 
 if (-not (Test-Path -LiteralPath $iconSource)) {
-    throw "Missing installer icon at $iconSource`nRun: powershell -File tools\branding\Generate-SalrynBrandingAssets.ps1"
+    throw "Missing installer icon at $iconSource. Run: powershell -File tools\branding\Generate-SalrynBrandingAssets.ps1"
 }
+
+# ---------------------------------------------------------------------------
+# WebView2 Evergreen Bootstrapper (required for -BuildInstaller)
+# ---------------------------------------------------------------------------
+function Ensure-WebView2Bootstrapper {
+    if (Test-Path -LiteralPath $webview2Bootstrapper) {
+        $hash = (Get-FileHash -Algorithm SHA256 -Path $webview2Bootstrapper).Hash.ToLowerInvariant()
+        Write-Info "WebView2 bootstrapper present: $webview2Bootstrapper"
+        Write-Info "WebView2 bootstrapper SHA-256: $hash"
+        return
+    }
+
+    Write-Info "WebView2 bootstrapper missing; downloading from Microsoft..."
+    Write-Info "URL: $webview2BootstrapperUrl"
+    try {
+        Invoke-WebRequest -Uri $webview2BootstrapperUrl -OutFile $webview2Bootstrapper -UseBasicParsing
+    }
+    catch {
+        throw "Failed to download Microsoft Edge WebView2 Evergreen Bootstrapper from $webview2BootstrapperUrl. $_"
+    }
+
+    if (-not (Test-Path -LiteralPath $webview2Bootstrapper)) {
+        throw "WebView2 bootstrapper download completed but file is missing: $webview2Bootstrapper"
+    }
+
+    $hash = (Get-FileHash -Algorithm SHA256 -Path $webview2Bootstrapper).Hash.ToLowerInvariant()
+    $size = (Get-Item -LiteralPath $webview2Bootstrapper).Length
+    Write-Info "Downloaded WebView2 bootstrapper ($size bytes)"
+    Write-Info "WebView2 bootstrapper SHA-256: $hash"
+}
+
+Ensure-WebView2Bootstrapper
 
 # ---------------------------------------------------------------------------
 # Web build
@@ -199,13 +235,45 @@ New-Item -ItemType Directory -Force -Path $shellTemp | Out-Null
     /p:UseAppHost=true /p:Version=$Version
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish Salryn.Desktop.WebView failed (exit $LASTEXITCODE)" }
 
-Get-ChildItem -Path $shellTemp -File | ForEach-Object {
-    Copy-Item -Force $_.FullName (Join-Path $publishDir $_.Name)
+# Merge shell publish into the API stage. Use wildcard copy so existing
+# directories (especially runtimes\) merge instead of nesting as runtimes\runtimes.
+Copy-Item -Path (Join-Path $shellTemp '*') -Destination $publishDir -Recurse -Force
+
+# WebView2Loader.dll is required for CoreWebView2Environment / GetAvailableBrowserVersionString.
+# Place it under the RID path AND beside the EXE (most reliable for installed layout).
+$webview2LoaderSrc = Join-Path $shellTemp "runtimes\win-x64\native\WebView2Loader.dll"
+if (-not (Test-Path -LiteralPath $webview2LoaderSrc)) {
+    # Fall back to any published loader under the shell output
+    $webview2LoaderSrc = Get-ChildItem -Path $shellTemp -Recurse -Filter "WebView2Loader.dll" -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -match 'win-x64' } |
+        Select-Object -First 1 -ExpandProperty FullName
+}
+if (-not $webview2LoaderSrc -or -not (Test-Path -LiteralPath $webview2LoaderSrc)) {
+    throw "Shell publish is missing WebView2Loader.dll under $shellTemp"
+}
+
+$webview2NativeDir = Join-Path $publishDir "runtimes\win-x64\native"
+New-Item -ItemType Directory -Force -Path $webview2NativeDir | Out-Null
+Copy-Item -Force $webview2LoaderSrc (Join-Path $webview2NativeDir "WebView2Loader.dll")
+Copy-Item -Force $webview2LoaderSrc (Join-Path $publishDir "WebView2Loader.dll")
+Write-Info "WebView2Loader staged: $(Join-Path $publishDir 'WebView2Loader.dll')"
+
+# Also stage arm64/x86 loaders under RID paths when present (optional completeness)
+foreach ($rid in @("win-arm64", "win-x86")) {
+    $src = Join-Path $shellTemp "runtimes\$rid\native\WebView2Loader.dll"
+    if (Test-Path -LiteralPath $src) {
+        $destDir = Join-Path $publishDir "runtimes\$rid\native"
+        New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+        Copy-Item -Force $src (Join-Path $destDir "WebView2Loader.dll")
+    }
 }
 
 $shellExe = Join-Path $publishDir "Salryn.Desktop.WebView.exe"
 if (-not (Test-Path $shellExe)) {
     throw "Published app shell missing: $shellExe"
+}
+if (-not (Test-Path (Join-Path $publishDir "WebView2Loader.dll"))) {
+    throw "Published app shell missing WebView2Loader.dll beside EXE."
 }
 
 # ---------------------------------------------------------------------------
@@ -237,6 +305,8 @@ foreach ($asset in @("salryn-icon.ico","salryn-icon.png","salryn-banner-clear.pn
     "WebDist=dist\"
     "InstallerIcon=assets\branding\salryn-icon.ico"
     "ProductionDataPath=%ProgramData%\Salryn\data\salryn.db"
+    "WebView2=EvergreenBootstrapper"
+    "WebView2Bootstrapper=installer\redist\MicrosoftEdgeWebview2Setup.exe"
 ) | Set-Content -Path (Join-Path $publishDir "salryn-beta-rc1-installer-stage.txt") -Encoding UTF8
 
 Write-Host ""
@@ -258,6 +328,10 @@ if (-not $BuildInstaller) {
 
 Write-Info "Resolving Inno Setup 6 compiler (ISCC.exe)..."
 $iscc = Resolve-IsccPath -ExplicitPath $InnoSetupCompilerPath
+
+if (-not (Test-Path -LiteralPath $webview2Bootstrapper)) {
+    throw "WebView2 bootstrapper required for installer compile is missing: $webview2Bootstrapper"
+}
 
 Write-Info "Found ISCC: $iscc"
 Write-Info "Compiling $issScript ..."

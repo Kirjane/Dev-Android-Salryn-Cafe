@@ -13,6 +13,7 @@ Windows installer.
 | Node.js / npm | Build React web dist | No |
 | Approved branding assets in `assets/branding/` | Icon, banner PNGs, ICO | No |
 | **Inno Setup 6** | **Compile `SalrynSetup.iss` into a setup EXE** | **No** |
+| WebView2 Evergreen Bootstrapper in `installer/redist/` | Packaged into setup; installs runtime on client | No (installer handles it) |
 
 Download Inno Setup 6: <https://jrsoftware.org/isinfo.php>
 
@@ -22,8 +23,17 @@ After a standard installation, ISCC.exe will be at:
 C:\Program Files (x86)\Inno Setup 6\ISCC.exe
 ```
 
+or (per-user):
+
+```
+%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe
+```
+
 The build script discovers it automatically.  You can also override via the
 `INNO_SETUP_ISCC` environment variable or the `-InnoSetupCompilerPath` parameter.
+
+If `installer/redist/MicrosoftEdgeWebview2Setup.exe` is missing, the build script
+downloads it from the official Microsoft Evergreen Bootstrapper link.
 
 ---
 
@@ -56,6 +66,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\installer\Build-Salryn
 | Start Menu folder | `Kirjane Labs\Salryn POS` |
 | App / shortcut icon | `assets\branding\salryn-icon.ico` |
 | Output EXE | `artifacts\installer\setup\Salryn-POS-BetaRC1-Setup.exe` |
+| WebView2 | Evergreen Bootstrapper (`installer/redist/MicrosoftEdgeWebview2Setup.exe`) |
+
+---
+
+## WebView2 Runtime (client)
+
+- Salryn setup **detects** WebView2 Runtime via Microsoft-documented registry `pv` keys.
+- If missing, setup runs `MicrosoftEdgeWebview2Setup.exe /silent /install`.
+- Clients do **not** install WebView2 manually.
+- **Internet may be required** during beta install so the Evergreen Bootstrapper can download the runtime.
+- Offline bundling of the larger standalone WebView2 installer is deferred.
 
 ---
 
@@ -76,6 +97,7 @@ salryn-beta-rc1-installer-stage.txt
 
 - The client receives **`Salryn-POS-BetaRC1-Setup.exe`** only.
 - They run the installer (standard Windows wizard).
+- Setup installs WebView2 Runtime if needed, then Salryn POS.
 - After installation they launch **Salryn POS** from the desktop or Start Menu shortcut.
-- They do **not** need PowerShell, a browser, localhost, or Inno Setup.
-- Production data is stored under `C:\ProgramData\Salryn` and is preserved on upgrade/uninstall.
+- They do **not** need PowerShell, a browser, localhost, Inno Setup, or a manual WebView2 install.
+- Production data remains under `%ProgramData%\Salryn` and is preserved on upgrade/uninstall.

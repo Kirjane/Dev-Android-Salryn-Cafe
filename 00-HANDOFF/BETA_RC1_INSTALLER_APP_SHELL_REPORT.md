@@ -4,93 +4,53 @@
 
 `KIRCH-BETA-RC1-INSTALLER-APP-SHELL`
 
-## Scope
+## Decision
 
-This lane delivers:
-
-1. Approved Beta RC1 branding assets (icon, banners, ICO, favicon sizes).
-2. WebView2 app shell (`Salryn.Desktop.WebView`) wired with the Salryn POS icon and title.
-3. Inno Setup 6 installer script (`installer/SalrynSetup.iss`) — proper, reusable build path.
-4. Hardened build script (`tools/installer/Build-SalrynBetaRc1Installer.ps1`) with robust
-   ISCC discovery, clear failure messages, and SHA-256 output.
-5. Web manifest and favicon wiring in the React app.
+`BETA_RC1_INSTALLER_APP_SHELL_REPAIRED_AND_PASSED`
 
 ---
 
-## What changed
+## Root cause of WebView2 “missing or damaged” dialog
 
-### Branding assets
+The system **already had** Microsoft Edge WebView2 Runtime:
 
-| File | Role |
+| Check | Result |
 |---|---|
-| `assets/branding/salryn-icon.png` | Master icon (all surfaces) |
-| `assets/branding/salryn-icon.ico` | Windows ICO (16/32/48/64/128/256) |
-| `assets/branding/salryn-icon-{N}x{N}.png` | Resized PNGs: 16/32/48/64/128/192/256/512/1024 |
-| `assets/branding/salryn-banner-clear.png` | Light-background banner |
-| `assets/branding/salryn-banner-filled.png` | Dark-background banner |
+| Registry `pv` (HKLM WOW6432Node EdgeUpdate Clients `{F3017226-…}`) | `143.0.3650.139` |
+| `CoreWebView2Environment.GetAvailableBrowserVersionString()` (probe) | `143.0.3650.139` |
 
-Generation tool: `tools/branding/Generate-SalrynBrandingAssets.ps1`
+The installed Salryn shell still showed the missing-runtime dialog because **`WebView2Loader.dll` was not packaged** into the installer staging/install folder.
 
-### App shell (`src/Salryn.Desktop.WebView`)
+Cause in `Build-SalrynBetaRc1Installer.ps1`:
 
-- `ApplicationIcon` → `assets/branding/salryn-icon.ico`
-- Window title → `Salryn POS` (was `Salryn Ledger Console`)
-- Error dialog titles → `Salryn POS`
+1. Shell publish was merged with **file-only** copy (`Get-ChildItem -File`), dropping `runtimes\…\WebView2Loader.dll`.
+2. Later recursive directory copy could **nest** `runtimes\runtimes` instead of merging native loaders next to SQLite natives.
 
-### Web app (`src/Salryn.App.Web`)
+Without `WebView2Loader.dll`, `GetAvailableBrowserVersionString()` throws (e.g. `DllNotFoundException`), which the shell treated as “runtime missing.”
 
-- `public/` folder added with: `favicon.ico`, `favicon-16x16.png`, `favicon-32x32.png`,
-  `apple-touch-icon.png`, `icon-192.png`, `icon-512.png`, `site.webmanifest`
-- `index.html` updated with favicon and manifest `<link>` tags
-- `site.webmanifest`: `name: Salryn POS`, `short_name: Salryn`
+### Fix
 
-### Installer
-
-- `installer/SalrynSetup.iss` — Inno Setup 6 script
-  - App name: **Salryn POS**, Publisher: **Kirjane Labs**
-  - Install path: `C:\Program Files\Kirjane Labs\Salryn POS`
-  - Start Menu: `Kirjane Labs\Salryn POS`
-  - Desktop shortcut: **Salryn POS**
-  - Icon: `assets\branding\salryn-icon.ico`
-  - ProgramData preserved on uninstall
-  - Output: `Salryn-POS-BetaRC1-Setup.exe`
-  - Stable AppId: `A4E2B8C1-7D3F-4A91-9C2E-5F6A8B1C0D3E` (Inno-compatible upgrade recognition)
-  - `UsePreviousAppDir=yes` for upgrade path reuse
-
-- `tools/installer/Build-SalrynBetaRc1Installer.ps1` — hardened build script
-  - ISCC discovery: parameter → env var → PATH → `%LOCALAPPDATA%\Programs\Inno Setup 6\` → Program Files paths
-  - Fails clearly if `-BuildInstaller` requested and ISCC missing
-  - Staging-only mode when `-BuildInstaller` not passed
-  - SHA-256 file written beside setup EXE
+- Merge shell publish with `Copy-Item (Join-Path $shellTemp '*') … -Recurse`.
+- Explicitly stage `WebView2Loader.dll` under `runtimes\win-x64\native\` **and beside** `Salryn.Desktop.WebView.exe`.
+- Fail the build if the loader is missing.
+- Keep Evergreen Bootstrapper install when registry `pv` is absent.
+- Installed-layout API launch: start adjacent `Salryn.Api.Local.exe` (not only `dotnet run` in a repo).
+- Installed-layout web URL: `http://127.0.0.1:5299/`.
 
 ---
 
-## Installer compile fix (2026-07-20)
+## WebView2 strategy
 
-### Previous compile blocker
-
-```
-Error on line 54 in installer\SalrynSetup.iss:
-Unrecognized [Setup] section directive "MajorUpgrade"
-```
-
-`MajorUpgrade` is a WiX/MSI directive and is not valid in Inno Setup 6.7.3.
-
-### Fix applied
-
-- Removed invalid `MajorUpgrade=no` from `[Setup]`
-- Retained stable `AppId` (`A4E2B8C1-7D3F-4A91-9C2E-5F6A8B1C0D3E`) for Inno-compatible upgrade recognition
-- Added `UsePreviousAppDir=yes` so upgrades reuse the prior install directory
-- File replacement on upgrade handled by `ignoreversion` on `[Files]` entries
-- `C:\ProgramData\Salryn` remains outside `[UninstallDelete]` — client data survives upgrade, uninstall, and reinstall
-
-### ISCC path found
-
-```
-C:\Users\kirch\AppData\Local\Programs\Inno Setup 6\ISCC.exe
-```
-
-(Inno Setup 6.7.3, per-user install under `%LOCALAPPDATA%\Programs\`)
+| Item | Value |
+|---|---|
+| Strategy | Evergreen Bootstrapper + ship native `WebView2Loader.dll` |
+| Bootstrapper path | `installer/redist/MicrosoftEdgeWebview2Setup.exe` |
+| Official source | `https://go.microsoft.com/fwlink/p/?LinkId=2124703` |
+| Bootstrapper SHA-256 | `23a55fbff920c0f99887848cfc25125f8f915df35638e01beb8f8fa9b5a0bc51` |
+| Silent flags | `/silent /install` |
+| Runtime detection (installer) | Registry `pv` under EdgeUpdate Clients GUID |
+| Loader packaging | `{app}\WebView2Loader.dll` + `{app}\runtimes\win-*\native\WebView2Loader.dll` |
+| Internet | Required during install only if runtime must be downloaded |
 
 ---
 
@@ -98,9 +58,33 @@ C:\Users\kirch\AppData\Local\Programs\Inno Setup 6\ISCC.exe
 
 | Property | Value |
 |---|---|
-| Setup EXE path | `artifacts\installer\setup\Salryn-POS-BetaRC1-Setup.exe` |
-| SHA-256 | `32c3c4e3d31f5bf8248d1e72d99a5a340f4edf2ffb1a59536e99103db916f92e` |
-| SHA file | `artifacts\installer\setup\Salryn-POS-BetaRC1-Setup.exe.sha256.txt` |
+| Path | `artifacts\installer\setup\Salryn-POS-BetaRC1-Setup.exe` |
+| SHA-256 | `a764b47fcade1e1465860c00167e93fca670402f7fcfd90ff8a71457769acb1c` |
+| ISCC | `C:\Users\kirch\AppData\Local\Programs\Inno Setup 6\ISCC.exe` |
+
+---
+
+## Proof
+
+### Install proof (Program Files)
+
+Agent session could not complete an elevated silent reinstall (UAC canceled: "operation was canceled by the user").
+**Kirch must run the new `Salryn-POS-BetaRC1-Setup.exe` as administrator** to replace the previous Program Files install that lacked `WebView2Loader.dll`.
+
+### Launch proof (staging layout = packaged payload)
+
+From `artifacts\installer\staging\Salryn` (includes `WebView2Loader.dll`, shell, API, `dist\`):
+
+| Check | Result |
+|---|---|
+| Launch `Salryn.Desktop.WebView.exe` | Started |
+| No early exit / no WebView2 missing dialog path | PASS |
+| `http://127.0.0.1:5299/health` | `200 {"status":"ok","service":"Salryn.Api.Local"}` within ~1s |
+| `http://127.0.0.1:5299/` | `200` (Salryn UI) |
+
+### Health proof
+
+PASS — see above.
 
 ---
 
@@ -108,15 +92,25 @@ C:\Users\kirch\AppData\Local\Programs\Inno Setup 6\ISCC.exe
 
 | Gate | Result |
 |---|---|
-| `dotnet build Salryn.sln` | PASS |
+| `dotnet build Salryn.sln` | PASS (run at end of lane) |
 | `npm --prefix src\Salryn.App.Web run build` | PASS |
 | `git diff --check` | PASS |
-| Installer staging (`Build-SalrynBetaRc1Installer.ps1 -SkipWebBuild`) | PASS |
 | ISCC compile (`-BuildInstaller`) | PASS |
-| Forbidden scan on `artifacts/installer/staging/Salryn` | PASS |
+| Forbidden scan on staging | PASS |
+| Staging launch + health | PASS |
 
 ---
 
-## Decision
+## Known P2
 
-`BETA_RC1_INSTALLER_EXE_COMPILED`
+- Program Files reinstall requires admin/UAC; agent could not elevate in this session.
+- Offline WebView2 **standalone** bundling still deferred (Evergreen Bootstrapper needs internet when runtime absent).
+- Setup EXE remains unsigned (SmartScreen).
+- Framework-dependent publish still needs .NET 10 on the client machine.
+
+---
+
+## Protected refs / promotion
+
+- Protected refs: none touched.
+- Promotion: not performed — push feature branch only.

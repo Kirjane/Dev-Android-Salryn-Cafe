@@ -4,8 +4,9 @@ using System.Net.Http;
 namespace Salryn.Desktop.WebView;
 
 /// <summary>
-/// Ensures the Salryn local API is reachable for the dev host.
-/// If it is not already running, it can launch <c>Salryn.Api.Local</c> as a dev child process.
+/// Ensures the Salryn local API is reachable for the native host.
+/// Installed layout: starts <c>Salryn.Api.Local.exe</c> beside this shell.
+/// Dev layout: launches <c>dotnet run --project</c> against the repository when present.
 /// This wrapper performs no business logic and never touches the database directly.
 /// </summary>
 internal sealed class LocalApiProcessManager : IDisposable
@@ -36,7 +37,7 @@ internal sealed class LocalApiProcessManager : IDisposable
     }
 
     /// <summary>
-    /// Ensures the API is healthy, starting it in dev mode if required.
+    /// Ensures the API is healthy, starting it if required.
     /// Returns true once /health responds successfully within the timeout.
     /// </summary>
     public async Task<bool> EnsureRunningAsync(TimeSpan timeout)
@@ -67,6 +68,54 @@ internal sealed class LocalApiProcessManager : IDisposable
     }
 
     private bool TryStartApiProcess()
+    {
+        if (TryStartInstalledApiExecutable())
+        {
+            return true;
+        }
+
+        return TryStartDevApiProcess();
+    }
+
+    /// <summary>
+    /// Production/installer layout: Salryn.Api.Local.exe ships next to the WebView shell.
+    /// </summary>
+    private bool TryStartInstalledApiExecutable()
+    {
+        string apiExe = Path.Combine(AppContext.BaseDirectory, "Salryn.Api.Local.exe");
+        if (!File.Exists(apiExe))
+        {
+            return false;
+        }
+
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = apiExe,
+            WorkingDirectory = AppContext.BaseDirectory,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+
+        // Production host binds localhost; urls may also come from launchSettings/defaults.
+        startInfo.ArgumentList.Add("--urls");
+        startInfo.ArgumentList.Add(DevHostConfig.ApiBaseUrl);
+
+        try
+        {
+            _apiProcess = Process.Start(startInfo);
+            StartedByHost = _apiProcess is not null;
+            return StartedByHost;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Repository / developer layout: start Api.Local via dotnet run --dev.
+    /// </summary>
+    private bool TryStartDevApiProcess()
     {
         string? apiProjectPath = ResolveApiProjectPath();
 
@@ -174,7 +223,7 @@ internal sealed class LocalApiProcessManager : IDisposable
         }
         catch (Exception)
         {
-            // Best effort cleanup of the dev child process.
+            // Best effort cleanup of the child process.
         }
         finally
         {

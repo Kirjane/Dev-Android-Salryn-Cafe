@@ -14,9 +14,12 @@ and wants to install, launch, and operate it.  No technical expertise is require
 ## System requirements
 
 - Windows 10 or Windows 11 (64-bit)
-- Microsoft Edge WebView2 Runtime (usually pre-installed on modern Windows)
-- .NET 10 Desktop Runtime (the installer will inform you if it is missing)
 - An administrator account (for the initial installation)
+- Internet access during installation (so Salryn can install Microsoft Edge WebView2 Runtime if it is not already on the PC)
+- .NET 10 Desktop Runtime (the installer or first launch will inform you if it is missing)
+
+You do **not** need to install Microsoft Edge WebView2 Runtime yourself.
+Salryn setup installs or confirms it automatically.
 
 ---
 
@@ -29,7 +32,8 @@ and wants to install, launch, and operate it.  No technical expertise is require
    C:\Program Files\Kirjane Labs\Salryn POS
    ```
 4. When prompted you can opt in to a **desktop shortcut**.
-5. Click **Finish**.  You can choose to launch Salryn POS immediately.
+5. If WebView2 Runtime is missing, setup installs it quietly (may take a minute).
+6. Click **Finish**.  You can choose to launch Salryn POS immediately.
 
 ---
 

@@ -14,17 +14,18 @@ internal static class LocalWebOriginPolicy
     ];
 
     /// <summary>
-    /// Resolves SALRYN_WEB_URL when set, otherwise the default Vite dev URL.
+    /// Resolves SALRYN_WEB_URL when set, otherwise <paramref name="fallbackUrl"/>.
     /// Returns false when an explicit override was rejected.
     /// </summary>
     public static bool TryResolveConfiguredWebUrl(
         string? configuredUrl,
+        string fallbackUrl,
         out string resolvedUrl,
         out string? rejectionReason)
     {
         if (string.IsNullOrWhiteSpace(configuredUrl))
         {
-            resolvedUrl = DevHostConfig.DefaultViteUrl;
+            resolvedUrl = fallbackUrl;
             rejectionReason = null;
             return true;
         }
@@ -42,9 +43,18 @@ internal static class LocalWebOriginPolicy
             "SALRYN_WEB_URL must be a local http URL on 127.0.0.1 or localhost port 5173 or 5299. " +
             "External sites, file/data/javascript URLs, and LAN addresses are blocked.";
 
-        resolvedUrl = DevHostConfig.DefaultViteUrl;
+        resolvedUrl = fallbackUrl;
         return false;
     }
+
+    /// <summary>
+    /// Back-compat overload used by older call sites/tests; defaults fallback to Vite.
+    /// </summary>
+    public static bool TryResolveConfiguredWebUrl(
+        string? configuredUrl,
+        out string resolvedUrl,
+        out string? rejectionReason) =>
+        TryResolveConfiguredWebUrl(configuredUrl, DevHostConfig.DefaultViteUrl, out resolvedUrl, out rejectionReason);
 
     public static bool IsAllowedLocalWebUrl(string url)
     {

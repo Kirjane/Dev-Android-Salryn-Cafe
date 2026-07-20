@@ -12,8 +12,8 @@ internal static class Program
         if (!IsWebView2RuntimeAvailable())
         {
             MessageBox.Show(
-                "Microsoft Edge WebView2 Runtime is required to run Salryn POS.\n" +
-                "Install the runtime, then restart Salryn.",
+                "Salryn POS could not start because Microsoft Edge WebView2 Runtime is missing or damaged.\n" +
+                "Re-run the Salryn installer or install WebView2 Runtime, then reopen Salryn.",
                 "Salryn POS",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
@@ -37,11 +37,28 @@ internal static class Program
 
         if (!apiReady)
         {
+            string apiMessage = DevHostConfig.IsInstalledLayout()
+                ? "Salryn POS could not start its local service.\n\n" +
+                  "Close any other Salryn windows, then open Salryn POS again from the Start Menu or desktop shortcut.\n" +
+                  "If the problem continues, re-run the Salryn installer or contact salryn.info@gmail.com."
+                : "The Salryn local API at " + DevHostConfig.ApiBaseUrl + " is not responding.\n\n" +
+                  "Start it manually with:\n" +
+                  "dotnet run --project .\\src\\Salryn.Api.Local\\Salryn.Api.Local.csproj -- --dev\n\n" +
+                  "Open the web view anyway?";
+
+            if (DevHostConfig.IsInstalledLayout())
+            {
+                MessageBox.Show(
+                    apiMessage,
+                    "Salryn POS",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                apiManager.Dispose();
+                return;
+            }
+
             DialogResult choice = MessageBox.Show(
-                "The Salryn local API at " + DevHostConfig.ApiBaseUrl + " is not responding.\n\n" +
-                "Start it manually with:\n" +
-                "dotnet run --project .\\src\\Salryn.Api.Local\\Salryn.Api.Local.csproj -- --dev\n\n" +
-                "Open the web view anyway?",
+                apiMessage,
                 "Salryn POS",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Warning);
@@ -76,6 +93,11 @@ internal static class Program
         }
         catch (WebView2RuntimeNotFoundException)
         {
+            return false;
+        }
+        catch (DllNotFoundException)
+        {
+            // Native WebView2Loader.dll missing from the install layout (packaging defect).
             return false;
         }
         catch (Exception)
