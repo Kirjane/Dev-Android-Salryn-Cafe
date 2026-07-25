@@ -152,6 +152,14 @@ Without `WebView2Loader.dll`, `GetAvailableBrowserVersionString()` throws (e.g. 
 
 ---
 
+## QA reset safety follow-up
+
+A blind review found two safety issues in `tools\qa\Reset-SalrynLocalState.ps1`: the port-5299 fallback could stop a non-Salryn process, and the script declared `SupportsShouldProcess` without honoring `-WhatIf` or `-Confirm` for its state-changing operations.
+
+The reset script now restricts the port fallback to clearly identified Salryn processes and leaves non-Salryn owners running with an explicit warning. Its process stops, backup copies, state moves, directory creation, and write test now use `ShouldProcess`, so `-WhatIf` produces planned-action output without changing ProgramData or license state and `-Confirm` prompts honestly. No client runtime, checkout, or installer behavior changed.
+
+---
+
 ## Gates
 
 | Gate | Result |

@@ -47,16 +47,48 @@ License path (not under ProgramData):
 function Write-Info([string]$Message) { Write-Host "[qa-reset] $Message" }
 function Write-WarnLine([string]$Message) { Write-Warning "[qa-reset] $Message" }
 
+function Test-IsClearlySalrynProcess {
+    param([System.Diagnostics.Process]$Process)
+
+    $knownNames = @("Salryn.Desktop.WebView", "Salryn.Api.Local")
+    if ($knownNames -contains $Process.ProcessName) {
+        return $true
+    }
+
+    $processPath = $null
+    try { $processPath = $Process.Path } catch { }
+    if ([string]::IsNullOrWhiteSpace($processPath)) {
+        try { $processPath = $Process.MainModule.FileName } catch { }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($processPath)) {
+        return $false
+    }
+
+    $executableName = Split-Path -Leaf $processPath
+    $isSalrynExecutable = $executableName -like "Salryn.*"
+    $isInstalledOrRepoPath = $processPath -match "(?i)\\Salryn(?:\\|$)"
+    return $isSalrynExecutable -and $isInstalledOrRepoPath
+}
+
 function Stop-SalrynProcesses {
     $stopped = New-Object System.Collections.Generic.List[string]
     $names = @("Salryn.Desktop.WebView", "Salryn.Api.Local")
 
     foreach ($name in $names) {
         Get-Process -Name $name -ErrorAction SilentlyContinue | ForEach-Object {
-            Write-Info "Stopping process $($_.ProcessName) (PID $($_.Id))"
-            Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
-            $stopped.Add("$($_.ProcessName)#$($_.Id)")
+            $target = "$($_.ProcessName) (PID $($_.Id))"
+            if ($PSCmdlet.ShouldProcess($target, "Stop Salryn process")) {
+                Write-Info "Stopping process $target"
+                Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+                $stopped.Add("$($_.ProcessName)#$($_.Id)")
+            }
         }
+    }
+
+    if ($WhatIfPreference) {
+        Write-Info "WhatIf: port 5299 fallback inspection skipped; no process will be stopped."
+        return $stopped
     }
 
     # Best-effort: stop anything still listening on 5299
@@ -67,9 +99,17 @@ function Stop-SalrynProcesses {
             if ($owningPid -and $owningPid -gt 0) {
                 $proc = Get-Process -Id $owningPid -ErrorAction SilentlyContinue
                 if ($proc) {
-                    Write-Info "Stopping port-5299 owner $($proc.ProcessName) (PID $owningPid)"
-                    Stop-Process -Id $owningPid -Force -ErrorAction SilentlyContinue
-                    $stopped.Add("$($proc.ProcessName)#$owningPid")
+                    if (-not (Test-IsClearlySalrynProcess -Process $proc)) {
+                        Write-WarnLine "Port 5299 is owned by a non-Salryn process; leaving it running."
+                        return
+                    }
+
+                    $target = "$($proc.ProcessName) (PID $owningPid), port 5299"
+                    if ($PSCmdlet.ShouldProcess($target, "Stop Salryn process")) {
+                        Write-Info "Stopping port-5299 owner $target"
+                        Stop-Process -Id $owningPid -Force -ErrorAction SilentlyContinue
+                        $stopped.Add("$($proc.ProcessName)#$owningPid")
+                    }
                 }
             }
         }
@@ -93,16 +133,26 @@ function Move-ItemSafe {
         return $false
     }
 
-    New-Item -ItemType Directory -Force -Path $DestinationDir | Out-Null
+    if (-not (Test-Path -LiteralPath $DestinationDir) -and
+        -not $PSCmdlet.ShouldProcess($DestinationDir, "Create QA backup directory")) {
+        return $false
+    }
+    if (-not (Test-Path -LiteralPath $DestinationDir)) {
+        New-Item -ItemType Directory -Force -Path $DestinationDir | Out-Null
+    }
     $leaf = Split-Path -Leaf $Source
     $dest = Join-Path $DestinationDir $leaf
     if (Test-Path -LiteralPath $dest) {
         $dest = Join-Path $DestinationDir ("{0}.{1}" -f $leaf, [Guid]::NewGuid().ToString("N").Substring(0, 8))
     }
 
-    Write-Info "Moving $Label -> $dest"
-    Move-Item -LiteralPath $Source -Destination $dest -Force
-    return $true
+    if ($PSCmdlet.ShouldProcess($Source, "Move $Label to QA backup ($dest)")) {
+        Write-Info "Moving $Label -> $dest"
+        Move-Item -LiteralPath $Source -Destination $dest -Force
+        return $true
+    }
+
+    return $false
 }
 
 function Copy-ItemSafe {
@@ -116,17 +166,27 @@ function Copy-ItemSafe {
         return $false
     }
 
-    New-Item -ItemType Directory -Force -Path $DestinationDir | Out-Null
+    if (-not (Test-Path -LiteralPath $DestinationDir) -and
+        -not $PSCmdlet.ShouldProcess($DestinationDir, "Create QA backup directory")) {
+        return $false
+    }
+    if (-not (Test-Path -LiteralPath $DestinationDir)) {
+        New-Item -ItemType Directory -Force -Path $DestinationDir | Out-Null
+    }
     $leaf = Split-Path -Leaf $Source
     $dest = Join-Path $DestinationDir $leaf
-    Write-Info "Backing up $Label -> $dest"
-    if ((Get-Item -LiteralPath $Source).PSIsContainer) {
-        Copy-Item -LiteralPath $Source -Destination $dest -Recurse -Force
+    if ($PSCmdlet.ShouldProcess($Source, "Copy $Label to QA backup ($dest)")) {
+        Write-Info "Backing up $Label -> $dest"
+        if ((Get-Item -LiteralPath $Source).PSIsContainer) {
+            Copy-Item -LiteralPath $Source -Destination $dest -Recurse -Force
+        }
+        else {
+            Copy-Item -LiteralPath $Source -Destination $dest -Force
+        }
+        return $true
     }
-    else {
-        Copy-Item -LiteralPath $Source -Destination $dest -Force
-    }
-    return $true
+
+    return $false
 }
 
 # ---------------------------------------------------------------------------
@@ -145,7 +205,7 @@ Write-Host "Include exports  : $IncludeExports"
 Write-Host "Include logs     : $IncludeLogs"
 Write-Host ""
 
-if (-not $Force) {
+if (-not $Force -and -not $WhatIfPreference) {
     $answer = Read-Host "This will stop Salryn and reset local DB + license after backup. Type YES to continue"
     if ($answer -ne "YES") {
         Write-Host "Aborted."
@@ -155,10 +215,16 @@ if (-not $Force) {
 
 $stopped = Stop-SalrynProcesses
 
-New-Item -ItemType Directory -Force -Path $backupRoot | Out-Null
+if ($PSCmdlet.ShouldProcess($backupRoot, "Create timestamped QA backup folder")) {
+    New-Item -ItemType Directory -Force -Path $backupRoot | Out-Null
+}
 $backupProgramData = Join-Path $backupRoot "ProgramData-Salryn"
 $backupLocalLicense = Join-Path $backupRoot "LocalAppData-Salryn-Licensing"
-New-Item -ItemType Directory -Force -Path $backupProgramData, $backupLocalLicense | Out-Null
+foreach ($backupDirectory in @($backupProgramData, $backupLocalLicense)) {
+    if ($PSCmdlet.ShouldProcess($backupDirectory, "Create QA backup directory")) {
+        New-Item -ItemType Directory -Force -Path $backupDirectory | Out-Null
+    }
+}
 
 $dbPath = Join-Path $programDataRoot "data\salryn.db"
 $configPath = Join-Path $programDataRoot "config"
@@ -190,14 +256,18 @@ if (Test-Path -LiteralPath $programDataRoot) {
             if ([string]::IsNullOrWhiteSpace((Split-Path $rel -Parent))) {
                 $destDir = $backupProgramData
             }
-            New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-            $dest = Join-Path $destDir $_.Name
-            Write-Info "Backing up ProgramData license-looking item: $($_.FullName)"
-            if ($_.PSIsContainer) {
-                Copy-Item -LiteralPath $_.FullName -Destination $dest -Recurse -Force
+            if ($PSCmdlet.ShouldProcess($destDir, "Create QA backup directory")) {
+                New-Item -ItemType Directory -Force -Path $destDir | Out-Null
             }
-            else {
-                Copy-Item -LiteralPath $_.FullName -Destination $dest -Force
+            $dest = Join-Path $destDir $_.Name
+            if ($PSCmdlet.ShouldProcess($_.FullName, "Copy ProgramData license-looking item to QA backup ($dest)")) {
+                Write-Info "Backing up ProgramData license-looking item: $($_.FullName)"
+                if ($_.PSIsContainer) {
+                    Copy-Item -LiteralPath $_.FullName -Destination $dest -Recurse -Force
+                }
+                else {
+                    Copy-Item -LiteralPath $_.FullName -Destination $dest -Force
+                }
             }
         }
 }
@@ -299,17 +369,26 @@ $requiredFolders = @(
     $localLicenseRoot
 )
 foreach ($folder in $requiredFolders) {
-    New-Item -ItemType Directory -Force -Path $folder | Out-Null
+    if ($PSCmdlet.ShouldProcess($folder, "Create required QA state directory")) {
+        New-Item -ItemType Directory -Force -Path $folder | Out-Null
+    }
 }
 
 # Write test
 $writeTestPath = Join-Path $programDataRoot "data\write-test.tmp"
 $writeTestPass = $false
 try {
-    Set-Content -LiteralPath $writeTestPath -Value "salryn-qa-write-test" -Encoding UTF8
-    if (Test-Path -LiteralPath $writeTestPath) {
-        Remove-Item -LiteralPath $writeTestPath -Force
-        $writeTestPass = -not (Test-Path -LiteralPath $writeTestPath)
+    if ($PSCmdlet.ShouldProcess($writeTestPath, "Create and remove QA write-test file")) {
+        Set-Content -LiteralPath $writeTestPath -Value "salryn-qa-write-test" -Encoding UTF8
+        if (Test-Path -LiteralPath $writeTestPath) {
+            if ($PSCmdlet.ShouldProcess($writeTestPath, "Remove QA write-test file")) {
+                Remove-Item -LiteralPath $writeTestPath -Force
+                $writeTestPass = -not (Test-Path -LiteralPath $writeTestPath)
+            }
+        }
+    }
+    elseif ($WhatIfPreference) {
+        $writeTestPass = $true
     }
 }
 catch {
