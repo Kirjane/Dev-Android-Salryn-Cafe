@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Salryn.Core.Models;
 using Salryn.Core.Security;
 
@@ -25,7 +26,9 @@ public interface ILocalApiSessionStore
 
 public sealed class InMemoryLocalApiSessionStore : ILocalApiSessionStore
 {
-    private readonly Dictionary<string, LocalApiSession> _sessions = new(StringComparer.Ordinal);
+    private static readonly TimeSpan SessionLifetime = TimeSpan.FromHours(8);
+
+    private readonly ConcurrentDictionary<string, StoredSession> _sessions = new(StringComparer.Ordinal);
 
     public LocalApiSession? Get(string sessionId)
     {
@@ -34,9 +37,18 @@ public sealed class InMemoryLocalApiSessionStore : ILocalApiSessionStore
             return null;
         }
 
-        return _sessions.TryGetValue(sessionId, out LocalApiSession? session)
-            ? session
-            : null;
+        if (!_sessions.TryGetValue(sessionId, out StoredSession? stored))
+        {
+            return null;
+        }
+
+        if (stored.ExpiresAt <= DateTimeOffset.UtcNow)
+        {
+            _sessions.TryRemove(sessionId, out _);
+            return null;
+        }
+
+        return stored.Session;
     }
 
     public LocalApiSession Create(AuthenticatedUserReadModel user)
@@ -44,6 +56,7 @@ public sealed class InMemoryLocalApiSessionStore : ILocalApiSessionStore
         ArgumentNullException.ThrowIfNull(user);
 
         string sessionId = Guid.NewGuid().ToString("N");
+        DateTimeOffset startedAt = DateTimeOffset.UtcNow;
         LocalApiSession session = new(
             sessionId,
             user.UserId,
@@ -53,9 +66,9 @@ public sealed class InMemoryLocalApiSessionStore : ILocalApiSessionStore
             user.RoleId,
             user.Status,
             user.Permissions,
-            DateTimeOffset.UtcNow);
+            startedAt);
 
-        _sessions[sessionId] = session;
+        _sessions[sessionId] = new StoredSession(session, startedAt.Add(SessionLifetime));
         return session;
     }
 
@@ -66,6 +79,8 @@ public sealed class InMemoryLocalApiSessionStore : ILocalApiSessionStore
             return false;
         }
 
-        return _sessions.Remove(sessionId);
+        return _sessions.TryRemove(sessionId, out _);
     }
+
+    private sealed record StoredSession(LocalApiSession Session, DateTimeOffset ExpiresAt);
 }
