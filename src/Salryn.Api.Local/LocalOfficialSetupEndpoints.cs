@@ -21,12 +21,7 @@ public static class LocalOfficialSetupEndpoints
             LocalApiSessionService sessions,
             CancellationToken cancellationToken) =>
         {
-            if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult localOnly)
-            {
-                return localOnly;
-            }
-
-            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
+            if (RequireOfficialSetupPermission(httpContext, sessions) is IResult unauthorized)
             {
                 return unauthorized;
             }
@@ -43,12 +38,7 @@ public static class LocalOfficialSetupEndpoints
             LocalApiSessionService sessions,
             CancellationToken cancellationToken) =>
         {
-            if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult localOnly)
-            {
-                return localOnly;
-            }
-
-            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
+            if (RequireOfficialSetupPermission(httpContext, sessions) is IResult unauthorized)
             {
                 return unauthorized;
             }
@@ -68,12 +58,7 @@ public static class LocalOfficialSetupEndpoints
             LocalApiSessionService sessions,
             CancellationToken cancellationToken) =>
         {
-            if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult localOnly)
-            {
-                return localOnly;
-            }
-
-            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
+            if (RequireOfficialSetupPermission(httpContext, sessions) is IResult unauthorized)
             {
                 return unauthorized;
             }
@@ -93,12 +78,7 @@ public static class LocalOfficialSetupEndpoints
             LocalApiSessionService sessions,
             CancellationToken cancellationToken) =>
         {
-            if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult localOnly)
-            {
-                return localOnly;
-            }
-
-            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
+            if (RequireOfficialSetupPermission(httpContext, sessions) is IResult unauthorized)
             {
                 return unauthorized;
             }
@@ -118,12 +98,7 @@ public static class LocalOfficialSetupEndpoints
             LocalApiSessionService sessions,
             CancellationToken cancellationToken) =>
         {
-            if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult localOnly)
-            {
-                return localOnly;
-            }
-
-            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
+            if (RequireOfficialSetupPermission(httpContext, sessions) is IResult unauthorized)
             {
                 return unauthorized;
             }
@@ -136,6 +111,16 @@ public static class LocalOfficialSetupEndpoints
                 await setup.SaveSeriesAsync(body, userId, cancellationToken).ConfigureAwait(false);
             return ToResult(result);
         });
+    }
+
+    private static IResult? RequireOfficialSetupPermission(
+        HttpContext httpContext,
+        LocalApiSessionService sessions)
+    {
+        return LocalApiPermissionGuards.RequirePermission(
+            httpContext,
+            sessions,
+            LocalApiPermissions.SettingsManage);
     }
 
     private static IResult ToResult(Result<OfficialSetupSnapshotContract> result)
