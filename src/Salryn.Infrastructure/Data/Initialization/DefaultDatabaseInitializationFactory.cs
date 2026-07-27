@@ -40,6 +40,7 @@ public static class DefaultDatabaseInitializationFactory
         // Version 15 adds vat_registration_mode on bir_machine_profiles (TRAD-M1 tax spine); no live issuance.
         // Version 18 adds store printer mode.
         // Version 19 adds the configured Windows printer name for host print-queue submission.
+        // Version 21 adds durable Remote POS checkout request reconciliation.
         IDatabaseMigration[] migrations =
         {
             new InitialSchemaMigration(),
@@ -61,7 +62,8 @@ public static class DefaultDatabaseInitializationFactory
             new OfficialDocumentLifecycleAccountingSchemaMigration(),
             new StorePrinterModeSchemaMigration(),
             new WindowsPrinterNameSchemaMigration(),
-            new StoreLogoBrandingSchemaMigration()
+            new StoreLogoBrandingSchemaMigration(),
+            new RemotePosCheckoutRequestSchemaMigration()
         };
 
         MigrationRunner migrationRunner = new(connectionFactory, migrations);

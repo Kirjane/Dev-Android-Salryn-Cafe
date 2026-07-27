@@ -142,7 +142,8 @@ internal static class RemotePosPostCommitAuditSafetySmokeChecks
             cashierSessionService,
             composition.SaleReadRepository,
             auditWriteRepository,
-            new RemotePosReceiptNumberAllocator());
+            new RemotePosReceiptNumberAllocator(),
+            new RemotePosCheckoutRequestStore(composition.ConnectionFactory));
     }
 
     private sealed class ThrowingAuditWriteRepository : IAuditWriteRepository

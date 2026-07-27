@@ -63,7 +63,7 @@ public static class RmoBirTradM3Rc1InvoiceOutputDeliveryChecks
         RequireContains(evidence, "WriteStatutory", "Evidence must write statutory when present.");
         RequireContains(coreSmoke, "rmo-bir-trad-invoice-output-delivery", "CoreSmoke RC1 gate required.");
         RequireContains(coreSmoke, "RmoBirTradM3Rc1InvoiceOutputDeliveryChecks.Run()", "CoreSmoke must run RC1 checks.");
-        RequireContains(catalog, "SupportedMigrationVersion = 20", "Catalog version must include the additive store-settings migration.");
+        RequireContains(catalog, "SupportedMigrationVersion = 21", "Catalog version must include the current additive migrations.");
     }
 
     private static void AssertServerOwnedModeInSource(string root)

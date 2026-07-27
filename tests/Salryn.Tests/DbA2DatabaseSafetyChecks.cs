@@ -136,7 +136,7 @@ public static class DbA2DatabaseSafetyChecks
     private static void RunIdempotencyDocumentationChecks(string projectRoot)
     {
         string remoteCheckout = ReadRequiredFile(projectRoot, "src", "Salryn.Api.Local", "RemotePos", "RemotePosCheckoutService.cs");
-        RequireContains(remoteCheckout, "_idempotency", "Remote POS idempotency must remain in-memory.");
+        RequireContains(remoteCheckout, "RemotePosCheckoutRequestStore", "Remote POS idempotency must use a durable request ledger.");
         RequireContains(remoteCheckout, "sales.receipt_no UNIQUE", "Remote POS must document sales.receipt_no UNIQUE backstop.");
         RequireContains(remoteCheckout, "memoize the committed success IMMEDIATELY", "Remote POS must memoize committed checkout before side effects.");
     }

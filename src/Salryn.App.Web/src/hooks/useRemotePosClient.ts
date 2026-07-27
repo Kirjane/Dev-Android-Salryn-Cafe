@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../api/http";
 import {
   fetchRemotePosCapabilities,
+  fetchRemotePosCheckoutStatus,
   fetchRemotePosPairingStatus,
   fetchRemotePosSession,
   fetchRemotePosTerminalTrust,
@@ -54,6 +55,41 @@ function newClientRequestId(): string {
     return `rpos-${cryptoObj.randomUUID()}`;
   }
   return `rpos-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+const pendingCheckoutStorageKey = "salryn.remote-pos.pending-checkout.v1";
+
+type PendingRemoteCheckout = {
+  hostBaseUrl: string;
+  clientRequestId: string;
+  payments: { method: string; amountCents: number }[];
+};
+
+function readPendingCheckout(hostBaseUrl: string): PendingRemoteCheckout | null {
+  try {
+    const raw = window.sessionStorage.getItem(pendingCheckoutStorageKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PendingRemoteCheckout>;
+    return parsed.hostBaseUrl === normalizeLanHostBaseUrl(hostBaseUrl)
+      && typeof parsed.clientRequestId === "string"
+      && Array.isArray(parsed.payments)
+      ? parsed as PendingRemoteCheckout
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function writePendingCheckout(pending: PendingRemoteCheckout | null): void {
+  try {
+    if (pending) {
+      window.sessionStorage.setItem(pendingCheckoutStorageKey, JSON.stringify(pending));
+    } else {
+      window.sessionStorage.removeItem(pendingCheckoutStorageKey);
+    }
+  } catch {
+    // The in-memory request id still prevents duplicate taps when storage is unavailable.
+  }
 }
 
 function describeError(error: unknown): string {
@@ -169,6 +205,7 @@ export function useRemotePosClient() {
 
   const [session, setSession] = useState<RemotePosSession | null>(null);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
+  const pendingCheckoutRef = useRef<PendingRemoteCheckout | null>(null);
   const [capabilities, setCapabilities] = useState<RemotePosCapabilities | null>(null);
   const [cart, setCart] = useState<RemotePosCart | null>(null);
   const [lastCheckout, setLastCheckout] = useState<RemotePosCheckoutResult | null>(null);
@@ -934,26 +971,65 @@ export function useRemotePosClient() {
   const submitCheckout = useCallback(
     async (payments: { method: string; amountCents: number }[]) => {
       if (!authedConnection) return;
-      const clientRequestId = newClientRequestId();
+      const normalizedHost = normalizeLanHostBaseUrl(authedConnection.hostBaseUrl);
+      const pending = pendingCheckoutRef.current
+        ?? readPendingCheckout(normalizedHost)
+        ?? { hostBaseUrl: normalizedHost, clientRequestId: newClientRequestId(), payments };
+      pendingCheckoutRef.current = pending;
+      writePendingCheckout(pending);
+
+      const clientRequestId = pending.clientRequestId;
       const result = await run("checkout", () =>
-        remotePosSubmitCheckout(authedConnection, { clientRequestId, payments }),
+        remotePosSubmitCheckout(authedConnection, { clientRequestId, payments: pending.payments }),
       );
-      if (result) {
-        setLastCheckout(result);
-        if (result.status === "Completed" || result.status === "DuplicateRequest") {
-          setCart(null);
-          setStatusMessage(
-            result.duplicate
-              ? `Duplicate submit safely returned original receipt ${result.receiptNumber ?? ""}.`
-              : `Sale completed on host. Receipt ${result.receiptNumber ?? ""}.`,
-          );
-        } else {
-          setStatusMessage(`Checkout responded: ${result.status}. ${result.message}`);
+
+      let resolved = result;
+      if (!resolved) {
+        setStatusMessage("Confirming the checkout result with the Host. Do not submit another sale.");
+        try {
+          resolved = await fetchRemotePosCheckoutStatus(authedConnection, clientRequestId);
+        } catch {
+          return;
         }
+      }
+
+      setLastCheckout(resolved);
+      if (resolved.status === "Completed" || resolved.status === "DuplicateRequest") {
+        pendingCheckoutRef.current = null;
+        writePendingCheckout(null);
+        setCart(null);
+        setStatusMessage(`Sale completed on host. Receipt ${resolved.receiptNumber ?? ""}.`);
+      } else if (resolved.status !== "PendingConfirmation" && resolved.status !== "RetryableUnknown") {
+        pendingCheckoutRef.current = null;
+        writePendingCheckout(null);
+        setStatusMessage(`Checkout responded: ${resolved.status}. ${resolved.message}`);
+      } else {
+        setStatusMessage("Checkout confirmation is still pending on the Host. Retry confirmation with the same request.");
       }
     },
     [authedConnection, run],
   );
+
+  useEffect(() => {
+    if (!authedConnection) return;
+    const pending = readPendingCheckout(authedConnection.hostBaseUrl);
+    if (!pending) return;
+    pendingCheckoutRef.current = pending;
+    setStatusMessage("Restoring pending checkout confirmation from this terminal.");
+    void fetchRemotePosCheckoutStatus(authedConnection, pending.clientRequestId)
+      .then((result) => {
+        setLastCheckout(result);
+        if (result.status === "Completed" || result.status === "DuplicateRequest") {
+          pendingCheckoutRef.current = null;
+          writePendingCheckout(null);
+          setCart(null);
+          setStatusMessage(`Sale completed on host. Receipt ${result.receiptNumber ?? ""}.`);
+        }
+      })
+      .catch(() => {
+        setStatusMessage("Checkout confirmation is pending. Do not create another sale until the Host is reachable.");
+      });
+  }, [authedConnection]);
 
   const effectiveFlowState = useMemo<RemotePosFlowState>(() => {
     if (isConnected) return "S6_REMOTE_POS_READY";

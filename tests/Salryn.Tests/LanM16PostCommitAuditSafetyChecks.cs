@@ -32,26 +32,22 @@ public static class LanM16PostCommitAuditSafetyChecks
 
         int commitCall = execute.IndexOf("CompleteSaleAsync", StringComparison.Ordinal);
         int commitFailureGuard = execute.IndexOf("if (completion.IsFailure)", StringComparison.Ordinal);
-        int memoize = execute.IndexOf("_idempotency[idempotencyKey] = completed;", StringComparison.Ordinal);
+        int persistCompletion = execute.IndexOf("_requestStore.MarkCompletedAsync(", StringComparison.Ordinal);
         int cartClear = execute.IndexOf("cart.Lines.Clear();", StringComparison.Ordinal);
         int auditCall = execute.IndexOf("WriteAuditAsync(", StringComparison.Ordinal);
 
         AssertTrue(commitCall >= 0, "Host sale must be completed via CompleteSaleAsync.");
-        AssertTrue(commitFailureGuard >= 0, "A pre-commit failure must be handled before memoization.");
-        AssertTrue(memoize >= 0, "The committed success must be memoized to the idempotency map.");
+        AssertTrue(commitFailureGuard >= 0, "A pre-commit failure must be handled before completion persistence.");
+        AssertTrue(persistCompletion >= 0, "The committed success must be persisted to the durable request ledger.");
         AssertTrue(cartClear >= 0, "The cart must be cleared after a committed sale.");
         AssertTrue(auditCall >= 0, "The checkout must write an audit trail.");
 
-        // Ordering: commit -> memoize success -> clear cart -> best-effort audit.
-        AssertTrue(commitCall < memoize, "Sale must commit before the success is memoized.");
-        AssertTrue(commitFailureGuard < memoize, "A pre-commit failure must be rejected before memoization.");
-        AssertTrue(memoize < auditCall, "Success must be memoized BEFORE the best-effort audit runs.");
+        // Ordering: commit -> persist success -> clear cart -> best-effort audit.
+        AssertTrue(commitCall < persistCompletion, "Sale must commit before its result is persisted.");
+        AssertTrue(commitFailureGuard < persistCompletion, "A pre-commit failure must be rejected before completion persistence.");
+        AssertTrue(persistCompletion < auditCall, "Success must be persisted BEFORE the best-effort audit runs.");
         AssertTrue(cartClear < auditCall, "The cart must be cleared BEFORE the best-effort audit runs.");
-
-        // The idempotency key flows into ExecuteSubmitAsync so memoization is keyed identically.
-        AssertContains(checkout, "string idempotencyKey,", "ExecuteSubmitAsync must receive the idempotency key for immediate memoization.");
-        AssertContains(checkout, "await ExecuteSubmitAsync(session, request, key, cancellationToken)",
-            "SubmitAsync must pass the idempotency key into ExecuteSubmitAsync.");
+        AssertContains(checkout, "ReconcileRecordAsync", "Interrupted completion persistence must be recoverable from the authoritative sale.");
     }
 
     private static void AssertAuditIsWrappedBestEffort(string checkout)
@@ -93,9 +89,9 @@ public static class LanM16PostCommitAuditSafetyChecks
         AssertNotContains(audit, "throw", "The best-effort audit must never rethrow after a committed sale.");
         AssertNotContains(audit, "ex.Message", "The audit path must never surface raw exception detail.");
 
-        // The retryable-unknown catch in SubmitAsync gives safe retry guidance and leaks nothing raw.
-        AssertContains(checkout, "Retry is safe", "Retryable failures must give safe retry guidance.");
-        AssertContains(checkout, "the host sale commits", "SubmitAsync must document that only pre-commit errors are retryable-unknown.");
+        // An unexpected exception must reconcile durable state rather than telling a client to mint a new request.
+        AssertContains(checkout, "ReconcileRecordAsync", "Unexpected checkout failures must reconcile durable request state.");
+        AssertContains(checkout, "failed before a durable request was recorded", "Pre-ledger failures must remain distinguishable.");
     }
 
     private static void AssertWiring(string doc, string coreSmoke, string infraSmoke)

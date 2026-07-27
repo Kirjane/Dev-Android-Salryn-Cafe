@@ -51,11 +51,24 @@ internal static class RemotePosCheckoutIdempotencySmokeChecks
             clientRequestId,
             new[] { new RemotePosCheckoutPaymentRequest("Cash", 5000) });
 
-        // First submit -> completed on host.
-        RemotePosCheckoutResultResponse first = checkout.SubmitAsync(session, request).GetAwaiter().GetResult();
+        // Two concurrent submits with the same key must serialize asynchronously: exactly one
+        // completion and one replay, with no thread-affine Monitor held across database awaits.
+        Task<RemotePosCheckoutResultResponse>[] concurrent =
+        {
+            checkout.SubmitAsync(session, request),
+            checkout.SubmitAsync(session, request),
+        };
+        Task.WhenAll(concurrent).GetAwaiter().GetResult();
+        RemotePosCheckoutResultResponse first = concurrent
+            .Select(task => task.Result)
+            .Single(result => result.Status == RemotePosCheckoutStatus.Completed);
+        RemotePosCheckoutResultResponse concurrentReplay = concurrent
+            .Select(task => task.Result)
+            .Single(result => result.Status == RemotePosCheckoutStatus.DuplicateRequest);
         RemotePosSmokeSupport.Require(first.Status == RemotePosCheckoutStatus.Completed,
             $"First submit must complete, got {first.Status}: {first.Message}");
         RemotePosSmokeSupport.Require(!first.Duplicate, "First submit must not be flagged duplicate.");
+        RemotePosSmokeSupport.Require(concurrentReplay.Duplicate, "Concurrent replay must be flagged duplicate.");
         RemotePosSmokeSupport.Require(!string.IsNullOrWhiteSpace(first.ReceiptNumber) && first.ReceiptNumber!.StartsWith("RPOS-", StringComparison.Ordinal),
             "Receipt number must be host-allocated with the RPOS- prefix.");
         RemotePosSmokeSupport.Require(first.TotalCents == 3000, "Sale total must be host-computed 3000.");
@@ -90,9 +103,26 @@ internal static class RemotePosCheckoutIdempotencySmokeChecks
             "Duplicate submit must not decrement stock again.");
 
         // Status lookup by client request id returns the memoized result.
-        RemotePosCheckoutResultResponse? found = checkout.FindCheckoutResult(session, clientRequestId);
+        RemotePosCheckoutResultResponse? found = checkout
+            .FindCheckoutResultAsync(session, clientRequestId)
+            .GetAwaiter()
+            .GetResult();
         RemotePosSmokeSupport.Require(found is not null && found.ReceiptNumber == receiptNumber,
             "Checkout status lookup must return the original result for the client request id.");
+
+        // A fresh service instance has an empty memory cache. It must recover the completed
+        // request from the durable host ledger and return the original receipt and sale.
+        RemotePosApiServices restartedServices = RemotePosSmokeSupport.CreateServices(
+            projectRoot, out _, out _);
+        RemotePosCheckoutResultResponse? recoveredAfterRestart = restartedServices.CheckoutService
+            .FindCheckoutResultAsync(session, clientRequestId)
+            .GetAwaiter()
+            .GetResult();
+        RemotePosSmokeSupport.Require(
+            recoveredAfterRestart is not null
+            && recoveredAfterRestart.ReceiptNumber == receiptNumber
+            && recoveredAfterRestart.SaleId == first.SaleId,
+            "A fresh checkout service must recover the original result from the durable request ledger.");
 
         // A different idempotency key with an (already cleared) empty cart fails safely without writing.
         RemotePosCheckoutResultResponse emptyCart = checkout

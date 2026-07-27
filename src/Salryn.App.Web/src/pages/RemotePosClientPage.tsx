@@ -598,9 +598,6 @@ export function RemotePosClientPage({ onExitToLanding }: RemotePosClientPageProp
               <Button variant="ghost" onClick={confirmClearPairingOrState} disabled={client.busy !== "idle"}>
                 Clear this device pairing and saved cashier session
               </Button>
-              <Button variant="ghost" disabled={client.busy !== "idle"} onClick={confirmClearPairingOrState}>
-                Clear this device state
-              </Button>
             </div>
           </CardBody>
         </Card>

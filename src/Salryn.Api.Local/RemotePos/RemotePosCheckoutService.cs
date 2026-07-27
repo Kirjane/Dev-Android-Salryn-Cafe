@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
 using Salryn.Core.Common;
 using Salryn.Core.Models;
 using Salryn.Core.ReadModels;
@@ -19,6 +21,7 @@ public static class RemotePosCheckoutStatus
     public const string OpenShiftRequired = "OpenShiftRequired";
     public const string ValidationFailed = "ValidationFailed";
     public const string RetryableUnknown = "RetryableUnknown";
+    public const string PendingConfirmation = "PendingConfirmation";
     public const string NotFound = "NotFound";
 }
 
@@ -42,10 +45,11 @@ public sealed class RemotePosCheckoutService
     private readonly ISaleReadRepository _saleReadRepository;
     private readonly IAuditWriteRepository _auditWriteRepository;
     private readonly RemotePosReceiptNumberAllocator _receiptAllocator;
+    private readonly RemotePosCheckoutRequestStore _requestStore;
 
     private readonly ConcurrentDictionary<Guid, RemotePosCart> _carts = new();
-    private readonly ConcurrentDictionary<string, RemotePosCheckoutResultResponse> _idempotency = new();
-    private readonly ConcurrentDictionary<string, object> _idempotencyLocks = new();
+    private readonly object _idempotencyGateSync = new();
+    private readonly Dictionary<string, IdempotencyGate> _idempotencyGates = new();
 
     public RemotePosCheckoutService(
         IProductReadRepository productReadRepository,
@@ -53,7 +57,8 @@ public sealed class RemotePosCheckoutService
         ICashierSessionService cashierSessionService,
         ISaleReadRepository saleReadRepository,
         IAuditWriteRepository auditWriteRepository,
-        RemotePosReceiptNumberAllocator receiptAllocator)
+        RemotePosReceiptNumberAllocator receiptAllocator,
+        RemotePosCheckoutRequestStore requestStore)
     {
         _productReadRepository = productReadRepository ?? throw new ArgumentNullException(nameof(productReadRepository));
         _checkoutApplicationService = checkoutApplicationService ?? throw new ArgumentNullException(nameof(checkoutApplicationService));
@@ -61,6 +66,7 @@ public sealed class RemotePosCheckoutService
         _saleReadRepository = saleReadRepository ?? throw new ArgumentNullException(nameof(saleReadRepository));
         _auditWriteRepository = auditWriteRepository ?? throw new ArgumentNullException(nameof(auditWriteRepository));
         _receiptAllocator = receiptAllocator ?? throw new ArgumentNullException(nameof(receiptAllocator));
+        _requestStore = requestStore ?? throw new ArgumentNullException(nameof(requestStore));
     }
 
     // ---- Cart lifecycle -------------------------------------------------------------------
@@ -338,10 +344,15 @@ public sealed class RemotePosCheckoutService
 
     // ---- Checkout submit (idempotent host write) ------------------------------------------
 
-    public RemotePosCheckoutResultResponse? FindCheckoutResult(RemotePosOperatorSession session, string clientRequestId)
+    public async Task<RemotePosCheckoutResultResponse?> FindCheckoutResultAsync(
+        RemotePosOperatorSession session,
+        string clientRequestId,
+        CancellationToken cancellationToken = default)
     {
-        string key = BuildIdempotencyKey(session, clientRequestId);
-        return _idempotency.TryGetValue(key, out RemotePosCheckoutResultResponse? result) ? result : null;
+        RemotePosCheckoutRequestRecord? record = await _requestStore
+            .FindAsync(session.StoreId, session.TerminalId, clientRequestId, cancellationToken)
+            .ConfigureAwait(false);
+        return record is null ? null : await ReconcileRecordAsync(record, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<RemotePosCheckoutResultResponse> SubmitAsync(
@@ -358,54 +369,61 @@ public sealed class RemotePosCheckoutService
         }
 
         string key = BuildIdempotencyKey(session, request.ClientRequestId);
-        object gate = _idempotencyLocks.GetOrAdd(key, _ => new object());
+        IdempotencyGate gate = RentIdempotencyGate(key);
 
-        // Kirch: why - serialize submits sharing an idempotency key so a LAN drop + retry cannot
-        // race two host writes. The DB sales.receipt_no UNIQUE constraint is the final backstop.
-        bool lockTaken = false;
         try
         {
-            Monitor.Enter(gate, ref lockTaken);
+            await gate.Semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            ReturnIdempotencyGate(key, gate);
+            throw;
+        }
 
-            if (_idempotency.TryGetValue(key, out RemotePosCheckoutResultResponse? existing))
+        try
+        {
+            RemotePosCheckoutRequestRecord? durable = await _requestStore
+                .FindAsync(session.StoreId, session.TerminalId, request.ClientRequestId, cancellationToken)
+                .ConfigureAwait(false);
+            if (durable is not null)
             {
-                return existing with { Duplicate = true, Status = RemotePosCheckoutStatus.DuplicateRequest };
+                RemotePosCheckoutResultResponse reconciled =
+                    await ReconcileRecordAsync(durable, cancellationToken).ConfigureAwait(false);
+                if (reconciled.Status == RemotePosCheckoutStatus.Completed)
+                {
+                    return reconciled with { Duplicate = true, Status = RemotePosCheckoutStatus.DuplicateRequest };
+                }
             }
 
             RemotePosCheckoutResultResponse result =
-                await ExecuteSubmitAsync(session, request, key, cancellationToken).ConfigureAwait(false);
-
-            // Backstop only: ExecuteSubmitAsync already memoizes a completed sale immediately after
-            // the host commit (before any best-effort side effect). Only durable, completed sales
-            // are memoized for idempotent replay; a pre-commit failure is intentionally not cached.
-            if (result.Status == RemotePosCheckoutStatus.Completed)
-            {
-                _idempotency[key] = result;
-            }
-
+                await ExecuteSubmitAsync(session, request, durable, cancellationToken).ConfigureAwait(false);
             return result;
         }
         catch (Exception)
         {
-            // Kirch: why - an exception here can only originate BEFORE the host sale commits (all
-            // post-commit work is memoized + wrapped best-effort inside ExecuteSubmitAsync). No sale
-            // was posted, so RetryableUnknown is safe: a retry re-runs from a clean state.
+            RemotePosCheckoutRequestRecord? durable = await _requestStore
+                .FindAsync(session.StoreId, session.TerminalId, request.ClientRequestId, CancellationToken.None)
+                .ConfigureAwait(false);
+            if (durable is not null)
+            {
+                return await ReconcileRecordAsync(durable, CancellationToken.None).ConfigureAwait(false);
+            }
+
             return Result(RemotePosCheckoutStatus.RetryableUnknown, request.ClientRequestId,
-                "Remote checkout hit an unexpected error. Retry is safe.", duplicate: false);
+                "Remote checkout failed before a durable request was recorded.", duplicate: false);
         }
         finally
         {
-            if (lockTaken)
-            {
-                Monitor.Exit(gate);
-            }
+            gate.Semaphore.Release();
+            ReturnIdempotencyGate(key, gate);
         }
     }
 
     private async Task<RemotePosCheckoutResultResponse> ExecuteSubmitAsync(
         RemotePosOperatorSession session,
         RemotePosCheckoutSubmitRequest request,
-        string idempotencyKey,
+        RemotePosCheckoutRequestRecord? durableRequest,
         CancellationToken cancellationToken)
     {
         if (request.Payments is null || request.Payments.Count == 0)
@@ -478,8 +496,25 @@ public sealed class RemotePosCheckoutService
                 "An open cashier shift is required on the host before checkout.", duplicate: false);
         }
 
-        // Host owns the document number; the client never supplies it.
-        string receiptNumber = _receiptAllocator.AllocateNext();
+        string requestHash = BuildRequestHash(cart.CartId, lines, payments);
+        RemotePosCheckoutRequestRecord ledger = durableRequest
+            ?? await _requestStore.GetOrCreatePendingAsync(
+                    session.StoreId,
+                    session.TerminalId,
+                    request.ClientRequestId,
+                    requestHash,
+                    _receiptAllocator.AllocateNext(),
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+        if (!string.Equals(ledger.RequestHash, requestHash, StringComparison.Ordinal))
+        {
+            return Result(RemotePosCheckoutStatus.ValidationFailed, request.ClientRequestId,
+                "This checkout request id was already used for different cart or payment details.", duplicate: false);
+        }
+
+        // Host owns the stable receipt number recorded before posting; the client never supplies it.
+        string receiptNumber = ledger.ReceiptNumber;
 
         PosCheckoutApplicationRequest applicationRequest = new(
             session.UserId,
@@ -522,10 +557,17 @@ public sealed class RemotePosCheckoutService
             Duplicate: false,
             Message: "Remote sale completed on host.");
 
-        // Kirch: why - memoize the committed success IMMEDIATELY, before any best-effort side effect
-        // that could throw (audit, cart clear). A LAN drop + retry after the commit must replay this
-        // exact result via the idempotency map, never re-post the sale or re-decrement inventory.
-        _idempotency[idempotencyKey] = completed;
+        // Persist the committed result before any best-effort side effect. If this update itself is
+        // interrupted, reconciliation uses the stable receipt recorded before posting and repairs
+        // the ledger from the authoritative sale row.
+        await _requestStore.MarkCompletedAsync(
+                ledger,
+                completed.SaleId,
+                completed.TotalCents,
+                completed.ChangeCents,
+                completed.Message,
+                cancellationToken)
+            .ConfigureAwait(false);
 
         // Clear the cart deterministically after the committed success. This is an in-memory list
         // clear under the cart lock and cannot fail the sale or create retry ambiguity.
@@ -639,6 +681,114 @@ public sealed class RemotePosCheckoutService
     private static string BuildIdempotencyKey(RemotePosOperatorSession session, string clientRequestId) =>
         $"{session.StoreId:N}:{session.TerminalId:N}:{clientRequestId}";
 
+    private async Task<RemotePosCheckoutResultResponse> ReconcileRecordAsync(
+        RemotePosCheckoutRequestRecord record,
+        CancellationToken cancellationToken)
+    {
+        if (record.State == RemotePosCheckoutRequestStore.Completed)
+        {
+            return new RemotePosCheckoutResultResponse(
+                RemotePosCheckoutStatus.Completed,
+                record.ClientRequestId,
+                record.ReceiptNumber,
+                record.SaleId,
+                record.TotalCents,
+                record.ChangeCents,
+                false,
+                record.Message);
+        }
+
+        Result<SaleDetailReadModel?> saleResult = await _saleReadRepository
+            .FindSaleByReceiptNoAsync(record.ReceiptNumber, cancellationToken)
+            .ConfigureAwait(false);
+        SaleDetailReadModel? sale = saleResult.IsSuccess ? saleResult.Value : null;
+        if (sale is null)
+        {
+            return new RemotePosCheckoutResultResponse(
+                RemotePosCheckoutStatus.PendingConfirmation,
+                record.ClientRequestId,
+                record.ReceiptNumber,
+                null,
+                null,
+                null,
+                false,
+                "Checkout is not committed; the original request may be retried with the same request id.");
+        }
+
+        const string message = "Remote sale completed on host.";
+        await _requestStore.MarkCompletedAsync(
+                record,
+                sale.Id.ToString(),
+                sale.Total.Cents,
+                sale.Change.Cents,
+                message,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return new RemotePosCheckoutResultResponse(
+            RemotePosCheckoutStatus.Completed,
+            record.ClientRequestId,
+            record.ReceiptNumber,
+            sale.Id.ToString(),
+            sale.Total.Cents,
+            sale.Change.Cents,
+            false,
+            message);
+    }
+
+    private IdempotencyGate RentIdempotencyGate(string key)
+    {
+        lock (_idempotencyGateSync)
+        {
+            if (!_idempotencyGates.TryGetValue(key, out IdempotencyGate? gate))
+            {
+                gate = new IdempotencyGate();
+                _idempotencyGates.Add(key, gate);
+            }
+
+            gate.Renters++;
+            return gate;
+        }
+    }
+
+    private void ReturnIdempotencyGate(string key, IdempotencyGate gate)
+    {
+        bool dispose = false;
+        lock (_idempotencyGateSync)
+        {
+            gate.Renters--;
+            if (gate.Renters == 0
+                && _idempotencyGates.TryGetValue(key, out IdempotencyGate? current)
+                && ReferenceEquals(current, gate))
+            {
+                _idempotencyGates.Remove(key);
+                dispose = true;
+            }
+        }
+
+        if (dispose)
+        {
+            gate.Semaphore.Dispose();
+        }
+    }
+
+    private static string BuildRequestHash(
+        Guid cartId,
+        IReadOnlyList<PosCheckoutLineInput> lines,
+        IReadOnlyList<PosCheckoutPaymentInput> payments)
+    {
+        StringBuilder canonical = new();
+        canonical.Append(cartId.ToString("N"));
+        foreach (PosCheckoutLineInput line in lines.OrderBy(line => line.ProductId))
+        {
+            canonical.Append('|').Append(line.ProductId.ToString("N")).Append(':').Append(line.QuantityX1000);
+        }
+        foreach (PosCheckoutPaymentInput payment in payments)
+        {
+            canonical.Append('|').Append(payment.Method).Append(':').Append(payment.AmountCents);
+        }
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString())));
+    }
+
     private static RemotePosCartOperationResult Ok(RemotePosCartResponse cart) =>
         new(true, "RemotePos.Cart.Ok", cart.Message, cart);
 
@@ -647,6 +797,13 @@ public sealed class RemotePosCheckoutService
 
     private static RemotePosCheckoutResultResponse Result(string status, string clientRequestId, string message, bool duplicate) =>
         new(status, clientRequestId, null, null, null, null, duplicate, message);
+
+    private sealed class IdempotencyGate
+    {
+        public SemaphoreSlim Semaphore { get; } = new(1, 1);
+
+        public int Renters { get; set; }
+    }
 
     private sealed class RemotePosCart
     {

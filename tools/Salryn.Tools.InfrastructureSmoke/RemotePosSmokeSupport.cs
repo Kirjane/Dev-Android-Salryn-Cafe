@@ -21,8 +21,10 @@ internal static class RemotePosSmokeSupport
 {
     public static void EnsureDatabaseReady(string projectRoot)
     {
+        string developmentRoot =
+            Environment.GetEnvironmentVariable("SALRYN_CORE_SMOKE_DEVELOPMENT_ROOT") ?? projectRoot;
         DatabaseInitializationOrchestrator orchestrator =
-            DefaultDatabaseInitializationFactory.CreateDevelopment(projectRoot);
+            DefaultDatabaseInitializationFactory.CreateDevelopment(developmentRoot);
 
         bool needsBootstrap = !File.Exists(orchestrator.DatabasePath);
 
@@ -34,7 +36,7 @@ internal static class RemotePosSmokeSupport
 
         if (needsBootstrap)
         {
-            RepositorySmokeChecks.Run(projectRoot);
+            RepositorySmokeChecks.Run(developmentRoot);
         }
     }
 
@@ -213,8 +215,10 @@ internal static class RemotePosSmokeSupport
 
     public static SqliteConnection OpenConnection(string projectRoot)
     {
+        string developmentRoot =
+            Environment.GetEnvironmentVariable("SALRYN_CORE_SMOKE_DEVELOPMENT_ROOT") ?? projectRoot;
         DatabaseInitializationOrchestrator orchestrator =
-            DefaultDatabaseInitializationFactory.CreateDevelopment(projectRoot);
+            DefaultDatabaseInitializationFactory.CreateDevelopment(developmentRoot);
 
         SqliteConnection connection = new($"Data Source={orchestrator.DatabasePath}");
         connection.Open();

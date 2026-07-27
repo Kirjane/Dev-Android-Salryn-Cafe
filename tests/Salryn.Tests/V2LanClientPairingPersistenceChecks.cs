@@ -121,7 +121,7 @@ public static class V2LanClientPairingPersistenceChecks
         AssertContains(landingPage, "clearAllLanClientDeviceState", "Remote client landing must clear pairing and operator token storage.");
         AssertContains(storage, "clearAllLanClientDeviceState", "Storage helper must expose full device clear.");
         AssertContains(page, "Clear this device pairing and saved cashier session", "Remote POS page must expose clear pairing + session action.");
-        AssertContains(page, "Clear this device state", "Remote POS page must expose clear device state action.");
+        AssertNotContains(page, ">Clear this device state<", "Remote POS page must not duplicate the full clear-device action.");
         AssertContains(page, "Passwords are never stored", "Remote POS page must keep password non-storage truth.");
         AssertContains(page, "Admin and Owner accounts are host-local only", "Remote POS page must keep Admin/Owner host-local.");
         AssertContains(terminalShell, "Sign out of this terminal?", "Terminal shell sign out must confirm.");

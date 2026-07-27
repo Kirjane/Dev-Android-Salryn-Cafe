@@ -23,7 +23,7 @@ public static class PreBetaCStoreLogoBrandingChecks
         string terminalShell = File.ReadAllText(Path.Combine(root, "src", "Salryn.App.Web", "src", "components", "TerminalShell.tsx"));
         string migration = File.ReadAllText(Path.Combine(root, "src", "Salryn.Infrastructure", "Data", "Migrations", "StoreLogoBrandingSchemaMigration.cs"));
 
-        RequireContains(catalog, "SupportedMigrationVersion = 20", "Catalog must advance to migration 20 for store logo.");
+        RequireContains(catalog, "SupportedMigrationVersion = 21", "Catalog must include the Remote POS checkout ledger migration.");
         RequireContains(factory, "StoreLogoBrandingSchemaMigration", "Factory must register store logo migration.");
         RequireContains(migration, "logo_content_type", "Migration must add logo_content_type.");
         RequireContains(migration, "logo_bytes", "Migration must add logo_bytes.");
@@ -56,7 +56,7 @@ public static class PreBetaCStoreLogoBrandingChecks
             using var cmd = connection.CreateCommand();
             cmd.CommandText = "SELECT COALESCE(MAX(version),0) FROM schema_migrations;";
             int max = Convert.ToInt32(cmd.ExecuteScalar());
-            RequireTrue(max == 20, "DB must migrate to version 20.");
+            RequireTrue(max == 21, "DB must migrate to version 21.");
 
             HashSet<string> cols = new(StringComparer.OrdinalIgnoreCase);
             cmd.CommandText = "PRAGMA table_info(store_settings);";

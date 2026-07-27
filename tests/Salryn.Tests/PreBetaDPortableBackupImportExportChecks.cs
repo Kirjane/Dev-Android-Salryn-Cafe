@@ -118,7 +118,7 @@ public static class PreBetaDPortableBackupImportExportChecks
                     INSERT INTO schema_migrations (version, name, applied_at)
                     VALUES ($v, 'future-probe', $ts);
                     """;
-                // SupportedMigrationVersion is currently 20; probe future = 21.
+                // Probe one version beyond the runtime-supported migration catalog.
                 cmd.Parameters.AddWithValue("$v", 21);
                 cmd.Parameters.AddWithValue("$ts", DateTimeOffset.UtcNow.ToString("O"));
                 cmd.ExecuteNonQuery();

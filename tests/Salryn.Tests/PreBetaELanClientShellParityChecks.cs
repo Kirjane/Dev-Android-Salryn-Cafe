@@ -14,18 +14,22 @@ public static class PreBetaELanClientShellParityChecks
         string app = Read(root, "src", "Salryn.App.Web", "src", "App.tsx");
         string activation = Read(root, "src", "Salryn.App.Web", "src", "pages", "TerminalActivationPage.tsx");
         string hostShell = Read(root, "src", "Salryn.App.Web", "src", "components", "AppShell.tsx");
+        string sharedShell = Read(root, "src", "Salryn.App.Web", "src", "components", "RoleAwareAppShell.tsx");
         string sessions = Read(root, "src", "Salryn.Api.Local", "RemotePos", "RemotePosOperatorSessionService.cs");
 
         // Terminal shell parity components
-        RequireContains(terminalShell, "Terminal Mode", "Terminal shell must show Terminal Mode.");
+        RequireContains(terminalShell, "RoleAwareAppShell", "Terminal shell must use the same role-aware shell implementation as Host.");
+        RequireContains(hostShell, "RoleAwareAppShell", "Host shell must use the shared role-aware shell implementation.");
+        RequireContains(terminalShell, "Terminal Ready", "Terminal shell must identify terminal readiness.");
         RequireContains(terminalShell, "POS Checkout", "Terminal shell must include POS Checkout nav.");
-        RequireContains(terminalShell, "bg-navy-900", "Terminal shell must use Host navy header language.");
-        RequireContains(terminalShell, "bg-navy-800", "Terminal shell must use Host navy rail language.");
+        RequireContains(sharedShell, "bg-navy-900", "Shared shell must use Host navy header language.");
+        RequireContains(sharedShell, "bg-navy-800", "Shared shell must use Host navy rail language.");
+        RequireContains(sharedShell, "Collapse sidebar", "Shared shell must expose responsive sidebar controls.");
         RequireNotContains(terminalShell, "host-lan-control", "Terminal shell must not include Terminal Management nav.");
         RequireNotContains(terminalShell, "Backup & Restore", "Terminal shell must not expose Backup nav label.");
         RequireNotContains(terminalShell, "Store Settings", "Terminal shell must not expose Store Settings nav.");
         RequireNotContains(terminalShell, "Terminal Management", "Terminal shell must not expose Terminal Management nav.");
-        RequireContains(terminalShell, "Host admin pages are not available on LAN terminals", "Terminal shell must state host admin pages are unavailable.");
+        RequireContains(terminalShell, "Host routes remain unmounted", "Terminal shell must preserve host-route isolation.");
 
         // Logged-in remote POS uses TerminalShell
         RequireContains(remotePos, "TerminalShell", "Remote POS ready state must render TerminalShell.");

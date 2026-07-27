@@ -42,13 +42,16 @@ public static class LanM16RemoteCheckoutIdempotencyAndHostWriteChecks
 
     private static void AssertIdempotency(string checkout)
     {
-        AssertContains(checkout, "_idempotency", "Remote checkout must maintain an idempotency map.");
+        AssertContains(checkout, "_idempotencyGates", "Remote checkout must serialize concurrent requests with the same idempotency key.");
         AssertContains(checkout, "BuildIdempotencyKey", "Remote checkout must key idempotency by store/terminal/client request id.");
         AssertContains(checkout, "RemotePosCheckoutStatus.DuplicateRequest", "Remote checkout must return DuplicateRequest on replay.");
-        AssertContains(checkout, "Monitor.Enter", "Remote checkout must serialize submits sharing an idempotency key.");
+        AssertContains(checkout, "SemaphoreSlim", "Remote checkout must use async-safe keyed serialization.");
+        AssertContains(checkout, "WaitAsync", "Remote checkout serialization must not hold a thread-affine lock across await.");
+        AssertNotContains(checkout, "Monitor.Enter", "Remote checkout must not hold a Monitor across asynchronous database work.");
+        AssertContains(checkout, "RemotePosCheckoutRequestStore", "Remote checkout must persist request reconciliation state.");
         AssertContains(checkout, "ClientRequestId", "Remote checkout must require a client request id (idempotency key).");
-        // Only durable, completed sales are memoized for idempotent replay.
-        AssertContains(checkout, "result.Status == RemotePosCheckoutStatus.Completed", "Only completed sales may be memoized for idempotent replay.");
+        AssertContains(checkout, "MarkCompletedAsync", "Committed checkout results must be persisted for idempotent replay.");
+        AssertContains(checkout, "ReconcileRecordAsync", "Durable pending requests must reconcile against the authoritative sale.");
     }
 
     private static void AssertHostOwnedReceipt(string checkout, string allocator, string contracts)

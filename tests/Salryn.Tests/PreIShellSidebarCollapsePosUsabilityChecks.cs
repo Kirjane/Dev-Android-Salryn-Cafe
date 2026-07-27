@@ -9,7 +9,7 @@ public static class PreIShellSidebarCollapsePosUsabilityChecks
     public static void Run()
     {
         string root = FindRoot();
-        string shell = Read(root, "src", "Salryn.App.Web", "src", "components", "AppShell.tsx");
+        string shell = Read(root, "src", "Salryn.App.Web", "src", "components", "RoleAwareAppShell.tsx");
         string commandBar = Read(root, "src", "Salryn.App.Web", "src", "components", "ui", "CommandBar.tsx");
         string dialog = Read(root, "src", "Salryn.App.Web", "src", "components", "ui", "Dialog.tsx");
         string dataTable = Read(root, "src", "Salryn.App.Web", "src", "components", "ui", "DataTable.tsx");
@@ -25,7 +25,7 @@ public static class PreIShellSidebarCollapsePosUsabilityChecks
         RequireContains(shell, "Collapse sidebar", "Collapse control label.");
         RequireContains(shell, "Expand sidebar", "Expand control label.");
         RequireContains(shell, "aria-expanded={!sidebarCollapsed}", "Accessible sidebar state.");
-        RequireContains(shell, "sidebarStorageKey", "Sidebar preference persistence.");
+        RequireContains(shell, "storageKey", "Sidebar preference persistence.");
         RequireContains(shell, "sidebarCollapsed ? \"w-16\" : \"w-60\"", "Collapsed and expanded widths.");
         RequireContains(shell, "overflow-x-hidden overflow-y-auto", "Workspace horizontal overflow boundary.");
         RequireContains(shell, "min-w-0 flex-1", "Shell shrink boundary.");

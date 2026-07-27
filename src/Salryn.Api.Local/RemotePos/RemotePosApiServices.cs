@@ -83,7 +83,8 @@ public sealed class RemotePosApiServices
             cashierSessionService,
             composition.SaleReadRepository,
             repositories.CreateAuditWriteRepository(),
-            new RemotePosReceiptNumberAllocator());
+            new RemotePosReceiptNumberAllocator(),
+            new RemotePosCheckoutRequestStore(composition.ConnectionFactory));
 
         RemotePosCapacityPolicy capacityPolicy = new();
         LocalLanTerminalEntitlementService lanEntitlements = new(new LocalLicenseService());

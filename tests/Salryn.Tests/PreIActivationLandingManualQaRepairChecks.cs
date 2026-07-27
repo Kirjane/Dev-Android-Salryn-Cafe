@@ -21,6 +21,7 @@ public static class PreIActivationLandingManualQaRepairChecks
         string navigation = File.ReadAllText(Path.Combine(root, "src", "Salryn.App.Web", "src", "navigation.ts"));
         string appShell = File.ReadAllText(Path.Combine(root, "src", "Salryn.App.Web", "src", "components", "AppShell.tsx"));
         string terminalShell = File.ReadAllText(Path.Combine(root, "src", "Salryn.App.Web", "src", "components", "TerminalShell.tsx"));
+        string sharedShell = File.ReadAllText(Path.Combine(root, "src", "Salryn.App.Web", "src", "components", "RoleAwareAppShell.tsx"));
         string hostLan = File.ReadAllText(Path.Combine(root, "src", "Salryn.App.Web", "src", "pages", "HostLanControlPage.tsx"));
         string orchestrator = File.ReadAllText(Path.Combine(root, "src", "Salryn.Infrastructure", "Data", "Initialization", "DatabaseInitializationOrchestrator.cs"));
         string logoMigration = File.ReadAllText(Path.Combine(root, "src", "Salryn.Infrastructure", "Data", "Migrations", "StoreLogoBrandingSchemaMigration.cs"));
@@ -89,8 +90,9 @@ public static class PreIActivationLandingManualQaRepairChecks
         // Responsive shells
         RequireNotContains(appShell, "min-w-[48rem]", "AppShell must not force desktop min-width.");
         RequireNotContains(terminalShell, "min-w-[48rem]", "TerminalShell must not force desktop min-width.");
-        RequireContains(appShell, "min-w-0", "AppShell allows flex shrink.");
-        RequireContains(terminalShell, "min-w-0", "TerminalShell allows flex shrink.");
+        RequireContains(sharedShell, "min-w-0", "Shared Host/Terminal shell allows flex shrink.");
+        RequireContains(appShell, "RoleAwareAppShell", "Host must use shared role-aware shell.");
+        RequireContains(terminalShell, "RoleAwareAppShell", "Terminal must use shared role-aware shell.");
 
         // Terminal Management product copy
         RequireContains(hostLan, "Terminal licenses are issued from the Host license context", "Host-context issuance.");

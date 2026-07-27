@@ -344,7 +344,9 @@ public static class RemotePosApiEndpoints
                 return rejected;
             }
 
-            RemotePosCheckoutResultResponse? result = services.CheckoutService.FindCheckoutResult(session!, clientRequestId);
+            RemotePosCheckoutResultResponse? result = await services.CheckoutService
+                .FindCheckoutResultAsync(session!, clientRequestId, cancellationToken)
+                .ConfigureAwait(false);
 
             if (result is null)
             {
