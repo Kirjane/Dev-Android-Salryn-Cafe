@@ -15,7 +15,8 @@ public sealed record HostOperatorCheckoutRequest(
     string? CustomerFullName = null,
     string? CustomerPhone = null,
     DateOnly? DueDate = null,
-    string? Note = null);
+    string? Note = null,
+    string? ClientRequestId = null);
 
 public sealed record HostOperatorCheckoutResponse(
     string Status,
@@ -27,4 +28,6 @@ public sealed record HostOperatorCheckoutResponse(
     bool ReceiptSnapshotSaved = false,
     string FileReceiptStatus = "NotAttempted",
     string? FileReceiptPath = null,
-    string? FileReceiptError = null);
+    string? FileReceiptError = null,
+    string? ClientRequestId = null,
+    bool Duplicate = false);

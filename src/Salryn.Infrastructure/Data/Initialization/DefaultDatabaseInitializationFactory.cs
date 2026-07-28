@@ -41,6 +41,8 @@ public static class DefaultDatabaseInitializationFactory
         // Version 18 adds store printer mode.
         // Version 19 adds the configured Windows printer name for host print-queue submission.
         // Version 21 adds durable Remote POS checkout request reconciliation.
+        // Version 22 adds the U1 accounts receivable ledger.
+        // Version 23 adds durable host checkout request reconciliation.
         IDatabaseMigration[] migrations =
         {
             new InitialSchemaMigration(),
@@ -64,7 +66,8 @@ public static class DefaultDatabaseInitializationFactory
             new WindowsPrinterNameSchemaMigration(),
             new StoreLogoBrandingSchemaMigration(),
             new RemotePosCheckoutRequestSchemaMigration(),
-            new AccountsReceivableSchemaMigration()
+            new AccountsReceivableSchemaMigration(),
+            new HostCheckoutRequestSchemaMigration()
         };
 
         MigrationRunner migrationRunner = new(connectionFactory, migrations);

@@ -118,6 +118,7 @@ export function CheckoutPage() {
   const [barcodeStatus, setBarcodeStatus] = useState<string | null>(null);
   const [printResult, setPrintResult] = useState<ReceiptPrintResult | null>(null);
   const scanInputRef = useRef<HTMLInputElement | null>(null);
+  const checkoutRequestIdRef = useRef<string | null>(null);
 
   const sessionQuery = useQuery({ queryKey: ["host-checkout-session"], queryFn: fetchSession, retry: false });
   const shiftQuery = useQuery({ queryKey: ["host-checkout-shift"], queryFn: fetchHostShift, retry: false });
@@ -231,7 +232,7 @@ export function CheckoutPage() {
     }).filter((line) => line.quantity > 0));
   }
 
-  function clearCart() { setCartLines([]); setCashAmount(""); setCheckoutResult(null); setCompletedSale(null); setPrintResult(null); setBarcodeStatus(null); setShowConfirmCheckout(false); setAttemptState(initialAttemptState); setBackendMessage(null); }
+  function clearCart() { checkoutRequestIdRef.current = null; setCartLines([]); setCashAmount(""); setCheckoutResult(null); setCompletedSale(null); setPrintResult(null); setBarcodeStatus(null); setShowConfirmCheckout(false); setAttemptState(initialAttemptState); setBackendMessage(null); }
   async function startNewSale() { clearCart(); await refreshShiftAndProducts(); }
   async function refreshShiftAndProducts() { setBackendMessage(null); await Promise.all([sessionQuery.refetch(), shiftQuery.refetch(), productsQuery.refetch(), unitsQuery.refetch()]); setLastRefreshAt(new Date().toISOString()); }
   async function handleOpenShift() { setBackendMessage(null); setIsOpeningShift(true); try { await openHostShift({ openingCashCents: toCents(openingCash) }); setBackendMessage(null); notify.success("Shift opened", "Checkout is ready for sales."); await Promise.all([shiftQuery.refetch(), productsQuery.refetch(), unitsQuery.refetch()]); setLastRefreshAt(new Date().toISOString()); } catch (error) { const description = describeCheckoutBackendError(error); setBackendMessage(description); notify.error("Shift was not opened", safeNotificationDescription(new Error(description), "Review the opening cash and try again.")); } finally { setIsOpeningShift(false); } }
@@ -243,6 +244,8 @@ export function CheckoutPage() {
     if (!canReviewCheckout || isSubmittingCheckout) return;
     setBackendMessage(null); setCheckoutResult(null); setCompletedSale(null); setPrintResult(null); setAttemptState(initialAttemptState); setIsSubmittingCheckout(true);
     try {
+      const clientRequestId = checkoutRequestIdRef.current ?? crypto.randomUUID();
+      checkoutRequestIdRef.current = clientRequestId;
       const customer = customersQuery.data?.find((row) => row.customer.id === customerId)?.customer;
       const payments = paymentMode === "Cash"
         ? [{ method: "Cash" as const, amountCents: cashCents }]
@@ -251,6 +254,7 @@ export function CheckoutPage() {
             { method: "AccountsReceivable" as const, amountCents: balanceDueCents },
           ];
       const result = await submitCheckout({
+        clientRequestId,
         lines: cartLines.map((line) => ({ productId: line.product.id, quantityX1000: Math.round(line.quantity * 1000) })),
         payments,
         customerId: balanceDueCents > 0 ? customerId : undefined,
@@ -261,13 +265,17 @@ export function CheckoutPage() {
       });
       const receiptMetadata = result.checkout as CheckoutReceiptMetadata;
       setCheckoutResult(result);
+      checkoutRequestIdRef.current = null;
       setCompletedSale({ receiptNumber: result.checkout.receiptNumber, saleId: result.checkout.saleId, totalCents: result.checkout.totalCents, amountPaidCents: cashCents, changeCents: result.checkout.changeCents, fileReceiptStatus: receiptMetadata.fileReceiptStatus ?? null, fileReceiptPath: receiptMetadata.fileReceiptPath ?? null, fileReceiptError: receiptMetadata.fileReceiptError ?? null });
       setShowConfirmCheckout(false); setBackendMessage(result.message);
       setAttemptState({ httpStatus: 200, backendCode: result.code, checkoutStatus: result.checkout.status, receiptNumber: result.checkout.receiptNumber, saleId: result.checkout.saleId });
       notify.success("Sale completed", "Receipt was saved.");
       await productsQuery.refetch();
     } catch (error) {
-      if (error instanceof ApiError) setAttemptState({ httpStatus: error.status, backendCode: error.code ?? null, checkoutStatus: error.checkoutStatus ?? null, receiptNumber: null, saleId: null });
+      if (error instanceof ApiError) {
+        checkoutRequestIdRef.current = null;
+        setAttemptState({ httpStatus: error.status, backendCode: error.code ?? null, checkoutStatus: error.checkoutStatus ?? null, receiptNumber: null, saleId: null });
+      }
       const description = describeCheckoutBackendError(error);
       setBackendMessage(description);
       notify.error("Sale failed", safeNotificationDescription(new Error(description), "No stock or payment record was changed."));

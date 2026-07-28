@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Data.Sqlite;
 using Salryn.Api.Local;
 using Salryn.Api.Local.Auth;
 using Salryn.Api.Local.Contracts;
@@ -208,6 +209,29 @@ public static class V2HostOperatorCheckoutApiChecks
                 !Guid.TryParse(saleIdText, out Guid saleId))
             {
                 throw new InvalidOperationException("Valid checkout must return a completed sale with receipt and sale id.");
+            }
+
+            JsonDocument duplicate = await PostCheckoutAsync(operatorClient, validRequest, product).ConfigureAwait(false);
+            JsonElement duplicateCheckout = duplicate.RootElement.GetProperty("checkout");
+            if (!duplicateCheckout.GetProperty("duplicate").GetBoolean() ||
+                !string.Equals(duplicateCheckout.GetProperty("saleId").GetString(), saleIdText, StringComparison.Ordinal) ||
+                !string.Equals(duplicateCheckout.GetProperty("receiptNumber").GetString(), receiptNumber, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "Duplicate host checkout request must reconcile to the original sale and receipt.");
+            }
+
+            if (CountRows(
+                    composition.DbPaths.DatabasePath,
+                    "SELECT COUNT(*) FROM sales WHERE receipt_no = $value;",
+                    receiptNumber) != 1 ||
+                CountRows(
+                    composition.DbPaths.DatabasePath,
+                    "SELECT COUNT(*) FROM stock_movements WHERE reference_id = $value;",
+                    saleIdText) != 1)
+            {
+                throw new InvalidOperationException(
+                    "Duplicate host checkout retry must create one sale and one stock decrement.");
             }
 
             using HttpResponseMessage saleResponse = await operatorClient.GetAsync($"/api/sales/{saleId:D}")
@@ -627,7 +651,7 @@ public static class V2HostOperatorCheckoutApiChecks
     private static HostOperatorCheckoutRequest BuildCheckoutRequest(
         IReadOnlyList<HostOperatorCheckoutLineRequest> lines,
         IReadOnlyList<HostOperatorCheckoutPaymentRequest> payments) =>
-        new(lines, payments);
+        new(lines, payments, ClientRequestId: Guid.NewGuid().ToString("N"));
 
     private static IReadOnlyList<HostOperatorCheckoutPaymentRequest> BuildCashPayment(long amountCents) =>
         new[] { new HostOperatorCheckoutPaymentRequest("Cash", amountCents) };
@@ -787,6 +811,16 @@ public static class V2HostOperatorCheckoutApiChecks
         }
 
         return result.Value;
+    }
+
+    private static long CountRows(string databasePath, string sql, string value)
+    {
+        using SqliteConnection connection = new($"Data Source={databasePath}");
+        connection.Open();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.Parameters.AddWithValue("$value", value);
+        return Convert.ToInt64(command.ExecuteScalar());
     }
 
     private static void RequireSuccess(Result result, string area)

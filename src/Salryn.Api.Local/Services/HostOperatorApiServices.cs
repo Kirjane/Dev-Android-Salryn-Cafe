@@ -56,6 +56,7 @@ public sealed class HostOperatorApiServices
             cashierSessionService,
             composition.SaleReadRepository,
             new HostOperatorReceiptNumberAllocator(),
+            new HostCheckoutRequestStore(composition.ConnectionFactory),
             fileReceiptWriter,
             repositories.CreateAuditWriteRepository());
 

@@ -160,7 +160,8 @@ public static class PreIAuditTrailCoverageChecks
                 "Audit Trail Cashier",
                 new HostOperatorCheckoutRequest(
                     new[] { new HostOperatorCheckoutLineRequest(productId, 1000) },
-                    new[] { new HostOperatorCheckoutPaymentRequest("Cash", 5000) }),
+                    new[] { new HostOperatorCheckoutPaymentRequest("Cash", 5000) },
+                    ClientRequestId: Guid.NewGuid().ToString("N")),
                 CancellationToken.None).GetAwaiter().GetResult();
             RequireTrue(sale.Ok, "sale complete: " + sale.Message);
             RequireTrue(CountAudit(composition, OperatorAuditActions.SaleCompleted) >= 1, "Sale audit.");

@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Salryn.Api.Local.Contracts;
 using Salryn.Core.Common;
 using Salryn.Core.Models;
@@ -31,8 +33,11 @@ public sealed class HostOperatorCheckoutApiService
     private readonly ICashierSessionService _cashierSessionService;
     private readonly ISaleReadRepository _saleReadRepository;
     private readonly HostOperatorReceiptNumberAllocator _receiptAllocator;
+    private readonly HostCheckoutRequestStore _requestStore;
     private readonly IFileReceiptWriter _fileReceiptWriter;
     private readonly IAuditWriteRepository _auditWriteRepository;
+    private readonly object _idempotencyGateSync = new();
+    private readonly Dictionary<string, IdempotencyGate> _idempotencyGates = new();
 
     public HostOperatorCheckoutApiService(
         IProductReadRepository productReadRepository,
@@ -40,6 +45,7 @@ public sealed class HostOperatorCheckoutApiService
         ICashierSessionService cashierSessionService,
         ISaleReadRepository saleReadRepository,
         HostOperatorReceiptNumberAllocator receiptAllocator,
+        HostCheckoutRequestStore requestStore,
         IFileReceiptWriter fileReceiptWriter,
         IAuditWriteRepository auditWriteRepository)
     {
@@ -53,6 +59,8 @@ public sealed class HostOperatorCheckoutApiService
             ?? throw new ArgumentNullException(nameof(saleReadRepository));
         _receiptAllocator = receiptAllocator
             ?? throw new ArgumentNullException(nameof(receiptAllocator));
+        _requestStore = requestStore
+            ?? throw new ArgumentNullException(nameof(requestStore));
         _fileReceiptWriter = fileReceiptWriter
             ?? throw new ArgumentNullException(nameof(fileReceiptWriter));
         _auditWriteRepository = auditWriteRepository
@@ -67,6 +75,89 @@ public sealed class HostOperatorCheckoutApiService
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        if (string.IsNullOrWhiteSpace(request.ClientRequestId) || request.ClientRequestId.Length > 128)
+        {
+            return Fail(
+                "HostOperator.Checkout.ClientRequestIdRequired",
+                HostOperatorCheckoutStatus.ValidationFailed,
+                "A valid checkout request id is required.");
+        }
+
+        string requestHash = BuildRequestHash(userId, request);
+        string key = $"{userId:N}:{request.ClientRequestId}";
+        IdempotencyGate gate = RentIdempotencyGate(key);
+        try
+        {
+            await gate.Semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            ReturnIdempotencyGate(key, gate);
+            throw;
+        }
+
+        try
+        {
+            HostCheckoutRequestRecord? durable = await _requestStore
+                .FindAsync(userId, request.ClientRequestId, cancellationToken)
+                .ConfigureAwait(false);
+            if (durable is not null)
+            {
+                if (!string.Equals(durable.RequestHash, requestHash, StringComparison.Ordinal))
+                {
+                    return Fail(
+                        "HostOperator.Checkout.ClientRequestIdReused",
+                        HostOperatorCheckoutStatus.ValidationFailed,
+                        "This checkout request id was already used for different sale details.");
+                }
+
+                HostOperatorCheckoutOperationResult reconciled =
+                    await ReconcileAsync(durable, cancellationToken).ConfigureAwait(false);
+                if (reconciled.Ok)
+                {
+                    return WithDuplicate(reconciled);
+                }
+            }
+
+            return await ExecuteSubmitAsync(
+                    userId,
+                    cashierDisplayName,
+                    request,
+                    requestHash,
+                    durable,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            HostCheckoutRequestRecord? durable = await _requestStore
+                .FindAsync(userId, request.ClientRequestId, CancellationToken.None)
+                .ConfigureAwait(false);
+            if (durable is not null)
+            {
+                return await ReconcileAsync(durable, CancellationToken.None).ConfigureAwait(false);
+            }
+
+            return Fail(
+                "HostOperator.Checkout.RetryableUnknown",
+                HostOperatorCheckoutStatus.ValidationFailed,
+                "Checkout could not be confirmed. Retry with the same request id.");
+        }
+        finally
+        {
+            gate.Semaphore.Release();
+            ReturnIdempotencyGate(key, gate);
+        }
+    }
+
+    private async Task<HostOperatorCheckoutOperationResult> ExecuteSubmitAsync(
+        Guid userId,
+        string? cashierDisplayName,
+        HostOperatorCheckoutRequest request,
+        string requestHash,
+        HostCheckoutRequestRecord? durableRequest,
+        CancellationToken cancellationToken)
+    {
         if (userId == Guid.Empty)
         {
             return Fail(
@@ -195,7 +286,24 @@ public sealed class HostOperatorCheckoutApiService
                 product.TaxClassification));
         }
 
-        string receiptNumber = _receiptAllocator.AllocateNext(openSessionResult.Value.Id);
+        HostCheckoutRequestRecord ledger = durableRequest
+            ?? await _requestStore.GetOrCreatePendingAsync(
+                    userId,
+                    request.ClientRequestId!,
+                    requestHash,
+                    _receiptAllocator.AllocateNext(openSessionResult.Value.Id),
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+        if (!string.Equals(ledger.RequestHash, requestHash, StringComparison.Ordinal))
+        {
+            return Fail(
+                "HostOperator.Checkout.ClientRequestIdReused",
+                HostOperatorCheckoutStatus.ValidationFailed,
+                "This checkout request id was already used for different sale details.");
+        }
+
+        string receiptNumber = ledger.ReceiptNumber;
 
         PosCheckoutApplicationRequest applicationRequest = new(
             userId,
@@ -233,6 +341,15 @@ public sealed class HostOperatorCheckoutApiService
 
         string message = BuildCompletedMessage(fileReceipt);
 
+        await _requestStore.MarkCompletedAsync(
+                ledger,
+                sale?.Id.ToString(),
+                sale?.Total.Cents,
+                sale?.Change.Cents,
+                message,
+                cancellationToken)
+            .ConfigureAwait(false);
+
         await OperatorAuditTrail.TryWriteAsync(
                 _auditWriteRepository,
                 userId,
@@ -264,7 +381,137 @@ public sealed class HostOperatorCheckoutApiService
                 receiptSnapshotSaved,
                 fileReceipt.Status,
                 fileReceipt.FilePath,
-                fileReceipt.ErrorMessage));
+                fileReceipt.ErrorMessage,
+                request.ClientRequestId,
+                Duplicate: false));
+    }
+
+    private async Task<HostOperatorCheckoutOperationResult> ReconcileAsync(
+        HostCheckoutRequestRecord record,
+        CancellationToken cancellationToken)
+    {
+        if (record.State == HostCheckoutRequestStore.Completed)
+        {
+            return CompletedFromRecord(record, duplicate: false);
+        }
+
+        Result<SaleDetailReadModel?> saleResult = await _saleReadRepository
+            .FindSaleByReceiptNoAsync(record.ReceiptNumber, cancellationToken)
+            .ConfigureAwait(false);
+        SaleDetailReadModel? sale = saleResult.IsSuccess ? saleResult.Value : null;
+        if (sale is null)
+        {
+            return Fail(
+                "HostOperator.Checkout.PendingConfirmation",
+                HostOperatorCheckoutStatus.ValidationFailed,
+                "Checkout is not committed; retry the original request with the same request id.");
+        }
+
+        const string message = "Sale completed on host. The original result was reconciled.";
+        await _requestStore.MarkCompletedAsync(
+                record,
+                sale.Id.ToString(),
+                sale.Total.Cents,
+                sale.Change.Cents,
+                message,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return new HostOperatorCheckoutOperationResult(
+            true,
+            "HostOperator.Checkout.Completed",
+            message,
+            new HostOperatorCheckoutResponse(
+                HostOperatorCheckoutStatus.Completed,
+                record.ReceiptNumber,
+                sale.Id.ToString(),
+                sale.Total.Cents,
+                sale.Change.Cents,
+                message,
+                !string.IsNullOrWhiteSpace(sale.ReceiptSnapshot),
+                ClientRequestId: record.ClientRequestId));
+    }
+
+    private static HostOperatorCheckoutOperationResult CompletedFromRecord(
+        HostCheckoutRequestRecord record,
+        bool duplicate) =>
+        new(
+            true,
+            "HostOperator.Checkout.Completed",
+            record.Message,
+            new HostOperatorCheckoutResponse(
+                HostOperatorCheckoutStatus.Completed,
+                record.ReceiptNumber,
+                record.SaleId,
+                record.TotalCents,
+                record.ChangeCents,
+                record.Message,
+                ClientRequestId: record.ClientRequestId,
+                Duplicate: duplicate));
+
+    private static HostOperatorCheckoutOperationResult WithDuplicate(
+        HostOperatorCheckoutOperationResult result) =>
+        result.Checkout is null
+            ? result
+            : result with { Checkout = result.Checkout with { Duplicate = true } };
+
+    private static string BuildRequestHash(Guid userId, HostOperatorCheckoutRequest request)
+    {
+        StringBuilder canonical = new();
+        canonical.Append(userId.ToString("N"));
+        foreach (HostOperatorCheckoutLineRequest line in (request.Lines ?? Array.Empty<HostOperatorCheckoutLineRequest>())
+                     .OrderBy(line => line.ProductId))
+        {
+            canonical.Append("|L:").Append(line.ProductId.ToString("N")).Append(':').Append(line.QuantityX1000);
+        }
+        foreach (HostOperatorCheckoutPaymentRequest payment in request.Payments ?? Array.Empty<HostOperatorCheckoutPaymentRequest>())
+        {
+            canonical.Append("|P:").Append(payment.Method.Trim().ToUpperInvariant()).Append(':').Append(payment.AmountCents);
+        }
+        canonical.Append("|C:").Append(request.CustomerId?.ToString("N") ?? string.Empty);
+        canonical.Append("|D:").Append(request.DueDate?.ToString("O") ?? string.Empty);
+        canonical.Append("|N:").Append(request.Note?.Trim() ?? string.Empty);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString())));
+    }
+
+    private IdempotencyGate RentIdempotencyGate(string key)
+    {
+        lock (_idempotencyGateSync)
+        {
+            if (!_idempotencyGates.TryGetValue(key, out IdempotencyGate? gate))
+            {
+                gate = new IdempotencyGate();
+                _idempotencyGates.Add(key, gate);
+            }
+            gate.Renters++;
+            return gate;
+        }
+    }
+
+    private void ReturnIdempotencyGate(string key, IdempotencyGate gate)
+    {
+        bool dispose = false;
+        lock (_idempotencyGateSync)
+        {
+            gate.Renters--;
+            if (gate.Renters == 0 &&
+                _idempotencyGates.TryGetValue(key, out IdempotencyGate? current) &&
+                ReferenceEquals(current, gate))
+            {
+                _idempotencyGates.Remove(key);
+                dispose = true;
+            }
+        }
+        if (dispose)
+        {
+            gate.Semaphore.Dispose();
+        }
+    }
+
+    private sealed class IdempotencyGate
+    {
+        public SemaphoreSlim Semaphore { get; } = new(1, 1);
+        public int Renters { get; set; }
     }
 
     private async Task<FileReceiptWriteResult> WriteFileReceiptAfterCommitAsync(

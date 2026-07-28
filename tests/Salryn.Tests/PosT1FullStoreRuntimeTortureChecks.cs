@@ -126,7 +126,8 @@ public static class PosT1FullStoreRuntimeTortureChecks
             "Torture Test Cashier",
             new HostOperatorCheckoutRequest(
                 new[] { new HostOperatorCheckoutLineRequest(productId, quantityX1000) },
-                new[] { new HostOperatorCheckoutPaymentRequest("Cash", cashCents) })).GetAwaiter().GetResult();
+                new[] { new HostOperatorCheckoutPaymentRequest("Cash", cashCents) },
+                ClientRequestId: Guid.NewGuid().ToString("N"))).GetAwaiter().GetResult();
         Require(result.Ok && result.Checkout?.Status == HostOperatorCheckoutStatus.Completed, "Checkout must complete.");
         Require(result.Checkout!.ReceiptSnapshotSaved, "Checkout must persist a receipt snapshot.");
         return result.Checkout;

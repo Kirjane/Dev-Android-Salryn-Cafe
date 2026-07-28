@@ -29,6 +29,7 @@ export type CheckoutPaymentRequest = {
 };
 
 export type CheckoutRequest = {
+  clientRequestId: string;
   lines: CheckoutLineRequest[];
   payments: CheckoutPaymentRequest[];
   customerId?: string;
@@ -45,6 +46,8 @@ export type CheckoutResult = {
   totalCents: number | null;
   changeCents: number | null;
   message: string;
+  clientRequestId?: string | null;
+  duplicate?: boolean;
 };
 
 export type CheckoutEnvelope = {
