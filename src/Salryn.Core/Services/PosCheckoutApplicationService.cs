@@ -30,7 +30,12 @@ public sealed record PosCheckoutApplicationRequest(
     long TaxCents,
     string? ReceiptSnapshot,
     DateTimeOffset? SaleDate = null,
-    string? CashierDisplayName = null);
+    string? CashierDisplayName = null,
+    Guid? CustomerId = null,
+    string? CustomerFullName = null,
+    string? CustomerPhone = null,
+    DateOnly? ReceivableDueDate = null,
+    string? ReceivableNote = null);
 
 public interface IPosCheckoutApplicationService
 {

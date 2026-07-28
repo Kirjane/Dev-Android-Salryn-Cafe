@@ -52,6 +52,20 @@ public sealed class Sale
 
     public Money Change { get; init; }
 
+    public Guid? CustomerId { get; init; }
+
+    public SalePaymentStatus PaymentStatus { get; init; } = SalePaymentStatus.Paid;
+
+    public Money BalanceDue { get; init; } = Money.Zero;
+
+    public DateOnly? ReceivableDueDate { get; init; }
+
+    public string? ReceivableNote { get; init; }
+
+    public string? CustomerFullNameSnapshot { get; init; }
+
+    public string? CustomerPhoneSnapshot { get; init; }
+
     public SaleStatus Status { get; init; } = SaleStatus.Completed;
 
     public Guid? VoidedByUserId { get; init; }

@@ -114,12 +114,21 @@ public sealed class HostOperatorCheckoutApiService
         List<PosCheckoutPaymentInput> payments = new();
         foreach (HostOperatorCheckoutPaymentRequest payment in request.Payments)
         {
-            if (!string.Equals(payment.Method, "Cash", StringComparison.OrdinalIgnoreCase))
+            PaymentMethod method;
+            if (string.Equals(payment.Method, "Cash", StringComparison.OrdinalIgnoreCase))
+            {
+                method = PaymentMethod.Cash;
+            }
+            else if (string.Equals(payment.Method, "AccountsReceivable", StringComparison.OrdinalIgnoreCase))
+            {
+                method = PaymentMethod.AccountsReceivable;
+            }
+            else
             {
                 return Fail(
                     "HostOperator.Checkout.UnsupportedPaymentMethod",
                     HostOperatorCheckoutStatus.ValidationFailed,
-                    "Only Cash tender is supported for host checkout in this build.");
+                    "Payment method must be Cash or AccountsReceivable.");
             }
 
             if (payment.AmountCents <= 0)
@@ -130,7 +139,7 @@ public sealed class HostOperatorCheckoutApiService
                     "Payment amount must be greater than zero.");
             }
 
-            payments.Add(new PosCheckoutPaymentInput(PaymentMethod.Cash, payment.AmountCents));
+            payments.Add(new PosCheckoutPaymentInput(method, payment.AmountCents));
         }
 
         List<PosCheckoutLineInput> lines = new();
@@ -197,7 +206,12 @@ public sealed class HostOperatorCheckoutApiService
             SaleDiscountCents: 0,
             TaxCents: 0,
             ReceiptSnapshot: null,
-            CashierDisplayName: cashierDisplayName);
+            CashierDisplayName: cashierDisplayName,
+            CustomerId: request.CustomerId,
+            CustomerFullName: request.CustomerFullName,
+            CustomerPhone: request.CustomerPhone,
+            ReceivableDueDate: request.DueDate,
+            ReceivableNote: request.Note);
 
         Result completion = await _checkoutApplicationService
             .CompleteSaleAsync(applicationRequest, cancellationToken)

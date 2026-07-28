@@ -10,7 +10,12 @@ public sealed record HostOperatorCheckoutPaymentRequest(
 
 public sealed record HostOperatorCheckoutRequest(
     IReadOnlyList<HostOperatorCheckoutLineRequest> Lines,
-    IReadOnlyList<HostOperatorCheckoutPaymentRequest> Payments);
+    IReadOnlyList<HostOperatorCheckoutPaymentRequest> Payments,
+    Guid? CustomerId = null,
+    string? CustomerFullName = null,
+    string? CustomerPhone = null,
+    DateOnly? DueDate = null,
+    string? Note = null);
 
 public sealed record HostOperatorCheckoutResponse(
     string Status,

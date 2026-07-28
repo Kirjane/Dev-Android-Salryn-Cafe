@@ -108,6 +108,11 @@ public sealed class SqliteSaleWriteRepository :
                 }
             }
 
+            if (sale.BalanceDue.Cents > 0)
+            {
+                InsertReceivableDebit(connection, transaction, sale);
+            }
+
             return Result.Success();
         }
         catch (SqliteException ex) when (IsUniqueConstraintViolation(ex))
@@ -247,7 +252,12 @@ public sealed class SqliteSaleWriteRepository :
                 void_reason,
                 voided_at,
                 receipt_snapshot,
-                created_at
+                created_at,
+                customer_id,
+                payment_status,
+                balance_due_cents,
+                receivable_due_date,
+                receivable_note
             )
             VALUES (
                 $id,
@@ -266,7 +276,12 @@ public sealed class SqliteSaleWriteRepository :
                 $voidReason,
                 $voidedAt,
                 $receiptSnapshot,
-                $createdAt
+                $createdAt,
+                $customerId,
+                $paymentStatus,
+                $balanceDueCents,
+                $receivableDueDate,
+                $receivableNote
             );
             """;
 
@@ -287,7 +302,51 @@ public sealed class SqliteSaleWriteRepository :
         command.Parameters.AddWithValue("$voidedAt", sale.VoidedAt?.ToString("O") ?? (object)DBNull.Value);
         command.Parameters.AddWithValue("$receiptSnapshot", DbNullableText(sale.ReceiptSnapshot));
         command.Parameters.AddWithValue("$createdAt", sale.CreatedAt.ToString("O"));
+        command.Parameters.AddWithValue("$customerId", DbNullableGuid(sale.CustomerId));
+        command.Parameters.AddWithValue("$paymentStatus", sale.PaymentStatus.ToString());
+        command.Parameters.AddWithValue("$balanceDueCents", sale.BalanceDue.Cents);
+        command.Parameters.AddWithValue("$receivableDueDate", sale.ReceivableDueDate?.ToString("yyyy-MM-dd") ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$receivableNote", DbNullableText(sale.ReceivableNote));
 
+        command.ExecuteNonQuery();
+    }
+
+    private static void InsertReceivableDebit(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        Sale sale)
+    {
+        if (!sale.CustomerId.HasValue)
+        {
+            throw new InvalidOperationException("A customer is required for an accounts receivable debit.");
+        }
+
+        using SqliteCommand balance = connection.CreateCommand();
+        balance.Transaction = transaction;
+        balance.CommandText =
+            "SELECT balance_after_cents FROM accounts_receivable_entries WHERE customer_id=$customer ORDER BY created_at DESC, id DESC LIMIT 1;";
+        balance.Parameters.AddWithValue("$customer", sale.CustomerId.Value.ToString("D"));
+        object? value = balance.ExecuteScalar();
+        long current = value is null or DBNull ? 0 : Convert.ToInt64(value);
+
+        using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT INTO accounts_receivable_entries
+            (id,customer_id,sale_id,collection_id,entry_type,debit_cents,credit_cents,
+             balance_after_cents,due_date,note,created_by_user_id,created_at)
+            VALUES ($id,$customer,$sale,NULL,'CreditSale',$debit,0,$balance,$due,$note,$user,$at);
+            """;
+        command.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("D"));
+        command.Parameters.AddWithValue("$customer", sale.CustomerId.Value.ToString("D"));
+        command.Parameters.AddWithValue("$sale", sale.Id.ToString("D"));
+        command.Parameters.AddWithValue("$debit", sale.BalanceDue.Cents);
+        command.Parameters.AddWithValue("$balance", checked(current + sale.BalanceDue.Cents));
+        command.Parameters.AddWithValue("$due", sale.ReceivableDueDate?.ToString("yyyy-MM-dd") ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$note", DbNullableText(sale.ReceivableNote));
+        command.Parameters.AddWithValue("$user", sale.CashierUserId.ToString("D"));
+        command.Parameters.AddWithValue("$at", sale.CreatedAt.ToString("O"));
         command.ExecuteNonQuery();
     }
 

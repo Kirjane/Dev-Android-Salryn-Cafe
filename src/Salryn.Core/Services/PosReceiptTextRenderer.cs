@@ -25,7 +25,14 @@ public sealed record PosReceiptSnapshotDraft(
     string? ContactNumber = null,
     string? ReceiptHeader = null,
     string? ReceiptFooter = null,
-    string? CashierDisplayName = null);
+    string? CashierDisplayName = null,
+    string? CustomerFullName = null,
+    string? CustomerPhone = null,
+    Money? CashPaid = null,
+    Money? UtangAmount = null,
+    Money? BalanceDue = null,
+    DateOnly? DueDate = null,
+    string? ReceivableNote = null);
 
 public static class PosReceiptTextRenderer
 {
@@ -115,7 +122,18 @@ public static class PosReceiptTextRenderer
         }
 
         builder.AppendLine("TOTAL   : " + FormatMoney(draft.Total));
-        builder.AppendLine("Cash    : " + FormatMoney(draft.AmountPaid));
+        Money cashPaid = draft.CashPaid ?? Money.FromCents(
+            draft.Payments.Where(payment => payment.Method == PaymentMethod.Cash).Sum(payment => payment.Amount.Cents));
+        builder.AppendLine("Cash    : " + FormatMoney(cashPaid));
+        if (draft.UtangAmount is Money utang && utang.Cents > 0)
+        {
+            builder.AppendLine("Utang   : " + FormatMoney(utang));
+            builder.AppendLine("Balance : " + FormatMoney(draft.BalanceDue ?? utang));
+            builder.AppendLine("Customer: " + Safe(draft.CustomerFullName));
+            if (!string.IsNullOrWhiteSpace(draft.CustomerPhone)) builder.AppendLine("Phone   : " + Safe(draft.CustomerPhone));
+            if (draft.DueDate.HasValue) builder.AppendLine("Due date: " + draft.DueDate.Value.ToString("yyyy-MM-dd"));
+            if (!string.IsNullOrWhiteSpace(draft.ReceivableNote)) builder.AppendLine("Note    : " + Safe(draft.ReceivableNote));
+        }
         builder.AppendLine("Change  : " + FormatMoney(draft.Change));
         builder.AppendLine("Payment : " + FormatPaymentMethods(draft.Payments));
         builder.AppendLine(new string('-', ReceiptWidth));

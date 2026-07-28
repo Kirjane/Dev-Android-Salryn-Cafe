@@ -174,7 +174,27 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
                     "Checkout payment cannot be less than the sale total."));
             }
 
-            long changeCents = checked(amountPaidCents - totalCents);
+            long receivableCents = request.Payments
+                .Where(payment => payment.Method == PaymentMethod.AccountsReceivable)
+                .Sum(payment => payment.AmountCents);
+            long cashTenderCents = request.Payments
+                .Where(payment => payment.Method == PaymentMethod.Cash)
+                .Sum(payment => payment.AmountCents);
+            if (receivableCents > 0 && (!request.CustomerId.HasValue || request.CustomerId.Value == Guid.Empty))
+            {
+                return Result<TrustedPosCheckoutSaleBuildResult>.Fail(Error.Validation(
+                    "CheckoutBoundary.CustomerRequiredForUtang",
+                    "A customer is required when an Utang balance is due."));
+            }
+            if (receivableCents > totalCents)
+            {
+                return Result<TrustedPosCheckoutSaleBuildResult>.Fail(Error.Validation(
+                    "CheckoutBoundary.InvalidUtangAmount",
+                    "Utang cannot exceed the sale total."));
+            }
+            long changeCents = receivableCents > 0
+                ? 0
+                : checked(cashTenderCents - totalCents);
             Money subtotal = Money.FromCents(subtotalCents);
             Money saleDiscount = Money.FromCents(request.SaleDiscountCents);
             Money tax = Money.FromCents(request.TaxCents);
@@ -209,7 +229,14 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
                     settings?.ContactNumber,
                     settings?.ReceiptHeader,
                     settings?.ReceiptFooter,
-                    request.CashierDisplayName))
+                    request.CashierDisplayName,
+                    request.CustomerFullName,
+                    request.CustomerPhone,
+                    Money.FromCents(cashTenderCents),
+                    Money.FromCents(receivableCents),
+                    Money.FromCents(receivableCents),
+                    request.ReceivableDueDate,
+                    request.ReceivableNote))
                 : request.ReceiptSnapshot.Trim();
 
             Sale sale = new()
@@ -225,6 +252,15 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
                 Total = total,
                 AmountPaid = amountPaid,
                 Change = change,
+                CustomerId = request.CustomerId,
+                PaymentStatus = receivableCents == 0
+                    ? SalePaymentStatus.Paid
+                    : cashTenderCents == 0 ? SalePaymentStatus.Credit : SalePaymentStatus.Partial,
+                BalanceDue = Money.FromCents(receivableCents),
+                ReceivableDueDate = request.ReceivableDueDate,
+                ReceivableNote = string.IsNullOrWhiteSpace(request.ReceivableNote) ? null : request.ReceivableNote.Trim(),
+                CustomerFullNameSnapshot = string.IsNullOrWhiteSpace(request.CustomerFullName) ? null : request.CustomerFullName.Trim(),
+                CustomerPhoneSnapshot = string.IsNullOrWhiteSpace(request.CustomerPhone) ? null : request.CustomerPhone.Trim(),
                 Status = SaleStatus.Completed,
                 VoidedByUserId = null,
                 VoidReason = null,
