@@ -33,8 +33,9 @@ public static class U1EntitlementGatingChecks
         Require(checkout.Contains("LicenseFeatures.ReceivablesUtangLedger", StringComparison.Ordinal) &&
                 checkout.Contains("AccountsReceivable", StringComparison.Ordinal),
             "Utang checkout must enforce the U1 entitlement server-side.");
-        Require(reports.Contains("includeReceivables: receivablesDecision.Allowed", StringComparison.Ordinal),
-            "Base reports must omit the U1 section when the add-on is unlicensed.");
+        Require(reports.Contains("receivablesDecision.Allowed && canViewReceivables", StringComparison.Ordinal) &&
+                reports.Contains("LocalApiPermissions.ReceivablesView", StringComparison.Ordinal),
+            "AR reports must require both the U1 entitlement and Receivables.View.");
         Require(navigation.Contains("ReceivablesUtangLedger", StringComparison.Ordinal),
             "Host navigation must combine entitlement with page permission.");
 

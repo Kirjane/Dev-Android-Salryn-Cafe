@@ -102,7 +102,9 @@ public static class U1AccountsReceivableRuntimeChecks
             Require(cash.TotalCents == 10_000 && cash.ChangeCents == 10_000,
                 "Overpaid cash smoke must persist sale total and returned change.");
 
-            await AssertCollectionIdempotencyAsync(receivables, paidCustomer.Id, 10_000, userId, paths.DatabasePath);
+            AccountsReceivableCollection paidCollection =
+                await AssertCollectionIdempotencyAsync(
+                    receivables, paidCustomer.Id, 10_000, userId, paths.DatabasePath);
             await AssertCollectionIdempotencyAsync(receivables, partialCustomer.Id, 3_000, userId, paths.DatabasePath);
 
             AccountsReceivableSummary summary = RequireSuccess(await receivables.GetSummaryAsync(), "U1 summary");
@@ -154,6 +156,16 @@ public static class U1AccountsReceivableRuntimeChecks
                     (await restoredReceivables.GetLedgerAsync(unpaidCustomer.Id)).Value.All(
                         entry => !string.Equals(entry.Note, "Post-backup mutation", StringComparison.Ordinal)),
                 "Backup/restore must preserve U1 balances/history and discard post-backup mutation.");
+            Require((await restoredReceivables.VoidCollectionAsync(
+                    paidCollection.Id, userId, "Duplicate reversal proof")).IsSuccess,
+                "Authorized collection reversal must succeed.");
+            Result duplicateReversal = await restoredReceivables.VoidCollectionAsync(
+                paidCollection.Id, userId, "Duplicate reversal proof");
+            Require(duplicateReversal.IsFailure &&
+                    (duplicateReversal.ErrorDetail.Code == "Receivables.CollectionNotFound" ||
+                     duplicateReversal.ErrorDetail.Code == "Receivables.CollectionAlreadyVoided") &&
+                    Count(paths.DatabasePath, "accounts_receivable_entries", "collection_id", paidCollection.Id.ToString("D")) == 2,
+                "A collection may have one original credit and one append-only reversal; duplicate reversal must be denied.");
 
             Console.WriteLine(
                 "U1 runtime: full/partial Utang, idempotency, receipt identity, aging, net-cash reports, and backup/restore PASS.");
@@ -254,6 +266,26 @@ public static class U1AccountsReceivableRuntimeChecks
 
             Require((await manager.GetAsync("/api/receivables/summary")).StatusCode == HttpStatusCode.OK,
                 "Licensed Manager with Receivables.View must be allowed to read summary.");
+            LocalApiSession reportOnlySession = sessions.Create(new AuthenticatedUserReadModel(
+                userId, "u1-report-only", "U1 Report Only", "Custom", UserStatus.Active,
+                new[] { DefaultSeedData.Permissions.ReportsView }));
+            using HttpClient reportOnly = Client(address, reportOnlySession);
+            OwnerReportsResponse? reportOnlySummary =
+                await reportOnly.GetFromJsonAsync<OwnerReportsResponse>("/api/owner-reports/summary");
+            Require(reportOnlySummary?.Receivables is null,
+                "Reports.View without Receivables.View must not expose AR totals.");
+            LocalApiSession reportAndReceivablesSession = sessions.Create(new AuthenticatedUserReadModel(
+                userId, "u1-report-ar", "U1 Report AR", "Custom", UserStatus.Active,
+                new[]
+                {
+                    DefaultSeedData.Permissions.ReportsView,
+                    DefaultSeedData.Permissions.ReceivablesView
+                }));
+            using HttpClient reportAndReceivables = Client(address, reportAndReceivablesSession);
+            OwnerReportsResponse? authorizedReport =
+                await reportAndReceivables.GetFromJsonAsync<OwnerReportsResponse>("/api/owner-reports/summary");
+            Require(authorizedReport?.Receivables is not null,
+                "Reports.View plus Receivables.View with U1 must expose AR totals.");
             using HttpResponseMessage managerCollection = await manager.PostAsJsonAsync(
                 "/api/receivables/collections",
                 new
@@ -286,8 +318,8 @@ public static class U1AccountsReceivableRuntimeChecks
         public Task<LocalLicenseValidationResult> GetStatusAsync(CancellationToken cancellationToken = default)
         {
             IReadOnlyList<string> features = U1Enabled
-                ? new[] { LicenseFeatures.Pos, LicenseFeatures.ReceivablesUtangLedger }
-                : new[] { LicenseFeatures.Pos };
+                ? new[] { LicenseFeatures.Pos, LicenseFeatures.Reports, LicenseFeatures.ReceivablesUtangLedger }
+                : new[] { LicenseFeatures.Pos, LicenseFeatures.Reports };
             return Task.FromResult(new LocalLicenseValidationResult(
                 LicenseStatus.Licensed,
                 LicenseEdition.Local,
@@ -309,6 +341,7 @@ public static class U1AccountsReceivableRuntimeChecks
         public Task<bool> HasFeatureAsync(string feature, CancellationToken cancellationToken = default) =>
             Task.FromResult(
                 string.Equals(feature, LicenseFeatures.Pos, StringComparison.Ordinal) ||
+                string.Equals(feature, LicenseFeatures.Reports, StringComparison.Ordinal) ||
                 (U1Enabled && string.Equals(
                     feature,
                     LicenseFeatures.ReceivablesUtangLedger,
@@ -324,7 +357,7 @@ public static class U1AccountsReceivableRuntimeChecks
         return client;
     }
 
-    private static async Task AssertCollectionIdempotencyAsync(
+    private static async Task<AccountsReceivableCollection> AssertCollectionIdempotencyAsync(
         SqliteAccountsReceivableService receivables,
         Guid customerId,
         long amountCents,
@@ -341,6 +374,7 @@ public static class U1AccountsReceivableRuntimeChecks
         Require(Count(databasePath, "accounts_receivable_collections", "id", first.Id.ToString("D")) == 1 &&
                 Count(databasePath, "accounts_receivable_entries", "collection_id", first.Id.ToString("D")) == 1,
             "Duplicate collection must create one collection and one AR credit.");
+        return first;
     }
 
     private static async Task<ReceivableCustomer> CreateCustomerAsync(

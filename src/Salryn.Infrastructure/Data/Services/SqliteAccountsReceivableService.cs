@@ -283,12 +283,15 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         DateTimeOffset now = DateTimeOffset.UtcNow;
         await using SqliteCommand update = connection.CreateCommand();
         update.Transaction = transaction;
-        update.CommandText = "UPDATE accounts_receivable_collections SET voided_at=$at, voided_by_user_id=$user, void_reason=$reason WHERE id=$id;";
+        update.CommandText = "UPDATE accounts_receivable_collections SET voided_at=$at, voided_by_user_id=$user, void_reason=$reason WHERE id=$id AND voided_at IS NULL;";
         update.Parameters.AddWithValue("$at", now.ToString("O"));
         update.Parameters.AddWithValue("$user", voidedByUserId.ToString("D"));
         update.Parameters.AddWithValue("$reason", reason.Trim());
         update.Parameters.AddWithValue("$id", collectionId.ToString("D"));
-        await update.ExecuteNonQueryAsync(cancellationToken);
+        if (await update.ExecuteNonQueryAsync(cancellationToken) != 1)
+            return Result.Fail(Error.Conflict(
+                "Receivables.CollectionAlreadyVoided",
+                "Collection was already reversed."));
         await InsertEntryAsync(connection, transaction, new AccountsReceivableEntry(Guid.NewGuid(), customerId, null,
             collectionId, AccountsReceivableEntryType.CollectionReversal, amount, 0, balance + amount, null,
             reason.Trim(), voidedByUserId, now), cancellationToken);

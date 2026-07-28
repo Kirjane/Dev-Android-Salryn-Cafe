@@ -31,6 +31,8 @@ export const Permissions = {
   StoreTerminalPairingRevoke: "StoreTerminal.PairingRevoke",
   ReceivablesView: "Receivables.View",
   ReceivablesCreateCreditSale: "Receivables.CreateCreditSale",
+  ReceivablesCollect: "Receivables.Collect",
+  ReceivablesAdjust: "Receivables.Adjust",
 } as const;
 
 export type Permission = (typeof Permissions)[keyof typeof Permissions];

@@ -13,9 +13,15 @@ export type ReceivableCustomer = {
   lastTransactionAt: string | null;
 };
 
+export const ReceivableEntryType = {
+  Collection: 2,
+  CollectionReversal: 6,
+} as const;
+
 export type ReceivableEntry = {
   id: string;
-  entryType: string;
+  collectionId: string | null;
+  entryType: number;
   debitCents: number;
   creditCents: number;
   balanceAfterCents: number;
@@ -48,4 +54,8 @@ export const createCustomer = (body: { fullName: string; phone?: string; note?: 
 export const collectReceivable = (body: { customerId: string; amountCents: number; method: string; note?: string; clientRequestId: string }) =>
   request("/api/receivables/collections", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+export const voidReceivableCollection = (collectionId: string, reason: string) =>
+  request<{ status: string }>(`/api/receivables/collections/${collectionId}/void`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }),
   });

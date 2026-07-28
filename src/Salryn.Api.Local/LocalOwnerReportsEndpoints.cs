@@ -31,9 +31,14 @@ internal static class LocalOwnerReportsEndpoints
             LicenseEnforcementDecision receivablesDecision = await licensing
                 .RequireFeatureAsync(LicenseFeatures.ReceivablesUtangLedger, cancellationToken)
                 .ConfigureAwait(false);
+            bool canViewReceivables =
+                LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    LocalApiPermissions.ReceivablesView) is null;
 
             Result<OwnerReportsResponse> result = await service.GetSummaryAsync(
-                    includeReceivables: receivablesDecision.Allowed,
+                    includeReceivables: receivablesDecision.Allowed && canViewReceivables,
                     cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
