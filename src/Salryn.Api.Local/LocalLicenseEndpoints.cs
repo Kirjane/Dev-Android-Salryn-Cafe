@@ -79,11 +79,28 @@ public static class LocalLicenseEndpoints
 
         app.MapPost("/api/license/install", async (
             HttpContext httpContext,
+            LocalApiSessionService sessions,
             CancellationToken cancellationToken) =>
         {
             if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult localOnly)
             {
                 return localOnly;
+            }
+
+            LocalLicenseValidationResult before = await localLicenseService
+                .GetStatusAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            // First install/recovery must remain possible before an operator account exists. Once a
+            // valid license state is present, installation is replacement/update and requires the
+            // same Settings.Manage boundary as other host licensing administration.
+            if (RequiresPrivilegedInstallAuthorization(before.Status) &&
+                LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    LocalApiPermissions.SettingsManage) is IResult denied)
+            {
+                return denied;
             }
 
             if (!httpContext.Request.HasJsonContentType())
@@ -105,9 +122,6 @@ public static class LocalLicenseEndpoints
                 return Results.Json(read.Error, statusCode: StatusCodes.Status400BadRequest);
             }
 
-            LocalLicenseValidationResult before = await localLicenseService
-                .GetStatusAsync(cancellationToken)
-                .ConfigureAwait(false);
             bool hadLicense = before.Status is LicenseStatus.Licensed or LicenseStatus.Grace or LicenseStatus.Development;
 
             LocalLicenseInstallResponse result = await localLicenseService
@@ -149,6 +163,9 @@ public static class LocalLicenseEndpoints
             return Results.Json(result, statusCode: statusCode);
         });
     }
+
+    public static bool RequiresPrivilegedInstallAuthorization(LicenseStatus status) =>
+        status is LicenseStatus.Licensed or LicenseStatus.Grace or LicenseStatus.Development;
 
     private static async Task<LocalLicenseInstallEnvelopeReadResult> ReadInstallRequestAsync(
         HttpContext httpContext,

@@ -104,6 +104,7 @@ public static class Program
         RoleM2BackendPermissionEnforcementChecks.Run();
         RoleM3HttpApiPermissionRuntimeChecks.RunAsync().GetAwaiter().GetResult();
         RoleM4PermissionBoundaryRegressionMatrixChecks.RunAsync().GetAwaiter().GetResult();
+        RoleAuthorizationBlockerFixChecks.RunAsync().GetAwaiter().GetResult();
         V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();
         V2HostOperatorCheckoutApiChecks.RunAsync().GetAwaiter().GetResult();
         V2ReactCheckoutSourceChecks.Run();
@@ -605,6 +606,9 @@ public static class Program
                 return;
             case "manual-m1-bootstrap-auth-repair":
                 ManualM1BootstrapAuthRepairChecks.Run();
+                return;
+            case "role-authorization-blocker-fix":
+                RoleAuthorizationBlockerFixChecks.RunAsync().GetAwaiter().GetResult();
                 return;
             case "user-m1-host-only-user-creation":
                 UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();

@@ -1,6 +1,7 @@
 using Salryn.Api.Local.Auth;
 using Salryn.Core.Common;
 using Salryn.Core.Official;
+using Salryn.Core.Security;
 using Salryn.Core.Services;
 using Salryn.Infrastructure.Data;
 using Salryn.Infrastructure.Data.Services;
@@ -27,7 +28,10 @@ public static class LocalOfficialLivePostingCandidateEndpoints
                 return localOnly;
             }
 
-            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
+            if (LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    SalrynPermissions.OfficialReadingView) is IResult unauthorized)
             {
                 return unauthorized;
             }
@@ -79,7 +83,10 @@ public static class LocalOfficialLivePostingCandidateEndpoints
                 return localOnly;
             }
 
-            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
+            if (LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    SalrynPermissions.OfficialReadingView) is IResult unauthorized)
             {
                 return unauthorized;
             }

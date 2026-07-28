@@ -1,6 +1,7 @@
 using Salryn.Api.Local.Auth;
 using Salryn.Core.Common;
 using Salryn.Core.Official;
+using Salryn.Core.Security;
 using Salryn.Core.Services;
 using Salryn.Core.Services.InvoiceOutput;
 using Salryn.Core.Services.Lifecycle;
@@ -28,7 +29,10 @@ public static class LocalOfficialDocumentLifecycleEndpoints
                 return localOnly;
             }
 
-            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
+            if (LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    SalrynPermissions.OfficialReadingView) is IResult unauthorized)
             {
                 return unauthorized;
             }
@@ -83,6 +87,14 @@ public static class LocalOfficialDocumentLifecycleEndpoints
                 return Results.Json(
                     new { code = "DocumentLifecycle.UnknownAction", message = "Unknown lifecycle action." },
                     statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    PermissionFor(action)) is IResult permissionDenied)
+            {
+                return permissionDenied;
             }
 
             if (string.IsNullOrWhiteSpace(body.IdempotencyKey))
@@ -218,6 +230,14 @@ public static class LocalOfficialDocumentLifecycleEndpoints
                 return unauthorized;
             }
 
+            if (LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    SalrynPermissions.OfficialDocumentCancel) is IResult permissionDenied)
+            {
+                return permissionDenied;
+            }
+
             string? userId = sessions.GetRequiredSession(
                 httpContext.Request.Cookies[LocalApiSessionService.SessionCookieName])?.UserId.ToString("D");
             if (!Guid.TryParse(userId, out Guid actorId))
@@ -252,6 +272,16 @@ public static class LocalOfficialDocumentLifecycleEndpoints
             return Results.Json(result.Value);
         });
     }
+
+    private static string PermissionFor(OfficialDocumentLifecycleAction action) => action switch
+    {
+        OfficialDocumentLifecycleAction.Reprint => SalrynPermissions.OfficialDocumentReprint,
+        OfficialDocumentLifecycleAction.Void => SalrynPermissions.OfficialDocumentVoid,
+        OfficialDocumentLifecycleAction.Refund => SalrynPermissions.OfficialDocumentRefund,
+        OfficialDocumentLifecycleAction.Cancel => SalrynPermissions.OfficialDocumentCancel,
+        OfficialDocumentLifecycleAction.Adjust => SalrynPermissions.OfficialDocumentCorrection,
+        _ => SalrynPermissions.SettingsManage
+    };
 
     public sealed record LifecycleActionApiRequest(
         string? Action,

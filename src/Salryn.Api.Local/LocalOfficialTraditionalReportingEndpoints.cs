@@ -1,6 +1,7 @@
 using Salryn.Api.Local.Auth;
 using Salryn.Core.Common;
 using Salryn.Core.Models;
+using Salryn.Core.Security;
 using Salryn.Core.Services.Reporting;
 using Salryn.Infrastructure.Data;
 using Salryn.Infrastructure.Data.Services;
@@ -25,7 +26,10 @@ public static class LocalOfficialTraditionalReportingEndpoints
                 return localOnly;
             }
 
-            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
+            if (LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    SalrynPermissions.OfficialReadingView) is IResult unauthorized)
             {
                 return unauthorized;
             }
@@ -39,7 +43,7 @@ public static class LocalOfficialTraditionalReportingEndpoints
             LocalApiSessionService sessions,
             CancellationToken cancellationToken) =>
         {
-            if (Guard(httpContext, sessions) is IResult denied)
+            if (Guard(httpContext, sessions, SalrynPermissions.OfficialReadingView) is IResult denied)
             {
                 return denied;
             }
@@ -60,7 +64,7 @@ public static class LocalOfficialTraditionalReportingEndpoints
             LocalApiSessionService sessions,
             CancellationToken cancellationToken) =>
         {
-            if (Guard(httpContext, sessions) is IResult denied)
+            if (Guard(httpContext, sessions, SalrynPermissions.OfficialReadingFinalize) is IResult denied)
             {
                 return denied;
             }
@@ -91,7 +95,7 @@ public static class LocalOfficialTraditionalReportingEndpoints
             LocalApiSessionService sessions,
             CancellationToken cancellationToken) =>
         {
-            if (Guard(httpContext, sessions) is IResult denied)
+            if (Guard(httpContext, sessions, SalrynPermissions.OfficialEvidenceExport) is IResult denied)
             {
                 return denied;
             }
@@ -112,7 +116,7 @@ public static class LocalOfficialTraditionalReportingEndpoints
             LocalApiSessionService sessions,
             CancellationToken cancellationToken) =>
         {
-            if (Guard(httpContext, sessions) is IResult denied)
+            if (Guard(httpContext, sessions, SalrynPermissions.OfficialEvidenceExport) is IResult denied)
             {
                 return denied;
             }
@@ -132,7 +136,7 @@ public static class LocalOfficialTraditionalReportingEndpoints
             LocalApiSessionService sessions,
             CancellationToken cancellationToken) =>
         {
-            if (Guard(httpContext, sessions) is IResult denied)
+            if (Guard(httpContext, sessions, SalrynPermissions.OfficialReadingView) is IResult denied)
             {
                 return denied;
             }
@@ -143,19 +147,17 @@ public static class LocalOfficialTraditionalReportingEndpoints
         });
     }
 
-    private static IResult? Guard(HttpContext httpContext, LocalApiSessionService sessions)
+    private static IResult? Guard(
+        HttpContext httpContext,
+        LocalApiSessionService sessions,
+        string permission)
     {
         if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult localOnly)
         {
             return localOnly;
         }
 
-        if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
-        {
-            return unauthorized;
-        }
-
-        return null;
+        return LocalApiPermissionGuards.RequirePermission(httpContext, sessions, permission);
     }
 
     private static bool TryParseRequest(

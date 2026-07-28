@@ -8,6 +8,7 @@ using Salryn.Composition.Local;
 using Salryn.Core.Common;
 using Salryn.Core.Host;
 using Salryn.Core.Security;
+using Salryn.Core.Services.Licensing;
 
 namespace Salryn.Api.Local;
 
@@ -18,6 +19,8 @@ public sealed class LocalApiApplicationOptions
     public SalrynLocalComposition? Composition { get; init; }
 
     public ILocalApiSessionStore? SessionStore { get; init; }
+
+    public ILocalLicenseService? LicenseService { get; init; }
 
     public bool InitializeDatabase { get; init; } = true;
 
@@ -275,8 +278,8 @@ public static class LocalApiApplicationFactory
             return Results.Ok(sessions.GetSession(sessionId));
         });
 
-        app.MapLocalBootstrapEndpoints(composition);
-        app.MapLocalLicenseEndpoints(composition: composition);
+        app.MapLocalBootstrapEndpoints(composition, options.LicenseService);
+        app.MapLocalLicenseEndpoints(options.LicenseService, composition: composition);
 
         app.MapGet("/api/dashboard/summary", async (
             HttpContext httpContext,
@@ -284,7 +287,10 @@ public static class LocalApiApplicationFactory
             DashboardSummaryService summaryService,
             CancellationToken cancellationToken) =>
         {
-            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthorized)
+            if (LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    LocalApiPermissions.ReportsView) is IResult unauthorized)
             {
                 return unauthorized;
             }
