@@ -31,4 +31,10 @@ public static class SalrynPermissions
     public const string StoreTerminalManage = "StoreTerminal.Manage";
     public const string StoreTerminalPairingIssue = "StoreTerminal.PairingIssue";
     public const string StoreTerminalPairingRevoke = "StoreTerminal.PairingRevoke";
+    public const string ReceivablesView = "Receivables.View";
+    public const string ReceivablesCreateCreditSale = "Receivables.CreateCreditSale";
+    public const string ReceivablesCollect = "Receivables.Collect";
+    public const string ReceivablesAdjust = "Receivables.Adjust";
+    public const string ReceivablesExport = "Receivables.Export";
+    public const string ReceivablesManageCustomers = "Receivables.ManageCustomers";
 }

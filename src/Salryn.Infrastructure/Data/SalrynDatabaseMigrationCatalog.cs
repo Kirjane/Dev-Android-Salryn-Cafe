@@ -2,7 +2,7 @@ namespace Salryn.Infrastructure.Data;
 
 internal static class SalrynDatabaseMigrationCatalog
 {
-    public const int SupportedMigrationVersion = 21;
+    public const int SupportedMigrationVersion = 22;
 
     private static readonly (int Version, string Table)[] CriticalTablesByIntroducingVersion =
     {
@@ -39,6 +39,9 @@ internal static class SalrynDatabaseMigrationCatalog
         (17, "official_document_lifecycle_settlements"),
         (17, "official_document_adjustment_documents"),
         (21, "remote_pos_checkout_requests"),
+        (22, "customers"),
+        (22, "accounts_receivable_entries"),
+        (22, "accounts_receivable_collections"),
     };
 
     private static readonly string[] LegacyCoreTables =

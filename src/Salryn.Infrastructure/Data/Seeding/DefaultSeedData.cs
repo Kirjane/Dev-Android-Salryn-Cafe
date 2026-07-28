@@ -36,6 +36,12 @@ public static class DefaultSeedData
         public const string StoreTerminalManage = "StoreTerminal.Manage";
         public const string StoreTerminalPairingIssue = "StoreTerminal.PairingIssue";
         public const string StoreTerminalPairingRevoke = "StoreTerminal.PairingRevoke";
+        public const string ReceivablesView = "Receivables.View";
+        public const string ReceivablesCreateCreditSale = "Receivables.CreateCreditSale";
+        public const string ReceivablesCollect = "Receivables.Collect";
+        public const string ReceivablesAdjust = "Receivables.Adjust";
+        public const string ReceivablesExport = "Receivables.Export";
+        public const string ReceivablesManageCustomers = "Receivables.ManageCustomers";
     }
 
     public static IReadOnlyList<SeedRole> Roles { get; } = new SeedRole[]
@@ -74,7 +80,13 @@ public static class DefaultSeedData
         Permissions.StoreTerminalView,
         Permissions.StoreTerminalManage,
         Permissions.StoreTerminalPairingIssue,
-        Permissions.StoreTerminalPairingRevoke
+        Permissions.StoreTerminalPairingRevoke,
+        Permissions.ReceivablesView,
+        Permissions.ReceivablesCreateCreditSale,
+        Permissions.ReceivablesCollect,
+        Permissions.ReceivablesAdjust,
+        Permissions.ReceivablesExport,
+        Permissions.ReceivablesManageCustomers
     };
 
     public static IReadOnlyList<string> ManagerPermissions { get; } = new string[]
@@ -91,7 +103,12 @@ public static class DefaultSeedData
         Permissions.OfficialEvidenceExport,
         Permissions.ImportExportProducts,
         Permissions.ShiftOpenClose,
-        Permissions.StoreTerminalView
+        Permissions.StoreTerminalView,
+        Permissions.ReceivablesView,
+        Permissions.ReceivablesCreateCreditSale,
+        Permissions.ReceivablesCollect,
+        Permissions.ReceivablesExport,
+        Permissions.ReceivablesManageCustomers
     };
 
     public static IReadOnlyList<string> CashierPermissions { get; } = new string[]

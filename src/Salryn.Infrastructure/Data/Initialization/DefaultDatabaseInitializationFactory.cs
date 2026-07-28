@@ -63,7 +63,8 @@ public static class DefaultDatabaseInitializationFactory
             new StorePrinterModeSchemaMigration(),
             new WindowsPrinterNameSchemaMigration(),
             new StoreLogoBrandingSchemaMigration(),
-            new RemotePosCheckoutRequestSchemaMigration()
+            new RemotePosCheckoutRequestSchemaMigration(),
+            new AccountsReceivableSchemaMigration()
         };
 
         MigrationRunner migrationRunner = new(connectionFactory, migrations);

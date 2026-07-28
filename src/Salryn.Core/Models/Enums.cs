@@ -16,7 +16,8 @@ public enum SaleStatus
 
 public enum PaymentMethod
 {
-    Cash = 1
+    Cash = 1,
+    AccountsReceivable = 2
 }
 
 public enum StockMovementType
