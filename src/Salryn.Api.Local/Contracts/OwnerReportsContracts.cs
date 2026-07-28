@@ -11,7 +11,15 @@ public sealed record OwnerReportsResponse(
     IReadOnlyList<OwnerCashierTotalRow> CashierTotals,
     IReadOnlyList<OwnerCategoryTotalRow> CategoryTotals,
     IReadOnlyList<OwnerLowStockRow> LowStock,
-    OwnerInventoryValueSummary InventoryValue);
+    OwnerInventoryValueSummary InventoryValue,
+    OwnerReceivablesSummary Receivables);
+
+public sealed record OwnerReceivablesSummary(
+    long CreditSalesCents,
+    long CashCollectedOnSalesCents,
+    long CollectionsCents,
+    long OutstandingCents,
+    long OverdueCents);
 
 public sealed record OwnerSalesPeriodSummary(
     string PeriodKey,

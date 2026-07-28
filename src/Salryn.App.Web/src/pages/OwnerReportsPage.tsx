@@ -123,6 +123,13 @@ export function OwnerReportsPage() {
               <SummaryCard title="Weekly sales" period={data.weekly} />
               <SummaryCard title="Monthly sales" period={data.monthly} />
             </div>
+            <Card><CardHeader><CardTitle>Accounts Receivable</CardTitle></CardHeader><CardBody><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{[
+              ["Credit sales", data.receivables.creditSalesCents],
+              ["Cash on sales", data.receivables.cashCollectedOnSalesCents],
+              ["AR collections", data.receivables.collectionsCents],
+              ["Outstanding", data.receivables.outstandingCents],
+              ["Overdue", data.receivables.overdueCents],
+            ].map(([label, cents]) => <div key={label as string} className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase text-slate-500">{label}</p><p className="mt-1 text-lg font-bold">{moneyFromCents(cents as number)}</p></div>)}</div><p className="mt-3 text-xs text-slate-500">Utang remains a sale but is excluded from cash collected. AR collections reduce receivables and never create a second sale.</p></CardBody></Card>
 
             <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
               <Card>

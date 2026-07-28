@@ -64,6 +64,13 @@ export type OwnerReportsResponse = {
   categoryTotals: OwnerCategoryTotalRow[];
   lowStock: OwnerLowStockRow[];
   inventoryValue: OwnerInventoryValueSummary;
+  receivables: {
+    creditSalesCents: number;
+    cashCollectedOnSalesCents: number;
+    collectionsCents: number;
+    outstandingCents: number;
+    overdueCents: number;
+  };
 };
 
 export async function fetchOwnerReportsSummary(): Promise<OwnerReportsResponse> {

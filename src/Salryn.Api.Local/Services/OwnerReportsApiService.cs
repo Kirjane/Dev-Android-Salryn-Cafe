@@ -68,7 +68,8 @@ public sealed class OwnerReportsApiService
                 CashierTotals: ReadCashierTotals(connection, monthStart, monthEnd),
                 CategoryTotals: ReadCategoryTotals(connection, monthStart, monthEnd),
                 LowStock: ReadLowStock(connection),
-                InventoryValue: ReadInventoryValue(connection));
+                InventoryValue: ReadInventoryValue(connection),
+                Receivables: ReadReceivables(connection, monthStart, monthEnd, todayStart));
 
             return Task.FromResult(Result<OwnerReportsResponse>.Success(response));
         }
@@ -336,6 +337,38 @@ public sealed class OwnerReportsApiService
             valuedProducts,
             missingCostProducts,
             "Inventory value estimated from current stock on hand multiplied by product cost.");
+    }
+
+    private static OwnerReceivablesSummary ReadReceivables(
+        SqliteConnection connection,
+        DateTimeOffset rangeStart,
+        DateTimeOffset rangeEnd,
+        DateTimeOffset todayStart)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+              COALESCE((SELECT SUM(balance_due_cents) FROM sales
+                        WHERE status=$completed AND sale_date >= $start AND sale_date < $end),0),
+              COALESCE((SELECT SUM(p.amount_cents) FROM payments p INNER JOIN sales s ON s.id=p.sale_id
+                        WHERE p.method=$cash AND s.status=$completed
+                          AND s.sale_date >= $start AND s.sale_date < $end),0),
+              COALESCE((SELECT SUM(amount_cents) FROM accounts_receivable_collections
+                        WHERE voided_at IS NULL AND collected_at >= $start AND collected_at < $end),0),
+              COALESCE((SELECT SUM(debit_cents-credit_cents) FROM accounts_receivable_entries),0),
+              COALESCE((SELECT SUM(debit_cents) FROM accounts_receivable_entries
+                        WHERE debit_cents > 0 AND due_date IS NOT NULL AND due_date < $today),0);
+            """;
+        command.Parameters.AddWithValue("$completed", Convert.ToInt32(SaleStatus.Completed));
+        command.Parameters.AddWithValue("$cash", Convert.ToInt32(PaymentMethod.Cash));
+        command.Parameters.AddWithValue("$start", rangeStart.ToUniversalTime().ToString("O"));
+        command.Parameters.AddWithValue("$end", rangeEnd.ToUniversalTime().ToString("O"));
+        command.Parameters.AddWithValue("$today", DateOnly.FromDateTime(todayStart.DateTime).ToString("yyyy-MM-dd"));
+        using SqliteDataReader reader = command.ExecuteReader();
+        reader.Read();
+        return new OwnerReceivablesSummary(
+            reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2), reader.GetInt64(3), reader.GetInt64(4));
     }
 
     private static void AddRangeParameters(SqliteCommand command, DateTimeOffset rangeStart, DateTimeOffset rangeEnd)
