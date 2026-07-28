@@ -29,6 +29,7 @@ export const Permissions = {
   StoreTerminalManage: "StoreTerminal.Manage",
   StoreTerminalPairingIssue: "StoreTerminal.PairingIssue",
   StoreTerminalPairingRevoke: "StoreTerminal.PairingRevoke",
+  ReceivablesView: "Receivables.View",
 } as const;
 
 export type Permission = (typeof Permissions)[keyof typeof Permissions];
@@ -39,6 +40,7 @@ export type HostPage =
   | "products"
   | "inventory"
   | "sales"
+  | "receivables"
   | "owner-reports"
   | "settings"
   | "license"
@@ -58,6 +60,7 @@ export const implementedPages: readonly AppPage[] = [
   "products",
   "inventory",
   "sales",
+  "receivables",
   "owner-reports",
   "settings",
   "license",
@@ -88,6 +91,7 @@ const pagePermissions: Partial<Record<AppPage, readonly Permission[]>> = {
   products: [Permissions.ProductsView],
   inventory: [Permissions.InventoryView],
   sales: [Permissions.SalesViewHistory],
+  receivables: [Permissions.ReceivablesView],
   "owner-reports": [Permissions.ReportsView],
   settings: [Permissions.SettingsManage],
   license: [Permissions.SettingsManage],
@@ -126,7 +130,7 @@ export function canAccessPage(session: SessionState | null | undefined, page: Ap
 
   const roleId = session.user.roleId.toLowerCase();
   const cashierPages: readonly AppPage[] = ["checkout", "sales"];
-  const managerPages: readonly AppPage[] = ["dashboard", "checkout", "products", "inventory", "sales", "owner-reports", "audit"];
+  const managerPages: readonly AppPage[] = ["dashboard", "checkout", "products", "inventory", "sales", "receivables", "owner-reports", "audit"];
   if (roleId === RoleIds.Cashier && !cashierPages.includes(page)) return false;
   if (roleId === RoleIds.Manager && !managerPages.includes(page)) return false;
 

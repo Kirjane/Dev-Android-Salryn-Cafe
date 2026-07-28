@@ -29,6 +29,7 @@ import { SalesHistoryPage } from "./pages/SalesHistoryPage";
 import { OfficialSetupPage } from "./pages/OfficialSetupPage";
 import { TraditionalReportingPage } from "./pages/TraditionalReportingPage";
 import { UsersPage } from "./pages/UsersPage";
+import { ReceivablesPage } from "./pages/ReceivablesPage";
 import { canAccessPage, getFirstAllowedPage } from "./security/permissions";
 import { isRemoteClientBrowserLocation } from "./utils/lanEntry";
 import { readInstalledTerminalLicense } from "./utils/terminalLicenseStorage";
@@ -60,6 +61,8 @@ function renderPage(page: AppPage, session: SessionState, onLogout: () => void, 
       return <InventoryPage />;
     case "sales":
       return <SalesHistoryPage canVoid={session.user?.permissions.includes("Sales.Void") ?? false} />;
+    case "receivables":
+      return <ReceivablesPage />;
     case "owner-reports":
       return <OwnerReportsPage />;
     case "settings":

@@ -15,6 +15,7 @@ export type NavItemConfig = EnabledNavItem;
 export const navItems: NavItemConfig[] = [
   { id: "checkout", label: "POS Checkout", enabled: true, group: "Cashier" },
   { id: "sales", label: "Sales & Receipts", enabled: true, group: "Cashier" },
+  { id: "receivables", label: "Utang Ledger", enabled: true, group: "Manager" },
   { id: "dashboard", label: "Dashboard", enabled: true, group: "Manager" },
   { id: "owner-reports", label: "Reports", enabled: true, group: "Manager" },
   { id: "products", label: "Product Catalog", enabled: true, group: "Manager" },

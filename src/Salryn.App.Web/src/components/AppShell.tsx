@@ -28,6 +28,7 @@ const navIcons: Record<string, LucideIcon> = {
   "Product Catalog": Tags,
   "Stock Movements": Boxes,
   "Sales & Receipts": History,
+  "Utang Ledger": FileText,
   Reports: BarChart3,
   Users,
   Audit: ShieldCheck,
