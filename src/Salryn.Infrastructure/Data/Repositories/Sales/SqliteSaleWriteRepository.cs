@@ -156,6 +156,14 @@ public sealed class SqliteSaleWriteRepository :
             using var connection = CreateOpenConnection();
             using var transaction = connection.BeginTransaction();
 
+            Result receivableVoid = PrepareReceivableSaleVoid(
+                connection, transaction, saleId, voidedByUserId, reason);
+            if (receivableVoid.IsFailure)
+            {
+                transaction.Rollback();
+                return Task.FromResult(receivableVoid);
+            }
+
             using var command = connection.CreateCommand();
 
             command.Transaction = transaction;
@@ -309,6 +317,83 @@ public sealed class SqliteSaleWriteRepository :
         command.Parameters.AddWithValue("$receivableNote", DbNullableText(sale.ReceivableNote));
 
         command.ExecuteNonQuery();
+    }
+
+    private static Result PrepareReceivableSaleVoid(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        Guid saleId,
+        Guid voidedByUserId,
+        string reason)
+    {
+        using SqliteCommand read = connection.CreateCommand();
+        read.Transaction = transaction;
+        read.CommandText =
+            """
+            SELECT customer_id, balance_due_cents, sale_date
+            FROM sales WHERE id=$sale AND status=$completed;
+            """;
+        read.Parameters.AddWithValue("$sale", saleId.ToString("D"));
+        read.Parameters.AddWithValue("$completed", Convert.ToInt32(SaleStatus.Completed));
+        using SqliteDataReader reader = read.ExecuteReader();
+        if (!reader.Read() || reader.IsDBNull(0) || reader.GetInt64(1) <= 0)
+        {
+            return Result.Success();
+        }
+        Guid customerId = Guid.Parse(reader.GetString(0));
+        long debit = reader.GetInt64(1);
+        string saleDate = reader.GetString(2);
+        reader.Close();
+
+        using SqliteCommand collected = connection.CreateCommand();
+        collected.Transaction = transaction;
+        collected.CommandText =
+            """
+            SELECT 1 FROM accounts_receivable_entries
+            WHERE customer_id=$customer AND entry_type IN ('Collection','AdjustmentCredit')
+              AND created_at >= $saleDate LIMIT 1;
+            """;
+        collected.Parameters.AddWithValue("$customer", customerId.ToString("D"));
+        collected.Parameters.AddWithValue("$saleDate", saleDate);
+        if (collected.ExecuteScalar() is not null)
+        {
+            return Result.Fail(Error.Conflict(
+                "Receivables.PartiallyCollectedSaleVoidBlocked",
+                "A credit sale with later collections cannot be voided through the unpaid-sale path."));
+        }
+
+        using SqliteCommand balanceCommand = connection.CreateCommand();
+        balanceCommand.Transaction = transaction;
+        balanceCommand.CommandText =
+            "SELECT balance_after_cents FROM accounts_receivable_entries WHERE customer_id=$customer ORDER BY created_at DESC, id DESC LIMIT 1;";
+        balanceCommand.Parameters.AddWithValue("$customer", customerId.ToString("D"));
+        long current = Convert.ToInt64(balanceCommand.ExecuteScalar() ?? 0L);
+        if (current < debit)
+        {
+            return Result.Fail(Error.Conflict(
+                "Receivables.SaleVoidBalanceConflict",
+                "The customer balance no longer permits an unpaid credit-sale reversal."));
+        }
+
+        using SqliteCommand reverse = connection.CreateCommand();
+        reverse.Transaction = transaction;
+        reverse.CommandText =
+            """
+            INSERT INTO accounts_receivable_entries
+            (id,customer_id,sale_id,collection_id,entry_type,debit_cents,credit_cents,
+             balance_after_cents,due_date,note,created_by_user_id,created_at)
+            VALUES ($id,$customer,$sale,NULL,'SaleReversal',0,$credit,$balance,NULL,$note,$user,$at);
+            """;
+        reverse.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("D"));
+        reverse.Parameters.AddWithValue("$customer", customerId.ToString("D"));
+        reverse.Parameters.AddWithValue("$sale", saleId.ToString("D"));
+        reverse.Parameters.AddWithValue("$credit", debit);
+        reverse.Parameters.AddWithValue("$balance", current - debit);
+        reverse.Parameters.AddWithValue("$note", reason.Trim());
+        reverse.Parameters.AddWithValue("$user", voidedByUserId.ToString("D"));
+        reverse.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O"));
+        reverse.ExecuteNonQuery();
+        return Result.Success();
     }
 
     private static void InsertReceivableDebit(

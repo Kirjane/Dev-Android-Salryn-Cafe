@@ -67,7 +67,7 @@ public static class RmoBirQa1RealMachineDatabaseChecks
         RequireTrue(File.Exists(study), "QA1 study document must exist.");
     }
 
-    private const int CurrentSupportedMigrationVersion = 21;
+    private const int CurrentSupportedMigrationVersion = 22;
     private const int FutureProbeMigrationVersion = 21;
 
     private static void RunCleanCurrent(string qaRoot)

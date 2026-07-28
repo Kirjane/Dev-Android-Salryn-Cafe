@@ -23,7 +23,7 @@ public static class PreBetaCStoreLogoBrandingChecks
         string terminalShell = File.ReadAllText(Path.Combine(root, "src", "Salryn.App.Web", "src", "components", "TerminalShell.tsx"));
         string migration = File.ReadAllText(Path.Combine(root, "src", "Salryn.Infrastructure", "Data", "Migrations", "StoreLogoBrandingSchemaMigration.cs"));
 
-        RequireContains(catalog, "SupportedMigrationVersion = 21", "Catalog must include the Remote POS checkout ledger migration.");
+        RequireContains(catalog, "SupportedMigrationVersion = 22", "Catalog must include the U1 accounts receivable migration.");
         RequireContains(factory, "StoreLogoBrandingSchemaMigration", "Factory must register store logo migration.");
         RequireContains(migration, "logo_content_type", "Migration must add logo_content_type.");
         RequireContains(migration, "logo_bytes", "Migration must add logo_bytes.");

@@ -48,7 +48,7 @@ public static class RmoBirTradM1TaxInvoicePolicyChecks
         string engine = File.ReadAllText(Path.Combine(projectRoot, "src", "Salryn.Core", "Services", "OfficialDocumentTaxBucketEngine.cs"));
         string invoicePolicy = File.ReadAllText(Path.Combine(projectRoot, "src", "Salryn.Core", "Services", "SalrynInvoiceDocumentPolicy.cs"));
 
-        RequireContains(catalog, "SupportedMigrationVersion = 21", "Catalog must include the current additive migrations.");
+        RequireContains(catalog, "SupportedMigrationVersion = 22", "Catalog must include the current additive migrations.");
         RequireContains(factory, "VatRegistrationModeSchemaMigration", "Factory must register v15.");
         RequireContains(migration, "Version => 15", "Migration version must be 15.");
         RequireContains(migration, "vat_registration_mode", "Migration must add vat_registration_mode.");
