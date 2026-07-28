@@ -59,6 +59,7 @@ public static class U1AccountsReceivableLedgerChecks
                 "Terminal endpoints must not expose receivables in U1.");
 
             Console.WriteLine("U1 AR: recurring ledger, collection/no-second-sale, atomic source boundary, and terminal denial PASS.");
+            await U1AccountsReceivableRuntimeChecks.RunAsync();
         }
         finally
         {

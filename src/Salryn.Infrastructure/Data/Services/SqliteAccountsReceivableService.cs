@@ -29,9 +29,18 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
                              FROM accounts_receivable_entries e
                              WHERE e.customer_id = c.id
                              ORDER BY e.created_at DESC, e.id DESC LIMIT 1), 0),
-                   (SELECT MIN(e.due_date) FROM accounts_receivable_entries e
-                    WHERE e.customer_id = c.id AND e.debit_cents > 0
-                      AND e.balance_after_cents > 0),
+                   (WITH allocation AS (
+                        SELECT e.due_date, e.debit_cents,
+                               COALESCE(SUM(e.debit_cents) OVER (
+                                   PARTITION BY e.customer_id ORDER BY e.created_at, e.id
+                                   ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS prior_debits,
+                               SUM(e.credit_cents) OVER (PARTITION BY e.customer_id) AS total_credits
+                        FROM accounts_receivable_entries e
+                        WHERE e.customer_id = c.id
+                    )
+                    SELECT MIN(due_date) FROM allocation
+                    WHERE due_date IS NOT NULL
+                      AND MAX(0, debit_cents - MAX(0, total_credits - prior_debits)) > 0),
                    (SELECT MAX(e.created_at) FROM accounts_receivable_entries e
                     WHERE e.customer_id = c.id)
             FROM customers c
@@ -113,6 +122,19 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         return Result<ReceivableCustomer>.Success(updated);
     }
 
+    public async Task<Result<ReceivableCustomer?>> FindCustomerAsync(
+        Guid customerId,
+        CancellationToken cancellationToken = default)
+    {
+        if (customerId == Guid.Empty)
+            return Result<ReceivableCustomer?>.Fail(
+                Error.Validation("Receivables.InvalidCustomer", "A valid customer id is required."));
+        await using SqliteConnection connection = _connections.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        return Result<ReceivableCustomer?>.Success(
+            await FindCustomerAsync(connection, customerId, cancellationToken));
+    }
+
     public async Task<Result<IReadOnlyList<AccountsReceivableEntry>>> GetLedgerAsync(
         Guid customerId,
         CancellationToken cancellationToken = default)
@@ -142,10 +164,29 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         await connection.OpenAsync(cancellationToken);
         long total = await ScalarAsync(connection, "SELECT COALESCE(SUM(debit_cents-credit_cents),0) FROM accounts_receivable_entries;", cancellationToken);
         string today = DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd");
+        const string exposureCte =
+            """
+            WITH allocation AS (
+                SELECT due_date, debit_cents,
+                       COALESCE(SUM(debit_cents) OVER (
+                           PARTITION BY customer_id ORDER BY created_at, id
+                           ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS prior_debits,
+                       SUM(credit_cents) OVER (PARTITION BY customer_id) AS total_credits
+                FROM accounts_receivable_entries
+            ),
+            exposure AS (
+                SELECT due_date,
+                       MAX(0, debit_cents - MAX(0, total_credits - prior_debits)) AS remaining_cents
+                FROM allocation
+                WHERE debit_cents > 0
+            )
+            """;
         long overdue = await ScalarAsync(connection,
-            "SELECT COALESCE(SUM(debit_cents),0) FROM accounts_receivable_entries WHERE due_date < $today AND debit_cents > 0;", cancellationToken, today);
+            exposureCte + " SELECT COALESCE(SUM(remaining_cents),0) FROM exposure WHERE due_date < $today;",
+            cancellationToken, today);
         long dueToday = await ScalarAsync(connection,
-            "SELECT COALESCE(SUM(debit_cents),0) FROM accounts_receivable_entries WHERE due_date = $today AND debit_cents > 0;", cancellationToken, today);
+            exposureCte + " SELECT COALESCE(SUM(remaining_cents),0) FROM exposure WHERE due_date = $today;",
+            cancellationToken, today);
         long collected = await ScalarAsync(connection,
             "SELECT COALESCE(SUM(amount_cents),0) FROM accounts_receivable_collections WHERE substr(collected_at,1,10)=$today AND voided_at IS NULL;", cancellationToken, today);
         return Result<AccountsReceivableSummary>.Success(new(total, dueToday, overdue, collected));

@@ -351,13 +351,30 @@ public sealed class OwnerReportsApiService
             SELECT
               COALESCE((SELECT SUM(balance_due_cents) FROM sales
                         WHERE status=$completed AND sale_date >= $start AND sale_date < $end),0),
-              COALESCE((SELECT SUM(p.amount_cents) FROM payments p INNER JOIN sales s ON s.id=p.sale_id
-                        WHERE p.method=$cash AND s.status=$completed
-                          AND s.sale_date >= $start AND s.sale_date < $end),0),
+              COALESCE((SELECT SUM(cash_tender_cents - change_cents)
+                        FROM (
+                            SELECT s.id,
+                                   SUM(CASE WHEN p.method=$cash THEN p.amount_cents ELSE 0 END) AS cash_tender_cents,
+                                   s.change_cents
+                            FROM sales s
+                            INNER JOIN payments p ON p.sale_id=s.id
+                            WHERE s.status=$completed
+                              AND s.sale_date >= $start AND s.sale_date < $end
+                            GROUP BY s.id, s.change_cents
+                        )),0),
               COALESCE((SELECT SUM(amount_cents) FROM accounts_receivable_collections
                         WHERE voided_at IS NULL AND collected_at >= $start AND collected_at < $end),0),
               COALESCE((SELECT SUM(debit_cents-credit_cents) FROM accounts_receivable_entries),0),
-              COALESCE((SELECT SUM(debit_cents) FROM accounts_receivable_entries
+              COALESCE((WITH allocation AS (
+                            SELECT due_date, debit_cents,
+                                   COALESCE(SUM(debit_cents) OVER (
+                                       PARTITION BY customer_id ORDER BY created_at, id
+                                       ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS prior_debits,
+                                   SUM(credit_cents) OVER (PARTITION BY customer_id) AS total_credits
+                            FROM accounts_receivable_entries
+                        )
+                        SELECT SUM(MAX(0, debit_cents - MAX(0, total_credits - prior_debits)))
+                        FROM allocation
                         WHERE debit_cents > 0 AND due_date IS NOT NULL AND due_date < $today),0);
             """;
         command.Parameters.AddWithValue("$completed", Convert.ToInt32(SaleStatus.Completed));

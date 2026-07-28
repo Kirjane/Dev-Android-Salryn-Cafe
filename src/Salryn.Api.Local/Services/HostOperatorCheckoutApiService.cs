@@ -34,6 +34,7 @@ public sealed class HostOperatorCheckoutApiService
     private readonly ISaleReadRepository _saleReadRepository;
     private readonly HostOperatorReceiptNumberAllocator _receiptAllocator;
     private readonly HostCheckoutRequestStore _requestStore;
+    private readonly IAccountsReceivableService _receivables;
     private readonly IFileReceiptWriter _fileReceiptWriter;
     private readonly IAuditWriteRepository _auditWriteRepository;
     private readonly object _idempotencyGateSync = new();
@@ -46,6 +47,7 @@ public sealed class HostOperatorCheckoutApiService
         ISaleReadRepository saleReadRepository,
         HostOperatorReceiptNumberAllocator receiptAllocator,
         HostCheckoutRequestStore requestStore,
+        IAccountsReceivableService receivables,
         IFileReceiptWriter fileReceiptWriter,
         IAuditWriteRepository auditWriteRepository)
     {
@@ -61,6 +63,8 @@ public sealed class HostOperatorCheckoutApiService
             ?? throw new ArgumentNullException(nameof(receiptAllocator));
         _requestStore = requestStore
             ?? throw new ArgumentNullException(nameof(requestStore));
+        _receivables = receivables
+            ?? throw new ArgumentNullException(nameof(receivables));
         _fileReceiptWriter = fileReceiptWriter
             ?? throw new ArgumentNullException(nameof(fileReceiptWriter));
         _auditWriteRepository = auditWriteRepository
@@ -305,6 +309,27 @@ public sealed class HostOperatorCheckoutApiService
 
         string receiptNumber = ledger.ReceiptNumber;
 
+        string? authoritativeCustomerName = null;
+        string? authoritativeCustomerPhone = null;
+        if (request.CustomerId.HasValue)
+        {
+            Result<ReceivableCustomer?> customerResult = await _receivables
+                .FindCustomerAsync(request.CustomerId.Value, cancellationToken)
+                .ConfigureAwait(false);
+            if (customerResult.IsFailure)
+                return Fail(
+                    customerResult.ErrorDetail.Code,
+                    HostOperatorCheckoutStatus.ValidationFailed,
+                    customerResult.ErrorDetail.Message);
+            if (customerResult.Value is null || !customerResult.Value.IsActive)
+                return Fail(
+                    "HostOperator.Checkout.CustomerUnavailable",
+                    HostOperatorCheckoutStatus.ValidationFailed,
+                    "The selected customer was not found or is inactive.");
+            authoritativeCustomerName = customerResult.Value.FullName;
+            authoritativeCustomerPhone = customerResult.Value.Phone;
+        }
+
         PosCheckoutApplicationRequest applicationRequest = new(
             userId,
             openSessionResult.Value.Id,
@@ -316,8 +341,8 @@ public sealed class HostOperatorCheckoutApiService
             ReceiptSnapshot: null,
             CashierDisplayName: cashierDisplayName,
             CustomerId: request.CustomerId,
-            CustomerFullName: request.CustomerFullName,
-            CustomerPhone: request.CustomerPhone,
+            CustomerFullName: authoritativeCustomerName,
+            CustomerPhone: authoritativeCustomerPhone,
             ReceivableDueDate: request.DueDate,
             ReceivableNote: request.Note);
 

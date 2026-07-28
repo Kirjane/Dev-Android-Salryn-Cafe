@@ -58,6 +58,9 @@ public interface IAccountsReceivableService
         Guid customerId,
         UpdateReceivableCustomerRequest request,
         CancellationToken cancellationToken = default);
+    Task<Result<ReceivableCustomer?>> FindCustomerAsync(
+        Guid customerId,
+        CancellationToken cancellationToken = default);
     Task<Result<IReadOnlyList<AccountsReceivableEntry>>> GetLedgerAsync(
         Guid customerId,
         CancellationToken cancellationToken = default);

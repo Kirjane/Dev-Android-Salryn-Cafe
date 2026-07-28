@@ -3,6 +3,7 @@ using Salryn.Core.Common;
 using Salryn.Core.ReadModels;
 using Salryn.Core.Services;
 using Salryn.Infrastructure.Data.Repositories;
+using Salryn.Infrastructure.Data.Services;
 
 namespace Salryn.Api.Local.Services;
 
@@ -57,6 +58,7 @@ public sealed class HostOperatorApiServices
             composition.SaleReadRepository,
             new HostOperatorReceiptNumberAllocator(),
             new HostCheckoutRequestStore(composition.ConnectionFactory),
+            new SqliteAccountsReceivableService(composition.ConnectionFactory),
             fileReceiptWriter,
             repositories.CreateAuditWriteRepository());
 
