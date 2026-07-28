@@ -1,0 +1,150 @@
+flowchart TB
+  %% Salryn RC1 architecture at c25824fc466e67c5303a4b443e140c765906bbf7
+  %% Status classes distinguish release, proven, pending, storage, and legacy surfaces.
+
+  subgraph DIST["Distribution and installation"]
+    GH["GitHub public release asset\nSalryn-POS-BetaRC1-Setup.exe\nNEW BUILD + SHA REQUIRED"]:::pending
+    ISS["Inno Setup 6\ninstaller/SalrynSetup.iss"]:::release
+    STAGE["Build-SalrynBetaRc1Installer.ps1\npublishes WebView + API + React dist\nforbidden: salryn.db / secrets"]:::release
+    INSTALL["C:\Program Files\Kirjane Labs\Salryn POS\nDesktop WebView EXE + Local API EXE\ndist + WebView2Loader + branding"]:::storage
+    WVBOOT["WebView2 Evergreen bootstrapper\ninstaller-managed when runtime absent"]:::release
+    SHORTCUT["Desktop / Start Menu shortcut\nSalryn POS"]:::release
+    OLDHASH["OLD installer SHA\n9f6e...d6c\npre-hardening only"]:::risk
+    STAGE --> ISS --> GH
+    ISS --> INSTALL
+    WVBOOT --> ISS
+    INSTALL --> SHORTCUT
+    OLDHASH -. "must not represent c25824f" .-> GH
+  end
+
+  subgraph START["Installed host startup"]
+    DESKTOP["Salryn.Desktop.WebView.exe\ncurrent user-facing entry"]:::release
+    WVCHECK["WebView2 runtime + native loader check"]:::release
+    APIMGR["LocalApiProcessManager\nstart adjacent Salryn.Api.Local.exe"]:::release
+    HEALTH["GET http://127.0.0.1:5299/health\n40 s readiness loop"]:::proven
+    WEBVIEW["WebView2 MainForm\nLocalApplicationData/Salryn/WebView2"]:::release
+    NAVPOL["LocalWebOriginPolicy\nlocalhost/127.0.0.1 ports 5173/5299 only"]:::proven
+    SHORTCUT --> DESKTOP --> WVCHECK --> APIMGR --> HEALTH --> WEBVIEW
+    NAVPOL --> WEBVIEW
+  end
+
+  subgraph REACT["React frontend - API-served production dist"]
+    DISTWEB["dist/index.html + Vite assets\nserved by Salryn.Api.Local"]:::release
+    ENTRY["App.tsx\nloopback ConsoleApp vs non-loopback RemoteClientApp"]:::release
+    SESSION["Host auth/session\n/api/auth/login + HttpOnly Strict cookie\n/api/session"]:::proven
+    ROLE["RoleAwareAppShell\nshared layout, branding, role, sidebar, sign-out"]:::release
+    HOSTSHELL["AppShell host configuration\npermission-filtered navigation"]:::release
+    TERMSHELL["TerminalShell configuration\nPOS Checkout navigation only"]:::proven
+    HOSTPAGES["Host pages\ncheckout, products, inventory, sales,\nreports, settings, backup, users, audit,\nlicense, terminal management"]:::release
+    TERMPAGE["RemotePosClientPage\npairing, operator login, cart, checkout"]:::release
+    UIBOUND["UI boundary is defense-in-depth\nAPI authorization remains authoritative"]:::security
+    WEBVIEW --> DISTWEB --> ENTRY
+    ENTRY --> SESSION --> ROLE
+    ROLE --> HOSTSHELL --> HOSTPAGES
+    ENTRY --> TERMSHELL --> TERMPAGE
+    UIBOUND --> HOSTSHELL
+    UIBOUND --> TERMSHELL
+  end
+
+  subgraph API["Salryn.Api.Local - host-owned HTTP and authorization"]
+    APIHOST["Kestrel local API\n127.0.0.1:5299 + configured explicit LAN bind"]:::release
+    STATIC["Static dist + SPA fallback"]:::release
+    LOCALGUARD["LocalApiLocalAccessGuard\nloopback only; bridge headers rejected\nnon-local Origin rejected\nSec-Fetch-Site cross-site rejected"]:::proven
+    SSTORE["Concurrent server session store\n8-hour expiry in source"]:::source
+    EXPIRY["Session expiry runtime proof PENDING"]:::pending
+    PERMS["Permission guards\nProducts / Inventory / Sales / Reports /\nUsers / Audit / Settings / Backup"]:::proven
+    OFFICIAL["Official setup\nSettings.Manage required"]:::proven
+    APIS["API groups\nproducts + stock + sales + receipts\ncheckout + shifts + backup/restore\naudit/export + settings + reports"]:::release
+    HEALTH --> APIHOST
+    APIHOST --> STATIC --> DISTWEB
+    APIHOST --> LOCALGUARD --> SSTORE --> PERMS --> APIS
+    SSTORE --> EXPIRY
+    PERMS --> OFFICIAL
+  end
+
+  subgraph LAN["LAN terminal trust and checkout"]
+    DEVICE["Terminal browser/device\nnon-loopback React entry"]:::manual
+    LANURL["Host explicit LAN bind\nsame API/static origin"]:::source
+    PAIR["Pairing request -> host approval\none-time activation -> terminal credential\nhandshake proof"]:::proven
+    RSESSION["Remote operator session\nCashier/Manager only; token hash server-side\n30-minute expiry; observed-origin bound"]:::proven
+    RAUTH["RemotePosApiAuthorization\nterminal + handshake + session + role/permission"]:::proven
+    RCART["Host-side in-memory cart\nproduct/barcode lookup and host pricing"]:::release
+    RID["Stable clientRequestId\nsessionStorage pending checkout"]:::proven
+    SUBMIT["POST /api/remote-pos/checkout/submit"]:::release
+    STATUS["GET /api/remote-pos/checkout/status/{id}\nambiguous-response reconciliation"]:::proven
+    LEDGER["remote_pos_checkout_requests\n(store, terminal, client request) PK\nstable host receipt + request hash + state"]:::proven
+    DEVICE --> LANURL --> PAIR --> RSESSION --> RAUTH --> RCART --> RID --> SUBMIT
+    RID --> STATUS
+    SUBMIT --> LEDGER
+    STATUS --> LEDGER
+    TERMPAGE --> DEVICE
+  end
+
+  subgraph DOMAIN["Host checkout, inventory, sales, and receipts"]
+    LOOKUP["Persisted active product lookup\nhost price + stock tracking"]:::release
+    SHIFT["Open cashier shift required"]:::release
+    BUILDER["TrustedPosCheckoutSaleBuilder\nvalidate lines/payments/totals\nbuild sale/items/payments/stock movements\nrender immutable receipt snapshot"]:::release
+    TX["SQLite transaction\nsale + sale_items + payments + stock_movements"]:::proven
+    STOCK["Inventory rules\nstock-in / adjustment / checkout stock-out\nno negative tracked stock; low-stock reads"]:::proven
+    SALE["Sales history/detail\ncashier display name + persisted snapshot"]:::release
+    FILE["Post-commit receipt text file\nProgramData/Salryn/receipts\nfailure does not roll back sale"]:::proven
+    PRINT["Print/reprint from persisted snapshot\nsale is not modified"]:::proven
+    SUBMIT --> LOOKUP
+    HOSTPAGES --> LOOKUP
+    LOOKUP --> SHIFT --> BUILDER --> TX
+    LEDGER --> BUILDER
+    TX --> STOCK
+    TX --> SALE --> FILE
+    SALE --> PRINT
+    TX --> LEDGER
+  end
+
+  subgraph DATA["SQLite and durable local storage"]
+    DB["C:\ProgramData\Salryn\data\salryn.db\nschema migrations 1..21"]:::storage
+    TABLES["Core tables\nroles/users/store_settings/products\nsales/sale_items/payments/stock_movements\ncashier_sessions/audit/error/backup logs"]:::storage
+    MIG21["Migration 21\ndurable remote checkout ledger"]:::storage
+    BACKUP["C:\ProgramData\Salryn\backups\nmanifest + DB + SHA-256\nverify shape/version before restore"]:::storage
+    EXPORT["C:\ProgramData\Salryn\exports"]:::storage
+    LOGS["C:\ProgramData\Salryn\logs"]:::storage
+    RECEIPTS["C:\ProgramData\Salryn\receipts"]:::storage
+    CONFIG["C:\ProgramData\Salryn\config"]:::storage
+    RESTORE["Backup.Manage + licensed feature\nconfirmation text + fresh verification\nsafety backup before replacement\ninvalid/future/corrupt package rejected"]:::proven
+    TX --> DB --> TABLES
+    LEDGER --> MIG21 --> DB
+    FILE --> RECEIPTS
+    DB --> BACKUP --> RESTORE --> DB
+    DB --> EXPORT
+    DB --> LOGS
+    APIHOST --> CONFIG
+  end
+
+  subgraph LICENSE["Licensing boundary"]
+    LICFILE["%LOCALAPPDATA%\Salryn\Licensing\license.json\nsystem .bak.json files"]:::storage
+    LICSVC["LocalLicenseService + enforcement\nmachine binding + feature gates"]:::release
+    PUBKEY["Embedded public verification key only\nRSA SHA-256 verification"]:::security
+    NOPRIV["Private signing key/material\nMUST remain outside repo and installer"]:::risk
+    ENTRY --> LICSVC --> LICFILE
+    PUBKEY --> LICSVC
+    NOPRIV -. forbidden .-> STAGE
+  end
+
+  subgraph BACKLOG["Legacy and remaining release gates"]
+    WF["Salryn.App.WinForms\ncompiled legacy shell\nNOT staged by RC1 installer\nNON-RELEASE surface"]:::legacy
+    DEV["Developer tools / CoreSmoke / InfrastructureSmoke\nverification only"]:::legacy
+    MANLAN["Manual two-machine LAN/browser QA PENDING"]:::pending
+    REBUILD["Installer rebuild + new SHA-256 PENDING"]:::pending
+    RELEASE["Public release update PENDING"]:::pending
+    EXPIRY --> MANLAN --> REBUILD --> RELEASE
+    WF -. "shares Core/Infrastructure but not installer entry" .-> DB
+    DEV -. verifies .-> APIHOST
+  end
+
+  classDef release fill:#e8f1ff,stroke:#1d4ed8,color:#0f172a,stroke-width:1.5px;
+  classDef proven fill:#dcfce7,stroke:#15803d,color:#052e16,stroke-width:1.5px;
+  classDef source fill:#fef9c3,stroke:#a16207,color:#422006,stroke-width:1.5px;
+  classDef pending fill:#ffedd5,stroke:#c2410c,color:#431407,stroke-width:2px;
+  classDef manual fill:#fae8ff,stroke:#a21caf,color:#3b0764,stroke-width:1.5px;
+  classDef storage fill:#f1f5f9,stroke:#475569,color:#0f172a,stroke-width:1.5px;
+  classDef security fill:#ede9fe,stroke:#6d28d9,color:#2e1065,stroke-width:1.5px;
+  classDef risk fill:#fee2e2,stroke:#b91c1c,color:#450a0a,stroke-width:2px;
+  classDef legacy fill:#e5e7eb,stroke:#6b7280,color:#374151,stroke-width:1.5px,stroke-dasharray:5 3;
