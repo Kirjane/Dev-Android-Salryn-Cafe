@@ -8,7 +8,9 @@ using Salryn.Composition.Local;
 using Salryn.Core.Common;
 using Salryn.Core.Host;
 using Salryn.Core.Security;
+using Salryn.Core.Services;
 using Salryn.Core.Services.Licensing;
+using Salryn.Infrastructure.Data.Services;
 
 namespace Salryn.Api.Local;
 
@@ -125,6 +127,8 @@ public static class LocalApiApplicationFactory
         builder.Services.AddSingleton<SaleVoidApiService>();
         builder.Services.AddSingleton<OwnerReportsApiService>();
         builder.Services.AddSingleton<UserAdminApiService>();
+        builder.Services.AddSingleton<IAccountsReceivableService>(
+            new SqliteAccountsReceivableService(composition.ConnectionFactory));
         builder.Services.AddSingleton<RemoteReadOnlyApiService>();
         builder.Services.AddSingleton<LocalApiLanRuntimeStatusService>();
         builder.Services.AddSingleton<LocalLanControlService>();
@@ -309,6 +313,7 @@ public static class LocalApiApplicationFactory
         app.MapLocalBackupPackageEndpoints(composition);
         app.MapLocalHostShiftEndpoints();
         app.MapLocalHostCheckoutEndpoints();
+        app.MapLocalAccountsReceivableEndpoints();
         app.MapLocalReceiptPrinterEndpoints();
         app.MapLocalUserAdminEndpoints();
         app.MapRemoteReadOnlyEndpoints();

@@ -17,6 +17,12 @@ internal static class LocalApiPermissions
     public const string SalesCreate = "Sales.Create";
     public const string SalesVoid = "Sales.Void";
     public const string BackupManage = "Backup.Manage";
+    public const string ReceivablesView = "Receivables.View";
+    public const string ReceivablesCreateCreditSale = "Receivables.CreateCreditSale";
+    public const string ReceivablesCollect = "Receivables.Collect";
+    public const string ReceivablesAdjust = "Receivables.Adjust";
+    public const string ReceivablesExport = "Receivables.Export";
+    public const string ReceivablesManageCustomers = "Receivables.ManageCustomers";
 }
 
 internal static class LocalApiPermissionGuards

@@ -24,6 +24,17 @@ internal static class LocalHostCheckoutEndpoints
                 return unauthorized;
             }
 
+            bool createsReceivable = request.Payments?.Any(payment =>
+                string.Equals(payment.Method, "AccountsReceivable", StringComparison.OrdinalIgnoreCase)) == true;
+            if (createsReceivable &&
+                LocalApiPermissionGuards.RequirePermission(
+                    httpContext,
+                    sessions,
+                    LocalApiPermissions.ReceivablesCreateCreditSale) is IResult creditDenied)
+            {
+                return creditDenied;
+            }
+
             if (await ApiLicenseGuard.RequireLicensedFeatureAsync(LicenseFeatures.Pos, cancellationToken)
                     .ConfigureAwait(false) is IResult licenseDenied)
             {
