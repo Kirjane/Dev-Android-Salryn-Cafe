@@ -45,7 +45,7 @@ export const createCustomer = (body: { fullName: string; phone?: string; note?: 
   request<ReceivableCustomer["customer"]>("/api/customers", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
-export const collectReceivable = (body: { customerId: string; amountCents: number; method: string; note?: string }) =>
+export const collectReceivable = (body: { customerId: string; amountCents: number; method: string; note?: string; clientRequestId: string }) =>
   request("/api/receivables/collections", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });

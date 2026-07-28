@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Data.Sqlite;
 using Salryn.Core.Common;
 using Salryn.Core.Models;
@@ -153,11 +155,32 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         RecordReceivableCollectionRequest request,
         CancellationToken cancellationToken = default)
     {
-        if (request.CustomerId == Guid.Empty || request.CollectedByUserId == Guid.Empty || request.AmountCents <= 0)
-            return Result<AccountsReceivableCollection>.Fail(Error.Validation("Receivables.InvalidCollection", "Customer, collector, and a positive amount are required."));
+        if (request.CustomerId == Guid.Empty || request.CollectedByUserId == Guid.Empty ||
+            request.AmountCents <= 0 || string.IsNullOrWhiteSpace(request.ClientRequestId) ||
+            request.ClientRequestId.Length > 128)
+            return Result<AccountsReceivableCollection>.Fail(Error.Validation(
+                "Receivables.InvalidCollection",
+                "Customer, collector, positive amount, and a valid request id are required."));
         await using SqliteConnection connection = _connections.CreateConnection();
         await connection.OpenAsync(cancellationToken);
-        await using SqliteTransaction transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        await using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        string requestHash = BuildCollectionRequestHash(request);
+        (AccountsReceivableCollection Collection, string RequestHash)? existing =
+            await FindCollectionByRequestAsync(
+                    connection,
+                    transaction,
+                    request.CollectedByUserId,
+                    request.ClientRequestId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        if (existing is not null)
+        {
+            if (!string.Equals(existing.Value.RequestHash, requestHash, StringComparison.Ordinal))
+                return Result<AccountsReceivableCollection>.Fail(Error.Conflict(
+                    "Receivables.CollectionRequestIdReused",
+                    "This collection request id was already used for different collection details."));
+            return Result<AccountsReceivableCollection>.Success(existing.Value.Collection);
+        }
         long balance = await GetBalanceAsync(connection, transaction, request.CustomerId, cancellationToken);
         if (request.AmountCents > balance)
             return Result<AccountsReceivableCollection>.Fail(Error.Validation("Receivables.CollectionExceedsBalance", "Collection cannot exceed the outstanding balance."));
@@ -165,7 +188,8 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         AccountsReceivableCollection collection = new(Guid.NewGuid(), request.CustomerId, request.AmountCents,
             string.IsNullOrWhiteSpace(request.Method) ? "Cash" : request.Method.Trim(), Clean(request.Note),
             request.CollectedByUserId, now, null, null, null);
-        await InsertCollectionAsync(connection, transaction, collection, cancellationToken);
+        await InsertCollectionAsync(
+            connection, transaction, collection, request.ClientRequestId, requestHash, cancellationToken);
         await InsertEntryAsync(connection, transaction, new AccountsReceivableEntry(
             Guid.NewGuid(), request.CustomerId, null, collection.Id, AccountsReceivableEntryType.Collection,
             0, request.AmountCents, balance - request.AmountCents, null, collection.Note,
@@ -241,11 +265,17 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         return value is null or DBNull ? 0 : Convert.ToInt64(value);
     }
 
-    private static async Task InsertCollectionAsync(SqliteConnection c, SqliteTransaction t, AccountsReceivableCollection x, CancellationToken ct)
+    private static async Task InsertCollectionAsync(
+        SqliteConnection c,
+        SqliteTransaction t,
+        AccountsReceivableCollection x,
+        string clientRequestId,
+        string requestHash,
+        CancellationToken ct)
     {
         await using SqliteCommand command = c.CreateCommand();
         command.Transaction = t;
-        command.CommandText = "INSERT INTO accounts_receivable_collections (id,customer_id,amount_cents,method,note,collected_by_user_id,collected_at) VALUES ($id,$customer,$amount,$method,$note,$user,$at);";
+        command.CommandText = "INSERT INTO accounts_receivable_collections (id,customer_id,amount_cents,method,note,collected_by_user_id,collected_at,client_request_id,request_hash) VALUES ($id,$customer,$amount,$method,$note,$user,$at,$request,$hash);";
         command.Parameters.AddWithValue("$id", x.Id.ToString("D"));
         command.Parameters.AddWithValue("$customer", x.CustomerId.ToString("D"));
         command.Parameters.AddWithValue("$amount", x.AmountCents);
@@ -253,7 +283,53 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         command.Parameters.AddWithValue("$note", (object?)x.Note ?? DBNull.Value);
         command.Parameters.AddWithValue("$user", x.CollectedByUserId.ToString("D"));
         command.Parameters.AddWithValue("$at", x.CollectedAt.ToString("O"));
+        command.Parameters.AddWithValue("$request", clientRequestId);
+        command.Parameters.AddWithValue("$hash", requestHash);
         await command.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task<(AccountsReceivableCollection Collection, string RequestHash)?>
+        FindCollectionByRequestAsync(
+            SqliteConnection connection,
+            SqliteTransaction transaction,
+            Guid collectedByUserId,
+            string clientRequestId,
+            CancellationToken cancellationToken)
+    {
+        await using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT id, customer_id, amount_cents, method, note, collected_by_user_id, collected_at,
+                   voided_at, voided_by_user_id, void_reason, request_hash
+            FROM accounts_receivable_collections
+            WHERE collected_by_user_id = $user AND client_request_id = $request;
+            """;
+        command.Parameters.AddWithValue("$user", collectedByUserId.ToString("D"));
+        command.Parameters.AddWithValue("$request", clientRequestId);
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+            return null;
+
+        AccountsReceivableCollection collection = new(
+            Guid.Parse(reader.GetString(0)),
+            Guid.Parse(reader.GetString(1)),
+            reader.GetInt64(2),
+            reader.GetString(3),
+            reader.IsDBNull(4) ? null : reader.GetString(4),
+            Guid.Parse(reader.GetString(5)),
+            DateTimeOffset.Parse(reader.GetString(6)),
+            reader.IsDBNull(7) ? null : DateTimeOffset.Parse(reader.GetString(7)),
+            reader.IsDBNull(8) ? null : Guid.Parse(reader.GetString(8)),
+            reader.IsDBNull(9) ? null : reader.GetString(9));
+        return (collection, reader.GetString(10));
+    }
+
+    private static string BuildCollectionRequestHash(RecordReceivableCollectionRequest request)
+    {
+        string canonical =
+            $"{request.CustomerId:N}|{request.AmountCents}|{request.Method.Trim().ToUpperInvariant()}|{request.Note?.Trim() ?? string.Empty}";
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 
     internal static async Task InsertEntryAsync(SqliteConnection c, SqliteTransaction t, AccountsReceivableEntry x, CancellationToken ct)

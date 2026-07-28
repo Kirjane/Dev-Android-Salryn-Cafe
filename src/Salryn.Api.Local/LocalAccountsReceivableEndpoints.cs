@@ -61,7 +61,8 @@ internal static class LocalAccountsReceivableEndpoints
             if (Guard(context, sessions, LocalApiPermissions.ReceivablesCollect) is IResult denied) return denied;
             LocalApiSession session = RequiredSession(context, sessions);
             return ToResult(await service.CollectAsync(new(
-                request.CustomerId, request.AmountCents, request.Method, request.Note, session.UserId), ct),
+                request.CustomerId, request.AmountCents, request.Method, request.Note, session.UserId,
+                request.ClientRequestId), ct),
                 StatusCodes.Status201Created);
         });
 
@@ -112,7 +113,12 @@ internal static class LocalAccountsReceivableEndpoints
         string FullName, string? Phone, string? Address, string? Note, long? CreditLimitCents);
     private sealed record UpdateCustomerApiRequest(
         string FullName, string? Phone, string? Address, string? Note, long? CreditLimitCents, bool IsActive);
-    private sealed record CollectionApiRequest(Guid CustomerId, long AmountCents, string Method, string? Note);
+    private sealed record CollectionApiRequest(
+        Guid CustomerId,
+        long AmountCents,
+        string Method,
+        string? Note,
+        string ClientRequestId);
     private sealed record AdjustmentApiRequest(Guid CustomerId, long AmountCents, bool IsDebit, string Note);
     private sealed record VoidCollectionApiRequest(string Reason);
 }

@@ -43,6 +43,7 @@ public static class DefaultDatabaseInitializationFactory
         // Version 21 adds durable Remote POS checkout request reconciliation.
         // Version 22 adds the U1 accounts receivable ledger.
         // Version 23 adds durable host checkout request reconciliation.
+        // Version 24 adds durable receivable collection request reconciliation.
         IDatabaseMigration[] migrations =
         {
             new InitialSchemaMigration(),
@@ -67,7 +68,8 @@ public static class DefaultDatabaseInitializationFactory
             new StoreLogoBrandingSchemaMigration(),
             new RemotePosCheckoutRequestSchemaMigration(),
             new AccountsReceivableSchemaMigration(),
-            new HostCheckoutRequestSchemaMigration()
+            new HostCheckoutRequestSchemaMigration(),
+            new ReceivableCollectionRequestSchemaMigration()
         };
 
         MigrationRunner migrationRunner = new(connectionFactory, migrations);

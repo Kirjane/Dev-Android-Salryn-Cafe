@@ -32,12 +32,21 @@ public static class U1AccountsReceivableLedgerChecks
             Require(firstDebit.IsSuccess && secondDebit.IsSuccess, "Recurring Utang debits must succeed.");
             Require(secondDebit.Value.BalanceAfterCents == 20_000, "Recurring Utang must accumulate.");
 
-            var collection = await service.CollectAsync(new(customerId, 5_000, "Cash", "Partial collection", userId));
+            string collectionRequestId = Guid.NewGuid().ToString("N");
+            var collection = await service.CollectAsync(new(
+                customerId, 5_000, "Cash", "Partial collection", userId, collectionRequestId));
             Require(collection.IsSuccess, "Collection must succeed.");
+            var duplicateCollection = await service.CollectAsync(new(
+                customerId, 5_000, "Cash", "Partial collection", userId, collectionRequestId));
+            Require(
+                duplicateCollection.IsSuccess && duplicateCollection.Value.Id == collection.Value.Id,
+                "Duplicate collection request must reconcile to the original collection.");
             var ledger = await service.GetLedgerAsync(customerId);
-            Require(ledger.IsSuccess && ledger.Value.Count == 3, "Ledger history must remain append-only.");
+            Require(ledger.IsSuccess && ledger.Value.Count == 3, "Duplicate collection must add only one ledger credit.");
             Require(ledger.Value[^1].BalanceAfterCents == 15_000, "Collection must reduce the balance.");
             Require(Count(paths.DatabasePath, "sales") == 0, "Collection must not create a second sale.");
+            Require(Count(paths.DatabasePath, "accounts_receivable_collections") == 1,
+                "Duplicate collection must create one collection row.");
 
             string saleRepository = ReadRepo("src", "Salryn.Infrastructure", "Data", "Repositories", "Sales", "SqliteSaleWriteRepository.cs");
             Require(saleRepository.Contains("InsertReceivableDebit(connection, transaction, sale)", StringComparison.Ordinal),

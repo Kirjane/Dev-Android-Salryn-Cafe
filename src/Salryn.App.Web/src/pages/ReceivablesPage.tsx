@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { ApiError } from "../api/http";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   collectReceivable,
@@ -18,6 +19,8 @@ export function ReceivablesPage() {
   const [collectionAmount, setCollectionAmount] = useState("");
   const [collectionNote, setCollectionNote] = useState("");
   const [message, setMessage] = useState("");
+  const [isCollecting, setIsCollecting] = useState(false);
+  const collectionRequestIdRef = useRef<string | null>(null);
   const summary = useQuery({ queryKey: ["receivables-summary"], queryFn: fetchReceivablesSummary });
   const customers = useQuery({ queryKey: ["receivables-customers", search], queryFn: () => fetchReceivableCustomers(search) });
   const ledger = useQuery({
@@ -28,13 +31,18 @@ export function ReceivablesPage() {
   const selected = customers.data?.find((row) => row.customer.id === selectedId);
 
   async function collect() {
+    if (isCollecting) return;
     const amountCents = Math.round(Number(collectionAmount) * 100);
     if (!selectedId || !Number.isFinite(amountCents) || amountCents <= 0) {
       setMessage("Select a customer and enter a positive collection amount.");
       return;
     }
+    setIsCollecting(true);
     try {
-      await collectReceivable({ customerId: selectedId, amountCents, method: "Cash", note: collectionNote || undefined });
+      const clientRequestId = collectionRequestIdRef.current ?? crypto.randomUUID();
+      collectionRequestIdRef.current = clientRequestId;
+      await collectReceivable({ customerId: selectedId, amountCents, method: "Cash", note: collectionNote || undefined, clientRequestId });
+      collectionRequestIdRef.current = null;
       setCollectionAmount(""); setCollectionNote(""); setMessage("Collection recorded. No new sale was created.");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["receivables-summary"] }),
@@ -42,7 +50,10 @@ export function ReceivablesPage() {
         queryClient.invalidateQueries({ queryKey: ["receivables-ledger", selectedId] }),
       ]);
     } catch (error) {
+      if (error instanceof ApiError) collectionRequestIdRef.current = null;
       setMessage(error instanceof Error ? error.message : "Collection failed.");
+    } finally {
+      setIsCollecting(false);
     }
   }
 
@@ -72,7 +83,7 @@ export function ReceivablesPage() {
       </CardBody></Card>
       <Card><CardHeader><CardTitle>{selected ? `${selected.customer.fullName} ledger` : "Customer ledger"}</CardTitle></CardHeader><CardBody className="space-y-4">
         {!selectedId ? <p className="text-sm text-slate-500">Select a customer to inspect recurring Utang and collections.</p> : <>
-          <div className="grid gap-2 sm:grid-cols-3"><TextInput value={collectionAmount} onChange={(event) => setCollectionAmount(event.target.value)} inputMode="decimal" placeholder="Collection amount" /><TextInput value={collectionNote} onChange={(event) => setCollectionNote(event.target.value)} placeholder="Optional collection note" /><Button onClick={() => void collect()}>Collect payment</Button></div>
+          <div className="grid gap-2 sm:grid-cols-3"><TextInput value={collectionAmount} onChange={(event) => setCollectionAmount(event.target.value)} inputMode="decimal" placeholder="Collection amount" disabled={isCollecting} /><TextInput value={collectionNote} onChange={(event) => setCollectionNote(event.target.value)} placeholder="Optional collection note" disabled={isCollecting} /><Button onClick={() => void collect()} disabled={isCollecting}>{isCollecting ? "Recording..." : "Collect payment"}</Button></div>
           <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left text-xs uppercase text-slate-500"><th className="p-2">Date</th><th className="p-2">Entry</th><th className="p-2">Debit</th><th className="p-2">Credit</th><th className="p-2">Balance</th><th className="p-2">Note</th></tr></thead><tbody>{(ledger.data ?? []).map((entry) => <tr key={entry.id} className="border-b"><td className="p-2">{formatDateTime(entry.createdAt)}</td><td className="p-2">{entry.entryType}</td><td className="p-2">{money(entry.debitCents)}</td><td className="p-2">{money(entry.creditCents)}</td><td className="p-2 font-semibold">{money(entry.balanceAfterCents)}</td><td className="p-2">{entry.note || "—"}</td></tr>)}</tbody></table></div>
         </>}
       </CardBody></Card>

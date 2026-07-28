@@ -24,7 +24,8 @@ public sealed record RecordReceivableCollectionRequest(
     long AmountCents,
     string Method,
     string? Note,
-    Guid CollectedByUserId);
+    Guid CollectedByUserId,
+    string ClientRequestId);
 
 public sealed record RecordReceivableAdjustmentRequest(
     Guid CustomerId,
