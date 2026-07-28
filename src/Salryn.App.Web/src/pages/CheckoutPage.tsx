@@ -124,7 +124,13 @@ export function CheckoutPage() {
   const shiftQuery = useQuery({ queryKey: ["host-checkout-shift"], queryFn: fetchHostShift, retry: false });
   const unitsQuery = useQuery({ queryKey: ["host-checkout-product-units"], queryFn: fetchProductUnits, retry: false });
   const productsQuery = useQuery({ queryKey: ["host-checkout-products", search, productPage], queryFn: () => fetchProducts({ search: search.trim() || undefined, isActive: true, page: productPage, pageSize: checkoutPageSize }), retry: false });
-  const customersQuery = useQuery({ queryKey: ["receivable-customers-checkout"], queryFn: () => fetchReceivableCustomers(), retry: false });
+  const canCreateReceivable = sessionQuery.data?.user?.permissions.includes("Receivables.CreateCreditSale") ?? false;
+  const customersQuery = useQuery({
+    queryKey: ["receivable-customers-checkout"],
+    queryFn: () => fetchReceivableCustomers(),
+    retry: false,
+    enabled: canCreateReceivable,
+  });
 
   const subtotal = useMemo(() => cartLines.reduce((sum, line) => sum + line.product.sellingPrice * line.quantity, 0), [cartLines]);
   const itemQuantityTotal = useMemo(() => cartLines.reduce((sum, line) => sum + line.quantity, 0), [cartLines]);
@@ -146,12 +152,13 @@ export function CheckoutPage() {
     if (cartLines.length === 0) return "No cart lines yet.";
     if (paymentMode === "Cash" && cashCents <= 0) return "Cash tender is missing.";
     if (paymentMode === "Cash" && cashCents < subtotalCents) return "Cash tender is below subtotal.";
+    if (paymentMode !== "Cash" && !canCreateReceivable) return "Your role cannot create an Utang sale.";
     if (paymentMode === "Utang" && cashCents !== 0) return "Full Utang requires cash received to be zero.";
     if (paymentMode === "CashUtang" && (cashCents <= 0 || cashCents >= subtotalCents)) return "Cash + Utang requires a partial cash amount.";
     if (balanceDueCents > 0 && !customerId) return "Select a customer for the Utang balance.";
     if (isSubmittingCheckout) return "Checkout is submitting.";
     return null;
-  }, [balanceDueCents, cartLines.length, cashCents, completedSale, customerId, isSubmittingCheckout, paymentMode, shiftOpen, subtotalCents]);
+  }, [balanceDueCents, canCreateReceivable, cartLines.length, cashCents, completedSale, customerId, isSubmittingCheckout, paymentMode, shiftOpen, subtotalCents]);
   const canReviewCheckout = cartValidationMessage === null && cartLines.length > 0;
 
   useEffect(() => {
@@ -166,6 +173,14 @@ export function CheckoutPage() {
   }, [canReviewCheckout, completedSale, showConfirmCheckout, showFastAdd]);
 
   useEffect(() => { if (!fastAddUnitId && unitsQuery.data && unitsQuery.data.length > 0) setFastAddUnitId(unitsQuery.data[0].id); }, [fastAddUnitId, unitsQuery.data]);
+  useEffect(() => {
+    if (!canCreateReceivable && paymentMode !== "Cash") {
+      setPaymentMode("Cash");
+      setCustomerId("");
+      setDueDate("");
+      setUtangNote("");
+    }
+  }, [canCreateReceivable, paymentMode]);
 
   function handleSearchChange(value: string) { setSearch(value); setProductPage(1); setBarcodeStatus(null); }
 
