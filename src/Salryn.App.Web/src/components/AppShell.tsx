@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { fetchRemotePosPairingHostStatus } from "../api/remoteReadOnlyClient";
 import type { SessionState } from "../api/session";
+import type { LocalLicenseStatus } from "../api/license";
 import { fetchStoreBranding } from "../api/storeSettings";
 import { getNavItems, type AppPage } from "../navigation";
 import { hasPermission, Permissions } from "../security/permissions";
@@ -41,14 +42,15 @@ const navIcons: Record<string, LucideIcon> = {
 
 type AppShellProps = {
   session: SessionState;
+  licenseStatus: LocalLicenseStatus;
   currentPage: AppPage;
   onNavigate: (page: AppPage) => void;
   onLogout: () => void;
   children: ReactNode;
 };
 
-export function AppShell({ session, currentPage, onNavigate, onLogout, children }: AppShellProps) {
-  const visibleNavItems = getNavItems(session);
+export function AppShell({ session, licenseStatus, currentPage, onNavigate, onLogout, children }: AppShellProps) {
+  const visibleNavItems = getNavItems(session, licenseStatus.enabledFeatures);
   const terminalManagementVisible = visibleNavItems.some((item) => item.id === "host-lan-control");
   const canViewPendingJoinRequests =
     terminalManagementVisible && hasPermission(session, Permissions.StoreTerminalView);

@@ -11,6 +11,7 @@ using Salryn.Core.Security;
 using Salryn.Core.Services;
 using Salryn.Core.Services.Licensing;
 using Salryn.Infrastructure.Data.Services;
+using Salryn.Infrastructure.Licensing;
 
 namespace Salryn.Api.Local;
 
@@ -120,6 +121,10 @@ public static class LocalApiApplicationFactory
         builder.Services.AddSingleton(new LocalApiHostControlUrls(localUrl));
         builder.Services.AddSingleton(sessionStore);
         builder.Services.AddSingleton(sessionService);
+        ILocalLicenseService licenseService = options.LicenseService ?? new LocalLicenseService();
+        builder.Services.AddSingleton(licenseService);
+        builder.Services.AddSingleton<ILocalLicenseEnforcementService>(
+            new LocalLicenseEnforcementService(licenseService));
         builder.Services.AddSingleton(dashboardSummaryService);
         builder.Services.AddSingleton<OperatorReadService>();
         builder.Services.AddSingleton<FastAddProductApiService>();

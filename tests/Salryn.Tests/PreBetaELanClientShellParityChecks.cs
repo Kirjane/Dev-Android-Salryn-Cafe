@@ -64,7 +64,10 @@ public static class PreBetaELanClientShellParityChecks
 
         // Host shell still has admin surfaces (contrast)
         RequireContains(hostShell, "Terminal Management", "Host shell must retain Terminal Management.");
-        RequireContains(hostShell, "getNavItems(session)", "Host shell must keep permission-filtered host nav.");
+        RequireContains(
+            hostShell,
+            "getNavItems(session, licenseStatus.enabledFeatures)",
+            "Host shell must keep permission-and-entitlement-filtered host nav.");
     }
 
     private static string Read(string root, params string[] parts) =>

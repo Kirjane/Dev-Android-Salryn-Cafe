@@ -1,6 +1,7 @@
 using Salryn.Api.Local.Auth;
 using Salryn.Core.Common;
 using Salryn.Core.Services;
+using Salryn.Core.Services.Licensing;
 
 namespace Salryn.Api.Local;
 
@@ -9,16 +10,17 @@ internal static class LocalAccountsReceivableEndpoints
     public static WebApplication MapLocalAccountsReceivableEndpoints(this WebApplication app)
     {
         app.MapGet("/api/customers", async (string? search, HttpContext context, LocalApiSessionService sessions,
-            IAccountsReceivableService service, CancellationToken ct) =>
+            IAccountsReceivableService service, ILocalLicenseEnforcementService licensing, CancellationToken ct) =>
         {
-            if (Guard(context, sessions, LocalApiPermissions.ReceivablesView) is IResult denied) return denied;
+            if (await Guard(context, sessions, licensing, LocalApiPermissions.ReceivablesView, ct) is IResult denied) return denied;
             return ToResult(await service.SearchCustomersAsync(search, ct));
         });
 
         app.MapPost("/api/customers", async (CreateCustomerApiRequest request, HttpContext context,
             LocalApiSessionService sessions, IAccountsReceivableService service, CancellationToken ct) =>
         {
-            if (Guard(context, sessions, LocalApiPermissions.ReceivablesManageCustomers) is IResult denied) return denied;
+            ILocalLicenseEnforcementService licensing = context.RequestServices.GetRequiredService<ILocalLicenseEnforcementService>();
+            if (await Guard(context, sessions, licensing, LocalApiPermissions.ReceivablesManageCustomers, ct) is IResult denied) return denied;
             LocalApiSession session = RequiredSession(context, sessions);
             return ToResult(await service.CreateCustomerAsync(new(
                 request.FullName, request.Phone, request.Address, request.Note,
@@ -28,7 +30,8 @@ internal static class LocalAccountsReceivableEndpoints
         app.MapPatch("/api/customers/{id:guid}", async (Guid id, UpdateCustomerApiRequest request, HttpContext context,
             LocalApiSessionService sessions, IAccountsReceivableService service, CancellationToken ct) =>
         {
-            if (Guard(context, sessions, LocalApiPermissions.ReceivablesManageCustomers) is IResult denied) return denied;
+            ILocalLicenseEnforcementService licensing = context.RequestServices.GetRequiredService<ILocalLicenseEnforcementService>();
+            if (await Guard(context, sessions, licensing, LocalApiPermissions.ReceivablesManageCustomers, ct) is IResult denied) return denied;
             return ToResult(await service.UpdateCustomerAsync(id, new(
                 request.FullName, request.Phone, request.Address, request.Note,
                 request.CreditLimitCents, request.IsActive), ct));
@@ -37,28 +40,32 @@ internal static class LocalAccountsReceivableEndpoints
         app.MapGet("/api/receivables/summary", async (HttpContext context, LocalApiSessionService sessions,
             IAccountsReceivableService service, CancellationToken ct) =>
         {
-            if (Guard(context, sessions, LocalApiPermissions.ReceivablesView) is IResult denied) return denied;
+            ILocalLicenseEnforcementService licensing = context.RequestServices.GetRequiredService<ILocalLicenseEnforcementService>();
+            if (await Guard(context, sessions, licensing, LocalApiPermissions.ReceivablesView, ct) is IResult denied) return denied;
             return ToResult(await service.GetSummaryAsync(ct));
         });
 
         app.MapGet("/api/receivables/customers", async (string? search, HttpContext context,
             LocalApiSessionService sessions, IAccountsReceivableService service, CancellationToken ct) =>
         {
-            if (Guard(context, sessions, LocalApiPermissions.ReceivablesView) is IResult denied) return denied;
+            ILocalLicenseEnforcementService licensing = context.RequestServices.GetRequiredService<ILocalLicenseEnforcementService>();
+            if (await Guard(context, sessions, licensing, LocalApiPermissions.ReceivablesView, ct) is IResult denied) return denied;
             return ToResult(await service.SearchCustomersAsync(search, ct));
         });
 
         app.MapGet("/api/receivables/customers/{id:guid}/ledger", async (Guid id, HttpContext context,
             LocalApiSessionService sessions, IAccountsReceivableService service, CancellationToken ct) =>
         {
-            if (Guard(context, sessions, LocalApiPermissions.ReceivablesView) is IResult denied) return denied;
+            ILocalLicenseEnforcementService licensing = context.RequestServices.GetRequiredService<ILocalLicenseEnforcementService>();
+            if (await Guard(context, sessions, licensing, LocalApiPermissions.ReceivablesView, ct) is IResult denied) return denied;
             return ToResult(await service.GetLedgerAsync(id, ct));
         });
 
         app.MapPost("/api/receivables/collections", async (CollectionApiRequest request, HttpContext context,
             LocalApiSessionService sessions, IAccountsReceivableService service, CancellationToken ct) =>
         {
-            if (Guard(context, sessions, LocalApiPermissions.ReceivablesCollect) is IResult denied) return denied;
+            ILocalLicenseEnforcementService licensing = context.RequestServices.GetRequiredService<ILocalLicenseEnforcementService>();
+            if (await Guard(context, sessions, licensing, LocalApiPermissions.ReceivablesCollect, ct) is IResult denied) return denied;
             LocalApiSession session = RequiredSession(context, sessions);
             return ToResult(await service.CollectAsync(new(
                 request.CustomerId, request.AmountCents, request.Method, request.Note, session.UserId,
@@ -69,7 +76,8 @@ internal static class LocalAccountsReceivableEndpoints
         app.MapPost("/api/receivables/adjustments", async (AdjustmentApiRequest request, HttpContext context,
             LocalApiSessionService sessions, IAccountsReceivableService service, CancellationToken ct) =>
         {
-            if (Guard(context, sessions, LocalApiPermissions.ReceivablesAdjust) is IResult denied) return denied;
+            ILocalLicenseEnforcementService licensing = context.RequestServices.GetRequiredService<ILocalLicenseEnforcementService>();
+            if (await Guard(context, sessions, licensing, LocalApiPermissions.ReceivablesAdjust, ct) is IResult denied) return denied;
             LocalApiSession session = RequiredSession(context, sessions);
             return ToResult(await service.AdjustAsync(new(
                 request.CustomerId, request.AmountCents, request.IsDebit, request.Note, session.UserId), ct),
@@ -80,7 +88,8 @@ internal static class LocalAccountsReceivableEndpoints
             HttpContext context, LocalApiSessionService sessions, IAccountsReceivableService service,
             CancellationToken ct) =>
         {
-            if (Guard(context, sessions, LocalApiPermissions.ReceivablesAdjust) is IResult denied) return denied;
+            ILocalLicenseEnforcementService licensing = context.RequestServices.GetRequiredService<ILocalLicenseEnforcementService>();
+            if (await Guard(context, sessions, licensing, LocalApiPermissions.ReceivablesAdjust, ct) is IResult denied) return denied;
             LocalApiSession session = RequiredSession(context, sessions);
             Result result = await service.VoidCollectionAsync(id, session.UserId, request.Reason, ct);
             return result.IsSuccess ? Results.Ok(new { status = "Voided" }) : ToError(result.ErrorDetail);
@@ -89,8 +98,28 @@ internal static class LocalAccountsReceivableEndpoints
         return app;
     }
 
-    private static IResult? Guard(HttpContext context, LocalApiSessionService sessions, string permission) =>
-        LocalApiPermissionGuards.RequirePermission(context, sessions, permission);
+    private static async Task<IResult?> Guard(
+        HttpContext context,
+        LocalApiSessionService sessions,
+        ILocalLicenseEnforcementService licensing,
+        string permission,
+        CancellationToken cancellationToken)
+    {
+        if (ApiAuthExtensions.RequireAuthenticatedSession(context, sessions) is IResult unauthenticated)
+        {
+            return unauthenticated;
+        }
+
+        if (await ApiLicenseGuard.RequireLicensedFeatureAsync(
+                licensing,
+                LicenseFeatures.ReceivablesUtangLedger,
+                cancellationToken).ConfigureAwait(false) is IResult unlicensed)
+        {
+            return unlicensed;
+        }
+
+        return LocalApiPermissionGuards.RequirePermission(context, sessions, permission);
+    }
 
     private static LocalApiSession RequiredSession(HttpContext context, LocalApiSessionService sessions) =>
         sessions.GetRequiredSession(context.Request.Cookies[LocalApiSessionService.SessionCookieName])!;

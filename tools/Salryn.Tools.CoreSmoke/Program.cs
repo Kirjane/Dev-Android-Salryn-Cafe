@@ -614,6 +614,9 @@ public static class Program
             case "u1-accounts-receivable":
                 U1AccountsReceivableLedgerChecks.RunAsync().GetAwaiter().GetResult();
                 return;
+            case "u1-entitlement-gating":
+                U1EntitlementGatingChecks.RunAsync().GetAwaiter().GetResult();
+                return;
             case "user-m1-host-only-user-creation":
                 UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
                 return;

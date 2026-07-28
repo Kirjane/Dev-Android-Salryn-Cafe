@@ -12,6 +12,7 @@ using Salryn.Core.Models;
 using Salryn.Core.ReadModels;
 using Salryn.Core.Security;
 using Salryn.Core.Services;
+using Salryn.Core.Services.Licensing;
 using Salryn.Infrastructure.Data;
 using Salryn.Infrastructure.Data.Services;
 using Salryn.Infrastructure.Data.Seeding;
@@ -197,6 +198,7 @@ public static class U1AccountsReceivableRuntimeChecks
         Guid userId,
         Guid customerId)
     {
+        ToggleU1LicenseService licenseService = new();
         InMemoryLocalApiSessionStore sessions = new();
         await using WebApplication app = await LocalApiApplicationFactory.CreateAsync(
             new[] { "--dev" },
@@ -206,6 +208,7 @@ public static class U1AccountsReceivableRuntimeChecks
                 Composition = composition,
                 InitializeDatabase = false,
                 SessionStore = sessions,
+                LicenseService = licenseService,
                 EnableStaticWebAssets = false,
                 WriteDevelopmentDatabasePath = false
             });
@@ -217,6 +220,22 @@ public static class U1AccountsReceivableRuntimeChecks
             using HttpClient anonymous = new() { BaseAddress = address };
             Require((await anonymous.GetAsync("/api/receivables/summary")).StatusCode == HttpStatusCode.Unauthorized,
                 "Unauthenticated receivables request must be denied.");
+
+            LocalApiSession managerSession = sessions.Create(new AuthenticatedUserReadModel(
+                userId, "u1-manager", "U1 Manager", "Manager", UserStatus.Active,
+                new[]
+                {
+                    DefaultSeedData.Permissions.ReceivablesView,
+                    DefaultSeedData.Permissions.ReceivablesCollect
+                }));
+            using HttpClient manager = Client(address, managerSession);
+            using HttpResponseMessage baseLicenseSummary = await manager.GetAsync("/api/receivables/summary");
+            Require(baseLicenseSummary.StatusCode == HttpStatusCode.Forbidden &&
+                    (await baseLicenseSummary.Content.ReadAsStringAsync())
+                        .Contains("Receivables.FeatureNotLicensed", StringComparison.Ordinal),
+                "Base Host state must deny U1 with the feature-not-licensed code.");
+
+            licenseService.U1Enabled = true;
 
             LocalApiSession cashierSession = sessions.Create(new AuthenticatedUserReadModel(
                 userId, "u1-cashier", "U1 Cashier", "Cashier", UserStatus.Active,
@@ -231,18 +250,10 @@ public static class U1AccountsReceivableRuntimeChecks
                     payments = new[] { new { method = "AccountsReceivable", amountCents = 1 } }
                 });
             Require(cashierCredit.StatusCode == HttpStatusCode.Forbidden,
-                "Cashier without Receivables.CreateCreditSale must be denied credit checkout.");
+                "Licensed Cashier without Receivables.CreateCreditSale must be denied credit checkout.");
 
-            LocalApiSession managerSession = sessions.Create(new AuthenticatedUserReadModel(
-                userId, "u1-manager", "U1 Manager", "Manager", UserStatus.Active,
-                new[]
-                {
-                    DefaultSeedData.Permissions.ReceivablesView,
-                    DefaultSeedData.Permissions.ReceivablesCollect
-                }));
-            using HttpClient manager = Client(address, managerSession);
             Require((await manager.GetAsync("/api/receivables/summary")).StatusCode == HttpStatusCode.OK,
-                "Manager with Receivables.View must be allowed to read summary.");
+                "Licensed Manager with Receivables.View must be allowed to read summary.");
             using HttpResponseMessage managerCollection = await manager.PostAsJsonAsync(
                 "/api/receivables/collections",
                 new
@@ -266,6 +277,42 @@ public static class U1AccountsReceivableRuntimeChecks
         {
             await app.StopAsync();
         }
+    }
+
+    private sealed class ToggleU1LicenseService : ILocalLicenseService
+    {
+        public bool U1Enabled { get; set; }
+
+        public Task<LocalLicenseValidationResult> GetStatusAsync(CancellationToken cancellationToken = default)
+        {
+            IReadOnlyList<string> features = U1Enabled
+                ? new[] { LicenseFeatures.Pos, LicenseFeatures.ReceivablesUtangLedger }
+                : new[] { LicenseFeatures.Pos };
+            return Task.FromResult(new LocalLicenseValidationResult(
+                LicenseStatus.Licensed,
+                LicenseEdition.Local,
+                features,
+                ExpiresAt: null,
+                DaysRemaining: null,
+                MachineMatched: true,
+                Message: "U1 runtime test Host license.",
+                SourcePath: "test",
+                ValidationTimestamp: DateTimeOffset.UtcNow,
+                LicenseType: LicenseType.Host));
+        }
+
+        public Task<LocalLicenseInstallResponse> InstallAsync(
+            LocalLicenseInstallRequest request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<bool> HasFeatureAsync(string feature, CancellationToken cancellationToken = default) =>
+            Task.FromResult(
+                string.Equals(feature, LicenseFeatures.Pos, StringComparison.Ordinal) ||
+                (U1Enabled && string.Equals(
+                    feature,
+                    LicenseFeatures.ReceivablesUtangLedger,
+                    StringComparison.Ordinal)));
     }
 
     private static HttpClient Client(Uri address, LocalApiSession session)

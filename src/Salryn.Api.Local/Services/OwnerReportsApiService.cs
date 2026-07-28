@@ -20,7 +20,8 @@ public sealed class OwnerReportsApiService
 
     public Task<Result<OwnerReportsResponse>> GetSummaryAsync(
         DateTimeOffset? nowOverride = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool includeReceivables = true)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -69,7 +70,9 @@ public sealed class OwnerReportsApiService
                 CategoryTotals: ReadCategoryTotals(connection, monthStart, monthEnd),
                 LowStock: ReadLowStock(connection),
                 InventoryValue: ReadInventoryValue(connection),
-                Receivables: ReadReceivables(connection, monthStart, monthEnd, todayStart));
+                Receivables: includeReceivables
+                    ? ReadReceivables(connection, monthStart, monthEnd, todayStart)
+                    : null);
 
             return Task.FromResult(Result<OwnerReportsResponse>.Success(response));
         }

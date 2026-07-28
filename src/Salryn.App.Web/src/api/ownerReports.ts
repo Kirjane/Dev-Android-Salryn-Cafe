@@ -70,7 +70,7 @@ export type OwnerReportsResponse = {
     collectionsCents: number;
     outstandingCents: number;
     overdueCents: number;
-  };
+  } | null;
 };
 
 export async function fetchOwnerReportsSummary(): Promise<OwnerReportsResponse> {

@@ -14,6 +14,7 @@ internal static class LocalOwnerReportsEndpoints
             HttpContext httpContext,
             LocalApiSessionService sessions,
             OwnerReportsApiService service,
+            ILocalLicenseEnforcementService licensing,
             CancellationToken cancellationToken) =>
         {
             if (LocalApiPermissionGuards.RequirePermission(httpContext, sessions, LocalApiPermissions.ReportsView) is IResult denied)
@@ -27,7 +28,13 @@ internal static class LocalOwnerReportsEndpoints
                 return licenseDenied;
             }
 
-            Result<OwnerReportsResponse> result = await service.GetSummaryAsync(cancellationToken: cancellationToken)
+            LicenseEnforcementDecision receivablesDecision = await licensing
+                .RequireFeatureAsync(LicenseFeatures.ReceivablesUtangLedger, cancellationToken)
+                .ConfigureAwait(false);
+
+            Result<OwnerReportsResponse> result = await service.GetSummaryAsync(
+                    includeReceivables: receivablesDecision.Allowed,
+                    cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
             if (result.IsSuccess)

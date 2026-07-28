@@ -12,7 +12,7 @@ public sealed record OwnerReportsResponse(
     IReadOnlyList<OwnerCategoryTotalRow> CategoryTotals,
     IReadOnlyList<OwnerLowStockRow> LowStock,
     OwnerInventoryValueSummary InventoryValue,
-    OwnerReceivablesSummary Receivables);
+    OwnerReceivablesSummary? Receivables);
 
 public sealed record OwnerReceivablesSummary(
     long CreditSalesCents,

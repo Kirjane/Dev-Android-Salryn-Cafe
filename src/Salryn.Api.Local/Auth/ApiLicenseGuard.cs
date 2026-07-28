@@ -30,7 +30,9 @@ internal static class ApiLicenseGuard
 
         return Results.Json(
             new LicenseDeniedApiResponse(
-                "License.FeatureDenied",
+                string.Equals(feature, LicenseFeatures.ReceivablesUtangLedger, StringComparison.Ordinal)
+                    ? "Receivables.FeatureNotLicensed"
+                    : "License.FeatureDenied",
                 decision.Message,
                 decision.RequiredFeature,
                 decision.LicenseStatus,

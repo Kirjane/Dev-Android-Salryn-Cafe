@@ -168,9 +168,12 @@ function ConsoleApp() {
   if (!sessionQuery.data?.isAuthenticated) return <LoginPage onLoggedIn={() => void queryClient.invalidateQueries({ queryKey: ["session"] })} />;
 
   const session = sessionQuery.data;
+  const licenseStatus = licenseStatusQuery.data!;
   const firstAllowedPage = getFirstAllowedPage(session);
-  const pageContent = canAccessPage(session, currentPage) ? renderPage(currentPage, session, () => void handleLogout(), setCurrentPage) : <AccessDenied currentPage={currentPage} onGoHome={() => firstAllowedPage && setCurrentPage(firstAllowedPage)} />;
-  return <AppShell session={session} currentPage={currentPage} onNavigate={setCurrentPage} onLogout={() => void handleLogout()}>{pageContent}</AppShell>;
+  const u1Licensed = licenseStatus.enabledFeatures.includes("ReceivablesUtangLedger");
+  const pageAllowed = canAccessPage(session, currentPage) && (currentPage !== "receivables" || u1Licensed);
+  const pageContent = pageAllowed ? renderPage(currentPage, session, () => void handleLogout(), setCurrentPage) : <AccessDenied currentPage={currentPage} onGoHome={() => firstAllowedPage && setCurrentPage(firstAllowedPage)} />;
+  return <AppShell session={session} licenseStatus={licenseStatus} currentPage={currentPage} onNavigate={setCurrentPage} onLogout={() => void handleLogout()}>{pageContent}</AppShell>;
 }
 
 function isHostLicenseReady(status: LocalLicenseStatus | undefined): boolean {

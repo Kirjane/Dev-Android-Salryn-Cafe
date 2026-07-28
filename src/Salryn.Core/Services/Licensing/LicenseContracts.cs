@@ -36,6 +36,7 @@ public static class LicenseFeatures
     public const string Backup = "Backup";
     public const string Licensing = "Licensing";
     public const string LanTerminals = "LanTerminals";
+    public const string ReceivablesUtangLedger = "ReceivablesUtangLedger";
 
     /// <summary>Features a Terminal license may enable (LAN terminal surface only).</summary>
     public static IReadOnlySet<string> TerminalAllowed { get; } = new HashSet<string>(StringComparer.Ordinal)
@@ -51,7 +52,8 @@ public static class LicenseFeatures
         Reports,
         Users,
         Backup,
-        Licensing
+        Licensing,
+        ReceivablesUtangLedger
     };
 
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(StringComparer.Ordinal)
@@ -62,7 +64,8 @@ public static class LicenseFeatures
         Users,
         Backup,
         Licensing,
-        LanTerminals
+        LanTerminals,
+        ReceivablesUtangLedger
     };
 
     public static IReadOnlyList<string> AllList { get; } = new[]
@@ -73,7 +76,8 @@ public static class LicenseFeatures
         Users,
         Backup,
         Licensing,
-        LanTerminals
+        LanTerminals,
+        ReceivablesUtangLedger
     };
 }
 

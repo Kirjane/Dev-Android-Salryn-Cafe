@@ -14,8 +14,33 @@ internal static class LocalHostCheckoutEndpoints
             HttpContext httpContext,
             LocalApiSessionService sessions,
             HostOperatorApiServices hostOperator,
+            ILocalLicenseEnforcementService licensing,
             CancellationToken cancellationToken) =>
         {
+            if (ApiAuthExtensions.RequireAuthenticatedSession(httpContext, sessions) is IResult unauthenticated)
+            {
+                return unauthenticated;
+            }
+
+            bool createsReceivable = request.Payments?.Any(payment =>
+                string.Equals(payment.Method, "AccountsReceivable", StringComparison.OrdinalIgnoreCase)) == true;
+
+            if (await ApiLicenseGuard.RequireLicensedFeatureAsync(licensing, LicenseFeatures.Pos, cancellationToken)
+                    .ConfigureAwait(false) is IResult licenseDenied)
+            {
+                return licenseDenied;
+            }
+
+            if (createsReceivable &&
+                await ApiLicenseGuard.RequireLicensedFeatureAsync(
+                        licensing,
+                        LicenseFeatures.ReceivablesUtangLedger,
+                        cancellationToken)
+                    .ConfigureAwait(false) is IResult receivablesLicenseDenied)
+            {
+                return receivablesLicenseDenied;
+            }
+
             if (LocalApiPermissionGuards.RequirePermission(
                     httpContext,
                     sessions,
@@ -24,8 +49,6 @@ internal static class LocalHostCheckoutEndpoints
                 return unauthorized;
             }
 
-            bool createsReceivable = request.Payments?.Any(payment =>
-                string.Equals(payment.Method, "AccountsReceivable", StringComparison.OrdinalIgnoreCase)) == true;
             if (createsReceivable &&
                 LocalApiPermissionGuards.RequirePermission(
                     httpContext,
@@ -33,12 +56,6 @@ internal static class LocalHostCheckoutEndpoints
                     LocalApiPermissions.ReceivablesCreateCreditSale) is IResult creditDenied)
             {
                 return creditDenied;
-            }
-
-            if (await ApiLicenseGuard.RequireLicensedFeatureAsync(LicenseFeatures.Pos, cancellationToken)
-                    .ConfigureAwait(false) is IResult licenseDenied)
-            {
-                return licenseDenied;
             }
 
             LocalApiSession? session = GetRequiredSession(httpContext, sessions);

@@ -30,6 +30,7 @@ export const Permissions = {
   StoreTerminalPairingIssue: "StoreTerminal.PairingIssue",
   StoreTerminalPairingRevoke: "StoreTerminal.PairingRevoke",
   ReceivablesView: "Receivables.View",
+  ReceivablesCreateCreditSale: "Receivables.CreateCreditSale",
 } as const;
 
 export type Permission = (typeof Permissions)[keyof typeof Permissions];

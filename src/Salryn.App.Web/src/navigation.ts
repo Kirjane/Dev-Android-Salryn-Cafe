@@ -36,9 +36,11 @@ export function isInternalSurfaceModeEnabled(): boolean {
   return import.meta.env.VITE_SALRYN_INTERNAL_SURFACES === "true";
 }
 
-export function getNavItems(session: SessionState): NavItemConfig[] {
+export function getNavItems(session: SessionState, enabledFeatures: readonly string[] = []): NavItemConfig[] {
   const configuredItems = isInternalSurfaceModeEnabled()
     ? [...navItems, ...internalNavItems]
     : navItems;
-  return configuredItems.filter((item) => canAccessPage(session, item.id));
+  return configuredItems.filter((item) =>
+    canAccessPage(session, item.id) &&
+    (item.id !== "receivables" || enabledFeatures.includes("ReceivablesUtangLedger")));
 }
