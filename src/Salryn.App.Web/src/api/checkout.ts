@@ -24,13 +24,18 @@ export type CheckoutLineRequest = {
 };
 
 export type CheckoutPaymentRequest = {
-  method: "Cash";
+  method: "Cash" | "AccountsReceivable";
   amountCents: number;
 };
 
 export type CheckoutRequest = {
   lines: CheckoutLineRequest[];
   payments: CheckoutPaymentRequest[];
+  customerId?: string;
+  customerFullName?: string;
+  customerPhone?: string;
+  dueDate?: string;
+  note?: string;
 };
 
 export type CheckoutResult = {

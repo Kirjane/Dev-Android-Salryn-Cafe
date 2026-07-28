@@ -6,6 +6,7 @@ import { fastAddUnknownBarcode } from "../api/fastAddProduct";
 import { fetchProducts, fetchProductUnits, type ProductListItem } from "../api/products";
 import { printReceiptForSale, type ReceiptPrintResult } from "../api/receiptPrint";
 import { fetchSession } from "../api/session";
+import { fetchReceivableCustomers } from "../api/receivables";
 import { Alert, Button, Card, CardBody, CardHeader, CardTitle, CommandBar, ErrorState, LoadingState, StatusPill, TextInput, useNotifications } from "../components/ui";
 import { formatDateTime, formatMoney, formatQuantity } from "../utils/format";
 import { safeNotificationDescription } from "../utils/notificationError";
@@ -87,6 +88,10 @@ export function CheckoutPage() {
   const [productPage, setProductPage] = useState(1);
   const [cartLines, setCartLines] = useState<CartLine[]>([]);
   const [cashAmount, setCashAmount] = useState("");
+  const [paymentMode, setPaymentMode] = useState<"Cash" | "Utang" | "CashUtang">("Cash");
+  const [customerId, setCustomerId] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [utangNote, setUtangNote] = useState("");
   const [openingCash, setOpeningCash] = useState("0.00");
   const [backendMessage, setBackendMessage] = useState<string | null>(null);
   const [checkoutResult, setCheckoutResult] = useState<CheckoutEnvelope | null>(null);
@@ -115,11 +120,13 @@ export function CheckoutPage() {
   const shiftQuery = useQuery({ queryKey: ["host-checkout-shift"], queryFn: fetchHostShift, retry: false });
   const unitsQuery = useQuery({ queryKey: ["host-checkout-product-units"], queryFn: fetchProductUnits, retry: false });
   const productsQuery = useQuery({ queryKey: ["host-checkout-products", search, productPage], queryFn: () => fetchProducts({ search: search.trim() || undefined, isActive: true, page: productPage, pageSize: checkoutPageSize }), retry: false });
+  const customersQuery = useQuery({ queryKey: ["receivable-customers-checkout"], queryFn: () => fetchReceivableCustomers(), retry: false });
 
   const subtotal = useMemo(() => cartLines.reduce((sum, line) => sum + line.product.sellingPrice * line.quantity, 0), [cartLines]);
   const itemQuantityTotal = useMemo(() => cartLines.reduce((sum, line) => sum + line.quantity, 0), [cartLines]);
   const cashCents = toCents(cashAmount);
   const subtotalCents = Math.round(subtotal * 100);
+  const balanceDueCents = paymentMode === "Cash" ? 0 : Math.max(0, subtotalCents - cashCents);
   const estimatedChangeCents = cashCents >= subtotalCents ? cashCents - subtotalCents : 0;
   const shift = shiftQuery.data?.shift;
   const shiftOpen = isOpenShift(shift?.shiftState);
@@ -133,11 +140,14 @@ export function CheckoutPage() {
     if (completedSale) return "Start a new sale before submitting again.";
     if (!shiftOpen) return "No open shift.";
     if (cartLines.length === 0) return "No cart lines yet.";
-    if (cashCents <= 0) return "Cash tender is missing.";
-    if (cashCents < subtotalCents) return "Cash tender is below subtotal.";
+    if (paymentMode === "Cash" && cashCents <= 0) return "Cash tender is missing.";
+    if (paymentMode === "Cash" && cashCents < subtotalCents) return "Cash tender is below subtotal.";
+    if (paymentMode === "Utang" && cashCents !== 0) return "Full Utang requires cash received to be zero.";
+    if (paymentMode === "CashUtang" && (cashCents <= 0 || cashCents >= subtotalCents)) return "Cash + Utang requires a partial cash amount.";
+    if (balanceDueCents > 0 && !customerId) return "Select a customer for the Utang balance.";
     if (isSubmittingCheckout) return "Checkout is submitting.";
     return null;
-  }, [cartLines.length, cashCents, completedSale, isSubmittingCheckout, shiftOpen, subtotalCents]);
+  }, [balanceDueCents, cartLines.length, cashCents, completedSale, customerId, isSubmittingCheckout, paymentMode, shiftOpen, subtotalCents]);
   const canReviewCheckout = cartValidationMessage === null && cartLines.length > 0;
 
   useEffect(() => {
@@ -229,7 +239,22 @@ export function CheckoutPage() {
     if (!canReviewCheckout || isSubmittingCheckout) return;
     setBackendMessage(null); setCheckoutResult(null); setCompletedSale(null); setPrintResult(null); setAttemptState(initialAttemptState); setIsSubmittingCheckout(true);
     try {
-      const result = await submitCheckout({ lines: cartLines.map((line) => ({ productId: line.product.id, quantityX1000: Math.round(line.quantity * 1000) })), payments: [{ method: "Cash", amountCents: cashCents }] });
+      const customer = customersQuery.data?.find((row) => row.customer.id === customerId)?.customer;
+      const payments = paymentMode === "Cash"
+        ? [{ method: "Cash" as const, amountCents: cashCents }]
+        : [
+            ...(cashCents > 0 ? [{ method: "Cash" as const, amountCents: cashCents }] : []),
+            { method: "AccountsReceivable" as const, amountCents: balanceDueCents },
+          ];
+      const result = await submitCheckout({
+        lines: cartLines.map((line) => ({ productId: line.product.id, quantityX1000: Math.round(line.quantity * 1000) })),
+        payments,
+        customerId: balanceDueCents > 0 ? customerId : undefined,
+        customerFullName: customer?.fullName,
+        customerPhone: customer?.phone ?? undefined,
+        dueDate: dueDate || undefined,
+        note: utangNote.trim() || undefined,
+      });
       const receiptMetadata = result.checkout as CheckoutReceiptMetadata;
       setCheckoutResult(result);
       setCompletedSale({ receiptNumber: result.checkout.receiptNumber, saleId: result.checkout.saleId, totalCents: result.checkout.totalCents, amountPaidCents: cashCents, changeCents: result.checkout.changeCents, fileReceiptStatus: receiptMetadata.fileReceiptStatus ?? null, fileReceiptPath: receiptMetadata.fileReceiptPath ?? null, fileReceiptError: receiptMetadata.fileReceiptError ?? null });
@@ -278,6 +303,7 @@ export function CheckoutPage() {
       {backendMessage ? <Alert tone={completedSale ? "success" : "warning"}>{backendMessage}</Alert> : null}
       {shiftQuery.isLoading ? <LoadingState label="Reading host shift..." /> : null}
       {shiftQuery.isError ? <ErrorState message={describeCheckoutBackendError(shiftQuery.error)} /> : null}
+      {shiftOpen ? <Card className="border-blue-200 bg-blue-50/40"><CardHeader><CardTitle>Payment mode</CardTitle></CardHeader><CardBody className="grid gap-3 md:grid-cols-2 xl:grid-cols-5"><div><label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">Sale payment</label><select className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm" value={paymentMode} onChange={(event) => { const mode = event.target.value as "Cash" | "Utang" | "CashUtang"; setPaymentMode(mode); if (mode === "Utang") setCashAmount("0"); }}><option value="Cash">Cash</option><option value="Utang">Utang</option><option value="CashUtang">Cash + Utang</option></select></div>{paymentMode !== "Cash" ? <><div><label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">Customer</label><select className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm" value={customerId} onChange={(event) => setCustomerId(event.target.value)}><option value="">Select customer</option>{(customersQuery.data ?? []).filter((row) => row.customer.isActive).map((row) => <option key={row.customer.id} value={row.customer.id}>{row.customer.fullName}{row.customer.phone ? ` · ${row.customer.phone}` : ""}</option>)}</select></div><div><label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">Due date</label><TextInput type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} /></div><div><label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">Utang note</label><TextInput value={utangNote} onChange={(event) => setUtangNote(event.target.value)} placeholder="Optional note" /></div><div className="rounded-md border border-blue-200 bg-white p-3"><p className="text-xs uppercase text-slate-500">Balance due</p><p className="text-lg font-bold text-blue-800">{fromCents(balanceDueCents)}</p></div></> : null}</CardBody></Card> : null}
 
       {!shiftOpen ? (
         <Card className="border-amber-300 bg-amber-50/70"><CardHeader><CardTitle>Cashier workstation locked</CardTitle></CardHeader><CardBody className="grid gap-4 text-sm text-amber-950 lg:grid-cols-[1fr_auto] lg:items-end"><div><label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-amber-900">Opening cash</label><TextInput value={openingCash} onChange={(event) => setOpeningCash(event.target.value)} /><p className="mt-2 text-xs text-amber-800">Open a cashier shift before product search, cart, payment, and checkout controls become available.</p></div><Button onClick={() => void handleOpenShift()} disabled={isOpeningShift || shiftQuery.isLoading}>{isOpeningShift ? "Opening..." : "Open Shift"}</Button></CardBody></Card>
