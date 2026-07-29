@@ -14,7 +14,11 @@ export type ReceivableCustomer = {
 };
 
 export const ReceivableEntryType = {
+  CreditSale: 1,
   Collection: 2,
+  AdjustmentDebit: 3,
+  AdjustmentCredit: 4,
+  SaleReversal: 5,
   CollectionReversal: 6,
 } as const;
 
@@ -28,6 +32,29 @@ export type ReceivableEntry = {
   dueDate: string | null;
   note: string | null;
   createdAt: string;
+  paymentStatus: number | null;
+};
+
+export type CollectionApiResponse = {
+  collection: {
+    id: string;
+    customerId: string;
+    amountCents: number;
+    note: string | null;
+    collectedAt: string;
+  };
+  acknowledgment: {
+    collectionId: string;
+    customerName: string;
+    amountPaidCents: number;
+    previousBalanceCents: number;
+    newBalanceCents: number;
+    collectedBy: string;
+    collectedAt: string;
+    note: string | null;
+    method: string;
+  };
+  plainTextAcknowledgment: string;
 };
 
 export type ReceivablesSummary = {
@@ -52,7 +79,7 @@ export const createCustomer = (body: { fullName: string; phone?: string; note?: 
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
 export const collectReceivable = (body: { customerId: string; amountCents: number; method: string; note?: string; clientRequestId: string }) =>
-  request("/api/receivables/collections", {
+  request<CollectionApiResponse>("/api/receivables/collections", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
 export const voidReceivableCollection = (collectionId: string, reason: string) =>

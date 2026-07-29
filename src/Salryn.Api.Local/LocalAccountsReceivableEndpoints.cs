@@ -1,5 +1,6 @@
 using Salryn.Api.Local.Auth;
 using Salryn.Core.Common;
+using Salryn.Core.Models;
 using Salryn.Core.Services;
 using Salryn.Core.Services.Licensing;
 
@@ -67,10 +68,19 @@ internal static class LocalAccountsReceivableEndpoints
             ILocalLicenseEnforcementService licensing = context.RequestServices.GetRequiredService<ILocalLicenseEnforcementService>();
             if (await Guard(context, sessions, licensing, LocalApiPermissions.ReceivablesCollect, ct) is IResult denied) return denied;
             LocalApiSession session = RequiredSession(context, sessions);
-            return ToResult(await service.CollectAsync(new(
+            Result<AccountsReceivableCollection> collection = await service.CollectAsync(new(
                 request.CustomerId, request.AmountCents, request.Method, request.Note, session.UserId,
-                request.ClientRequestId), ct),
-                StatusCodes.Status201Created);
+                request.ClientRequestId), ct);
+            if (collection.IsFailure) return ToError(collection.ErrorDetail);
+            Result<CollectionPaymentAcknowledgment> acknowledgment =
+                await service.GetCollectionAcknowledgmentAsync(collection.Value.Id, ct);
+            if (acknowledgment.IsFailure) return ToError(acknowledgment.ErrorDetail);
+            return Results.Json(
+                new CollectionApiResponse(
+                    collection.Value,
+                    acknowledgment.Value,
+                    RenderCollectionAcknowledgment(acknowledgment.Value)),
+                statusCode: StatusCodes.Status201Created);
         });
 
         app.MapPost("/api/receivables/adjustments", async (AdjustmentApiRequest request, HttpContext context,
@@ -138,6 +148,23 @@ internal static class LocalAccountsReceivableEndpoints
         return Results.Json(new { error = error.Message, code = error.Code }, statusCode: status);
     }
 
+    private static string RenderCollectionAcknowledgment(CollectionPaymentAcknowledgment acknowledgment) =>
+        $"""
+        COLLECTION RECEIPT
+        Operational payment acknowledgment
+
+        Customer: {acknowledgment.CustomerName}
+        Amount paid: {acknowledgment.AmountPaidCents / 100m:N2}
+        Previous balance: {acknowledgment.PreviousBalanceCents / 100m:N2}
+        New balance: {acknowledgment.NewBalanceCents / 100m:N2}
+        Collected by: {acknowledgment.CollectedBy}
+        Date/time: {acknowledgment.CollectedAt:yyyy-MM-dd HH:mm:ss zzz}
+        Method: {acknowledgment.Method}
+        Note/reference: {acknowledgment.Note ?? "None"}
+
+        Store operational acknowledgment only.
+        """;
+
     private sealed record CreateCustomerApiRequest(
         string FullName, string? Phone, string? Address, string? Note, long? CreditLimitCents);
     private sealed record UpdateCustomerApiRequest(
@@ -148,6 +175,10 @@ internal static class LocalAccountsReceivableEndpoints
         string Method,
         string? Note,
         string ClientRequestId);
+    private sealed record CollectionApiResponse(
+        AccountsReceivableCollection Collection,
+        CollectionPaymentAcknowledgment Acknowledgment,
+        string PlainTextAcknowledgment);
     private sealed record AdjustmentApiRequest(Guid CustomerId, long AmountCents, bool IsDebit, string Note);
     private sealed record VoidCollectionApiRequest(string Reason);
 }

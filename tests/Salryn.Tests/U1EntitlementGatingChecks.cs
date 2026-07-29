@@ -28,6 +28,9 @@ public static class U1EntitlementGatingChecks
         string checkout = ReadRepo("src", "Salryn.Api.Local", "LocalHostCheckoutEndpoints.cs");
         string reports = ReadRepo("src", "Salryn.Api.Local", "LocalOwnerReportsEndpoints.cs");
         string navigation = ReadRepo("src", "Salryn.App.Web", "src", "navigation.ts");
+        string receivablesPage = ReadRepo("src", "Salryn.App.Web", "src", "pages", "ReceivablesPage.tsx");
+        string receivablesService = ReadRepo(
+            "src", "Salryn.Infrastructure", "Data", "Services", "SqliteAccountsReceivableService.cs");
         Require(endpoints.Contains("LicenseFeatures.ReceivablesUtangLedger", StringComparison.Ordinal),
             "Every U1 endpoint must pass through the central U1 license guard.");
         Require(checkout.Contains("LicenseFeatures.ReceivablesUtangLedger", StringComparison.Ordinal) &&
@@ -38,6 +41,19 @@ public static class U1EntitlementGatingChecks
             "AR reports must require both the U1 entitlement and Receivables.View.");
         Require(navigation.Contains("ReceivablesUtangLedger", StringComparison.Ordinal),
             "Host navigation must combine entitlement with page permission.");
+        foreach (string label in new[]
+                 {
+                     "Credit Sale", "Partial Credit Sale", "Payment Collection",
+                     "Collection Reversal", "Credit Sale Reversal", "Adjustment"
+                 })
+            Require(receivablesPage.Contains($"\"{label}\"", StringComparison.Ordinal),
+                $"Receivables ledger must expose the human-readable label: {label}.");
+        Require(receivablesPage.Contains("Collection Receipt", StringComparison.Ordinal) &&
+                receivablesPage.Contains("Print acknowledgment", StringComparison.Ordinal),
+            "Collection UI must expose the operational payment acknowledgment.");
+        Require(receivablesService.Contains("CustomerQueryLimit = 100", StringComparison.Ordinal) &&
+                receivablesService.Contains("LedgerQueryLimit = 500", StringComparison.Ordinal),
+            "Receivables customer and ledger queries must remain bounded.");
 
         Console.WriteLine("U1 ENTITLEMENT GATING: base denied, paid Host allowed, Terminal denied, runtime boundaries present PASS.");
     }

@@ -15,6 +15,18 @@ import { Permissions, hasPermission } from "../security/permissions";
 import { formatDateTime, formatMoney } from "../utils/format";
 
 const money = (cents: number) => formatMoney(cents / 100);
+const SalePaymentStatus = { Partial: 3 } as const;
+
+function ledgerLabel(entryType: number, paymentStatus: number | null) {
+  if (entryType === ReceivableEntryType.CreditSale) {
+    return paymentStatus === SalePaymentStatus.Partial ? "Partial Credit Sale" : "Credit Sale";
+  }
+  if (entryType === ReceivableEntryType.Collection) return "Payment Collection";
+  if (entryType === ReceivableEntryType.CollectionReversal) return "Collection Reversal";
+  if (entryType === ReceivableEntryType.SaleReversal) return "Credit Sale Reversal";
+  if (entryType === ReceivableEntryType.AdjustmentDebit || entryType === ReceivableEntryType.AdjustmentCredit) return "Adjustment";
+  return "Ledger Entry";
+}
 
 export function ReceivablesPage() {
   const queryClient = useQueryClient();
@@ -24,6 +36,7 @@ export function ReceivablesPage() {
   const [collectionNote, setCollectionNote] = useState("");
   const [message, setMessage] = useState("");
   const [isCollecting, setIsCollecting] = useState(false);
+  const [collectionAcknowledgment, setCollectionAcknowledgment] = useState("");
   const [voidCollectionId, setVoidCollectionId] = useState("");
   const [voidReason, setVoidReason] = useState("");
   const [voidConfirmed, setVoidConfirmed] = useState(false);
@@ -51,8 +64,9 @@ export function ReceivablesPage() {
     try {
       const clientRequestId = collectionRequestIdRef.current ?? crypto.randomUUID();
       collectionRequestIdRef.current = clientRequestId;
-      await collectReceivable({ customerId: selectedId, amountCents, method: "Cash", note: collectionNote || undefined, clientRequestId });
+      const result = await collectReceivable({ customerId: selectedId, amountCents, method: "Cash", note: collectionNote || undefined, clientRequestId });
       collectionRequestIdRef.current = null;
+      setCollectionAcknowledgment(result.plainTextAcknowledgment);
       setCollectionAmount(""); setCollectionNote(""); setMessage("Collection recorded. No new sale was created.");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["receivables-summary"] }),
@@ -88,6 +102,24 @@ export function ReceivablesPage() {
     }
   }
 
+  function printCollectionAcknowledgment() {
+    if (!collectionAcknowledgment) return;
+    const printWindow = window.open("", "_blank", "width=520,height=720");
+    if (!printWindow) {
+      setMessage("Print window was blocked. Allow pop-ups and try again.");
+      return;
+    }
+    printWindow.opener = null;
+    printWindow.document.title = "Collection Receipt";
+    const receipt = printWindow.document.createElement("pre");
+    receipt.style.whiteSpace = "pre-wrap";
+    receipt.style.fontFamily = "monospace";
+    receipt.style.fontSize = "12px";
+    receipt.textContent = collectionAcknowledgment;
+    printWindow.document.body.appendChild(receipt);
+    printWindow.print();
+  }
+
   return <div className="space-y-4">
     <CommandBar title="Utang Ledger" subtitle="Accounts Receivable balances, collections, and immutable customer history." />
     {message ? <Alert tone="info">{message}</Alert> : null}
@@ -115,6 +147,10 @@ export function ReceivablesPage() {
       <Card><CardHeader><CardTitle>{selected ? `${selected.customer.fullName} ledger` : "Customer ledger"}</CardTitle></CardHeader><CardBody className="space-y-4">
         {!selectedId ? <p className="text-sm text-slate-500">Select a customer to inspect recurring Utang and collections.</p> : <>
           <div className="grid gap-2 sm:grid-cols-3"><TextInput value={collectionAmount} onChange={(event) => setCollectionAmount(event.target.value)} inputMode="decimal" placeholder="Collection amount" disabled={isCollecting} /><TextInput value={collectionNote} onChange={(event) => setCollectionNote(event.target.value)} placeholder="Optional collection note" disabled={isCollecting} /><Button onClick={() => void collect()} disabled={isCollecting}>{isCollecting ? "Recording..." : "Collect payment"}</Button></div>
+          {collectionAcknowledgment ? <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold text-emerald-950">Collection Receipt</p><Button size="sm" variant="secondary" onClick={printCollectionAcknowledgment}>Print acknowledgment</Button></div>
+            <pre className="mt-3 whitespace-pre-wrap rounded-md border border-emerald-100 bg-white p-3 font-mono text-xs text-slate-800">{collectionAcknowledgment}</pre>
+          </div> : null}
           {canAdjust && voidCollectionId ? <div className="space-y-3 rounded-md border border-rose-200 bg-rose-50 p-3">
             <p className="text-sm font-semibold text-rose-950">Reverse collection</p>
             <TextInput value={voidReason} onChange={(event) => { setVoidReason(event.target.value); setVoidConfirmed(false); }} placeholder="Required reversal reason" disabled={isVoiding} />
@@ -126,7 +162,7 @@ export function ReceivablesPage() {
           </div> : null}
           <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left text-xs uppercase text-slate-500"><th className="p-2">Date</th><th className="p-2">Entry</th><th className="p-2">Debit</th><th className="p-2">Credit</th><th className="p-2">Balance</th><th className="p-2">Note</th>{canAdjust ? <th className="p-2">Action</th> : null}</tr></thead><tbody>{(ledger.data ?? []).map((entry) => {
             const alreadyReversed = Boolean(entry.collectionId) && (ledger.data ?? []).some((candidate) => candidate.collectionId === entry.collectionId && candidate.entryType === ReceivableEntryType.CollectionReversal);
-            return <tr key={entry.id} className="border-b"><td className="p-2">{formatDateTime(entry.createdAt)}</td><td className="p-2">{entry.entryType}</td><td className="p-2">{money(entry.debitCents)}</td><td className="p-2">{money(entry.creditCents)}</td><td className="p-2 font-semibold">{money(entry.balanceAfterCents)}</td><td className="p-2">{entry.note || "—"}</td>{canAdjust ? <td className="p-2">{entry.entryType === ReceivableEntryType.Collection && entry.collectionId ? <Button size="sm" variant="danger" onClick={() => { setVoidCollectionId(entry.collectionId!); setVoidReason(""); setVoidConfirmed(false); }} disabled={isVoiding || alreadyReversed}>{alreadyReversed ? "Reversed" : "Reverse"}</Button> : null}</td> : null}</tr>;
+            return <tr key={entry.id} className="border-b"><td className="p-2">{formatDateTime(entry.createdAt)}</td><td className="p-2">{ledgerLabel(entry.entryType, entry.paymentStatus)}</td><td className="p-2">{money(entry.debitCents)}</td><td className="p-2">{money(entry.creditCents)}</td><td className="p-2 font-semibold">{money(entry.balanceAfterCents)}</td><td className="p-2">{entry.note || "—"}</td>{canAdjust ? <td className="p-2">{entry.entryType === ReceivableEntryType.Collection && entry.collectionId ? <Button size="sm" variant="danger" onClick={() => { setVoidCollectionId(entry.collectionId!); setVoidReason(""); setVoidConfirmed(false); }} disabled={isVoiding || alreadyReversed}>{alreadyReversed ? "Reversed" : "Reverse"}</Button> : null}</td> : null}</tr>;
           })}</tbody></table></div>
         </>}
       </CardBody></Card>

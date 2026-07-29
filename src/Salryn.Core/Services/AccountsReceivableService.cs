@@ -46,6 +46,17 @@ public sealed record AccountsReceivableSummary(
     long OverdueCents,
     long CollectedTodayCents);
 
+public sealed record CollectionPaymentAcknowledgment(
+    Guid CollectionId,
+    string CustomerName,
+    long AmountPaidCents,
+    long PreviousBalanceCents,
+    long NewBalanceCents,
+    string CollectedBy,
+    DateTimeOffset CollectedAt,
+    string? Note,
+    string Method);
+
 public interface IAccountsReceivableService
 {
     Task<Result<IReadOnlyList<ReceivableCustomerBalance>>> SearchCustomersAsync(
@@ -68,6 +79,9 @@ public interface IAccountsReceivableService
         CancellationToken cancellationToken = default);
     Task<Result<AccountsReceivableCollection>> CollectAsync(
         RecordReceivableCollectionRequest request,
+        CancellationToken cancellationToken = default);
+    Task<Result<CollectionPaymentAcknowledgment>> GetCollectionAcknowledgmentAsync(
+        Guid collectionId,
         CancellationToken cancellationToken = default);
     Task<Result<AccountsReceivableEntry>> AdjustAsync(
         RecordReceivableAdjustmentRequest request,

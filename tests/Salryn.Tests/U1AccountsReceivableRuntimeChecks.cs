@@ -81,6 +81,11 @@ public static class U1AccountsReceivableRuntimeChecks
                 },
                 partialCustomer.Id, overdueDate, null, null);
             Require(partial.ChangeCents == 0, "Partial Cash + Utang checkout must return zero change.");
+            AccountsReceivableEntry partialEntry =
+                (await receivables.GetLedgerAsync(partialCustomer.Id)).Value.Single(
+                    entry => entry.EntryType == AccountsReceivableEntryType.CreditSale);
+            Require(partialEntry.PaymentStatus == SalePaymentStatus.Partial,
+                "Partial credit ledger projection must retain payment status for its operator label.");
 
             HostOperatorCheckoutResponse reversed = await CheckoutAsync(
                 host, userId, productId, Guid.NewGuid().ToString("N"),
@@ -132,7 +137,6 @@ public static class U1AccountsReceivableRuntimeChecks
             Require(reports.Receivables.OutstandingCents == 13_000 &&
                     reports.Receivables.OverdueCents == 13_000,
                 "Owner report outstanding and overdue must agree with AR summary.");
-            await AssertAuthorizationMatrixAsync(composition, userId, unpaidCustomer.Id).ConfigureAwait(false);
 
             SqliteBackupRecoveryService backup = new(paths);
             string backupPath = RequireSuccess(backup.CreateBackup(), "U1 backup");
@@ -156,16 +160,16 @@ public static class U1AccountsReceivableRuntimeChecks
                     (await restoredReceivables.GetLedgerAsync(unpaidCustomer.Id)).Value.All(
                         entry => !string.Equals(entry.Note, "Post-backup mutation", StringComparison.Ordinal)),
                 "Backup/restore must preserve U1 balances/history and discard post-backup mutation.");
-            Require((await restoredReceivables.VoidCollectionAsync(
-                    paidCollection.Id, userId, "Duplicate reversal proof")).IsSuccess,
-                "Authorized collection reversal must succeed.");
-            Result duplicateReversal = await restoredReceivables.VoidCollectionAsync(
-                paidCollection.Id, userId, "Duplicate reversal proof");
-            Require(duplicateReversal.IsFailure &&
-                    (duplicateReversal.ErrorDetail.Code == "Receivables.CollectionNotFound" ||
-                     duplicateReversal.ErrorDetail.Code == "Receivables.CollectionAlreadyVoided") &&
-                    Count(paths.DatabasePath, "accounts_receivable_entries", "collection_id", paidCollection.Id.ToString("D")) == 2,
-                "A collection may have one original credit and one append-only reversal; duplicate reversal must be denied.");
+            await AssertAuthorizationMatrixAsync(
+                    composition, userId, unpaidCustomer.Id, paidCollection.Id, paths.DatabasePath)
+                .ConfigureAwait(false);
+            SeedQueryCapData(paths.DatabasePath, userId, unpaidCustomer.Id);
+            Require((await restoredReceivables.SearchCustomersAsync(null)).Value.Count ==
+                    SqliteAccountsReceivableService.CustomerQueryLimit,
+                "Customer search must enforce its backend result cap.");
+            Require((await restoredReceivables.GetLedgerAsync(unpaidCustomer.Id)).Value.Count ==
+                    SqliteAccountsReceivableService.LedgerQueryLimit,
+                "Customer ledger must enforce its backend result cap.");
 
             Console.WriteLine(
                 "U1 runtime: full/partial Utang, idempotency, receipt identity, aging, net-cash reports, and backup/restore PASS.");
@@ -208,8 +212,14 @@ public static class U1AccountsReceivableRuntimeChecks
     private static async Task AssertAuthorizationMatrixAsync(
         SalrynLocalComposition composition,
         Guid userId,
-        Guid customerId)
+        Guid customerId,
+        Guid collectionId,
+        string databasePath)
     {
+        Require(DefaultSeedData.AdminPermissions.Contains(DefaultSeedData.Permissions.ReceivablesAdjust) &&
+                !DefaultSeedData.ManagerPermissions.Contains(DefaultSeedData.Permissions.ReceivablesAdjust) &&
+                !DefaultSeedData.CashierPermissions.Contains(DefaultSeedData.Permissions.ReceivablesAdjust),
+            "Collection reversal permission must default to Admin only.");
         ToggleU1LicenseService licenseService = new();
         InMemoryLocalApiSessionStore sessions = new();
         await using WebApplication app = await LocalApiApplicationFactory.CreateAsync(
@@ -263,9 +273,17 @@ public static class U1AccountsReceivableRuntimeChecks
                 });
             Require(cashierCredit.StatusCode == HttpStatusCode.Forbidden,
                 "Licensed Cashier without Receivables.CreateCreditSale must be denied credit checkout.");
+            Require((await cashier.PostAsJsonAsync(
+                    $"/api/receivables/collections/{collectionId:D}/void",
+                    new { reason = "Cashier must be denied" })).StatusCode == HttpStatusCode.Forbidden,
+                "Cashier must be denied collection reversal.");
 
             Require((await manager.GetAsync("/api/receivables/summary")).StatusCode == HttpStatusCode.OK,
                 "Licensed Manager with Receivables.View must be allowed to read summary.");
+            Require((await manager.PostAsJsonAsync(
+                    $"/api/receivables/collections/{collectionId:D}/void",
+                    new { reason = "Manager must be denied by default" })).StatusCode == HttpStatusCode.Forbidden,
+                "Manager without Receivables.Adjust must be denied collection reversal.");
             LocalApiSession reportOnlySession = sessions.Create(new AuthenticatedUserReadModel(
                 userId, "u1-report-only", "U1 Report Only", "Custom", UserStatus.Active,
                 new[] { DefaultSeedData.Permissions.ReportsView }));
@@ -299,11 +317,61 @@ public static class U1AccountsReceivableRuntimeChecks
             Require(managerCollection.StatusCode == HttpStatusCode.BadRequest,
                 "Manager with Receivables.Collect must pass authorization into domain validation.");
 
-            using HttpRequestMessage terminalRequest = new(HttpMethod.Get, "/api/receivables/summary");
+            using HttpRequestMessage terminalRequest = new(
+                HttpMethod.Post,
+                $"/api/receivables/collections/{collectionId:D}/void");
             terminalRequest.Headers.Add("X-Salryn-Terminal-Id", Guid.NewGuid().ToString("D"));
+            terminalRequest.Content = JsonContent.Create(new { reason = "Terminal must be denied" });
             using HttpResponseMessage terminalResponse = await manager.SendAsync(terminalRequest);
             Require(terminalResponse.StatusCode == HttpStatusCode.Forbidden,
-                "LAN terminal request context must be denied local receivable endpoints.");
+                "LAN terminal request context must be denied collection reversal.");
+
+            LocalApiSession adminSession = sessions.Create(new AuthenticatedUserReadModel(
+                userId, "u1-admin", "U1 Admin", "Admin", UserStatus.Active,
+                new[]
+                {
+                    DefaultSeedData.Permissions.ReceivablesView,
+                    DefaultSeedData.Permissions.ReceivablesCollect,
+                    DefaultSeedData.Permissions.ReceivablesAdjust
+                }));
+            using HttpClient admin = Client(address, adminSession);
+            using HttpResponseMessage collectionResponse = await admin.PostAsJsonAsync(
+                "/api/receivables/collections",
+                new
+                {
+                    customerId,
+                    amountCents = 100,
+                    method = "Cash",
+                    note = "ACK-100",
+                    clientRequestId = Guid.NewGuid().ToString("N")
+                });
+            Require(collectionResponse.StatusCode == HttpStatusCode.Created,
+                "Admin with Receivables.Collect must create a collection acknowledgment.");
+            string acknowledgmentJson = await collectionResponse.Content.ReadAsStringAsync();
+            Require(acknowledgmentJson.Contains("COLLECTION RECEIPT", StringComparison.Ordinal) &&
+                    acknowledgmentJson.Contains("Authoritative Unpaid", StringComparison.Ordinal) &&
+                    acknowledgmentJson.Contains("ACK-100", StringComparison.Ordinal) &&
+                    acknowledgmentJson.Contains("U1 Runtime", StringComparison.Ordinal) &&
+                    acknowledgmentJson.Contains("\"amountPaidCents\":100", StringComparison.Ordinal) &&
+                    acknowledgmentJson.Contains("\"previousBalanceCents\":10000", StringComparison.Ordinal) &&
+                    acknowledgmentJson.Contains("\"newBalanceCents\":9900", StringComparison.Ordinal) &&
+                    !acknowledgmentJson.Contains("BIR", StringComparison.OrdinalIgnoreCase) &&
+                    !acknowledgmentJson.Contains("accounting", StringComparison.OrdinalIgnoreCase) &&
+                    !acknowledgmentJson.Contains("official tax", StringComparison.OrdinalIgnoreCase),
+                "Collection acknowledgment must contain operational payment fields without compliance claims.");
+
+            Require((await admin.PostAsJsonAsync(
+                    $"/api/receivables/collections/{collectionId:D}/void",
+                    new { reason = "Admin correction proof" })).StatusCode == HttpStatusCode.OK,
+                "Admin with Receivables.Adjust must reverse a collection.");
+            using HttpResponseMessage duplicateReversal = await admin.PostAsJsonAsync(
+                $"/api/receivables/collections/{collectionId:D}/void",
+                new { reason = "Duplicate reversal proof" });
+            Require(duplicateReversal.StatusCode == HttpStatusCode.Conflict &&
+                    (await duplicateReversal.Content.ReadAsStringAsync())
+                        .Contains("This collection was already reversed.", StringComparison.Ordinal) &&
+                    Count(databasePath, "accounts_receivable_entries", "collection_id", collectionId.ToString("D")) == 2,
+                "Duplicate reversal must return the standard message and append only one reversal.");
         }
         finally
         {
@@ -430,6 +498,51 @@ public static class U1AccountsReceivableRuntimeChecks
         command.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O"));
         command.ExecuteNonQuery();
         return id;
+    }
+
+    private static void SeedQueryCapData(string databasePath, Guid userId, Guid customerId)
+    {
+        using SqliteConnection connection = new($"Data Source={databasePath}");
+        connection.Open();
+        using SqliteTransaction transaction = connection.BeginTransaction();
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        for (int index = 0; index < 105; index++)
+        {
+            using SqliteCommand customer = connection.CreateCommand();
+            customer.Transaction = transaction;
+            customer.CommandText =
+                """
+                INSERT INTO customers
+                    (id,full_name,phone,address,note,credit_limit_cents,is_active,
+                     created_by_user_id,created_at,updated_at)
+                VALUES ($id,$name,NULL,NULL,NULL,NULL,1,$user,$at,$at);
+                """;
+            customer.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("D"));
+            customer.Parameters.AddWithValue("$name", $"Query Cap Customer {index:D3}");
+            customer.Parameters.AddWithValue("$user", userId.ToString("D"));
+            customer.Parameters.AddWithValue("$at", now.AddMilliseconds(index).ToString("O"));
+            customer.ExecuteNonQuery();
+        }
+        for (int index = 0; index < 505; index++)
+        {
+            using SqliteCommand ledger = connection.CreateCommand();
+            ledger.Transaction = transaction;
+            ledger.CommandText =
+                """
+                INSERT INTO accounts_receivable_entries
+                    (id,customer_id,sale_id,collection_id,entry_type,debit_cents,credit_cents,
+                     balance_after_cents,due_date,note,created_by_user_id,created_at)
+                VALUES ($id,$customer,NULL,NULL,'AdjustmentDebit',1,0,$balance,NULL,
+                        'Query cap proof',$user,$at);
+                """;
+            ledger.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("D"));
+            ledger.Parameters.AddWithValue("$customer", customerId.ToString("D"));
+            ledger.Parameters.AddWithValue("$balance", 9_901 + index);
+            ledger.Parameters.AddWithValue("$user", userId.ToString("D"));
+            ledger.Parameters.AddWithValue("$at", now.AddSeconds(index + 1).ToString("O"));
+            ledger.ExecuteNonQuery();
+        }
+        transaction.Commit();
     }
 
     private static long Count(string databasePath, string table, string column, string value) =>

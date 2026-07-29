@@ -9,6 +9,9 @@ namespace Salryn.Infrastructure.Data.Services;
 
 public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
 {
+    public const int CustomerQueryLimit = 100;
+    public const int LedgerQueryLimit = 500;
+
     private readonly SqliteConnectionFactory _connections;
 
     public SqliteAccountsReceivableService(SqliteConnectionFactory connections) =>
@@ -45,11 +48,13 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
                     WHERE e.customer_id = c.id)
             FROM customers c
             WHERE $search = '' OR c.full_name LIKE $pattern OR COALESCE(c.phone, '') LIKE $pattern
-            ORDER BY c.full_name COLLATE NOCASE;
+            ORDER BY c.full_name COLLATE NOCASE
+            LIMIT $limit;
             """;
         string value = search?.Trim() ?? string.Empty;
         command.Parameters.AddWithValue("$search", value);
         command.Parameters.AddWithValue("$pattern", $"%{value}%");
+        command.Parameters.AddWithValue("$limit", CustomerQueryLimit);
 
         List<ReceivableCustomerBalance> rows = new();
         await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -145,11 +150,21 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         command.CommandText =
             """
             SELECT id, customer_id, sale_id, collection_id, entry_type, debit_cents, credit_cents,
-                   balance_after_cents, due_date, note, created_by_user_id, created_at
-            FROM accounts_receivable_entries WHERE customer_id=$customer
+                   balance_after_cents, due_date, note, created_by_user_id, created_at, payment_status
+            FROM (
+                SELECT e.id, e.customer_id, e.sale_id, e.collection_id, e.entry_type,
+                       e.debit_cents, e.credit_cents, e.balance_after_cents, e.due_date,
+                       e.note, e.created_by_user_id, e.created_at, s.payment_status
+                FROM accounts_receivable_entries e
+                LEFT JOIN sales s ON s.id = e.sale_id
+                WHERE e.customer_id=$customer
+                ORDER BY e.created_at DESC, e.id DESC
+                LIMIT $limit
+            )
             ORDER BY created_at, id;
             """;
         command.Parameters.AddWithValue("$customer", customerId.ToString("D"));
+        command.Parameters.AddWithValue("$limit", LedgerQueryLimit);
         List<AccountsReceivableEntry> entries = new();
         await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -239,6 +254,48 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         return Result<AccountsReceivableCollection>.Success(collection);
     }
 
+    public async Task<Result<CollectionPaymentAcknowledgment>> GetCollectionAcknowledgmentAsync(
+        Guid collectionId,
+        CancellationToken cancellationToken = default)
+    {
+        if (collectionId == Guid.Empty)
+            return Result<CollectionPaymentAcknowledgment>.Fail(
+                Error.Validation("Receivables.InvalidCollection", "A valid collection is required."));
+
+        await using SqliteConnection connection = _connections.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT c.id, customer.full_name, c.amount_cents,
+                   entry.balance_after_cents + c.amount_cents,
+                   entry.balance_after_cents,
+                   user.display_name, c.collected_at, c.note, c.method
+            FROM accounts_receivable_collections c
+            JOIN customers customer ON customer.id = c.customer_id
+            JOIN accounts_receivable_entries entry
+              ON entry.collection_id = c.id AND entry.entry_type = 'Collection'
+            JOIN users user ON user.id = c.collected_by_user_id
+            WHERE c.id = $id;
+            """;
+        command.Parameters.AddWithValue("$id", collectionId.ToString("D"));
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+            return Result<CollectionPaymentAcknowledgment>.Fail(
+                Error.NotFound("Receivables.CollectionNotFound", "Collection was not found."));
+
+        return Result<CollectionPaymentAcknowledgment>.Success(new(
+            Guid.Parse(reader.GetString(0)),
+            reader.GetString(1),
+            reader.GetInt64(2),
+            reader.GetInt64(3),
+            reader.GetInt64(4),
+            reader.GetString(5),
+            DateTimeOffset.Parse(reader.GetString(6)),
+            reader.IsDBNull(7) ? null : reader.GetString(7),
+            reader.GetString(8)));
+    }
+
     public async Task<Result<AccountsReceivableEntry>> AdjustAsync(
         RecordReceivableAdjustmentRequest request,
         CancellationToken cancellationToken = default)
@@ -271,11 +328,15 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         await using SqliteTransaction transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
         await using SqliteCommand read = connection.CreateCommand();
         read.Transaction = transaction;
-        read.CommandText = "SELECT customer_id, amount_cents FROM accounts_receivable_collections WHERE id=$id AND voided_at IS NULL;";
+        read.CommandText = "SELECT customer_id, amount_cents, voided_at FROM accounts_receivable_collections WHERE id=$id;";
         read.Parameters.AddWithValue("$id", collectionId.ToString("D"));
         await using SqliteDataReader reader = await read.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
-            return Result.Fail(Error.NotFound("Receivables.CollectionNotFound", "Active collection was not found."));
+            return Result.Fail(Error.NotFound("Receivables.CollectionNotFound", "Collection was not found."));
+        if (!reader.IsDBNull(2))
+            return Result.Fail(Error.Conflict(
+                "Receivables.CollectionAlreadyVoided",
+                "This collection was already reversed."));
         Guid customerId = Guid.Parse(reader.GetString(0));
         long amount = reader.GetInt64(1);
         await reader.DisposeAsync();
@@ -291,7 +352,7 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         if (await update.ExecuteNonQueryAsync(cancellationToken) != 1)
             return Result.Fail(Error.Conflict(
                 "Receivables.CollectionAlreadyVoided",
-                "Collection was already reversed."));
+                "This collection was already reversed."));
         await InsertEntryAsync(connection, transaction, new AccountsReceivableEntry(Guid.NewGuid(), customerId, null,
             collectionId, AccountsReceivableEntryType.CollectionReversal, amount, 0, balance + amount, null,
             reason.Trim(), voidedByUserId, now), cancellationToken);
@@ -406,7 +467,8 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         Guid.Parse(r.GetString(0)), Guid.Parse(r.GetString(1)), r.IsDBNull(2) ? null : Guid.Parse(r.GetString(2)),
         r.IsDBNull(3) ? null : Guid.Parse(r.GetString(3)), Enum.Parse<AccountsReceivableEntryType>(r.GetString(4)),
         r.GetInt64(5), r.GetInt64(6), r.GetInt64(7), r.IsDBNull(8) ? null : DateOnly.Parse(r.GetString(8)),
-        r.IsDBNull(9) ? null : r.GetString(9), Guid.Parse(r.GetString(10)), DateTimeOffset.Parse(r.GetString(11)));
+        r.IsDBNull(9) ? null : r.GetString(9), Guid.Parse(r.GetString(10)), DateTimeOffset.Parse(r.GetString(11)),
+        r.IsDBNull(12) ? null : Enum.Parse<SalePaymentStatus>(r.GetString(12)));
 
     private static async Task<ReceivableCustomer?> FindCustomerAsync(SqliteConnection c, Guid id, CancellationToken ct)
     {

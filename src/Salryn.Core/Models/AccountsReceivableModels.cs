@@ -41,7 +41,8 @@ public sealed record AccountsReceivableEntry(
     DateOnly? DueDate,
     string? Note,
     Guid CreatedByUserId,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    SalePaymentStatus? PaymentStatus = null);
 
 public sealed record AccountsReceivableCollection(
     Guid Id,
