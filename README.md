@@ -1,66 +1,82 @@
-# Salryn
+# Salryn POS
 
-Salryn is a native offline-first Windows POS and inventory system for small retail operations.
+Salryn is an offline-ready point-of-sale and retail operations platform developed for micro, small, and medium enterprises. It centralizes sales, inventory, stock movement, receipts, reporting, user activity, and local data protection in one Windows-based system.
 
-The current project state is maintained in:
+## Problem Addressed
 
-```text
-00-HANDOFF/SCOPE_SUMMARY.md
-```
+Many small retail businesses still maintain sales and inventory records through notebooks, spreadsheets, or disconnected applications. This creates repetitive encoding, delayed stock information, inconsistent records, and limited visibility for day-to-day business decisions.
 
-Older per-phase handoff documents remain archive history. The current development policy is to update documentation only at stable certainty points, not after every small implementation move.
+Salryn connects completed sales directly to inventory movement and reporting so that transaction records, stock levels, receipts, and operational activity remain organized in one system.
 
-## Sealed PRE-I candidate
+## Core Capabilities
 
-```text
-Repository: Kirch-Nairu/Salryn
-Final Salryn PRE-I candidate branch: KIRCH-PRE-I-STALE-DOC-REPAIR-FOR-SEAL
-Final Salryn PRE-I candidate SHA: 1a173994dd23f46c62c13fc7b54ca44a6cdf65c0
-Seal documentation branch: KIRCH-PRE-I-FINAL-STACK-SEAL
-Seal decision: PRE_I_FINAL_STACK_SEAL_PASSED
-```
+- Point-of-sale checkout and sales recording
+- Automatic inventory deduction for completed sales
+- Product, barcode, SKU, unit, category, and brand management
+- Stock-in and controlled stock-adjustment workflows
+- Low-stock and out-of-stock monitoring
+- Sales history and receipt preservation
+- Receipt reprinting without modifying the original sale
+- Daily, weekly, monthly, and product-level reporting
+- Cashier, shift, and user activity tracking
+- Role-based access controls
+- Audit records and CSV export
+- Local backup and restore
+- Offline operation without continuous internet access
 
-## Current LicensingOps candidate
+## Design Principles
 
-```text
-Repository: Kirch-Nairu/Salryn.LicensingOps
-Current LicensingOps candidate branch: KIRCH-LICOPS-M6-CROSS-REPO-ACTIVATION-PROOF
-Current LicensingOps candidate SHA: f73bf74a6e68f835640d0ea3942f979f8fc823d9
-```
+- Transaction records are saved before receipt printing.
+- Receipt snapshots remain immutable after a completed sale.
+- Inventory changes are represented through traceable stock movements.
+- Voids and reversals follow controlled workflows.
+- Business logic is separated from the user interface.
+- Monetary and quantity values use deterministic representations.
+- Compliance claims are not made without the corresponding review and implementation work.
 
-The final seal evidence is recorded in `00-HANDOFF/PRE_I_FINAL_STACK_SEAL_REPORT.md`, with the bounded product truth in `00-HANDOFF/PRE_I_FINAL_CAPABILITY_MATRIX.md`.
+## Technology
 
-## Recommended next
+- C# and .NET
+- Local ASP.NET Core application services
+- Windows desktop application shell
+- Web-based user interface hosted locally
+- SQLite-based local persistence
+- Keyboard-wedge barcode scanner support
+- Receipt printer integration
+- Layered application architecture
 
-```text
-KIRCH-I1-PACKAGE-REFRESH-PRE-BETA
-```
+## Current Stage
 
-The PRE-I seal does not claim package/I1 proof, a desktop shortcut/WebView2 app shell, installer proof, production activation, BIR/eSales readiness, or branch promotion. Those boundaries remain explicit in the seal report.
+Salryn has a functional, internally validated build covering the principal retail workflows, including checkout, inventory updates, stock management, receipt handling, reporting, user controls, auditing, and backup operations.
 
-## Project shape
+The solution is positioned for controlled pilot implementation with selected MSMEs to validate real operating conditions, staff usability, hardware compatibility, deployment procedures, and business-specific requirements.
 
-```text
-src/Salryn.Core
-src/Salryn.Infrastructure
-src/Salryn.Host.Local
-src/Salryn.Api.Local
-src/Salryn.App.Web
-src/Salryn.App.WinForms
-src/Salryn.Desktop.WebView
-tests/Salryn.Tests
-tools/Salryn.Tools.CoreSmoke
-tools/Salryn.Tools.InfrastructureSmoke
-tools/Salryn.Tools.CheckoutLocalHostSmoke
-00-COMPLIANCE
-00-HANDOFF
-```
+## Intended Users
 
-## Core rules
+- Small retail and general merchandise stores
+- Sari-sari and neighborhood stores
+- Specialty retailers
+- MSMEs transitioning from manual sales and inventory records
+- Businesses operating in locations with limited or unstable connectivity
 
-- Core owns business rules.
-- Infrastructure owns SQLite.
-- The Store Host owns database writes for LAN-capable operation.
-- Clients must not open shared SQLite over LAN.
-- Verification must pass before a scope is treated as stable.
-- Protected refs must not be promoted or moved without explicit verified release instruction.
+## Project Structure
+
+- `src/` — application and supporting services
+- `tests/` — automated and validation-focused tests
+- `docs/` — technical, operational, and release documentation
+- `installer/` — packaging and deployment resources where applicable
+
+## Product and Publisher
+
+**Product:** Salryn POS  
+**Publisher:** Kirjane Information Technology Services
+
+Salryn is proprietary software. Access, deployment, licensing, and use are subject to the applicable written agreement with Kirjane Information Technology Services.
+
+## Release-candidate boundaries
+
+- The Windows Host is the supported production shape for this candidate.
+- LAN Terminals are a future feature and are not included in the current production release.
+- Accounts Receivable / Utang is an optional paid Host entitlement named `ReceivablesUtangLedger`; it is an operational ledger, not an accounting or tax-compliance system.
+- Historical PASS reports are not fresh execution evidence. Current results and blockers are recorded in `00-HANDOFF/SALRYN_STABILIZATION_EXECUTION_LEDGER.md`.
+- No merge, public release, production installer distribution, or client deployment is authorized without Kirch's approval of the exact candidate SHA.
