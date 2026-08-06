@@ -1,45 +1,74 @@
-﻿# Salryn
+# Salryn POS
 
-Salryn is a native offline-first Windows POS project for small retail and general merchandise stores.
+Salryn is an offline-ready point-of-sale and retail operations platform developed for micro, small, and medium enterprises. It centralizes sales, inventory, stock movement, receipts, reporting, user activity, and local data protection in one Windows-based system.
 
-## Current Status
+## Problem Addressed
 
-Planning Pack: Complete  
-Phase 1: C# Solution Skeleton Complete  
-Phase 2: Core Value Objects Complete  
-Phase 3: Core Models Complete  
-Phase 4: Result/Error Pattern Polish Complete  
+Many small retail businesses still maintain sales and inventory records through notebooks, spreadsheets, or disconnected applications. This creates repetitive encoding, delayed stock information, inconsistent records, and limited visibility for day-to-day business decisions.
 
-## Stack
+Salryn connects completed sales directly to inventory movement and reporting so that transaction records, stock levels, receipts, and operational activity remain organized in one system.
 
-- C#
-- .NET 10
-- WinForms
-- SQLite later
-- Microsoft.Data.Sqlite later
-- ESC/POS printer later
-- Keyboard-wedge barcode scanner
-- Layered desktop architecture
+## Core Capabilities
 
-## Project Rules
+- Point-of-sale checkout and sales recording
+- Automatic inventory deduction for completed sales
+- Product, barcode, SKU, unit, category, and brand management
+- Stock-in and controlled stock-adjustment workflows
+- Low-stock and out-of-stock monitoring
+- Sales history and receipt preservation
+- Receipt reprinting without modifying the original sale
+- Daily, weekly, monthly, and product-level reporting
+- Cashier, shift, and user activity tracking
+- Role-based access controls
+- Audit records and CSV export
+- Local backup and restore
+- Offline operation without continuous internet access
 
-- Engine first, UI second.
-- No business logic in WinForms.
-- Money uses integer cents.
-- Quantity uses x1000 scaled integer.
-- Sales are saved before printing.
-- Receipt snapshots are preserved.
-- Inventory changes use stock movements.
-- V1 is void-only; refunds are reserved for V2.
-- No BIR-compliance claim unless proper compliance work is completed.
+## Design Principles
 
-## Projects
+- Transaction records are saved before receipt printing.
+- Receipt snapshots remain immutable after a completed sale.
+- Inventory changes are represented through traceable stock movements.
+- Voids and reversals follow controlled workflows.
+- Business logic is separated from the user interface.
+- Monetary and quantity values use deterministic representations.
+- Compliance claims are not made without the corresponding review and implementation work.
 
-- src/Salryn.App.WinForms
-- src/Salryn.Core
-- src/Salryn.Infrastructure
-- tests/Salryn.Tests
+## Technology
 
-## Current Next Phase
+- C# and .NET
+- Local ASP.NET Core application services
+- Windows desktop application shell
+- Web-based user interface hosted locally
+- SQLite-based local persistence
+- Keyboard-wedge barcode scanner support
+- Receipt printer integration
+- Layered application architecture
 
-Phase 5: SQLite Infrastructure.
+## Current Stage
+
+Salryn has a functional, internally validated build covering the principal retail workflows, including checkout, inventory updates, stock management, receipt handling, reporting, user controls, auditing, and backup operations.
+
+The solution is positioned for controlled pilot implementation with selected MSMEs to validate real operating conditions, staff usability, hardware compatibility, deployment procedures, and business-specific requirements.
+
+## Intended Users
+
+- Small retail and general merchandise stores
+- Sari-sari and neighborhood stores
+- Specialty retailers
+- MSMEs transitioning from manual sales and inventory records
+- Businesses operating in locations with limited or unstable connectivity
+
+## Project Structure
+
+- `src/` — application and supporting services
+- `tests/` — automated and validation-focused tests
+- `docs/` — technical, operational, and release documentation
+- `installer/` — packaging and deployment resources where applicable
+
+## Product and Publisher
+
+**Product:** Salryn POS  
+**Publisher:** Kirjane Labs
+
+Salryn is proprietary software. Access, deployment, licensing, and use are subject to the applicable written agreement with Kirjane Labs.
