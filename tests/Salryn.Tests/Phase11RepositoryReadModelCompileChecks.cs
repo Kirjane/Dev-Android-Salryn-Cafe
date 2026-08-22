@@ -39,6 +39,7 @@ public static class Phase11RepositoryReadModelCompileChecks
             StockOnHand: Quantity.FromX1000(1000).Value,
             ReorderLevel: Quantity.FromX1000(5000).Value,
             TrackStock: true,
+            TaxClassification: ProductTaxClassification.Vatable,
             IsActive: true);
 
         SaleHistoryItemReadModel sale = new(

@@ -1,0 +1,14 @@
+﻿{
+  "profiles": {
+    "Salryn.App.WinForms": {
+      "commandName": "Project"
+    },
+    "Salryn.App.WinForms Development": {
+      "commandName": "Project",
+      "commandLineArgs": "--dev",
+      "environmentVariables": {
+        "SALRYN_APP_ENV": "Development"
+      }
+    }
+  }
+}

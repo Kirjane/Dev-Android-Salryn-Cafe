@@ -28,7 +28,9 @@ public enum StockMovementType
     AdjustmentRemove = 5,
     Damage = 6,
     Expired = 7,
-    CountCorrection = 8
+    CountCorrection = 8,
+    /// <summary>M4-RC2: sellable restock from customer return (not a void of original sale).</summary>
+    ReturnRestock = 9
 }
 
 public enum PrintJobStatus

@@ -4,6 +4,7 @@
     <ProjectReference Include="..\..\src\Salryn.Core\Salryn.Core.csproj" />
     <ProjectReference Include="..\..\src\Salryn.Infrastructure\Salryn.Infrastructure.csproj" />
       <ProjectReference Include="..\..\src\Salryn.App.WinForms\Salryn.App.WinForms.csproj" />
+      <ProjectReference Include="..\..\src\Salryn.Api.Local\Salryn.Api.Local.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

@@ -1,0 +1,52 @@
+flowchart TD
+    %% ==== Native WinForms official output text-file workflow (RMO-A2..A7 sealed) ====
+    A[WinForms Shell] --> B{User permission}
+    B -->|OfficialOutput.Run Admin only| C[Native Official Output Text File UI]
+    B -->|No OfficialOutput.Run| X[Official Output run blocked]
+    C --> D[Package supply and source selection boundary]
+    D --> E[Readiness check]
+    E --> F[Output root policy ValidateWritableOutputRoot]
+    F --> G[Text-file external output adapter]
+    G --> H[official-output packageHash folder]
+    G --> I[manifest package ledger dispatch-plan payload receipt text files]
+    C --> J[Official-output workflow audit recorder]
+    J --> K[(audit_logs generic table)]
+    F --> FA[Duplicate package refusal OutputPackageAlreadyExists]
+
+    %% ==== Read-only web console and loopback API ====
+    L[React Web Console] --> M[Local API 127.0.0.1:5299]
+    M --> N[Read-only operator GET endpoints]
+    L --> O[Official Output nav disabled]
+    O -.no Web or API official-output.-> C
+    P2[WebView origin policy] -.loopback 5173 5299 only.-> M
+
+    %% ==== Official checkout data spine wired to UI fail-closed ====
+    Q0[Checkout Presenter official mode] -->|readiness gates selection| Q1[Official Checkout Completion Boundary]
+    Q0 -.no accredited profile seeded so dormant.-> Q9[Standard non-official sale path]
+    Q1 --> R0[Official Checkout Readiness Service fail-closed]
+    R0 --> P[Official Checkout Persistence Service]
+    P --> Q[Shared SQLite Transaction Boundary]
+    Q --> R[Sequence Allocation Participant]
+    Q --> S[Completed Sale Write Participant]
+    Q --> T[Electronic Journal Append Participant ORIGINAL only]
+    R --> U[(bir_official_document_sequences)]
+    S --> V[(sales)]
+    S --> W[(sale_items)]
+    S --> Y[(payments)]
+    S --> Z[(stock_movements)]
+    T --> AA[(bir_electronic_journal_entries)]
+    T --> AB[(bir_electronic_journal_entry_events ORIGINAL)]
+
+    Q -->|commit together| AC[Sale plus sequence plus ORIGINAL journal aligned]
+    Q -->|rollback together| AD[No sequence or journal drift on failure]
+
+    %% ==== Implemented but not UI-wired and not sealed as claims ====
+    AI[Composed in AppServices not UI-wired] --> AJ[Reprint audit-event service]
+    AI --> AK[Void Refund Cancel Correction audit-event service]
+    AI --> AL[X-reading and Z-reading services bir_z_readings]
+    AI --> AM[Text preview renderer and output packaging]
+
+    %% ==== Current explicit boundaries ====
+    AE[Current explicit boundaries] --> AF[No LAN multi-terminal]
+    AE --> AG[No printer PDF Crystal ESC-POS scanner]
+    AE --> AH[No BIR certification or accreditation claim]

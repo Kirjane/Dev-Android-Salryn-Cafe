@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Salryn.Composition.Local\Salryn.Composition.Local.csproj" />
+    <ProjectReference Include="..\Salryn.Core\Salryn.Core.csproj" />
+    <ProjectReference Include="..\Salryn.Host.Local\Salryn.Host.Local.csproj" />
+    <ProjectReference Include="..\Salryn.Infrastructure\Salryn.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

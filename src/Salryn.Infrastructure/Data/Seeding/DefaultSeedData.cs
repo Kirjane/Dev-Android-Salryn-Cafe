@@ -18,10 +18,24 @@ public static class DefaultSeedData
         public const string SalesVoid = "Sales.Void";
         public const string SalesViewHistory = "Sales.ViewHistory";
         public const string ReportsView = "Reports.View";
+        public const string OfficialOutputRun = "OfficialOutput.Run";
+        public const string OfficialDocumentReprint = "OfficialDocument.Reprint";
+        public const string OfficialDocumentVoid = "OfficialDocument.Void";
+        public const string OfficialDocumentCancel = "OfficialDocument.Cancel";
+        public const string OfficialDocumentCorrection = "OfficialDocument.Correction";
+        public const string OfficialDocumentRefund = "OfficialDocument.Refund";
+        public const string OfficialReadingView = "OfficialReading.View";
+        public const string OfficialReadingFinalize = "OfficialReading.Finalize";
+        public const string OfficialEvidenceExport = "OfficialEvidence.Export";
         public const string BackupManage = "Backup.Manage";
         public const string AuditView = "Audit.View";
         public const string ImportExportProducts = "ImportExport.Products";
         public const string ShiftOpenClose = "Shift.OpenClose";
+        public const string StoreDeploymentManage = "StoreDeployment.Manage";
+        public const string StoreTerminalView = "StoreTerminal.View";
+        public const string StoreTerminalManage = "StoreTerminal.Manage";
+        public const string StoreTerminalPairingIssue = "StoreTerminal.PairingIssue";
+        public const string StoreTerminalPairingRevoke = "StoreTerminal.PairingRevoke";
     }
 
     public static IReadOnlyList<SeedRole> Roles { get; } = new SeedRole[]
@@ -43,10 +57,24 @@ public static class DefaultSeedData
         Permissions.SalesVoid,
         Permissions.SalesViewHistory,
         Permissions.ReportsView,
+        Permissions.OfficialOutputRun,
+        Permissions.OfficialDocumentReprint,
+        Permissions.OfficialDocumentVoid,
+        Permissions.OfficialDocumentCancel,
+        Permissions.OfficialDocumentCorrection,
+        Permissions.OfficialDocumentRefund,
+        Permissions.OfficialReadingView,
+        Permissions.OfficialReadingFinalize,
+        Permissions.OfficialEvidenceExport,
         Permissions.BackupManage,
         Permissions.AuditView,
         Permissions.ImportExportProducts,
-        Permissions.ShiftOpenClose
+        Permissions.ShiftOpenClose,
+        Permissions.StoreDeploymentManage,
+        Permissions.StoreTerminalView,
+        Permissions.StoreTerminalManage,
+        Permissions.StoreTerminalPairingIssue,
+        Permissions.StoreTerminalPairingRevoke
     };
 
     public static IReadOnlyList<string> ManagerPermissions { get; } = new string[]
@@ -59,8 +87,11 @@ public static class DefaultSeedData
         Permissions.SalesVoid,
         Permissions.SalesViewHistory,
         Permissions.ReportsView,
+        Permissions.OfficialReadingView,
+        Permissions.OfficialEvidenceExport,
         Permissions.ImportExportProducts,
-        Permissions.ShiftOpenClose
+        Permissions.ShiftOpenClose,
+        Permissions.StoreTerminalView
     };
 
     public static IReadOnlyList<string> CashierPermissions { get; } = new string[]

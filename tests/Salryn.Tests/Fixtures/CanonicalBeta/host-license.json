@@ -1,0 +1,19 @@
+{
+  "LicenseId": "lic_host_20260718151522_6846bbec",
+  "CustomerName": "Canonical Beta Fixture",
+  "Edition": "Local",
+  "IssuedAt": "2026-07-18T15:15:22+00:00",
+  "ExpiresAt": null,
+  "MachineBinding": "SALRYN-MC-CB01-0000-0000-0001",
+  "Features": ["Pos", "Reports", "Users", "Backup", "Licensing"],
+  "Signature": "9AonJ1hy2WMcOhZb8FVMI9EzHCIjPXzoIhoRzci7hlAt7ubSwXARipm+yneUdfjGSNdvlD06Cs1upbDpkD8+iyc/GaHQr7SuRI1n4iaj133gxKJNgU9MjDwNEaw8J+ez71L+nuGawPJMkABSxpVoeb4GdK2a2+QKqJieysqezBH2hPaGU2kl6Id91IU1Y9AuuU2p7wtnUU66IEcVIz6MfdehsQeyBXpNRkFMRF+/iDn3QM6vrmZtOL1JbvreH+rKwt/eZ858yBHmwwnUdmAgrECv98DfoLxiaGiIs9Q/7likAIOu5hwLVjkrF5qqsylemZ9+fYBnEREiV/tHtfHY+A==",
+  "SchemaVersion": 2,
+  "ApplicationId": "Salryn.POS",
+  "StoreId": "store_canonical_beta_fixture",
+  "AllowedLanTerminals": 0,
+  "SupportExpiresAt": null,
+  "UpdatesUntil": null,
+  "LicenseType": "Host",
+  "HostLicenseId": null,
+  "TerminalId": null
+}

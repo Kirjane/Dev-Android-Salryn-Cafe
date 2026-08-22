@@ -1,4 +1,5 @@
 ﻿using Salryn.Core.Common;
+using Salryn.Core.Models;
 using Salryn.Core.ReadModels;
 
 namespace Salryn.Core.Services;
@@ -11,6 +12,7 @@ public sealed record PosCheckoutProductPick(
     long UnitPriceCents,
     long? CostPriceCents,
     bool TrackStock,
+    ProductTaxClassification TaxClassification,
     bool IsActive);
 
 public sealed class PosCheckoutProductPickerBoundary
@@ -36,6 +38,7 @@ public sealed class PosCheckoutProductPickerBoundary
                 product.SellingPrice.Cents,
                 product.CostPrice?.Cents,
                 product.TrackStock,
+                product.TaxClassification,
                 product.IsActive),
             quantityX1000,
             discountCents);
@@ -62,6 +65,7 @@ public sealed class PosCheckoutProductPickerBoundary
                 product.SellingPrice.Cents,
                 product.CostPrice?.Cents,
                 product.TrackStock,
+                product.TaxClassification,
                 product.IsActive),
             quantityX1000,
             discountCents);
@@ -106,6 +110,7 @@ public sealed class PosCheckoutProductPickerBoundary
                 product.UnitPriceCents,
                 product.CostPriceCents,
                 product.TrackStock,
+                product.TaxClassification,
                 discountCents);
 
             return Result<PosCheckoutDraftLineInput>.Success(lineInput);

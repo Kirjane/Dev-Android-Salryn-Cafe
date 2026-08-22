@@ -1,146 +1,114 @@
-﻿# Salryn POS Hardware Lock
+# Salryn POS Hardware Scope Lock
 
 Status:
-PLANNING LOCK ONLY.
+BETA / RELEASE SCOPE LOCK.
 
-Hardware target:
-Small retail/general merchandise POS setup.
+Cross-reference:
+`00-HANDOFF/BETA_CAPABILITY_MATRIX.md` (PRE-BETA-H seal) for SUPPORTED / CODE-PROVEN / HARDWARE-PROOF-PENDING / FORBIDDEN claims.
+
+Purpose:
+Prevent hardware-drift from entering active beta/release planning.
 
 ---
 
-# 1. Barcode Scanner
+## Current allowed printer scope
 
-V1 decision:
-Use keyboard-wedge barcode scanner mode.
+Allowed current claim:
 
-Meaning:
-The scanner behaves like a keyboard and types the barcode into the focused input box, then sends Enter.
+- Windows print queue internal receipt printing.
+- Valid Windows printer/manual test proof may prove only that Windows print queue path.
+- Internal receipt only.
+- No official/BIR output.
 
-Required behavior:
-- Cashier scan box must stay focused.
-- Scanner suffix should be Enter.
-- Raw input should be trimmed.
-- Unknown barcode opens Fast Add Product.
+The app may preserve internal receipt snapshots and submit saved receipt text to a configured Windows printer queue.
 
-Avoid in V1:
-- Direct USB HID API
+---
+
+## Hardware peripherals outside beta scope
+
+Hardware peripherals beyond the Windows print queue are outside the beta scope.
+
+Banned from beta/release scope:
+
+- cash drawer
+- drawer kick
+- receipt cutter
+- cut receipt command
+- ESC/POS
+- thermal printer profile
+- hardware receipt width/profile support
+- thermal receipt formatting
+- hardware bundle/support claims
+
+These are not active roadmap items, not release blockers, and not tracked for this release.
+
+---
+
+## Barcode scanner boundary
+
+Allowed:
+
+- Keyboard-wedge barcode scanner mode.
+- Scanner behaves like keyboard input into the focused scan/search field.
+- Enter suffix may submit/confirm the scan.
+
+Out of scope for this release:
+
+- direct USB HID scanner API
 - Bluetooth special handling
-- Scanner driver dependency
-- Complex device enumeration
-
-Why:
-Keyboard-wedge mode is the simplest and most reliable for small stores.
+- scanner driver dependency
+- complex device enumeration
 
 ---
 
-# 2. Receipt Printer
-
-V1 decision:
-Support ESC/POS thermal receipt printer.
-
-Preferred:
-- LAN/Ethernet thermal printer
-
-Fallback:
-- Windows-installed printer
-
-Why LAN first:
-- Can print to IP address and port.
-- Less driver pain than USB.
-- Easier to test with raw ESC/POS commands.
-
-Default LAN port:
-- 9100
-
----
-
-# 3. Printer Adapter Design
-
-Interface:
-IReceiptPrinter
-
-Implementations:
-- EscPosTcpPrinter
-- WindowsPrintPrinter
-- FileReceiptPrinter
-
-Purpose:
-The app should not care which printer type is used.
-
-ReceiptService calls:
-- IReceiptPrinter.PrintAsync(receiptText)
-
----
-
-# 4. FileReceiptPrinter
-
-Purpose:
-Development and testing.
-
-Behavior:
-- Saves receipt text to a .txt file.
-- Does not need physical printer.
-
-Use:
-- Early development
-- Debugging
-- Client demo without hardware
-
----
-
-# 5. Printer Failure Rules
+## Printer failure rules
 
 If printing fails:
+
 - Sale remains saved.
-- Print job marked FAILED.
-- User sees warning.
-- User can reprint receipt.
+- Receipt snapshot remains stored.
+- User sees a warning.
+- User can attempt reprint from the persisted snapshot.
 
 Never:
-- Roll back completed sale just because printer failed.
+
+- Roll back a completed sale because printer submission failed.
 - Lose receipt snapshot.
 - Create duplicate sale on reprint.
+- Create duplicate payment on reprint.
+- Mutate stock because of print or reprint.
 
 ---
 
-# 6. Cash Drawer
+## Client setup boundary
 
-V1:
-Optional / not required.
+For beta/release planning, do not require a hardware bundle.
 
-Future:
-- Trigger via receipt printer ESC/POS pulse command.
+Acceptable beta setup:
 
-Do not block v1 on cash drawer.
+- Windows PC or laptop.
+- Keyboard-wedge barcode scanner if scanning is tested.
+- Any valid Windows-installed printer only if Kirch performs and records manual print proof.
 
----
-
-# 7. Hardware Setup Checklist
-
-For client deployment:
-- Windows PC or laptop
-- Barcode scanner in keyboard mode
-- ESC/POS thermal printer
-- Printer paper width: 58mm or 80mm
-- Stable power
-- Local backup location
-- Optional external drive for backups
+No beta claim may require or advertise cash drawer, cutter, ESC/POS, thermal profile, or bundled POS hardware support.
 
 ---
 
-# 8. Test Cases
-
-Barcode scanner:
-- Scan known barcode
-- Scan unknown barcode
-- Scan with Enter suffix
-- Scan with weird spaces
-- Manual barcode typing
+## Test cases in active scope
 
 Printer:
-- Test print
-- Print receipt
-- Reprint receipt
-- Printer offline
-- Wrong printer IP
-- Paper out scenario if detectable
+
+- Windows printer disabled path.
+- Windows printer name missing path.
+- Windows print queue submission path on Windows host.
+- Print failure leaves sale unchanged.
+- Reprint uses persisted receipt snapshot and leaves sale/payment/stock unchanged.
+
+Scanner:
+
+- Manual barcode typing.
+- Keyboard-wedge scan of known barcode.
+- Keyboard-wedge scan of unknown barcode.
+- Enter suffix behavior.
+
+Status: `SCOPE_LOCKED_OUT_OF_BETA_HARDWARE_EXTRAS`

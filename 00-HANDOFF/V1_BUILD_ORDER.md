@@ -1,11 +1,25 @@
 ﻿# Salryn V1 Build Order
 
 Status:
+**HISTORICAL PLANNING DOCUMENT** — retained for archaeology only.
+Superseded for product truth by:
+
+- `00-HANDOFF/BETA_CAPABILITY_MATRIX.md` (PRE-BETA-H seal)
+- `06-HARDWARE/HARDWARE_LOCK.md`
+- `09-DEPLOYMENT/DEPLOYMENT_LOCK.md`
+- Current beta readiness lane reports under `00-HANDOFF/PRE_BETA_*`
+
+Critical correction:
+**Step 22 “ESC/POS printer” is NOT beta/product truth.** ESC/POS, drawer, cutter, and thermal profiles are **FORBIDDEN** for beta. Current printer path is **Windows print queue internal receipts only**.
+
+App code exists and is far past “no app code yet.” Do not use this file as a release claim source.
+
+Original status (obsolete):
 PLANNING LOCK ONLY.
 No app code yet.
 
-Purpose:
-This document defines the exact order for building Salryn V1 after the planning docs are accepted.
+Purpose (historical):
+This document defined the exact order for building Salryn V1 after the planning docs were accepted.
 
 Core rule:
 Build the engine first, then the screens.
@@ -42,7 +56,7 @@ Salryn must be built in this order:
 19. Void sale
 20. Reports
 21. Backup/restore
-22. ESC/POS printer
+22. ESC/POS printer  ← **OBSOLETE / FORBIDDEN for beta** (use Windows print queue only; see HARDWARE_LOCK)
 23. User roles/security
 24. Client settings/customization
 25. Testing pass

@@ -33,6 +33,42 @@ public sealed class MigrationRunner
         return _migrations.Count > 0;
     }
 
+    public int GetPendingMigrationCount()
+    {
+        if (_migrations.Count == 0)
+        {
+            return 0;
+        }
+
+        if (!File.Exists(_connectionFactory.DatabasePath))
+        {
+            return 0;
+        }
+
+        using var connection = _connectionFactory.CreateConnection();
+        connection.Open();
+
+        SqlitePragma.Apply(connection);
+
+        if (!SchemaMigrationsTableExists(connection))
+        {
+            return _migrations.Count;
+        }
+
+        HashSet<int> appliedVersions = GetAppliedVersions(connection);
+        int pendingCount = 0;
+
+        foreach (IDatabaseMigration migration in _migrations)
+        {
+            if (!appliedVersions.Contains(migration.Version))
+            {
+                pendingCount++;
+            }
+        }
+
+        return pendingCount;
+    }
+
     public void RunPendingMigrations()
     {
         if (_migrations.Count == 0)
@@ -62,6 +98,19 @@ public sealed class MigrationRunner
 
             transaction.Commit();
         }
+    }
+
+    private static bool SchemaMigrationsTableExists(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT 1
+            FROM sqlite_master
+            WHERE type = 'table' AND name = 'schema_migrations'
+            LIMIT 1;
+            """;
+
+        return command.ExecuteScalar() is not null;
     }
 
     private static void EnsureSchemaMigrationsTable(SqliteConnection connection)

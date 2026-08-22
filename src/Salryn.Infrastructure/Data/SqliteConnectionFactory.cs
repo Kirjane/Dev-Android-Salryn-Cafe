@@ -32,4 +32,9 @@ public sealed class SqliteConnectionFactory
 
         return new SqliteConnection(CreateConnectionString());
     }
+
+    public static void ClearAllPools()
+    {
+        SqliteConnection.ClearAllPools();
+    }
 }

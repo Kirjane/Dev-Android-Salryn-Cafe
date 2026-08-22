@@ -12,6 +12,7 @@ public sealed record PosCheckoutDraftLineInput(
     long UnitPriceCents,
     long? CostPriceCents,
     bool TrackStock,
+    ProductTaxClassification TaxClassification = ProductTaxClassification.Vatable,
     long DiscountCents = 0);
 
 public sealed record PosCheckoutDraftLine(
@@ -25,6 +26,7 @@ public sealed record PosCheckoutDraftLine(
     long? CostPriceCents,
     long DiscountCents,
     bool TrackStock,
+    ProductTaxClassification TaxClassification,
     long GrossCents,
     long LineTotalCents);
 
@@ -44,6 +46,7 @@ public sealed record PosCheckoutDraftTotals(
 
 public sealed record PosCheckoutDraftTransaction(
     Guid CashierUserId,
+    Guid? CashierSessionId,
     string? ReceiptNumber,
     IReadOnlyList<PosCheckoutDraftLine> Lines,
     IReadOnlyList<PosCheckoutDraftPayment> Payments,
@@ -56,6 +59,7 @@ public sealed class PosCheckoutDraftTransactionBuilder
     private readonly List<PosCheckoutDraftPayment> _payments = new();
 
     private Guid _cashierUserId;
+    private Guid? _cashierSessionId;
     private string? _receiptNumber;
     private string? _receiptSnapshot;
     private long _saleDiscountCents;
@@ -71,6 +75,19 @@ public sealed class PosCheckoutDraftTransactionBuilder
         }
 
         _cashierUserId = cashierUserId;
+        return Result.Success();
+    }
+
+    public Result SetCashierSessionId(Guid cashierSessionId)
+    {
+        if (cashierSessionId == Guid.Empty)
+        {
+            return Result.Fail(Error.Validation(
+                "CheckoutDraft.InvalidCashierSessionId",
+                "Checkout draft cashier session ID is required."));
+        }
+
+        _cashierSessionId = cashierSessionId;
         return Result.Success();
     }
 
@@ -127,6 +144,7 @@ public sealed class PosCheckoutDraftTransactionBuilder
                 input.CostPriceCents,
                 input.DiscountCents,
                 input.TrackStock,
+                input.TaxClassification,
                 grossCents,
                 checked(grossCents - input.DiscountCents));
 
@@ -314,6 +332,7 @@ public sealed class PosCheckoutDraftTransactionBuilder
         {
             PosCheckoutDraftTransaction transaction = new(
                 _cashierUserId,
+                _cashierSessionId,
                 _receiptNumber,
                 _lines.ToArray(),
                 _payments.ToArray(),
@@ -335,6 +354,13 @@ public sealed class PosCheckoutDraftTransactionBuilder
             return Result<PosCheckoutApplicationRequest>.Fail(Error.Validation(
                 "CheckoutDraft.InvalidCashierUserId",
                 "Checkout draft cashier user ID is required."));
+        }
+
+        if (!_cashierSessionId.HasValue || _cashierSessionId.GetValueOrDefault() == Guid.Empty)
+        {
+            return Result<PosCheckoutApplicationRequest>.Fail(Error.Validation(
+                "CheckoutDraft.InvalidCashierSessionId",
+                "Checkout draft cashier session ID is required."));
         }
 
         if (string.IsNullOrWhiteSpace(_receiptNumber))
@@ -378,6 +404,7 @@ public sealed class PosCheckoutDraftTransactionBuilder
 
             PosCheckoutApplicationRequest request = new(
                 _cashierUserId,
+                _cashierSessionId.GetValueOrDefault(),
                 _receiptNumber.Trim(),
                 _lines.Select(line => new PosCheckoutLineInput(
                     line.ProductId,
@@ -388,7 +415,8 @@ public sealed class PosCheckoutDraftTransactionBuilder
                     line.UnitPriceCents,
                     line.CostPriceCents,
                     line.DiscountCents,
-                    line.TrackStock)).ToArray(),
+                    line.TrackStock,
+                    line.TaxClassification)).ToArray(),
                 _payments.Select(payment => new PosCheckoutPaymentInput(
                     payment.Method,
                     payment.AmountCents)).ToArray(),
@@ -560,3 +588,6 @@ public sealed class PosCheckoutDraftTransactionBuilder
             "Checkout draft amount calculation is too large.");
     }
 }
+
+
+

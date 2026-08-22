@@ -277,6 +277,7 @@ internal static class ProductWriteSmokeChecks
             ReorderLevel = reorderLevel,
             TrackStock = trackStock,
             AllowDiscount = allowDiscount,
+            TaxClassification = ProductTaxClassification.Vatable,
             IsActive = isActive,
             CreatedAt = createdAt,
             UpdatedAt = updatedAt

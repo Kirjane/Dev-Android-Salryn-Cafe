@@ -1,12 +1,28 @@
 ﻿using System.Globalization;
 using Salryn.Core.Common;
 using Salryn.Core.Models;
+using Salryn.Core.ReadModels;
 using Salryn.Core.Services;
 
 namespace Salryn.App.WinForms.Features.Checkout;
 
+// Kirch file guide: presenter for Checkout search, cart, payment, readiness, and sale submit.
+// UI location: backs the full POS Checkout screen.
+// Frontend note: keep button behavior here; the form should only render state and forward user actions.
+
 public sealed class CheckoutPresenter
 {
+    private readonly ICheckoutProductSearchBoundary? _productSearchBoundary;
+    private readonly CheckoutSessionContext? _sessionContext;
+    private readonly ICheckoutReceiptNumberBoundary _receiptNumberBoundary;
+    private readonly ICheckoutCompletionBoundary _completionBoundary;
+    private readonly ICheckoutOfficialModeReadinessBoundary? _officialModeReadinessBoundary;
+    private readonly IOfficialCheckoutCompletionBoundary? _officialCompletionBoundary;
+    private readonly PosCheckoutProductPickerBoundary _productPickerBoundary = new();
+
+    // Kirch state map: draft sale state controlled by the presenter.
+    // UI side: cart rows, totals, selected line, prepared product, payments, and submit status all come from these fields.
+    // Frontend note: forms should not mutate these directly; add presenter methods when UI needs a new action.
     private PosCheckoutDraftTransactionBuilder _builder = new();
 
     private Guid? _cashierUserId;
@@ -16,9 +32,75 @@ public sealed class CheckoutPresenter
     private string _cashAmountText = "PHP 0.00";
     private long _cashAmountCents;
     private Guid? _selectedLineId;
+    private PosCheckoutDraftLineInput? _preparedProductLineInput;
+    private CheckoutPreparedProductViewModel? _preparedProduct;
+    private CheckoutCompletionDryRunViewModel _completionDryRun =
+        CheckoutCompletionDryRunViewModel.NotRun();
+    private CheckoutSaleSubmitGuardViewModel _saleSubmitGuard =
+        CheckoutSaleSubmitGuardViewModel.NotPrepared();
+    private CheckoutSaleSubmitResultViewModel _saleSubmitResult =
+        CheckoutSaleSubmitResultViewModel.NotRun();
+    private CheckoutOfficialModeViewModel _officialMode =
+        CheckoutOfficialModeViewModel.NotChecked();
+    private bool _isOfficialModeSelected;
+    private bool _isSaleSubmitInProgress;
+    private bool _hasSaleSubmitCompleted;
 
     public CheckoutPresenter()
+        : this(
+            productSearchBoundary: null,
+            sessionContext: null,
+            receiptNumberBoundary: null,
+            completionBoundary: null)
     {
+    }
+
+    public CheckoutPresenter(ICheckoutProductSearchBoundary? productSearchBoundary)
+        : this(
+            productSearchBoundary,
+            sessionContext: null,
+            receiptNumberBoundary: null,
+            completionBoundary: null)
+    {
+    }
+
+    public CheckoutPresenter(
+        ICheckoutProductSearchBoundary? productSearchBoundary,
+        CheckoutSessionContext? sessionContext)
+        : this(
+            productSearchBoundary,
+            sessionContext,
+            receiptNumberBoundary: null,
+            completionBoundary: null)
+    {
+    }
+
+    public CheckoutPresenter(
+        ICheckoutProductSearchBoundary? productSearchBoundary,
+        CheckoutSessionContext? sessionContext,
+        ICheckoutReceiptNumberBoundary? receiptNumberBoundary)
+        : this(
+            productSearchBoundary,
+            sessionContext,
+            receiptNumberBoundary,
+            completionBoundary: null)
+    {
+    }
+
+    public CheckoutPresenter(
+        ICheckoutProductSearchBoundary? productSearchBoundary,
+        CheckoutSessionContext? sessionContext,
+        ICheckoutReceiptNumberBoundary? receiptNumberBoundary,
+        ICheckoutCompletionBoundary? completionBoundary,
+        ICheckoutOfficialModeReadinessBoundary? officialModeReadinessBoundary = null,
+        IOfficialCheckoutCompletionBoundary? officialCompletionBoundary = null)
+    {
+        _productSearchBoundary = productSearchBoundary;
+        _sessionContext = sessionContext;
+        _receiptNumberBoundary = receiptNumberBoundary ?? new SystemCheckoutReceiptNumberBoundary();
+        _completionBoundary = completionBoundary ?? new CheckoutCompletionBoundary();
+        _officialModeReadinessBoundary = officialModeReadinessBoundary;
+        _officialCompletionBoundary = officialCompletionBoundary;
         State = CheckoutViewModel.Empty();
         _ = RefreshState("Checkout presenter ready.");
     }
@@ -35,8 +117,172 @@ public sealed class CheckoutPresenter
         _cashAmountText = "PHP 0.00";
         _cashAmountCents = 0;
         _selectedLineId = null;
+        _preparedProductLineInput = null;
+        _preparedProduct = null;
+        _completionDryRun = CheckoutCompletionDryRunViewModel.NotRun();
+        _saleSubmitGuard = CheckoutSaleSubmitGuardViewModel.NotPrepared();
+        _saleSubmitResult = CheckoutSaleSubmitResultViewModel.NotRun();
+        _officialMode = CheckoutOfficialModeViewModel.NotChecked();
+        _isOfficialModeSelected = false;
+        _isSaleSubmitInProgress = false;
+        _hasSaleSubmitCompleted = false;
 
-        return RefreshState("Checkout presenter initialized.");
+        Result receiptResult = AssignNewReceiptNumber();
+
+        if (receiptResult.IsFailure)
+        {
+            return FailFrom(receiptResult);
+        }
+
+        if (_sessionContext is not null)
+        {
+            Result cashierResult = _builder.SetCashierUserId(_sessionContext.CashierUserId);
+
+            if (cashierResult.IsFailure)
+            {
+                return FailFrom(cashierResult);
+            }
+
+            Result cashierSessionResult = _builder.SetCashierSessionId(_sessionContext.CashierSessionId);
+
+            if (cashierSessionResult.IsFailure)
+            {
+                return FailFrom(cashierSessionResult);
+            }
+
+            _cashierUserId = _sessionContext.CashierUserId;
+
+            return RefreshState(
+                $"Checkout bound to cashier shift {_sessionContext.ShortCashierSessionId}.");
+        }
+
+        return RefreshState("Checkout presenter initialized without cashier shift context.");
+    }
+
+    public async Task<CheckoutPresenterOperationResult> RefreshOfficialModeReadinessAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (_officialModeReadinessBoundary is null)
+        {
+            _isOfficialModeSelected = false;
+            _officialMode = new CheckoutOfficialModeViewModel(
+                HasCheckedReadiness: true,
+                IsReady: false,
+                CanSelectOfficialMode: false,
+                IsOfficialModeSelected: false,
+                SummaryText: "Official output boundary missing",
+                DetailText: "Official mode readiness is not wired in this checkout surface.",
+                ErrorCode: "CheckoutOfficialMode.BoundaryMissing",
+                ErrorMessage: "Official mode readiness is not wired in this checkout surface.");
+
+            return RefreshState("Official output readiness boundary is not wired.");
+        }
+
+        Result<CheckoutOfficialModeReadiness> readinessResult =
+            await _officialModeReadinessBoundary.CheckAsync(cancellationToken).ConfigureAwait(false);
+
+        if (readinessResult.IsFailure)
+        {
+            _isOfficialModeSelected = false;
+            _officialMode = new CheckoutOfficialModeViewModel(
+                HasCheckedReadiness: true,
+                IsReady: false,
+                CanSelectOfficialMode: false,
+                IsOfficialModeSelected: false,
+                SummaryText: "Official output check failed",
+                DetailText: readinessResult.Error,
+                ErrorCode: readinessResult.ErrorDetail.Code,
+                ErrorMessage: readinessResult.Error);
+
+            CheckoutPresenterOperationResult refreshed =
+                RefreshState("Official output readiness check failed.");
+
+            State = refreshed.State with
+            {
+                HasError = true,
+                ErrorCode = readinessResult.ErrorDetail.Code,
+                ErrorMessage = readinessResult.Error,
+                StatusMessage = readinessResult.Error
+            };
+
+            return new CheckoutPresenterOperationResult(
+                IsSuccess: false,
+                ErrorCode: readinessResult.ErrorDetail.Code,
+                ErrorMessage: readinessResult.Error,
+                State: State);
+        }
+
+        CheckoutOfficialModeReadiness readiness = readinessResult.Value;
+
+        if (readiness.CanSelectOfficialMode && _officialCompletionBoundary is null)
+        {
+            _isOfficialModeSelected = false;
+            _officialMode = new CheckoutOfficialModeViewModel(
+                HasCheckedReadiness: true,
+                IsReady: false,
+                CanSelectOfficialMode: false,
+                IsOfficialModeSelected: false,
+                SummaryText: "Official completion boundary missing",
+                DetailText: "Official output readiness passed, but official completion is not wired in this checkout surface.",
+                ErrorCode: "CheckoutOfficialMode.CompletionBoundaryMissing",
+                ErrorMessage: "Official output readiness passed, but official completion is not wired in this checkout surface.");
+
+            return RefreshState(_officialMode.SummaryText);
+        }
+
+        if (!readiness.CanSelectOfficialMode)
+        {
+            _isOfficialModeSelected = false;
+        }
+
+        _officialMode = MapOfficialMode(readiness, _isOfficialModeSelected);
+
+        return RefreshState(readiness.SummaryText);
+    }
+
+    public CheckoutPresenterOperationResult SelectStandardMode()
+    {
+        if (!_isOfficialModeSelected)
+        {
+            return RefreshState("Standard POS sale mode selected.");
+        }
+
+        _isOfficialModeSelected = false;
+        _officialMode = _officialMode with { IsOfficialModeSelected = false };
+        ResetCompletionDryRun();
+
+        return RefreshState("Standard POS sale mode selected.");
+    }
+
+    public CheckoutPresenterOperationResult SelectOfficialMode()
+    {
+        if (!_officialMode.HasCheckedReadiness)
+        {
+            return Fail(
+                "CheckoutOfficialMode.ReadinessCheckRequired",
+                "Refresh official output readiness before selecting official mode.");
+        }
+
+        if (!_officialMode.CanSelectOfficialMode)
+        {
+            return Fail(
+                _officialMode.ErrorCode ?? "CheckoutOfficialMode.NotReady",
+                _officialMode.DetailText);
+        }
+
+        if (_officialCompletionBoundary is null)
+        {
+            return Fail(
+                "CheckoutOfficialMode.CompletionBoundaryMissing",
+                "Official checkout completion is not wired in this checkout surface.");
+        }
+
+        // Kirch: why - official selection is allowed only when readiness and the official completion boundary are both wired.
+        _isOfficialModeSelected = true;
+        _officialMode = _officialMode with { IsOfficialModeSelected = true };
+        ResetCompletionDryRun();
+
+        return RefreshState("Official output selected. Completion will use the official guarded path.");
     }
 
     public CheckoutPresenterOperationResult SetCashierUserId(Guid cashierUserId)
@@ -49,8 +295,31 @@ public sealed class CheckoutPresenter
         }
 
         _cashierUserId = cashierUserId;
+        ResetCompletionDryRun();
 
         return RefreshState("Cashier placeholder set.");
+    }
+
+    private Result AssignNewReceiptNumber()
+    {
+        Result<string> receiptResult =
+            _receiptNumberBoundary.CreateReceiptNumber(_sessionContext);
+
+        if (receiptResult.IsFailure)
+        {
+            return Result.Fail(receiptResult.ErrorDetail);
+        }
+
+        Result builderResult = _builder.SetReceiptNumber(receiptResult.Value);
+
+        if (builderResult.IsFailure)
+        {
+            return builderResult;
+        }
+
+        _receiptNumber = receiptResult.Value;
+
+        return Result.Success();
     }
 
     public CheckoutPresenterOperationResult SetReceiptNumber(string? receiptNumber)
@@ -65,18 +334,132 @@ public sealed class CheckoutPresenter
         }
 
         _receiptNumber = trimmed;
+        ResetCompletionDryRun();
 
-        return RefreshState("Receipt placeholder set.");
+        return RefreshState("Receipt number set.");
     }
 
     public CheckoutPresenterOperationResult SetProductInputText(string? productInputText)
     {
         _productInputText = productInputText?.Trim() ?? string.Empty;
-        _productResultText = string.IsNullOrWhiteSpace(_productInputText)
-            ? "Waiting for product input."
-            : "Product lookup will be wired in a later phase.";
+        _preparedProductLineInput = null;
+        _preparedProduct = null;
+
+        if (string.IsNullOrWhiteSpace(_productInputText))
+        {
+            _productResultText = "Waiting for product input.";
+        }
+        else if (_productSearchBoundary is null)
+        {
+            _productResultText = "Product search boundary is not wired yet.";
+        }
+        else
+        {
+            _productResultText = "Ready to search product.";
+        }
 
         return RefreshState("Product input updated.");
+    }
+
+    // Kirch workflow: product search step.
+    // UI side: called by the Checkout search button or scanner-enter flow.
+    // Do not change: lookup must stay behind ICheckoutProductSearchBoundary.
+    public async Task<CheckoutPresenterOperationResult> SearchProductAsync(
+        string? productInputText,
+        CancellationToken cancellationToken = default)
+    {
+        SetProductInputText(productInputText);
+
+        if (string.IsNullOrWhiteSpace(_productInputText))
+        {
+            return Fail(
+                "CheckoutUi.ProductSearchTextRequired",
+                "Enter or scan a product before searching.");
+        }
+
+        if (_productSearchBoundary is null)
+        {
+            return Fail(
+                "CheckoutUi.ProductSearchBoundaryMissing",
+                "Product search is not wired yet.");
+        }
+
+        Result<ProductLookupReadModel?> searchResult =
+            await _productSearchBoundary.FindProductAsync(
+                _productInputText,
+                cancellationToken).ConfigureAwait(false);
+
+        if (searchResult.IsFailure)
+        {
+            return FailFrom(searchResult);
+        }
+
+        ProductLookupReadModel? product = searchResult.Value;
+
+        if (product is null)
+        {
+            _preparedProductLineInput = null;
+            _preparedProduct = null;
+            _productResultText = $"No product found for '{_productInputText}'.";
+
+            return RefreshState("Product not found.");
+        }
+
+        Result<PosCheckoutDraftLineInput> lineInputResult =
+            _productPickerBoundary.CreateLineInput(product);
+
+        if (lineInputResult.IsFailure)
+        {
+            _preparedProductLineInput = null;
+            _preparedProduct = null;
+
+            return FailFrom(lineInputResult);
+        }
+
+        _preparedProductLineInput = lineInputResult.Value;
+        _preparedProduct = MapPreparedProduct(product);
+        _productResultText = $"{product.Name} is ready to add.";
+
+        return RefreshState("Product found and prepared.");
+    }
+
+    public CheckoutPresenterOperationResult ClearProductSearch()
+    {
+        _productInputText = string.Empty;
+        _productResultText = "Waiting for product input.";
+        _preparedProductLineInput = null;
+        _preparedProduct = null;
+
+        return RefreshState("Product search cleared.");
+    }
+
+    // Kirch workflow: prepared product to cart line.
+    // UI side: Add Item button consumes the last successful product search result.
+    // Frontend note: disable/enable polish belongs in the view model state, not manual form flags.
+    public CheckoutPresenterOperationResult AddPreparedProductLine()
+    {
+        if (_preparedProductLineInput is null)
+        {
+            return Fail(
+                "CheckoutUi.PreparedProductRequired",
+                "Search and prepare a product before adding it to the draft.");
+        }
+
+        Result<PosCheckoutDraftLine> result = _builder.AddLine(_preparedProductLineInput);
+
+        if (result.IsFailure)
+        {
+            return FailFrom(result);
+        }
+
+        _selectedLineId = result.Value.Id;
+        _preparedProductLineInput = null;
+        _preparedProduct = null;
+        _productInputText = string.Empty;
+        _productResultText = "Waiting for product input.";
+        ResetCompletionDryRun();
+
+        return RefreshState("Prepared product added to draft.");
     }
 
     public CheckoutPresenterOperationResult AddPreparedLine(PosCheckoutDraftLineInput? lineInput)
@@ -96,6 +479,7 @@ public sealed class CheckoutPresenter
         }
 
         _selectedLineId = result.Value.Id;
+        ResetCompletionDryRun();
 
         return RefreshState("Prepared line added to draft.");
     }
@@ -123,6 +507,8 @@ public sealed class CheckoutPresenter
             _selectedLineId = null;
         }
 
+        ResetCompletionDryRun();
+
         return RefreshState("Draft line removed.");
     }
 
@@ -137,6 +523,7 @@ public sealed class CheckoutPresenter
 
         _cashAmountCents = amountCents;
         _cashAmountText = FormatMoney(amountCents);
+        ResetCompletionDryRun();
 
         return RefreshState("Cash amount updated.");
     }
@@ -199,6 +586,8 @@ public sealed class CheckoutPresenter
             return FailFrom(result);
         }
 
+        ResetCompletionDryRun();
+
         return RefreshState("Cash payment added to draft.");
     }
 
@@ -211,12 +600,331 @@ public sealed class CheckoutPresenter
             return FailFrom(result);
         }
 
+        ResetCompletionDryRun();
+
         return RefreshState("Draft payments cleared.");
     }
 
     public CheckoutPresenterOperationResult ClearDraft()
     {
         return Initialize();
+    }
+
+    public CheckoutPresenterOperationResult DryRunCompletionRequest()
+    {
+        if (_isOfficialModeSelected && _officialCompletionBoundary is null)
+        {
+            return Fail(
+                "CheckoutOfficialMode.CompletionBoundaryMissing",
+                "Official checkout completion is not wired in this checkout surface.");
+        }
+
+        ResetSaleSubmitGuard();
+
+        Result<PosCheckoutDraftTransaction> transactionResult = _builder.GetTransaction();
+
+        if (transactionResult.IsFailure)
+        {
+            return FailFrom(transactionResult);
+        }
+
+        Result<PosCheckoutApplicationRequest> requestResult =
+            _builder.BuildApplicationRequest();
+
+        if (requestResult.IsFailure)
+        {
+            _completionDryRun = new CheckoutCompletionDryRunViewModel(
+                HasRun: true,
+                IsSuccess: false,
+                BuiltRequest: false,
+                SummaryText: "failed",
+                DetailText: requestResult.Error,
+                ErrorCode: requestResult.ErrorDetail.Code,
+                ErrorMessage: requestResult.Error);
+
+            CheckoutPresenterOperationResult refreshed =
+                RefreshState("Completion request dry run failed.");
+
+            State = refreshed.State with
+            {
+                HasError = true,
+                ErrorCode = requestResult.ErrorDetail.Code,
+                ErrorMessage = requestResult.Error,
+                StatusMessage = requestResult.Error
+            };
+
+            return new CheckoutPresenterOperationResult(
+                IsSuccess: false,
+                ErrorCode: requestResult.ErrorDetail.Code,
+                ErrorMessage: requestResult.Error,
+                State: State);
+        }
+
+        PosCheckoutApplicationRequest request = requestResult.Value;
+        PosCheckoutDraftTransaction transaction = transactionResult.Value;
+        string selectedModeText = _isOfficialModeSelected
+            ? "official"
+            : "standard";
+
+        _completionDryRun = new CheckoutCompletionDryRunViewModel(
+            HasRun: true,
+            IsSuccess: true,
+            BuiltRequest: true,
+            SummaryText: $"passed · {selectedModeText} request built · submit locked",
+            DetailText:
+                $"Receipt {request.ReceiptNumber} · Shift {request.CashierSessionId.ToString("N")[..8]} · {request.Lines.Count} item(s) · {request.Payments.Count} payment(s) · total {FormatMoney(transaction.Totals.TotalCents)}.",
+            ErrorCode: null,
+            ErrorMessage: null);
+
+        return RefreshState($"Completion request dry run passed for {selectedModeText} mode. Sale submit remains locked.");
+    }
+
+
+    public CheckoutPresenterOperationResult PrepareSaleSubmitGuard()
+    {
+        if (_isSaleSubmitInProgress)
+        {
+            return FailSaleSubmitGuard(
+                "CheckoutSubmitGuard.AlreadyInProgress",
+                "Sale submit guard is already preparing a submit attempt.");
+        }
+
+        if (!_completionDryRun.HasRun ||
+            !_completionDryRun.IsSuccess ||
+            !_completionDryRun.BuiltRequest)
+        {
+            return FailSaleSubmitGuard(
+                "CheckoutSubmitGuard.DryRunRequired",
+                "Run a successful completion dry run before preparing the sale submit guard.");
+        }
+
+        if (_isOfficialModeSelected && _officialCompletionBoundary is null)
+        {
+            return FailSaleSubmitGuard(
+                "CheckoutOfficialMode.CompletionBoundaryMissing",
+                "Official checkout completion is not wired in this checkout surface.");
+        }
+
+        _isSaleSubmitInProgress = true;
+
+        try
+        {
+            Result<PosCheckoutApplicationRequest> requestResult =
+                _builder.BuildApplicationRequest();
+
+            if (requestResult.IsFailure)
+            {
+                return FailSaleSubmitGuard(
+                    requestResult.ErrorDetail.Code,
+                    requestResult.Error);
+            }
+
+            PosCheckoutApplicationRequest request = requestResult.Value;
+            Guid attemptId = Guid.NewGuid();
+            string attemptToken = attemptId.ToString("N")[..8].ToUpperInvariant();
+
+            _saleSubmitGuard = new CheckoutSaleSubmitGuardViewModel(
+                IsPrepared: true,
+                IsInProgress: false,
+                HasAttemptToken: true,
+                AttemptTokenText: attemptToken,
+                CanExecuteSubmit: true,
+                SummaryText: "prepared · ready to complete",
+                DetailText:
+                    $"Attempt {attemptToken} · Receipt {request.ReceiptNumber} · Shift {request.CashierSessionId.ToString("N")[..8]} · Complete Sale is enabled through the {BuildSelectedCompletionPathText()} guarded path.",
+                ErrorCode: null,
+                ErrorMessage: null);
+
+            _isSaleSubmitInProgress = false;
+
+            return RefreshState("Sale submit guard prepared. Complete Sale is ready.");
+        }
+        finally
+        {
+            _isSaleSubmitInProgress = false;
+        }
+    }
+
+
+    // Kirch workflow: final sale submit.
+    // UI side: Complete Sale button reaches here only after readiness and submit guard pass.
+    // Do not change: completion must remain guarded and application-service backed.
+    public async Task<CheckoutPresenterOperationResult> ExecutePreparedSaleSubmitAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (_isSaleSubmitInProgress)
+        {
+            return FailSaleSubmitExecution(
+                "CheckoutSubmit.AlreadyInProgress",
+                "Sale submit execution is already in progress.");
+        }
+
+        if (_hasSaleSubmitCompleted)
+        {
+            return FailSaleSubmitExecution(
+                "CheckoutSubmit.AlreadyCompleted",
+                "This checkout draft has already completed sale submit execution.");
+        }
+
+        if (!_saleSubmitGuard.IsPrepared ||
+            !_saleSubmitGuard.HasAttemptToken ||
+            !_saleSubmitGuard.CanExecuteSubmit)
+        {
+            return FailSaleSubmitExecution(
+                "CheckoutSubmit.GuardRequired",
+                "Prepare the sale submit guard before executing sale submit.");
+        }
+
+        if (!_completionDryRun.HasRun ||
+            !_completionDryRun.IsSuccess ||
+            !_completionDryRun.BuiltRequest)
+        {
+            return FailSaleSubmitExecution(
+                "CheckoutSubmit.DryRunRequired",
+                "Run a successful completion dry run before executing sale submit.");
+        }
+
+        Result<PosCheckoutApplicationRequest> requestResult =
+            _builder.BuildApplicationRequest();
+
+        if (requestResult.IsFailure)
+        {
+            return FailSaleSubmitExecution(
+                requestResult.ErrorDetail.Code,
+                requestResult.Error);
+        }
+
+        PosCheckoutApplicationRequest request = requestResult.Value;
+
+        if (_isOfficialModeSelected && _officialCompletionBoundary is null)
+        {
+            return FailSaleSubmitExecution(
+                "CheckoutOfficialMode.CompletionBoundaryMissing",
+                "Official checkout completion is not wired in this checkout surface.");
+        }
+
+        _isSaleSubmitInProgress = true;
+
+        try
+        {
+            Result completionResult = _isOfficialModeSelected
+                ? await _officialCompletionBoundary!.CompleteSaleAsync(
+                    request,
+                    cancellationToken).ConfigureAwait(false)
+                : await _completionBoundary.CompleteSaleAsync(
+                    request,
+                    cancellationToken).ConfigureAwait(false);
+
+            if (completionResult.IsFailure)
+            {
+                _isSaleSubmitInProgress = false;
+
+                return FailSaleSubmitExecution(
+                    completionResult.ErrorDetail.Code,
+                    completionResult.Error);
+            }
+
+            _hasSaleSubmitCompleted = true;
+            _isSaleSubmitInProgress = false;
+
+            _saleSubmitResult = new CheckoutSaleSubmitResultViewModel(
+                HasRun: true,
+                IsSuccess: true,
+                IsCompleted: true,
+                SummaryText: "completed",
+                DetailText:
+                    $"Receipt {request.ReceiptNumber} completed through the {BuildSelectedCompletionPathText()} guarded path. Complete Sale is now locked after completion.",
+                ErrorCode: null,
+                ErrorMessage: null);
+
+            _saleSubmitGuard = _saleSubmitGuard with
+            {
+                CanExecuteSubmit = false,
+                SummaryText = "executed · locked",
+                DetailText = "Sale submit execution completed. Submit guard is now locked."
+            };
+
+            return RefreshState($"Sale submit execution completed through the {BuildSelectedCompletionPathText()} guarded path.");
+        }
+        finally
+        {
+            _isSaleSubmitInProgress = false;
+        }
+    }
+
+    private CheckoutPresenterOperationResult FailSaleSubmitExecution(string code, string message)
+    {
+        _saleSubmitResult = new CheckoutSaleSubmitResultViewModel(
+            HasRun: true,
+            IsSuccess: false,
+            IsCompleted: false,
+            SummaryText: "blocked",
+            DetailText: message,
+            ErrorCode: code,
+            ErrorMessage: message);
+
+        CheckoutPresenterOperationResult refreshed =
+            RefreshState("Sale submit execution blocked.");
+
+        State = refreshed.State with
+        {
+            HasError = true,
+            ErrorCode = code,
+            ErrorMessage = message,
+            StatusMessage = message
+        };
+
+        return new CheckoutPresenterOperationResult(
+            IsSuccess: false,
+            ErrorCode: code,
+            ErrorMessage: message,
+            State: State);
+    }
+    private CheckoutPresenterOperationResult FailSaleSubmitGuard(string code, string message)
+    {
+        _saleSubmitGuard = new CheckoutSaleSubmitGuardViewModel(
+            IsPrepared: false,
+            IsInProgress: _isSaleSubmitInProgress,
+            HasAttemptToken: false,
+            AttemptTokenText: string.Empty,
+            CanExecuteSubmit: false,
+            SummaryText: "blocked",
+            DetailText: message,
+            ErrorCode: code,
+            ErrorMessage: message);
+
+        CheckoutPresenterOperationResult refreshed =
+            RefreshState("Sale submit guard preparation blocked.");
+
+        State = refreshed.State with
+        {
+            HasError = true,
+            ErrorCode = code,
+            ErrorMessage = message,
+            StatusMessage = message
+        };
+
+        return new CheckoutPresenterOperationResult(
+            IsSuccess: false,
+            ErrorCode: code,
+            ErrorMessage: message,
+            State: State);
+    }
+
+    private void ResetSaleSubmitGuard()
+    {
+        _saleSubmitGuard = CheckoutSaleSubmitGuardViewModel.NotPrepared();
+        _saleSubmitResult = CheckoutSaleSubmitResultViewModel.NotRun();
+        _isSaleSubmitInProgress = false;
+        _hasSaleSubmitCompleted = false;
+    }
+    private void ResetCompletionDryRun()
+    {
+        _completionDryRun = CheckoutCompletionDryRunViewModel.NotRun();
+        _saleSubmitGuard = CheckoutSaleSubmitGuardViewModel.NotPrepared();
+        _saleSubmitResult = CheckoutSaleSubmitResultViewModel.NotRun();
+        _isSaleSubmitInProgress = false;
+        _hasSaleSubmitCompleted = false;
     }
 
     public CheckoutPresenterOperationResult RefreshState()
@@ -241,22 +949,66 @@ public sealed class CheckoutPresenter
 
         bool hasLines = lines.Count > 0;
         bool hasPayments = transaction.Payments.Count > 0;
+        bool hasProductInput = !string.IsNullOrWhiteSpace(_productInputText);
+        bool saleCompleted = _hasSaleSubmitCompleted || _saleSubmitResult.IsCompleted;
+        bool canExecuteSelectedMode =
+            !_isOfficialModeSelected ||
+            (_officialMode.CanSelectOfficialMode && _officialCompletionBoundary is not null);
+
+        Result<CheckoutCompletionReadiness> completionReadinessResult =
+            _isOfficialModeSelected && _officialCompletionBoundary is not null
+                ? _officialCompletionBoundary.Evaluate(transaction)
+                : _completionBoundary.Evaluate(transaction);
+
+        if (completionReadinessResult.IsFailure)
+        {
+            return FailFrom(completionReadinessResult);
+        }
+
+        CheckoutCompletionReadiness completionReadiness = completionReadinessResult.Value;
 
         State = new CheckoutViewModel(
             CashierUserId: _cashierUserId,
+            CashierSessionId: _sessionContext?.CashierSessionId,
+            CashierDisplayName: _sessionContext?.CashierDisplayName ?? string.Empty,
+            CashierRoleName: _sessionContext?.CashierRoleName ?? string.Empty,
+            CashierSessionText: _sessionContext?.ShiftLine ?? "No cashier shift context bound.",
+            CheckoutModeText: BuildCheckoutModeText(),
+            OfficialMode: _officialMode with { IsOfficialModeSelected = _isOfficialModeSelected },
             ReceiptNumber: _receiptNumber,
             ProductInputText: _productInputText,
             ProductResultText: _productResultText,
+            PreparedProduct: _preparedProduct,
             Lines: lines,
             Totals: MapTotals(transaction.Totals),
             PaymentCount: transaction.Payments.Count,
             CashAmountText: _cashAmountText,
             CashAmountCents: _cashAmountCents,
-            CanAddPreparedLine: !string.IsNullOrWhiteSpace(_productInputText),
-            CanRemoveSelectedLine: hasLines,
-            CanAddCashPayment: hasLines && _cashAmountCents > 0,
-            CanClearPayments: hasPayments,
-            CanCompleteSale: false,
+            CanSearchProduct: !saleCompleted && _productSearchBoundary is not null && hasProductInput,
+            CanAddPreparedLine: !saleCompleted && (hasProductInput || _preparedProductLineInput is not null),
+            CanAddPreparedProductLine: !saleCompleted && _preparedProductLineInput is not null,
+            CanRemoveSelectedLine: !saleCompleted && hasLines,
+            CanAddCashPayment: !saleCompleted && hasLines && _cashAmountCents > 0,
+            CanClearPayments: !saleCompleted && hasPayments,
+            CanCompleteSale: !saleCompleted && canExecuteSelectedMode && _saleSubmitGuard.CanExecuteSubmit && !_isSaleSubmitInProgress,
+            CompletionReadiness: MapCompletionReadiness(completionReadiness),
+            CompletionDryRun: _completionDryRun,
+            SaleSubmitGuard: _isSaleSubmitInProgress
+                ? _saleSubmitGuard with
+                {
+                    IsInProgress = true,
+                    SummaryText = "executing",
+                    DetailText = "Sale submit execution is running through the guarded path."
+                }
+                : _saleSubmitGuard,
+            SaleSubmitResult: _isSaleSubmitInProgress
+                ? _saleSubmitResult with
+                {
+                    HasRun = true,
+                    SummaryText = "executing",
+                    DetailText = "Sale submit execution is in progress."
+                }
+                : _saleSubmitResult,
             StatusMessage: statusMessage,
             HasError: false,
             ErrorCode: null,
@@ -296,6 +1048,54 @@ public sealed class CheckoutPresenter
             State: State);
     }
 
+    private static CheckoutCompletionReadinessViewModel MapCompletionReadiness(
+        CheckoutCompletionReadiness readiness)
+    {
+        return new CheckoutCompletionReadinessViewModel(
+            HasCashierUser: readiness.HasCashierUser,
+            HasCashierSession: readiness.HasCashierSession,
+            HasReceiptNumber: readiness.HasReceiptNumber,
+            HasLines: readiness.HasLines,
+            HasPayments: readiness.HasPayments,
+            IsPaidInFull: readiness.IsPaidInFull,
+            CanBuildCompletionRequest: readiness.CanBuildCompletionRequest,
+            CanSubmitSale: readiness.CanSubmitSale,
+            SummaryText: readiness.SummaryText,
+            DetailText: readiness.DetailText);
+    }
+
+    private CheckoutOfficialModeViewModel MapOfficialMode(
+        CheckoutOfficialModeReadiness readiness,
+        bool isOfficialModeSelected)
+    {
+        return new CheckoutOfficialModeViewModel(
+            HasCheckedReadiness: readiness.HasCheckedReadiness,
+            IsReady: readiness.IsReady,
+            CanSelectOfficialMode: readiness.CanSelectOfficialMode,
+            IsOfficialModeSelected: readiness.CanSelectOfficialMode && isOfficialModeSelected,
+            SummaryText: readiness.SummaryText,
+            DetailText: readiness.DetailText,
+            ErrorCode: readiness.ErrorCode,
+            ErrorMessage: readiness.ErrorMessage);
+    }
+
+    private string BuildCheckoutModeText()
+    {
+        string baseText = _sessionContext?.ModeLine ?? "Repository-backed product search · Sale completion locked";
+        string selectedMode = _isOfficialModeSelected
+            ? "Official output selected · official submit boundary ready"
+            : "Standard POS sale selected";
+
+        return $"{baseText} · {selectedMode} · {_officialMode.SummaryText}";
+    }
+
+    private string BuildSelectedCompletionPathText()
+    {
+        return _isOfficialModeSelected
+            ? "official"
+            : "standard";
+    }
+
     private static CheckoutLineViewModel MapLine(PosCheckoutDraftLine line)
     {
         return new CheckoutLineViewModel(
@@ -316,6 +1116,26 @@ public sealed class CheckoutPresenter
             LineTotalCents: line.LineTotalCents,
             LineTotalText: FormatMoney(line.LineTotalCents),
             TrackStock: line.TrackStock);
+    }
+
+    private static CheckoutPreparedProductViewModel MapPreparedProduct(ProductLookupReadModel product)
+    {
+        return new CheckoutPreparedProductViewModel(
+            ProductId: product.Id,
+            ProductName: product.Name,
+            Sku: product.Sku,
+            Barcode: product.Barcode,
+            UnitName: product.UnitName,
+            UnitPriceCents: product.SellingPrice.Cents,
+            UnitPriceText: FormatMoney(product.SellingPrice.Cents),
+            CostPriceCents: product.CostPrice?.Cents,
+            CostPriceText: product.CostPrice is null
+                ? "PHP 0.00"
+                : FormatMoney(product.CostPrice.Value.Cents),
+            StockOnHandX1000: product.StockOnHand.ValueX1000,
+            StockOnHandText: FormatQuantity(product.StockOnHand.ValueX1000),
+            TrackStock: product.TrackStock,
+            IsActive: product.IsActive);
     }
 
     private static CheckoutTotalsViewModel MapTotals(PosCheckoutDraftTotals totals)
@@ -350,4 +1170,3 @@ public sealed class CheckoutPresenter
         return (quantityX1000 / 1000m).ToString("0.###", CultureInfo.InvariantCulture);
     }
 }
-

@@ -24,6 +24,47 @@ public sealed class SqliteSaleWriteRepository :
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        try
+        {
+            using var connection = CreateOpenConnection();
+            using var transaction = connection.BeginTransaction();
+
+            Result writeResult = WriteCompletedSale(
+                connection,
+                transaction,
+                sale,
+                items,
+                payments,
+                stockMovements,
+                cancellationToken);
+
+            if (writeResult.IsFailure)
+            {
+                transaction.Rollback();
+                return Task.FromResult(writeResult);
+            }
+
+            transaction.Commit();
+
+            return Task.FromResult(Result.Success());
+        }
+        catch (Exception ex) when (ex is SqliteException or InvalidOperationException or OverflowException)
+        {
+            return Task.FromResult(Unexpected("Sales.AddCompletedSaleFailed", ex));
+        }
+    }
+
+    internal static Result WriteCompletedSale(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        Sale sale,
+        IReadOnlyList<SaleItem> items,
+        IReadOnlyList<Payment> payments,
+        IReadOnlyList<StockMovement> stockMovements,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
         Result validation = ValidateCompletedSale(
             sale,
             items,
@@ -32,14 +73,12 @@ public sealed class SqliteSaleWriteRepository :
 
         if (validation.IsFailure)
         {
-            return Task.FromResult(validation);
+            return validation;
         }
 
         try
         {
-            using var connection = CreateOpenConnection();
-            using var transaction = connection.BeginTransaction();
-
+            // Kirch: shared official checkout uses this same write path so sale rows and journal evidence cannot drift.
             InsertSale(connection, transaction, sale);
 
             foreach (SaleItem item in items)
@@ -65,28 +104,25 @@ public sealed class SqliteSaleWriteRepository :
 
                 if (stockResult.IsFailure)
                 {
-                    transaction.Rollback();
-                    return Task.FromResult(stockResult);
+                    return stockResult;
                 }
             }
 
-            transaction.Commit();
-
-            return Task.FromResult(Result.Success());
+            return Result.Success();
         }
         catch (SqliteException ex) when (IsUniqueConstraintViolation(ex))
         {
-            return Task.FromResult(ToAddSaleUniqueConflict(ex));
+            return ToAddSaleUniqueConflict(ex);
         }
         catch (SqliteException ex) when (IsForeignKeyConstraintViolation(ex))
         {
-            return Task.FromResult(Result.Fail(Error.Validation(
+            return Result.Fail(Error.Validation(
                 "Sales.InvalidReference",
-                "Sale contains an invalid cashier, session, product, payment, stock, or user reference.")));
+                "Sale contains an invalid cashier, session, product, payment, stock, or user reference."));
         }
         catch (Exception ex) when (ex is SqliteException or InvalidOperationException or OverflowException)
         {
-            return Task.FromResult(Unexpected("Sales.AddCompletedSaleFailed", ex));
+            return Unexpected("Sales.AddCompletedSaleFailed", ex);
         }
     }
 
@@ -510,6 +546,34 @@ public sealed class SqliteSaleWriteRepository :
         IReadOnlyList<Payment> payments,
         IReadOnlyList<StockMovement> stockMovements)
     {
+        if (sale is null)
+        {
+            return Result.Fail(Error.Validation(
+                "Sales.SaleRequired",
+                "Sale is required."));
+        }
+
+        if (items is null)
+        {
+            return Result.Fail(Error.Validation(
+                "Sales.SaleItemsRequired",
+                "Sale items are required."));
+        }
+
+        if (payments is null)
+        {
+            return Result.Fail(Error.Validation(
+                "Sales.PaymentsRequired",
+                "Sale payments are required."));
+        }
+
+        if (stockMovements is null)
+        {
+            return Result.Fail(Error.Validation(
+                "Sales.StockMovementsRequired",
+                "Sale stock movements are required."));
+        }
+
         if (sale.Id == Guid.Empty)
         {
             return Result.Fail(Error.Validation(

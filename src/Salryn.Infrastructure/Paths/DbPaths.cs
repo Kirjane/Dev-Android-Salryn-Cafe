@@ -1,4 +1,6 @@
-﻿namespace Salryn.Infrastructure.Paths;
+﻿using Salryn.Core.Common;
+
+namespace Salryn.Infrastructure.Paths;
 
 public sealed class DbPaths
 {
@@ -39,6 +41,41 @@ public sealed class DbPaths
     public static DbPaths CreateDevelopment(string projectRoot)
     {
         return new DbPaths(Path.Combine(projectRoot, ".salryn-dev"));
+    }
+
+    public Result ValidateProductionWritability()
+    {
+        try
+        {
+            EnsureDirectories();
+
+            string probePath = Path.Combine(
+                DataPath,
+                ".salryn-write-probe-" + Guid.NewGuid().ToString("N") + ".tmp");
+
+            File.WriteAllText(probePath, DateTimeOffset.UtcNow.ToString("O"));
+            File.Delete(probePath);
+
+            if (File.Exists(DatabasePath))
+            {
+                using FileStream databaseProbe = File.Open(
+                    DatabasePath,
+                    FileMode.Open,
+                    FileAccess.ReadWrite,
+                    FileShare.Read);
+            }
+
+            return Result.Success();
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            return Result.Fail(Error.Failure(
+                "DatabasePath.ProductionNotWritable",
+                "SALRYN production database folder or database file is not writable. " +
+                "Database path: " + DatabasePath + ". " +
+                "Run SALRYN with permissions to write to ProgramData\\Salryn, fix the folder permissions, " +
+                "or use --dev only for development."));
+        }
     }
 
     public void EnsureDirectories()

@@ -1,5 +1,6 @@
 ﻿using Salryn.Core.Common;
 using Salryn.Core.ReadModels;
+using Salryn.Core.Security;
 using Salryn.Core.ValueObjects;
 
 namespace Salryn.Core.Repositories;
@@ -7,6 +8,11 @@ namespace Salryn.Core.Repositories;
 public interface IProductReadRepository
 {
     Task<Result<ProductLookupReadModel?>> FindByIdAsync(
+        Guid productId,
+        CancellationToken cancellationToken = default);
+
+    // Kirch: Reads the complete editable product record for safe edit workflows.
+    Task<Result<ProductDetailReadModel?>> FindDetailByIdAsync(
         Guid productId,
         CancellationToken cancellationToken = default);
 
@@ -78,11 +84,24 @@ public interface IUserReadRepository
 
     Task<Result<IReadOnlyList<UserReadModel>>> GetAllAsync(
         CancellationToken cancellationToken = default);
+
+    Task<Result<IReadOnlyList<UserRoleReadModel>>> GetRolesAsync(
+        CancellationToken cancellationToken = default);
+}
+public interface IUserPermissionReadRepository
+{
+    // Kirch: Reads a user's role permissions without performing authentication or writes.
+    Task<Result<UserPermissionReadModel?>> FindByUserIdAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IStoreSettingsReadRepository
 {
     Task<Result<StoreSettingsReadModel?>> GetCurrentAsync(
+        CancellationToken cancellationToken = default);
+
+    Task<Result<StoreLogoReadModel?>> GetLogoAsync(
         CancellationToken cancellationToken = default);
 }
 
@@ -100,13 +119,40 @@ public interface ICashierSessionReadRepository
 public interface IAuditReadRepository
 {
     Task<Result<PagedResult<AuditLogReadModel>>> SearchAuditLogsAsync(
-        PageRequest page,
+        AuditLogSearchFilter filter,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Exports filtered audit rows for CSV (complete filter match up to MaxRows, newest first).
+    /// </summary>
+    Task<Result<IReadOnlyList<AuditLogExportRow>>> ExportAuditLogsAsync(
+        AuditLogExportFilter filter,
         CancellationToken cancellationToken = default);
 }
 
 public interface IErrorLogReadRepository
 {
     Task<Result<PagedResult<ErrorLogReadModel>>> SearchErrorLogsAsync(
-        PageRequest page,
+        ErrorLogSearchFilter filter,
         CancellationToken cancellationToken = default);
 }
+
+
+public interface IAuthenticationRepository
+{
+    // Kirch: Checks whether the database already has at least one active user for login routing.
+    Task<Result<bool>> HasAnyActiveUserAsync(
+        CancellationToken cancellationToken = default);
+
+    // Kirch: Reads a login credential profile by username without exposing SQLite to the app layer.
+    Task<Result<LoginUserCredentialReadModel?>> FindCredentialByUsernameAsync(
+        string username,
+        CancellationToken cancellationToken = default);
+
+    // Kirch: Creates the first active admin user during first-run setup.
+    Task<Result<AuthenticatedUserReadModel>> CreateFirstAdminAsync(
+        FirstRunAdminSetupRequest request,
+        string passwordHash,
+        CancellationToken cancellationToken = default);
+}
+

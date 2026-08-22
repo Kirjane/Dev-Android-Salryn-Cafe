@@ -1,56 +1,78 @@
-﻿# Salryn POS Deployment Lock
+# Salryn POS Deployment Lock
 
 Status:
-PLANNING LOCK ONLY.
-No installer yet.
-No app code yet.
+BETA / RELEASE SCOPE LOCK.
+No installer proof yet.
 
 Goal:
-Define how Salryn should eventually be installed, backed up, configured, and handed over to clients.
+Define how Salryn should be installed, backed up, configured, and handed over without adding hardware-drift to beta scope.
 
 ---
 
-# 1. V1 Deployment Model
+## 1. Beta deployment model
 
-Salryn v1 deployment target:
-- One Windows PC or laptop
-- One local SQLite database
-- One cashier station
-- One receipt printer
-- One barcode scanner
-- Local backup folder
+Salryn beta/release deployment target:
 
-Not included in v1:
-- Multi-terminal sync
-- Cloud database
-- Branch sync
-- Web dashboard
-- Mobile app
+- **One Windows Host PC or laptop** running Salryn Host + one local SQLite database.
+- **Optional licensed LAN Cashier/Manager terminals** that connect to that Host (no local store DB on the terminal).
+- Windows print queue internal receipt printing only if manually proven on that host (see HARDWARE_LOCK).
+- Keyboard-wedge barcode scanner workflow (hardware paper/scan proof pending until physically tested).
+- Local portable backup import/export (`.salryn-backup.zip`) plus on-host backup packages.
+- Store logo/branding persisted on Host and shown on Host shell + LAN TerminalShell.
 
----
+Clarification (PRE-BETA-H):
+Older “single cashier workstation only” language is **superseded** for product truth.
+The deployment remains **single-host / single database**, not multi-master sync.
+LAN terminals are in beta scope when licensed and paired.
 
-# 2. Target Client Setup
+Not included in beta/release scope:
 
-Minimum hardware:
-- Windows 10 or Windows 11 PC/laptop
-- 4GB RAM minimum
-- SSD recommended
-- USB barcode scanner in keyboard-wedge mode
-- ESC/POS thermal receipt printer
-- Stable power source
+- Multi-terminal production **sync** (each terminal writing its own DB).
+- Cloud database.
+- Branch sync.
+- Public SaaS web dashboard.
+- Mobile app store distribution as a product claim.
+- Hardware peripherals beyond the Windows print queue (ESC/POS, drawer, cutter, thermal profiles).
+- Hardware bundle/support claim.
+- Cloud activation.
 
-Preferred printer:
-- LAN/Ethernet ESC/POS printer
-
-Fallback printer:
-- Windows-installed receipt printer
+Authoritative honesty matrix: `00-HANDOFF/BETA_CAPABILITY_MATRIX.md`.
 
 ---
 
-# 3. Production Data Path
+## 2. Target client setup
+
+Minimum host:
+
+- Windows 10 or Windows 11 PC/laptop.
+- 4GB RAM minimum.
+- SSD recommended.
+- Stable power source.
+
+Printer boundary:
+
+- Windows print queue only.
+- Internal receipt only.
+- Manual printer proof required before any local paper-output claim.
+- No official/BIR output.
+- No ESC/POS.
+- No cutter.
+- No cash drawer.
+- No thermal width/profile support.
+- No hardware bundle/support claim.
+
+Barcode boundary:
+
+- Keyboard-wedge scanner mode only.
+- No scanner driver or HID integration claim.
+
+---
+
+## 3. Production data path
 
 Recommended production path:
 
+```text
 C:\ProgramData\Salryn\
 ├─ data\
 │  └─ salryn.db
@@ -59,8 +81,10 @@ C:\ProgramData\Salryn\
 ├─ logs\
 ├─ receipts\
 └─ config\
+```
 
 Rules:
+
 - Database should not live inside Downloads.
 - Database should not live inside temporary folders.
 - Backups should not overwrite each other.
@@ -68,151 +92,126 @@ Rules:
 
 ---
 
-# 4. Installer Goal
+## 4. Installer goal
 
-Future installer should:
-- Install Salryn app
-- Create C:\ProgramData\Salryn folders
-- Create desktop shortcut
-- Install required runtime if needed
-- Preserve existing database during update
-- Never delete client data during update
+Installer remains outside this lane.
+
+Future installer proof should:
+
+- Install Salryn app.
+- Create `C:\ProgramData\Salryn` folders.
+- Create desktop shortcut.
+- Install required runtime if needed.
+- Preserve existing database during update.
+- Never delete client data during update.
 
 Avoid:
-- Installer that wipes old data
-- Installer that stores database beside EXE only
-- Manual copy-paste deployment forever
+
+- Installer that wipes old data.
+- Installer that stores database beside EXE only.
+- Manual copy-paste deployment forever.
 
 ---
 
-# 5. First-Run Setup Wizard
+## 5. First-run setup boundary
 
-First launch should ask for:
-1. Store name
-2. Business name optional
-3. Address
-4. Contact number
-5. Receipt width: 58mm or 80mm
-6. Default currency label: PHP
-7. Admin username
-8. Admin password
-9. Printer mode:
-   - File test mode
-   - LAN printer
-   - Windows printer
-10. Backup folder
+First-run/client setup may ask for:
 
-After setup:
-- Create default roles
-- Create admin user
-- Create default category
-- Create default units
-- Save store settings
-- Run test receipt option
+1. Store name.
+2. Optional business name.
+3. Address.
+4. Contact number.
+5. Default currency label: PHP.
+6. Admin username.
+7. Admin password.
+8. Printer mode: Disabled or Windows Printer.
+9. Exact Windows printer name when Windows Printer mode is selected.
+10. Backup folder only after Backup UI is implemented and verified.
+
+Do not add first-run controls for cash drawer, cutter, ESC/POS, thermal profiles, hardware receipt width/profile, or hardware bundle selection.
 
 ---
 
-# 6. Backup Policy
+## 6. Backup policy
 
-V1 required:
-- Manual backup button
-- Timestamped backup file
-- Backup log
-- Backup verification
+Backup UI remains a separate release blocker/lane.
 
-Recommended backup filename:
-salryn-backup-YYYYMMDD-HHMMSS.db
+Required when implemented:
 
-Recommended backup locations:
-- Local backups folder
-- Optional external USB drive
-- Optional client-chosen folder
-
-Rules:
-- Backup before restore.
+- Manual backup button.
+- Timestamped backup file.
+- Backup manifest/verification.
+- Restore warning.
 - Restore requires admin.
 - Restore should be logged.
-- App should warn user before restore.
+- Backup before restore.
 
 ---
 
-# 7. Update Policy
+## 7. Update policy
 
-Future update rules:
+Update rules:
+
 - Never overwrite database.
 - Run migrations safely.
 - Backup before migration.
-- Keep migration version in app_metadata.
+- Keep migration version in app metadata.
 - If migration fails, do not launch partially upgraded app.
 
 ---
 
-# 8. Client Handoff Checklist
+## 8. Client handoff checklist
 
 Before handing over to client:
-- Store profile configured
-- Admin account created
-- Cashier account created
-- Printer test passed
-- Barcode scanner test passed
-- Sample product added
-- Sample sale completed
-- Receipt printed
-- Reprint tested
-- Void tested
-- Backup tested
-- Daily report tested
-- Monthly PDF tested
+
+- Store profile configured.
+- Admin account created.
+- Cashier account created.
+- Barcode scanner test passed if scanner is used.
+- Sample product added.
+- Sample sale completed.
+- Internal receipt snapshot confirmed.
+- Windows print queue manual test passed only if a Windows printer is configured.
+- Reprint tested.
+- Void tested.
+- Backup tested only after Backup UI is implemented.
+- Detailed Reports tested.
+
+Do not add cash drawer, cutter, ESC/POS, thermal profile, hardware bundle, or hardware support validation to beta handoff.
 
 ---
 
-# 9. Support Notes
+## 9. Support notes
 
-Support should ask:
-- Windows version
-- Printer model
-- Printer connection type
-- Barcode scanner model
-- Salryn version
-- Database backup date
-- Screenshot of error
-- Log file if available
+Support may ask:
+
+- Windows version.
+- Windows printer name/model if Windows printing is configured.
+- Printer connection type only for Windows queue troubleshooting.
+- Barcode scanner model if scanner is used.
+- Salryn version.
+- Database backup date after Backup UI exists.
+- Screenshot of error.
+- Log file if available.
+
+No beta support claim is made for cash drawer, cutter, ESC/POS, thermal profiles, or bundled POS hardware.
 
 ---
 
-# 10. Legal/Compliance Note
+## 10. Legal/compliance note
 
-Salryn v1 should be positioned as:
-Native sales and inventory POS software.
+Salryn beta/release should be positioned as:
+
+Native sales and inventory POS software with internal receipt snapshots and optional Windows print queue submission.
 
 Do not claim:
-- BIR-accredited
-- BIR-compliant official receipt system
-- Official invoice system
 
-Unless:
-- The proper compliance, registration, and accreditation workflow is actually completed.
+- BIR-accredited.
+- BIR-compliant official receipt system.
+- Official invoice system.
+- eSales production transmission.
+- Hardware bundle/support.
 
----
+Unless the proper compliance, registration, accreditation, hardware, and acceptance workflows are actually completed in separate approved lanes.
 
-# FINAL REVIEW PATCH: Deployment Additions
-
-## Client Setup Additions
-
-Before handoff:
-- Create first cashier shift test.
-- Close cashier shift test.
-- Export product CSV test.
-- Backup after setup.
-
----
-
-## Support Additions
-
-When debugging, also ask:
-- Was shift mode enabled?
-- Was the cashier shift open or closed?
-- Last receipt number printed
-- Last backup file path
-- Error log file/table entry if available
-
+Status: `SCOPE_LOCKED_OUT_OF_BETA_HARDWARE_EXTRAS`

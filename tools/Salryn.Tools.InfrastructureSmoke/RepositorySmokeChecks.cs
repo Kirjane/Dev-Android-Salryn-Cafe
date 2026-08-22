@@ -6,7 +6,6 @@ using Salryn.Infrastructure.Data.Bootstrap;
 using Salryn.Infrastructure.Data.Initialization;
 using Salryn.Infrastructure.Data.Repositories;
 using Salryn.Infrastructure.Paths;
-using Salryn.Infrastructure.Security;
 
 internal static class RepositorySmokeChecks
 {
@@ -52,7 +51,7 @@ internal static class RepositorySmokeChecks
             orchestrator.CheckStatus(),
             "RepositorySmoke.CheckStatus");
 
-        if (!status.FirstRunStatus.IsDatabaseInitialized)
+        if (!status.FirstRunStatus.IsDatabaseInitialized || status.RequiresDatabaseUpgrade)
         {
             DatabaseInitializationSummary summary = RequireSuccess(
                 orchestrator.InitializeDatabase(),
@@ -64,9 +63,7 @@ internal static class RepositorySmokeChecks
 
     private static Guid EnsureBootstrapAdmin(SqliteConnectionFactory connectionFactory)
     {
-        FirstRunBootstrapper bootstrapper = new(
-            connectionFactory,
-            new Pbkdf2PasswordHasher());
+        FirstRunBootstrapper bootstrapper = new(connectionFactory);
 
         FirstRunStatus status = RequireSuccess(
             bootstrapper.CheckStatus(),
@@ -285,11 +282,21 @@ internal static class RepositorySmokeChecks
             "RepositorySmoke.CashierSessionFindOpen");
 
         PagedResult<AuditLogReadModel> auditLogs = RequireSuccess(
-            auditRepository.SearchAuditLogsAsync(PageRequest.FirstPage(20)).GetAwaiter().GetResult(),
+            auditRepository.SearchAuditLogsAsync(
+                new AuditLogSearchFilter(
+                    PageRequest.FirstPage(20),
+                    From: null,
+                    To: null,
+                    Search: new SearchText(null))).GetAwaiter().GetResult(),
             "RepositorySmoke.AuditSearch");
 
         PagedResult<ErrorLogReadModel> errorLogs = RequireSuccess(
-            errorLogRepository.SearchErrorLogsAsync(PageRequest.FirstPage(20)).GetAwaiter().GetResult(),
+            errorLogRepository.SearchErrorLogsAsync(
+                new ErrorLogSearchFilter(
+                    PageRequest.FirstPage(20),
+                    From: null,
+                    To: null,
+                    Search: new SearchText(null))).GetAwaiter().GetResult(),
             "RepositorySmoke.ErrorSearch");
 
         if (adminById is null)

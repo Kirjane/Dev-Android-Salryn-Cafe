@@ -1,0 +1,46 @@
+flowchart TD
+    %% Hypothesized complete single-machine RMO spine. NOT implemented fact.
+    A[Machine and Profile Registration] --> B[Official Sequence Control]
+    A --> C[Taxpayer and Header Evidence]
+    D[Checkout Official Mode] --> E[Official Checkout Readiness Gate]
+    E --> B
+    E --> F[Tax and VAT Bucket Engine]
+    E --> G[Receipt and Invoice Snapshot Generator]
+
+    B --> H[Shared Transaction Coordinator]
+    G --> H
+    F --> H
+
+    H --> I[Persist official sale]
+    H --> J[Persist payments items stock movement]
+    H --> K[Electronic Journal ORIGINAL append]
+    H --> L[Audit trail]
+
+    K --> M[Electronic Journal Events]
+    M --> N[Reprint event if authorized]
+    M --> O[Void Refund Cancel events]
+    M --> P[Export and Preservation event]
+
+    I --> Q[X-reading report]
+    I --> R[Z-reading report]
+    K --> Q
+    K --> R
+    F --> Q
+    F --> R
+
+    Q --> S[Backend reports]
+    R --> S
+    S --> T[Evidence pack]
+
+    U[Official Output Adapters] --> V[Text-file output current]
+    U --> W[Printer PDF Crystal ESC-POS only if explicitly scoped later]
+    T --> XP[Sales-data export or transmission if scoped]
+    T --> YP[Backup retention and recovery evidence]
+
+    Z1[LAN multi-terminal layer later] -.requires.-> ZA[terminal identity]
+    Z1 -.requires.-> ZB[clock and order policy]
+    Z1 -.requires.-> ZC[concurrency and sequence ownership]
+    Z1 -.not prerequisite for single-machine RMO spine.-> H
+
+    T --> ZD[External legal accounting and BIR review]
+    ZD --> ZE[Possible certification or accreditation process]

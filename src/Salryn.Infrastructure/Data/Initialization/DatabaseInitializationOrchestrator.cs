@@ -45,8 +45,11 @@ public sealed class DatabaseInitializationOrchestrator
                         IsDatabaseInitialized: false,
                         IsFirstRunRequired: true,
                         HasUsers: false,
-                        HasStoreSettings: false)));
+                        HasStoreSettings: false),
+                    PendingMigrationCount: ConfiguredMigrationCount));
         }
+
+        int pendingMigrationCount = _migrationRunner.GetPendingMigrationCount();
 
         Result<FirstRunStatus> firstRunStatusResult = _firstRunBootstrapper.CheckStatus();
 
@@ -61,7 +64,13 @@ public sealed class DatabaseInitializationOrchestrator
                 DatabaseFileExists: true,
                 ConfiguredMigrationCount: ConfiguredMigrationCount,
                 HasSeedDataFoundation: true,
-                FirstRunStatus: firstRunStatusResult.Value));
+                FirstRunStatus: firstRunStatusResult.Value,
+                PendingMigrationCount: pendingMigrationCount));
+    }
+
+    public Result<AdminBootstrapSummary> CreateFirstAdmin(AdminBootstrapRequest request)
+    {
+        return _firstRunBootstrapper.CreateFirstAdmin(request);
     }
 
     public Result<DatabaseInitializationSummary> InitializeDatabase()
@@ -69,6 +78,8 @@ public sealed class DatabaseInitializationOrchestrator
         try
         {
             _migrationRunner.RunPendingMigrations();
+            // PRE-I: repair existing DBs if logo columns are missing after partial/skipped v20 apply.
+            EnsureStoreLogoColumns();
             _databaseSeeder.SeedDefaultData();
 
             Result<FirstRunStatus> firstRunStatusResult = _firstRunBootstrapper.CheckStatus();
@@ -97,5 +108,18 @@ public sealed class DatabaseInitializationOrchestrator
                 "DatabaseInitialization.InvalidOperation",
                 $"Database initialization could not continue: {ex.Message}"));
         }
+    }
+
+    private void EnsureStoreLogoColumns()
+    {
+        if (!File.Exists(_connectionFactory.DatabasePath))
+        {
+            return;
+        }
+
+        using var connection = _connectionFactory.CreateConnection();
+        connection.Open();
+        SqlitePragma.Apply(connection);
+        StoreLogoBrandingSchemaMigration.EnsureLogoColumnsPresent(connection);
     }
 }

@@ -30,7 +30,9 @@ public sealed record StockMovementFilter(
     StockMovementType? MovementType,
     DateTimeOffset? From,
     DateTimeOffset? To,
-    PageRequest Page);
+    PageRequest Page,
+    string? ReferenceType = null,
+    string? ReferenceId = null);
 
 public sealed record UserReadModel(
     Guid Id,
@@ -51,7 +53,17 @@ public sealed record StoreSettingsReadModel(
     int ReceiptWidthMm,
     bool TaxModeEnabled,
     bool ShiftModeEnabled,
-    bool AllowNegativeStock);
+    bool AllowNegativeStock,
+    string? ReceiptHeader = null,
+    string? ReceiptFooter = null,
+    string PrinterMode = "Disabled",
+    string? WindowsPrinterName = null,
+    bool HasLogo = false,
+    string? LogoContentType = null);
+
+public sealed record StoreLogoReadModel(
+    string ContentType,
+    byte[] Bytes);
 
 public sealed record CashierSessionReadModel(
     Guid Id,
@@ -76,6 +88,24 @@ public sealed record AuditLogReadModel(
     string? Reason,
     DateTimeOffset CreatedAt);
 
+/// <summary>
+/// Export row for server-side audit CSV. Details is optional safe metadata (never secrets).
+/// </summary>
+public sealed record AuditLogExportRow(
+    DateTimeOffset CreatedAt,
+    string? UserDisplayName,
+    string Action,
+    string EntityType,
+    string? EntityId,
+    string? Reason,
+    string? Details);
+
+public sealed record AuditLogExportFilter(
+    DateTimeOffset? From,
+    DateTimeOffset? To,
+    SearchText Search,
+    int MaxRows);
+
 public sealed record ErrorLogReadModel(
     Guid Id,
     Guid? UserId,
@@ -84,3 +114,15 @@ public sealed record ErrorLogReadModel(
     string Message,
     string? TechnicalDetail,
     DateTimeOffset CreatedAt);
+
+public sealed record AuditLogSearchFilter(
+    PageRequest Page,
+    DateTimeOffset? From,
+    DateTimeOffset? To,
+    SearchText Search);
+
+public sealed record ErrorLogSearchFilter(
+    PageRequest Page,
+    DateTimeOffset? From,
+    DateTimeOffset? To,
+    SearchText Search);

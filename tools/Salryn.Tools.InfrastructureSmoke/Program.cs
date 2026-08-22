@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Salryn.Core.Common;
 using Salryn.Infrastructure.Data;
 using Salryn.Infrastructure.Data.Initialization;
@@ -31,6 +31,26 @@ try
 
         case "repositories":
             RepositorySmokeChecks.Run(projectRoot);
+            break;
+
+        case "auth-first-run":
+            AuthenticationFirstRunStoreSettingsSmokeChecks.Run(projectRoot);
+            break;
+
+        case "mvp-business-flow":
+            MvpBusinessFlowDatabaseSmokeChecks.Run(projectRoot);
+            break;
+
+        case "dev-prelaunch-seed":
+            DevelopmentPreLaunchSeedChecks.Run(projectRoot);
+            break;
+
+        case "flow-reset-dev-seed":
+            FlowResetDevSeedChecks.Run(projectRoot);
+            break;
+
+        case "qa-products-seed":
+            QaProductsSeedChecks.Run(projectRoot);
             break;
 
         case "product-write":
@@ -95,6 +115,42 @@ try
 
         case "pos-checkout-application-repository":
             PosCheckoutApplicationRepositorySmokeChecks.Run(projectRoot);
+            OfficialCheckoutCompletionTrustSmokeChecks.Run(projectRoot);
+            OfficialXReadingSmokeChecks.Run(projectRoot);
+            OfficialZReadingSmokeChecks.Run(projectRoot);
+            OfficialDocumentAuditEventSmokeChecks.Run(projectRoot);
+            OfficialDocumentLifecycleSmokeChecks.Run(projectRoot);
+            OfficialOutputSourceSmokeChecks.Run(projectRoot);
+            OfficialDocumentReprintSmokeChecks.Run(projectRoot);
+            break;
+
+        case "pos-store-day-regression":
+            PosStoreDayRegressionSmokeChecks.Run(projectRoot);
+            break;
+
+        case "pos-admin-operations-regression":
+            PosAdminOperationsRegressionSmokeChecks.Run(projectRoot);
+            break;
+
+        case "pos-phase-b-regression":
+            Console.WriteLine("===== POS PHASE-B REGRESSION GATE =====");
+            Console.WriteLine("===== POS PHASE-B B1: STORE-DAY REGRESSION =====");
+            PosStoreDayRegressionSmokeChecks.Run(projectRoot);
+            Console.WriteLine("===== POS PHASE-B B2: ADMIN OPERATIONS REGRESSION =====");
+            PosAdminOperationsRegressionSmokeChecks.Run(projectRoot);
+            Console.WriteLine("POS Phase-B regression gate passed.");
+            break;
+
+        case "app-production-readiness":
+            AppProductionReadinessSmokeChecks.Run(projectRoot);
+            break;
+
+        case "app-first-run-bootstrap-readiness":
+            AppFirstRunBootstrapReadinessSmokeChecks.Run(projectRoot);
+            break;
+
+        case "app-startup-failure-diagnostics":
+            AppStartupFailureDiagnosticsSmokeChecks.Run(projectRoot);
             break;
 
         case "pos-checkout-draft-transaction-builder":
@@ -113,6 +169,119 @@ try
             PosCheckoutUiPresenterViewModelSmokeChecks.Run(projectRoot);
             break;
 
+        case "pos-checkout-ui-product-search-presenter-boundary":
+            PosCheckoutUiProductSearchPresenterBoundarySmokeChecks.Run(projectRoot);
+            break;
+
+        case "pos-checkout-ui-product-repository-search-boundary":
+            PosCheckoutUiProductRepositorySearchBoundarySmokeChecks.Run(projectRoot);
+            break;
+
+        case "official-output-text-file":
+            OfficialOutputTextFileWorkflowUiBoundaryAuditSmokeChecks.Run();
+            OfficialTextFileExternalOutputSmokeChecks.Run(projectRoot);
+            break;
+
+        case "official-output-text-file-dev-candidate":
+            OfficialOutputTextFileDevCandidateSmokeCommand.Run(projectRoot);
+            break;
+
+        case "host-command-loopback":
+            HostCommandLoopbackSmokeChecks.Run(projectRoot);
+            break;
+
+        case "terminal-registry-pairing":
+            TerminalRegistryPairingSmokeChecks.Run(projectRoot);
+            break;
+
+        case "controlled-remote-transport-gate":
+            ControlledRemoteTransportGateSmokeChecks.Run(projectRoot);
+            break;
+
+        case "pairing-activation-handshake":
+            PairingActivationHandshakeSmokeChecks.Run(projectRoot);
+            break;
+
+        case "lan-m14-end-to-end-closure":
+            LanM14EndToEndRemoteReadOnlyLanClosureSmokeChecks.Run(projectRoot);
+            break;
+
+        case "remote-readonly-lan-field-hardening":
+            LanM15RemoteReadOnlyLanFieldHardeningSmokeChecks.Run(projectRoot);
+            break;
+
+        case "remote-readonly-lan-preflight":
+            LanM15RemoteReadOnlyLanPreflightSmokeChecks.Run(projectRoot);
+            break;
+
+        case "remote-readonly-lan-local-control":
+            LanM15RemoteReadOnlyLanLocalControlSmokeChecks.Run(projectRoot);
+            break;
+
+        case "remote-readonly-lan-session-resilience":
+            LanM15RemoteReadOnlyLanSessionResilienceSmokeChecks.Run(projectRoot);
+            break;
+
+        case "remote-readonly-lan-negative-path-hardening":
+            LanM15RemoteReadOnlyLanNegativePathHardeningSmokeChecks.Run(projectRoot);
+            break;
+
+        case "remote-readonly-lan-final-acceptance":
+            LanM15RemoteReadOnlyLanFinalAcceptanceSmokeChecks.Run(projectRoot);
+            break;
+
+        case "safe-remote-readonly-client":
+            SafeRemoteReadOnlyClientSmokeChecks.Run(projectRoot);
+            break;
+
+        case "remote-pos-operator-session":
+            RemotePosOperatorSessionSmokeChecks.Run(projectRoot);
+            break;
+
+        case "remote-pos-command-authorization":
+            RemotePosCommandAuthorizationSmokeChecks.Run(projectRoot);
+            break;
+
+        case "remote-pos-checkout-idempotency":
+            RemotePosCheckoutIdempotencySmokeChecks.Run(projectRoot);
+            break;
+
+        case "remote-pos-host-write-boundary":
+            RemotePosHostWriteBoundarySmokeChecks.Run(projectRoot);
+            break;
+
+        case "remote-pos-manager-admin-boundary":
+            RemotePosManagerAdminBoundarySmokeChecks.Run(projectRoot);
+            break;
+
+        case "remote-pos-host-client-identity":
+            RemotePosHostClientIdentitySmokeChecks.Run(projectRoot);
+            break;
+
+        case "remote-pos-final-acceptance":
+            RemotePosFinalAcceptanceSmokeChecks.Run(projectRoot);
+            break;
+
+        case "remote-pos-pairing-gate":
+            RemotePosPairingGateSmokeChecks.Run(projectRoot);
+            break;
+
+        case "remote-pos-origin-binding":
+            RemotePosOriginBindingSmokeChecks.Run(projectRoot);
+            break;
+
+        case "remote-pos-post-commit-audit-safety":
+            RemotePosPostCommitAuditSafetySmokeChecks.Run(projectRoot);
+            break;
+
+        case "lan-m16-rc-b-entry-boundary":
+            LanM16RcBEntryBoundarySmokeChecks.Run(projectRoot);
+            break;
+
+        case "rmo-engineering-candidate":
+            RmoEngineeringCandidateSmokeChecks.Run(projectRoot);
+            break;
+
         case "reset":
             Reset(projectRoot);
             break;
@@ -122,6 +291,8 @@ try
             PrintStatus(projectRoot);
             Initialize(projectRoot);
             Inspect(projectRoot);
+            AuthenticationFirstRunStoreSettingsSmokeChecks.Run(projectRoot);
+            MvpBusinessFlowDatabaseSmokeChecks.Run(projectRoot);
             RepositorySmokeChecks.Run(projectRoot);
             ProductWriteSmokeChecks.Run(projectRoot);
             ProductWriteEdgeSmokeChecks.Run(projectRoot);
@@ -139,17 +310,26 @@ try
             PosCheckoutRepositoryIntegrationSmokeChecks.Run(projectRoot);
             PosCheckoutApplicationBoundarySmokeChecks.Run(projectRoot);
             PosCheckoutApplicationRepositorySmokeChecks.Run(projectRoot);
+            OfficialCheckoutCompletionTrustSmokeChecks.Run(projectRoot);
+            OfficialXReadingSmokeChecks.Run(projectRoot);
+            OfficialZReadingSmokeChecks.Run(projectRoot);
+            OfficialDocumentAuditEventSmokeChecks.Run(projectRoot);
+            OfficialDocumentLifecycleSmokeChecks.Run(projectRoot);
+            OfficialOutputSourceSmokeChecks.Run(projectRoot);
+            OfficialDocumentReprintSmokeChecks.Run(projectRoot);
             PosCheckoutDraftTransactionBuilderSmokeChecks.Run(projectRoot);
             PosCheckoutProductPickerBoundarySmokeChecks.Run(projectRoot);
             PosCheckoutProductPickerRepositoryIntegrationSmokeChecks.Run(projectRoot);
             PosCheckoutUiPresenterViewModelSmokeChecks.Run(projectRoot);
+            PosCheckoutUiProductSearchPresenterBoundarySmokeChecks.Run(projectRoot);
+            PosCheckoutUiProductRepositorySearchBoundarySmokeChecks.Run(projectRoot);
             Reset(projectRoot);
             Console.WriteLine("FULL SMOKE TEST PASSED AND CLEANED UP.");
             break;
 
         default:
             Console.WriteLine("Unknown command.");
-            Console.WriteLine("Use: status | init | inspect | reset | repositories | product-write | product-write-edge | inventory-write | inventory-write-edge | sales-write | sales-write-edge | sales-read-write | cashier-session-write | cashier-session-write-edge | cashier-session-read-write | cashier-session-service | cashier-session-service-edge | pos-checkout-session-enforcement | pos-checkout-repository-integration | pos-checkout-application-boundary | pos-checkout-application-repository | pos-checkout-draft-transaction-builder | pos-checkout-product-picker-boundary | pos-checkout-product-picker-repository-integration | pos-checkout-ui-presenter-viewmodel | full");
+            Console.WriteLine("Use: status | init | inspect | reset | repositories | auth-first-run | mvp-business-flow | dev-prelaunch-seed | qa-products-seed | product-write | product-write-edge | inventory-write | inventory-write-edge | sales-write | sales-write-edge | sales-read-write | cashier-session-write | cashier-session-write-edge | cashier-session-read-write | cashier-session-service | cashier-session-service-edge | pos-checkout-session-enforcement | pos-checkout-repository-integration | pos-checkout-application-boundary | pos-checkout-application-repository | pos-store-day-regression | pos-admin-operations-regression | pos-phase-b-regression | app-production-readiness | app-first-run-bootstrap-readiness | app-startup-failure-diagnostics | pos-checkout-draft-transaction-builder | pos-checkout-product-picker-boundary | pos-checkout-product-picker-repository-integration | pos-checkout-ui-presenter-viewmodel | pos-checkout-ui-product-search-presenter-boundary | pos-checkout-ui-product-repository-search-boundary | official-output-text-file | official-output-text-file-dev-candidate | host-command-loopback | terminal-registry-pairing | controlled-remote-transport-gate | pairing-activation-handshake | remote-pos-pairing-gate | safe-remote-readonly-client | remote-pos-operator-session | remote-pos-command-authorization | remote-pos-checkout-idempotency | remote-pos-host-write-boundary | remote-pos-manager-admin-boundary | remote-pos-host-client-identity | remote-pos-final-acceptance | remote-pos-origin-binding | remote-pos-post-commit-audit-safety | lan-m16-rc-b-entry-boundary | rmo-engineering-candidate | full");
             Environment.ExitCode = 1;
             break;
     }
@@ -170,7 +350,7 @@ static void PrintStatus(string projectRoot)
 
     if (statusResult.IsFailure)
     {
-        Fail(statusResult.Error);
+        Fail(statusResult.Error?.ToString() ?? "Status check failed.");
         return;
     }
 
@@ -185,6 +365,8 @@ static void PrintStatus(string projectRoot)
     Console.WriteLine($"First-run required: {status.FirstRunStatus.IsFirstRunRequired}");
     Console.WriteLine($"Has users: {status.FirstRunStatus.HasUsers}");
     Console.WriteLine($"Has store settings: {status.FirstRunStatus.HasStoreSettings}");
+    Console.WriteLine($"Pending migrations: {status.PendingMigrationCount}");
+    Console.WriteLine($"Requires database upgrade: {status.RequiresDatabaseUpgrade}");
     Console.WriteLine();
 }
 
@@ -199,7 +381,7 @@ static void Initialize(string projectRoot)
 
     if (result.IsFailure)
     {
-        Fail(result.Error);
+        Fail(result.Error?.ToString() ?? "Initialization failed.");
         return;
     }
 
@@ -442,32 +624,3 @@ static string FindProjectRoot(string startPath)
 
     throw new InvalidOperationException("Could not find Salryn.sln from current directory.");
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

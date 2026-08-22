@@ -49,6 +49,84 @@ public interface IInventoryWriteRepository
         CancellationToken cancellationToken = default);
 }
 
+public sealed record UserAdminCreateRequest(
+    string Username,
+    string DisplayName,
+    Guid RoleId,
+    string PasswordHash,
+    Guid CreatedByUserId,
+    UserStatus Status = UserStatus.Active);
+
+public sealed record UserAdminUpdateRequest(
+    Guid UserId,
+    string Username,
+    string DisplayName,
+    Guid RoleId,
+    Guid UpdatedByUserId);
+
+public sealed record UserAdminPasswordResetRequest(
+    Guid UserId,
+    string PasswordHash,
+    Guid ResetByUserId);
+
+public sealed record UserAdminStatusChangeRequest(
+    Guid UserId,
+    UserStatus Status,
+    string? Reason,
+    Guid ChangedByUserId);
+
+public interface IUserWriteRepository
+{
+    Task<Result> CreateAsync(
+        UserAdminCreateRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<Result> UpdateAsync(
+        UserAdminUpdateRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<Result> ResetPasswordAsync(
+        UserAdminPasswordResetRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<Result> SetStatusAsync(
+        UserAdminStatusChangeRequest request,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed record StoreSettingsUpdateRequest(
+    Guid StoreSettingsId,
+    string StoreName,
+    string? BusinessName,
+    string? Address,
+    string? ContactNumber,
+    string? Tin,
+    string CurrencyLabel,
+    int ReceiptWidthMm,
+    bool TaxModeEnabled,
+    bool ShiftModeEnabled,
+    string? ReceiptHeader = null,
+    string? ReceiptFooter = null,
+    string PrinterMode = "Disabled",
+    string? WindowsPrinterName = null);
+
+public interface IStoreSettingsWriteRepository
+{
+    Task<Result> UpdateAsync(
+        StoreSettingsUpdateRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<Result> SetLogoAsync(
+        Guid storeSettingsId,
+        string contentType,
+        byte[] bytes,
+        CancellationToken cancellationToken = default);
+
+    Task<Result> ClearLogoAsync(
+        Guid storeSettingsId,
+        CancellationToken cancellationToken = default);
+}
+
 public interface ICashierSessionWriteRepository
 {
     Task<Result> OpenAsync(
@@ -82,4 +160,3 @@ public interface IErrorLogWriteRepository
         ErrorLog errorLog,
         CancellationToken cancellationToken = default);
 }
-

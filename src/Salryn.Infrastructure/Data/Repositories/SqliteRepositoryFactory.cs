@@ -56,9 +56,28 @@ public sealed class SqliteRepositoryFactory
         return new SqliteUserReadRepository(_connectionFactory);
     }
 
+    public IUserWriteRepository CreateUserWriteRepository()
+    {
+        return new SqliteUserWriteRepository(_connectionFactory);
+    }
+
+    public IUserPermissionReadRepository CreateUserPermissionReadRepository()
+    {
+        return new SqliteUserPermissionReadRepository(_connectionFactory);
+    }
+    public IAuthenticationRepository CreateAuthenticationRepository()
+    {
+        return new SqliteAuthenticationRepository(_connectionFactory);
+    }
+
     public IStoreSettingsReadRepository CreateStoreSettingsReadRepository()
     {
         return new SqliteStoreSettingsReadRepository(_connectionFactory);
+    }
+
+    public IStoreSettingsWriteRepository CreateStoreSettingsWriteRepository()
+    {
+        return new SqliteStoreSettingsWriteRepository(_connectionFactory);
     }
 
     public ICashierSessionReadRepository CreateCashierSessionReadRepository()
@@ -76,12 +95,41 @@ public sealed class SqliteRepositoryFactory
         return new SqliteAuditReadRepository(_connectionFactory);
     }
 
+    public IAuditWriteRepository CreateAuditWriteRepository()
+    {
+        return new SqliteAuditWriteRepository(_connectionFactory);
+    }
+
     public IErrorLogReadRepository CreateErrorLogReadRepository()
     {
         return new SqliteErrorLogReadRepository(_connectionFactory);
     }
-}
 
+    public IErrorLogWriteRepository CreateErrorLogWriteRepository()
+    {
+        return new SqliteErrorLogWriteRepository(_connectionFactory);
+    }
+
+    public SqliteDeploymentIdentityRepository CreateDeploymentIdentityRepository()
+    {
+        return new SqliteDeploymentIdentityRepository(_connectionFactory);
+    }
+
+    public SqliteTerminalRegistryRepository CreateTerminalRegistryRepository()
+    {
+        return new SqliteTerminalRegistryRepository(_connectionFactory);
+    }
+
+    public SqliteTerminalPairingInviteRepository CreateTerminalPairingInviteRepository()
+    {
+        return new SqliteTerminalPairingInviteRepository(_connectionFactory);
+    }
+
+    public SqliteTerminalCredentialRepository CreateTerminalCredentialRepository()
+    {
+        return new SqliteTerminalCredentialRepository(_connectionFactory);
+    }
+}
 
 
 

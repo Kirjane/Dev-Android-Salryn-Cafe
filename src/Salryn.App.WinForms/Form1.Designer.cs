@@ -1,5 +1,9 @@
 ﻿namespace Salryn.App.WinForms;
 
+// Kirch file guide: designer-generated legacy form code.
+// UI location: paired with Form1 only.
+// Frontend note: avoid manual edits unless Form1 is being removed or revived.
+
 partial class Form1
 {
     /// <summary>

@@ -1,0 +1,14 @@
+{
+  "profiles": {
+    "Salryn.Api.Local Development": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "applicationUrl": "http://127.0.0.1:5299",
+      "commandLineArgs": "--dev",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "SALRYN_APP_ENV": "Development"
+      }
+    }
+  }
+}

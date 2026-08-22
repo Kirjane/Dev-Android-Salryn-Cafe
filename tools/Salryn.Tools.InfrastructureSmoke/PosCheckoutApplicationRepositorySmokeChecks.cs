@@ -57,7 +57,7 @@ internal static class PosCheckoutApplicationRepositorySmokeChecks
             saleWriteRepository,
             cashierSessions);
 
-        PosCheckoutApplicationService checkoutApplication = new(checkoutCore);
+        PosCheckoutApplicationService checkoutApplication = new(checkoutCore, productReadRepository);
 
         ForceCloseExistingOpenSession(
             cashierSessions,
@@ -81,6 +81,7 @@ internal static class PosCheckoutApplicationRepositorySmokeChecks
 
         PosCheckoutApplicationRequest noOpenRequest = CreateRequest(
             cashier.Id,
+            Guid.NewGuid(),
             trackedProduct,
             seedIds.UnitName,
             receiptPrefix: "APP-RI-NOOPEN",
@@ -119,6 +120,7 @@ internal static class PosCheckoutApplicationRepositorySmokeChecks
 
         PosCheckoutApplicationRequest trackedRequest = CreateRequest(
             cashier.Id,
+            openSession.Id,
             trackedProduct,
             seedIds.UnitName,
             receiptPrefix: "APP-RI-TRACKED",
@@ -179,6 +181,7 @@ internal static class PosCheckoutApplicationRepositorySmokeChecks
 
         PosCheckoutApplicationRequest untrackedRequest = CreateRequest(
             cashier.Id,
+            openSession.Id,
             untrackedProduct,
             seedIds.UnitName,
             receiptPrefix: "APP-RI-UNTRACKED",
@@ -381,6 +384,7 @@ internal static class PosCheckoutApplicationRepositorySmokeChecks
 
     private static PosCheckoutApplicationRequest CreateRequest(
         Guid cashierId,
+        Guid cashierSessionId,
         Product product,
         string unitName,
         string receiptPrefix,
@@ -399,6 +403,7 @@ internal static class PosCheckoutApplicationRepositorySmokeChecks
 
         return new PosCheckoutApplicationRequest(
             cashierId,
+            cashierSessionId,
             NewReceiptNo(receiptPrefix),
             new[]
             {
@@ -717,3 +722,4 @@ internal static class PosCheckoutApplicationRepositorySmokeChecks
         Guid UnitId,
         string UnitName);
 }
+

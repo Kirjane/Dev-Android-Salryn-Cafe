@@ -1,21 +1,17 @@
 ﻿using Microsoft.Data.Sqlite;
 using Salryn.Core.Common;
+using Salryn.Core.Security;
 using Salryn.Infrastructure.Data.Seeding;
-using Salryn.Infrastructure.Security;
 
 namespace Salryn.Infrastructure.Data.Bootstrap;
 
 public sealed class FirstRunBootstrapper
 {
     private readonly SqliteConnectionFactory _connectionFactory;
-    private readonly IPasswordHasher _passwordHasher;
 
-    public FirstRunBootstrapper(
-        SqliteConnectionFactory connectionFactory,
-        IPasswordHasher passwordHasher)
+    public FirstRunBootstrapper(SqliteConnectionFactory connectionFactory)
     {
         _connectionFactory = connectionFactory;
-        _passwordHasher = passwordHasher;
     }
 
     public Result<FirstRunStatus> CheckStatus()
@@ -88,7 +84,7 @@ public sealed class FirstRunBootstrapper
                 storeSettingsId,
                 createdAt));
         }
-        catch (SqliteException ex)
+        catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
         {
             return Result<AdminBootstrapSummary>.Fail(Error.Unexpected(
                 "Bootstrap.CreateAdminFailed",
@@ -176,14 +172,18 @@ public sealed class FirstRunBootstrapper
             HasStoreSettings: hasStoreSettings);
     }
 
-    private void InsertAdminUser(
+    private static void InsertAdminUser(
         SqliteConnection connection,
         SqliteTransaction transaction,
         AdminBootstrapRequest request,
         Guid adminUserId,
         string now)
     {
-        string passwordHash = _passwordHasher.HashPassword(request.AdminPassword);
+        Result<string> passwordHashResult = SalrynPasswordHasher.HashPassword(request.AdminPassword);
+        if (passwordHashResult.IsFailure)
+        {
+            throw new InvalidOperationException(passwordHashResult.Error);
+        }
 
         Execute(connection, transaction, """
             INSERT INTO users
@@ -196,7 +196,7 @@ public sealed class FirstRunBootstrapper
                 ["$id"] = adminUserId.ToString("D"),
                 ["$username"] = request.AdminUsername.Trim(),
                 ["$displayName"] = request.AdminDisplayName.Trim(),
-                ["$passwordHash"] = passwordHash,
+                ["$passwordHash"] = passwordHashResult.Value,
                 ["$roleId"] = DefaultSeedData.AdminRoleId,
                 ["$createdAt"] = now
             });

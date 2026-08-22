@@ -1,14 +1,21 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\..\src\Salryn.Core\Salryn.Core.csproj" />
     <ProjectReference Include="..\..\src\Salryn.Infrastructure\Salryn.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Salryn.Host.Local\Salryn.Host.Local.csproj" />
+    <ProjectReference Include="..\..\src\Salryn.Api.Local\Salryn.Api.Local.csproj" />
+    <ProjectReference Include="..\..\src\Salryn.App.WinForms\Salryn.App.WinForms.csproj" />
+    <ProjectReference Include="..\..\tools\Salryn.Tools.DevData\Salryn.Tools.DevData.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <!-- PRELAN-HARDEN-4: Salryn verification is intentionally Windows-targeted; see 00-HANDOFF/PRELAN_HARDENING/VERIFICATION_TARGETS.md -->
+    <TargetFramework>net10.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 
 </Project>
