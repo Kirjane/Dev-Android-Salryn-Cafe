@@ -48,7 +48,7 @@ function friendlyInstallError(raw: string | null | undefined, code?: string | nu
     return "That license request is not valid. Paste only the signed license text - not a file path.";
   }
   if (codeLower.includes("unsupportedfield") || lower.includes("unsupported field")) {
-    return "That license file has unexpected fields. Ask Kirjane Labs for a new signed license.";
+    return "That license file has unexpected fields. Ask Kirjane Information Technology Services for a new signed license.";
   }
   if (codeLower.includes("emptydocument") || lower.includes("content is required")) {
     return "Paste the full signed license you received before installing.";
@@ -57,34 +57,34 @@ function friendlyInstallError(raw: string | null | undefined, code?: string | nu
     return "The license text is not valid. Paste the full signed license file you received.";
   }
   if (lower.includes("machinebinding is required") || (lower.includes("machinebinding") && lower.includes("empty"))) {
-    return "This license is missing a device binding. Ask Kirjane Labs for a new signed license.";
+    return "This license is missing a device binding. Ask Kirjane Information Technology Services for a new signed license.";
   }
   if (lower.includes("does not match this installation") || lower.includes("machine binding does not match")) {
     return "This license does not match this device." + contact;
   }
   if (lower.includes("unsigned") || lower.includes("signature is invalid") || lower.includes("signature verifier") || lower.includes("fails closed") || lower.includes("signature")) {
-    return "This license could not be verified. Ask Kirjane Labs for a new signed license file.";
+    return "This license could not be verified. Ask Kirjane Information Technology Services for a new signed license file.";
   }
   if (lower.includes("expired") && !lower.includes("grace")) {
     return "This license has expired." + contact;
   }
   if (lower.includes("schema")) {
-    return "This license format is not supported by this Salryn version. Ask Kirjane Labs for an updated license.";
+    return "This license format is not supported by this Salryn version. Ask Kirjane Information Technology Services for an updated license.";
   }
   if (lower.includes("applicationid")) {
-    return "This license is not for Salryn POS. Ask Kirjane Labs for the correct license.";
+    return "This license is not for Salryn POS. Ask Kirjane Information Technology Services for the correct license.";
   }
   if (lower.includes("storeid") || lower.includes("identity fields")) {
-    return "This license is missing required store or customer details. Ask Kirjane Labs for a new signed license.";
+    return "This license is missing required store or customer details. Ask Kirjane Information Technology Services for a new signed license.";
   }
   if (lower.includes("must not include hostlicenseid") || lower.includes("must not include terminalid")) {
-    return "This Host license has Terminal-only fields. Ask Kirjane Labs for a correct Host license.";
+    return "This Host license has Terminal-only fields. Ask Kirjane Information Technology Services for a correct Host license.";
   }
   if (lower.includes("must not include allowedlanterminals")) {
-    return "This Terminal license has Host-only fields. Ask Kirjane Labs for a correct Terminal license.";
+    return "This Terminal license has Host-only fields. Ask Kirjane Information Technology Services for a correct Terminal license.";
   }
   if (lower.includes("must include hostlicenseid") || lower.includes("must include terminalid")) {
-    return "This Terminal license is incomplete. Ask Kirjane Labs for a new Terminal license.";
+    return "This Terminal license is incomplete. Ask Kirjane Information Technology Services for a new Terminal license.";
   }
   if (lower.includes("does not unlock host") || (lower.includes("terminal license is valid") && lower.includes("host"))) {
     return "A Terminal license cannot activate Host POS setup on this device.";
@@ -173,13 +173,13 @@ function TermsBody() {
         <strong className="text-[#111827]">9. Account and operator responsibility.</strong> You are responsible for operator accounts, passwords, permissions, device access, transaction review, and correcting operator-entered data through the supported workflows.
       </p>
       <p>
-        <strong className="text-[#111827]">10. Support boundaries.</strong> Kirjane Labs may request your Machine Code, license file, logs, screenshots, or backup files to investigate an issue. Do not send signing secrets or unrelated personal data. Contact {BETA_CONTACT_EMAIL}.
+        <strong className="text-[#111827]">10. Support boundaries.</strong> Kirjane Information Technology Services may request your Machine Code, license file, logs, screenshots, or backup files to investigate an issue. Do not send signing secrets or unrelated personal data. Contact {BETA_CONTACT_EMAIL}.
       </p>
       <p>
         <strong className="text-[#111827]">11. Beta limitations.</strong> Current beta status: ongoing. Features and operating procedures may change, and client deployment requires the stated manual verification. Not included: guarantees for unsupported hardware, continuous network availability, or features outside the documented beta scope.
       </p>
       <p>
-        <strong className="text-[#111827]">12. Rights reservation.</strong> Salryn and its related product materials are products of Kirjane Labs. © 2026 Kirjane Labs. All rights reserved. Rights not expressly granted remain reserved.
+        <strong className="text-[#111827]">12. Rights reservation.</strong> Salryn and its related product materials are products of Kirjane Information Technology Services. © 2026 Kirjane Information Technology Services. All rights reserved. Rights not expressly granted remain reserved.
       </p>
       <p>
         <strong className="text-[#111827]">13. Acceptance.</strong> By installing or replacing a license, you confirm that you have read and accept these Terms &amp; Conditions and the current beta boundaries.
@@ -260,7 +260,7 @@ export function LicensePage() {
     try {
       await navigator.clipboard.writeText(machineCode);
       setMessage("Machine Code copied.");
-      notify.info("Machine Code copied", "Send it to Kirjane Labs support.");
+      notify.info("Machine Code copied", "Send it to Kirjane Information Technology Services support.");
     } catch {
       setError("Could not copy Machine Code. Select and copy it manually.");
       notify.error("Machine Code was not copied", "Select the code and copy it manually.");
@@ -283,7 +283,7 @@ export function LicensePage() {
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E5E7EB] pb-4">
           <div>
             <p className="text-base font-semibold tracking-wide text-[#111827]">Salryn</p>
-            <p className="mt-0.5 text-xs text-[#6B7280]">by Kirjane Labs</p>
+            <p className="mt-0.5 text-xs text-[#6B7280]">by Kirjane Information Technology Services</p>
           </div>
           <StatusPill tone={showActiveSummary ? "success" : statusTone(status?.status ?? "Unlicensed")}>
             {showActiveSummary ? "Activated" : currentStatusLabel === "Development" ? "Development" : "Not activated"}
@@ -312,7 +312,7 @@ export function LicensePage() {
                 This device needs a signed local license before setup can continue.
               </p>
               <p className="mt-3 text-sm leading-6 text-[#4B5563]">
-                Salryn runs locally on this device. Send this Machine Code to Kirjane Labs to receive a signed license file.
+                Salryn runs locally on this device. Send this Machine Code to Kirjane Information Technology Services to receive a signed license file.
               </p>
               <div className="mt-6 flex flex-col gap-2 sm:flex-row">
                 <Button className="min-h-11 bg-[#1F4B7A] hover:bg-[#183a5f]" onClick={() => openWizard("import")}>
@@ -357,7 +357,7 @@ export function LicensePage() {
                 Copy Machine Code
               </Button>
               <p className="mt-5 text-sm leading-6 text-[#4B5563]">
-                Send this code to Kirjane Labs. You will receive a signed local license file for this device.
+                Send this code to Kirjane Information Technology Services. You will receive a signed local license file for this device.
               </p>
               <p className="mt-4 text-sm text-[#4B5563]">
                 Support: <span className="font-mono text-[#111827]">{BETA_CONTACT_EMAIL}</span>
@@ -436,7 +436,7 @@ export function LicensePage() {
                     value={licenseText}
                     onChange={(event) => setLicenseText(event.target.value)}
                     className="min-h-40 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 font-mono text-xs text-[#111827] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1F4B7A]"
-                    placeholder="Paste the signed Host license you received from Kirjane Labs."
+                    placeholder="Paste the signed Host license you received from Kirjane Information Technology Services."
                   />
                 </label>
                 <label className="mt-4 flex items-start gap-2 text-sm text-[#4B5563]">
@@ -469,34 +469,22 @@ export function LicensePage() {
           </main>
         ) : null}
 
-        <section className="mt-10 rounded-xl border border-[#E5E7EB] bg-white p-5 sm:p-6" aria-labelledby="licensing-credits-title">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#1F4B7A]">Salryn</p>
-          <p className="mt-1 text-sm font-medium text-[#6B7280]">by Kirjane Labs</p>
-          <h2 id="licensing-credits-title" className="mt-4 text-xl font-semibold text-[#111827]">Licensing &amp; Credits</h2>
-          <p className="mt-3 text-sm font-semibold text-[#111827]">
-            Salryn is an offline-first POS and ledger console for store operations.
+        <section className="mt-10 rounded-xl border border-[#E5E7EB] bg-white p-5 sm:p-6" aria-labelledby="salryn-product-title">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[#1F4B7A]">Product information</p>
+          <h2 id="salryn-product-title" className="mt-3 text-xl font-semibold text-[#111827]">Salryn POS</h2>
+          <p className="mt-2 text-sm font-semibold text-[#111827]">
+            A product of Kirjane Information Technology Services.
           </p>
-          <p className="mt-1 text-sm leading-6 text-[#4B5563]">
-            Built by Kirjane Labs. Designed for local sales, inventory movement tracking, reports, backups, and LAN terminals.
+          <p className="mt-3 text-sm leading-6 text-[#4B5563]">
+            Salryn helps stores manage point-of-sale transactions, products, stock movements, receipts,
+            reporting, and local backups from a single Host computer.
           </p>
-          <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-[#6B7280]">Products of Kirjane Labs: Salryn</p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {[
-              ["Paul Gamayot", "Business Lead"],
-              ["Kirch Ivan Balite", "Technology Lead"],
-              ["Jesse Edwin Culas", "Marketing Lead"],
-              ["James Karl Tara", "Business Development"],
-              ["Osiris Kedigadash Palac", "DevOps Lead"],
-            ].map(([name, role]) => (
-              <div key={name} className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3">
-                <p className="font-semibold text-[#111827]">{name}</p>
-                <p className="mt-1 text-xs text-[#6B7280]">{role}</p>
-              </div>
-            ))}
-          </div>
+          <p className="mt-3 text-sm leading-6 text-[#4B5563]">
+            LAN Terminals are a future feature and are not included in the current production release.
+          </p>
           <div className="mt-5 border-t border-[#E5E7EB] pt-4 text-xs text-[#6B7280]">
-            <p>Salryn by Kirjane Labs</p>
-            <p className="mt-1">© 2026 Kirjane Labs. All rights reserved.</p>
+            <p>Product support: {BETA_CONTACT_EMAIL}</p>
+            <p className="mt-1">© 2026 Kirjane Information Technology Services. All rights reserved.</p>
           </div>
         </section>
       </div>
@@ -516,10 +504,10 @@ export function LicensePage() {
           }
         >
           <p>
-            Send this Machine Code to Kirjane Labs / Salryn Infodesk at <span className="font-mono font-semibold text-[#111827]">{BETA_CONTACT_EMAIL}</span> with your store details.
+            Send this Machine Code to Kirjane Information Technology Services / Salryn Infodesk at <span className="font-mono font-semibold text-[#111827]">{BETA_CONTACT_EMAIL}</span> with your store details.
           </p>
           <p className="mt-3">
-            Salryn generates this Machine Code. Kirjane Labs returns a signed Host license for import here.
+            Salryn generates this Machine Code. Kirjane Information Technology Services returns a signed Host license for import here.
           </p>
           <div className="mt-4 rounded-lg border border-[#E5E7EB] bg-[#F4F5F7] px-4 py-3">
             <p className="text-xs font-medium uppercase tracking-wide text-[#6B7280]">Machine Code</p>
@@ -590,14 +578,14 @@ export function LicensePage() {
               Accept the Terms &amp; Conditions before installing a license.
             </Alert>
           ) : null}
-          <p className="mt-3">Paste the signed Host license JSON you received from Kirjane Labs.</p>
+          <p className="mt-3">Paste the signed Host license JSON you received from Kirjane Information Technology Services.</p>
           <label className="mt-4 block space-y-2 text-sm font-medium text-[#111827]">
             <span>Signed Host license JSON</span>
             <textarea
               value={licenseText}
               onChange={(event) => setLicenseText(event.target.value)}
               className="min-h-48 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 font-mono text-xs text-[#111827] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1F4B7A]"
-              placeholder="Paste the signed Host license you received from Kirjane Labs."
+              placeholder="Paste the signed Host license you received from Kirjane Information Technology Services."
             />
           </label>
         </WizardShell>
