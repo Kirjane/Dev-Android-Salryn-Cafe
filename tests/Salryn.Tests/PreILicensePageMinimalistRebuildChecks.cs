@@ -37,8 +37,8 @@ public static class PreILicensePageMinimalistRebuildChecks
         // Machine code + support + footer
         RequireContains(license, "machineCode", "Machine code binding present.");
         RequireContains(license, "salryn.info@gmail.com", "Support email retained.");
-        RequireContains(license, "Salryn by Kirjane Labs", "Footer product line.");
-        RequireContains(license, "Licensing &amp; Credits", "Credits page title.");
+        RequireContains(license, "A product of Kirjane Information Technology Services.", "Product attribution.");
+        RequireContains(license, "Product information", "Product information title.");
         RequireContains(license, "Show technical details", "Technical IDs collapsed by default.");
         RequireContains(license, "showSupportDetails", "Collapsed technical details state.");
 
