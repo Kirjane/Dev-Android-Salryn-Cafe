@@ -27,22 +27,20 @@ public static class PreIClientFacingProductPolishChecks
 
     private static void AssertCreditsAndPositioning(string license, string credits)
     {
-        string joined = license + "\n" + credits;
+        string joined = license + "\\n" + credits;
         foreach (string required in new[]
         {
-            "Licensing &amp; Credits",
-            "Products of Kirjane Labs: Salryn",
-            "Salryn is an offline-first POS and ledger console for store operations.",
-            "Built by Kirjane Labs.",
-            "Paul Gamayot",
-            "Kirch Ivan Balite",
-            "Jesse Edwin Culas",
-            "James Karl Tara",
-            "Osiris Kedigadash Palac",
-            "DevOps Lead",
-            "© 2026 Kirjane Labs. All rights reserved.",
-        }) RequireContains(joined, required, "Credits or positioning regression.");
+            "Product information",
+            "Kirjane Information Technology Services",
+            "A product of Kirjane Information Technology Services.",
+            "LAN Terminals are a future feature",
+            "© 2026 Kirjane Information Technology Services. All rights reserved.",
+        }) RequireContains(joined, required, "Product identity regression.");
 
+        RequireNotContains(license, "Licensing &amp; Credits", "Individual credits removed.");
+        RequireNotContains(joined, "Paul Gamayot", "No staff biographies in customer product.");
+        RequireNotContains(joined, "Kirch Ivan Balite", "No staff biographies in customer product.");
+        RequireNotContains(joined, "Osiris Kedigadash Palac", "No staff biographies in customer product.");
         RequireNotContains(joined, "Repository-backed beta build", "Repository language must not be client-facing.");
     }
 
