@@ -13,7 +13,8 @@ public static class PreBetaLicenseCreditsPagePolishChecks
         string terminalPage = File.ReadAllText(Path.Combine(root, "src", "Salryn.App.Web", "src", "pages", "TerminalActivationPage.tsx"));
         string credits = File.ReadAllText(Path.Combine(root, "src", "Salryn.App.Web", "src", "components", "ProductCreditsCard.tsx"));
 
-        RequireContains(licensePage, "Licensing &amp; Credits", "Host license page exposes credits.");
+        RequireContains(licensePage, "Product information", "Host license page identifies the product.");
+        RequireNotContains(licensePage, "Licensing &amp; Credits", "Host license page must not expose personal credits.");
         RequireContains(licensePage, "lg:grid-cols-2", "Host license page must use two-column desktop layout.");
         RequireContains(licensePage, "Import Signed Host License JSON", "Host import card title required.");
         RequireContains(licensePage, "Copy Machine Code", "Host Machine Code copy required.");
@@ -45,37 +46,22 @@ public static class PreBetaLicenseCreditsPagePolishChecks
         RequireNotContains(terminalPage, "you need a Host License ID", "Terminal path must not require Host License ID.");
         RequireNotContains(terminalPage, "you need a Store ID", "Terminal path must not require Store ID.");
 
-        // Credits identity (shared card — Host + Terminal)
-        RequireContains(credits, "SALRYN", "Credits must show SALRYN.");
-        RequireContains(credits, "by Kirjane Labs", "Credits must show by Kirjane Labs.");
-        RequireContains(credits, "Licensing & Credits", "Credits title required.");
-        RequireContains(credits, "Products of Kirjane Labs: Salryn", "Product identity line required.");
-        RequireContains(credits, "Credits", "Credits section heading required.");
-
-        // People / hierarchy
-        RequireContains(credits, "Paul Gamayot", "Business Lead name required.");
-        RequireContains(credits, "Business Lead", "Business Lead role required.");
-        RequireContains(credits, "Kirch Ivan Balite", "Technology Lead name required.");
-        RequireContains(credits, "Technology Lead", "Technology Lead role required.");
-        RequireContains(credits, "Jesse Edwin Culas", "Marketing Lead name required.");
-        RequireContains(credits, "Marketing Lead", "Marketing Lead role required.");
-        RequireContains(credits, "James Karl Tara", "Business Development name required.");
-        RequireContains(credits, "Business Development", "Business Development role required.");
-        RequireContains(credits, "Osiris Kedigadash Palac", "Dev Ops Lead name required.");
-        RequireContains(credits, "DevOps Lead", "DevOps Lead role required.");
-        RequireContains(credits, "salryn.info@gmail.com", "Support email required.");
-        RequireContains(credits, "© 2026 Kirjane Labs", "Copyright footer required.");
-
-        // Product identity stays client-facing without repository/build metadata.
-        RequireContains(credits, "Salryn by Kirjane Labs", "Client-facing product footer retained.");
-        RequireNotContains(credits, "Build Type", "Build Type must not be a prominent card label.");
-        RequireNotContains(credits, ">Publisher<", "Publisher must not be a large metadata label.");
-        RequireNotContains(credits, ">Product<", "Product must not be a large metadata label.");
-        RequireNotContains(credits, "Repository-backed beta build", "Repository build wording removed.");
-        RequireNotContains(credits, "mock sample", "Credits must not say mock sample.");
-        RequireNotContains(credits, "Software Development", "Do not rename Technology Lead to Software Development.");
-        RequireNotContains(credits, "RMO", "Credits must not expose RMO.");
-        RequireNotContains(credits, "eSales", "Credits must not expose eSales.");
+        // Product-level identity replaces individual staff credits.
+        RequireContains(credits, "SALRYN", "Salryn wordmark required.");
+        RequireContains(credits, "Kirjane Information Technology Services", "Registered business attribution required.");
+        RequireContains(credits, "A product of {company}", "Product attribution required.");
+        RequireContains(credits, "salryn.info@gmail.com", "Support contact required.");
+        RequireNotContains(credits, "Licensing & Credits", "Credits heading must be removed.");
+        RequireNotContains(credits, "Paul Gamayot", "Personal name must not appear on the product card.");
+        RequireNotContains(credits, "Kirch Ivan Balite", "Personal name must not appear on the product card.");
+        RequireNotContains(credits, "Jesse Edwin Culas", "Personal name must not appear on the product card.");
+        RequireNotContains(credits, "James Karl Tara", "Personal name must not appear on the product card.");
+        RequireNotContains(credits, "Osiris Kedigadash Palac", "Personal name must not appear on the product card.");
+        RequireNotContains(licensePage, "Paul Gamayot", "Personal credits must not appear on Host License page.");
+        RequireContains(licensePage, "LAN Terminals are a future feature", "LAN deferral must be explicit.");
+        RequireNotContains(credits, "Build Type", "Build metadata not client-facing.");
+        RequireNotContains(credits, "RMO", "Product card must not expose regulatory internals.");
+        RequireNotContains(credits, "eSales", "Product card must not expose regulatory internals.");
 
         // Host Terminal Management — cleaned request language (admin IDs allowed)
         string hostLan = File.ReadAllText(Path.Combine(root, "src", "Salryn.App.Web", "src", "pages", "HostLanControlPage.tsx"));
