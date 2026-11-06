@@ -167,7 +167,7 @@ function TermsBody() {
         <strong className="text-[#111827]">7. Receipts and compliance.</strong> BIR accreditation: current beta status: not included; target: a future compliance lane. eSales transmission: current beta status: not included; target: a future compliance lane. Current receipts are internal operational receipts, not a representation of accreditation or approval.
       </p>
       <p>
-        <strong className="text-[#111827]">8. LAN terminals.</strong> Each LAN terminal requires its own signed Terminal license and connects to the Host over the local network. Terminal availability depends on the Host, network, license, and configured access.
+        <strong className="text-[#111827]">8. LAN terminals.</strong> LAN Terminals are a future feature, not included in the current production release. Internal testing requires separate device licensing, explicit Host authorization, and acceptance of network and reconnection limitations.
       </p>
       <p>
         <strong className="text-[#111827]">9. Account and operator responsibility.</strong> You are responsible for operator accounts, passwords, permissions, device access, transaction review, and correcting operator-entered data through the supported workflows.
