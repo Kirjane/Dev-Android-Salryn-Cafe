@@ -25,7 +25,7 @@ export const navItems: NavItemConfig[] = [
   { id: "settings", label: "Store Settings", enabled: true, group: "Admin" },
   { id: "license", label: "License", enabled: true, group: "Admin" },
   { id: "backup-restore", label: "Backup & Restore", enabled: true, group: "Admin" },
-  { id: "host-lan-control", label: "Terminal Management", enabled: true, group: "Admin" },
+  { id: "host-lan-control", label: "LAN Terminals · Future Feature", enabled: true, group: "Admin" },
 ];
 
 const internalNavItems: NavItemConfig[] = [
