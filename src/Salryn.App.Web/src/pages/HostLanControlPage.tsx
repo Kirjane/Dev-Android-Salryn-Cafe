@@ -372,6 +372,111 @@ export function HostLanControlPage() {
     }
   }
 
+  // Future-feature staging: ordinary client builds expose only the overview and safe shutdown.
+  // The existing LAN management implementation remains available for internal verification.
+  if (import.meta.env.VITE_SALRYN_INTERNAL_SURFACES !== "true") {
+    return (
+      <div className="space-y-6">
+        <CommandBar
+          title="LAN Terminals — Future Feature"
+          subtitle="Additional network-connected POS devices are not included in this release."
+          status={<StatusPill tone="warning">Future Feature</StatusPill>}
+          actions={<Button variant="secondary" onClick={refreshAll} disabled={busy}>Refresh status</Button>}
+        />
+
+        <Alert tone="warning" title="Not available for client production">
+          LAN Terminals are retained for future development and testing. The current release is
+          intended for one Host POS computer. Do not enable LAN cashier devices for a live store
+          until reconnection, persistence, and two-device acceptance testing is complete.
+        </Alert>
+
+        <Card>
+          <CardHeader><CardTitle>What is planned?</CardTitle></CardHeader>
+          <CardBody className="space-y-4 text-sm text-slate-700">
+            <p>
+              LAN Terminals will allow separately licensed cashier or manager devices on the same
+              local network to connect to Salryn Host. The Host will keep control of sales,
+              inventory, permissions, and store data.
+            </p>
+            <p>
+              Remaining work includes reliable device reconnection, Host restart behavior,
+              operator-session recovery, checkout retries, and physical network testing.
+              Previous pairing or test settings are preserved; they are not treated as an
+              accepted production service.
+            </p>
+            {statusQuery.isError || runtimeStatusQuery.isError ? (
+              <Alert tone="danger" title="LAN status could not be checked">
+                Contact Kirjane support before using any previously configured LAN access.
+              </Alert>
+            ) : null}
+            {runtime?.lanTransportEnabled || status?.remotePosRuntimeEnabled ? (
+              <Alert tone="warning" title="Previous LAN configuration detected">
+                LAN access may still be enabled from earlier testing. Stop it below before
+                operating the Host in a single-PC production environment.
+              </Alert>
+            ) : (
+              <StatusPill tone="neutral">Not enabled for this release</StatusPill>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                disabled={busy || !runtime?.lanTransportEnabled}
+                onClick={() => setPendingStopLan(true)}
+              >
+                Stop existing LAN access
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={busy || !status?.remotePosRuntimeEnabled}
+                onClick={() => setPendingStopTerminalPos(true)}
+              >
+                Stop terminal POS access
+              </Button>
+            </div>
+          </CardBody>
+        </Card>
+        <ConfirmDialog
+          open={pendingStopLan}
+          title="Stop LAN access?"
+          description="Existing LAN devices will no longer connect. Saved registrations are preserved."
+          confirmLabel="Stop LAN access"
+          cancelLabel="Cancel"
+          destructive
+          onConfirm={() => {
+            setPendingStopLan(false);
+            remoteTransportMutation.mutate(
+              { enable: false, bindAddress: null },
+              {
+                onSuccess: () => notify.warning("LAN access stopped", "Remote devices can no longer connect."),
+                onError: (error) => notify.error("LAN access was not stopped", safeNotificationDescription(error, "Check Host LAN status.")),
+              },
+            );
+          }}
+          onCancel={() => setPendingStopLan(false)}
+        />
+        <ConfirmDialog
+          open={pendingStopTerminalPos}
+          title="Stop terminal POS access?"
+          description="Existing operator sessions will be blocked from using remote POS."
+          confirmLabel="Stop terminal POS access"
+          cancelLabel="Cancel"
+          destructive
+          onConfirm={() => {
+            setPendingStopTerminalPos(false);
+            remotePosRuntimeMutation.mutate(
+              { enable: false },
+              {
+                onSuccess: () => notify.warning("Terminal POS access stopped", "Remote POS is disabled."),
+                onError: (error) => notify.error("Terminal POS access was not stopped", safeNotificationDescription(error, "Check Host status.")),
+              },
+            );
+          }}
+          onCancel={() => setPendingStopTerminalPos(false)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <CommandBar
