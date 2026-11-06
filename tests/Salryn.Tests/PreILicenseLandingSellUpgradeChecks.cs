@@ -15,7 +15,7 @@ public static class PreILicenseLandingSellUpgradeChecks
 
         // Minimalist Host landing (design lock)
         RequireContains(licensePage, "Salryn", "Host landing wordmark.");
-        RequireContains(licensePage, "by Kirjane Labs", "Host landing identity.");
+        RequireContains(licensePage, "by Kirjane Information Technology Services", "Host landing identity.");
         RequireContains(licensePage, "Activate Salryn", "Primary activation title.");
         RequireContains(licensePage, "Import license", "Primary import CTA.");
         RequireContains(licensePage, "Copy Machine Code", "Machine code action.");
@@ -27,7 +27,7 @@ public static class PreILicenseLandingSellUpgradeChecks
         RequireContains(licensePage, "licenseText.trim().length > 0 && termsAccepted", "Install remains terms and document gated.");
         RequireContains(licensePage, "Import Signed Host License JSON", "Signed Host import step.");
         RequireContains(licensePage, "Show technical details", "Technical details collapsed.");
-        RequireContains(licensePage, "Licensing &amp; Credits", "Credits section.");
+        RequireContains(licensePage, "Product information", "Product identity section.");
         RequireContains(licensePage, "bg-[#F4F5F7]", "Light minimalist page background.");
 
         // Rejected design must stay gone
@@ -37,7 +37,7 @@ public static class PreILicenseLandingSellUpgradeChecks
         RequireNotContains(licensePage, "Sparkles", "No sparkles.");
         RequireNotContains(licensePage, "Already have a license? Import license", "Old CTA removed.");
         RequireNotContains(licensePage, "mock sample", "No sample-build copy.");
-        RequireContains(licensePage, "Products of Kirjane Labs: Salryn", "Product identity line.");
+        RequireContains(licensePage, "A product of Kirjane Information Technology Services.", "Product identity line.");
         RequireNotContains(licensePage, "Build Type", "No prominent build metadata.");
         RequireContains(licensePage, "cloud activation is not required", "Local license boundary.");
         RequireNotContains(licensePage, "cloud activation is required", "No online activation requirement.");
@@ -46,15 +46,13 @@ public static class PreILicenseLandingSellUpgradeChecks
         RequireNotContains(licensePage, "find Store ID", "No Store ID task.");
         RequireNotContains(licensePage, "find Host License ID", "No Host License ID task.");
 
-        // Shared credits component still exists for Terminal (not required on Host minimalist page)
-        RequireContains(credits, "Licensing & Credits", "Integrated trust section heading.");
-        RequireContains(credits, "Products of Kirjane Labs: Salryn", "Product identity line.");
-        RequireContains(credits, "Paul Gamayot", "Business Lead credit.");
-        RequireContains(credits, "James Karl Tara", "Business Development credit.");
-        RequireContains(credits, "Kirch Ivan Balite", "Technology Lead credit.");
-        RequireContains(credits, "Osiris Kedigadash Palac", "Dev Ops Lead credit.");
-        RequireContains(credits, "Jesse Edwin Culas", "Marketing Lead credit.");
-        RequireContains(credits, "DevOps Lead", "Exact DevOps role.");
+        // Shared identity component remains compatible, without personal credits.
+        RequireContains(credits, "Kirjane Information Technology Services", "Business identity.");
+        RequireContains(credits, "A product of {company}", "Product attribution.");
+        RequireNotContains(credits, "Licensing & Credits", "Personal credits section removed.");
+        RequireNotContains(credits, "Paul Gamayot", "Individual credits removed.");
+        RequireNotContains(credits, "Kirch Ivan Balite", "Individual credits removed.");
+        RequireNotContains(credits, "DevOps Lead", "Staff org chart removed.");
 
         RequireContains(terminalPage, "<ProductCreditsCard />", "Terminal keeps the compatible default shared credits card.");
         RequireContains(terminalPage, "Import Signed Terminal License JSON", "Terminal import behavior remains present.");
