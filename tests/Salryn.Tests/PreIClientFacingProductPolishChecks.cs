@@ -27,7 +27,7 @@ public static class PreIClientFacingProductPolishChecks
 
     private static void AssertCreditsAndPositioning(string license, string credits)
     {
-        string joined = license + "\\n" + credits;
+        string joined = license + "\n" + credits;
         foreach (string required in new[]
         {
             "Product information",
