@@ -28,7 +28,7 @@ public static class PreIActivationLandingManualQaRepairChecks
 
         // Host landing — minimalist rebuild (see pre-i-license-page-minimalist-rebuild)
         RequireContains(licensePage, "Salryn", "Host landing wordmark.");
-        RequireContains(licensePage, "by Kirjane Labs", "Host landing Kirjane Labs.");
+        RequireContains(licensePage, "by Kirjane Information Technology Services", "Host landing Kirjane identity.");
         RequireContains(licensePage, "Activate Salryn", "Primary Activate Salryn title.");
         RequireContains(licensePage, "Import license", "Primary import CTA.");
         RequireContains(licensePage, "Machine Code", "Wizard step 1 Machine Code.");
@@ -42,7 +42,7 @@ public static class PreIActivationLandingManualQaRepairChecks
         RequireContains(licensePage, "Host license active", "Success wording.");
         RequireContains(licensePage, "Show technical details", "Technical details collapsed.");
         RequireNotContains(licensePage, "What Salryn offers", "No marketing feature wall.");
-        RequireContains(licensePage, "Products of Kirjane Labs: Salryn", "Product credits identity.");
+        RequireContains(licensePage, "A product of Kirjane Information Technology Services.", "Product identity.");
         RequireNotContains(licensePage, "mock sample", "No mock sample.");
         RequireNotContains(licensePage, "cloud activation ready", "No cloud activation claim.");
 
@@ -60,18 +60,15 @@ public static class PreIActivationLandingManualQaRepairChecks
         RequireNotContains(terminalPage, "Products of Kirjane Labs", "Terminal no products metadata.");
         RequireNotContains(terminalPage, "you need a Host License ID", "No Host License ID burden.");
 
-        // Credits
-        RequireContains(credits, "SALRYN", "Credits wordmark.");
-        RequireContains(credits, "by Kirjane Labs", "Credits byline.");
-        RequireContains(credits, "Licensing & Credits", "Credits title.");
-        RequireContains(credits, "Paul Gamayot", "Business Lead.");
-        RequireContains(credits, "Kirch Ivan Balite", "Technology Lead.");
-        RequireContains(credits, "Jesse Edwin Culas", "Marketing Lead.");
-        RequireContains(credits, "James Karl Tara", "Business Development.");
-        RequireContains(credits, "Osiris Kedigadash Palac", "Dev Ops Lead.");
-        RequireContains(credits, "Products of Kirjane Labs: Salryn", "Credits product identity.");
-        RequireContains(credits, "DevOps Lead", "DevOps Lead role.");
-        RequireNotContains(credits, "Build Type", "Credits no Build Type card.");
+        // Product identity only, no personal credit roster.
+        RequireContains(credits, "SALRYN", "Salryn wordmark.");
+        RequireContains(credits, "Kirjane Information Technology Services", "Kirjane product attribution.");
+        RequireContains(credits, "salryn.info@gmail.com", "Product support.");
+        RequireNotContains(credits, "Licensing & Credits", "Individual credits removed.");
+        RequireNotContains(credits, "Paul Gamayot", "Staff names not displayed.");
+        RequireNotContains(credits, "Kirch Ivan Balite", "Staff names not displayed.");
+        RequireNotContains(credits, "Osiris Kedigadash Palac", "Staff names not displayed.");
+        RequireNotContains(credits, "Build Type", "No Build Type metadata card.");
 
         // Backup modals
         RequireContains(backupPage, "Backup created successfully", "Create backup success modal.");
