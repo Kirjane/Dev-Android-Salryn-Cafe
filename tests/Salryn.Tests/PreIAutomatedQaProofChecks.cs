@@ -59,7 +59,7 @@ public static class PreIAutomatedQaProofChecks
     private static void AssertLicenseLandingContract(string license)
     {
         RequireContains(license, "Salryn", "Fresh Salryn wordmark.");
-        RequireContains(license, "by Kirjane Labs", "Fresh Kirjane Labs identity.");
+        RequireContains(license, "by Kirjane Information Technology Services", "Fresh Kirjane product identity.");
         RequireContains(license, "Activate Salryn", "Fresh activation CTA.");
         RequireContains(license, "Import license", "Fresh import CTA.");
         RequireContains(license, "salryn.info@gmail.com", "Fresh support email.");
