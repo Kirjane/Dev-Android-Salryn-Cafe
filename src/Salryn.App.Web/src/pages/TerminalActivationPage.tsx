@@ -159,7 +159,7 @@ export function TerminalActivationPage({ onActivated }: TerminalActivationPagePr
                 <div className="bg-gradient-to-br from-navy-900 via-navy-800 to-blue-900 px-6 py-8 text-white sm:px-8 sm:py-10">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-300">LAN terminal activation</p>
                   <h1 className="mt-3 text-3xl font-black tracking-[0.12em] sm:text-4xl">SALRYN Terminal</h1>
-                  <p className="mt-2 text-sm font-medium text-blue-100">by Kirjane Labs</p>
+                  <p className="mt-2 text-sm font-medium text-blue-100">by Kirjane Information Technology Services</p>
                   <p className="mt-5 max-w-xl text-base leading-relaxed text-white/90">
                     Connect this device to your Salryn Host as a licensed Cashier/Manager terminal.
                   </p>
@@ -270,12 +270,12 @@ export function TerminalActivationPage({ onActivated }: TerminalActivationPagePr
           }
         >
           <p>
-            Send this Terminal Machine Code and a terminal name/location to your store admin or Kirjane Labs / Salryn Infodesk at{" "}
+            Send this Terminal Machine Code and a terminal name/location to your store admin or Kirjane Information Technology Services / Salryn Infodesk at{" "}
             <span className="font-mono font-semibold">{ACTIVATION_CONTACT}</span>.
           </p>
           <div className="mt-4">
             <Alert tone="info" title="Simple terminal request">
-              Salryn generates this Machine Code. Your store admin or Kirjane Labs will issue a Terminal license from the Host license. You do not need a Host License ID or Store ID.
+              Salryn generates this Machine Code. Your store admin or Kirjane Information Technology Services will issue a Terminal license from the Host license. You do not need a Host License ID or Store ID.
             </Alert>
           </div>
           <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4">
@@ -295,7 +295,7 @@ export function TerminalActivationPage({ onActivated }: TerminalActivationPagePr
             <li>Terminal Machine Code</li>
           </ul>
           <p className="mt-3 text-slate-600">
-            Store admin or Kirjane Labs issues the Terminal license from the Host license context. Each LAN terminal needs its own signed Terminal license for this device.
+            Store admin or Kirjane Information Technology Services issues the Terminal license from the Host license context. Each LAN terminal needs its own signed Terminal license for this device.
           </p>
         </WizardShell>
       ) : null}
@@ -330,7 +330,7 @@ export function TerminalActivationPage({ onActivated }: TerminalActivationPagePr
               <strong>4.</strong> No Host admin pages are available on terminals. Cashier/Manager workflows only.
             </p>
             <p>
-              <strong>5.</strong> Terminal licenses are issued from the Host license context by store admin or Kirjane Labs.
+              <strong>5.</strong> Terminal licenses are issued from the Host license context by store admin or Kirjane Information Technology Services.
             </p>
           </div>
           <label className="mt-4 flex items-start gap-2 text-sm font-medium">
