@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   fetchStoreSettings,
   removeStoreLogo,
@@ -13,6 +14,7 @@ const supportedCurrencies = new Set(["PHP", "₱"]);
 const logoAccept = "image/png,image/jpeg,image/webp";
 
 export function StoreSettingsPage() {
+  const queryClient = useQueryClient();
   const [value, setValue] = useState<StoreSettings | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -54,6 +56,7 @@ export function StoreSettingsPage() {
     try {
       const { id: _id, hasLogo: _hasLogo, logoContentType: _logoType, ...updateRequest } = value;
       await saveStoreSettings({ ...updateRequest, windowsPrinterName: updateRequest.windowsPrinterName?.trim() || null });
+      void queryClient.invalidateQueries({ queryKey: ["app-shell-store-branding"] });
       setMessage("Store settings saved. New receipts will use the updated store, receipt, and printer settings.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Store settings could not be saved.");
@@ -78,6 +81,7 @@ export function StoreSettingsPage() {
       const result = await uploadStoreLogo(file);
       setValue({ ...value, hasLogo: result.hasLogo, logoContentType: result.logoContentType });
       setLogoPreviewKey((k) => k + 1);
+      void queryClient.invalidateQueries({ queryKey: ["app-shell-store-branding"] });
       setMessage("Store logo saved. Host and LAN shells will show the new branding after refresh.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Logo could not be uploaded.");
@@ -94,6 +98,7 @@ export function StoreSettingsPage() {
       await removeStoreLogo();
       setValue({ ...value, hasLogo: false, logoContentType: null });
       setLogoPreviewKey((k) => k + 1);
+      void queryClient.invalidateQueries({ queryKey: ["app-shell-store-branding"] });
       setMessage("Store logo removed.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Logo could not be removed.");

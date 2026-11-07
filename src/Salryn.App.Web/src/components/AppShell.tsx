@@ -18,7 +18,7 @@ import { fetchRemotePosPairingHostStatus } from "../api/remoteReadOnlyClient";
 import type { SessionState } from "../api/session";
 import type { LocalLicenseStatus } from "../api/license";
 import { fetchStoreBranding } from "../api/storeSettings";
-import { getNavItems, type AppPage } from "../navigation";
+import { getNavItems, getPageLocationMeta, type AppPage } from "../navigation";
 import { hasPermission, Permissions } from "../security/permissions";
 import { RoleAwareAppShell, type RoleAwareShellNavItem } from "./RoleAwareAppShell";
 import { StatusPill } from "./ui";
@@ -36,6 +36,7 @@ const navIcons: Record<string, LucideIcon> = {
   "Store Settings": Store,
   License: ShieldCheck,
   "Backup & Restore": ShieldCheck,
+  "LAN Terminals · Future Feature": Network,
   "Terminal Management": Network,
   "Report Artifacts": BarChart3,
 };
@@ -71,9 +72,11 @@ export function AppShell({ session, licenseStatus, currentPage, onNavigate, onLo
     id: item.id,
     label: item.label,
     group: item.group,
+    domain: item.domain,
     Icon: navIcons[item.label] ?? FileText,
     badge: item.id === "host-lan-control" ? pendingJoinRequestCount : undefined,
   }));
+  const locationMeta = getPageLocationMeta(currentPage);
 
   const pendingBanner = pendingJoinRequestCount > 0 ? (
     <button
@@ -99,6 +102,8 @@ export function AppShell({ session, licenseStatus, currentPage, onNavigate, onLo
       roleName={session.user?.roleName ?? "Operator"}
       navItems={shellNav}
       activeNav={currentPage}
+      activeDomainLabel={locationMeta.domain}
+      activePageLabel={locationMeta.label}
       onNavigate={(id) => onNavigate(id as AppPage)}
       onSignOut={onLogout}
       signOutTitle="Sign out of Salryn?"

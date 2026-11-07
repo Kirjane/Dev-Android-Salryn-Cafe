@@ -107,7 +107,7 @@ export function NotificationViewport({
 }) {
   return (
     <div
-      className="pointer-events-none fixed inset-x-0 top-0 z-[100] flex flex-col items-end gap-2 p-3 sm:left-auto sm:w-[26rem] sm:p-4"
+      className="pointer-events-none fixed inset-x-0 top-[62px] z-[100] flex flex-col items-end gap-2 px-3 py-2 sm:left-auto sm:w-[25rem] sm:px-5"
       aria-live="polite"
       aria-relevant="additions"
       aria-label="Action notifications"

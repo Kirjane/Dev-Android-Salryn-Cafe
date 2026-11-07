@@ -26,11 +26,11 @@ export function MetricCard({
       }`}
     >
       <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-semibold text-slate-500">{title}</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</p>
         {badge ? <StatusPill tone={tone}>{badge}</StatusPill> : null}
       </div>
-      <p className="mt-2 text-2xl font-bold text-slate-950">{value}</p>
-      {subtitle ? <p className="mt-1 text-xs text-slate-400">{subtitle}</p> : null}
+      <p className="mt-2 text-2xl font-bold tabular-nums tracking-tight text-slate-950">{value}</p>
+      {subtitle ? <p className="mt-1 text-xs text-slate-500">{subtitle}</p> : null}
     </div>
   );
 }

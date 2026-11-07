@@ -21,6 +21,7 @@ import {
   CardTitle,
   CommandBar,
   DataTable,
+  Dialog as UiDialog,
   ErrorState,
   LoadingState,
   StatusPill,
@@ -111,37 +112,36 @@ function Dialog({
   onClose: () => void;
 }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"
-      role="dialog"
-      aria-modal="true"
+    <UiDialog
+      open={true}
+      title={title}
+      subtitle="Stock-In and Stock Adjustment does not create sales, payments, receipts. Every write creates an inventory movement ledger entry only."
+      size="xl"
+      onClose={onClose}
+      footer={footer}
     >
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-xl bg-white shadow-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
-            <p className="mt-1 text-xs text-slate-500">
-              Stock-In and Stock Adjustment does not create sales, payments,
-              receipts. Every write creates an inventory movement ledger entry
-              only.
-            </p>
-          </div>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Close
-          </Button>
-        </div>
-        <div className="max-h-[62vh] overflow-y-auto px-5 py-4">{children}</div>
-        <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4">
-          {footer}
-        </div>
-      </div>
-    </div>
+      <div className="max-h-[62vh] overflow-y-auto">{children}</div>
+    </UiDialog>
   );
+}
+
+function readInitialProductFilter(): { productId: string; productName: string } {
+  if (typeof window === "undefined") {
+    return { productId: "", productName: "" };
+  }
+  const params = new URLSearchParams(window.location.search);
+  return {
+    productId: params.get("productId")?.trim() ?? "",
+    productName: params.get("productName")?.trim() ?? "",
+  };
 }
 
 export function InventoryPage() {
   const { notify } = useNotifications();
+  const initialProductFilter = useMemo(() => readInitialProductFilter(), []);
   const [page, setPage] = useState(1);
+  const [filterProductId, setFilterProductId] = useState(initialProductFilter.productId);
+  const [filterProductName, setFilterProductName] = useState(initialProductFilter.productName);
   const [movementType, setMovementType] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -156,9 +156,10 @@ export function InventoryPage() {
     queryFn: fetchLowStockProducts,
   });
   const movementsQuery = useQuery({
-    queryKey: ["inventory-movements", page, movementType, from, to],
+    queryKey: ["inventory-movements", page, filterProductId, movementType, from, to],
     queryFn: () =>
       fetchStockMovements({
+        productId: filterProductId || undefined,
         movementType: movementType || undefined,
         from: from || undefined,
         to: to || undefined,
@@ -211,9 +212,17 @@ export function InventoryPage() {
   }
   function resetStockFilters() {
     setPage(1);
+    setFilterProductId("");
+    setFilterProductName("");
     setMovementType("");
     setFrom("");
     setTo("");
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("productId");
+      url.searchParams.delete("productName");
+      window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    }
   }
   function updateForm<K extends keyof StockFormState>(
     key: K,
@@ -464,7 +473,14 @@ export function InventoryPage() {
         </Card>
         <Card className="flex min-h-[28rem] min-w-0 flex-col xl:min-h-0">
           <CardHeader className="shrink-0">
-            <CardTitle>Movement ledger</CardTitle>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle>Movement ledger</CardTitle>
+              {filterProductId ? (
+                <StatusPill tone="primary">
+                  Filtered: {filterProductName || filterProductId}
+                </StatusPill>
+              ) : null}
+            </div>
           </CardHeader>
           <CardBody className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
             <div className="min-h-[5.25rem] shrink-0 rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -508,7 +524,7 @@ export function InventoryPage() {
                   className="flex-none"
                   variant="secondary"
                   onClick={resetStockFilters}
-                  disabled={!movementType && !from && !to}
+                  disabled={!filterProductId && !movementType && !from && !to}
                 >
                   Clear
                 </Button>

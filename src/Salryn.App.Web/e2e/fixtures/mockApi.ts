@@ -492,10 +492,17 @@ export async function installMockSalrynApi(page: Page, options: MockSalrynScenar
     }
 
     if (path === "/api/inventory/movements" && method === "GET") {
+      const productId = url.searchParams.get("productId")?.trim() ?? "";
+      const movementType = url.searchParams.get("movementType")?.trim() ?? "";
+      const filtered = SYNTHETIC_STOCK_MOVEMENTS.filter((item) => {
+        if (productId && item.productId !== productId) return false;
+        if (movementType && item.movementType !== movementType) return false;
+        return true;
+      });
       return route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(toPagedResponse(SYNTHETIC_STOCK_MOVEMENTS)),
+        body: JSON.stringify(toPagedResponse(filtered)),
       });
     }
 

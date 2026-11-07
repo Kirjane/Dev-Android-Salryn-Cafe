@@ -1,11 +1,11 @@
-# Salryn POS — Playwright Visual Baseline & QA Verification Report (Phase A0 / R1)
+# Salryn POS — Playwright Visual Baseline & QA Verification Report (Phase A0 / R1 + Wave A1–A4 Implementation)
 
 **Target Application**: Salryn POS (Base Retail Edition + Signed U1 Accounts Receivable / Utang + Owner Financial Analytics)  
 **Branch**: `antigravity/salryn-premium-pos-ux` (stacked on `codex/salryn-owner-analytics-w0-w4` @ `ee16c9cc89055bcf7c2c155d20398c0bf43011ec`)  
 **Worktree**: `C:\Salryn-Antigravity`  
-**Phase**: `ANTIGRAVITY A0` ([GitHub Issue #19](https://github.com/Kirjane/Salryn/issues/19) / [Draft PR #21](https://github.com/Kirjane/Salryn/pull/21) — Hardened in `R1`)  
+**Phase**: `ANTIGRAVITY A0-R1 + Wave A1–A4 Implementation` ([GitHub Issue #19](https://github.com/Kirjane/Salryn/issues/19) / [GitHub Issue #20](https://github.com/Kirjane/Salryn/issues/20) / [Draft PR #21](https://github.com/Kirjane/Salryn/pull/21))  
 **Status**:
-- **`MOCKED_UI` Suite (`npm run test:e2e`)**: **PASS (`22 / 22` tests passing, exit code `0`)**
+- **`MOCKED_UI` Suite (`npm run test:e2e`)**: **PASS (`24 / 24` tests passing, exit code `0`)**
 - **`MOCKED_UI` Visual Regression Gate (`npm run test:visual`)**: **PASS (`16 / 16` visual specs, `42 / 42` `toHaveScreenshot` comparisons passing with `updateSnapshots: "none"`, exit code `0`)**
 - **`INTEGRATED_HOST` Suite (`npm run test:integrated-host`)**: **BLOCKED / NOT RUN (`overallVerdict: "BLOCKED"`, `code: "BLOCKED_NO_HOST"`, exit code `1` — no live licensed Host running on `127.0.0.1:5299`)**
 
@@ -32,7 +32,7 @@
 |---|---|---|---|---|
 | `npm ci` | `src/Salryn.App.Web` | Clean lockfile dependency installation | **PASS** | `0` |
 | `npm run build` | `src/Salryn.App.Web` | TypeScript (`tsc -b`), Vite bundle (`vite build`), and build stamp (`scripts/write-build-stamp.mjs`) | **PASS** | `0` |
-| `npm run test:e2e` | `src/Salryn.App.Web` | `playwright test --project=mocked-ui` (strictly `MOCKED_UI`: 16 visual specs + 6 interaction/defect specs; never runs `integrated-host`) | **22 passed** | `0` |
+| `npm run test:e2e` | `src/Salryn.App.Web` | `playwright test --project=mocked-ui` (strictly `MOCKED_UI`: 16 visual specs + 8 interaction/defect-fix specs; never runs `integrated-host`) | **24 passed** | `0` |
 | `npm run test:visual` | `src/Salryn.App.Web` | `playwright test --project=mocked-ui --grep @visual` (strict `toHaveScreenshot` compare/fail against 42 committed PNGs; never updates files) | **16 passed (42 snapshots matched)** | `0` |
 | `npm run test:visual:update` | `src/Salryn.App.Web` | `playwright test --project=mocked-ui --grep @visual --update-snapshots=all` (manual, human-reviewed baseline update only) | **16 passed** | `0` |
 | `npm run test:integrated-host` | `src/Salryn.App.Web` | `playwright test --project=integrated-host` (unmocked live Host gate on `127.0.0.1:5299`) | **1 failed, 2 did not run (`BLOCKED_NO_HOST`)** | `1` |
@@ -110,20 +110,24 @@ All 42 expected PNG snapshots are committed under `src/Salryn.App.Web/e2e/__scre
 
 ---
 
-## 4. Automated Interaction & Known UX Defect Verification (`e2e/mocked-ui-interactions-and-defects.spec.ts`)
+## 4. Automated Interaction & UX Defect Resolution Verification (`e2e/mocked-ui-interactions-and-defects.spec.ts`)
 
-In addition to the 16 visual baseline tests (42 `toHaveScreenshot` assertions), `e2e/mocked-ui-interactions-and-defects.spec.ts` runs 6 behavioral and defect-verification specs inside the `mocked-ui` project:
+In addition to the 16 visual baseline tests (42 `toHaveScreenshot` assertions), `e2e/mocked-ui-interactions-and-defects.spec.ts` runs 8 behavioral and defect-resolution specs inside the `mocked-ui` project:
 
 1. **Zero Unexpected Runtime `pageerror` Events Across Core Navigation (`PASS`)**:
    - Navigates sequentially across all 13 standard sidebar destinations (`POS Checkout` through `LAN Terminals · Future Feature`), waits for each page's `<main> <h1>` to render, records any console errors as test annotations, and asserts `pageErrors.length === 0`.
 2. **Checkout Keyboard Barcode Scan (`Enter`) & `F9` Review Shortcut (`PASS`)**:
    - Enters barcode `4800011001015` into the scan input and presses `Enter`; verifies `Sinandomeng Premium Rice 5kg` (`PHP 285.00`) is added to the cart.
    - Clicks quick-tender `500` and presses `F9`; verifies `"Review Checkout"` opens and `Escape` closes it.
-3. **`KNOWN-DEFECT UX-004` (`ProductsPage` Custom Dialog Ignores `Escape` Key) (`PASS` — Pinned Current Defect)**:
-   - Annotated with `known-defect: UX-004`. Opens `"Create Product"` modal in `ProductsPage`, presses `Escape`, and confirms the local custom `Dialog` remains open. Will be inverted when fixed in Issue #20.
-4. **`KNOWN-DEFECT UX-005` (`ProductsPage` `"View Movements"` Dead End) (`PASS` — Pinned Current Defect)**:
-   - Annotated with `known-defect: UX-005`. Selects a product in `ProductsPage`, clicks `"View Movements"`, and verifies that the user remains on `Product Catalog` instead of navigating to `Stock Movements`. Will be inverted when fixed in Issue #20.
-5. **`KNOWN-DEFECT UX-008` (Sidebar Navigation Does Not Push Browser History) (`PASS` — Pinned Current Defect)**:
-   - Annotated with `known-defect: UX-008`. Navigates via sidebar `Dashboard` → `Product Catalog` and verifies `window.history.length` does not increment. Will be inverted when fixed in Issue #20.
+3. **`UX-004 FIXED` (`ProductsPage` Dialog Closes Cleanly on `Escape` Key) (`PASS`)**:
+   - Opens `"Create Product"` modal in `ProductsPage`, presses `Escape`, and verifies the shared accessible `Dialog` closes and restores focus.
+4. **`UX-005 FIXED` (`ProductsPage` `"View Movements"` Button Navigates Directly to `Stock Movements` Filtered by Product) (`PASS`)**:
+   - Selects `Sinandomeng Premium Rice 5kg` in `ProductsPage`, clicks `"View Movements"`, and verifies direct navigation to `Stock Movements` (`/?page=inventory&productId=...`) with the active product filter pill.
+5. **`UX-008 FIXED` (Sidebar Navigation Synchronizes URL Query Parameter and Supports Browser `Back` Navigation) (`PASS`)**:
+   - Navigates via sidebar `Dashboard` → `Product Catalog`, verifies `?page=products` in the URL, calls `await page.goBack()`, and verifies return to `Dashboard`.
 6. **Cross-Page Drilldown Verification — `OwnerReportsPage` → `SalesHistoryPage` (`PASS`)**:
    - Clicks the daily sales drilldown row on `OwnerReportsPage` and verifies `Sales & Receipts` opens with `salesFrom=2026-04-19` in the URL.
+7. **`UX-001 & UX-002 FIXED` (`Utang` Mode Disables `Cash tendered` and Never Shows False `"Insufficient cash"` Warning) (`PASS`)**:
+   - Adds an item to the cart, selects `Utang` in `"Sale payment"`, and verifies `Cash tendered` is disabled, `"Insufficient cash"` has count `0`, and `"Utang credit balance"` is visible.
+8. **`UX-010 FIXED` (Backup Verification Completes Inline Without Blocking Modal `OK` Popup) (`PASS`)**:
+   - Clicks `"Verify Backup"` on `Backup & Restore` and verifies `"Restore Backup"` is immediately enabled alongside the inline verification banner without requiring a modal `OK` dismissal.

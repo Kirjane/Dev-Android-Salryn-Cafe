@@ -5,14 +5,6 @@ function sidebarNavButton(page: Page, label: string) {
   return page.locator("aside").getByRole("button", { name: label, exact: true });
 }
 
-/**
- * Known UX defects are pinned as CURRENT behaviour so that the A0 baseline is truthful. When #20 fixes a defect,
- * the matching KNOWN-DEFECT test is expected to fail and must be inverted deliberately in the same PR.
- */
-function knownDefect(id: string, description: string) {
-  test.info().annotations.push({ type: "known-defect", description: `${id}: ${description}` });
-}
-
 test.describe("MOCKED_UI Keyboard, Navigation, Accessibility & UX Defect Verification", () => {
   test("Verifies zero unexpected runtime pageerrors across core workflow navigation", async ({ page }) => {
     const pageErrors: string[] = [];
@@ -72,8 +64,7 @@ test.describe("MOCKED_UI Keyboard, Navigation, Accessibility & UX Defect Verific
     await expect(page.getByRole("heading", { name: "Review Checkout" })).toHaveCount(0);
   });
 
-  test("KNOWN-DEFECT UX-004: ProductsPage custom Dialog does not close on Escape key", async ({ page }) => {
-    knownDefect("UX-004", "Custom ProductsPage Dialog ignores Escape. Assertion pins CURRENT behaviour; fix belongs to #20.");
+  test("UX-004 FIXED: ProductsPage Dialog closes cleanly on Escape key", async ({ page }) => {
     await installMockSalrynApi(page, { persona: "admin" });
     await page.goto("/");
     await sidebarNavButton(page, "Product Catalog").click();
@@ -82,42 +73,41 @@ test.describe("MOCKED_UI Keyboard, Navigation, Accessibility & UX Defect Verific
     const dialogHeading = page.getByRole("heading", { name: "Create Product" });
     await expect(dialogHeading).toBeVisible();
 
-    // Press Escape - local custom Dialog in ProductsPage.tsx lacks Escape listener
+    // Press Escape - shared accessible Dialog closes modal
     await page.keyboard.press("Escape");
-    await expect(dialogHeading).toBeVisible();
+    await expect(dialogHeading).toHaveCount(0);
   });
 
-  test("KNOWN-DEFECT UX-005: ProductsPage 'View Movements' button shows inline banner instead of navigating", async ({
+  test("UX-005 FIXED: ProductsPage 'View Movements' button navigates directly to Stock Movements filtered by product", async ({
     page,
   }) => {
     await installMockSalrynApi(page, { persona: "admin" });
     await page.goto("/");
-    knownDefect("UX-005", "View Movements stays on Product Catalog. Assertion pins CURRENT behaviour; fix belongs to #20.");
     await sidebarNavButton(page, "Product Catalog").click();
 
     await page.getByText("Sinandomeng Premium Rice 5kg").first().click();
     await expect(page.getByRole("button", { name: "View Movements" })).toBeVisible();
     await page.getByRole("button", { name: "View Movements" }).click();
 
-    // Remains on ProductsPage instead of navigating to Stock Movements
-    await expect(page.getByRole("heading", { name: "Product Catalog" })).toBeVisible();
-    await expect(page.getByText(/Stock Movements/i).first()).toBeVisible();
+    // Navigates directly to Stock Movements filtered by selected product
+    await expect(page.getByRole("heading", { name: "Stock Movements" })).toBeVisible();
+    await expect(page.getByText(/Filtered: Sinandomeng Premium Rice 5kg/i)).toBeVisible();
+    expect(page.url()).toContain("page=inventory");
   });
 
-  test("KNOWN-DEFECT UX-008: Sidebar navigation does not push browser history entries, breaking Back button", async ({
+  test("UX-008 FIXED: Sidebar navigation synchronizes URL query parameter and supports browser Back navigation", async ({
     page,
   }) => {
     await installMockSalrynApi(page, { persona: "admin" });
     await page.goto("/");
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 
-    knownDefect("UX-008", "Sidebar navigation does not push history. Assertion pins CURRENT behaviour; fix belongs to #20.");
-    const initialHistoryLength = await page.evaluate(() => window.history.length);
     await sidebarNavButton(page, "Product Catalog").click();
     await expect(page.getByRole("heading", { name: "Product Catalog" })).toBeVisible();
+    expect(page.url()).toContain("page=products");
 
-    const afterNavHistoryLength = await page.evaluate(() => window.history.length);
-    expect(afterNavHistoryLength).toBe(initialHistoryLength);
+    await page.goBack();
+    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
   });
 
   test("OwnerReportsPage drilldown to Sales & Receipts populates URL query parameters", async ({ page }) => {
@@ -128,5 +118,35 @@ test.describe("MOCKED_UI Keyboard, Navigation, Accessibility & UX Defect Verific
     await page.getByRole("button", { name: /2026-04-19/i }).first().click();
     await expect(page.getByRole("heading", { name: "Sales & Receipts" })).toBeVisible();
     expect(page.url()).toContain("salesFrom=2026-04-19");
+  });
+
+  test("UX-001 & UX-002 FIXED: Utang mode disables Cash tendered and never shows false 'Insufficient cash' warning", async ({
+    page,
+  }) => {
+    await installMockSalrynApi(page, { persona: "admin", hasOpenShift: true, u1Entitled: true });
+    await page.goto("/");
+    await sidebarNavButton(page, "POS Checkout").click();
+
+    await page.getByRole("button", { name: "Add" }).first().click();
+    await expect(page.getByText("PHP 285.00").first()).toBeVisible();
+
+    const paymentSelect = page.getByLabel("Sale payment");
+    await paymentSelect.selectOption("Utang");
+
+    // In Utang mode with 0 cash tendered, Cash tendered is disabled and no false 'Insufficient cash' warning is shown
+    await expect(page.getByLabel("Cash tendered")).toBeDisabled();
+    await expect(page.getByText("Insufficient cash")).toHaveCount(0);
+    await expect(page.getByText("Utang credit balance")).toBeVisible();
+  });
+
+  test("UX-010 FIXED: Backup verification completes inline without blocking modal OK popup", async ({ page }) => {
+    await installMockSalrynApi(page, { persona: "admin" });
+    await page.goto("/");
+    await sidebarNavButton(page, "Backup & Restore").click();
+
+    await page.getByRole("button", { name: "Verify Backup" }).first().click();
+    await expect(page.getByText(/Backup verified: salryn-backup-20260419-020000/i)).toBeVisible();
+    // Restore Backup button is immediately enabled without needing to dismiss a blocking OK dialog first
+    await expect(page.getByRole("button", { name: "Restore Backup" }).first()).toBeEnabled();
   });
 });

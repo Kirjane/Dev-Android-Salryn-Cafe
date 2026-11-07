@@ -6,6 +6,7 @@ export { CommandBar } from "./CommandBar";
 export { DataTable, type DataTableColumn } from "./DataTable";
 export { FormField } from "./FormField";
 export { TextInput } from "./TextInput";
+export { Select } from "./Select";
 export { PasswordInput } from "./PasswordInput";
 export { Alert } from "./Alert";
 export { EmptyState } from "./EmptyState";

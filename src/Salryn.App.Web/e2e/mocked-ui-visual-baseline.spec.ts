@@ -227,9 +227,8 @@ test.describe("MOCKED_UI Visual Baseline & Screen Inventory @visual", () => {
     await sidebarNavButton(page, "Backup & Restore").click();
     await expect(page.getByRole("heading", { name: "Backup & Restore" })).toBeVisible();
     await page.getByRole("button", { name: "Verify" }).first().click();
-    await expect(page.getByRole("heading", { name: "Backup verified" })).toBeVisible();
+    await expect(page.getByText(/Backup verified: salryn-backup-20260419-020000/i)).toBeVisible();
     await expectBaseline(page, "26-backup-restore-verified.png");
-    await page.getByRole("button", { name: "OK" }).click();
 
     // 27: LAN Terminals · Future Feature
     await sidebarNavButton(page, "LAN Terminals · Future Feature").click();
@@ -284,7 +283,7 @@ test.describe("MOCKED_UI Visual Baseline & Screen Inventory @visual", () => {
     await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
     await expectBaseline(page, "34-responsive-1920x1080-owner-reports.png");
 
-    // 35: 390x844 Mobile Owner Reports
+    // 35: 390x844 Mobile Owner Reports (collapsed sidebar hides cleanly on < 768px; header toggle opens slide-over nav)
     await page.setViewportSize({ width: 390, height: 844 });
     await expectBaseline(page, "35-responsive-390x844-mobile-owner-reports.png");
 
