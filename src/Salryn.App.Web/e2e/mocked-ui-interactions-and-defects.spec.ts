@@ -5,10 +5,22 @@ function sidebarNavButton(page: Page, label: string) {
   return page.locator("aside").getByRole("button", { name: label, exact: true });
 }
 
+/**
+ * Known UX defects are pinned as CURRENT behaviour so that the A0 baseline is truthful. When #20 fixes a defect,
+ * the matching KNOWN-DEFECT test is expected to fail and must be inverted deliberately in the same PR.
+ */
+function knownDefect(id: string, description: string) {
+  test.info().annotations.push({ type: "known-defect", description: `${id}: ${description}` });
+}
+
 test.describe("MOCKED_UI Keyboard, Navigation, Accessibility & UX Defect Verification", () => {
   test("Verifies zero unexpected runtime pageerrors across core workflow navigation", async ({ page }) => {
     const pageErrors: string[] = [];
+    const consoleErrors: string[] = [];
     page.on("pageerror", (err) => pageErrors.push(err.message));
+    page.on("console", (msg) => {
+      if (msg.type() === "error") consoleErrors.push(msg.text());
+    });
 
     await installMockSalrynApi(page, { persona: "admin", u1Entitled: true });
     await page.goto("/");
@@ -31,8 +43,12 @@ test.describe("MOCKED_UI Keyboard, Navigation, Accessibility & UX Defect Verific
 
     for (const label of navLabels) {
       await sidebarNavButton(page, label).click();
+      await expect(page.locator("main h1").first()).toBeVisible();
     }
 
+    if (consoleErrors.length > 0) {
+      test.info().annotations.push({ type: "console-errors", description: consoleErrors.join(" | ") });
+    }
     expect(pageErrors).toEqual([]);
   });
 
@@ -56,7 +72,8 @@ test.describe("MOCKED_UI Keyboard, Navigation, Accessibility & UX Defect Verific
     await expect(page.getByRole("heading", { name: "Review Checkout" })).toHaveCount(0);
   });
 
-  test("Documents UX Defect: ProductsPage custom Dialog does not close on Escape key", async ({ page }) => {
+  test("KNOWN-DEFECT UX-004: ProductsPage custom Dialog does not close on Escape key", async ({ page }) => {
+    knownDefect("UX-004", "Custom ProductsPage Dialog ignores Escape. Assertion pins CURRENT behaviour; fix belongs to #20.");
     await installMockSalrynApi(page, { persona: "admin" });
     await page.goto("/");
     await sidebarNavButton(page, "Product Catalog").click();
@@ -70,11 +87,12 @@ test.describe("MOCKED_UI Keyboard, Navigation, Accessibility & UX Defect Verific
     await expect(dialogHeading).toBeVisible();
   });
 
-  test("Documents UX Defect: ProductsPage 'View Movements' button shows inline banner instead of navigating", async ({
+  test("KNOWN-DEFECT UX-005: ProductsPage 'View Movements' button shows inline banner instead of navigating", async ({
     page,
   }) => {
     await installMockSalrynApi(page, { persona: "admin" });
     await page.goto("/");
+    knownDefect("UX-005", "View Movements stays on Product Catalog. Assertion pins CURRENT behaviour; fix belongs to #20.");
     await sidebarNavButton(page, "Product Catalog").click();
 
     await page.getByText("Sinandomeng Premium Rice 5kg").first().click();
@@ -86,13 +104,14 @@ test.describe("MOCKED_UI Keyboard, Navigation, Accessibility & UX Defect Verific
     await expect(page.getByText(/Stock Movements/i).first()).toBeVisible();
   });
 
-  test("Documents UX Defect: Sidebar navigation does not push browser history entries, breaking Back button", async ({
+  test("KNOWN-DEFECT UX-008: Sidebar navigation does not push browser history entries, breaking Back button", async ({
     page,
   }) => {
     await installMockSalrynApi(page, { persona: "admin" });
     await page.goto("/");
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 
+    knownDefect("UX-008", "Sidebar navigation does not push history. Assertion pins CURRENT behaviour; fix belongs to #20.");
     const initialHistoryLength = await page.evaluate(() => window.history.length);
     await sidebarNavButton(page, "Product Catalog").click();
     await expect(page.getByRole("heading", { name: "Product Catalog" })).toBeVisible();
