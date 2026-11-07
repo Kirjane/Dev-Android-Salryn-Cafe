@@ -6,7 +6,9 @@ Branch: `codex/issue-9-s0-s5-rc`
 
 Source branch point: `f85e910902622f950230095a3dcf00e43f09b46b`
 
-Candidate SHA: pending final commit; run `git rev-parse HEAD` after the final evidence commit.
+Candidate implementation/evidence SHA: `7b9d1a753b170e20cd67bfa88abc3d480d9992b2`.
+
+Draft review: GitHub PR #10 (`codex/issue-9-s0-s5-rc` → `main`). The PR is intentionally draft and does not authorize merge or release.
 
 ## Phase status
 
