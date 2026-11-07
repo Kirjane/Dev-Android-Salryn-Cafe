@@ -1,6 +1,6 @@
 # Salryn Owner Analytics Acceptance Report
 
-Candidate implementation: `0ff285900af913b6d569514a2b3ded29aec68228` on `codex/salryn-owner-analytics-w0-w4`, stacked from PR #10 head `1d53a907425549355626b4ba39a104cc9a7a0292`.
+Corrected tested implementation: `a34e16ee36f49e316dc2e836d710a35c3869af64` on `codex/salryn-owner-analytics-w0-w4`, stacked from PR #10 head `1d53a907425549355626b4ba39a104cc9a7a0292`.
 
 ## Acceptance decision
 
@@ -17,11 +17,13 @@ The full CoreSmoke entrypoint ran through this feature's checks and stopped only
 
 ## Authorization and privacy
 
-All analytics routes require loopback Host access, authenticated `Reports.View`, and signed Reports entitlement. AR data/export additionally requires `Receivables.View` and signed `ReceivablesUtangLedger`. Existing runtime proof confirms unauthenticated 401, unlicensed/unauthorized 403, Base denied, paid Host allowed, and Terminal denied. AR PII is absent from general aggregate endpoints; AR CSV is behind the additional guards.
+All analytics routes require loopback Host access, authenticated `Reports.View`, and signed Reports entitlement. AR data/export additionally requires `Receivables.View` and signed `ReceivablesUtangLedger`. Runtime HTTP proof directly exercises `/ar-aging` and `/export/ar.csv`: anonymous is 401; Base, Cashier, Reports-only and Terminal contexts are 403 without financial values/PII; signed U1 Host with both permissions is 200. AR PII is absent from general aggregate endpoints.
 
 ## Reconciliation proof
 
 Disposable SQLite fixtures cover truly empty periods, completed and void sales, Manila midnight boundaries, cash over-tender/change, full Utang, equal preceding periods, current catalog cost changed away from historical snapshot, formula-prefixed product names, 205 customers, 501 ledger rows and 100,000 additional sales. Overview totals equal the sum of daily buckets; reads leave sale counts unchanged. Existing U1 runtime covers partial/full Utang, replay, collection reversal, receipt identity, aging and restore.
+
+The P1 collection-reversal regression was run against the old SQL first and failed because aging buckets exceeded canonical `SUM(debit_cents-credit_cents)`. After correction, a mixed fixture reconciles at ₱470: overdue ₱170, due today ₱100, due soon ₱150 and legitimate undated exposure ₱50. It covers full and partial collection reversal, differently dated sales with FIFO allocation, undated debit/credit adjustments, sale reversal, unreversed collection and duplicate reversal denial. A reversal now restores the original receivable by reducing net credits but cannot generate a second undated debt. AR summary, customer balances/oldest due, owner report and analytics agree under the same Manila as-of, with no read mutation.
 
 The item/category ranking amount is not presented as additive sales composition because order-level discount and additive tax live on the sale. Stable product IDs use historical item labels; categories are disclosed as current classification. Gross margin is shown only with complete historical item cost coverage and is labeled an estimate, not net profit.
 
