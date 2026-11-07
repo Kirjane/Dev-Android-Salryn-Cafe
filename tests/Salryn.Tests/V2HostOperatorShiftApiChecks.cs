@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Builder;
 using Salryn.Api.Local;
 using Salryn.Api.Local.Auth;
 using Salryn.Api.Local.Contracts;
+using Salryn.Api.Local.Services;
 using Salryn.Composition.Local;
 using Salryn.Core.Common;
 using Salryn.Core.Models;
@@ -135,6 +136,19 @@ public static class V2HostOperatorShiftApiChecks
 
             JsonDocument closedShift = await PostShiftCloseAsync(cashierClient, 5000).ConfigureAwait(false);
             AssertShiftState(closedShift, "Closed", "Shift close must return a closed shift.");
+            string closedSessionId = closedShift.RootElement.GetProperty("shift").GetProperty("shiftId").GetString()
+                ?? throw new InvalidOperationException("Closed shift response must retain the session id.");
+            using (HttpResponseMessage deniedReview = await noShiftPermission.PostAsJsonAsync(
+                       $"/api/cash-drawer/{closedSessionId}/review",
+                       new DrawerReviewCommand("Acknowledged", "Unauthorized synthetic review", "denied-review"))
+                       .ConfigureAwait(false))
+            {
+                if (deniedReview.StatusCode != HttpStatusCode.Forbidden)
+                {
+                    throw new InvalidOperationException(
+                        $"Drawer review without Audit.View must return 403, got {(int)deniedReview.StatusCode}.");
+                }
+            }
 
             using HttpClient auditClient = CreateClient(
                 baseAddress,
