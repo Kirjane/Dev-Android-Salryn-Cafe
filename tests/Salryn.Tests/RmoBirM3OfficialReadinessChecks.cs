@@ -49,7 +49,7 @@ public static class RmoBirM3OfficialReadinessChecks
 
         AssertContains(endpoints, "/api/official/readiness", "Host readiness endpoint must exist.");
         AssertContains(endpoints, "RequireLoopbackOperatorRequest", "Readiness endpoint must be host-local only.");
-        AssertContains(endpoints, "RequireAuthenticatedSession", "Readiness endpoint must require auth.");
+        AssertContains(endpoints, "RequirePermission", "Readiness endpoint must require authenticated permission.");
         AssertContains(endpoints, "MapGet", "Readiness endpoint must be GET only.");
         AssertNotContains(endpoints, "MapPost", "Readiness endpoints must not expose POST mutators.");
 

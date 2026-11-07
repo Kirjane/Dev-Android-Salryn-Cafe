@@ -6,42 +6,61 @@ namespace Salryn.Api.Local.Services;
 public sealed class DashboardSummaryService
 {
     private readonly SalrynLocalComposition _composition;
+    private readonly TimeProvider _timeProvider;
+    private static readonly TimeZoneInfo StoreTimeZone = TimeZoneInfo.CreateCustomTimeZone(
+        "Asia/Manila",
+        TimeSpan.FromHours(8),
+        "Philippine Standard Time",
+        "Philippine Standard Time");
 
-    public DashboardSummaryService(SalrynLocalComposition composition)
+    public DashboardSummaryService(SalrynLocalComposition composition, TimeProvider? timeProvider = null)
     {
         _composition = composition ?? throw new ArgumentNullException(nameof(composition));
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public async Task<Contracts.DashboardSummaryResponse> GetSummaryAsync(
         CancellationToken cancellationToken = default)
     {
         List<string> warnings = [];
-        DateTime today = DateTime.Today;
-        DateTime tomorrow = today.AddDays(1);
+        DateTimeOffset storeNow = TimeZoneInfo.ConvertTime(_timeProvider.GetUtcNow(), StoreTimeZone);
+        DateTimeOffset today = new(
+            storeNow.Year, storeNow.Month, storeNow.Day, 0, 0, 0, StoreTimeZone.BaseUtcOffset);
+        DateTimeOffset tomorrow = today.AddDays(1);
 
-        long todaySalesCents = 0;
+        decimal todaySalesCents = 0;
         int todayTransactionCount = 0;
         int productCount = 0;
         int lowStockCount = 0;
 
-        var salesResult = await _composition.SaleReadRepository.SearchSalesAsync(
-            new Core.ReadModels.SaleHistoryFilter(
-                From: new DateTimeOffset(today),
-                To: new DateTimeOffset(tomorrow),
-                CashierUserId: null,
-                Status: null,
-                ReceiptNo: null,
-                Page: Core.ReadModels.PageRequest.FirstPage(200)),
-            cancellationToken).ConfigureAwait(false);
+        const int salesPageSize = 500;
+        int salesPage = 1;
+        while (true)
+        {
+            var salesResult = await _composition.SaleReadRepository.SearchSalesAsync(
+                new Core.ReadModels.SaleHistoryFilter(
+                    From: today,
+                    To: tomorrow.AddTicks(-1),
+                    CashierUserId: null,
+                    Status: Core.Models.SaleStatus.Completed,
+                    ReceiptNo: null,
+                    Page: new Core.ReadModels.PageRequest(salesPage, salesPageSize)),
+                cancellationToken).ConfigureAwait(false);
 
-        if (salesResult.IsSuccess)
-        {
+            if (salesResult.IsFailure)
+            {
+                warnings.Add($"sales: {salesResult.ErrorDetail.Message}");
+                break;
+            }
+
             todayTransactionCount = salesResult.Value.TotalCount;
-            todaySalesCents = salesResult.Value.Items.Sum(item => item.Total.Cents);
-        }
-        else
-        {
-            warnings.Add($"sales: {salesResult.ErrorDetail.Message}");
+            foreach (var sale in salesResult.Value.Items)
+                todaySalesCents += sale.Total.Cents;
+
+            if (salesPage * salesPageSize >= salesResult.Value.TotalCount)
+                break;
+
+            salesPage++;
         }
 
         var productsResult = await _composition.ProductReadRepository.SearchAsync(

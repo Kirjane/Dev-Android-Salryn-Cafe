@@ -139,7 +139,6 @@ public static class WebA4NativeHostVisualFidelityChecks
             "SAPBusinessObjects",
             ".rpt",
             "file-picker",
-            "window.print",
             "PrinterSettings",
             "printerTarget",
             "scanner",

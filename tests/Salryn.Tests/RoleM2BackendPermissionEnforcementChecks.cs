@@ -72,7 +72,7 @@ public static class RoleM2BackendPermissionEnforcementChecks
         AssertContains(program, "app.MapPost(\"/api/auth/logout\"", "Logout endpoint must remain auth workflow.");
         AssertContains(program, "app.MapGet(\"/api/session\"", "Session discovery endpoint must remain available.");
         AssertContains(program, "app.MapGet(\"/api/dashboard/summary\"", "Dashboard summary endpoint must remain mapped.");
-        AssertContains(program, "ApiAuthExtensions.RequireAuthenticatedSession", "Dashboard summary must require authentication.");
+        AssertContains(program, "LocalApiPermissions.ReportsView", "Dashboard summary must require authenticated report permission.");
 
         foreach ((string route, string permission) in OperatorReadPermissions)
         {

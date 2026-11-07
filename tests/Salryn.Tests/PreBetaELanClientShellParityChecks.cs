@@ -14,6 +14,7 @@ public static class PreBetaELanClientShellParityChecks
         string app = Read(root, "src", "Salryn.App.Web", "src", "App.tsx");
         string activation = Read(root, "src", "Salryn.App.Web", "src", "pages", "TerminalActivationPage.tsx");
         string hostShell = Read(root, "src", "Salryn.App.Web", "src", "components", "AppShell.tsx");
+        string navigation = Read(root, "src", "Salryn.App.Web", "src", "navigation.ts");
         string sharedShell = Read(root, "src", "Salryn.App.Web", "src", "components", "RoleAwareAppShell.tsx");
         string sessions = Read(root, "src", "Salryn.Api.Local", "RemotePos", "RemotePosOperatorSessionService.cs");
 
@@ -63,7 +64,7 @@ public static class PreBetaELanClientShellParityChecks
         RequireContains(activation, "Copy Terminal Machine Code", "Lane B terminal machine code copy must remain.");
 
         // Host shell still has admin surfaces (contrast)
-        RequireContains(hostShell, "Terminal Management", "Host shell must retain Terminal Management.");
+        RequireContains(navigation, "LAN Terminals · Future Feature", "Host navigation must state the LAN future-feature boundary.");
         RequireContains(
             hostShell,
             "getNavItems(session, licenseStatus.enabledFeatures)",

@@ -39,7 +39,8 @@ public static class LocalLicensingLanTerminalEntitlementEnforcementChecks
                 service,
                 hardCap: 10,
                 defaultMaxActiveSessions: 3,
-                signatureVerifier: _ => true);
+                signatureVerifier: _ => true,
+                utcNow: () => FixedNow);
 
             // Missing license blocks operational LAN.
             LocalLanTerminalEntitlementStatus missing = entitlements.GetHostEntitlementAsync().GetAwaiter().GetResult();

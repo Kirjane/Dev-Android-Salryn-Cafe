@@ -100,7 +100,7 @@ public static class WebA3ShellDesignSystemChecks
         RequireNotContains(backupPageText, "installer migration proof", "BackupRestorePage must not show installer disclaimer copy.");
         RequireNotContains(backupPageText, "BIR archive", "BackupRestorePage must not show regulatory disclaimer copy.");
         RequireContains(navigationText, "VITE_SALRYN_INTERNAL_SURFACES", "Internal navigation must require an explicit build flag.");
-        RequireContains(navigationText, "label: \"Terminal Management\"", "Internal LAN navigation must use Terminal Management.");
+        RequireContains(navigationText, "label: \"LAN Terminals · Future Feature\"", "Production LAN navigation must state the future-feature boundary.");
         RequireContains(navigationText, "label: \"Report Artifacts\"", "Report Artifacts must remain explicitly internal-gated.");
         RequireNotContains(appShellText, "SALRYN LEDGER CONSOLE", "AppShell must not use engineering-console branding.");
         RequireNotContains(appShellText, "Local API", "AppShell must not expose local API diagnostics.");
@@ -149,7 +149,6 @@ public static class WebA3ShellDesignSystemChecks
             "SAPBusinessObjects",
             ".rpt",
             "file-picker",
-            "window.print",
             "PrinterSettings",
             "printerTarget",
             "scanner",

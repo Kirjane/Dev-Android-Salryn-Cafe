@@ -33,7 +33,8 @@ public static class U1AccountsReceivableRuntimeChecks
 
             Guid userId = SeedUser(paths.DatabasePath);
             Guid productId = SeedProduct(paths.DatabasePath);
-            SqliteAccountsReceivableService receivables = new(composition.ConnectionFactory);
+            ManualTimeProvider clock = new(new DateTimeOffset(2026, 11, 7, 15, 59, 0, TimeSpan.Zero));
+            SqliteAccountsReceivableService receivables = new(composition.ConnectionFactory, clock);
             HostOperatorApiServices host = HostOperatorApiServices.Create(composition);
             Require((await host.ShiftService.OpenShiftAsync(userId, 0)).Ok, "U1 runtime shift must open.");
 
@@ -41,7 +42,7 @@ public static class U1AccountsReceivableRuntimeChecks
             ReceivableCustomer partialCustomer = await CreateCustomerAsync(receivables, userId, "Authoritative Partial", "09170000002");
             ReceivableCustomer reversedCustomer = await CreateCustomerAsync(receivables, userId, "Authoritative Reversed", "09170000003");
             ReceivableCustomer unpaidCustomer = await CreateCustomerAsync(receivables, userId, "Authoritative Unpaid", "09170000004");
-            DateOnly overdueDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-2));
+            DateOnly overdueDate = new(2026, 11, 5);
 
             string fullRequestId = Guid.NewGuid().ToString("N");
             HostOperatorCheckoutResponse full = await CheckoutAsync(
@@ -110,11 +111,14 @@ public static class U1AccountsReceivableRuntimeChecks
             AccountsReceivableCollection paidCollection =
                 await AssertCollectionIdempotencyAsync(
                     receivables, paidCustomer.Id, 10_000, userId, paths.DatabasePath);
+            clock.SetUtcNow(new DateTimeOffset(2026, 11, 7, 16, 1, 0, TimeSpan.Zero));
             await AssertCollectionIdempotencyAsync(receivables, partialCustomer.Id, 3_000, userId, paths.DatabasePath);
 
             AccountsReceivableSummary summary = RequireSuccess(await receivables.GetSummaryAsync(), "U1 summary");
             Require(summary.TotalReceivablesCents == 13_000 && summary.OverdueCents == 13_000,
                 "AR summary must report only remaining unpaid overdue exposure.");
+            Require(summary.CollectedTodayCents == 3_000,
+                "The Manila store day must exclude a 23:59 collection from the prior day and include a 00:01 collection.");
             IReadOnlyList<ReceivableCustomerBalance> balances =
                 RequireSuccess(await receivables.SearchCustomersAsync(null), "U1 customer balances");
             Require(Balance(balances, paidCustomer.Id).BalanceCents == 0 &&
@@ -128,7 +132,7 @@ public static class U1AccountsReceivableRuntimeChecks
                 "Sale reversal must remove overdue exposure.");
 
             OwnerReportsResponse reports = RequireSuccess(
-                await new OwnerReportsApiService(composition).GetSummaryAsync(),
+                await new OwnerReportsApiService(composition).GetSummaryAsync(clock.GetUtcNow()),
                 "U1 owner reports");
             Require(reports.Receivables.CashCollectedOnSalesCents == 14_000,
                 "Cash collected on sales must exclude returned change and include partial retained cash.");
@@ -153,7 +157,7 @@ public static class U1AccountsReceivableRuntimeChecks
                     SqliteBackupRecoveryService.RestoreConfirmationText),
                 "U1 restore");
             SqliteAccountsReceivableService restoredReceivables =
-                new(new SqliteConnectionFactory(paths));
+                new(new SqliteConnectionFactory(paths), clock);
             AccountsReceivableSummary restoredSummary =
                 RequireSuccess(await restoredReceivables.GetSummaryAsync(), "U1 restored summary");
             Require(restoredSummary.TotalReceivablesCents == 13_000 &&
@@ -163,6 +167,26 @@ public static class U1AccountsReceivableRuntimeChecks
             await AssertAuthorizationMatrixAsync(
                     composition, userId, unpaidCustomer.Id, paidCollection.Id, paths.DatabasePath)
                 .ConfigureAwait(false);
+            AccountsReceivableSummary reversedCollectionSummary = RequireSuccess(
+                await restoredReceivables.GetSummaryAsync(),
+                "U1 collection reversal aging summary");
+            Require(reversedCollectionSummary.TotalReceivablesCents == 22_900 &&
+                    reversedCollectionSummary.OverdueCents == 22_900,
+                "A fully paid overdue invoice must become overdue again after its collection is reversed.");
+            IReadOnlyList<ReceivableCustomerBalance> reversedBalances = RequireSuccess(
+                await restoredReceivables.SearchCustomersAsync(null),
+                "U1 collection reversal customer aging");
+            ReceivableCustomerBalance paidAfterReversal = Balance(reversedBalances, paidCustomer.Id);
+            Require(paidAfterReversal.BalanceCents == 10_000 && paidAfterReversal.OldestDueDate == overdueDate,
+                $"Collection reversal must restore the original invoice due date instead of creating undated exposure. " +
+                $"Actual balance={paidAfterReversal.BalanceCents}, oldestDue={paidAfterReversal.OldestDueDate}.");
+            OwnerReportsResponse reversedReports = RequireSuccess(
+                await new OwnerReportsApiService(composition).GetSummaryAsync(clock.GetUtcNow()),
+                "U1 collection reversal owner reports");
+            Require(reversedReports.Receivables.OutstandingCents == 22_900 &&
+                    reversedReports.Receivables.OverdueCents == 22_900,
+                "Owner-report outstanding and overdue values must match the AR ledger after collection reversal.");
+            await AssertDashboardAggregateAsync(clock).ConfigureAwait(false);
             SeedQueryCapData(paths.DatabasePath, userId, unpaidCustomer.Id);
             Require((await restoredReceivables.SearchCustomersAsync(null)).Value.Count ==
                     SqliteAccountsReceivableService.CustomerQueryLimit,
@@ -207,6 +231,70 @@ public static class U1AccountsReceivableRuntimeChecks
         Require(result.Ok && result.Checkout?.Status == HostOperatorCheckoutStatus.Completed,
             "U1 runtime checkout must complete: " + result.Message);
         return result.Checkout!;
+    }
+
+    private static async Task AssertDashboardAggregateAsync(ManualTimeProvider clock)
+    {
+        string root = Path.Combine(Path.GetTempPath(), "salryn-dashboard-aggregate-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            DbPaths paths = DbPaths.CreateDevelopment(root);
+            SalrynLocalComposition composition = SalrynLocalComposition.Create(paths);
+            await composition.InitializeDatabaseAsync().ConfigureAwait(false);
+            Guid userId = SeedUser(paths.DatabasePath);
+            DateTimeOffset saleTime = new(2026, 11, 8, 8, 0, 0, TimeSpan.FromHours(8));
+            using SqliteConnection connection = new($"Data Source={paths.DatabasePath}");
+            connection.Open();
+            using SqliteTransaction transaction = connection.BeginTransaction();
+            for (int index = 0; index < 205; index++)
+            {
+                InsertDashboardSale(connection, transaction, userId, index, 123, SaleStatus.Completed, saleTime);
+            }
+            InsertDashboardSale(connection, transaction, userId, 999, 999_999, SaleStatus.Voided, saleTime);
+            transaction.Commit();
+
+            DashboardSummaryResponse dashboard = await new DashboardSummaryService(composition, clock).GetSummaryAsync();
+            Require(dashboard.TodayTransactionCount == 205 && dashboard.TodaySalesTotal == 252.15m,
+                "Dashboard must aggregate every completed sale beyond the former 200-row cap and exclude voids.");
+            OwnerReportsResponse owner = RequireSuccess(
+                await new OwnerReportsApiService(composition).GetSummaryAsync(clock.GetUtcNow()),
+                "dashboard owner-report parity");
+            Require(owner.Daily.SalesCount == 205 && owner.Daily.SalesAmountCents == 25_215 &&
+                    owner.Daily.VoidedCount == 1 && owner.Daily.VoidedAmountCents == 999_999,
+                "Dashboard completed-sale totals must agree with owner reports while owner reports retain void totals.");
+        }
+        finally
+        {
+            SqliteConnectionFactory.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static void InsertDashboardSale(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        Guid userId,
+        int index,
+        long totalCents,
+        SaleStatus status,
+        DateTimeOffset saleTime)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT INTO sales
+                (id,receipt_no,sale_date,cashier_user_id,subtotal_cents,discount_cents,tax_cents,
+                 total_cents,amount_paid_cents,change_cents,status,created_at)
+            VALUES ($id,$receipt,$date,$user,$total,0,0,$total,$total,0,$status,$date);
+            """;
+        command.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("D"));
+        command.Parameters.AddWithValue("$receipt", $"DASH-{index:0000}");
+        command.Parameters.AddWithValue("$date", saleTime.ToUniversalTime().ToString("O"));
+        command.Parameters.AddWithValue("$user", userId.ToString("D"));
+        command.Parameters.AddWithValue("$total", totalCents);
+        command.Parameters.AddWithValue("$status", Convert.ToInt32(status));
+        command.ExecuteNonQuery();
     }
 
     private static async Task AssertAuthorizationMatrixAsync(
@@ -335,6 +423,25 @@ public static class U1AccountsReceivableRuntimeChecks
                     DefaultSeedData.Permissions.ReceivablesAdjust
                 }));
             using HttpClient admin = Client(address, adminSession);
+            long adjustmentEntriesBefore = Count(
+                databasePath,
+                "accounts_receivable_entries",
+                "entry_type",
+                AccountsReceivableEntryType.AdjustmentDebit.ToString());
+            var adjustmentPayload = new
+            {
+                customerId,
+                amountCents = 500,
+                isDebit = true,
+                note = "Replay-unsafe release probe"
+            };
+            Require((await admin.PostAsJsonAsync("/api/receivables/adjustments", adjustmentPayload)).StatusCode ==
+                    HttpStatusCode.NotFound &&
+                    (await admin.PostAsJsonAsync("/api/receivables/adjustments", adjustmentPayload)).StatusCode ==
+                    HttpStatusCode.NotFound &&
+                    Count(databasePath, "accounts_receivable_entries", "entry_type",
+                        AccountsReceivableEntryType.AdjustmentDebit.ToString()) == adjustmentEntriesBefore,
+                "Manual adjustment retries must be inaccessible in the release API and must not mutate the ledger.");
             using HttpResponseMessage collectionResponse = await admin.PostAsJsonAsync(
                 "/api/receivables/collections",
                 new
@@ -414,6 +521,15 @@ public static class U1AccountsReceivableRuntimeChecks
                     feature,
                     LicenseFeatures.ReceivablesUtangLedger,
                     StringComparison.Ordinal)));
+    }
+
+    private sealed class ManualTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        private DateTimeOffset _utcNow = utcNow;
+
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+
+        public void SetUtcNow(DateTimeOffset value) => _utcNow = value;
     }
 
     private static HttpClient Client(Uri address, LocalApiSession session)

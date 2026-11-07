@@ -58,8 +58,8 @@ public static class PreIP1CopyGuardHonestyChecks
         RequireContains(licensePage, "I understand this replaces the active local license for this device.", "Replace device-local re-ack.");
 
         // P1-007 LicensingOps softened in primary operator surfaces (allowed in request block)
-        RequireContains(hostLan, "Kirjane Labs / Salryn Infodesk", "Primary Host LAN copy prefers Kirjane Labs / Salryn Infodesk.");
-        RequireContains(licensePage, "Kirjane Labs / Salryn Infodesk", "License import prefers Infodesk wording.");
+        RequireContains(hostLan, "Kirjane Information Technology Services / Salryn Infodesk", "Primary Host LAN copy uses company-level attribution.");
+        RequireContains(licensePage, "Kirjane Information Technology Services / Salryn Infodesk", "License import uses company-level attribution.");
 
         // P1-008
         RequireContains(remotePos, "Advanced support only", "Terminal product ID path uses Advanced support only.");

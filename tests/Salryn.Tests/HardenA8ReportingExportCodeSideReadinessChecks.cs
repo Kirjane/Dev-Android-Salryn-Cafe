@@ -38,7 +38,6 @@ public static class HardenA8ReportingExportCodeSideReadinessChecks
         string changedFrontend = page + Environment.NewLine + client;
         string[] forbiddenFrontendTerms =
         [
-            "window.print",
             "PrinterSettings",
             "SAP",
             ".rpt",

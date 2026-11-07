@@ -79,7 +79,7 @@ public static class RoleM1OperatorRolePermissionUxCompileChecks
         AssertNotContains(navigationFile, "Remote Read-Only Client", "Host navigation must not expose the Remote Read-Only Client page.");
         AssertNotContains(navigationFile, "remote-pos", "Host navigation must not route to remote-pos.");
         AssertNotContains(navigationFile, "remote-readonly", "Host navigation must not route to remote-readonly.");
-        AssertContains(appShellFile, "getNavItems(session)", "AppShell must render permission-aware navigation.");
+        AssertContains(appShellFile, "getNavItems(session, licenseStatus.enabledFeatures)", "AppShell must render permission-and-entitlement-aware navigation.");
         AssertContains(appFile, "canAccessPage(session, currentPage)", "App.tsx must centrally guard the current page.");
         AssertContains(appFile, "AccessDenied", "App.tsx must expose an access denied state.");
         AssertNotContains(appFile, "roleName ===", "App.tsx must not authorize by role-name comparison.");

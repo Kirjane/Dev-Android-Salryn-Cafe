@@ -41,7 +41,8 @@ public static class LocalLicensingCloseoutHardGatesAndTerminalProofChecks
                 service,
                 hardCap: 10,
                 defaultMaxActiveSessions: 3,
-                signatureVerifier: _ => true);
+                signatureVerifier: _ => true,
+                utcNow: () => FixedNow);
 
             // Missing license blocks host features.
             RequireTrue(!enforcement.IsFeatureAllowedAsync(LicenseFeatures.Pos).GetAwaiter().GetResult(), "Missing license must deny Pos.");
@@ -118,7 +119,7 @@ public static class LocalLicensingCloseoutHardGatesAndTerminalProofChecks
             RequireNotContains(pairing, "may not always send TerminalLicenseJson", "Optional terminal proof comment must be removed.");
             RequireContains(hostLan, "title=\"Terminal Management\"", "Internal host LAN UI must use Terminal Management naming.");
             RequireNotContains(hostLan, "TerminalLicenseJson", "Client copy must not expose the terminal proof field name.");
-            RequireContains(navigation, "{ id: \"host-lan-control\", label: \"Terminal Management\", enabled: true, group: \"Admin\" }", "Terminal Management must be normal Admin navigation.");
+            RequireContains(navigation, "{ id: \"host-lan-control\", label: \"LAN Terminals · Future Feature\", enabled: true, group: \"Admin\" }", "Normal Admin navigation must state the LAN future-feature boundary.");
             RequireContains(remoteClient, "terminalLicenseJson", "Remote client must send terminalLicenseJson.");
             RequireContains(remoteClient, "readInstalledTerminalLicense", "Remote client must load explicitly installed terminal license proof.");
 

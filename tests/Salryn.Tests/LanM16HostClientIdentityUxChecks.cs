@@ -75,7 +75,7 @@ public static class LanM16HostClientIdentityUxChecks
 
         AssertNotContains(navigation, "Remote POS Client", "Host navigation must not expose the Remote POS Client page.");
         AssertContains(navigation, "VITE_SALRYN_INTERNAL_SURFACES", "Report Artifacts must retain explicit internal mode.");
-        AssertContains(navigation, "label: \"Terminal Management\"", "Admin navigation must use Terminal Management.");
+        AssertContains(navigation, "label: \"LAN Terminals · Future Feature\"", "Admin navigation must state the LAN future-feature boundary.");
         AssertNotContains(navigation, "remote-pos", "Host navigation must not route to remote-pos.");
         AssertNotContains(permissions, "\"remote-pos\"", "Remote POS Client must not be a host AppPage.");
         AssertNotContains(consoleApp, "RemotePosClientPage", "ConsoleApp must not render Remote POS Client.");

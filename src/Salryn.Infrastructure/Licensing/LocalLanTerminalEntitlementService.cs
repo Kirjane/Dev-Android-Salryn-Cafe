@@ -26,12 +26,14 @@ public sealed class LocalLanTerminalEntitlementService
     private readonly Func<LocalLicenseDocument, bool> _signatureVerifier;
     private readonly int _hardCap;
     private readonly int _defaultMaxActiveSessions;
+    private readonly Func<DateTimeOffset> _utcNow;
 
     public LocalLanTerminalEntitlementService(
         ILocalLicenseService? licenses = null,
         int hardCap = DefaultHardCap,
         int defaultMaxActiveSessions = DefaultMaxActiveSessions,
-        Func<LocalLicenseDocument, bool>? signatureVerifier = null)
+        Func<LocalLicenseDocument, bool>? signatureVerifier = null,
+        Func<DateTimeOffset>? utcNow = null)
     {
         _licenses = licenses ?? new LocalLicenseService();
         _signatureVerifier = signatureVerifier ?? LocalLicenseSignatureVerifier.Verify;
@@ -39,6 +41,7 @@ public sealed class LocalLanTerminalEntitlementService
         _defaultMaxActiveSessions = defaultMaxActiveSessions > 0
             ? defaultMaxActiveSessions
             : DefaultMaxActiveSessions;
+        _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
     }
 
     public async Task<LocalLanTerminalEntitlementStatus> GetHostEntitlementAsync(
@@ -160,7 +163,7 @@ public sealed class LocalLanTerminalEntitlementService
             MachineFingerprint = normalizedMachineCode,
             SignatureVerifier = _signatureVerifier
         };
-        LocalLicenseValidator terminalValidator = new(options);
+        LocalLicenseValidator terminalValidator = new(options, _utcNow);
         LocalLicenseFileReadResult read = new(
             "terminal-proof",
             Exists: true,

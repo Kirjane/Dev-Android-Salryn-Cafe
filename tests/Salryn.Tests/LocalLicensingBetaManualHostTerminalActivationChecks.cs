@@ -165,7 +165,7 @@ public static class LocalLicensingBetaManualHostTerminalActivationChecks
             RequireContains(licensePage, "Activate Salryn", "License UI must use product activation title.");
             RequireContains(licensePage, "Copy Machine Code", "Host activation must offer copy Machine Code.");
             RequireContains(licensePage, "Salryn generates this Machine Code", "Host activation must state machine-code rule.");
-            RequireContains(licensePage, "Kirjane Labs returns a signed Host license", "Host activation must explain the signed-license return flow.");
+            RequireContains(licensePage, "Kirjane Information Technology Services returns a signed Host license", "Host activation must explain the signed-license return flow.");
             RequireContains(licensePage, "Each LAN terminal needs its own Terminal license", "License UI must separate the Terminal license boundary.");
             RequireContains(licensePage, "Terminal users do not need a Host License ID", "Host page must not force Host License ID onto terminal users.");
             RequireContains(licensePage, "This device needs a signed local license before setup can continue.", "Minimalist fresh subtitle required.");

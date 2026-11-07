@@ -348,7 +348,7 @@ export function HostLanControlPage() {
     "",
     "Terminal licenses are issued from the Host license context.",
     "Copy this request for the license desk.",
-    "Send to Kirjane Labs / Salryn Infodesk (salryn.info@gmail.com) or your license desk.",
+    "Send to Kirjane Information Technology Services / Salryn Infodesk (salryn.info@gmail.com) or your license desk.",
     "Each LAN terminal needs its own Terminal license.",
     "",
     "Store: " + (hostCustomer || "(set after Host license)"),
@@ -358,7 +358,7 @@ export function HostLanControlPage() {
     "Terminal name/location: " + (pendingTerminal?.terminalName || pendingTerminal?.terminalId || "(e.g. Counter 1)"),
     "Terminal Machine Code: (copy from that terminal device activation screen)",
     "",
-    "Salryn generates Machine Codes. Kirjane Labs / Salryn Infodesk issues Terminal licenses from the Host license.",
+    "Salryn generates Machine Codes. Kirjane Information Technology Services / Salryn Infodesk issues Terminal licenses from the Host license.",
   ].join("\n");
 
   async function copyTerminalRequest() {

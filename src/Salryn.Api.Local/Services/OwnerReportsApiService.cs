@@ -8,6 +8,11 @@ namespace Salryn.Api.Local.Services;
 
 public sealed class OwnerReportsApiService
 {
+    private static readonly TimeZoneInfo StoreTimeZone = TimeZoneInfo.CreateCustomTimeZone(
+        "Asia/Manila",
+        TimeSpan.FromHours(8),
+        "Philippine Standard Time",
+        "Philippine Standard Time");
     private const string WeekRule = "Current calendar week, Monday 00:00 through next Monday 00:00 using the host machine local date.";
     private const string OfficialBoundary = "Owner Reports are store operational reports only. Not an official/BIR/RMO report.";
 
@@ -27,8 +32,8 @@ public sealed class OwnerReportsApiService
 
         try
         {
-            DateTimeOffset now = nowOverride ?? DateTimeOffset.Now;
-            DateTimeOffset todayStart = new(now.Year, now.Month, now.Day, 0, 0, 0, now.Offset);
+            DateTimeOffset now = TimeZoneInfo.ConvertTime(nowOverride ?? TimeProvider.System.GetUtcNow(), StoreTimeZone);
+            DateTimeOffset todayStart = new(now.Year, now.Month, now.Day, 0, 0, 0, StoreTimeZone.BaseUtcOffset);
             DateTimeOffset todayEnd = todayStart.AddDays(1);
             int mondayOffset = ((int)todayStart.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
             DateTimeOffset weekStart = todayStart.AddDays(-mondayOffset);
@@ -370,10 +375,12 @@ public sealed class OwnerReportsApiService
               COALESCE((SELECT SUM(debit_cents-credit_cents) FROM accounts_receivable_entries),0),
               COALESCE((WITH allocation AS (
                             SELECT due_date, debit_cents,
-                                   COALESCE(SUM(debit_cents) OVER (
+                                   COALESCE(SUM(CASE WHEN due_date IS NOT NULL THEN debit_cents ELSE 0 END) OVER (
                                        PARTITION BY customer_id ORDER BY created_at, id
                                        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS prior_debits,
-                                   SUM(credit_cents) OVER (PARTITION BY customer_id) AS total_credits
+                                   SUM(CASE WHEN entry_type = 'CollectionReversal'
+                                            THEN -debit_cents ELSE credit_cents END)
+                                       OVER (PARTITION BY customer_id) AS total_credits
                             FROM accounts_receivable_entries
                         )
                         SELECT SUM(MAX(0, debit_cents - MAX(0, total_credits - prior_debits)))

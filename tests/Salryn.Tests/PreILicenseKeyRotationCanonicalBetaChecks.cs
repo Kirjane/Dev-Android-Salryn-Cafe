@@ -56,7 +56,10 @@ public static class PreILicenseKeyRotationCanonicalBetaChecks
             Require(!LocalLicenseSignatureVerifier.Verify(tampered), "tampered signed fields must fail signature verification");
             Require((await Service(Path.Combine(root, "tampered"), host.MachineBinding!).InstallAsync(new(tamperedJson))).InstallStatus == "Rejected", "tampered Host install must fail");
 
-            LocalLanTerminalEntitlementService entitlements = new(hostService, signatureVerifier: LocalLicenseSignatureVerifier.Verify);
+            LocalLanTerminalEntitlementService entitlements = new(
+                hostService,
+                signatureVerifier: LocalLicenseSignatureVerifier.Verify,
+                utcNow: () => FixedNow);
             LocalLanTerminalEntitlementStatus hostEntitlement = await entitlements.GetHostEntitlementAsync();
             Require(hostEntitlement.HostOperationalLanAllowed, "canonical Host must unlock Host Terminal Management");
             Require(entitlements.ValidateTerminalLicenseProof(terminalJson, terminal.MachineBinding, hostEntitlement).IsSuccess, "canonical Terminal proof");

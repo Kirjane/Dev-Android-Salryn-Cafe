@@ -13,9 +13,20 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
     public const int LedgerQueryLimit = 500;
 
     private readonly SqliteConnectionFactory _connections;
+    private readonly TimeProvider _timeProvider;
+    private static readonly TimeZoneInfo StoreTimeZone = TimeZoneInfo.CreateCustomTimeZone(
+        "Asia/Manila",
+        TimeSpan.FromHours(8),
+        "Philippine Standard Time",
+        "Philippine Standard Time");
 
-    public SqliteAccountsReceivableService(SqliteConnectionFactory connections) =>
+    public SqliteAccountsReceivableService(
+        SqliteConnectionFactory connections,
+        TimeProvider? timeProvider = null)
+    {
         _connections = connections ?? throw new ArgumentNullException(nameof(connections));
+        _timeProvider = timeProvider ?? TimeProvider.System;
+    }
 
     public async Task<Result<IReadOnlyList<ReceivableCustomerBalance>>> SearchCustomersAsync(
         string? search,
@@ -28,16 +39,17 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
             """
             SELECT c.id, c.full_name, c.phone, c.address, c.note, c.credit_limit_cents,
                    c.is_active, c.created_by_user_id, c.created_at, c.updated_at,
-                   COALESCE((SELECT e.balance_after_cents
+                   COALESCE((SELECT SUM(e.debit_cents - e.credit_cents)
                              FROM accounts_receivable_entries e
-                             WHERE e.customer_id = c.id
-                             ORDER BY e.created_at DESC, e.id DESC LIMIT 1), 0),
+                             WHERE e.customer_id = c.id), 0),
                    (WITH allocation AS (
                         SELECT e.due_date, e.debit_cents,
-                               COALESCE(SUM(e.debit_cents) OVER (
+                               COALESCE(SUM(CASE WHEN e.due_date IS NOT NULL THEN e.debit_cents ELSE 0 END) OVER (
                                    PARTITION BY e.customer_id ORDER BY e.created_at, e.id
                                    ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS prior_debits,
-                               SUM(e.credit_cents) OVER (PARTITION BY e.customer_id) AS total_credits
+                               SUM(CASE WHEN e.entry_type = 'CollectionReversal'
+                                        THEN -e.debit_cents ELSE e.credit_cents END)
+                                   OVER (PARTITION BY e.customer_id) AS total_credits
                         FROM accounts_receivable_entries e
                         WHERE e.customer_id = c.id
                     )
@@ -78,7 +90,7 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         if (request.CreditLimitCents < 0)
             return Result<ReceivableCustomer>.Fail(Error.Validation("Receivables.InvalidCreditLimit", "Credit limit cannot be negative."));
 
-        DateTimeOffset now = DateTimeOffset.UtcNow;
+        DateTimeOffset now = _timeProvider.GetUtcNow();
         ReceivableCustomer customer = new(
             Guid.NewGuid(), request.FullName.Trim(), Clean(request.Phone), Clean(request.Address),
             Clean(request.Note), request.CreditLimitCents, true, request.CreatedByUserId, now, now);
@@ -113,7 +125,7 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         {
             FullName = request.FullName.Trim(), Phone = Clean(request.Phone), Address = Clean(request.Address),
             Note = Clean(request.Note), CreditLimitCents = request.CreditLimitCents,
-            IsActive = request.IsActive, UpdatedAt = DateTimeOffset.UtcNow
+            IsActive = request.IsActive, UpdatedAt = _timeProvider.GetUtcNow()
         };
         await using SqliteCommand command = connection.CreateCommand();
         command.CommandText =
@@ -178,15 +190,21 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         await using SqliteConnection connection = _connections.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         long total = await ScalarAsync(connection, "SELECT COALESCE(SUM(debit_cents-credit_cents),0) FROM accounts_receivable_entries;", cancellationToken);
-        string today = DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd");
+        DateTimeOffset storeNow = TimeZoneInfo.ConvertTime(_timeProvider.GetUtcNow(), StoreTimeZone);
+        DateTimeOffset todayStart = new(
+            storeNow.Year, storeNow.Month, storeNow.Day, 0, 0, 0, StoreTimeZone.BaseUtcOffset);
+        DateTimeOffset tomorrowStart = todayStart.AddDays(1);
+        string today = DateOnly.FromDateTime(todayStart.DateTime).ToString("yyyy-MM-dd");
         const string exposureCte =
             """
             WITH allocation AS (
                 SELECT due_date, debit_cents,
-                       COALESCE(SUM(debit_cents) OVER (
+                       COALESCE(SUM(CASE WHEN due_date IS NOT NULL THEN debit_cents ELSE 0 END) OVER (
                            PARTITION BY customer_id ORDER BY created_at, id
                            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS prior_debits,
-                       SUM(credit_cents) OVER (PARTITION BY customer_id) AS total_credits
+                       SUM(CASE WHEN entry_type = 'CollectionReversal'
+                                THEN -debit_cents ELSE credit_cents END)
+                           OVER (PARTITION BY customer_id) AS total_credits
                 FROM accounts_receivable_entries
             ),
             exposure AS (
@@ -202,8 +220,12 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         long dueToday = await ScalarAsync(connection,
             exposureCte + " SELECT COALESCE(SUM(remaining_cents),0) FROM exposure WHERE due_date = $today;",
             cancellationToken, today);
-        long collected = await ScalarAsync(connection,
-            "SELECT COALESCE(SUM(amount_cents),0) FROM accounts_receivable_collections WHERE substr(collected_at,1,10)=$today AND voided_at IS NULL;", cancellationToken, today);
+        long collected = await ScalarRangeAsync(connection,
+            "SELECT COALESCE(SUM(amount_cents),0) FROM accounts_receivable_collections " +
+            "WHERE collected_at >= $start AND collected_at < $end AND voided_at IS NULL;",
+            cancellationToken,
+            todayStart.ToUniversalTime(),
+            tomorrowStart.ToUniversalTime());
         return Result<AccountsReceivableSummary>.Success(new(total, dueToday, overdue, collected));
     }
 
@@ -240,7 +262,7 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         long balance = await GetBalanceAsync(connection, transaction, request.CustomerId, cancellationToken);
         if (request.AmountCents > balance)
             return Result<AccountsReceivableCollection>.Fail(Error.Validation("Receivables.CollectionExceedsBalance", "Collection cannot exceed the outstanding balance."));
-        DateTimeOffset now = DateTimeOffset.UtcNow;
+        DateTimeOffset now = _timeProvider.GetUtcNow();
         AccountsReceivableCollection collection = new(Guid.NewGuid(), request.CustomerId, request.AmountCents,
             string.IsNullOrWhiteSpace(request.Method) ? "Cash" : request.Method.Trim(), Clean(request.Note),
             request.CollectedByUserId, now, null, null, null);
@@ -313,7 +335,7 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
             request.IsDebit ? AccountsReceivableEntryType.AdjustmentDebit : AccountsReceivableEntryType.AdjustmentCredit,
             request.IsDebit ? request.AmountCents : 0, request.IsDebit ? 0 : request.AmountCents,
             request.IsDebit ? balance + request.AmountCents : balance - request.AmountCents,
-            null, request.Note.Trim(), request.CreatedByUserId, DateTimeOffset.UtcNow);
+            null, request.Note.Trim(), request.CreatedByUserId, _timeProvider.GetUtcNow());
         await InsertEntryAsync(connection, transaction, entry, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return Result<AccountsReceivableEntry>.Success(entry);
@@ -341,7 +363,7 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         long amount = reader.GetInt64(1);
         await reader.DisposeAsync();
         long balance = await GetBalanceAsync(connection, transaction, customerId, cancellationToken);
-        DateTimeOffset now = DateTimeOffset.UtcNow;
+        DateTimeOffset now = _timeProvider.GetUtcNow();
         await using SqliteCommand update = connection.CreateCommand();
         update.Transaction = transaction;
         update.CommandText = "UPDATE accounts_receivable_collections SET voided_at=$at, voided_by_user_id=$user, void_reason=$reason WHERE id=$id AND voided_at IS NULL;";
@@ -498,6 +520,20 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         command.CommandText = sql;
         if (today is not null) command.Parameters.AddWithValue("$today", today);
         return Convert.ToInt64(await command.ExecuteScalarAsync(ct));
+    }
+
+    private static async Task<long> ScalarRangeAsync(
+        SqliteConnection connection,
+        string sql,
+        CancellationToken cancellationToken,
+        DateTimeOffset start,
+        DateTimeOffset end)
+    {
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.Parameters.AddWithValue("$start", start.ToString("O"));
+        command.Parameters.AddWithValue("$end", end.ToString("O"));
+        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
     }
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

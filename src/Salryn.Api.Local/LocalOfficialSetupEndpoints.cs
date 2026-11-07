@@ -117,6 +117,11 @@ public static class LocalOfficialSetupEndpoints
         HttpContext httpContext,
         LocalApiSessionService sessions)
     {
+        if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult localOnly)
+        {
+            return localOnly;
+        }
+
         return LocalApiPermissionGuards.RequirePermission(
             httpContext,
             sessions,

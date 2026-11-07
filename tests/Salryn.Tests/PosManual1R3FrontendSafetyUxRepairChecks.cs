@@ -77,7 +77,7 @@ public static class PosManual1R3FrontendSafetyUxRepairChecks
         RequireNotContains(navigation, "label: \"Production Reports\"", "Production Reports nav label must be removed.");
 
         RequireContains(navigation, "VITE_SALRYN_INTERNAL_SURFACES", "Advanced surfaces must require explicit internal mode.");
-        RequireContains(navigation, "label: \"Terminal Management\"", "Internal LAN navigation must use Terminal Management.");
+        RequireContains(navigation, "label: \"LAN Terminals · Future Feature\"", "Production LAN navigation must state the future-feature boundary.");
         RequireNotContains(appShell, "Advanced contains internal host tools only", "Normal shell must not show an Advanced warning wall.");
 
         // Backup UI1: Backup & Restore is implemented and admin-gated (stale "planned" deferral copy is obsolete).

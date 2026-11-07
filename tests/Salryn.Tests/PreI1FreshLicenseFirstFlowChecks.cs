@@ -33,7 +33,7 @@ public static class PreI1FreshLicenseFirstFlowChecks
         RequireNotContains(licensePage, "path-bearing", "Fresh license page must not expose path-bearing technical jargon.");
         RequireContains(licenseEndpoints, "RequireLoopbackOperatorRequest", "Pre-login license endpoints must stay loopback-only.");
         RequireNotContains(EndpointBlock(licenseEndpoints, "MapGet(\"/api/license/status\""), "RequireAuthenticatedSession", "License status must be reachable before login.");
-        RequireNotContains(EndpointBlock(licenseEndpoints, "MapPost(\"/api/license/install\""), "RequirePermission", "License install must be reachable before login.");
+        RequireContains(EndpointBlock(licenseEndpoints, "MapPost(\"/api/license/install\""), "RequiresPrivilegedInstallAuthorization(before.Status)", "First install must remain pre-login while licensed replacement stays permission-gated.");
         RequireContains(EndpointBlock(licenseEndpoints, "MapPost(\"/api/license/install\""), "HasJsonContentType", "Pre-login license install must reject simple cross-origin form posts.");
         RequireContains(bootstrapEndpoints, "Bootstrap.HostLicenseRequired", "Bootstrap API must enforce a valid Host license.");
         RequireContains(bootstrapEndpoints, "license.LicenseType == LicenseType.Host", "Bootstrap API must reject Terminal license type.");

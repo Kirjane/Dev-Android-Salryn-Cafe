@@ -88,10 +88,13 @@ internal static class LocalAccountsReceivableEndpoints
         {
             ILocalLicenseEnforcementService licensing = context.RequestServices.GetRequiredService<ILocalLicenseEnforcementService>();
             if (await Guard(context, sessions, licensing, LocalApiPermissions.ReceivablesAdjust, ct) is IResult denied) return denied;
-            LocalApiSession session = RequiredSession(context, sessions);
-            return ToResult(await service.AdjustAsync(new(
-                request.CustomerId, request.AmountCents, request.IsDebit, request.Note, session.UserId), ct),
-                StatusCodes.Status201Created);
+            _ = request;
+            _ = service;
+            return Results.NotFound(new
+            {
+                code = "Receivables.AdjustmentsUnavailable",
+                message = "Manual receivable adjustments are not available in this release."
+            });
         });
 
         app.MapPost("/api/receivables/collections/{id:guid}/void", async (Guid id, VoidCollectionApiRequest request,
