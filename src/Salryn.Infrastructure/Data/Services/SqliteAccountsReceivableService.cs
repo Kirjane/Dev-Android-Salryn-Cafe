@@ -43,19 +43,20 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
                              FROM accounts_receivable_entries e
                              WHERE e.customer_id = c.id), 0),
                    (WITH allocation AS (
-                        SELECT e.due_date, e.debit_cents,
-                               COALESCE(SUM(CASE WHEN e.due_date IS NOT NULL THEN e.debit_cents ELSE 0 END) OVER (
+                        SELECT e.due_date,
+                               CASE WHEN e.entry_type <> 'CollectionReversal' THEN e.debit_cents ELSE 0 END AS exposure_debit,
+                               COALESCE(SUM(CASE WHEN e.entry_type <> 'CollectionReversal' THEN e.debit_cents ELSE 0 END) OVER (
                                    PARTITION BY e.customer_id ORDER BY e.created_at, e.id
-                                   ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS prior_debits,
+                                   ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS prior_exposure_debits,
                                SUM(CASE WHEN e.entry_type = 'CollectionReversal'
                                         THEN -e.debit_cents ELSE e.credit_cents END)
-                                   OVER (PARTITION BY e.customer_id) AS total_credits
+                                   OVER (PARTITION BY e.customer_id) AS net_credits
                         FROM accounts_receivable_entries e
                         WHERE e.customer_id = c.id
                     )
                     SELECT MIN(due_date) FROM allocation
                     WHERE due_date IS NOT NULL
-                      AND MAX(0, debit_cents - MAX(0, total_credits - prior_debits)) > 0),
+                      AND MAX(0, exposure_debit - MAX(0, net_credits - prior_exposure_debits)) > 0),
                    (SELECT MAX(e.created_at) FROM accounts_receivable_entries e
                     WHERE e.customer_id = c.id)
             FROM customers c
@@ -95,7 +96,7 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         command.CommandText="""
             SELECT c.id,c.full_name,c.phone,c.address,c.note,c.credit_limit_cents,c.is_active,c.created_by_user_id,c.created_at,c.updated_at,
               COALESCE((SELECT SUM(e.debit_cents-e.credit_cents) FROM accounts_receivable_entries e WHERE e.customer_id=c.id),0),
-              (WITH allocation AS (SELECT e.due_date,e.debit_cents,COALESCE(SUM(CASE WHEN e.due_date IS NOT NULL THEN e.debit_cents ELSE 0 END) OVER (PARTITION BY e.customer_id ORDER BY e.created_at,e.id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0) prior_debits,SUM(CASE WHEN e.entry_type='CollectionReversal' THEN -e.debit_cents ELSE e.credit_cents END) OVER (PARTITION BY e.customer_id) total_credits FROM accounts_receivable_entries e WHERE e.customer_id=c.id) SELECT MIN(due_date) FROM allocation WHERE due_date IS NOT NULL AND MAX(0,debit_cents-MAX(0,total_credits-prior_debits))>0),
+              (WITH allocation AS (SELECT e.due_date,CASE WHEN e.entry_type<>'CollectionReversal' THEN e.debit_cents ELSE 0 END exposure_debit,COALESCE(SUM(CASE WHEN e.entry_type<>'CollectionReversal' THEN e.debit_cents ELSE 0 END) OVER (PARTITION BY e.customer_id ORDER BY e.created_at,e.id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0) prior_exposure_debits,SUM(CASE WHEN e.entry_type='CollectionReversal' THEN -e.debit_cents ELSE e.credit_cents END) OVER (PARTITION BY e.customer_id) net_credits FROM accounts_receivable_entries e WHERE e.customer_id=c.id) SELECT MIN(due_date) FROM allocation WHERE due_date IS NOT NULL AND MAX(0,exposure_debit-MAX(0,net_credits-prior_exposure_debits))>0),
               (SELECT MAX(e.created_at) FROM accounts_receivable_entries e WHERE e.customer_id=c.id)
             FROM customers c WHERE $search='' OR c.full_name LIKE $pattern OR COALESCE(c.phone,'') LIKE $pattern
             ORDER BY c.full_name COLLATE NOCASE,c.id LIMIT $limit OFFSET $offset;
@@ -239,20 +240,21 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         const string exposureCte =
             """
             WITH allocation AS (
-                SELECT due_date, debit_cents,
-                       COALESCE(SUM(CASE WHEN due_date IS NOT NULL THEN debit_cents ELSE 0 END) OVER (
+                SELECT due_date,
+                       CASE WHEN entry_type <> 'CollectionReversal' THEN debit_cents ELSE 0 END AS exposure_debit,
+                       COALESCE(SUM(CASE WHEN entry_type <> 'CollectionReversal' THEN debit_cents ELSE 0 END) OVER (
                            PARTITION BY customer_id ORDER BY created_at, id
-                           ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS prior_debits,
+                           ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS prior_exposure_debits,
                        SUM(CASE WHEN entry_type = 'CollectionReversal'
                                 THEN -debit_cents ELSE credit_cents END)
-                           OVER (PARTITION BY customer_id) AS total_credits
+                           OVER (PARTITION BY customer_id) AS net_credits
                 FROM accounts_receivable_entries
             ),
             exposure AS (
                 SELECT due_date,
-                       MAX(0, debit_cents - MAX(0, total_credits - prior_debits)) AS remaining_cents
+                       MAX(0, exposure_debit - MAX(0, net_credits - prior_exposure_debits)) AS remaining_cents
                 FROM allocation
-                WHERE debit_cents > 0
+                WHERE exposure_debit > 0
             )
             """;
         long overdue = await ScalarAsync(connection,

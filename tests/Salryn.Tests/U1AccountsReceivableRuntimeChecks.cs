@@ -330,6 +330,10 @@ public static class U1AccountsReceivableRuntimeChecks
             using HttpClient anonymous = new() { BaseAddress = address };
             Require((await anonymous.GetAsync("/api/receivables/summary")).StatusCode == HttpStatusCode.Unauthorized,
                 "Unauthenticated receivables request must be denied.");
+            using HttpResponseMessage anonymousAging = await anonymous.GetAsync("/api/owner-analytics/ar-aging?from=2026-11-01&to=2026-11-30");
+            Require(anonymousAging.StatusCode == HttpStatusCode.Unauthorized &&
+                    !(await anonymousAging.Content.ReadAsStringAsync()).Contains("outstandingCents", StringComparison.Ordinal),
+                "Unauthenticated AR analytics must be denied without financial-value leakage.");
 
             LocalApiSession managerSession = sessions.Create(new AuthenticatedUserReadModel(
                 userId, "u1-manager", "U1 Manager", "Manager", UserStatus.Active,
@@ -344,6 +348,19 @@ public static class U1AccountsReceivableRuntimeChecks
                     (await baseLicenseSummary.Content.ReadAsStringAsync())
                         .Contains("Receivables.FeatureNotLicensed", StringComparison.Ordinal),
                 "Base Host state must deny U1 with the feature-not-licensed code.");
+            LocalApiSession baseReportArSession = sessions.Create(new AuthenticatedUserReadModel(
+                userId, "base-report-ar", "Base Report AR", "Custom", UserStatus.Active,
+                new[] { DefaultSeedData.Permissions.ReportsView, DefaultSeedData.Permissions.ReceivablesView }));
+            using HttpClient baseReportAr = Client(address, baseReportArSession);
+            foreach (string path in new[] { "/api/owner-analytics/ar-aging?from=2026-11-01&to=2026-11-30", "/api/owner-analytics/export/ar.csv?from=2026-11-01&to=2026-11-30" })
+            {
+                using HttpResponseMessage denied = await baseReportAr.GetAsync(path);
+                string deniedBody = await denied.Content.ReadAsStringAsync();
+                Require(denied.StatusCode == HttpStatusCode.Forbidden &&
+                        !deniedBody.Contains("outstandingCents", StringComparison.Ordinal) &&
+                        !deniedBody.Contains("U1 Runtime", StringComparison.Ordinal),
+                    "Base Host must not receive AR analytics/export values or PII.");
+            }
 
             licenseService.U1Enabled = true;
 
@@ -351,6 +368,10 @@ public static class U1AccountsReceivableRuntimeChecks
                 userId, "u1-cashier", "U1 Cashier", "Cashier", UserStatus.Active,
                 new[] { DefaultSeedData.Permissions.SalesCreate }));
             using HttpClient cashier = Client(address, cashierSession);
+            using HttpResponseMessage cashierAging = await cashier.GetAsync("/api/owner-analytics/ar-aging?from=2026-11-01&to=2026-11-30");
+            Require(cashierAging.StatusCode == HttpStatusCode.Forbidden &&
+                    !(await cashierAging.Content.ReadAsStringAsync()).Contains("outstandingCents", StringComparison.Ordinal),
+                "Cashier without Reports/Receivables permissions must not receive AR analytics values.");
             using HttpResponseMessage cashierCredit = await cashier.PostAsJsonAsync(
                 "/api/checkout",
                 new
@@ -376,6 +397,9 @@ public static class U1AccountsReceivableRuntimeChecks
                 userId, "u1-report-only", "U1 Report Only", "Custom", UserStatus.Active,
                 new[] { DefaultSeedData.Permissions.ReportsView }));
             using HttpClient reportOnly = Client(address, reportOnlySession);
+            Require((await reportOnly.GetAsync("/api/owner-analytics/ar-aging?from=2026-11-01&to=2026-11-30")).StatusCode == HttpStatusCode.Forbidden &&
+                    (await reportOnly.GetAsync("/api/owner-analytics/export/ar.csv?from=2026-11-01&to=2026-11-30")).StatusCode == HttpStatusCode.Forbidden,
+                "Reports.View alone must not expose AR aging or export.");
             OwnerReportsResponse? reportOnlySummary =
                 await reportOnly.GetFromJsonAsync<OwnerReportsResponse>("/api/owner-reports/summary");
             Require(reportOnlySummary?.Receivables is null,
@@ -388,6 +412,9 @@ public static class U1AccountsReceivableRuntimeChecks
                     DefaultSeedData.Permissions.ReceivablesView
                 }));
             using HttpClient reportAndReceivables = Client(address, reportAndReceivablesSession);
+            Require((await reportAndReceivables.GetAsync("/api/owner-analytics/ar-aging?from=2026-11-01&to=2026-11-30")).StatusCode == HttpStatusCode.OK &&
+                    (await reportAndReceivables.GetAsync("/api/owner-analytics/export/ar.csv?from=2026-11-01&to=2026-11-30")).StatusCode == HttpStatusCode.OK,
+                "Signed U1 Host with Reports.View and Receivables.View must receive AR aging/export.");
             OwnerReportsResponse? authorizedReport =
                 await reportAndReceivables.GetFromJsonAsync<OwnerReportsResponse>("/api/owner-reports/summary");
             Require(authorizedReport?.Receivables is not null,
@@ -413,6 +440,12 @@ public static class U1AccountsReceivableRuntimeChecks
             using HttpResponseMessage terminalResponse = await manager.SendAsync(terminalRequest);
             Require(terminalResponse.StatusCode == HttpStatusCode.Forbidden,
                 "LAN terminal request context must be denied collection reversal.");
+            using HttpRequestMessage terminalAging = new(HttpMethod.Get, "/api/owner-analytics/ar-aging?from=2026-11-01&to=2026-11-30");
+            terminalAging.Headers.Add("X-Salryn-Terminal-Id", Guid.NewGuid().ToString("D"));
+            using HttpResponseMessage terminalAgingResponse = await reportAndReceivables.SendAsync(terminalAging);
+            Require(terminalAgingResponse.StatusCode == HttpStatusCode.Forbidden &&
+                    !(await terminalAgingResponse.Content.ReadAsStringAsync()).Contains("outstandingCents", StringComparison.Ordinal),
+                "Terminal request context must not receive AR analytics values.");
 
             LocalApiSession adminSession = sessions.Create(new AuthenticatedUserReadModel(
                 userId, "u1-admin", "U1 Admin", "Admin", UserStatus.Active,

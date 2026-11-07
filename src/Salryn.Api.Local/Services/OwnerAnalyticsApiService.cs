@@ -169,15 +169,16 @@ public sealed class OwnerAnalyticsApiService
             using SqliteCommand command = connection.CreateCommand();
             command.CommandText = """
                 WITH allocation AS (
-                    SELECT customer_id,due_date,debit_cents,
-                           COALESCE(SUM(CASE WHEN due_date IS NOT NULL THEN debit_cents ELSE 0 END) OVER
-                             (PARTITION BY customer_id ORDER BY created_at,id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0) prior_debits,
+                    SELECT customer_id,due_date,entry_type,
+                           CASE WHEN entry_type<>'CollectionReversal' THEN debit_cents ELSE 0 END exposure_debit,
+                           COALESCE(SUM(CASE WHEN entry_type<>'CollectionReversal' THEN debit_cents ELSE 0 END) OVER
+                             (PARTITION BY customer_id ORDER BY created_at,id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0) prior_exposure_debits,
                            SUM(CASE WHEN entry_type='CollectionReversal' THEN -debit_cents ELSE credit_cents END)
-                             OVER (PARTITION BY customer_id) total_credits
+                             OVER (PARTITION BY customer_id) net_credits
                     FROM accounts_receivable_entries
                 ), exposure AS (
-                    SELECT due_date, MAX(0,debit_cents-MAX(0,total_credits-prior_debits)) remaining
-                    FROM allocation WHERE debit_cents>0
+                    SELECT due_date, MAX(0,exposure_debit-MAX(0,net_credits-prior_exposure_debits)) remaining
+                    FROM allocation WHERE exposure_debit>0
                 )
                 SELECT COALESCE(SUM(remaining),0),
                        COALESCE(SUM(CASE WHEN due_date < $today THEN remaining ELSE 0 END),0),

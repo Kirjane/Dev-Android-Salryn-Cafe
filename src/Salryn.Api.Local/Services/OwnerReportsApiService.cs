@@ -374,18 +374,19 @@ public sealed class OwnerReportsApiService
                         WHERE voided_at IS NULL AND collected_at >= $start AND collected_at < $end),0),
               COALESCE((SELECT SUM(debit_cents-credit_cents) FROM accounts_receivable_entries),0),
               COALESCE((WITH allocation AS (
-                            SELECT due_date, debit_cents,
-                                   COALESCE(SUM(CASE WHEN due_date IS NOT NULL THEN debit_cents ELSE 0 END) OVER (
+                            SELECT due_date,
+                                   CASE WHEN entry_type <> 'CollectionReversal' THEN debit_cents ELSE 0 END AS exposure_debit,
+                                   COALESCE(SUM(CASE WHEN entry_type <> 'CollectionReversal' THEN debit_cents ELSE 0 END) OVER (
                                        PARTITION BY customer_id ORDER BY created_at, id
-                                       ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS prior_debits,
+                                       ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS prior_exposure_debits,
                                    SUM(CASE WHEN entry_type = 'CollectionReversal'
                                             THEN -debit_cents ELSE credit_cents END)
-                                       OVER (PARTITION BY customer_id) AS total_credits
+                                       OVER (PARTITION BY customer_id) AS net_credits
                             FROM accounts_receivable_entries
                         )
-                        SELECT SUM(MAX(0, debit_cents - MAX(0, total_credits - prior_debits)))
+                        SELECT SUM(MAX(0, exposure_debit - MAX(0, net_credits - prior_exposure_debits)))
                         FROM allocation
-                        WHERE debit_cents > 0 AND due_date IS NOT NULL AND due_date < $today),0);
+                        WHERE exposure_debit > 0 AND due_date IS NOT NULL AND due_date < $today),0);
             """;
         command.Parameters.AddWithValue("$completed", Convert.ToInt32(SaleStatus.Completed));
         command.Parameters.AddWithValue("$cash", Convert.ToInt32(PaymentMethod.Cash));
