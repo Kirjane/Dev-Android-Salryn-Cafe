@@ -73,4 +73,3 @@ public sealed record OwnerArAgingResponse(
     IReadOnlyList<OwnerPaymentMixRow> CollectionsByMethod,
     IReadOnlyList<OwnerArAgingBucket> Buckets,
     string AllocationDisclosure);
-
