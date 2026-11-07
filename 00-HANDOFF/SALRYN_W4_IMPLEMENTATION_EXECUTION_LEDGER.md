@@ -17,7 +17,7 @@ Policy: provisional; no merge, release, signing, deployment or distribution.
 
 ## Executed evidence
 
-The implementation commit SHA and final evidence SHA are filled after commits. Commands are from the isolated worktree; exit codes are recorded only after execution.
+Tested implementation SHA: `8f9b3f54ca70ab1781a833933f31338801e01a0a`. Commands are from the isolated worktree; all rows below completed with exit code 0. The final ledger commit is a documentation-only successor and is recorded in the PR summary.
 
 | Command | Exit | Outcome |
 |---|---:|---|
@@ -29,8 +29,12 @@ The implementation commit SHA and final evidence SHA are filled after commits. C
 | CoreSmoke `--only u1-entitlement-gating` | 0 | paid Host and Terminal denial boundaries PASS |
 | CoreSmoke `--only owner-analytics-w0-w3` | 0 | store-day/cash/Utang/void/read-only analytics PASS |
 | CoreSmoke `--only pos-r1-owner-reports` | 0 | owner report regression PASS |
-| CoreSmoke `--only pre-beta-d-portable-backup-import-export` | pending final rerun | v25 backup and v26 future-schema probe |
-| InfrastructureSmoke, web build/audit, NuGet audit, `git diff --check` | pending final run | final mechanical/dependency gates |
+| CoreSmoke `--only pre-beta-d-portable-backup-import-export` | 0 | v25 backup/restore and v26 future-schema rejection PASS |
+| InfrastructureSmoke `cashier-session-service-edge` | 0 | session service/repository edge regression PASS |
+| `npm run build` | 0 | React/TypeScript production build PASS (existing chunk-size advisory only) |
+| `npm audit --audit-level=high` | 0 | 0 vulnerabilities |
+| `dotnet list Salryn.sln package --vulnerable --include-transitive` | 0 | no vulnerable packages from configured source |
+| `git diff --check` | 0 | clean whitespace check |
 
 ## Honest limits
 
