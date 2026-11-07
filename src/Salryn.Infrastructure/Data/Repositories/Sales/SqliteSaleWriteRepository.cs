@@ -93,6 +93,8 @@ public sealed class SqliteSaleWriteRepository :
                 InsertPayment(connection, transaction, payment);
             }
 
+            InsertCashDrawerSaleEvent(connection, transaction, sale, payments);
+
             foreach (StockMovement movement in stockMovements)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -317,6 +319,16 @@ public sealed class SqliteSaleWriteRepository :
         command.Parameters.AddWithValue("$receivableNote", DbNullableText(sale.ReceivableNote));
 
         command.ExecuteNonQuery();
+    }
+
+    private static void InsertCashDrawerSaleEvent(SqliteConnection connection,SqliteTransaction transaction,Sale sale,IReadOnlyList<Payment> payments)
+    {
+        if(sale.CashierSessionId is not Guid sessionId)return;
+        long tender=payments.Where(p=>p.Method==PaymentMethod.Cash).Sum(p=>p.Amount.Cents);
+        long net=tender-sale.Change.Cents;if(net<=0)return;
+        using SqliteCommand command=connection.CreateCommand();command.Transaction=transaction;
+        command.CommandText="""INSERT INTO cash_drawer_events(id,cashier_session_id,event_type,direction,amount_cents,source_type,source_id,actor_user_id,method,occurred_at,request_id,note) VALUES($id,$session,'CashSaleNet',1,$amount,'Sale',$source,$actor,'Cash',$at,$request,'Cash tender less change');""";
+        command.Parameters.AddWithValue("$id",Guid.NewGuid().ToString("D"));command.Parameters.AddWithValue("$session",sessionId.ToString("D"));command.Parameters.AddWithValue("$amount",net);command.Parameters.AddWithValue("$source",sale.Id.ToString("D"));command.Parameters.AddWithValue("$actor",sale.CashierUserId.ToString("D"));command.Parameters.AddWithValue("$at",sale.SaleDate.ToString("O"));command.Parameters.AddWithValue("$request","sale:"+sale.Id.ToString("D"));command.ExecuteNonQuery();
     }
 
     private static Result PrepareReceivableSaleVoid(

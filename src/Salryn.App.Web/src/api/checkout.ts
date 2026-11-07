@@ -6,6 +6,11 @@ export type HostShift = {
   openedAtUtc: string | null;
   openingCashCents: number | null;
   message: string;
+  expectedCashCents?: number | null;
+  countedCashCents?: number | null;
+  varianceCents?: number | null;
+  coverageStatus?: string | null;
+  reviewStatus?: string | null;
 };
 
 export type HostShiftEnvelope = {
@@ -77,10 +82,12 @@ export async function openHostShift(request: OpenShiftRequest): Promise<HostShif
   return readJson<HostShiftEnvelope>(response);
 }
 
-export async function closeHostShift(): Promise<HostShiftEnvelope> {
+export async function closeHostShift(request: { countedCashCents: number; physicalCountConfirmed: boolean; clientRequestId: string; note?: string }): Promise<HostShiftEnvelope> {
   const response = await fetch("/api/shift/close", {
     method: "POST",
     credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
   });
 
   return readJson<HostShiftEnvelope>(response);

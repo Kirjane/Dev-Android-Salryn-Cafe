@@ -15,11 +15,13 @@ public sealed record HostOperatorShiftOperationResult(
 public sealed class HostOperatorShiftApiService
 {
     private readonly ICashierSessionService _cashierSessionService;
+    private readonly CashDrawerReconciliationService _drawer;
 
-    public HostOperatorShiftApiService(ICashierSessionService cashierSessionService)
+    public HostOperatorShiftApiService(ICashierSessionService cashierSessionService,CashDrawerReconciliationService drawer)
     {
         _cashierSessionService = cashierSessionService
             ?? throw new ArgumentNullException(nameof(cashierSessionService));
+        _drawer=drawer;
     }
 
     public async Task<HostOperatorShiftOperationResult> OpenShiftAsync(
@@ -132,6 +134,7 @@ public sealed class HostOperatorShiftApiService
 
     public async Task<HostOperatorShiftOperationResult> CloseShiftAsync(
         Guid userId,
+        HostOperatorShiftCloseRequest request,
         CancellationToken cancellationToken = default)
     {
         if (userId == Guid.Empty)
@@ -166,23 +169,13 @@ public sealed class HostOperatorShiftApiService
         }
 
         CashierSessionReadModel open = openResult.Value;
-
-        Result<CashierSessionReadModel> closed = await _cashierSessionService
-            .CloseAsync(
-                new CloseCashierSessionRequest(
-                    open.Id,
-                    userId,
-                    open.ExpectedCash,
-                    "Host Console shift close"),
-                cancellationToken)
-            .ConfigureAwait(false);
+        Result<CashDrawerSnapshot> closed=_drawer.Close(userId,new(request.CountedCashCents,request.PhysicalCountConfirmed,request.ClientRequestId,request.Note));
 
         if (closed.IsFailure)
         {
             return new HostOperatorShiftOperationResult(
                 false,
-                closed.ErrorDetail.Code,
-                closed.ErrorDetail.Message,
+                closed.ErrorDetail.Code, closed.ErrorDetail.Message,
                 null);
         }
 
@@ -195,7 +188,7 @@ public sealed class HostOperatorShiftApiService
                 open.Id.ToString(),
                 null,
                 null,
-                "Cashier shift closed."));
+                "Cashier shift closed.",closed.Value.ExpectedCashCents,closed.Value.CountedCashCents,closed.Value.VarianceCents,closed.Value.CoverageStatus,closed.Value.ReviewStatus));
     }
 
     private static HostOperatorShiftResponse BuildShiftResponse(CashierSessionReadModel session) =>

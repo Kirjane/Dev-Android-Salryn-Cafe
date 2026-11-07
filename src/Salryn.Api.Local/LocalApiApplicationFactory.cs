@@ -155,6 +155,7 @@ public static class LocalApiApplicationFactory
         builder.Services.AddSingleton<SaleVoidApiService>();
         builder.Services.AddSingleton<OwnerReportsApiService>();
         builder.Services.AddSingleton<OwnerAnalyticsApiService>();
+        builder.Services.AddSingleton<CashDrawerReconciliationService>();
         builder.Services.AddSingleton<UserAdminApiService>();
         builder.Services.AddSingleton<IAccountsReceivableService>(
             new SqliteAccountsReceivableService(composition.ConnectionFactory));

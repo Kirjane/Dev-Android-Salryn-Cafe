@@ -69,7 +69,8 @@ public static class DefaultDatabaseInitializationFactory
             new RemotePosCheckoutRequestSchemaMigration(),
             new AccountsReceivableSchemaMigration(),
             new HostCheckoutRequestSchemaMigration(),
-            new ReceivableCollectionRequestSchemaMigration()
+            new ReceivableCollectionRequestSchemaMigration(),
+            new CashDrawerReconciliationSchemaMigration()
         };
 
         MigrationRunner migrationRunner = new(connectionFactory, migrations);

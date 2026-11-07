@@ -216,6 +216,7 @@ public sealed class SqliteCashierSessionWriteRepository :
                 variance_cents,
                 status,
                 notes
+                ,cash_coverage_started_at
             )
             VALUES (
                 $id,
@@ -228,6 +229,7 @@ public sealed class SqliteCashierSessionWriteRepository :
                 $varianceCents,
                 $status,
                 $notes
+                ,$coverageStartedAt
             );
             """;
 
@@ -241,6 +243,7 @@ public sealed class SqliteCashierSessionWriteRepository :
         command.Parameters.AddWithValue("$varianceCents", session.Variance.Cents);
         command.Parameters.AddWithValue("$status", Convert.ToInt32(CashierSessionStatus.Open));
         command.Parameters.AddWithValue("$notes", DbNullableText(session.Notes));
+        command.Parameters.AddWithValue("$coverageStartedAt", session.OpenedAt.ToString("O"));
 
         command.ExecuteNonQuery();
     }

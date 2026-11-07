@@ -325,21 +325,8 @@ public sealed class RemotePosCheckoutService
                 "No open cashier shift to close.", null);
         }
 
-        CashierSessionReadModel open = openResult.Value;
-
-        Result<CashierSessionReadModel> closed = await _cashierSessionService
-            .CloseAsync(new CloseCashierSessionRequest(open.Id, session.UserId, open.ExpectedCash, "Remote POS shift close"), cancellationToken)
-            .ConfigureAwait(false);
-
-        if (closed.IsFailure)
-        {
-            return new RemotePosShiftOperationResult(false, "RemotePos.Shift.CloseFailed",
-                "Cashier shift could not be closed on the host.", null);
-        }
-
-        return new RemotePosShiftOperationResult(true, "RemotePos.Shift.Closed",
-            "Cashier shift closed.",
-            new RemotePosShiftResponse("Closed", open.Id.ToString(), null, "Cashier shift closed."));
+        return new RemotePosShiftOperationResult(false,"RemotePos.Shift.PhysicalCountRequired",
+            "Remote close is disabled. Complete the physical drawer count on the Host console.",null);
     }
 
     // ---- Checkout submit (idempotent host write) ------------------------------------------

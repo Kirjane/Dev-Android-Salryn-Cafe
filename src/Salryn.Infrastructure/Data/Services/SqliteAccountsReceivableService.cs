@@ -309,12 +309,15 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         AccountsReceivableCollection collection = new(Guid.NewGuid(), request.CustomerId, request.AmountCents,
             string.IsNullOrWhiteSpace(request.Method) ? "Cash" : request.Method.Trim(), Clean(request.Note),
             request.CollectedByUserId, now, null, null, null);
+        Guid? drawerSession=await FindOpenSessionAsync(connection,transaction,request.CollectedByUserId,cancellationToken);
         await InsertCollectionAsync(
-            connection, transaction, collection, request.ClientRequestId, requestHash, cancellationToken);
+            connection, transaction, collection, request.ClientRequestId, requestHash, drawerSession, cancellationToken);
         await InsertEntryAsync(connection, transaction, new AccountsReceivableEntry(
             Guid.NewGuid(), request.CustomerId, null, collection.Id, AccountsReceivableEntryType.Collection,
             0, request.AmountCents, balance - request.AmountCents, null, collection.Note,
             request.CollectedByUserId, now), cancellationToken);
+        if(drawerSession is Guid session && string.Equals(collection.Method,"Cash",StringComparison.OrdinalIgnoreCase))
+            await InsertDrawerEventAsync(connection,transaction,session,collection.Id,request.CollectedByUserId,request.AmountCents,request.ClientRequestId,now,cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return Result<AccountsReceivableCollection>.Success(collection);
     }
@@ -441,11 +444,12 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         AccountsReceivableCollection x,
         string clientRequestId,
         string requestHash,
+        Guid? cashierSessionId,
         CancellationToken ct)
     {
         await using SqliteCommand command = c.CreateCommand();
         command.Transaction = t;
-        command.CommandText = "INSERT INTO accounts_receivable_collections (id,customer_id,amount_cents,method,note,collected_by_user_id,collected_at,client_request_id,request_hash) VALUES ($id,$customer,$amount,$method,$note,$user,$at,$request,$hash);";
+        command.CommandText = "INSERT INTO accounts_receivable_collections (id,customer_id,amount_cents,method,note,collected_by_user_id,collected_at,client_request_id,request_hash,cashier_session_id) VALUES ($id,$customer,$amount,$method,$note,$user,$at,$request,$hash,$session);";
         command.Parameters.AddWithValue("$id", x.Id.ToString("D"));
         command.Parameters.AddWithValue("$customer", x.CustomerId.ToString("D"));
         command.Parameters.AddWithValue("$amount", x.AmountCents);
@@ -455,8 +459,12 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         command.Parameters.AddWithValue("$at", x.CollectedAt.ToString("O"));
         command.Parameters.AddWithValue("$request", clientRequestId);
         command.Parameters.AddWithValue("$hash", requestHash);
+        command.Parameters.AddWithValue("$session",cashierSessionId?.ToString("D")??(object)DBNull.Value);
         await command.ExecuteNonQueryAsync(ct);
     }
+
+    private static async Task<Guid?> FindOpenSessionAsync(SqliteConnection c,SqliteTransaction t,Guid user,CancellationToken ct){await using SqliteCommand q=c.CreateCommand();q.Transaction=t;q.CommandText="SELECT id FROM cashier_sessions WHERE user_id=$user AND status=1 ORDER BY opened_at DESC LIMIT 1";q.Parameters.AddWithValue("$user",user.ToString("D"));object? v=await q.ExecuteScalarAsync(ct);return v is string s?Guid.Parse(s):null;}
+    private static async Task InsertDrawerEventAsync(SqliteConnection c,SqliteTransaction t,Guid session,Guid collection,Guid actor,long amount,string request,DateTimeOffset at,CancellationToken ct){await using SqliteCommand q=c.CreateCommand();q.Transaction=t;q.CommandText="INSERT INTO cash_drawer_events(id,cashier_session_id,event_type,direction,amount_cents,source_type,source_id,actor_user_id,method,occurred_at,request_id,note) VALUES($id,$session,'ArCashCollection',1,$amount,'ArCollection',$source,$actor,'Cash',$at,$request,'Cash AR collection')";q.Parameters.AddWithValue("$id",Guid.NewGuid().ToString("D"));q.Parameters.AddWithValue("$session",session.ToString("D"));q.Parameters.AddWithValue("$amount",amount);q.Parameters.AddWithValue("$source",collection.ToString("D"));q.Parameters.AddWithValue("$actor",actor.ToString("D"));q.Parameters.AddWithValue("$at",at.ToString("O"));q.Parameters.AddWithValue("$request","ar:"+request);await q.ExecuteNonQueryAsync(ct);}
 
     private static async Task<(AccountsReceivableCollection Collection, string RequestHash)?>
         FindCollectionByRequestAsync(

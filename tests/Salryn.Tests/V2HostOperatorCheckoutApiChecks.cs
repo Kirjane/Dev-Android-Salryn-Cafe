@@ -686,7 +686,21 @@ public static class V2HostOperatorCheckoutApiChecks
 
     private static async Task PostShiftCloseAsync(HttpClient client)
     {
-        using HttpResponseMessage response = await client.PostAsync("/api/shift/close", null).ConfigureAwait(false);
+        using HttpResponseMessage drawerResponse = await client.GetAsync("/api/cash-drawer").ConfigureAwait(false);
+        if (drawerResponse.StatusCode != HttpStatusCode.OK)
+        {
+            throw new InvalidOperationException($"Expected GET /api/cash-drawer to return 200, got {(int)drawerResponse.StatusCode}.");
+        }
+
+        using JsonDocument drawer = JsonDocument.Parse(await drawerResponse.Content.ReadAsStringAsync().ConfigureAwait(false));
+        long countedCashCents = drawer.RootElement.GetProperty("expectedCashCents").GetInt64();
+        using HttpResponseMessage response = await client.PostAsJsonAsync(
+            "/api/shift/close",
+            new HostOperatorShiftCloseRequest(
+                countedCashCents,
+                true,
+                "v2-checkout-close-" + Guid.NewGuid().ToString("N"),
+                "V2 checkout reconciliation smoke")).ConfigureAwait(false);
         if (response.StatusCode != HttpStatusCode.OK)
         {
             throw new InvalidOperationException($"Expected POST /api/shift/close to return 200, got {(int)response.StatusCode}.");

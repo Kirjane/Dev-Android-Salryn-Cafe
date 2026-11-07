@@ -120,14 +120,21 @@ public static class V2HostOperatorShiftApiChecks
             JsonDocument readOpenShift = await GetShiftAsync(cashierClient).ConfigureAwait(false);
             AssertShiftState(readOpenShift, "Open", "Shift read must return the open shift.");
 
-            JsonDocument closedShift = await PostShiftCloseAsync(cashierClient).ConfigureAwait(false);
+            await AssertStatusAsync(
+                cashierClient,
+                HttpMethod.Post,
+                "/api/shift/close",
+                HttpStatusCode.BadRequest,
+                "Shift close without an explicit physical count must return 400.").ConfigureAwait(false);
+
+            JsonDocument closedShift = await PostShiftCloseAsync(cashierClient, 5000).ConfigureAwait(false);
             AssertShiftState(closedShift, "Closed", "Shift close must return a closed shift.");
 
             await AssertStatusAsync(
                 cashierClient,
                 HttpMethod.Post,
                 "/api/shift/close",
-                HttpStatusCode.Conflict,
+                HttpStatusCode.BadRequest,
                 "Closing with no open shift must return 409.").ConfigureAwait(false);
         }
         finally
@@ -206,7 +213,8 @@ public static class V2HostOperatorShiftApiChecks
 
         if (string.Equals(state, "Open", StringComparison.Ordinal))
         {
-            await PostShiftCloseAsync(client).ConfigureAwait(false);
+            long openingCashCents = current.RootElement.GetProperty("shift").GetProperty("openingCashCents").GetInt64();
+            await PostShiftCloseAsync(client, openingCashCents).ConfigureAwait(false);
         }
     }
 
@@ -235,9 +243,15 @@ public static class V2HostOperatorShiftApiChecks
         return JsonDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
     }
 
-    private static async Task<JsonDocument> PostShiftCloseAsync(HttpClient client)
+    private static async Task<JsonDocument> PostShiftCloseAsync(HttpClient client, long countedCashCents)
     {
-        using HttpResponseMessage response = await client.PostAsync("/api/shift/close", null).ConfigureAwait(false);
+        using HttpResponseMessage response = await client.PostAsJsonAsync(
+            "/api/shift/close",
+            new HostOperatorShiftCloseRequest(
+                countedCashCents,
+                true,
+                "v2-shift-close-" + Guid.NewGuid().ToString("N"),
+                "V2 shift reconciliation smoke")).ConfigureAwait(false);
         if (response.StatusCode != HttpStatusCode.OK)
         {
             throw new InvalidOperationException($"Expected POST /api/shift/close to return 200, got {(int)response.StatusCode}.");

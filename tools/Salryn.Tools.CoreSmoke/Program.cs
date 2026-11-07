@@ -107,6 +107,7 @@ public static class Program
         RoleAuthorizationBlockerFixChecks.RunAsync().GetAwaiter().GetResult();
         U1AccountsReceivableLedgerChecks.RunAsync().GetAwaiter().GetResult();
         OwnerAnalyticsW0W3RuntimeChecks.Run();
+        W4CashDrawerReconciliationChecks.Run();
         V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();
         V2HostOperatorCheckoutApiChecks.RunAsync().GetAwaiter().GetResult();
         V2ReactCheckoutSourceChecks.Run();
@@ -623,6 +624,9 @@ public static class Program
                 return;
             case "owner-analytics-w0-w3":
                 OwnerAnalyticsW0W3RuntimeChecks.Run();
+                return;
+            case "w4-cash-drawer-reconciliation":
+                W4CashDrawerReconciliationChecks.Run();
                 return;
             case "user-m1-host-only-user-creation":
                 UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();

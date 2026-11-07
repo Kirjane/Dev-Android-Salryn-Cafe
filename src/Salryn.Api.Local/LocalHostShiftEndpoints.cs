@@ -64,6 +64,7 @@ internal static class LocalHostShiftEndpoints
         });
 
         app.MapPost("/api/shift/close", async (
+            HostOperatorShiftCloseRequest request,
             HttpContext httpContext,
             LocalApiSessionService sessions,
             HostOperatorApiServices hostOperator,
@@ -84,10 +85,26 @@ internal static class LocalHostShiftEndpoints
             }
 
             HostOperatorShiftOperationResult result = await hostOperator.ShiftService
-                .CloseShiftAsync(session.UserId, cancellationToken)
+                .CloseShiftAsync(session.UserId, request, cancellationToken)
                 .ConfigureAwait(false);
 
             return ToShiftResult(result);
+        });
+
+        app.MapGet("/api/cash-drawer",(HttpContext context,LocalApiSessionService sessions,CashDrawerReconciliationService drawer)=>
+        {
+            if(LocalApiPermissionGuards.RequirePermission(context,sessions,LocalApiPermissions.ShiftOpenClose) is IResult denied)return denied;
+            LocalApiSession? session=GetRequiredSession(context,sessions);if(session is null)return AuthenticationRequired();return ToDrawerResult(drawer.Read(session.UserId));
+        });
+        app.MapPost("/api/cash-drawer/movements",(DrawerMovementCommand request,HttpContext context,LocalApiSessionService sessions,CashDrawerReconciliationService drawer)=>
+        {
+            if(LocalApiPermissionGuards.RequirePermission(context,sessions,LocalApiPermissions.ShiftOpenClose) is IResult denied)return denied;
+            LocalApiSession? session=GetRequiredSession(context,sessions);if(session is null)return AuthenticationRequired();return ToDrawerResult(drawer.RecordMovement(session.UserId,request));
+        });
+        app.MapPost("/api/cash-drawer/{sessionId:guid}/review",(Guid sessionId,DrawerReviewCommand request,HttpContext context,LocalApiSessionService sessions,CashDrawerReconciliationService drawer)=>
+        {
+            if(LocalApiPermissionGuards.RequirePermission(context,sessions,LocalApiPermissions.AuditView) is IResult denied)return denied;
+            LocalApiSession? session=GetRequiredSession(context,sessions);if(session is null)return AuthenticationRequired();return ToDrawerResult(drawer.Review(session.UserId,sessionId,request));
         });
 
         return app;
@@ -138,4 +155,5 @@ internal static class LocalHostShiftEndpoints
             shift = result.Shift
         });
     }
+    private static IResult ToDrawerResult(Salryn.Core.Common.Result<CashDrawerSnapshot> result)=>result.IsSuccess?Results.Ok(result.Value):Results.Json(new{error=result.ErrorDetail.Message,code=result.ErrorDetail.Code},statusCode:result.ErrorDetail.Type==Salryn.Core.Common.ErrorType.NotFound?404:409);
 }
