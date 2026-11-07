@@ -296,7 +296,7 @@ foreach ($asset in @("salryn-icon.ico","salryn-icon.png","salryn-banner-clear.pn
 # ---------------------------------------------------------------------------
 @(
     "Product=Salryn POS"
-    "Publisher=Kirjane Labs"
+    "Publisher=Kirjane Information Technology Services"
     "ProductVersion=$Version"
     "StagedUtc=$((Get-Date).ToUniversalTime().ToString('o'))"
     "Entry=Salryn.Desktop.WebView"
@@ -336,7 +336,7 @@ if (-not (Test-Path -LiteralPath $webview2Bootstrapper)) {
 Write-Info "Found ISCC: $iscc"
 Write-Info "Compiling $issScript ..."
 
-& $iscc $issScript
+& $iscc "/DMyAppVersion=$Version" $issScript
 if ($LASTEXITCODE -ne 0) { throw "ISCC failed (exit $LASTEXITCODE)" }
 
 $setupExe = Get-ChildItem -Path $setupDir -Filter "*.exe" |

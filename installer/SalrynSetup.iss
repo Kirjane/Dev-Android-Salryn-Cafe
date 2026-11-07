@@ -22,10 +22,12 @@
 
 #define MyAppName      "Salryn POS"
 #define MyAppShortName "Salryn"
-#define MyAppPublisher "Kirjane Labs"
+#define MyAppPublisher "Kirjane Information Technology Services"
 #define MyAppExeName   "Salryn.Desktop.WebView.exe"
 #define MyAppIcon      "..\assets\branding\salryn-icon.ico"
-#define MyAppVersion   "0.1.0-beta-rc1"
+#ifndef MyAppVersion
+  #define MyAppVersion "0.1.0-rc1"
+#endif
 ; Stable AppId — must not change between Salryn POS installer builds.
 ; Inno Setup uses this to recognize upgrades of the same installed product.
 #define MyAppGuid      "A4E2B8C1-7D3F-4A91-9C2E-5F6A8B1C0D3E"
@@ -40,9 +42,9 @@ AppPublisherURL=https://github.com/Kirch-Nairu/Salryn
 AppSupportURL=mailto:salryn.info@gmail.com
 AppUpdatesURL=https://github.com/Kirch-Nairu/Salryn/releases
 
-; Install under C:\Program Files\Kirjane Labs\Salryn POS
-DefaultDirName={autopf}\Kirjane Labs\Salryn POS
-; Start Menu: Kirjane Labs\Salryn POS
+; Install under the company publisher folder.
+DefaultDirName={autopf}\Kirjane Information Technology Services\Salryn POS
+; Start Menu: Kirjane Information Technology Services\Salryn POS
 DefaultGroupName={#MyAppPublisher}\{#MyAppName}
 DisableProgramGroupPage=no
 UsePreviousAppDir=yes
@@ -137,7 +139,7 @@ begin
   begin
     MsgBox(
       'Salryn POS setup could not find the Microsoft Edge WebView2 Runtime bootstrapper.' + #13#10 +
-      'Re-download Salryn-POS-BetaRC1-Setup.exe from Kirjane Labs and try again.',
+      'Re-download Salryn-POS-BetaRC1-Setup.exe from Kirjane Information Technology Services and try again.',
       mbError, MB_OK);
     Result := False;
     Exit;

@@ -59,11 +59,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\installer\Build-Salryn
 | Property | Value |
 |---|---|
 | Display name | Salryn POS |
-| Publisher | Kirjane Labs |
-| Install path | `C:\Program Files\Kirjane Labs\Salryn POS` |
+| Publisher | Kirjane Information Technology Services |
+| Install path | `C:\Program Files\Kirjane Information Technology Services\Salryn POS` |
 | Production data | `C:\ProgramData\Salryn` (never removed on uninstall) |
 | Desktop shortcut | Salryn POS |
-| Start Menu folder | `Kirjane Labs\Salryn POS` |
+| Start Menu folder | `Kirjane Information Technology Services\Salryn POS` |
 | App / shortcut icon | `assets\branding\salryn-icon.ico` |
 | Output EXE | `artifacts\installer\setup\Salryn-POS-BetaRC1-Setup.exe` |
 | WebView2 | Evergreen Bootstrapper (`installer/redist/MicrosoftEdgeWebview2Setup.exe`) |
@@ -80,7 +80,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\installer\Build-Salryn
 
 ---
 
-## Installed layout (under `C:\Program Files\Kirjane Labs\Salryn POS`)
+## Installed layout (under `C:\Program Files\Kirjane Information Technology Services\Salryn POS`)
 
 ```
 Salryn.Desktop.WebView.exe      ← WebView2 app shell — user-facing entry point

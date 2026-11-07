@@ -22,6 +22,8 @@ public static class PreBetaCStoreLogoBrandingChecks
         string appShell = File.ReadAllText(Path.Combine(root, "src", "Salryn.App.Web", "src", "components", "AppShell.tsx"));
         string terminalShell = File.ReadAllText(Path.Combine(root, "src", "Salryn.App.Web", "src", "components", "TerminalShell.tsx"));
         string migration = File.ReadAllText(Path.Combine(root, "src", "Salryn.Infrastructure", "Data", "Migrations", "StoreLogoBrandingSchemaMigration.cs"));
+        string installer = File.ReadAllText(Path.Combine(root, "installer", "SalrynSetup.iss"));
+        string installerBuild = File.ReadAllText(Path.Combine(root, "tools", "installer", "Build-SalrynBetaRc1Installer.ps1"));
 
         RequireContains(catalog, "SupportedMigrationVersion = 24", "Catalog must include the collection request migration.");
         RequireContains(factory, "StoreLogoBrandingSchemaMigration", "Factory must register store logo migration.");
@@ -40,6 +42,10 @@ public static class PreBetaCStoreLogoBrandingChecks
         RequireContains(appShell, "fetchStoreBranding", "Host AppShell must read branding.");
         RequireContains(appShell, "logoUrl", "Host AppShell must render logo when present.");
         RequireContains(terminalShell, "logoUrl", "TerminalShell must accept logo branding.");
+        RequireContains(installer, "Kirjane Information Technology Services", "Installer publisher must use the accepted company identity.");
+        RequireContains(installerBuild, "Publisher=Kirjane Information Technology Services", "Installer stage stamp must use the accepted company identity.");
+        RequireContains(installerBuild, "\"/DMyAppVersion=$Version\"", "Installer compiler must receive the requested release version.");
+        RequireNotContains(installer + installerBuild, "Kirjane Labs", "Release packaging must not retain the superseded publisher identity.");
 
         string tempRoot = Path.Combine(Path.GetTempPath(), "salryn-logo-c-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
@@ -124,6 +130,11 @@ public static class PreBetaCStoreLogoBrandingChecks
     private static void RequireContains(string source, string value, string message)
     {
         if (!source.Contains(value, StringComparison.Ordinal)) throw new InvalidOperationException(message + " Missing: " + value);
+    }
+
+    private static void RequireNotContains(string source, string value, string message)
+    {
+        if (source.Contains(value, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException(message + " Forbidden: " + value);
     }
 
     private static void RequireTrue(bool condition, string message)
