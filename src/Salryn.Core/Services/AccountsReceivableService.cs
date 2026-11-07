@@ -46,6 +46,8 @@ public sealed record AccountsReceivableSummary(
     long OverdueCents,
     long CollectedTodayCents);
 
+public sealed record ReceivablePage<T>(IReadOnlyList<T> Items,int Offset,int Limit,int Total,bool HasMore,DateTimeOffset AsOfUtc,string TimeZoneId);
+
 public sealed record CollectionPaymentAcknowledgment(
     Guid CollectionId,
     string CustomerName,
@@ -62,6 +64,8 @@ public interface IAccountsReceivableService
     Task<Result<IReadOnlyList<ReceivableCustomerBalance>>> SearchCustomersAsync(
         string? search,
         CancellationToken cancellationToken = default);
+    Task<Result<ReceivablePage<ReceivableCustomerBalance>>> SearchCustomersPageAsync(
+        string? search,int offset,int limit,CancellationToken cancellationToken = default);
     Task<Result<ReceivableCustomer>> CreateCustomerAsync(
         CreateReceivableCustomerRequest request,
         CancellationToken cancellationToken = default);
@@ -75,6 +79,8 @@ public interface IAccountsReceivableService
     Task<Result<IReadOnlyList<AccountsReceivableEntry>>> GetLedgerAsync(
         Guid customerId,
         CancellationToken cancellationToken = default);
+    Task<Result<ReceivablePage<AccountsReceivableEntry>>> GetLedgerPageAsync(
+        Guid customerId,int offset,int limit,CancellationToken cancellationToken = default);
     Task<Result<AccountsReceivableSummary>> GetSummaryAsync(
         CancellationToken cancellationToken = default);
     Task<Result<AccountsReceivableCollection>> CollectAsync(

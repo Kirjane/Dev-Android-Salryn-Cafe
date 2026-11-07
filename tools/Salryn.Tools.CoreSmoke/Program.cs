@@ -106,6 +106,7 @@ public static class Program
         RoleM4PermissionBoundaryRegressionMatrixChecks.RunAsync().GetAwaiter().GetResult();
         RoleAuthorizationBlockerFixChecks.RunAsync().GetAwaiter().GetResult();
         U1AccountsReceivableLedgerChecks.RunAsync().GetAwaiter().GetResult();
+        OwnerAnalyticsW0W3RuntimeChecks.Run();
         V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();
         V2HostOperatorCheckoutApiChecks.RunAsync().GetAwaiter().GetResult();
         V2ReactCheckoutSourceChecks.Run();
@@ -619,6 +620,9 @@ public static class Program
                 return;
             case "u1-entitlement-gating":
                 U1EntitlementGatingChecks.RunAsync().GetAwaiter().GetResult();
+                return;
+            case "owner-analytics-w0-w3":
+                OwnerAnalyticsW0W3RuntimeChecks.Run();
                 return;
             case "user-m1-host-only-user-creation":
                 UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();

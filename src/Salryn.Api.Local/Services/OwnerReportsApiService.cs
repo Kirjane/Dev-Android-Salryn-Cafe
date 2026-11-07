@@ -13,7 +13,7 @@ public sealed class OwnerReportsApiService
         TimeSpan.FromHours(8),
         "Philippine Standard Time",
         "Philippine Standard Time");
-    private const string WeekRule = "Current calendar week, Monday 00:00 through next Monday 00:00 using the host machine local date.";
+    private const string WeekRule = "Current calendar week, Monday 00:00 through next Monday 00:00 in Asia/Manila.";
     private const string OfficialBoundary = "Owner Reports are store operational reports only. Not an official/BIR/RMO report.";
 
     private readonly SalrynLocalComposition _composition;

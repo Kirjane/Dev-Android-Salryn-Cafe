@@ -81,6 +81,31 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         return Result<IReadOnlyList<ReceivableCustomerBalance>>.Success(rows);
     }
 
+    public async Task<Result<ReceivablePage<ReceivableCustomerBalance>>> SearchCustomersPageAsync(
+        string? search,int offset,int limit,CancellationToken cancellationToken=default)
+    {
+        offset=Math.Max(0,offset);limit=Math.Clamp(limit,1,100);
+        string value=search?.Trim()??string.Empty;
+        await using SqliteConnection connection=_connections.CreateConnection();await connection.OpenAsync(cancellationToken);
+        await using SqliteCommand count=connection.CreateCommand();
+        count.CommandText="SELECT COUNT(*) FROM customers c WHERE $search='' OR c.full_name LIKE $pattern OR COALESCE(c.phone,'') LIKE $pattern;";
+        count.Parameters.AddWithValue("$search",value);count.Parameters.AddWithValue("$pattern",$"%{value}%");
+        int total=Convert.ToInt32(await count.ExecuteScalarAsync(cancellationToken));
+        await using SqliteCommand command=connection.CreateCommand();
+        command.CommandText="""
+            SELECT c.id,c.full_name,c.phone,c.address,c.note,c.credit_limit_cents,c.is_active,c.created_by_user_id,c.created_at,c.updated_at,
+              COALESCE((SELECT SUM(e.debit_cents-e.credit_cents) FROM accounts_receivable_entries e WHERE e.customer_id=c.id),0),
+              (WITH allocation AS (SELECT e.due_date,e.debit_cents,COALESCE(SUM(CASE WHEN e.due_date IS NOT NULL THEN e.debit_cents ELSE 0 END) OVER (PARTITION BY e.customer_id ORDER BY e.created_at,e.id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0) prior_debits,SUM(CASE WHEN e.entry_type='CollectionReversal' THEN -e.debit_cents ELSE e.credit_cents END) OVER (PARTITION BY e.customer_id) total_credits FROM accounts_receivable_entries e WHERE e.customer_id=c.id) SELECT MIN(due_date) FROM allocation WHERE due_date IS NOT NULL AND MAX(0,debit_cents-MAX(0,total_credits-prior_debits))>0),
+              (SELECT MAX(e.created_at) FROM accounts_receivable_entries e WHERE e.customer_id=c.id)
+            FROM customers c WHERE $search='' OR c.full_name LIKE $pattern OR COALESCE(c.phone,'') LIKE $pattern
+            ORDER BY c.full_name COLLATE NOCASE,c.id LIMIT $limit OFFSET $offset;
+            """;
+        command.Parameters.AddWithValue("$search",value);command.Parameters.AddWithValue("$pattern",$"%{value}%");command.Parameters.AddWithValue("$limit",limit);command.Parameters.AddWithValue("$offset",offset);
+        List<ReceivableCustomerBalance> items=new();await using SqliteDataReader reader=await command.ExecuteReaderAsync(cancellationToken);
+        while(await reader.ReadAsync(cancellationToken))items.Add(new(ReadCustomer(reader),reader.GetInt64(10),reader.IsDBNull(11)?null:DateOnly.Parse(reader.GetString(11)),reader.IsDBNull(12)?null:DateTimeOffset.Parse(reader.GetString(12))));
+        return Result<ReceivablePage<ReceivableCustomerBalance>>.Success(new(items,offset,limit,total,offset+items.Count<total,_timeProvider.GetUtcNow(),"Asia/Manila"));
+    }
+
     public async Task<Result<ReceivableCustomer>> CreateCustomerAsync(
         CreateReceivableCustomerRequest request,
         CancellationToken cancellationToken = default)
@@ -182,6 +207,22 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         while (await reader.ReadAsync(cancellationToken))
             entries.Add(ReadEntry(reader));
         return Result<IReadOnlyList<AccountsReceivableEntry>>.Success(entries);
+    }
+
+    public async Task<Result<ReceivablePage<AccountsReceivableEntry>>> GetLedgerPageAsync(Guid customerId,int offset,int limit,CancellationToken cancellationToken=default)
+    {
+        offset=Math.Max(0,offset);limit=Math.Clamp(limit,1,200);
+        await using SqliteConnection connection=_connections.CreateConnection();await connection.OpenAsync(cancellationToken);
+        await using SqliteCommand count=connection.CreateCommand();count.CommandText="SELECT COUNT(*) FROM accounts_receivable_entries WHERE customer_id=$customer;";count.Parameters.AddWithValue("$customer",customerId.ToString("D"));
+        int total=Convert.ToInt32(await count.ExecuteScalarAsync(cancellationToken));
+        await using SqliteCommand command=connection.CreateCommand();command.CommandText="""
+            SELECT e.id,e.customer_id,e.sale_id,e.collection_id,e.entry_type,e.debit_cents,e.credit_cents,e.balance_after_cents,e.due_date,e.note,e.created_by_user_id,e.created_at,s.payment_status
+            FROM accounts_receivable_entries e LEFT JOIN sales s ON s.id=e.sale_id
+            WHERE e.customer_id=$customer ORDER BY e.created_at DESC,e.id DESC LIMIT $limit OFFSET $offset;
+            """;
+        command.Parameters.AddWithValue("$customer",customerId.ToString("D"));command.Parameters.AddWithValue("$limit",limit);command.Parameters.AddWithValue("$offset",offset);
+        List<AccountsReceivableEntry> items=new();await using SqliteDataReader reader=await command.ExecuteReaderAsync(cancellationToken);while(await reader.ReadAsync(cancellationToken))items.Add(ReadEntry(reader));
+        return Result<ReceivablePage<AccountsReceivableEntry>>.Success(new(items,offset,limit,total,offset+items.Count<total,_timeProvider.GetUtcNow(),"Asia/Manila"));
     }
 
     public async Task<Result<AccountsReceivableSummary>> GetSummaryAsync(

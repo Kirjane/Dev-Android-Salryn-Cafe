@@ -63,6 +63,7 @@ export type ReceivablesSummary = {
   overdueCents: number;
   collectedTodayCents: number;
 };
+export type ReceivablePage<T> = { items: T[]; pageNumber: number; pageSize: number; totalCount: number; totalPages: number; hasMore: boolean; asOfUtc: string; timeZoneId: string };
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { credentials: "include", ...init });
@@ -71,9 +72,13 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const fetchReceivableCustomers = (search = "") =>
   request<ReceivableCustomer[]>(`/api/receivables/customers?search=${encodeURIComponent(search)}`);
+export const fetchReceivableCustomersPage = (search = "", page = 1, pageSize = 50) =>
+  request<ReceivablePage<ReceivableCustomer>>(`/api/receivables/customers/page?search=${encodeURIComponent(search)}&page=${page}&pageSize=${pageSize}`);
 export const fetchReceivablesSummary = () => request<ReceivablesSummary>("/api/receivables/summary");
 export const fetchCustomerLedger = (id: string) =>
   request<ReceivableEntry[]>(`/api/receivables/customers/${id}/ledger`);
+export const fetchCustomerLedgerPage = (id: string, page = 1, pageSize = 100) =>
+  request<ReceivablePage<ReceivableEntry>>(`/api/receivables/customers/${id}/ledger/page?page=${page}&pageSize=${pageSize}`);
 export const createCustomer = (body: { fullName: string; phone?: string; note?: string }) =>
   request<ReceivableCustomer["customer"]>("/api/customers", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),

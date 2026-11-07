@@ -64,7 +64,7 @@ function renderPage(page: AppPage, session: SessionState, onLogout: () => void, 
     case "receivables":
       return <ReceivablesPage />;
     case "owner-reports":
-      return <OwnerReportsPage />;
+      return <OwnerReportsPage onOpenSales={(from, to) => { window.history.replaceState({ page: "owner-reports" }, "", "/"); window.history.pushState({ page: "sales" }, "", `/?salesFrom=${from}&salesTo=${to}`); onNavigate("sales"); }} onOpenReceivables={() => { window.history.replaceState({ page: "owner-reports" }, "", "/"); window.history.pushState({ page: "receivables" }, "", "/"); onNavigate("receivables"); }} />;
     case "settings":
       return <StoreSettingsPage />;
     case "license":
@@ -148,6 +148,7 @@ function ConsoleApp() {
   }
 
   useEffect(() => { void refreshBootstrapStatus(); }, []);
+  useEffect(() => { const restore = (event: PopStateEvent) => { const page = event.state?.page as AppPage | undefined; if (page) setCurrentPage(page); }; window.addEventListener("popstate", restore); return () => window.removeEventListener("popstate", restore); }, []);
   useEffect(() => {
     if (bootstrapStatus?.firstRunRequired && window.location.pathname !== "/bootstrap") window.history.replaceState(null, "", "/bootstrap");
     if (bootstrapStatus && !bootstrapStatus.firstRunRequired && window.location.pathname === "/bootstrap") window.history.replaceState(null, "", "/");

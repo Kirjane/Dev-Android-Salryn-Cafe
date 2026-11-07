@@ -154,6 +154,7 @@ public static class LocalApiApplicationFactory
         builder.Services.AddSingleton<ProductManagementApiService>();
         builder.Services.AddSingleton<SaleVoidApiService>();
         builder.Services.AddSingleton<OwnerReportsApiService>();
+        builder.Services.AddSingleton<OwnerAnalyticsApiService>();
         builder.Services.AddSingleton<UserAdminApiService>();
         builder.Services.AddSingleton<IAccountsReceivableService>(
             new SqliteAccountsReceivableService(composition.ConnectionFactory));
@@ -336,6 +337,7 @@ public static class LocalApiApplicationFactory
         app.MapLocalProductManagementEndpoints();
         app.MapLocalSaleVoidEndpoints();
         app.MapLocalOwnerReportsEndpoints();
+        app.MapLocalOwnerAnalyticsEndpoints();
         app.MapLocalStoreSettingsEndpoints(composition);
         app.MapLocalStoreBrandingEndpoints(composition);
         app.MapLocalBackupPackageEndpoints(composition);

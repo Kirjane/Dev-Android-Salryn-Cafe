@@ -54,12 +54,32 @@ internal static class LocalAccountsReceivableEndpoints
             return ToResult(await service.SearchCustomersAsync(search, ct));
         });
 
+        app.MapGet("/api/receivables/customers/page", async (string? search,int? page,int? pageSize,HttpContext context,
+            LocalApiSessionService sessions,IAccountsReceivableService service,CancellationToken ct) =>
+        {
+            ILocalLicenseEnforcementService licensing=context.RequestServices.GetRequiredService<ILocalLicenseEnforcementService>();
+            if(await Guard(context,sessions,licensing,LocalApiPermissions.ReceivablesView,ct) is IResult denied)return denied;
+            int number=Math.Max(1,page??1),size=Math.Clamp(pageSize??50,1,100);
+            Result<ReceivablePage<ReceivableCustomerBalance>> result=await service.SearchCustomersPageAsync(search,(number-1)*size,size,ct);
+            return result.IsFailure?ToError(result.ErrorDetail):Results.Ok(new{items=result.Value.Items,pageNumber=number,pageSize=size,totalCount=result.Value.Total,totalPages=(int)Math.Ceiling(result.Value.Total/(double)size),hasMore=result.Value.HasMore,result.Value.AsOfUtc,result.Value.TimeZoneId});
+        });
+
         app.MapGet("/api/receivables/customers/{id:guid}/ledger", async (Guid id, HttpContext context,
             LocalApiSessionService sessions, IAccountsReceivableService service, CancellationToken ct) =>
         {
             ILocalLicenseEnforcementService licensing = context.RequestServices.GetRequiredService<ILocalLicenseEnforcementService>();
             if (await Guard(context, sessions, licensing, LocalApiPermissions.ReceivablesView, ct) is IResult denied) return denied;
             return ToResult(await service.GetLedgerAsync(id, ct));
+        });
+
+        app.MapGet("/api/receivables/customers/{id:guid}/ledger/page", async (Guid id,int? page,int? pageSize,HttpContext context,
+            LocalApiSessionService sessions,IAccountsReceivableService service,CancellationToken ct) =>
+        {
+            ILocalLicenseEnforcementService licensing=context.RequestServices.GetRequiredService<ILocalLicenseEnforcementService>();
+            if(await Guard(context,sessions,licensing,LocalApiPermissions.ReceivablesView,ct) is IResult denied)return denied;
+            int number=Math.Max(1,page??1),size=Math.Clamp(pageSize??100,1,200);
+            Result<ReceivablePage<AccountsReceivableEntry>> result=await service.GetLedgerPageAsync(id,(number-1)*size,size,ct);
+            return result.IsFailure?ToError(result.ErrorDetail):Results.Ok(new{items=result.Value.Items,pageNumber=number,pageSize=size,totalCount=result.Value.Total,totalPages=(int)Math.Ceiling(result.Value.Total/(double)size),hasMore=result.Value.HasMore,result.Value.AsOfUtc,result.Value.TimeZoneId});
         });
 
         app.MapPost("/api/receivables/collections", async (CollectionApiRequest request, HttpContext context,

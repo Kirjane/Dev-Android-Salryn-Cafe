@@ -20,11 +20,12 @@ function printTone(status: string | null | undefined): "success" | "warning" | "
 }
 
 export function SalesHistoryPage({ canVoid = false }: { canVoid?: boolean }) {
+  const incoming = new URLSearchParams(window.location.search);
   const { notify } = useNotifications();
   const [receiptNo, setReceiptNo] = useState("");
   const [status, setStatus] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const [from, setFrom] = useState(incoming.get("salesFrom") ?? "");
+  const [to, setTo] = useState(incoming.get("salesTo") ?? "");
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isReprinting, setIsReprinting] = useState(false);
