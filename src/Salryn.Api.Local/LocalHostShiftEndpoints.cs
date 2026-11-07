@@ -106,6 +106,11 @@ internal static class LocalHostShiftEndpoints
             if(LocalApiPermissionGuards.RequirePermission(context,sessions,LocalApiPermissions.AuditView) is IResult denied)return denied;
             LocalApiSession? session=GetRequiredSession(context,sessions);if(session is null)return AuthenticationRequired();return ToDrawerResult(drawer.Review(session.UserId,sessionId,request));
         });
+        app.MapGet("/api/cash-drawer/history",(int? limit,int? offset,HttpContext context,LocalApiSessionService sessions,CashDrawerReconciliationService drawer)=>
+        {
+            if(LocalApiPermissionGuards.RequirePermission(context,sessions,LocalApiPermissions.AuditView) is IResult denied)return denied;
+            if(GetRequiredSession(context,sessions) is null)return AuthenticationRequired();var result=drawer.ReadClosedHistory(limit??50,offset??0);return result.IsSuccess?Results.Ok(result.Value):Results.Json(new{error=result.ErrorDetail.Message,code=result.ErrorDetail.Code},statusCode:400);
+        });
 
         return app;
     }

@@ -14,7 +14,7 @@ Status: draft candidate stacked on PR #18. Base Salryn POS with licensed U1 AR o
 | Collection void/reversal | void metadata and compensating AR semantics | none automatically | existing collection identity | Bookkeeping reversal is not proof that cash physically left the drawer. An actual repayment must be recorded as `CashRefund`. |
 | Sale void without cash returned | sale void state | none | sale identity retained | No phantom outflow. An actual cash return requires an explicit `CashRefund`. |
 | Cash-in / cash-out / actual refund | `cash_drawer_events` | `CashIn` (+), `CashOut` (-), `CashRefund` (-) | signed-in operator's open session | Positive cents, reason and replay key required. |
-| Close shift | reconciliation plus session close columns | none | cashier's own open session | Explicit nonnegative physical count and confirmation required. Expected is opening plus signed events; count is never prefilled. |
+| Close shift | reconciliation plus session close columns | none | cashier's own open session | Explicit nonnegative physical count and confirmation required. Expected is opening plus source-verified signed events; count is never prefilled. Migration 26 persists/backfills the canonical close note so same-ID replay compares operator, count, confirmation and note. |
 | Discrepancy review | `cash_drawer_reviews` | none | closed reconciliation | `Audit.View` authority appends acknowledgment and reason; original count is immutable. |
 | Restart / retry | existing SQLite rows | no synthesized event | stored session ID | Unique source/event and request keys make same-data replay idempotent; changed-data reuse fails. |
 | Legacy shift | pre-v25 rows | none synthesized | no coverage start | Explicit `LegacyUnverified`; W4 safe close fails closed rather than attributing history by timestamp. |
@@ -22,6 +22,8 @@ Status: draft candidate stacked on PR #18. Base Salryn POS with licensed U1 AR o
 ## Expected amount
 
 `opening float + SUM(direction * amount_cents)` over authoritative events for that session. Sales use cash tender minus change. Utang originated, noncash tenders/collections, and voids without actual cash movement are excluded.
+
+Before `Verified`, close performs a transactionally consistent 1:1 comparison. Each session sale's computed cash tender less change must match exactly one `CashSaleNet` event with the same sale, session, cashier, direction, method and cents. Each session-linked cash AR collection must likewise match exactly one `ArCashCollection`. Missing, orphaned, spoofed or mismatched events block close; aggregate cancellation cannot make bad sources valid. Voids/reversals do not infer physical refunds, while an actual cash return is a separately request-keyed `CashRefund`.
 
 ## Unsupported or policy-dependent semantics
 

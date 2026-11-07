@@ -106,6 +106,12 @@ public static class V2HostOperatorShiftApiChecks
                 "/api/shift",
                 HttpStatusCode.Forbidden,
                 "Shift read without Shift.OpenClose must return 403.").ConfigureAwait(false);
+            await AssertStatusAsync(
+                noShiftPermission,
+                HttpMethod.Get,
+                "/api/cash-drawer/history?limit=10&offset=0",
+                HttpStatusCode.Forbidden,
+                "Drawer history without Audit.View must return 403.").ConfigureAwait(false);
 
             using HttpClient cashierClient = CreateClient(baseAddress, sessionStore.Create(cashier));
 
@@ -129,6 +135,22 @@ public static class V2HostOperatorShiftApiChecks
 
             JsonDocument closedShift = await PostShiftCloseAsync(cashierClient, 5000).ConfigureAwait(false);
             AssertShiftState(closedShift, "Closed", "Shift close must return a closed shift.");
+
+            using HttpClient auditClient = CreateClient(
+                baseAddress,
+                sessionStore.Create(new AuthenticatedUserReadModel(
+                    Guid.NewGuid(),
+                    "w4-audit",
+                    "W4 Audit",
+                    "Manager",
+                    UserStatus.Active,
+                    new[] { DefaultSeedData.Permissions.AuditView })));
+            await AssertStatusAsync(
+                auditClient,
+                HttpMethod.Get,
+                "/api/cash-drawer/history?limit=10&offset=0",
+                HttpStatusCode.OK,
+                "Audit-authorized drawer history must return 200.").ConfigureAwait(false);
 
             await AssertStatusAsync(
                 cashierClient,

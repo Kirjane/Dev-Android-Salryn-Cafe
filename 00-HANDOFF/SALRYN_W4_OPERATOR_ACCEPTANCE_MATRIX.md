@@ -7,6 +7,9 @@ Evidence is disposable SQLite and Windows loopback Host. `PASS` means executable
 | Opening 0 / nonzero | Expected begins at exact opening float | PASS — W4 smoke |
 | Cash-in, cash-out, actual refund | Signed event changes expected once; negative input denied | PASS — W4 smoke |
 | Replay | Same movement/close/review request is idempotent; changed payload is rejected | PASS — W4 smoke |
+| Close payload replay | Same close request/count/note/operator returns original; changed count or note conflicts and original remains immutable | PASS — red at `c96c51e`, green in R2 W4 smoke |
+| Sale source equality | Missing/wrong amount, direction, method, source, actor or session cannot produce `Verified` | PASS — disposable SQLite tamper matrix |
+| AR source equality | Linked cash collection requires exact event; missing/wrong amount or method blocks; noncash adds zero | PASS — disposable SQLite tamper matrix |
 | Cash sale and over-tender/change | One sale/stock/payment/receipt; drawer receives tender minus change | PASS — `v2-host-checkout` plus W4 event insertion |
 | Full Utang / mixed U1 | Full Utang adds zero cash; mixed adds only actual cash | PASS — U1 AR and entitlement smokes; source boundary reviewed |
 | AR cash vs noncash | Cash collection writes a session event atomically; noncash writes none | PASS — U1 runtime plus source boundary reviewed |
@@ -21,6 +24,7 @@ Evidence is disposable SQLite and Windows loopback Host. `PASS` means executable
 | Restart/recovery | ledger and replay keys are persisted in SQLite | PASS — schema and reopen-capable persistence boundary; physical restart operator run not required for draft |
 | Backup / restore / future schema | v25 data included; future v26 rejected | PASS — portable backup smoke after future probe update |
 | Owner detail | authorized drawer read exposes exact movements and reviewer trail | PASS — endpoint/source and W4 smoke |
+| Closed history authority | Unprivileged caller denied; `Audit.View` caller receives bounded read-only closed detail | PASS — loopback HTTP 403/200 regression; final financial approval role remains policy blocked |
 | Remote close / LAN | remote cannot silently auto-balance; production LAN remains unchanged | PASS — W4 source guard; LAN enablement not performed |
 | Policy activation / real cash handling | Kirch approves rules and operator observes an actual drawer count | POLICY BLOCKED — human approval/physical acceptance only |
 

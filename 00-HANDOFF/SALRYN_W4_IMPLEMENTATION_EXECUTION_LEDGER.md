@@ -15,6 +15,14 @@ Policy: provisional; no merge, release, signing, deployment or distribution.
 - Remote silent close is denied. Minimal existing checkout UI collects an unprefilled count and accurately labels variance/review.
 - Focused executable W4 smoke plus updated shift/checkout/backup regressions are registered in CoreSmoke.
 
+## R2 P1 correction evidence
+
+- Before SHA: `c96c51e6ec42137472e9762494bd54587845af17`.
+- Red-before command: CoreSmoke `--only w4-cash-drawer-reconciliation` in a disposable detached worktree with the new changed-count replay assertion. Exit was nonzero: `RED BEFORE: same close request with changed count must conflict`.
+- Migration 26 adds/backfills the canonical close note; replay now compares operator, counted cents, confirmation and normalized note without returning or logging private note content on conflict.
+- Close now validates every sale and cash AR collection against its exact event identity/session/actor/type/direction/method/cents, rejects orphan/spoofed/manual-invalid events, and keeps void/reversal separate from actual physical refund.
+- Added bounded `Audit.View` closed-history detail and denied count-submitter self-review. Final financial approval authority is still policy blocked.
+
 ## Executed evidence
 
 Tested implementation SHA: `8f9b3f54ca70ab1781a833933f31338801e01a0a`. Commands are from the isolated worktree; all rows below completed with exit code 0. The final ledger commit is a documentation-only successor and is recorded in the PR summary.

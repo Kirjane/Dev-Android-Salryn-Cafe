@@ -12,3 +12,5 @@ All rules below are **PENDING KIRCH APPROVAL**. They are implemented only in an 
 
 Implementation boundary: acknowledgment records a reviewer and reason but never changes counted or expected cash. Licensing, signing, installer, production LAN, deployment, distribution and merge remain outside W4.
 
+R2 authority clarification: the count submitter is technically denied self-acknowledgment, history is bounded and `Audit.View`-gated, and unauthorized callers are denied. `Audit.View` is still an existing broad audit permission—not an owner-approved financial-approval role. Enabling discrepancy acknowledgment for a final role matrix remains **PENDING KIRCH APPROVAL**; no force/unreconciled close exists.
+
