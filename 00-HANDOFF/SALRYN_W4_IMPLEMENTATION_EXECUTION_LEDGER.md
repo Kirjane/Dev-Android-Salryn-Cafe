@@ -38,6 +38,16 @@ R2 final tested implementation SHA: `03eb16627720e84941090ac984f452a651f1cbe9` (
 | NuGet vulnerable package scan | 0 | no vulnerable packages from configured source |
 | `git diff --check` | 0 | PASS |
 
+## R3 reproducible acceptance
+
+- Evidence-custody ZIP was generated first from `5f0d2d0e86e56525d084808163eb016c6d4edb2e`; see `SALRYN_W4_LOCAL_EVIDENCE_INDEX.md` for path, size, SHA-256 and the explicit upload blocker.
+- Reusable runner: `tools/Run-W4Acceptance.ps1`. It records exact commands, combined raw logs, native exit codes and a machine-readable summary; it aborts on critical failure and explicitly labels LicensingOps, physical acceptance and policy approval.
+- R3 tested source SHA: `a8d77374eecded648e3d05b5dff10a75db771a94`.
+- Runner output: `C:\Salryn-Evidence\W4\SALRYN_W4_R3_RUN_a8d7737\summary.json` (external/local, not committed).
+- All 15 runner gates passed at `a8d7737`: Release solution build; eight focused CoreSmoke financial/backup gates; InfrastructureSmoke; npm install/build/audit; NuGet scan; diff check.
+- Added executable denial/edge assertions: different-user close replay, unconfirmed close, event after close, void/reversal without fabricated refund, linked noncash collection, HTTP unauthorized history/review, plus existing foreign-shift/source-tamper/legacy/migration/retry uniqueness.
+- Frontend conflict contract was derived through read-only `git show` of Antigravity ref `6094016165a0664c82f5636f75d0a77f6e94815e`; no Antigravity worktree change or merge occurred.
+
 ## Executed evidence
 
 Tested implementation SHA: `8f9b3f54ca70ab1781a833933f31338801e01a0a`. Commands are from the isolated worktree; all rows below completed with exit code 0. The final ledger commit is a documentation-only successor and is recorded in the PR summary.
