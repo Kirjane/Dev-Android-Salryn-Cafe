@@ -6,7 +6,7 @@ Branch: `codex/issue-9-s0-s5-rc`
 
 Source branch point: `f85e910902622f950230095a3dcf00e43f09b46b`
 
-Candidate implementation/evidence SHA: `7eea7a7bb7b15d119e0dbca217bd2cac46468816`.
+Candidate implementation/evidence SHA: `8310b16a90c49220f1953f35a9f1d8358eb13e08`.
 
 Review continuation: PR #10 review checkpoint comment `6702228302` was addressed on 2026-11-07 PHT. `origin/main` was merged without force-push; the actual conflict was `README.md`. The resolution retains the accepted company attribution, RC boundaries, and U1 AR scope.
 
@@ -20,8 +20,8 @@ Draft review: GitHub PR #10 (`codex/issue-9-s0-s5-rc` → `main`). The PR is int
 | S1 | PASS | Dedicated U1 branch; reviewed main README and PR #8 branding/LAN changes integrated. Release C# build and React production build pass. |
 | S2 | PASS | AR reversal aging, Manila store-day, adjustment replay boundary, dashboard 200-row/void defect, report parity, checkout/collection replay, stock, identity, and reversal gates pass. |
 | S3 | PASS (automated) | Schema 1–24 upgrade/future-25 rejection, isolated backup/restore, entitlement/role/Terminal gates, dependency audit, and host-local official-setup boundary pass. No migrations 25–26 imported. |
-| S4 | EXECUTABLE IN-REPO GATES PASS; EXTERNAL PROOF + PHYSICAL QA BLOCKED | Full CoreSmoke passes through `pre-i-license-key-rotation-canonical-beta`, then stops at `pre-i-canonical-license-activation-proof` because this machine has neither a `Salryn.LicensingOps` proof manifest nor `SALRYN_CANONICAL_LICENSE_PROOF_MANIFEST`. Focused U1/checkout/entitlement/infrastructure/schema gates pass. `dotnet test` exits 0 but executes no framework tests because `Salryn.Tests` is a class library. Installed WebView2, printer/scanner, reinstall/upgrade, and two-device checks require a physical operator. |
-| S5 | STAGING PASS; SETUP EXE + RELEASE APPROVAL BLOCKED | Installer payload staging succeeds and is hashed. Setup compilation is blocked because Inno Setup 6 (`ISCC.exe`) is not installed/configured. Draft PR may be opened; merge and public/client release remain blocked on Kirch approval. |
+| S4 | EXECUTABLE IN-REPO GATES PASS; CONTROLLED PROOF + MINIMAL PHYSICAL QA BLOCKED | Full CoreSmoke passes through `pre-i-license-key-rotation-canonical-beta`, then stops at `pre-i-canonical-license-activation-proof`. The authenticated Kirch account cannot see `Kirjane/Salryn.LicensingOps`; no local checkout/temp manifest exists. Focused U1/checkout/entitlement/LAN/security/infrastructure/schema gates pass. Historical and current evidence is reconciled in `SALRYN_FINAL_ACCEPTANCE_EVIDENCE_RECONCILIATION.md`; two-device LAN QA is not an initial Host-release requirement. `dotnet test` is not counted because `Salryn.Tests` is a class library. |
+| S5 | REAL SETUP EXE PASS; INSTALLED DELTA + RELEASE APPROVAL BLOCKED | Inno Setup 6.7.3 was safely installed per-user and compiled the actual setup EXE. Identity, payload, forbidden-content scan, and hashes pass. Clean install/upgrade/offline/hardware observations and Kirch approval remain external/physical gates. |
 
 ## Defects repaired
 
@@ -35,6 +35,7 @@ Draft review: GitHub PR #10 (`codex/issue-9-s0-s5-rc` → `main`). The PR is int
 - LIC-01: LAN terminal proof validation now accepts an injectable UTC clock, keeping host and terminal validation deterministic and preventing fixed-date proof tests from silently testing expiry instead of store/host mismatch behavior.
 - DB-01: portable-backup future-schema proof now uses v25, one beyond the supported v24 catalog, instead of colliding with an existing migration row.
 - LAN-RC-01: release startup now suppresses every non-loopback listener unless the explicit internal-QA capability is enabled, including when an older database persisted `RemoteTransportEnabled=true`. Explicit `--lan-bind` also fails closed without `--internal-lan-qa`. Saved LAN configuration and terminal registrations are retained for reversible QA; authorization gates are unchanged.
+- PKG-01: installer publisher/install-path identity now uses Kirjane Information Technology Services, and the build's `-Version` value is passed to Inno Setup rather than diverging from a fixed script version. A source guard prevents regression to the superseded publisher.
 
 ## Fresh command evidence
 
@@ -67,18 +68,20 @@ Draft review: GitHub PR #10 (`codex/issue-9-s0-s5-rc` → `main`). The PR is int
 | Post-review `git diff --check` | PASS (exit 0) | No whitespace errors before candidate commit. |
 | Full CoreSmoke | BLOCKED at external proof gate | Rerun at exact tested implementation SHA `7eea7a7bb7b15d119e0dbca217bd2cac46468816`. All gates—including the new actual-socket LAN release-boundary proof—execute successfully through canonical key rotation. Execution then stops at `pre-i-canonical-license-activation-proof`: no external proof manifest is available. The gate explicitly requires `npm run proof:canonical-activation` in `Salryn.LicensingOps` or `SALRYN_CANONICAL_LICENSE_PROOF_MANIFEST`; neither the external repository nor signing proof is present locally. This evidence was not fabricated or bypassed. |
 | Installer staging | PASS | `Build-SalrynBetaRc1Installer.ps1` produced `artifacts/installer/staging/Salryn` with WebView2Loader present. |
-| Installer setup compile | BLOCKED | `-BuildInstaller` reaches staging, then reports Inno Setup 6 `ISCC.exe` missing. Install Inno Setup 6 and set `INNO_SETUP_ISCC`, or pass `-InnoSetupCompilerPath`. |
+| `winget install --id JRSoftware.InnoSetup --exact --scope user --silent ...` | PASS (exit 0) | Official winget package installed Inno Setup 6.7.3 without elevation at `%LocalAppData%\Programs\Inno Setup 6\ISCC.exe`; package-manager download hash verification passed. |
+| `Build-SalrynBetaRc1Installer.ps1 -BuildInstaller -InnoSetupCompilerPath <per-user ISCC>` | PASS (exit 0) | Actual EXE compiled at `artifacts/installer/setup/Salryn-POS-BetaRC1-Setup.exe`; Inno compile successful. |
+| Installer identity/payload inspection | PASS | Product `Salryn POS`; version `0.1.0-rc1`; company `Kirjane Information Technology Services`; size 24,110,051 bytes. WebView2 bootstrapper, root/RID loader, and production `dist/index.html` present. Database/license/private-key/test artifact count 0; private marker count 0. |
+| CoreSmoke `--only pre-beta-c-store-logo-branding` | PASS (exit 0) | Current packaging publisher/version source guards and v24 branding behavior pass at implementation SHA `8310b16a90c49220f1953f35a9f1d8358eb13e08`. |
 
 Raw stdout/stderr is preserved in the Codex task transcript. The repository intentionally does not commit volatile machine-path logs or disposable SQLite files.
 
 ## Required human actions / blockers
 
-- `BLOCKED: physical operator/maintainer action required` — install the generated setup on a clean Windows QA machine; verify WebView2 launch, first admin, base/U1/expired/downgrade/reactivation states, all three roles, offline checkout, restart, backup/restore, and upgrade without data loss.
-- `BLOCKED: physical operator/maintainer action required` — real printer/PDF target, barcode scanner, receipt print failure/reprint, and 100+ customer/500+ ledger UI responsiveness.
-- `BLOCKED: Kirch/licensing operator action required` — generate the canonical activation proof from `Salryn.LicensingOps` (`npm run proof:canonical-activation`) and provide its manifest via `SALRYN_CANONICAL_LICENSE_PROOF_MANIFEST`, then rerun full CoreSmoke. The required retired-key negative fixture is intentionally not present in this repository.
-- `BLOCKED: build-machine action required` — install Inno Setup 6 and expose `ISCC.exe` via `INNO_SETUP_ISCC` or `-InnoSetupCompilerPath`, then rerun the installer build. Staged hashes: `Salryn.Desktop.WebView.exe` = `6DEAE24F7C9418C781F1F8D6B628A7E6DDFF90A3BCA988921EBCE0E7D4E54D5A`; `Salryn.Api.Local.exe` = `D0FEC855003F44658AEE86764B8919587AB780A62297C0FE270F6419A7EB6B27`; WebView2 bootstrapper = `23A55FBFF920C0F99887848CFC25125F8F915DF35638E01BEB8F8FA9B5A0BC51`.
+- `BLOCKED: physical operator/maintainer action required` — run the short disposable-data script in `SALRYN_FINAL_ACCEPTANCE_EVIDENCE_RECONCILIATION.md` for the newly compiled setup: clean install or upgrade, WebView2 launch, controlled Base/U1/Terminal states, offline checkout/restart, backup/restore, uninstall data preservation, and large-U1 UI observation.
+- `BLOCKED: physical hardware action required` — real keyboard-wedge scanner and Windows print-queue paper/reprint/failure observations using the short script in the reconciliation report. Software invariants are already proven and are not to be repeated indiscriminately.
+- `BLOCKED: controlled LicensingOps asset required` — the authenticated GitHub account cannot resolve `Kirjane/Salryn.LicensingOps`, and no local checkout or proof manifest exists. Generate the canonical proof in the authorized environment, set `SALRYN_CANONICAL_LICENSE_PROOF_MANIFEST`, and rerun canonical plus full CoreSmoke. Exact commands are in the reconciliation report.
 - `BLOCKED: Kirch approval required` — exact candidate SHA acceptance, pilot signoff, merge, and any public/client distribution.
 
 ## Next action
 
-Provide the canonical activation proof manifest and Inno Setup compiler, rerun the two blocked gates, then perform physical/hardware QA. The dedicated branch may be reviewed in a draft PR. Do not merge or publish without Kirch approval.
+Provide the controlled canonical manifest, execute only the minimal physical delta scripts, and obtain Kirch's written exact-SHA decision. The real installer remains local and unpublished. Keep PR #10 draft; do not merge or distribute.
