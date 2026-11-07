@@ -30,6 +30,12 @@ public sealed class LocalApiApplicationOptions
     public bool EnableStaticWebAssets { get; init; } = true;
 
     public bool WriteDevelopmentDatabasePath { get; init; } = true;
+
+    /// <summary>
+    /// Explicitly enables the deferred LAN listener for internal QA only. The release
+    /// default is fail-closed even when an older database persisted LAN as enabled.
+    /// </summary>
+    public bool EnableLanRemoteTransportForInternalQa { get; init; }
 }
 
 public static class LocalApiApplicationFactory
@@ -40,6 +46,8 @@ public static class LocalApiApplicationFactory
     {
         options ??= new LocalApiApplicationOptions();
         LocalApiLanBindStartupOptions startupBind = LocalApiLanBindStartupOptions.Parse(args);
+        bool internalLanTransportEnabled = options.EnableLanRemoteTransportForInternalQa
+            || args.Any(arg => string.Equals(arg, "--internal-lan-qa", StringComparison.OrdinalIgnoreCase));
         string localUrl = startupBind.Port is > 0
             ? LocalApiLanBindStartupOptions.BuildLocalUrl(startupBind.Port)
             : options.Url;
@@ -76,6 +84,12 @@ public static class LocalApiApplicationFactory
             ? lanConfigResult.Value
             : LanRemoteTransportConfig.CreateDefault();
 
+        if (startupBind.HasLanBind && !internalLanTransportEnabled)
+        {
+            throw new InvalidOperationException(
+                "LAN transport is a future feature in this release. Explicit LAN binding requires --internal-lan-qa.");
+        }
+
         if (startupBind.HasLanBind)
         {
             Result bindValidation = LocalApiNetworkInterfaceValidator.ValidateExplicitLanBind(startupBind.LanBindIp);
@@ -109,7 +123,16 @@ public static class LocalApiApplicationFactory
                 $"[Salryn LAN] Explicit startup bind applied: {startupBind.LanBindIp}:{ExtractListenPort(localUrl)}");
         }
 
-        IReadOnlyList<string> listenUrls = LocalApiLanUrlResolver.ResolveListenUrls(localUrl, lanConfig);
+        LanRemoteTransportConfig effectiveListenConfig = internalLanTransportEnabled
+            ? lanConfig
+            : LanRemoteTransportConfig.CreateDefault();
+        if (!internalLanTransportEnabled && lanConfig.RemoteTransportEnabled)
+        {
+            Console.WriteLine(
+                "[Salryn LAN] Persisted LAN configuration retained but listener suppressed by the release boundary.");
+        }
+
+        IReadOnlyList<string> listenUrls = LocalApiLanUrlResolver.ResolveListenUrls(localUrl, effectiveListenConfig);
 
         WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 

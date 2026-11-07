@@ -611,6 +611,9 @@ public static class Program
             case "role-authorization-blocker-fix":
                 RoleAuthorizationBlockerFixChecks.RunAsync().GetAwaiter().GetResult();
                 return;
+            case "sec-a1-local-api-webview-security":
+                SecA1LocalApiWebViewSecurityChecks.Run();
+                return;
             case "u1-accounts-receivable":
                 U1AccountsReceivableLedgerChecks.RunAsync().GetAwaiter().GetResult();
                 return;

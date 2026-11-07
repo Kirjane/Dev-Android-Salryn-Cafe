@@ -1,9 +1,24 @@
+using System.Net;
+using System.Net.Sockets;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Data.Sqlite;
+using Salryn.Api.Local;
+using Salryn.Composition.Local;
+using Salryn.Core.Common;
+using Salryn.Core.Host;
+using Salryn.Core.TerminalRegistry;
+using Salryn.Infrastructure.Data.Repositories.System;
+using Salryn.Infrastructure.Data.Services;
+using Salryn.Infrastructure.Paths;
+
 namespace Salryn.Tests;
 
 public static class V2LanBindTruthChecks
 {
     public static void Run()
     {
+        PersistedLanReleaseBoundaryAsync().GetAwaiter().GetResult();
+
         string projectRoot = FindProjectRoot(Directory.GetCurrentDirectory());
         string apiRoot = Path.Combine(projectRoot, "src", "Salryn.Api.Local");
         string webRoot = Path.Combine(projectRoot, "src", "Salryn.App.Web", "src");
@@ -36,6 +51,9 @@ public static class V2LanBindTruthChecks
         AssertContains(factory, "LocalApiLanBindStartupOptions.Parse", "Application factory must parse explicit LAN bind startup options.");
         AssertContains(factory, "LocalApiNetworkInterfaceValidator.ValidateExplicitLanBind", "Application factory must validate explicit LAN bind.");
         AssertContains(factory, "UseUrls(listenUrls.ToArray())", "Application factory must configure Kestrel listen URLs.");
+        AssertContains(factory, "EnableLanRemoteTransportForInternalQa", "Release LAN binding must require an explicit internal-QA capability.");
+        AssertContains(factory, "LanRemoteTransportConfig.CreateDefault()", "Release startup must suppress persisted LAN binding fail-closed.");
+        AssertContains(factory, "--internal-lan-qa", "Internal QA must retain an explicit reversible LAN opt-in.");
         AssertNotContains(factory, "0.0.0.0", "Application factory must not introduce wildcard bind.");
 
         AssertContains(resolver, "List<string> urls = [defaultUrl]", "LAN URL resolver must always seed loopback/default URL first.");
@@ -102,6 +120,152 @@ public static class V2LanBindTruthChecks
 
         AssertContains(coreSmoke, "v2-lan-bind-truth", "CoreSmoke must expose v2-lan-bind-truth runner.");
         AssertContains(coreSmoke, "v2-host-lan-control-ux", "CoreSmoke must expose v2-host-lan-control-ux runner.");
+    }
+
+    private static async Task PersistedLanReleaseBoundaryAsync()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "salryn-lan-release-boundary-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            DbPaths paths = DbPaths.CreateDevelopment(root);
+            SalrynLocalComposition composition = SalrynLocalComposition.Create(paths);
+            await composition.InitializeDatabaseAsync().ConfigureAwait(false);
+
+            string lanIp = FindAssignedLanIpv4();
+            int port = ReserveFreePort();
+            LanRemoteTransportConfigService config = new(composition.ConnectionFactory);
+            Result<LanRemoteTransportConfig> saved = await config.SaveAsync(new LanRemoteTransportConfigUpdateRequest(
+                RemoteTransportEnabled: true,
+                BindMode: LanRemoteTransportBindMode.ExplicitLanAddress,
+                BindAddress: lanIp,
+                Port: port,
+                RequirePairedTerminal: true,
+                RequireActiveTerminal: true,
+                RejectUnknownTerminals: true,
+                AllowOfficialCommandsRemotely: false,
+                AllowAdminCommandsRemotely: false,
+                UpdatedByUserId: null)).ConfigureAwait(false);
+            Require(saved.IsSuccess, "Previously enabled LAN configuration must be saved for the restart proof.");
+
+            Guid terminalId = Guid.NewGuid();
+            SqliteTerminalRegistryRepository terminals = new(composition.ConnectionFactory);
+            Result<SalrynTerminalRegistration> registered = await terminals.UpsertAsync(new SalrynTerminalRegistration(
+                TerminalId: terminalId,
+                StoreId: Guid.NewGuid(),
+                HostId: Guid.NewGuid(),
+                TerminalName: "Retained future terminal",
+                TerminalRole: TerminalRegistrationRole.CashierClient,
+                Status: TerminalRegistrationStatus.Active,
+                RegisteredAtUtc: DateTimeOffset.UtcNow,
+                LastSeenAtUtc: null,
+                DisabledAtUtc: null,
+                RevokedAtUtc: null,
+                CreatedByUserId: Guid.NewGuid(),
+                Notes: "Release-boundary preservation proof")).ConfigureAwait(false);
+            Require(registered.IsSuccess, "Terminal fixture must be persisted before restart.");
+
+            await using (WebApplication app = await LocalApiApplicationFactory.CreateAsync(
+                Array.Empty<string>(),
+                ApplicationOptions(composition, port)).ConfigureAwait(false))
+            {
+                await app.StartAsync().ConfigureAwait(false);
+                try
+                {
+                    Require(app.Urls.Count == 1 && app.Urls.All(IsLoopbackUrl),
+                        "Production-mode restart must bind loopback only despite persisted LAN enablement.");
+                    using HttpClient loopback = new() { BaseAddress = new Uri(app.Urls.Single()) };
+                    using HttpResponseMessage health = await loopback.GetAsync("/health").ConfigureAwait(false);
+                    Require(health.StatusCode == HttpStatusCode.OK,
+                        "Host loopback API must remain operational while LAN is suppressed.");
+                    Require(!await CanConnectAsync(lanIp, port).ConfigureAwait(false),
+                        "Production-mode restart must not expose the persisted LAN socket.");
+                }
+                finally
+                {
+                    await app.StopAsync().ConfigureAwait(false);
+                }
+            }
+
+            Result<LanRemoteTransportConfig> retainedConfig = await config.GetCurrentAsync().ConfigureAwait(false);
+            Result<SalrynTerminalRegistration?> retainedTerminal = await terminals.GetByIdAsync(terminalId).ConfigureAwait(false);
+            Require(retainedConfig.IsSuccess && retainedConfig.Value.RemoteTransportEnabled,
+                "Release suppression must preserve the saved LAN configuration for reversible internal QA.");
+            Require(retainedTerminal.IsSuccess && retainedTerminal.Value?.TerminalId == terminalId,
+                "Release suppression must preserve terminal registration records.");
+
+            await using (WebApplication qaApp = await LocalApiApplicationFactory.CreateAsync(
+                Array.Empty<string>(),
+                ApplicationOptions(composition, port, enableInternalLan: true)).ConfigureAwait(false))
+            {
+                await qaApp.StartAsync().ConfigureAwait(false);
+                try
+                {
+                    Require(qaApp.Urls.Any(url => url.Contains(lanIp, StringComparison.OrdinalIgnoreCase)),
+                        "Explicit internal-QA mode must restore the persisted LAN listener.");
+                    using HttpClient lanClient = new() { BaseAddress = new Uri($"http://{lanIp}:{port}") };
+                    using HttpResponseMessage lanHealth = await lanClient.GetAsync("/health").ConfigureAwait(false);
+                    Require(lanHealth.StatusCode == HttpStatusCode.OK,
+                        "Internal-QA mode must make the LAN endpoint reachable for reversible testing.");
+                }
+                finally
+                {
+                    await qaApp.StopAsync().ConfigureAwait(false);
+                }
+            }
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static LocalApiApplicationOptions ApplicationOptions(
+        SalrynLocalComposition composition,
+        int port,
+        bool enableInternalLan = false) => new()
+    {
+        Url = $"http://127.0.0.1:{port}",
+        Composition = composition,
+        InitializeDatabase = false,
+        EnableStaticWebAssets = false,
+        WriteDevelopmentDatabasePath = false,
+        EnableLanRemoteTransportForInternalQa = enableInternalLan
+    };
+
+    private static string FindAssignedLanIpv4() => Dns.GetHostAddresses(Dns.GetHostName())
+        .First(address => address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(address))
+        .ToString();
+
+    private static int ReserveFreePort()
+    {
+        TcpListener listener = new(IPAddress.Loopback, 0);
+        listener.Start();
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        return port;
+    }
+
+    private static bool IsLoopbackUrl(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) && IPAddress.IsLoopback(IPAddress.Parse(uri.Host));
+
+    private static async Task<bool> CanConnectAsync(string host, int port)
+    {
+        using TcpClient client = new();
+        try
+        {
+            await client.ConnectAsync(host, port).WaitAsync(TimeSpan.FromSeconds(1)).ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception ex) when (ex is SocketException or TimeoutException)
+        {
+            return false;
+        }
+    }
+
+    private static void Require(bool condition, string message)
+    {
+        if (!condition) throw new InvalidOperationException(message);
     }
 
     private static void AssertRemoteClientDoesNotExposeHostCheckout(string appSource)
