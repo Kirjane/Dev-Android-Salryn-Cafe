@@ -23,6 +23,21 @@ Policy: provisional; no merge, release, signing, deployment or distribution.
 - Close now validates every sale and cash AR collection against its exact event identity/session/actor/type/direction/method/cents, rejects orphan/spoofed/manual-invalid events, and keeps void/reversal separate from actual physical refund.
 - Added bounded `Audit.View` closed-history detail and denied count-submitter self-review. Final financial approval authority is still policy blocked.
 
+R2 final tested implementation SHA: `03eb16627720e84941090ac984f452a651f1cbe9` (`8e08e99d195e7d0807bce8f32fa47a785fabe5e8` plus the manual-source replay-key association invariant). The full affected gate matrix below was rerun at `03eb1662`.
+
+| R2 exact-SHA command/gate | Exit | Outcome |
+|---|---:|---|
+| `dotnet build Salryn.sln -c Release --no-restore` | 0 | PASS; 12 pre-existing nullable/analyzer warnings, no errors |
+| CoreSmoke W4 | 0 | canonical close replay; persisted restart retry; sale/AR source tamper matrix; history; self-review denial; v25→v26 migration PASS |
+| CoreSmoke shift / checkout | 0 / 0 | bodyless denial, history 403/200, cash checkout/change and close PASS |
+| CoreSmoke U1 AR / entitlement | 0 / 0 | Utang, collections, reversal and licensing boundary regressions PASS |
+| CoreSmoke owner analytics / owner reports | 0 / 0 | store-day and reporting financial regressions PASS |
+| CoreSmoke portable backup/import/export | 0 | migration 26 backup/restore and future version 27 rejection PASS |
+| InfrastructureSmoke `cashier-session-service-edge` | 0 | PASS |
+| `npm ci`; `npm run build`; `npm audit --audit-level=high` | 0 / 0 / 0 | 0 vulnerabilities; existing Vite chunk-size advisory only |
+| NuGet vulnerable package scan | 0 | no vulnerable packages from configured source |
+| `git diff --check` | 0 | PASS |
+
 ## Executed evidence
 
 Tested implementation SHA: `8f9b3f54ca70ab1781a833933f31338801e01a0a`. Commands are from the isolated worktree; all rows below completed with exit code 0. The final ledger commit is a documentation-only successor and is recorded in the PR summary.
