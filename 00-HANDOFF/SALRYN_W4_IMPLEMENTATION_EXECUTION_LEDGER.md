@@ -22,7 +22,7 @@ Tested implementation SHA: `8f9b3f54ca70ab1781a833933f31338801e01a0a`. Commands 
 | Command | Exit | Outcome |
 |---|---:|---|
 | `dotnet build Salryn.sln -c Release --no-restore` | 0 | Release solution build PASS |
-| CoreSmoke `--only w4-cash-drawer-reconciliation` | 0 | physical count, events, replay/conflict, discrepancy/review, immutable count, legacy fail-closed, remote denial PASS |
+| CoreSmoke `--only w4-cash-drawer-reconciliation` | 0 | physical count, negative denial, ownership, events, replay/conflict, shortage/overage review, immutable count, legacy fail-closed, remote denial PASS |
 | CoreSmoke `--only v2-host-shift` | 0 | permission/open/bodyless denial/explicit close PASS |
 | CoreSmoke `--only v2-host-checkout` | 0 | checkout retry and cash event-backed close PASS |
 | CoreSmoke `--only u1-accounts-receivable` | 0 | U1 AR ledger/runtime/backup boundaries PASS |
