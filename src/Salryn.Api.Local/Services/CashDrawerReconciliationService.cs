@@ -80,7 +80,7 @@ public sealed class CashDrawerReconciliationService
               SELECT e.id FROM cash_drawer_events e LEFT JOIN ar_expected x ON x.id=e.source_id
               WHERE e.cashier_session_id=$session AND e.source_type='ArCollection' AND (x.id IS NULL OR e.event_type<>'ArCashCollection' OR e.direction<>1 OR e.amount_cents<>x.amount_cents OR e.actor_user_id<>x.collected_by_user_id OR e.method<>'Cash')
             ), manual_bad AS (
-              SELECT id FROM cash_drawer_events WHERE cashier_session_id=$session AND (source_type NOT IN('Sale','ArCollection','ManualMovement') OR (source_type='ManualMovement' AND (method<>'Cash' OR (event_type='CashIn' AND direction<>1) OR (event_type IN('CashOut','CashRefund') AND direction<>-1) OR event_type NOT IN('CashIn','CashOut','CashRefund'))))
+              SELECT id FROM cash_drawer_events WHERE cashier_session_id=$session AND (source_type NOT IN('Sale','ArCollection','ManualMovement') OR (source_type='ManualMovement' AND (method<>'Cash' OR source_id<>request_id OR (event_type='CashIn' AND direction<>1) OR (event_type IN('CashOut','CashRefund') AND direction<>-1) OR event_type NOT IN('CashIn','CashOut','CashRefund'))))
             )
             SELECT (SELECT COUNT(*) FROM sale_bad)+(SELECT COUNT(*) FROM sale_orphan)+(SELECT COUNT(*) FROM ar_bad)+(SELECT COUNT(*) FROM ar_orphan)+(SELECT COUNT(*) FROM manual_bad)+
               (SELECT COUNT(*) FROM accounts_receivable_collections a WHERE a.collected_by_user_id=$user AND a.method='Cash' AND a.cashier_session_id IS NULL AND a.collected_at>=(SELECT opened_at FROM cashier_sessions WHERE id=$session));
