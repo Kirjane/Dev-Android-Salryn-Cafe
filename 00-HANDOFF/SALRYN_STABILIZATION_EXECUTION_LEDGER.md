@@ -6,7 +6,9 @@ Branch: `codex/issue-9-s0-s5-rc`
 
 Source branch point: `f85e910902622f950230095a3dcf00e43f09b46b`
 
-Candidate implementation/evidence SHA: `7b9d1a753b170e20cd67bfa88abc3d480d9992b2`.
+Candidate implementation/evidence SHA: `7eea7a7bb7b15d119e0dbca217bd2cac46468816`.
+
+Review continuation: PR #10 review checkpoint comment `6702228302` was addressed on 2026-11-07 PHT. `origin/main` was merged without force-push; the actual conflict was `README.md`. The resolution retains the accepted company attribution, RC boundaries, and U1 AR scope.
 
 Draft review: GitHub PR #10 (`codex/issue-9-s0-s5-rc` → `main`). The PR is intentionally draft and does not authorize merge or release.
 
@@ -32,6 +34,7 @@ Draft review: GitHub PR #10 (`codex/issue-9-s0-s5-rc` → `main`). The PR is int
 - Source guards were aligned to accepted U1 receipt printing, entitlement-aware navigation, schema v24, and LAN future-feature language.
 - LIC-01: LAN terminal proof validation now accepts an injectable UTC clock, keeping host and terminal validation deterministic and preventing fixed-date proof tests from silently testing expiry instead of store/host mismatch behavior.
 - DB-01: portable-backup future-schema proof now uses v25, one beyond the supported v24 catalog, instead of colliding with an existing migration row.
+- LAN-RC-01: release startup now suppresses every non-loopback listener unless the explicit internal-QA capability is enabled, including when an older database persisted `RemoteTransportEnabled=true`. Explicit `--lan-bind` also fails closed without `--internal-lan-qa`. Saved LAN configuration and terminal registrations are retained for reversible QA; authorization gates are unchanged.
 
 ## Fresh command evidence
 
@@ -52,7 +55,17 @@ Draft review: GitHub PR #10 (`codex/issue-9-s0-s5-rc` → `main`). The PR is int
 | CoreSmoke `--only rmo-bir-qa1-real-db` | PASS | Clean/legacy upgrade to v24, future v25 rejection, backup/restore and non-mutation pass in isolated temp root. |
 | CoreSmoke `--only lic-lan-terminal-entitlement-enforcement` | PASS | Deterministic terminal validation, Host/Terminal type separation, store/host/machine mismatch, capacity, and source guards pass. |
 | CoreSmoke `--only pre-beta-d-portable-backup-import-export` | PASS | Export/import, hash rejection, future-v25 rejection, and restore archive pass. |
-| Full CoreSmoke | BLOCKED at external proof gate | All gates execute successfully through canonical key rotation. Execution then stops at `pre-i-canonical-license-activation-proof`: no external proof manifest is available. The gate explicitly requires `npm run proof:canonical-activation` in `Salryn.LicensingOps` or `SALRYN_CANONICAL_LICENSE_PROOF_MANIFEST`; neither the external repository nor signing proof is present locally. This evidence was not fabricated or bypassed. |
+| CoreSmoke `--only v2-lan-bind-truth` | PASS (exit 0) | Disposable previously-LAN-enabled v24 database restarted in release mode: actual listener set was loopback-only, LAN TCP connection failed, loopback `/health` returned 200, and saved config plus terminal registration remained intact. Explicit internal-QA mode then bound the assigned LAN address and LAN `/health` returned 200. |
+| CoreSmoke `--only sec-a1-local-api-webview-security` | PASS (exit 0) | Focused security runner added and executed after the listener-boundary change. |
+| Post-review CoreSmoke `--only u1-accounts-receivable` | PASS (exit 0) | U1 AR financial, authorization, reversal, dashboard, and replay gates retained after main reconciliation. |
+| Post-review CoreSmoke `--only u1-entitlement-gating` | PASS (exit 0) | U1 paid Host/base/Terminal boundary retained. |
+| Post-review CoreSmoke `--only v2-host-checkout` | PASS (exit 0) | Loopback Host checkout remains operational and idempotent. |
+| Post-review `dotnet build Salryn.sln -c Release --no-restore` | PASS (exit 0) | Exact tested implementation SHA `7eea7a7bb7b15d119e0dbca217bd2cac46468816`; 0 warnings, 0 errors. |
+| Post-review `npm --prefix src/Salryn.App.Web run build` | PASS (exit 0) | Vite 6.4.5 production build; existing chunk-size advisory only. |
+| Post-review `dotnet list Salryn.sln package --vulnerable --include-transitive` | PASS (exit 0) | No vulnerable NuGet packages. |
+| Post-review `npm --prefix src/Salryn.App.Web audit --audit-level=high` | PASS (exit 0) | 0 vulnerabilities. |
+| Post-review `git diff --check` | PASS (exit 0) | No whitespace errors before candidate commit. |
+| Full CoreSmoke | BLOCKED at external proof gate | Rerun at exact tested implementation SHA `7eea7a7bb7b15d119e0dbca217bd2cac46468816`. All gates—including the new actual-socket LAN release-boundary proof—execute successfully through canonical key rotation. Execution then stops at `pre-i-canonical-license-activation-proof`: no external proof manifest is available. The gate explicitly requires `npm run proof:canonical-activation` in `Salryn.LicensingOps` or `SALRYN_CANONICAL_LICENSE_PROOF_MANIFEST`; neither the external repository nor signing proof is present locally. This evidence was not fabricated or bypassed. |
 | Installer staging | PASS | `Build-SalrynBetaRc1Installer.ps1` produced `artifacts/installer/staging/Salryn` with WebView2Loader present. |
 | Installer setup compile | BLOCKED | `-BuildInstaller` reaches staging, then reports Inno Setup 6 `ISCC.exe` missing. Install Inno Setup 6 and set `INNO_SETUP_ISCC`, or pass `-InnoSetupCompilerPath`. |
 
