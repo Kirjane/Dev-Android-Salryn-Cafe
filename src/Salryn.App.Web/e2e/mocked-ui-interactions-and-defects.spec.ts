@@ -7,6 +7,9 @@ function sidebarNavButton(page: Page, label: string) {
 
 test.describe("MOCKED_UI Keyboard, Navigation, Accessibility & UX Defect Verification", () => {
   test("Verifies zero unexpected runtime pageerrors across core workflow navigation", async ({ page }) => {
+    // This deliberately traverses every primary module. A cold Windows/Vite run
+    // can exceed the suite default even when the final route has rendered.
+    test.setTimeout(60_000);
     const pageErrors: string[] = [];
     const consoleErrors: string[] = [];
     page.on("pageerror", (err) => pageErrors.push(err.message));
