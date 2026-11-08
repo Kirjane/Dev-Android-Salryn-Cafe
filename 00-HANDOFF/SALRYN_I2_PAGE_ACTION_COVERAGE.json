@@ -1,0 +1,31 @@
+{
+  "schema": "salryn-i2-page-action-coverage-v1",
+  "testedImplementationSha": "73deac6d16e59b58eec79e87e0dfa62c89fbe99e",
+  "mockedSuite": { "passed": 41, "failed": 0, "retries": 0 },
+  "visualSuite": { "passedSpecs": 16, "baselines": 44, "failed": 0 },
+  "pages": [
+    { "page": "dashboard", "personas": ["cashier", "manager", "admin"], "states": ["healthy", "warnings"], "actions": ["navigate"], "verdict": "MOCKED_ACTION_TESTED", "evidence": ["mocked-ui-visual-baseline.spec.ts:77"] },
+    { "page": "checkout", "personas": ["cashier", "manager", "admin"], "states": ["closed", "cash", "utang", "split", "review", "fast-add", "physical-count", "retry", "denied"], "actions": ["scan", "F9", "close", "retry"], "verdict": "MOCKED_ACTION_TESTED_AND_CORE_SMOKE", "evidence": ["mocked-ui-interactions-and-defects.spec.ts:50", "w4-integrated-cash-drawer.spec.ts"] },
+    { "page": "sales", "personas": ["cashier", "manager", "admin"], "states": ["list", "receipt-detail", "void-controls"], "actions": ["open-detail"], "verdict": "MOCKED_ACTION_TESTED", "evidence": ["mocked-ui-visual-baseline.spec.ts:135"] },
+    { "page": "receivables", "personas": ["manager", "admin"], "states": ["entitled", "collection", "reversal-controls", "denied"], "actions": ["open-customer"], "verdict": "MOCKED_ACTION_TESTED_AND_CORE_SMOKE", "evidence": ["mocked-ui-visual-baseline.spec.ts:149", "coresmoke-u1-accounts-receivable"] },
+    { "page": "owner-reports", "personas": ["manager", "admin"], "states": ["analytics", "no-u1"], "actions": ["sales-drilldown", "reload", "back"], "verdict": "MOCKED_ACTION_TESTED_AND_CORE_SMOKE", "evidence": ["mocked-ui-interactions-and-defects.spec.ts:116", "w4-integrated-cash-drawer.spec.ts:193"] },
+    { "page": "products", "personas": ["manager", "admin"], "states": ["catalog", "detail", "create-dialog"], "actions": ["open-create", "escape", "movement-drilldown"], "verdict": "MOCKED_ACTION_TESTED", "evidence": ["mocked-ui-interactions-and-defects.spec.ts:70", "mocked-ui-interactions-and-defects.spec.ts:84"] },
+    { "page": "inventory", "personas": ["manager", "admin"], "states": ["ledger", "stock-in-dialog"], "actions": ["open-stock-in"], "verdict": "MOCKED_ACTION_TESTED", "evidence": ["mocked-ui-visual-baseline.spec.ts:190"] },
+    { "page": "users", "personas": ["admin"], "states": ["directory", "create-form", "roles"], "actions": [], "verdict": "MOCKED_RENDERED", "evidence": ["23-users-roles-permissions.png"] },
+    { "page": "audit", "personas": ["admin"], "states": ["events"], "actions": [], "verdict": "MOCKED_RENDERED", "evidence": ["24-audit-logs.png"] },
+    { "page": "settings", "personas": ["admin"], "states": ["store", "printer", "logo"], "actions": [], "verdict": "MOCKED_RENDERED", "evidence": ["25-store-settings.png"] },
+    { "page": "backup-restore", "personas": ["admin"], "states": ["list", "verified"], "actions": ["verify"], "verdict": "MOCKED_ACTION_TESTED_AND_CORE_SMOKE", "evidence": ["mocked-ui-interactions-and-defects.spec.ts:145", "coresmoke-pre-beta-d-portable-backup-import-export"] },
+    { "page": "host-lan-control", "personas": ["admin"], "states": ["future-feature-disabled"], "actions": [], "verdict": "MOCKED_RENDERED_FUTURE_ONLY", "evidence": ["27-lan-terminals-future-feature.png"] },
+    { "page": "license", "personas": ["public", "admin"], "states": ["unlicensed", "wizard", "activated"], "actions": ["open-wizard"], "verdict": "MOCKED_ACTION_TESTED", "evidence": ["02-license-unlicensed.png", "03-license-wizard-modal.png", "28-license-authenticated.png"] },
+    { "page": "login", "personas": ["public"], "states": ["idle", "invalid"], "actions": ["submit-invalid"], "verdict": "MOCKED_ACTION_TESTED", "evidence": ["mocked-ui-visual-baseline.spec.ts:64"] },
+    { "page": "bootstrap", "personas": ["first-run-admin"], "states": ["setup"], "actions": [], "verdict": "MOCKED_RENDERED", "evidence": ["04-bootstrap-setup.png"] },
+    { "page": "official-setup", "personas": ["internal"], "states": ["diagnostic"], "actions": [], "verdict": "NOT_APPLICABLE_INTERNAL_MOCKED_RENDERED", "evidence": ["38-internal-official-setup.png"] },
+    { "page": "traditional-reporting", "personas": ["internal"], "states": ["diagnostic"], "actions": [], "verdict": "NOT_APPLICABLE_INTERNAL_MOCKED_RENDERED", "evidence": ["39-internal-traditional-reporting.png"] },
+    { "page": "production-reports", "personas": ["internal"], "states": ["diagnostic"], "actions": [], "verdict": "NOT_APPLICABLE_INTERNAL_MOCKED_RENDERED", "evidence": ["43-internal-production-reports.png"] },
+    { "page": "terminal-activation", "personas": ["terminal"], "states": ["activation-gate"], "actions": [], "verdict": "MOCKED_RENDERED_NOT_RELEASED", "evidence": ["40-terminal-activation-gate.png"] },
+    { "page": "remote-landing", "personas": ["terminal"], "states": ["landing"], "actions": [], "verdict": "MOCKED_RENDERED_FUTURE_ONLY", "evidence": ["41-terminal-remote-landing.png"] },
+    { "page": "remote-pos", "personas": ["terminal"], "states": ["pairing"], "actions": [], "verdict": "MOCKED_RENDERED_FUTURE_ONLY", "evidence": ["42-terminal-remote-pos-pairing.png"] },
+    { "page": "remote-readonly", "personas": ["internal"], "states": ["diagnostic"], "actions": [], "verdict": "NOT_APPLICABLE_INTERNAL_MOCKED_RENDERED", "evidence": ["44-terminal-remote-readonly.png"] }
+  ],
+  "external": { "integratedHost": "BLOCKED_NO_HOST", "physicalDrawer": "NOT_RUN", "licensingOps": "NOT_RUN_LAST_GATE" }
+}
