@@ -301,7 +301,7 @@ test.describe("MOCKED_UI Visual Baseline & Screen Inventory @visual", () => {
     await expectBaseline(page, "37-scale-150pct-checkout.png");
   });
 
-  test("38 & 39 - Internal / Unreachable Host surfaces (OfficialSetupPage & TraditionalReportingPage via popstate)", async ({
+  test("38, 39 & 43 - Internal / Diagnostic Host surfaces (OfficialSetupPage, TraditionalReportingPage & ProductionReportsPage)", async ({
     page,
   }) => {
     await installMockSalrynApi(page, { persona: "admin", u1Entitled: true });
@@ -323,9 +323,17 @@ test.describe("MOCKED_UI Visual Baseline & Screen Inventory @visual", () => {
     });
     await expect(page.getByRole("heading", { name: "Internal Compliance Reporting Lab" })).toBeVisible();
     await expectBaseline(page, "39-internal-traditional-reporting.png");
+
+    // 43: Navigate to ProductionReportsPage via synthetic popstate
+    await page.evaluate(() => {
+      window.history.pushState({ page: "production-reports" }, "", "/?page=production-reports");
+      window.dispatchEvent(new PopStateEvent("popstate", { state: { page: "production-reports" } }));
+    });
+    await expect(page.getByRole("heading", { name: "Report Artifacts" })).toBeVisible();
+    await expectBaseline(page, "43-internal-production-reports.png");
   });
 
-  test("40 to 42 - Terminal / Remote Client flow (TerminalActivationPage, RemoteClientLandingPage, RemotePosClientPage)", async ({
+  test("40 to 42 & 44 - Terminal / Remote Client flow (TerminalActivationPage, RemoteClientLandingPage, RemotePosClientPage, RemoteReadOnlyClientPage)", async ({
     page,
   }) => {
     await installMockSalrynApi(page, { persona: "admin" });
@@ -378,5 +386,13 @@ test.describe("MOCKED_UI Visual Baseline & Screen Inventory @visual", () => {
     await page.getByRole("button", { name: /Open Salryn POS terminal/i }).click();
     await expect(page.getByRole("heading", { name: "Connect terminal to Host" })).toBeVisible();
     await expectBaseline(page, "42-terminal-remote-pos-pairing.png");
+
+    // 44: Return to Landing, expand support surfaces, and open Remote Read-Only client
+    await page.goto("http://salryn-terminal.localhost:5173/");
+    await expect(page.getByRole("heading", { name: "Open Salryn on this terminal" })).toBeVisible();
+    await page.getByText("Internal support surfaces").click();
+    await page.getByRole("button", { name: /Open Remote Read-Only/i }).click();
+    await expect(page.getByRole("heading", { name: "Remote Read-Only Client" })).toBeVisible();
+    await expectBaseline(page, "44-terminal-remote-readonly.png");
   });
 });

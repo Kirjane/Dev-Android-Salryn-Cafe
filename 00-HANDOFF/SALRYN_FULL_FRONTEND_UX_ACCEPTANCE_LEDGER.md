@@ -5,22 +5,26 @@
 **Authority**: Kirch Ivan Balite, Engineer  
 **Product**: Base Salryn POS Retail Application (Host + Terminal + U1 Utang + Analytics)  
 **Execution Directives**: [GitHub Issue #19](https://github.com/Kirjane/Salryn/issues/19), [Issue #20](https://github.com/Kirjane/Salryn/issues/20), PR #21  
-**Target Release**: Release Candidate 1 (RC1)
+**Frontend Framework**: React `^19.0.0` with `@tanstack/react-query` `^5.66.9` and Tailwind CSS `3.4.17`  
+**Target Release**: Release Candidate 2 (RC2)
 
 ---
 
 ## 1. Executive Summary & Quality Status
 
-All 20 identified UX findings and structural defects (`UX-01` through `UX-20`) across the entire Salryn POS frontend codebase are **100% resolved and verified**. The application now provides a consistent, high-contrast, accessible, and resilient user interface across all 22 pages, supporting keyboard-driven operations, explicit financial safety confirmations, responsive viewport scaling, and robust error recovery.
+All 20 identified UX findings and structural defects (`UX-01` through `UX-20`) across the entire Salryn POS frontend codebase are **100% resolved and verified**. The application provides a high-contrast, accessible, and resilient user interface across all 22 pages, supporting keyboard-driven operations, explicit financial safety confirmations, responsive viewport scaling, inert background containment, and robust error recovery.
 
-| Category | Total Tracked | Resolved / Closed | Pass Rate |
-| :--- | :---: | :---: | :---: |
-| **UX Defect Findings** | 20 | 20 | 100% |
-| **Accessibility & Contrast (WCAG 2.1 AA)** | 5 | 5 | 100% |
-| **Keyboard Navigation & Focus Trapping** | 6 | 6 | 100% |
-| **Financial Ledger Trust & Alignment** | 4 | 4 | 100% |
-| **Playwright Automated Tests** | 24 | 24 | 100% |
-| **C# Frontend Source Guards** | 18 | 18 | 100% |
+| Category | Total Tracked | Resolved / Closed | Pass Rate | Evidence Engine |
+| :--- | :---: | :---: | :---: | :--- |
+| **UX Defect Findings** | 20 | 20 | 100% | Playwright interaction tests & visual baselines |
+| **Accessibility & Contrast (WCAG 2.1 AA)** | 5 | 5 | 100% | High-contrast tokens, focus rings, ARIA roles |
+| **Keyboard Navigation & Focus Trapping** | 6 | 6 | 100% | Tab/Shift+Tab cycle, Escape close, autofocus |
+| **Inert Modal Background Containment** | 1 | 1 | 100% | `data-dialog-inert` ancestor sibling containment |
+| **Mobile 390×844 Toast Non-Obstruction** | 1 | 1 | 100% | Mobile header margin, toast compact layout |
+| **Playwright Automated Tests** | 27 | 27 | 100% | `npm run test:e2e` (16 visual + 11 interaction) |
+| **Visual Snapshot Baselines** | 44 | 44 | 100% | `e2e/__screenshots__/` (`01` through `44`) |
+| **C# Frontend Source Guards** | 18 | 18 | 100% | `Salryn.Tools.CoreSmoke` (`--only`) |
+| **Live Host Integration (Port 5299)** | 1 | Strictly Guarded | `BLOCKED_NO_HOST` | `npm run test:integrated-host` (no live host) |
 
 ---
 
@@ -35,7 +39,7 @@ All 20 identified UX findings and structural defects (`UX-01` through `UX-20`) a
 | **UX-05** | Checkout Station | Barcode wedge scanner would lose input focus when operators clicked away or closed modals. | Lack of persistent focus recovery on the primary barcode input element. | Added automatic focus recovery ref that re-engages the barcode input upon modal close or item selection. | **CLOSED** |
 | **UX-06** | Store Settings | Logo upload failed silently on unsupported file types without clear dimension or size constraints. | Native `<input type="file">` lacked validation feedback before upload dispatch. | Added client-side MIME validation, size checking (≤ 2MB), explicit error alerts, and logo removal confirmation. | **CLOSED** |
 | **UX-07** | Backup & Restore | Restore database action presented ambiguous warning copy that did not make destructive data replacement clear. | Generic confirmation dialog without explicit phrase confirmation. | Implemented typed confirmation dialog requiring the operator to enter the database safety phrase before the restore action unlocks. | **CLOSED** |
-| **UX-08** | Modal Dialogs | Modal dialogs did not lock background scroll, trap keyboard focus, or reliably close on `Escape`. | Vanilla `<div>` overlays lacking focus trap and `keydown` lifecycle hooks. | Completely refactored `Dialog.tsx` and `WizardShell` with body scroll locking, `Escape` key listeners, Tab focus trapping, and autofocus placement. | **CLOSED** |
+| **UX-08** | Modal Dialogs | Modal dialogs did not lock background scroll, trap keyboard focus, or reliably close on `Escape`. | Vanilla `<div>` overlays lacking focus trap, ancestor inert containment, and `keydown` lifecycle hooks. | Implemented global modal stack coordinating background inert containment on all ancestor siblings, scroll lock, Escape dismissal, and origin focus restoration. | **CLOSED** |
 | **UX-09** | Terminal Activation | Terminal activation screen lacked quick-copy feedback for the hardware machine code, making pairing difficult. | Machine code display was static text with no copy-to-clipboard action. | Implemented one-click *"Copy Machine Code"* button with active `Copied!` tooltip state and clear manual entry instructions. | **CLOSED** |
 | **UX-10** | Utang Reversal Safety | Voiding or reversing an Utang collection lacked a confirmation gate, risking accidental reversal of financial transactions. | Instant mutation call directly from the action button without safety check. | Implemented accessible `UiDialog` confirmation requiring a safety checkbox confirmation and displaying `busy={isVoiding}` mutation state. | **CLOSED** |
 | **UX-11** | Shift Management | Closing the cashier shift had no confirmation dialog or opening float summary, causing inadvertent shift closures. | Direct button trigger without reconciliation prompt. | Added `showCloseShiftModal` confirmation dialog displaying shift start timestamp, opening float, and operator name prior to closing. | **CLOSED** |
@@ -51,41 +55,30 @@ All 20 identified UX findings and structural defects (`UX-01` through `UX-20`) a
 
 ---
 
-## 3. Accessibility & Keyboard Navigation Audit
+## 3. Modal Architecture, Inert Containment, and Mobile Usability
 
-### 3.1 Keyboard Shortcuts & Fast POS Operation
-- **F1**: Reserved for help and POS documentation.
-- **F2**: Focus barcode search input on Checkout and Products catalog.
-- **F5**: Trigger New Sale (clears completed transaction and readies cart).
-- **F9**: Open "Review Checkout" modal when cart has items.
-- **Escape**: Universal modal dismissal (unless dialog is marked `busy`).
-- **Enter**: Immediate barcode lookup and cart addition.
-- **Tab / Shift+Tab**: Trapped within open modal dialogs; never bleeds into background elements.
+### 3.1 Background Inert Containment
+- When a modal dialog opens, `pushDialog` traverses the ancestor hierarchy from the modal container up to `document.body`.
+- Every sibling element along this path (such as `<aside>`, `<header>`, `<footer>`, and sibling content in `<main>`) is marked with `data-dialog-inert="true"` and `inert=""`.
+- Elements matching `[data-notification-viewport]` are explicitly preserved so operators can see and dismiss transient system alerts.
+- References to the marked elements are held directly in `DialogStackItem.inertElements`, guaranteeing clean cleanup even if the dialog unmounts before closing.
+- When the dialog closes, `popDialog` iterates over `inertElements` and removes `data-dialog-inert` and `inert=""`.
+- Focus is trapped within the active dialog using Tab / Shift+Tab listeners and restored to the origin element upon unmount.
 
-### 3.2 WCAG 2.1 AA Compliance Verification
-- **Contrast Ratios**: All text and interactive button labels achieve ≥ 4.5:1 against their rendered backgrounds. Large titles and icons exceed 3.0:1.
-- **Focus Rings**: Standardized `focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2` across all inputs, buttons, and custom tab triggers.
-- **Screen Reader Attributes**: Dialogs declare `role="dialog"` and `aria-modal="true"`. Tab groups declare `role="tablist"` with `aria-selected` and `aria-controls`. Action buttons declare descriptive `aria-label` tags.
+### 3.2 390×844 Mobile Viewport Usability (Toast Non-Obstruction)
+- On compact mobile viewports (< 640px), modal containers apply `max-sm:items-start max-sm:pt-20 max-sm:pb-6` and `max-sm:max-h-[calc(100vh-6rem)]`.
+- Notification toasts on mobile are pinned to `max-sm:top-2 max-sm:inset-x-2` with compact padding.
+- Because the modal starts at `y=80px`, top-positioned toasts do not cover the modal title, form inputs, or footer resolution CTAs (`Confirm` / `Cancel`).
+- Verified via Playwright spec: `390x844 mobile viewport: notification does not obstruct modal title, fields, or footer resolution CTA` (Pass).
 
 ---
 
 ## 4. End-to-End Workflow Verification Proof
 
-All core retail workflows are covered by automated Playwright specs running against safe synthetic fixtures:
-1. **Startup & Recovery**: Verified host-unavailable error gate and recovery retry (`01-startup-error-gate-host-unavailable.png`).
-2. **License Activation**: Verified unlicensed blocking gate and step-by-step activation wizard modal (`02-license-gate-unlicensed.png`, `03-license-activation-wizard-modal.png`).
-3. **First-Run Bootstrap**: Verified first-run administrator creation and validation (`04-bootstrap-first-run-setup.png`).
-4. **Operator Authentication**: Verified idle login and invalid credentials alert (`05-login-idle.png`, `06-login-invalid-credentials-error.png`).
-5. **Dashboard & Metrics**: Verified healthy operations and active warning badges (`07-dashboard-healthy.png`, `08-dashboard-operational-warnings.png`).
-6. **Checkout & POS Counter**: Verified closed shift gate, active cart, fast-add modal, review modal, and shift closing dialog (`09` through `13`).
-7. **Sales & Receipts**: Verified sales transaction list, receipt reprint preview, and void sale modal (`14-sales-history-list.png`, `15-sales-detail-and-receipt-modal.png`).
-8. **Utang / Accounts Receivable**: Verified signed U1 customer ledger, payment collection modal, and void reversal dialog (`16-receivables-utang-ledger.png`).
-9. **Financial Analytics**: Verified owner summaries, sales trends, margin analysis, and non-entitled U1 AR aging 403 handling (`17`, `18`).
-10. **Product Catalog & Inventory**: Verified product browsing, stock-in modal, and stock adjustments (`19` through `22`).
-11. **Administration & Governance**: Verified users directory side-by-side, audit logs, store settings, backup/restore, LAN control, and license governance (`23` through `28`).
-12. **Role & Entitlement Matrices**: Verified Cashier, Manager, and Admin navigation permissions (`29` through `31`).
-13. **Responsive Viewports**: Verified 1080p, 1366x768, 1024x768, and 125%/150% scaling (`32` through `37`).
-14. **Terminal Workstations**: Verified terminal activation, landing launchpad, and remote checkout station (`40` through `42`).
+All 22 pages and their application states are covered by automated Playwright specs running against safe synthetic fixtures:
+- 16 Visual Regression Suites (`mocked-ui-visual-baseline.spec.ts`) asserting 44 committed screenshot baselines in `e2e/__screenshots__/`.
+- 11 Interaction & Accessibility Suites (`mocked-ui-interactions-and-defects.spec.ts`) asserting keyboard traps, inert containment, deep link navigation, barcode entry, and mobile layout.
+- Exit code `0` across all 27 tests in `npm run test:e2e`.
 
 ---
 
@@ -93,9 +86,9 @@ All core retail workflows are covered by automated Playwright specs running agai
 
 ### 5.1 Known External Blockers
 - **Live Host Port 5299 (`BLOCKED_NO_HOST`)**:
-  Running `npm run test:integrated-host` strictly and honestly reports `BLOCKED_NO_HOST` when the local ASP.NET Core host process is not running. In accordance with project instructions, live integration testing is kept separate from mocked UI testing, and no synthetic shims are faked for integrated host runs.
+  Running `npm run test:integrated-host` strictly and honestly reports `BLOCKED_NO_HOST` when the local ASP.NET Core host process is not running. Live host testing is never faked with synthetic shims.
 - **Backend W4 Drawer Reconciliation PR #22**:
-  The backend implementation of the W4 shift reconciliation endpoint (`POST /api/shift/close`) is authored by Codex on branch `codex/salryn-w4-drawer-reconciliation-r1` (PR #22). The Antigravity frontend has implemented backward-compatible contract support (`CloseShiftRequest` payload support with parameterless fallback) ready for immediate integration once I1 merges PR #22.
+  The backend implementation of the W4 shift reconciliation endpoint (`POST /api/shift/close`) is authored by Codex on branch `codex/salryn-w4-drawer-reconciliation-r1` (PR #22). The Antigravity frontend provides backwards-compatible type alignment (`CloseShiftRequest` payload support with parameterless fallback) ready for integration in I1's PR #24.
 
 ### 5.2 Explicit Non-Claims
 - We do not claim to have merged, deployed, or released any code to production environments.

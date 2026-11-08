@@ -105,9 +105,12 @@ export function NotificationViewport({
   notifications: AppNotification[];
   onDismiss: (id: number) => void;
 }) {
+  if (notifications.length === 0) return null;
+
   return (
     <div
-      className="pointer-events-none fixed inset-x-0 top-[62px] z-[100] flex flex-col items-end gap-2 px-3 py-2 sm:left-auto sm:w-[25rem] sm:px-5"
+      data-notification-viewport="true"
+      className="pointer-events-none fixed inset-x-0 top-[62px] z-[100] flex flex-col items-end gap-2 px-3 py-2 sm:left-auto sm:w-[25rem] sm:px-5 max-sm:top-2 max-sm:inset-x-2 max-sm:items-center max-sm:gap-1.5"
       aria-live="polite"
       aria-relevant="additions"
       aria-label="Action notifications"
@@ -117,7 +120,7 @@ export function NotificationViewport({
         return (
           <div
             key={notification.id}
-            className={`pointer-events-auto flex w-full items-start gap-3 rounded-lg border px-4 py-3 shadow-lg ${classes}`}
+            className={`pointer-events-auto flex w-full items-start gap-3 rounded-lg border px-4 py-3 shadow-lg max-sm:px-3 max-sm:py-2 ${classes}`}
             role={notification.tone === "error" ? "alert" : "status"}
           >
             <Icon className="mt-0.5 shrink-0" size={18} aria-hidden="true" />

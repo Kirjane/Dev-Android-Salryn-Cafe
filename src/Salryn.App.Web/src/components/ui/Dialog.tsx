@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "./Button";
 
 type DialogSize = "sm" | "md" | "lg" | "xl" | "2xl";
@@ -24,6 +24,79 @@ const sizeClasses: Record<DialogSize, string> = {
   "2xl": "max-w-3xl",
 };
 
+// Global modal stack to coordinate inert backgrounds, scroll lock, and Escape handling
+interface DialogStackItem {
+  id: string;
+  container: HTMLDivElement;
+  inertElements: HTMLElement[];
+  onClose: () => void;
+  isBusy: () => boolean;
+}
+
+const dialogStack: DialogStackItem[] = [];
+let originalBodyOverflow = "";
+
+function getBackgroundElementsToInert(container: HTMLElement): HTMLElement[] {
+  const elements: HTMLElement[] = [];
+  let curr: HTMLElement | null = container;
+  while (curr && curr !== document.body) {
+    const parent: HTMLElement | null = curr.parentElement;
+    if (parent) {
+      for (const sibling of Array.from(parent.children)) {
+        if (
+          sibling !== curr &&
+          sibling instanceof HTMLElement &&
+          !sibling.hasAttribute("data-notification-viewport") &&
+          !sibling.querySelector?.("[data-notification-viewport]")
+        ) {
+          elements.push(sibling);
+        }
+      }
+    }
+    curr = parent;
+  }
+  return elements;
+}
+
+function pushDialog(item: Omit<DialogStackItem, "inertElements">) {
+  if (dialogStack.length === 0) {
+    originalBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.body.dataset.modalOpen = "true";
+  } else {
+    // If a dialog is already open, make the previous dialog container inert
+    const prev = dialogStack[dialogStack.length - 1];
+    prev.container.setAttribute("inert", "");
+  }
+
+  const inertElements = getBackgroundElementsToInert(item.container);
+  for (const el of inertElements) {
+    el.setAttribute("data-dialog-inert", "true");
+    el.setAttribute("inert", "");
+  }
+
+  dialogStack.push({ ...item, inertElements });
+}
+
+function popDialog(id: string) {
+  const index = dialogStack.findIndex((item) => item.id === id);
+  if (index !== -1) {
+    const [removed] = dialogStack.splice(index, 1);
+    for (const el of removed.inertElements) {
+      el.removeAttribute("data-dialog-inert");
+      el.removeAttribute("inert");
+    }
+  }
+  if (dialogStack.length === 0) {
+    document.body.style.overflow = originalBodyOverflow;
+    delete document.body.dataset.modalOpen;
+  } else {
+    // Topmost dialog is active and not inert
+    const top = dialogStack[dialogStack.length - 1];
+    top.container.removeAttribute("inert");
+  }
+}
+
 export function Dialog({
   open,
   title,
@@ -35,6 +108,8 @@ export function Dialog({
   size = "md",
   busy = false,
 }: DialogProps) {
+  const [dialogId] = useState(() => "salryn-dialog-" + Math.random().toString(36).substring(2, 9));
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const onCloseRef = useRef(onClose);
@@ -45,12 +120,19 @@ export function Dialog({
   useEffect(() => {
     if (!open) return;
 
+    // Capture origin focus for restoration upon close
     previousFocusRef.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
-    // Body scroll lock
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const container = containerRef.current;
+    if (container) {
+      pushDialog({
+        id: dialogId,
+        container,
+        onClose: () => onCloseRef.current(),
+        isBusy: () => busyRef.current,
+      });
+    }
 
     // Set initial focus
     const focusTimer = requestAnimationFrame(() => {
@@ -66,10 +148,18 @@ export function Dialog({
     });
 
     function handleKeyDown(event: KeyboardEvent) {
+      // Only topmost dialog handles keydown
+      const top = dialogStack[dialogStack.length - 1];
+      if (top?.id !== dialogId) return;
+
       if (event.key === "Escape") {
         if (!busyRef.current) {
           event.stopPropagation();
+          event.preventDefault();
           onCloseRef.current();
+        } else {
+          event.stopPropagation();
+          event.preventDefault();
         }
       } else if (event.key === "Tab" && dialogRef.current) {
         const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
@@ -90,15 +180,16 @@ export function Dialog({
     }
 
     window.addEventListener("keydown", handleKeyDown);
+
     return () => {
       cancelAnimationFrame(focusTimer);
-      document.body.style.overflow = originalOverflow;
       window.removeEventListener("keydown", handleKeyDown);
+      popDialog(dialogId);
       if (previousFocusRef.current && document.contains(previousFocusRef.current)) {
         previousFocusRef.current.focus();
       }
     };
-  }, [open]);
+  }, [open, dialogId]);
 
   if (!open) {
     return null;
@@ -110,8 +201,11 @@ export function Dialog({
     }
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+  const dialogContent = (
+    <div
+      ref={containerRef}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 max-sm:items-start max-sm:pt-20 max-sm:pb-6"
+    >
       <div
         className="absolute inset-0 bg-slate-900/55"
         onClick={handleBackdropClick}
@@ -122,8 +216,9 @@ export function Dialog({
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        aria-busy={busy ? "true" : undefined}
         tabIndex={-1}
-        className={`relative z-10 max-h-[calc(100vh-2rem)] w-full min-w-0 ${sizeClasses[size]} overflow-x-hidden overflow-y-auto rounded-lg border border-slate-300 bg-white shadow-xl focus:outline-none`}
+        className={`relative z-10 max-h-[calc(100vh-2rem)] max-sm:max-h-[calc(100vh-6rem)] w-full min-w-0 ${sizeClasses[size]} overflow-x-hidden overflow-y-auto rounded-lg border border-slate-300 bg-white shadow-xl focus:outline-none`}
       >
         <div className="flex min-h-13 items-start justify-between gap-4 bg-navy-900 px-5 py-3 text-white">
           <div className="min-w-0">
@@ -158,6 +253,8 @@ export function Dialog({
       </div>
     </div>
   );
+
+  return dialogContent;
 }
 
 type ConfirmDialogProps = {

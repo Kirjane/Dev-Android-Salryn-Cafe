@@ -660,6 +660,250 @@ export async function installMockSalrynApi(page: Page, options: MockSalrynScenar
       });
     }
 
+    // 15. Production Reports Diagnostic
+    if (path === "/api/production-reports/catalog") {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          {
+            kind: "daily-sales-summary",
+            title: "Daily Sales & Tax Summary",
+            priority: "P1",
+            family: "Sales",
+            requiredPermission: "Reports.View",
+            datasetAvailable: true,
+            usesCanonicalM5Projection: true,
+            rendererRequired: true,
+            requiredFilters: ["rangeStart", "rangeEnd"],
+          },
+          {
+            kind: "inventory-valuation",
+            title: "Inventory Movement & Valuation Ledger",
+            priority: "P1",
+            family: "Inventory",
+            requiredPermission: "Inventory.Manage",
+            datasetAvailable: true,
+            usesCanonicalM5Projection: true,
+            rendererRequired: true,
+            requiredFilters: [],
+          },
+          {
+            kind: "tax-bucket-reconciliation",
+            title: "BIR Tax Bucket & VAT Breakdown",
+            priority: "P2",
+            family: "Compliance",
+            requiredPermission: "Reports.View",
+            datasetAvailable: true,
+            usesCanonicalM5Projection: true,
+            rendererRequired: true,
+            requiredFilters: ["rangeStart", "rangeEnd"],
+          },
+        ]),
+      });
+    }
+
+    if (path === "/api/production-reports/renderer/status") {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          reportingEngine: "NativePdf",
+          note: "Native PDF reporting engine ready.",
+          allowedOutputKinds: ["pdf"],
+          nativePdf: {
+            available: true,
+            engineVersion: "1.0.0-rc1",
+          },
+          crystalCompatibility: {
+            disabledByDefault: true,
+            mode: "Disabled",
+            note: "Crystal reports disabled by default in modern runtime.",
+          },
+        }),
+      });
+    }
+
+    if (path === "/api/production-reports/dataset" && method === "POST") {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          reportKind: "daily-sales-summary",
+          reportTitle: "Daily Sales & Tax Summary",
+          datasetSha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          summary: "14 sales transactions processed in selected range.",
+        }),
+      });
+    }
+
+    if (path === "/api/production-reports/export" && method === "POST") {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          manifest: {
+            artifactId: "art-prod-20261109-001",
+            reportKind: "daily-sales-summary",
+            fileName: "daily-sales-summary-20261109.pdf",
+            contentType: "application/pdf",
+            byteLength: 24576,
+            pdfSha256: "a1b2c3d4e5f67890123456789abcdef0123456789abcdef0123456789abcdef0",
+            rendererName: "NativePdfRenderer",
+            rendererVersion: "1.0.0",
+            createdAt: "2026-11-09T00:00:00Z",
+          },
+        }),
+      });
+    }
+
+    // 16. Remote Read-Only Client
+    if (path === "/api/remote-readonly/status") {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          connectionStatus: "Connected",
+          mode: "LocalOnlyReadMode",
+          message: "LAN-M9-M13 web shell authenticated localhost API reads.",
+          pairedState: "Paired",
+          terminalRole: "Read-only client",
+          bindPolicy: {
+            defaultMode: "LocalhostOnly",
+            effectiveMode: "LocalhostOnly",
+            disabledByDefault: true,
+            localhostOnly: true,
+            explicitHostBindRequired: true,
+            specificIpOnly: true,
+            message: "Api.Local remains bound to 127.0.0.1.",
+          },
+          allowedCapabilities: ["Status read", "Product read", "Dashboard read", "Terminal status read"],
+          capabilities: ["Status read", "Product read", "Dashboard read", "Terminal status read"],
+          disabledMutations: [
+            "Checkout disabled",
+            "Sales mutation disabled",
+            "Inventory mutation disabled",
+            "Product mutation disabled",
+            "Admin mutation disabled",
+            "Backup mutation disabled",
+            "Official journal writes disabled",
+            "Official sequence allocation disabled",
+          ],
+        }),
+      });
+    }
+
+    if (path === "/api/remote-readonly/bind-policy") {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          defaultMode: "LocalhostOnly",
+          effectiveMode: "LocalhostOnly",
+          disabledByDefault: true,
+          localhostOnly: true,
+          explicitHostBindRequired: true,
+          specificIpOnly: true,
+          message: "Api.Local remains bound to 127.0.0.1.",
+        }),
+      });
+    }
+
+    if (path === "/api/remote-readonly/diagnostics") {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          mode: "LocalOnlyReadMode",
+          overallStatus: "Healthy",
+          message: "Diagnostics normal.",
+          readOnlyOnly: true,
+          lanDisabledByDefault: true,
+          terminalIdentityRequired: true,
+          handshakeProofRequired: true,
+          cookieTrustAcceptedForRemoteLan: false,
+          corsEnabled: false,
+          auditPolicyAvailable: true,
+          items: [
+            {
+              code: "DIAG-NET-01",
+              category: "Network",
+              severity: "Info",
+              message: "Local loopback listener verified.",
+            },
+          ],
+        }),
+      });
+    }
+
+    if (path === "/api/remote-readonly/preflight") {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          overallReadiness: "Ready",
+          message: "Preflight checks passed.",
+          readOnlyOnly: true,
+          checks: [
+            {
+              code: "CHK-DB-01",
+              status: "Pass",
+              category: "Database",
+              message: "Database connection healthy.",
+            },
+          ],
+          safeNextSteps: ["Proceed with read-only monitoring."],
+          blockedReasons: [],
+        }),
+      });
+    }
+
+    if (path === "/api/remote-readonly/terminal-status") {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          terminalId: "TERM-M9-RO-01",
+          sessionResilience: "High",
+          lastHeartbeatAt: "2026-11-09T01:00:00Z",
+        }),
+      });
+    }
+
+    if (path === "/api/remote-readonly/dashboard-summary") {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(SYNTHETIC_DASHBOARD_HEALTHY),
+      });
+    }
+
+    if (path.startsWith("/api/remote-readonly/products")) {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: SYNTHETIC_PRODUCT_ITEMS,
+          totalCount: SYNTHETIC_PRODUCT_ITEMS.length,
+          pageNumber: 1,
+          pageSize: 20,
+          totalPages: 1,
+        }),
+      });
+    }
+
+    if (path === "/api/remote-readonly/audit") {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          visibleCount: 0,
+          totalCount: 0,
+          items: [],
+        }),
+      });
+    }
+
     // Default fallback
     return route.fulfill({
       status: 200,

@@ -6,6 +6,11 @@ export type HostShift = {
   openedAtUtc: string | null;
   openingCashCents: number | null;
   message: string;
+  expectedCashCents?: number | null;
+  countedCashCents?: number | null;
+  varianceCents?: number | null;
+  coverageStatus?: string | null;
+  reviewStatus?: string | null;
 };
 
 export type HostShiftEnvelope = {
@@ -78,9 +83,9 @@ export async function openHostShift(request: OpenShiftRequest): Promise<HostShif
 }
 
 export type CloseShiftRequest = {
-  countedCashCents?: number;
-  physicalCountConfirmed?: boolean;
-  clientRequestId?: string;
+  countedCashCents: number;
+  physicalCountConfirmed: boolean;
+  clientRequestId: string;
   note?: string;
 };
 

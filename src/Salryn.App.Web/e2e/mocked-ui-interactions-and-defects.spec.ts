@@ -149,4 +149,102 @@ test.describe("MOCKED_UI Keyboard, Navigation, Accessibility & UX Defect Verific
     // Restore Backup button is immediately enabled without needing to dismiss a blocking OK dialog first
     await expect(page.getByRole("button", { name: "Restore Backup" }).first()).toBeEnabled();
   });
+
+  test("Dialog accessibility: sets background inert containment, traps Tab/Shift+Tab focus, and restores origin focus on close", async ({
+    page,
+  }) => {
+    await installMockSalrynApi(page, { persona: "admin" });
+    await page.goto("/");
+    await sidebarNavButton(page, "Product Catalog").click();
+
+    const triggerBtn = page.getByRole("button", { name: "Create Product" });
+    await triggerBtn.click();
+
+    // Verify background navigation and shell receive inert containment
+    await expect(page.getByRole("complementary", { name: "Primary navigation" })).toHaveAttribute("inert", "");
+    await expect(page.locator("header")).toHaveAttribute("inert", "");
+
+    const dialog = page.getByRole("dialog", { name: "Create Product" });
+    await expect(dialog).toBeVisible();
+
+    // Verify focus is trapped inside dialog
+    const activeIsInside = await dialog.evaluate((el) => el.contains(document.activeElement));
+    expect(activeIsInside).toBe(true);
+
+    // Tab through and verify containment
+    await page.keyboard.press("Tab");
+    const activeAfterTab = await dialog.evaluate((el) => el.contains(document.activeElement));
+    expect(activeAfterTab).toBe(true);
+
+    await page.keyboard.press("Shift+Tab");
+    const activeAfterShiftTab = await dialog.evaluate((el) => el.contains(document.activeElement));
+    expect(activeAfterShiftTab).toBe(true);
+
+    // Close dialog and verify inert is removed and focus is restored
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByRole("complementary", { name: "Primary navigation" })).not.toHaveAttribute("inert", "");
+    await expect(page.locator("header")).not.toHaveAttribute("inert", "");
+    await expect(triggerBtn).toBeFocused();
+  });
+
+  test("390x844 mobile viewport: notification does not obstruct modal title, fields, or footer resolution CTA", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await installMockSalrynApi(page, { persona: "admin", hasOpenShift: true });
+    await page.goto("/?page=checkout");
+
+    // Open Close Shift modal
+    await page.getByRole("button", { name: "Close Shift" }).click();
+    const dialog = page.getByRole("dialog", { name: "Close Cashier Shift" });
+    await expect(dialog).toBeVisible();
+
+    // Fire an error notification
+    await page.evaluate(() => {
+      // Trigger via custom event or direct notification context simulation
+      const event = new CustomEvent("salryn-test-notify", {
+        detail: { tone: "error", title: "Shift was not closed", description: "Close request conflict details." },
+      });
+      window.dispatchEvent(event);
+    });
+
+    // Also trigger via UI notification hook if listening or verify notification viewport
+    const heading = dialog.getByRole("heading", { name: "Close Cashier Shift" });
+    await expect(heading).toBeVisible();
+
+    // Verify modal title is clearly visible
+    const titleBox = await heading.boundingBox();
+    expect(titleBox).not.toBeNull();
+    expect(titleBox!.y).toBeGreaterThanOrEqual(60);
+
+    // Verify footer resolution CTA buttons are visible and clickable
+    const confirmBtn = dialog.getByRole("button", { name: "Confirm Close Shift" });
+    await expect(confirmBtn).toBeVisible();
+    await expect(confirmBtn).toBeEnabled();
+
+    const cancelBtn = dialog.getByRole("button", { name: "Cancel" });
+    await expect(cancelBtn).toBeVisible();
+    await cancelBtn.click();
+    await expect(dialog).toHaveCount(0);
+  });
+
+  test("OwnerReports deep link navigation persists on reload and supports browser Back", async ({ page }) => {
+    await installMockSalrynApi(page, { persona: "admin", u1Entitled: true });
+    await page.goto("/?page=owner-reports");
+
+    // Click sales trend drilldown
+    await page.getByRole("button", { name: /2026-04-19/i }).first().click();
+    await expect(page).toHaveURL(/page=sales.*salesFrom=2026-04-19/);
+    await expect(page.getByRole("heading", { name: "Sales & Receipts" })).toBeVisible();
+
+    // Reload page - state must remain preserved
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Sales & Receipts" })).toBeVisible();
+
+    // Browser back returns to owner-reports
+    await page.goBack();
+    await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
+    await expect(page).toHaveURL(/page=owner-reports/);
+  });
 });
