@@ -37,10 +37,17 @@ function Invoke-W4Gate {
     Write-Host "[W4] RUN $Name"
     Push-Location $WorkingDirectory
     try {
+        # Native tools such as Vite legitimately write warnings to stderr while
+        # returning exit code 0. Capture both streams and gate on the process
+        # exit code instead of letting PowerShell promote stderr to a terminating
+        # ErrorRecord under the runner's fail-fast policy.
+        $previousErrorActionPreference = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
         $output = & powershell -NoProfile -Command $Command 2>&1
         $exitCode = $LASTEXITCODE
     }
     finally {
+        $ErrorActionPreference = $previousErrorActionPreference
         Pop-Location
     }
     $output | Out-File -LiteralPath $logPath -Encoding utf8
