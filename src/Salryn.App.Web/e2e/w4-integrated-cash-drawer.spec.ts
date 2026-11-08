@@ -12,6 +12,16 @@ async function enterCount(page: Page, value: string) {
   await page.getByRole("checkbox", { name: /physically counted/i }).check();
 }
 
+function rectanglesOverlap(
+  first: { x: number; y: number; width: number; height: number },
+  second: { x: number; y: number; width: number; height: number },
+) {
+  return first.x < second.x + second.width
+    && first.x + first.width > second.x
+    && first.y < second.y + second.height
+    && first.y + first.height > second.y;
+}
+
 test.describe("I1 W4 integrated cash drawer UX", () => {
   test("shared dialog traps Tab, focuses inside, locks scroll, restores focus, and ignores Escape while busy", async ({ page }, testInfo) => {
     await installMockSalrynApi(page, { persona: "admin", closeShiftMode: "delayed-success" });
@@ -62,6 +72,32 @@ test.describe("I1 W4 integrated cash drawer UX", () => {
     await page.getByRole("button", { name: "Submit immutable count & close" }).click();
     await expect(page.locator("main").getByText(/original count was not changed/i)).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath("w4-over-conflict-390x844.png"), fullPage: true });
+  });
+
+  test("mobile financial error notification does not obstruct the count-dialog title or resolution controls", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await installMockSalrynApi(page, { persona: "admin", closeShiftMode: "conflict" });
+    await openCountDialog(page);
+    await enterCount(page, "51.00");
+    await page.getByRole("button", { name: "Submit immutable count & close" }).click();
+
+    const dialog = page.getByRole("dialog", { name: "Physical drawer count" });
+    const title = dialog.getByRole("heading", { name: "Physical drawer count" });
+    const resolution = page.getByRole("button", { name: "Submit immutable count & close" });
+    // The I1 dialog correctly removes background notifications from the
+    // accessibility tree while open, so inspect the rendered overlay directly.
+    const notification = page.locator('[aria-label="Action notifications"] [role="alert"]');
+    const [titleBox, resolutionBox, notificationBox] = await Promise.all([
+      title.boundingBox(),
+      resolution.boundingBox(),
+      notification.boundingBox(),
+    ]);
+
+    expect(titleBox).not.toBeNull();
+    expect(resolutionBox).not.toBeNull();
+    expect(notificationBox).not.toBeNull();
+    expect(rectanglesOverlap(notificationBox!, titleBox!)).toBe(false);
+    expect(rectanglesOverlap(notificationBox!, resolutionBox!)).toBe(false);
   });
 
   test("coverage error has no force-close and count dialog fits 1024x768", async ({ page }, testInfo) => {
