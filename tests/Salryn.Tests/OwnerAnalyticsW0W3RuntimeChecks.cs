@@ -105,7 +105,9 @@ public static class OwnerAnalyticsW0W3RuntimeChecks
         Require(Bucket(aging.Value,"soon")==150_00,"FIFO across differently dated sales must leave ₱150 due soon.");
         Require(Bucket(aging.Value,"later")==50_00,"Legitimate undated adjustment debit/credit must leave ₱50 in later/no due date.");
 
-        SqliteAccountsReceivableService ar=new(c.ConnectionFactory);
+        SqliteAccountsReceivableService ar=new(
+            c.ConnectionFactory,
+            new FixedTimeProvider(new DateTimeOffset(2026,11,8,4,0,0,TimeSpan.Zero)));
         var summary=ar.GetSummaryAsync().GetAwaiter().GetResult();
         Require(summary.IsSuccess && summary.Value.TotalReceivablesCents==canonical && summary.Value.OverdueCents==170_00 && summary.Value.DueTodayCents==100_00,"AR summary total and dated classifications must equal the P1 aging fixture.");
         var customers=ar.SearchCustomersAsync("AR P1").GetAwaiter().GetResult();
@@ -147,4 +149,9 @@ public static class OwnerAnalyticsW0W3RuntimeChecks
     private static void Exec(SqliteConnection x,SqliteTransaction tx,string sql,params (string,object)[] p){using var q=x.CreateCommand();q.Transaction=tx;q.CommandText=sql;foreach(var v in p)q.Parameters.AddWithValue(v.Item1,v.Item2);q.ExecuteNonQuery();}
     private static string RepoRoot(){string? p=Directory.GetCurrentDirectory();while(p is not null&&!File.Exists(Path.Combine(p,"Salryn.sln")))p=Directory.GetParent(p)?.FullName;return p??throw new InvalidOperationException("Repository root not found.");}
     private static void Require(bool value,string message){if(!value)throw new InvalidOperationException(message);}
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+    }
 }
