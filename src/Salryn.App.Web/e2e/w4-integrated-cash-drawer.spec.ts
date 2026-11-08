@@ -64,6 +64,39 @@ test.describe("I1 W4 integrated cash drawer UX", () => {
     await expect(page.getByText(/variance/i).first()).toBeVisible();
   });
 
+  test("physical zero is accepted as an explicit count and remains distinct from zero variance", async ({ page }, testInfo) => {
+    await installMockSalrynApi(page, { persona: "admin", closeShiftMode: "success" });
+    await openCountDialog(page);
+    await enterCount(page, "0.00");
+    await page.getByRole("button", { name: "Submit immutable count & close" }).click();
+    await expect(page.getByText(/counted PHP 0\.00; variance PHP -50\.00; PendingReview/i)).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("w4-physical-zero-shortage-1366x768.png"), fullPage: true });
+  });
+
+  for (const scenario of [
+    { mode: "bad-request" as const, status: 400 },
+    { mode: "unauthorized" as const, status: 401 },
+    { mode: "forbidden" as const, status: 403 },
+    { mode: "conflict" as const, status: 409 },
+  ]) {
+    test(`${scenario.status} deterministic close rejection does not silently reuse the rejected request identity`, async ({ page }) => {
+      const requestIds: string[] = [];
+      page.on("request", (request) => {
+        if (request.url().endsWith("/api/shift/close") && request.method() === "POST") {
+          requestIds.push((request.postDataJSON() as { clientRequestId: string }).clientRequestId);
+        }
+      });
+      await installMockSalrynApi(page, { persona: "admin", closeShiftMode: scenario.mode });
+      await openCountDialog(page);
+      await enterCount(page, "50.00");
+      await page.getByRole("button", { name: "Submit immutable count & close" }).click();
+      await expect(page.getByRole("dialog", { name: "Physical drawer count" })).toBeVisible();
+      await page.getByRole("button", { name: "Submit immutable count & close" }).click();
+      expect(requestIds).toHaveLength(2);
+      expect(requestIds[1]).not.toBe(requestIds[0]);
+    });
+  }
+
   test("conflict and missing coverage remain blocking financial errors on mobile", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await installMockSalrynApi(page, { persona: "admin", closeShiftMode: "conflict" });

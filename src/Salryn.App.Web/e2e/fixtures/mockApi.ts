@@ -62,7 +62,7 @@ export interface MockSalrynScenarioOptions {
   hasOpenShift?: boolean;
   /** Receivables AR aging 403 simulation */
   arAgingForbidden?: boolean;
-  closeShiftMode?: "success" | "delayed-success" | "ambiguous-once" | "conflict" | "coverage-unverified";
+  closeShiftMode?: "success" | "delayed-success" | "ambiguous-once" | "bad-request" | "unauthorized" | "forbidden" | "conflict" | "coverage-unverified";
 }
 
 export async function installMockSalrynApi(page: Page, options: MockSalrynScenarioOptions = {}) {
@@ -245,6 +245,15 @@ export async function installMockSalrynApi(page: Page, options: MockSalrynScenar
       const body = req.postDataJSON() as { countedCashCents?: number; physicalCountConfirmed?: boolean; clientRequestId?: string };
       if (!body || body.countedCashCents === undefined || body.physicalCountConfirmed !== true || !body.clientRequestId) {
         return route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ code: "CashDrawer.PhysicalCountRequired", error: "Physical count required." }) });
+      }
+      if (closeShiftMode === "bad-request") {
+        return route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ code: "CashDrawer.PhysicalCountRequired", error: "Physical count was rejected." }) });
+      }
+      if (closeShiftMode === "unauthorized") {
+        return route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ code: "Session.Unauthorized", error: "Authentication is required." }) });
+      }
+      if (closeShiftMode === "forbidden") {
+        return route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ code: "Shift.OpenClose", error: "Shift.OpenClose permission is required." }) });
       }
       if (closeShiftMode === "conflict") {
         return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ code: "CashDrawer.RequestConflict", error: "The close request id was already used with different submitted details." }) });
