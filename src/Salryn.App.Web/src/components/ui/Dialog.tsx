@@ -13,6 +13,7 @@ type DialogProps = {
   onClose: () => void;
   footer?: ReactNode;
   size?: DialogSize;
+  busy?: boolean;
 };
 
 const sizeClasses: Record<DialogSize, string> = {
@@ -32,11 +33,14 @@ export function Dialog({
   onClose,
   footer,
   size = "md",
+  busy = false,
 }: DialogProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
 
   useEffect(() => {
     if (!open) return;
@@ -44,15 +48,51 @@ export function Dialog({
     previousFocusRef.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
+    // Body scroll lock
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    // Set initial focus
+    const focusTimer = requestAnimationFrame(() => {
+      if (!dialogRef.current) return;
+      const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length > 0) {
+        focusable[0].focus();
+      } else {
+        dialogRef.current.focus();
+      }
+    });
+
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        event.stopPropagation();
-        onCloseRef.current();
+        if (!busyRef.current) {
+          event.stopPropagation();
+          onCloseRef.current();
+        }
+      } else if (event.key === "Tab" && dialogRef.current) {
+        const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable.length > 0) {
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        }
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => {
+      cancelAnimationFrame(focusTimer);
+      document.body.style.overflow = originalOverflow;
       window.removeEventListener("keydown", handleKeyDown);
       if (previousFocusRef.current && document.contains(previousFocusRef.current)) {
         previousFocusRef.current.focus();
@@ -64,11 +104,17 @@ export function Dialog({
     return null;
   }
 
+  function handleBackdropClick() {
+    if (!busy) {
+      onClose();
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-slate-900/55"
-        onClick={onClose}
+        onClick={handleBackdropClick}
         aria-hidden="true"
       />
       <div
@@ -76,7 +122,8 @@ export function Dialog({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`relative z-10 max-h-[calc(100vh-2rem)] w-full min-w-0 ${sizeClasses[size]} overflow-x-hidden overflow-y-auto rounded-lg border border-slate-300 bg-white shadow-xl`}
+        tabIndex={-1}
+        className={`relative z-10 max-h-[calc(100vh-2rem)] w-full min-w-0 ${sizeClasses[size]} overflow-x-hidden overflow-y-auto rounded-lg border border-slate-300 bg-white shadow-xl focus:outline-none`}
       >
         <div className="flex min-h-13 items-start justify-between gap-4 bg-navy-900 px-5 py-3 text-white">
           <div className="min-w-0">
@@ -85,8 +132,11 @@ export function Dialog({
           </div>
           <button
             type="button"
-            onClick={onClose}
-            className="rounded p-1 text-slate-300 hover:bg-white/10 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            disabled={busy}
+            onClick={() => {
+              if (!busy) onClose();
+            }}
+            className="rounded p-1 text-slate-300 hover:bg-white/10 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:pointer-events-none disabled:opacity-50"
             aria-label="Close dialog"
           >
             <X aria-hidden="true" size={20} />
@@ -100,7 +150,7 @@ export function Dialog({
         ) : null}
         <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3.5 sm:px-5">
           {footer ?? (
-            <Button variant="secondary" onClick={onClose}>
+            <Button variant="secondary" disabled={busy} onClick={onClose}>
               Close
             </Button>
           )}
@@ -117,6 +167,7 @@ type ConfirmDialogProps = {
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
+  busy?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 };
@@ -128,6 +179,7 @@ export function ConfirmDialog({
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
   destructive = false,
+  busy = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -136,13 +188,14 @@ export function ConfirmDialog({
       open={open}
       title={title}
       description={description}
+      busy={busy}
       onClose={onCancel}
       footer={
         <>
-          <Button variant="secondary" onClick={onCancel}>
+          <Button variant="secondary" disabled={busy} onClick={onCancel}>
             {cancelLabel}
           </Button>
-          <Button variant={destructive ? "danger" : "primary"} onClick={onConfirm}>
+          <Button variant={destructive ? "danger" : "primary"} disabled={busy} onClick={onConfirm}>
             {confirmLabel}
           </Button>
         </>

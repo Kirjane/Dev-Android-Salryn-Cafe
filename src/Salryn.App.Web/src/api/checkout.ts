@@ -77,10 +77,19 @@ export async function openHostShift(request: OpenShiftRequest): Promise<HostShif
   return readJson<HostShiftEnvelope>(response);
 }
 
-export async function closeHostShift(): Promise<HostShiftEnvelope> {
+export type CloseShiftRequest = {
+  countedCashCents?: number;
+  physicalCountConfirmed?: boolean;
+  clientRequestId?: string;
+  note?: string;
+};
+
+export async function closeHostShift(request?: CloseShiftRequest): Promise<HostShiftEnvelope> {
   const response = await fetch("/api/shift/close", {
     method: "POST",
     credentials: "include",
+    headers: request ? { "Content-Type": "application/json" } : undefined,
+    body: request ? JSON.stringify(request) : undefined,
   });
 
   return readJson<HostShiftEnvelope>(response);

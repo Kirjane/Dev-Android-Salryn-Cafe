@@ -48,7 +48,20 @@ export function SalesHistoryPage({ canVoid = false }: { canVoid?: boolean }) {
   useEffect(() => { setSelectedId(null); }, [receiptNo, status, from, to]);
   useEffect(() => { setReprintResult(null); setVoidReason(""); setVoidConfirmed(false); setVoidMessage(null); }, [selectedId]);
 
-  function resetFilters() { setReceiptNo(""); setStatus(""); setFrom(""); setTo(""); setPage(1); }
+  function resetFilters() {
+    setReceiptNo("");
+    setStatus("");
+    setFrom("");
+    setTo("");
+    setPage(1);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("salesFrom");
+      url.searchParams.delete("salesTo");
+      const nextQuery = url.searchParams.toString();
+      window.history.replaceState({ page: "sales" }, "", url.pathname + (nextQuery ? `?${nextQuery}` : ""));
+    }
+  }
 
   async function handleReprint() {
     if (!detailQuery.data?.id || isReprinting) return;
