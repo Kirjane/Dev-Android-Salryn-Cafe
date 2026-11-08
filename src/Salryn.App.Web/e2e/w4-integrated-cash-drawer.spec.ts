@@ -133,6 +133,52 @@ test.describe("I1 W4 integrated cash drawer UX", () => {
     expect(rectanglesOverlap(notificationBox!, resolutionBox!)).toBe(false);
   });
 
+  for (const viewport of [
+    { label: "390x844", width: 390, height: 844, zoom: "1" },
+    { label: "1024x768", width: 1024, height: 768, zoom: "1" },
+    { label: "1366x768-125pct", width: 1366, height: 768, zoom: "1.25" },
+    { label: "1366x768-150pct", width: 1366, height: 768, zoom: "1.5" },
+  ]) {
+    test(`real stacked financial errors preserve W4 recovery UI at ${viewport.label}`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      await installMockSalrynApi(page, { persona: "admin", closeShiftMode: "conflict" });
+      await openCountDialog(page);
+      await page.evaluate((zoom) => { document.documentElement.style.zoom = zoom; }, viewport.zoom);
+      await enterCount(page, "51.00");
+      const submit = page.getByRole("button", { name: "Submit immutable count & close" });
+      const dialog = page.getByRole("dialog", { name: "Physical drawer count" });
+      const notifications = page.locator('[data-notification-viewport] [role="alert"]');
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await submit.focus();
+        await page.keyboard.press("Enter");
+        await expect(notifications).toHaveCount(attempt + 1);
+        await expect(submit).toBeEnabled();
+      }
+      await expect(notifications).toHaveCount(3);
+      await expect(dialog.getByRole("heading", { name: "Physical drawer count" })).toBeVisible();
+      await expect(page.getByLabel("Actual counted cash")).toBeVisible();
+      await expect(submit).toBeVisible();
+      await expect(dialog.getByText(/No force-close is available/i)).toBeVisible();
+
+      const notificationBox = await page.locator("[data-notification-viewport]").boundingBox();
+      expect(notificationBox).not.toBeNull();
+      for (const protectedElement of [
+        dialog.getByRole("heading", { name: "Physical drawer count" }),
+        page.getByLabel("Actual counted cash"),
+        submit,
+        dialog.getByText(/No force-close is available/i),
+      ]) {
+        const protectedBox = await protectedElement.boundingBox();
+        expect(protectedBox).not.toBeNull();
+        expect(rectanglesOverlap(notificationBox!, protectedBox!)).toBe(false);
+      }
+      await submit.focus();
+      await page.keyboard.press("Shift+Tab");
+      expect(await dialog.evaluate((node) => node.contains(document.activeElement))).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`w4-stacked-errors-${viewport.label}.png`), fullPage: true });
+    });
+  }
+
   test("coverage error has no force-close and count dialog fits 1024x768", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1024, height: 768 });
     await installMockSalrynApi(page, { persona: "admin", closeShiftMode: "coverage-unverified" });

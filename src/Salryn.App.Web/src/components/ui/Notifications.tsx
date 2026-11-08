@@ -105,9 +105,40 @@ export function NotificationViewport({
   notifications: AppNotification[];
   onDismiss: (id: number) => void;
 }) {
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport || notifications.length === 0) return;
+    const updateClearance = () => {
+      const viewportRect = viewport.getBoundingClientRect();
+      const clearance = Math.ceil(viewportRect.bottom);
+      const dialogRect = document.querySelector<HTMLElement>('[data-dialog-container] > [role="dialog"]')?.getBoundingClientRect();
+      const horizontalOverlap = dialogRect
+        ? viewportRect.left < dialogRect.right && viewportRect.right > dialogRect.left
+        : false;
+      document.body.style.setProperty("--salryn-notification-height", `${clearance}px`);
+      document.body.dataset.hasNotifications = "true";
+      if (horizontalOverlap) document.body.dataset.notificationOverlap = "true";
+    };
+    const observer = new ResizeObserver(updateClearance);
+    observer.observe(viewport);
+    updateClearance();
+    return () => {
+      observer.disconnect();
+      document.body.style.removeProperty("--salryn-notification-height");
+      delete document.body.dataset.hasNotifications;
+      delete document.body.dataset.notificationOverlap;
+    };
+  }, [notifications.length]);
+
+  if (notifications.length === 0) return null;
+
   return (
     <div
-      className="pointer-events-none fixed inset-x-0 top-[62px] z-[100] flex flex-col items-end gap-2 px-3 py-2 sm:left-auto sm:w-[25rem] sm:px-5"
+      ref={viewportRef}
+      data-notification-viewport="true"
+      className="pointer-events-none fixed inset-x-0 top-[62px] z-[100] flex flex-col items-end gap-2 px-3 py-2 sm:left-auto sm:w-[25rem] sm:px-5 max-sm:top-2 max-sm:inset-x-2 max-sm:items-center max-sm:gap-1.5"
       aria-live="polite"
       aria-relevant="additions"
       aria-label="Action notifications"
@@ -117,7 +148,7 @@ export function NotificationViewport({
         return (
           <div
             key={notification.id}
-            className={`pointer-events-auto flex w-full items-start gap-3 rounded-lg border px-4 py-3 shadow-lg ${classes}`}
+            className={`pointer-events-auto flex w-full items-start gap-3 rounded-lg border px-4 py-3 shadow-lg max-sm:px-3 max-sm:py-2 ${classes}`}
             role={notification.tone === "error" ? "alert" : "status"}
           >
             <Icon className="mt-0.5 shrink-0" size={18} aria-hidden="true" />

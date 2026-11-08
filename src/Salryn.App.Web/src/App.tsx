@@ -85,7 +85,24 @@ function renderPage(page: AppPage, session: SessionState, onLogout: () => void, 
     case "receivables":
       return <ReceivablesPage />;
     case "owner-reports":
-      return <OwnerReportsPage onOpenSales={(from, to) => { window.history.replaceState({ page: "owner-reports" }, "", "/?page=owner-reports"); window.history.pushState({ page: "sales" }, "", `/?page=sales&salesFrom=${encodeURIComponent(from)}&salesTo=${encodeURIComponent(to)}`); setCurrentPageFromExternal(onNavigate, "sales"); }} onOpenReceivables={() => { window.history.replaceState({ page: "owner-reports" }, "", "/?page=owner-reports"); window.history.pushState({ page: "receivables" }, "", "/?page=receivables"); setCurrentPageFromExternal(onNavigate, "receivables"); }} />;
+      return (
+        <OwnerReportsPage
+          onOpenSales={(from, to) => {
+            window.history.replaceState({ page: "owner-reports" }, "", "/?page=owner-reports");
+            window.history.pushState(
+              { page: "sales" },
+              "",
+              `/?page=sales&salesFrom=${encodeURIComponent(from)}&salesTo=${encodeURIComponent(to)}`,
+            );
+            setCurrentPageFromExternal(onNavigate, "sales");
+          }}
+          onOpenReceivables={() => {
+            window.history.replaceState({ page: "owner-reports" }, "", "/?page=owner-reports");
+            window.history.pushState({ page: "receivables" }, "", "/?page=receivables");
+            setCurrentPageFromExternal(onNavigate, "receivables");
+          }}
+        />
+      );
     case "settings":
       return <StoreSettingsPage />;
     case "license":

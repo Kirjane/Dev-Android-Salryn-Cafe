@@ -2,6 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Keep live operational notifications and modal recovery controls visible at
+   the same time. The viewport height is measured by NotificationViewport;
+   long/stacked notifications scroll within a bounded region while the active
+   dialog uses the remaining screen height. */
+[data-notification-viewport] {
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
+body[data-modal-open][data-notification-overlap] [data-dialog-container] {
+  align-items: flex-start;
+  padding-top: calc(min(var(--salryn-notification-height, 0px), 40vh) + 1rem);
+}
+
+body[data-modal-open][data-notification-overlap] [data-dialog-container] > [role="dialog"] {
+  max-height: calc(100vh - min(var(--salryn-notification-height, 0px), 40vh) - 2rem);
+}
+
 :root {
   --salryn-shell-bg: #0f1a2a;
   --salryn-rail-bg: #162438;

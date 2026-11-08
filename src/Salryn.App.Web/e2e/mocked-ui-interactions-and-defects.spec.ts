@@ -152,4 +152,70 @@ test.describe("MOCKED_UI Keyboard, Navigation, Accessibility & UX Defect Verific
     // Restore Backup button is immediately enabled without needing to dismiss a blocking OK dialog first
     await expect(page.getByRole("button", { name: "Restore Backup" }).first()).toBeEnabled();
   });
+
+  test("Dialog accessibility: sets background inert containment, traps Tab/Shift+Tab focus, and restores origin focus on close", async ({
+    page,
+  }) => {
+    await installMockSalrynApi(page, { persona: "admin" });
+    await page.goto("/");
+    await sidebarNavButton(page, "Product Catalog").click();
+
+    const triggerBtn = page.getByRole("button", { name: "Create Product" });
+    await triggerBtn.click();
+
+    // Verify background navigation and shell are effectively contained by an
+    // inert ancestor (the portal implementation may inert the shared app root).
+    for (const background of [
+      page.getByRole("complementary", { name: "Primary navigation" }),
+      page.locator("header"),
+    ]) {
+      await expect.poll(() => background.evaluate((node) => Boolean(node.closest("[inert]")))).toBe(true);
+    }
+
+    const dialog = page.getByRole("dialog", { name: "Create Product" });
+    await expect(dialog).toBeVisible();
+
+    // Verify focus is trapped inside dialog
+    const activeIsInside = await dialog.evaluate((el) => el.contains(document.activeElement));
+    expect(activeIsInside).toBe(true);
+
+    // Tab through and verify containment
+    await page.keyboard.press("Tab");
+    const activeAfterTab = await dialog.evaluate((el) => el.contains(document.activeElement));
+    expect(activeAfterTab).toBe(true);
+
+    await page.keyboard.press("Shift+Tab");
+    const activeAfterShiftTab = await dialog.evaluate((el) => el.contains(document.activeElement));
+    expect(activeAfterShiftTab).toBe(true);
+
+    // Close dialog and verify inert is removed and focus is restored
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    for (const background of [
+      page.getByRole("complementary", { name: "Primary navigation" }),
+      page.locator("header"),
+    ]) {
+      await expect.poll(() => background.evaluate((node) => Boolean(node.closest("[inert]")))).toBe(false);
+    }
+    await expect(triggerBtn).toBeFocused();
+  });
+
+  test("OwnerReports deep link navigation persists on reload and supports browser Back", async ({ page }) => {
+    await installMockSalrynApi(page, { persona: "admin", u1Entitled: true });
+    await page.goto("/?page=owner-reports");
+
+    // Click sales trend drilldown
+    await page.getByRole("button", { name: /2026-04-19/i }).first().click();
+    await expect(page).toHaveURL(/page=sales.*salesFrom=2026-04-19/);
+    await expect(page.getByRole("heading", { name: "Sales & Receipts" })).toBeVisible();
+
+    // Reload page - state must remain preserved
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Sales & Receipts" })).toBeVisible();
+
+    // Browser back returns to owner-reports
+    await page.goBack();
+    await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
+    await expect(page).toHaveURL(/page=owner-reports/);
+  });
 });

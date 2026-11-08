@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "./Button";
 
@@ -25,6 +25,79 @@ const sizeClasses: Record<DialogSize, string> = {
   "2xl": "max-w-3xl",
 };
 
+// Global modal stack to coordinate inert backgrounds, scroll lock, and Escape handling
+interface DialogStackItem {
+  id: string;
+  container: HTMLDivElement;
+  inertElements: HTMLElement[];
+  onClose: () => void;
+  isBusy: () => boolean;
+}
+
+const dialogStack: DialogStackItem[] = [];
+let originalBodyOverflow = "";
+
+function getBackgroundElementsToInert(container: HTMLElement): HTMLElement[] {
+  const elements: HTMLElement[] = [];
+  let curr: HTMLElement | null = container;
+  while (curr && curr !== document.body) {
+    const parent: HTMLElement | null = curr.parentElement;
+    if (parent) {
+      for (const sibling of Array.from(parent.children)) {
+        if (
+          sibling !== curr &&
+          sibling instanceof HTMLElement &&
+          !sibling.hasAttribute("data-notification-viewport") &&
+          !sibling.querySelector?.("[data-notification-viewport]")
+        ) {
+          elements.push(sibling);
+        }
+      }
+    }
+    curr = parent;
+  }
+  return elements;
+}
+
+function pushDialog(item: Omit<DialogStackItem, "inertElements">) {
+  if (dialogStack.length === 0) {
+    originalBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.body.dataset.modalOpen = "true";
+  } else {
+    // If a dialog is already open, make the previous dialog container inert
+    const prev = dialogStack[dialogStack.length - 1];
+    prev.container.setAttribute("inert", "");
+  }
+
+  const inertElements = getBackgroundElementsToInert(item.container);
+  for (const el of inertElements) {
+    el.setAttribute("data-dialog-inert", "true");
+    el.setAttribute("inert", "");
+  }
+
+  dialogStack.push({ ...item, inertElements });
+}
+
+function popDialog(id: string) {
+  const index = dialogStack.findIndex((item) => item.id === id);
+  if (index !== -1) {
+    const [removed] = dialogStack.splice(index, 1);
+    for (const el of removed.inertElements) {
+      el.removeAttribute("data-dialog-inert");
+      el.removeAttribute("inert");
+    }
+  }
+  if (dialogStack.length === 0) {
+    document.body.style.overflow = originalBodyOverflow;
+    delete document.body.dataset.modalOpen;
+  } else {
+    // Topmost dialog is active and not inert
+    const top = dialogStack[dialogStack.length - 1];
+    top.container.removeAttribute("inert");
+  }
+}
+
 export function Dialog({
   open,
   title,
@@ -36,88 +109,111 @@ export function Dialog({
   size = "md",
   busy = false,
 }: DialogProps) {
+  const [dialogId] = useState(() => "salryn-dialog-" + Math.random().toString(36).substring(2, 9));
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
-  const overlayRef = useRef<HTMLDivElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const onCloseRef = useRef(onClose);
-  const busyRef = useRef(busy);
   onCloseRef.current = onClose;
+  const busyRef = useRef(busy);
   busyRef.current = busy;
 
   useEffect(() => {
     if (!open) return;
 
+    // Capture origin focus for restoration upon close
     previousFocusRef.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
-    const dialog = dialogRef.current;
-    const overlay = overlayRef.current;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const inerted = Array.from(document.body.children).filter((element) => element !== overlay);
-    const priorAriaHidden = new Map<Element, string | null>();
-    inerted.forEach((element) => {
-      priorAriaHidden.set(element, element.getAttribute("aria-hidden"));
-      element.setAttribute("inert", "");
-      element.setAttribute("aria-hidden", "true");
+    const container = containerRef.current;
+    if (container) {
+      pushDialog({
+        id: dialogId,
+        container,
+        onClose: () => onCloseRef.current(),
+        isBusy: () => busyRef.current,
+      });
+    }
+
+    // Set initial focus
+    const focusTimer = requestAnimationFrame(() => {
+      if (!dialogRef.current) return;
+      const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      const requestedInitialFocus = dialogRef.current.querySelector<HTMLElement>("[data-dialog-initial-focus]");
+      if (requestedInitialFocus) {
+        requestedInitialFocus.focus();
+      } else if (focusable.length > 0) {
+        focusable[0].focus();
+      } else {
+        dialogRef.current.focus();
+      }
     });
 
-    const focusable = () => Array.from(dialog?.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    ) ?? []).filter((element) => !element.hasAttribute("hidden") && element.getAttribute("aria-hidden") !== "true");
-    const initial = dialog?.querySelector<HTMLElement>("[data-dialog-initial-focus]") ?? focusable()[0] ?? dialog;
-    window.requestAnimationFrame(() => initial?.focus());
-
     function handleKeyDown(event: KeyboardEvent) {
+      // Only topmost dialog handles keydown
+      const top = dialogStack[dialogStack.length - 1];
+      if (top?.id !== dialogId) return;
+
       if (event.key === "Escape") {
-        if (busyRef.current) return;
-        event.stopPropagation();
-        onCloseRef.current();
-        return;
-      }
-      if (event.key === "Tab") {
-        const items = focusable();
-        if (items.length === 0) {
+        if (!busyRef.current) {
+          event.stopPropagation();
           event.preventDefault();
-          dialog?.focus();
-          return;
+          onCloseRef.current();
+        } else {
+          event.stopPropagation();
+          event.preventDefault();
         }
-        const first = items[0];
-        const last = items[items.length - 1];
-        if (event.shiftKey && (document.activeElement === first || !dialog?.contains(document.activeElement))) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first.focus();
+      } else if (event.key === "Tab" && dialogRef.current) {
+        const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable.length > 0) {
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
         }
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
+
     return () => {
+      cancelAnimationFrame(focusTimer);
       window.removeEventListener("keydown", handleKeyDown);
-      document.body.style.overflow = previousOverflow;
-      inerted.forEach((element) => {
-        element.removeAttribute("inert");
-        const prior = priorAriaHidden.get(element);
-        if (prior == null) element.removeAttribute("aria-hidden"); else element.setAttribute("aria-hidden", prior);
-      });
+      popDialog(dialogId);
       if (previousFocusRef.current && document.contains(previousFocusRef.current)) {
         previousFocusRef.current.focus();
       }
     };
-  }, [open]);
+  }, [open, dialogId]);
 
   if (!open) {
     return null;
   }
 
-  return createPortal(
-    <div ref={overlayRef} className="fixed inset-0 z-50 flex items-center justify-center p-4">
+  function handleBackdropClick() {
+    if (!busy) {
+      onClose();
+    }
+  }
+
+  const dialogContent = (
+    <div
+      ref={containerRef}
+      data-dialog-container="true"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+    >
       <div
         className="absolute inset-0 bg-slate-900/55"
-        onClick={() => { if (!busy) onClose(); }}
+        onClick={handleBackdropClick}
         aria-hidden="true"
       />
       <div
@@ -125,9 +221,9 @@ export function Dialog({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        aria-busy={busy || undefined}
+        aria-busy={busy ? "true" : undefined}
         tabIndex={-1}
-        className={`relative z-10 max-h-[calc(100vh-2rem)] w-full min-w-0 ${sizeClasses[size]} overflow-x-hidden overflow-y-auto rounded-lg border border-slate-300 bg-white shadow-xl`}
+        className={`relative z-10 max-h-[calc(100vh-2rem)] max-sm:max-h-[calc(100vh-6rem)] w-full min-w-0 ${sizeClasses[size]} overflow-x-hidden overflow-y-auto rounded-lg border border-slate-300 bg-white shadow-xl focus:outline-none`}
       >
         <div className="flex min-h-13 items-start justify-between gap-4 bg-navy-900 px-5 py-3 text-white">
           <div className="min-w-0">
@@ -136,9 +232,11 @@ export function Dialog({
           </div>
           <button
             type="button"
-            onClick={() => { if (!busy) onClose(); }}
             disabled={busy}
-            className="rounded p-1 text-slate-300 hover:bg-white/10 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            onClick={() => {
+              if (!busy) onClose();
+            }}
+            className="rounded p-1 text-slate-300 hover:bg-white/10 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:pointer-events-none disabled:opacity-50"
             aria-label="Close dialog"
           >
             <X aria-hidden="true" size={20} />
@@ -152,15 +250,16 @@ export function Dialog({
         ) : null}
         <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3.5 sm:px-5">
           {footer ?? (
-            <Button variant="secondary" onClick={onClose}>
+            <Button variant="secondary" disabled={busy} onClick={onClose}>
               Close
             </Button>
           )}
         </div>
       </div>
-    </div>,
-    document.body,
+    </div>
   );
+
+  return createPortal(dialogContent, document.body);
 }
 
 type ConfirmDialogProps = {
@@ -170,6 +269,7 @@ type ConfirmDialogProps = {
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
+  busy?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 };
@@ -181,6 +281,7 @@ export function ConfirmDialog({
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
   destructive = false,
+  busy = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -189,13 +290,14 @@ export function ConfirmDialog({
       open={open}
       title={title}
       description={description}
+      busy={busy}
       onClose={onCancel}
       footer={
         <>
-          <Button variant="secondary" onClick={onCancel}>
+          <Button variant="secondary" disabled={busy} onClick={onCancel}>
             {cancelLabel}
           </Button>
-          <Button variant={destructive ? "danger" : "primary"} onClick={onConfirm}>
+          <Button variant={destructive ? "danger" : "primary"} disabled={busy} onClick={onConfirm}>
             {confirmLabel}
           </Button>
         </>

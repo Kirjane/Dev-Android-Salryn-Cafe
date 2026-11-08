@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchLicenseStatus, installLicense, type LicenseStatusValue, type LicenseTypeValue } from "../api/license";
 import { Alert, Button, LoadingState, StatusPill, useNotifications } from "../components/ui";
@@ -108,14 +108,51 @@ function WizardShell({
   footer: ReactNode;
   onClose: () => void;
 }) {
+  const shellRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        onClose();
+      } else if (event.key === "Tab" && shellRef.current) {
+        const focusable = shellRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable.length > 0) {
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        }
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-6">
       <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} aria-hidden />
       <div
+        ref={shellRef}
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="relative z-10 flex max-h-[94vh] w-full max-w-xl flex-col overflow-hidden rounded-t-xl border border-[#E5E7EB] bg-white sm:rounded-xl"
+        tabIndex={-1}
+        className="relative z-10 flex max-h-[94vh] w-full max-w-xl flex-col overflow-hidden rounded-t-xl border border-[#E5E7EB] bg-white sm:rounded-xl focus:outline-none"
       >
         <div className="flex items-start justify-between gap-3 border-b border-[#E5E7EB] px-5 py-4 sm:px-6">
           <div>
