@@ -164,8 +164,10 @@ export function AuditPage() {
 
       <Card>
         <CardBody className="space-y-4">
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2" role="tablist" aria-label="Audit and error log tabs">
             <Button
+              role="tab"
+              aria-selected={tab === "audit"}
               variant={tab === "audit" ? "primary" : "secondary"}
               size="sm"
               onClick={() => {
@@ -176,6 +178,8 @@ export function AuditPage() {
               Audit logs
             </Button>
             <Button
+              role="tab"
+              aria-selected={tab === "errors"}
               variant={tab === "errors" ? "primary" : "secondary"}
               size="sm"
               onClick={() => {

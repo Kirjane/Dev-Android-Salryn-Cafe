@@ -63,9 +63,6 @@ export function BackupRestorePage() {
   const [restoreText, setRestoreText] = useState("");
   const [restoring, setRestoring] = useState(false);
   const [verifications, setVerifications] = useState<Record<string, BackupVerification>>({});
-  const [createSuccessId, setCreateSuccessId] = useState<string | null>(null);
-  const [verifySuccessId, setVerifySuccessId] = useState<string | null>(null);
-  const [restoreSuccessAt, setRestoreSuccessAt] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
 
   const backups = useMemo(() => backupsQuery.data ?? [], [backupsQuery.data]);
@@ -79,7 +76,6 @@ export function BackupRestorePage() {
     try {
       const created = await createBackup();
       setMessage(`Backup created: ${created.backupId}`);
-      setCreateSuccessId(created.backupId);
       notify.success("Backup created", "Keep a copy outside this computer.");
       await backupsQuery.refetch();
     } catch (e) {
@@ -99,7 +95,6 @@ export function BackupRestorePage() {
       setVerifications((current) => ({ ...current, [backupId]: verification }));
       setMessage(verification.database.isRestorable ? `Backup verified: ${backupId}` : `Backup is not restorable: ${backupId}`);
       if (verification.database.isRestorable) {
-        setVerifySuccessId(backupId);
         notify.success("Backup verified", "This backup is restorable.");
       } else {
         notify.error("Backup verification failed", "This backup is not restorable.");
@@ -154,9 +149,7 @@ export function BackupRestorePage() {
     setError(null);
     try {
       const result = await restoreBackup(restoreTarget, restoreText);
-      const when = result.completedAt ? formatDate(result.completedAt) : new Date().toLocaleString();
       setMessage(`Restore completed from ${restoreTarget}${result.completedAt ? ` at ${formatDate(result.completedAt)}` : ""}. Restart the app if the local API reports stale data.`);
-      setRestoreSuccessAt(when);
       setRestoreText("");
       setRestoreTarget(null);
       notify.success("Restore completed", "The active database was replaced from the verified backup.");
@@ -304,45 +297,6 @@ export function BackupRestorePage() {
             <span>Type RESTORE SALRYN BACKUP to enable restore</span>
             <TextInput value={restoreText} onChange={(event) => setRestoreText(event.target.value)} placeholder="RESTORE SALRYN BACKUP" />
           </label>
-        </div>
-      </Dialog>
-
-      <Dialog
-        open={Boolean(createSuccessId)}
-        title="Backup created"
-        onClose={() => setCreateSuccessId(null)}
-        footer={<Button onClick={() => setCreateSuccessId(null)}>OK</Button>}
-      >
-        <div className="space-y-2 text-center text-sm">
-          <p className="text-base font-semibold text-navy-900">Backup created successfully</p>
-          <p className="break-all font-mono text-xs text-slate-700">{createSuccessId}</p>
-          <p className="text-slate-600">You can Download Backup File or Verify Backup from the list below.</p>
-        </div>
-      </Dialog>
-
-      <Dialog
-        open={Boolean(verifySuccessId)}
-        title="Backup verified"
-        onClose={() => setVerifySuccessId(null)}
-        footer={<Button onClick={() => setVerifySuccessId(null)}>OK</Button>}
-      >
-        <div className="space-y-2 text-center text-sm">
-          <p className="text-base font-semibold text-navy-900">Backup verified and restorable</p>
-          <p className="break-all font-mono text-xs text-slate-700">{verifySuccessId}</p>
-          <p className="text-slate-600">You may Restore Backup after typing RESTORE SALRYN BACKUP in the confirmation dialog.</p>
-        </div>
-      </Dialog>
-
-      <Dialog
-        open={Boolean(restoreSuccessAt)}
-        title="Restore completed"
-        onClose={() => setRestoreSuccessAt(null)}
-        footer={<Button onClick={() => setRestoreSuccessAt(null)}>OK</Button>}
-      >
-        <div className="space-y-2 text-center text-sm">
-          <p className="text-base font-semibold text-navy-900">Restore completed</p>
-          <p className="text-slate-600">Completed at {restoreSuccessAt}. Restart the app if the local API reports stale data.</p>
-          <p className="text-xs text-slate-500">The previous database was archived automatically before restore.</p>
         </div>
       </Dialog>
     </div>

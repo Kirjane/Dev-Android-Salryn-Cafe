@@ -30,7 +30,7 @@ import { OfficialSetupPage } from "./pages/OfficialSetupPage";
 import { TraditionalReportingPage } from "./pages/TraditionalReportingPage";
 import { UsersPage } from "./pages/UsersPage";
 import { ReceivablesPage } from "./pages/ReceivablesPage";
-import { canAccessPage, getFirstAllowedPage } from "./security/permissions";
+import { canAccessPage, getFirstAllowedPage, implementedPages } from "./security/permissions";
 import { isRemoteClientBrowserLocation } from "./utils/lanEntry";
 import { readInstalledTerminalLicense } from "./utils/terminalLicenseStorage";
 
@@ -47,6 +47,15 @@ function AccessDenied({ currentPage, onGoHome }: { currentPage: AppPage; onGoHom
   );
 }
 
+function readPageFromUrl(): AppPage | null {
+  if (typeof window === "undefined") return null;
+  const raw = new URLSearchParams(window.location.search).get("page");
+  if (raw && (implementedPages as readonly string[]).includes(raw)) {
+    return raw as AppPage;
+  }
+  return null;
+}
+
 function renderPage(page: AppPage, session: SessionState, onLogout: () => void, onNavigate: (page: AppPage) => void) {
   switch (page) {
     case "dashboard":
@@ -56,7 +65,19 @@ function renderPage(page: AppPage, session: SessionState, onLogout: () => void, 
     case "host-lan-control":
       return <HostLanControlPage />;
     case "products":
-      return <ProductsPage />;
+      return (
+        <ProductsPage
+          onOpenInventory={(productId, productName) => {
+            window.history.replaceState({ page: "products" }, "", "/?page=products");
+            window.history.pushState(
+              { page: "inventory", productId, productName },
+              "",
+              `/?page=inventory&productId=${encodeURIComponent(productId)}&productName=${encodeURIComponent(productName)}`,
+            );
+            setCurrentPageFromExternal(onNavigate, "inventory");
+          }}
+        />
+      );
     case "inventory":
       return <InventoryPage />;
     case "sales":
@@ -64,7 +85,7 @@ function renderPage(page: AppPage, session: SessionState, onLogout: () => void, 
     case "receivables":
       return <ReceivablesPage />;
     case "owner-reports":
-      return <OwnerReportsPage onOpenSales={(from, to) => { window.history.replaceState({ page: "owner-reports" }, "", "/"); window.history.pushState({ page: "sales" }, "", `/?salesFrom=${from}&salesTo=${to}`); onNavigate("sales"); }} onOpenReceivables={() => { window.history.replaceState({ page: "owner-reports" }, "", "/"); window.history.pushState({ page: "receivables" }, "", "/"); onNavigate("receivables"); }} />;
+      return <OwnerReportsPage onOpenSales={(from, to) => { window.history.replaceState({ page: "owner-reports" }, "", "/?page=owner-reports"); window.history.pushState({ page: "sales" }, "", `/?page=sales&salesFrom=${encodeURIComponent(from)}&salesTo=${encodeURIComponent(to)}`); setCurrentPageFromExternal(onNavigate, "sales"); }} onOpenReceivables={() => { window.history.replaceState({ page: "owner-reports" }, "", "/?page=owner-reports"); window.history.pushState({ page: "receivables" }, "", "/?page=receivables"); setCurrentPageFromExternal(onNavigate, "receivables"); }} />;
     case "settings":
       return <StoreSettingsPage />;
     case "license":
@@ -86,6 +107,10 @@ function renderPage(page: AppPage, session: SessionState, onLogout: () => void, 
       return exhaustiveCheck;
     }
   }
+}
+
+function setCurrentPageFromExternal(onNavigate: (page: AppPage) => void, page: AppPage) {
+  onNavigate(page);
 }
 
 type RemoteClientMode = "activation" | "landing" | "remote-pos" | "remote-readonly";
@@ -137,7 +162,7 @@ function ConsoleApp() {
   const queryClient = useQueryClient();
   const sessionQuery = useAppSession();
   const licenseStatusQuery = useQuery({ queryKey: ["license-status"], queryFn: fetchLicenseStatus, retry: false });
-  const [currentPage, setCurrentPage] = useState<AppPage>("dashboard");
+  const [currentPage, setCurrentPage] = useState<AppPage>(() => readPageFromUrl() ?? "dashboard");
   const [bootstrapStatus, setBootstrapStatus] = useState<BootstrapStatus | null>(null);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [isBootstrapLoading, setIsBootstrapLoading] = useState(true);
@@ -147,8 +172,27 @@ function ConsoleApp() {
     try { setBootstrapStatus(await fetchBootstrapStatus()); } catch (error) { setBootstrapError((error as Error).message || "Could not read first-run setup status."); } finally { setIsBootstrapLoading(false); }
   }
 
+  function handleNavigate(nextPage: AppPage) {
+    setCurrentPage((prev) => {
+      if (prev !== nextPage && typeof window !== "undefined") {
+        const currentStatePage = (window.history.state as { page?: string } | null)?.page;
+        if (currentStatePage !== nextPage) {
+          window.history.pushState({ page: nextPage }, "", `/?page=${nextPage}`);
+        }
+      }
+      return nextPage;
+    });
+  }
+
   useEffect(() => { void refreshBootstrapStatus(); }, []);
-  useEffect(() => { const restore = (event: PopStateEvent) => { const page = event.state?.page as AppPage | undefined; if (page) setCurrentPage(page); }; window.addEventListener("popstate", restore); return () => window.removeEventListener("popstate", restore); }, []);
+  useEffect(() => {
+    const restore = (event: PopStateEvent) => {
+      const page = (event.state?.page as AppPage | undefined) ?? readPageFromUrl() ?? "dashboard";
+      setCurrentPage(page);
+    };
+    window.addEventListener("popstate", restore);
+    return () => window.removeEventListener("popstate", restore);
+  }, []);
   useEffect(() => {
     if (bootstrapStatus?.firstRunRequired && window.location.pathname !== "/bootstrap") window.history.replaceState(null, "", "/bootstrap");
     if (bootstrapStatus && !bootstrapStatus.firstRunRequired && window.location.pathname === "/bootstrap") window.history.replaceState(null, "", "/");
@@ -157,13 +201,16 @@ function ConsoleApp() {
     const session = sessionQuery.data;
     if (!session?.isAuthenticated || canAccessPage(session, currentPage)) return;
     const firstAllowedPage = getFirstAllowedPage(session);
-    if (firstAllowedPage && firstAllowedPage !== currentPage) setCurrentPage(firstAllowedPage);
+    if (firstAllowedPage && firstAllowedPage !== currentPage) {
+      window.history.replaceState({ page: firstAllowedPage }, "", `/?page=${firstAllowedPage}`);
+      setCurrentPage(firstAllowedPage);
+    }
   }, [currentPage, sessionQuery.data]);
 
   async function handleLogout() { try { await logout(); } catch {} queryClient.removeQueries(); void sessionQuery.refetch(); }
 
   if (isBootstrapLoading || sessionQuery.isLoading || licenseStatusQuery.isLoading) return <FullScreenCenter><p className="text-sm text-slate-300">Starting Salryn POS...</p></FullScreenCenter>;
-  if (bootstrapError || sessionQuery.isError || licenseStatusQuery.isError) return <FullScreenCenter><div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-8 shadow-xl"><h1 className="text-xl font-semibold text-slate-900">Salryn POS unavailable</h1><p className="mt-2 text-sm text-slate-500">{bootstrapError || (licenseStatusQuery.error as Error | null)?.message || "Salryn could not start on this device."}</p><div className="mt-6"><Button onClick={() => { void refreshBootstrapStatus(); void licenseStatusQuery.refetch(); }}>Try again</Button></div></div></FullScreenCenter>;
+  if (bootstrapError || sessionQuery.isError || licenseStatusQuery.isError) return <FullScreenCenter><div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-8 shadow-xl"><h1 className="text-xl font-semibold text-slate-900">Salryn POS unavailable</h1><p className="mt-2 text-sm text-slate-500">{bootstrapError || (licenseStatusQuery.error as Error | null)?.message || "Salryn could not start on this device."}</p><div className="mt-6"><Button onClick={() => { void refreshBootstrapStatus(); void sessionQuery.refetch(); void licenseStatusQuery.refetch(); }}>Try again</Button></div></div></FullScreenCenter>;
   if (!isHostLicenseReady(licenseStatusQuery.data)) return <div className="min-h-screen bg-[#f6f7f9] p-6"><div className="mx-auto max-w-6xl"><LicensePage /></div></div>;
   if (bootstrapStatus?.firstRunRequired) return <BootstrapSetupPage status={bootstrapStatus} onCompleted={() => { void refreshBootstrapStatus(); void queryClient.invalidateQueries({ queryKey: ["session"] }); }} />;
   if (!sessionQuery.data?.isAuthenticated) return <LoginPage onLoggedIn={() => void queryClient.invalidateQueries({ queryKey: ["session"] })} />;
@@ -173,8 +220,8 @@ function ConsoleApp() {
   const firstAllowedPage = getFirstAllowedPage(session);
   const u1Licensed = licenseStatus.enabledFeatures.includes("ReceivablesUtangLedger");
   const pageAllowed = canAccessPage(session, currentPage) && (currentPage !== "receivables" || u1Licensed);
-  const pageContent = pageAllowed ? renderPage(currentPage, session, () => void handleLogout(), setCurrentPage) : <AccessDenied currentPage={currentPage} onGoHome={() => firstAllowedPage && setCurrentPage(firstAllowedPage)} />;
-  return <AppShell session={session} licenseStatus={licenseStatus} currentPage={currentPage} onNavigate={setCurrentPage} onLogout={() => void handleLogout()}>{pageContent}</AppShell>;
+  const pageContent = pageAllowed ? renderPage(currentPage, session, () => void handleLogout(), handleNavigate) : <AccessDenied currentPage={currentPage} onGoHome={() => firstAllowedPage && handleNavigate(firstAllowedPage)} />;
+  return <AppShell session={session} licenseStatus={licenseStatus} currentPage={currentPage} onNavigate={handleNavigate} onLogout={() => void handleLogout()}>{pageContent}</AppShell>;
 }
 
 function isHostLicenseReady(status: LocalLicenseStatus | undefined): boolean {

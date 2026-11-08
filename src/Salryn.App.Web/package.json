@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build && node scripts/write-build-stamp.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e": "playwright test --project=mocked-ui",
+    "test:visual": "playwright test --project=mocked-ui --grep @visual",
+    "test:visual:update": "playwright test --project=mocked-ui --grep @visual --update-snapshots=all",
+    "test:integrated-host": "playwright test --project=integrated-host"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.66.9",
@@ -15,6 +19,7 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.0",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "@vitejs/plugin-react": "^4.3.4",

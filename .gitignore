@@ -1,4 +1,4 @@
-﻿bin/
+bin/
 obj/
 .vs/
 *.user
@@ -39,3 +39,7 @@ desktop.ini
 node_modules/
 dist/
 *.tsbuildinfo
+
+playwright-report/
+test-results/
+00-HANDOFF/evidence-out/

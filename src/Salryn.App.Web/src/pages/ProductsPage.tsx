@@ -29,6 +29,7 @@ import {
   CardTitle,
   CommandBar,
   DataTable,
+  Dialog as UiDialog,
   StatusPill,
   TextInput,
   useNotifications,
@@ -131,7 +132,6 @@ function describeCatalogStockError(error: unknown): string {
     ? error.message
     : "Unexpected stock write error.";
 }
-
 function Dialog({
   title,
   children,
@@ -144,35 +144,24 @@ function Dialog({
   onClose: () => void;
 }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"
-      role="dialog"
-      aria-modal="true"
+    <UiDialog
+      open={true}
+      title={title}
+      subtitle="Product Catalog is the operator owner screen for product edit, deactivate, Stock-In, stock adjustment, and movement-path guidance."
+      size="lg"
+      onClose={onClose}
+      footer={footer}
     >
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-xl bg-white shadow-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
-            <p className="mt-1 text-xs text-slate-500">
-              Product Catalog is the operator owner screen for product edit,
-              deactivate, Stock-In, stock adjustment, and movement-path
-              guidance.
-            </p>
-          </div>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Close
-          </Button>
-        </div>
-        <div className="max-h-[62vh] overflow-y-auto px-5 py-4">{children}</div>
-        <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4">
-          {footer}
-        </div>
-      </div>
-    </div>
+      <div className="max-h-[62vh] overflow-y-auto">{children}</div>
+    </UiDialog>
   );
 }
 
-export function ProductsPage() {
+type ProductsPageProps = {
+  onOpenInventory?: (productId: string, productName: string) => void;
+};
+
+export function ProductsPage({ onOpenInventory }: ProductsPageProps = {}) {
   const { notify } = useNotifications();
   const [search, setSearch] = useState("");
   const [categoryId, setCategoryId] = useState("");
@@ -548,6 +537,10 @@ export function ProductsPage() {
     }
   }
   function showMovementPath(detail: ProductDetail) {
+    if (onOpenInventory) {
+      onOpenInventory(detail.id, detail.name);
+      return;
+    }
     setWriteMessage(
       `View Movements shortcut: open Stock Movements, then review movement ledger entries for ${detail.name} / Product ID ${detail.id}.`,
     );

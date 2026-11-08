@@ -81,6 +81,7 @@ function Write-Summary {
 
 $core = 'tools/Salryn.Tools.CoreSmoke/Salryn.Tools.CoreSmoke.csproj'
 try {
+    Invoke-W4Gate 'dotnet-restore' 'dotnet restore Salryn.sln' $repoRoot
     Invoke-W4Gate 'release-build' 'dotnet build Salryn.sln -c Release --no-restore' $repoRoot
     foreach ($check in @(
         'w4-cash-drawer-reconciliation',

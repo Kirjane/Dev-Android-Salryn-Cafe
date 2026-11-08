@@ -37,6 +37,12 @@ body {
   color: var(--salryn-text);
   font-size: 14px;
   letter-spacing: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-mono,
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
 }
 
 button,
