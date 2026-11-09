@@ -71,8 +71,8 @@ public static class PreIActivationLandingManualQaRepairChecks
         RequireNotContains(credits, "Build Type", "No Build Type metadata card.");
 
         // Backup modals
-        RequireContains(backupPage, "Backup created successfully", "Create backup success modal.");
-        RequireContains(backupPage, "Backup verified and restorable", "Verify success modal.");
+        RequireContains(backupPage, "Backup created", "Create backup success notification.");
+        RequireContains(backupPage, "Backup verified", "Verify success notification.");
         RequireContains(backupPage, "Restore completed", "Restore success modal.");
         RequireContains(backupPage, "Type RESTORE SALRYN BACKUP to enable restore", "Restore confirmation phrase must match backend.");
         RequireContains(backupPage, "Restore replaces the current local database", "Restore safety copy.");
