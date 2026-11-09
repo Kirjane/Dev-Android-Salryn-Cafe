@@ -87,6 +87,38 @@ public sealed class SqliteProductWriteRepository :
             AddProductParameters(command, product, product.CreatedAt, product.UpdatedAt);
 
             command.ExecuteNonQuery();
+
+            // P1-R3-01: Initialize location bucket atomically inside the same transaction
+            // so new products immediately have an initialized Available bucket in MAIN-STORE.
+            using var checkCmd = connection.CreateCommand();
+            checkCmd.Transaction = transaction;
+            checkCmd.CommandText = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'product_stock_buckets' LIMIT 1;";
+            if (checkCmd.ExecuteScalar() is not null and not DBNull && product.TrackStock)
+            {
+                using var locCmd = connection.CreateCommand();
+                locCmd.Transaction = transaction;
+                locCmd.CommandText = "SELECT id FROM inventory_locations WHERE code = 'MAIN-STORE' LIMIT 1;";
+                object? locIdObj = locCmd.ExecuteScalar();
+                if (locIdObj is not null and not DBNull)
+                {
+                    using var bucketCmd = connection.CreateCommand();
+                    bucketCmd.Transaction = transaction;
+                    bucketCmd.CommandText = """
+                        INSERT OR IGNORE INTO product_stock_buckets (
+                            id, product_id, location_id, bucket_status, quantity_x1000, updated_at
+                        ) VALUES (
+                            $id, $productId, $locationId, 'Available', $quantityX1000, $updatedAt
+                        );
+                        """;
+                    bucketCmd.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("D"));
+                    bucketCmd.Parameters.AddWithValue("$productId", product.Id.ToString("D"));
+                    bucketCmd.Parameters.AddWithValue("$locationId", (string)locIdObj);
+                    bucketCmd.Parameters.AddWithValue("$quantityX1000", product.StockOnHand.ValueX1000);
+                    bucketCmd.Parameters.AddWithValue("$updatedAt", (product.UpdatedAt ?? product.CreatedAt).ToString("O"));
+                    bucketCmd.ExecuteNonQuery();
+                }
+            }
+
             transaction.Commit();
 
             return Task.FromResult(Result.Success());

@@ -72,7 +72,13 @@ internal static class StockBucketSyncHelper
                 object? pStock = prodStockCmd.ExecuteScalar();
                 if (pStock is not null and not DBNull)
                 {
-                    currentAvailableX1000 = Convert.ToInt64(pStock);
+                    // CRITICAL (P1-R3-01): The calling repository (SqliteInventoryWriteRepository or SqliteSaleWriteRepository)
+                    // has ALREADY updated products.stock_on_hand_x1000 to the post-movement quantity
+                    // (newStockOnHand = oldStockOnHand + quantityDeltaX1000).
+                    // To avoid double-counting the movement, initialize the pre-movement MAIN-STORE available stock
+                    // by subtracting quantityDeltaX1000 from the current product stock.
+                    long postMovementStockX1000 = Convert.ToInt64(pStock);
+                    currentAvailableX1000 = checked(postMovementStockX1000 - quantityDeltaX1000);
                 }
             }
         }

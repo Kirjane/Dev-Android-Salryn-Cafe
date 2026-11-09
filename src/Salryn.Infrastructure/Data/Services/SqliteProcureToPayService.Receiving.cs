@@ -831,15 +831,23 @@ public sealed partial class SqliteProcureToPayService
                 await updProd.ExecuteNonQueryAsync(cancellationToken);
             }
 
-            await UpsertStockBucketDeltaAsync(
-                connection,
-                transaction,
-                request.ProductId,
-                locationId,
-                StockBucketStatuses.Available,
-                locationVarianceQtyX1000,
-                now,
-                cancellationToken);
+            // Explicitly set the location bucket quantity to the actual counted quantity
+            await using (SqliteCommand bucketCmd = connection.CreateCommand())
+            {
+                bucketCmd.Transaction = transaction;
+                bucketCmd.CommandText = """
+                    INSERT INTO product_stock_buckets (id, product_id, location_id, bucket_status, quantity_x1000, updated_at)
+                    VALUES ($id, $prodId, $locId, 'Available', $qty, $now)
+                    ON CONFLICT(product_id, location_id, bucket_status)
+                    DO UPDATE SET quantity_x1000 = $qty, updated_at = $now;
+                    """;
+                bucketCmd.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("D"));
+                bucketCmd.Parameters.AddWithValue("$prodId", request.ProductId.ToString("D"));
+                bucketCmd.Parameters.AddWithValue("$locId", locationId.ToString("D"));
+                bucketCmd.Parameters.AddWithValue("$qty", request.ActualCountedQtyX1000);
+                bucketCmd.Parameters.AddWithValue("$now", now.ToString("O"));
+                await bucketCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
 
             movementId = Guid.NewGuid();
             StockMovementType movType = locationVarianceQtyX1000 > 0

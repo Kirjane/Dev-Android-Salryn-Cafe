@@ -66,8 +66,10 @@ public static class LpiP1IntegrityReproductionChecks
             await TestP105InventoryConsistencyAcrossPosAsync(composition, service, paths, receiverId, supervisorId, resaleProdId, nonResaleProdId);
             await TestP106OverdeliveryApprovalAuthorityAsync(service, paths, receiverId, supervisorId, resaleProdId);
             await TestP1R202ForwardMigrationV28Async(paths);
+            await TestP1R301FirstStockInDoublesLocationInventoryAsync(composition, service, paths, receiverId, supervisorId);
+            await TestP1R302MigrationV28NoStockDuplicationAsync();
 
-            Console.WriteLine("LPI P1 Integrity: All 6 P1 findings (P1-01 through P1-06) verified with full regression closure PASS.");
+            Console.WriteLine("LPI P1 Integrity: All findings (P1-01 through P1-06 and P1-R3-01/02) verified with full regression closure PASS.");
         }
         finally
         {
@@ -1125,6 +1127,406 @@ public static class LpiP1IntegrityReproductionChecks
                 $"Backup verification must pass on v28 schema: {verifyRes.ErrorDetail?.Message}");
 
             Console.WriteLine("P1-R2-02: Forward migration v27 -> v28 and backup verified PASS.");
+            await Task.CompletedTask;
+        }
+        finally
+        {
+            SqliteConnectionFactory.ClearAllPools();
+            if (Directory.Exists(testDir))
+            {
+                try { Directory.Delete(testDir, recursive: true); } catch { }
+            }
+        }
+    }
+
+
+    private static async Task TestP1R301FirstStockInDoublesLocationInventoryAsync(
+        SalrynLocalComposition composition,
+        SqliteProcureToPayService service,
+        DbPaths paths,
+        Guid cashierId,
+        Guid supervisorId)
+    {
+        Console.WriteLine("Running P1-R3-01: First Stock-In Doubles Location Inventory verification...");
+        InMemoryLocalApiSessionStore store = new();
+        LocalApiSession cashierSession = CreateSession(store, "Cashier", new[] {
+            "Products.Manage",
+            SalrynPermissions.InventoryAdjust,
+            SalrynPermissions.SalesVoid
+        }, cashierId);
+
+        Guid unitId;
+        using (SqliteConnection conn = new($"Data Source={paths.DatabasePath}"))
+        {
+            conn.Open();
+            using SqliteCommand cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT id FROM units WHERE is_active = 1 LIMIT 1;";
+            unitId = Guid.Parse((string)cmd.ExecuteScalar()!);
+        }
+
+        FastAddProductApiService fastAdd = new(composition);
+
+        // 1. Fast Add with zero initial stock
+        string zeroBarcode = "8800000000010";
+        var zeroRes = await fastAdd.FastAddAsync(new FastAddProductRequest(
+            zeroBarcode, "Fast Add Zero Stock Item", unitId, 150.00m, 0.0m), cashierSession);
+        Require(zeroRes.IsSuccess, $"Fast Add with zero stock must succeed: {zeroRes.ErrorDetail?.Message}");
+        Guid zeroProdId = zeroRes.Value.Product.Id;
+
+        long zeroProdStock = ReadStockOnHand(paths.DatabasePath, zeroProdId);
+        long zeroBucketStock = ReadLocationBucketQty(paths.DatabasePath, zeroProdId, "MAIN-STORE", "Available");
+        Require(zeroProdStock == 0, $"Fast Add zero stock: product stock must be 0, got {zeroProdStock}");
+        Require(zeroBucketStock == 0, $"Fast Add zero stock: MAIN-STORE bucket must be 0, got {zeroBucketStock}");
+
+        // 2. Fast Add with five initial units (5.0m)
+        string fiveBarcode = "8800000000011";
+        var fiveRes = await fastAdd.FastAddAsync(new FastAddProductRequest(
+            fiveBarcode, "Fast Add Five Stock Item", unitId, 250.00m, 5.0m), cashierSession);
+        Require(fiveRes.IsSuccess, $"Fast Add with 5 units must succeed: {fiveRes.ErrorDetail?.Message}");
+        Guid fiveProdId = fiveRes.Value.Product.Id;
+
+        long fiveProdStock = ReadStockOnHand(paths.DatabasePath, fiveProdId);
+        long fiveBucketStock = ReadLocationBucketQty(paths.DatabasePath, fiveProdId, "MAIN-STORE", "Available");
+        Require(fiveProdStock == 5_000, $"Fast Add 5 units: product stock must be 5000, got {fiveProdStock}");
+        Require(fiveBucketStock == 5_000,
+            $"Fast Add 5 units (P1-R3-01): MAIN-STORE bucket must be 5000 (NOT doubled to 10000), got {fiveBucketStock}");
+
+        // Verify stock_movements has exactly one StockIn movement
+        using (SqliteConnection conn = new($"Data Source={paths.DatabasePath}"))
+        {
+            conn.Open();
+            using SqliteCommand cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*), SUM(qty_change_x1000) FROM stock_movements WHERE product_id = $id;";
+            cmd.Parameters.AddWithValue("$id", fiveProdId.ToString("D"));
+            using var reader = cmd.ExecuteReader();
+            Require(reader.Read(), "Reader must read movements");
+            long movCount = reader.GetInt64(0);
+            long movQty = reader.GetInt64(1);
+            Require(movCount == 1 && movQty == 5_000,
+                $"Fast Add 5 units: expected 1 StockIn movement with 5000, got count={movCount}, qty={movQty}");
+        }
+
+        // 3. Stock-In for an existing product without a location bucket
+        Guid legacyProdId = Guid.NewGuid();
+        using (SqliteConnection conn = new($"Data Source={paths.DatabasePath}"))
+        {
+            conn.Open();
+            using SqliteCommand cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                INSERT INTO products (
+                    id, sku, barcode, name, unit_id, cost_price_cents, selling_price_cents,
+                    stock_on_hand_x1000, reorder_level_x1000, track_stock, allow_discount,
+                    is_active, created_at, updated_at
+                ) VALUES (
+                    $id, 'NO-BUCKET-SKU', '8800000000012', 'No Bucket Legacy Item', $unitId,
+                    5000, 10000, 10000, 1000, 1, 1, 1, datetime('now'), datetime('now')
+                );
+                """;
+            cmd.Parameters.AddWithValue("$id", legacyProdId.ToString("D"));
+            cmd.Parameters.AddWithValue("$unitId", unitId.ToString("D"));
+            cmd.ExecuteNonQuery();
+
+            // Verify 0 buckets exist
+            using SqliteCommand checkCmd = conn.CreateCommand();
+            checkCmd.CommandText = "SELECT COUNT(*) FROM product_stock_buckets WHERE product_id = $id;";
+            checkCmd.Parameters.AddWithValue("$id", legacyProdId.ToString("D"));
+            Require(Convert.ToInt64(checkCmd.ExecuteScalar()) == 0, "Product must have 0 buckets initially.");
+        }
+
+        // Apply Stock-In +5 units (5_000)
+        InventoryManagementApiService invService = new(composition);
+        LocalApiSession invSession = CreateSession(store, "Manager", new[] { SalrynPermissions.InventoryAdjust }, cashierId);
+        var stockInRes = await invService.StockInAsync(
+            new StockInRequest(legacyProdId, 5.0m, "Restock legacy product", "REF-LEGACY-IN"), invSession);
+        Require(stockInRes.IsSuccess, $"Stock-In on no-bucket product must succeed: {stockInRes.ErrorDetail?.Message}");
+
+        long legacyProdStockAfterIn = ReadStockOnHand(paths.DatabasePath, legacyProdId);
+        long legacyBucketStockAfterIn = ReadLocationBucketQty(paths.DatabasePath, legacyProdId, "MAIN-STORE", "Available");
+        Require(legacyProdStockAfterIn == 15_000,
+            $"Stock-In on legacy product: product stock must be 15000, got {legacyProdStockAfterIn}");
+        Require(legacyBucketStockAfterIn == 15_000,
+            $"Stock-In on legacy product (P1-R3-01): MAIN-STORE bucket must be 15000 (pre-movement 10k + 5k, NOT 20k), got {legacyBucketStockAfterIn}");
+
+        // 4. Subsequent sale, void, stock adjustment and restart
+        // 4a. Sale of 2 units (2_000)
+        Guid saleId = Guid.NewGuid();
+        Guid saleItemId = Guid.NewGuid();
+        Guid movId = Guid.NewGuid();
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        Sale sale = new()
+        {
+            Id = saleId,
+            ReceiptNumber = "OR-P1R3-00001",
+            CashierUserId = cashierId,
+            Subtotal = Money.FromCents(200_000),
+            Total = Money.FromCents(200_000),
+            AmountPaid = Money.FromCents(200_000),
+            Change = Money.Zero,
+            Status = SaleStatus.Completed,
+            ReceiptSnapshot = "Snapshot"
+        };
+        SaleItem saleItem = new()
+        {
+            SaleId = saleId,
+            ProductId = legacyProdId,
+            ProductNameSnapshot = "Legacy Item",
+            BarcodeSnapshot = "8800000000012",
+            UnitNameSnapshot = "pcs",
+            Quantity = Quantity.FromX1000(2_000).Value,
+            UnitPrice = Money.FromCents(100_000),
+            CostPrice = Money.FromCents(50_000),
+            LineTotal = Money.FromCents(200_000)
+        };
+        Payment payment = new() { SaleId = saleId, Amount = Money.FromCents(200_000) };
+        StockMovement saleMov = new()
+        {
+            ProductId = legacyProdId,
+            MovementType = StockMovementType.Sale,
+            QuantityChange = Quantity.FromX1000(2_000).Value,
+            CostPrice = Money.FromCents(50_000),
+            ReferenceType = "SALE",
+            ReferenceId = saleId,
+            Reason = "POS Checkout Sale",
+            UserId = cashierId
+        };
+
+        Result saleRes = await composition.SaleWriteRepository.AddCompletedSaleAsync(
+            sale, new[] { saleItem }, new[] { payment }, new[] { saleMov });
+        Require(saleRes.IsSuccess, $"Sale of 2 units must succeed: {saleRes.ErrorDetail?.Message}");
+
+        long stockAfterSale = ReadStockOnHand(paths.DatabasePath, legacyProdId);
+        long bucketAfterSale = ReadLocationBucketQty(paths.DatabasePath, legacyProdId, "MAIN-STORE", "Available");
+        Require(stockAfterSale == 13_000 && bucketAfterSale == 13_000,
+            $"Sale must decrease both product stock and bucket to 13000 (stock={stockAfterSale}, bucket={bucketAfterSale})");
+
+        // 4b. Void of the sale
+        SaleVoidApiService voidService = new(composition);
+        var voidRes = await voidService.VoidAsync(saleId, new SaleVoidRequest("Customer return P1R3"), cashierSession);
+        Require(voidRes.IsSuccess, $"Void must succeed: {voidRes.ErrorDetail?.Message}");
+
+        long stockAfterVoid = ReadStockOnHand(paths.DatabasePath, legacyProdId);
+        long bucketAfterVoid = ReadLocationBucketQty(paths.DatabasePath, legacyProdId, "MAIN-STORE", "Available");
+        Require(stockAfterVoid == 15_000 && bucketAfterVoid == 15_000,
+            $"Void must restore both product stock and bucket to 15000 (stock={stockAfterVoid}, bucket={bucketAfterVoid})");
+
+        // 4c. Physical count adjustment to 18 units (18_000)
+        LpiFoundationCatalog foundation = RequireSuccess(await service.GetFoundationCatalogAsync(), "foundation catalog");
+        Guid mainStoreLocId = foundation.Locations.First(l => l.Code == "MAIN-STORE").Id;
+
+        var adjRes = await service.RecordStockCountAdjustmentAsync(new RecordStockCountAdjustmentRequest(
+            legacyProdId,
+            mainStoreLocId,
+            18_000,
+            "FoundUnrecordedStock",
+            "P1-R3-01 verification count adjustment",
+            cashierId,
+            supervisorId));
+        Require(adjRes.IsSuccess, $"Count adjustment must succeed: {adjRes.ErrorDetail?.Message}");
+
+        long stockAfterAdj = ReadStockOnHand(paths.DatabasePath, legacyProdId);
+        long bucketAfterAdj = ReadLocationBucketQty(paths.DatabasePath, legacyProdId, "MAIN-STORE", "Available");
+        Require(stockAfterAdj == 18_000 && bucketAfterAdj == 18_000,
+            $"Adjustment must update both product stock and bucket to 18000 (stock={stockAfterAdj}, bucket={bucketAfterAdj})");
+
+        // 4d. Restart verification: create fresh composition from paths
+        SalrynLocalComposition restartedComposition = SalrynLocalComposition.Create(paths);
+        long stockRestart = ReadStockOnHand(paths.DatabasePath, legacyProdId);
+        long bucketRestart = ReadLocationBucketQty(paths.DatabasePath, legacyProdId, "MAIN-STORE", "Available");
+        Require(stockRestart == 18_000 && bucketRestart == 18_000,
+            $"After restart: product stock and bucket must remain 18000 (stock={stockRestart}, bucket={bucketRestart})");
+
+        Console.WriteLine("P1-R3-01: First Stock-In Doubles Location Inventory verified PASS.");
+    }
+
+    private static async Task TestP1R302MigrationV28NoStockDuplicationAsync()
+    {
+        Console.WriteLine("Running P1-R3-02: Migration v28 Duplicates Existing Warehouse Stock verification...");
+        string testDir = Path.Combine(Path.GetTempPath(), "salryn-p1r3-v28-upgrade-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            DbPaths tempPaths = DbPaths.CreateDevelopment(testDir);
+            Directory.CreateDirectory(testDir);
+            SqliteConnectionFactory connectionFactory = new(tempPaths);
+
+            // 1. Build genuine v27 database using the exact 27 schema migrations
+            IDatabaseMigration[] v27Migrations = new IDatabaseMigration[]
+            {
+                new InitialSchemaMigration(),
+                new BirMachineProfileSchemaMigration(),
+                new BirOfficialDocumentSequenceSchemaMigration(),
+                new BirElectronicJournalSchemaMigration(),
+                new BirElectronicJournalSchemaHardeningMigration(),
+                new BirZReadingSchemaMigration(),
+                new BirElectronicJournalCorrectionEventSchemaMigration(),
+                new ProductTaxClassificationSchemaMigration(),
+                new DeploymentIdentitySchemaMigration(),
+                new TerminalRegistrySchemaMigration(),
+                new LanRemoteTransportSchemaMigration(),
+                new TerminalCredentialHandshakeSchemaMigration(),
+                new OfficialReceiptProfileSchemaMigration(),
+                new OfficialDryRunPackageSchemaMigration(),
+                new VatRegistrationModeSchemaMigration(),
+                new OfficialDocumentLifecycleCompletionSchemaMigration(),
+                new OfficialDocumentLifecycleAccountingSchemaMigration(),
+                new StorePrinterModeSchemaMigration(),
+                new WindowsPrinterNameSchemaMigration(),
+                new StoreLogoBrandingSchemaMigration(),
+                new RemotePosCheckoutRequestSchemaMigration(),
+                new AccountsReceivableSchemaMigration(),
+                new HostCheckoutRequestSchemaMigration(),
+                new ReceivableCollectionRequestSchemaMigration(),
+                new CashDrawerReconciliationSchemaMigration(),
+                new CashDrawerCloseReplaySchemaMigration(),
+                new ProcureToPaySchemaMigration() // v27!
+            };
+
+            MigrationRunner runnerV27 = new(connectionFactory, v27Migrations);
+            runnerV27.RunPendingMigrations();
+
+            // Insert a unit and a secondary warehouse location (WAREHOUSE-1)
+            Guid wh1LocId = Guid.NewGuid();
+            Guid mainStoreLocId;
+            Guid pWarehouseOnly = Guid.NewGuid();
+            Guid pLegacyNoBucket = Guid.NewGuid();
+            Guid pAlreadyConsistent = Guid.NewGuid();
+            Guid pHistoricalDiscrepancy = Guid.NewGuid();
+
+            using (SqliteConnection conn = connectionFactory.CreateConnection())
+            {
+                conn.Open();
+                using SqliteCommand unitCmd = conn.CreateCommand();
+                unitCmd.CommandText = "INSERT OR IGNORE INTO units (id, name, abbreviation, allows_decimal_quantity, is_active) VALUES ('00000000-0000-0000-0000-000000000101', 'Piece', 'pcs', 0, 1);";
+                unitCmd.ExecuteNonQuery();
+
+                using SqliteCommand locCmd = conn.CreateCommand();
+                locCmd.CommandText = "SELECT id FROM inventory_locations WHERE code = 'MAIN-STORE' LIMIT 1;";
+                mainStoreLocId = Guid.Parse((string)locCmd.ExecuteScalar()!);
+
+                using SqliteCommand whCmd = conn.CreateCommand();
+                whCmd.CommandText = """
+                    INSERT INTO inventory_locations (id, code, name, location_type, is_active, created_at)
+                    VALUES ($id, 'WAREHOUSE-1', 'Main Distribution Warehouse', 'Warehouse', 1, datetime('now'));
+                    """;
+                whCmd.Parameters.AddWithValue("$id", wh1LocId.ToString("D"));
+                whCmd.ExecuteNonQuery();
+
+                // 1. Genuine v27 database containing warehouse-only received stock:
+                // Product 1: stock_on_hand = 10_000, bucket in WAREHOUSE-1 = 10_000, 0 in MAIN-STORE.
+                using SqliteCommand p1Cmd = conn.CreateCommand();
+                p1Cmd.CommandText = """
+                    INSERT INTO products (id, sku, barcode, name, unit_id, cost_price_cents, selling_price_cents,
+                                          stock_on_hand_x1000, reorder_level_x1000, track_stock, allow_discount, is_active, created_at, updated_at)
+                    VALUES ($id, 'WH-ONLY-SKU', '8800000000021', 'Warehouse Only Item', '00000000-0000-0000-0000-000000000101', 5000, 10000, 10000, 1000, 1, 1, 1, datetime('now'), datetime('now'));
+
+                    INSERT INTO product_stock_buckets (id, product_id, location_id, bucket_status, quantity_x1000, updated_at)
+                    VALUES ($bId, $id, $locId, 'Available', 10000, datetime('now'));
+                    """;
+                p1Cmd.Parameters.AddWithValue("$id", pWarehouseOnly.ToString("D"));
+                p1Cmd.Parameters.AddWithValue("$bId", Guid.NewGuid().ToString("D"));
+                p1Cmd.Parameters.AddWithValue("$locId", wh1LocId.ToString("D"));
+                p1Cmd.ExecuteNonQuery();
+
+                // 2. Legacy product with no stock-location buckets anywhere:
+                // Product 2: stock_on_hand = 7_500, no buckets anywhere.
+                using SqliteCommand p2Cmd = conn.CreateCommand();
+                p2Cmd.CommandText = """
+                    INSERT INTO products (id, sku, barcode, name, unit_id, cost_price_cents, selling_price_cents,
+                                          stock_on_hand_x1000, reorder_level_x1000, track_stock, allow_discount, is_active, created_at, updated_at)
+                    VALUES ($id, 'LEGACY-NO-BUCKET', '8800000000022', 'Legacy No Bucket Item', '00000000-0000-0000-0000-000000000101', 4000, 8000, 7500, 1000, 1, 1, 1, datetime('now'), datetime('now'));
+                    """;
+                p2Cmd.Parameters.AddWithValue("$id", pLegacyNoBucket.ToString("D"));
+                p2Cmd.ExecuteNonQuery();
+
+                // 3. Already consistent multiple-location inventory:
+                // Product 3: stock_on_hand = 12_000, MAIN-STORE = 4_000, WAREHOUSE-1 = 8_000.
+                using SqliteCommand p3Cmd = conn.CreateCommand();
+                p3Cmd.CommandText = """
+                    INSERT INTO products (id, sku, barcode, name, unit_id, cost_price_cents, selling_price_cents,
+                                          stock_on_hand_x1000, reorder_level_x1000, track_stock, allow_discount, is_active, created_at, updated_at)
+                    VALUES ($id, 'CONSISTENT-MULTI', '8800000000023', 'Consistent Multi Location Item', '00000000-0000-0000-0000-000000000101', 6000, 12000, 12000, 1000, 1, 1, 1, datetime('now'), datetime('now'));
+
+                    INSERT INTO product_stock_buckets (id, product_id, location_id, bucket_status, quantity_x1000, updated_at)
+                    VALUES ($bMain, $id, $locMain, 'Available', 4000, datetime('now')),
+                           ($bWh, $id, $locWh, 'Available', 8000, datetime('now'));
+                    """;
+                p3Cmd.Parameters.AddWithValue("$id", pAlreadyConsistent.ToString("D"));
+                p3Cmd.Parameters.AddWithValue("$bMain", Guid.NewGuid().ToString("D"));
+                p3Cmd.Parameters.AddWithValue("$locMain", mainStoreLocId.ToString("D"));
+                p3Cmd.Parameters.AddWithValue("$bWh", Guid.NewGuid().ToString("D"));
+                p3Cmd.Parameters.AddWithValue("$locWh", wh1LocId.ToString("D"));
+                p3Cmd.ExecuteNonQuery();
+
+                // 4. Inconsistent multi-location inventory (historical discrepancy):
+                // Product 4: stock_on_hand = 15_000, WAREHOUSE-1 = 9_000 (discrepancy).
+                using SqliteCommand p4Cmd = conn.CreateCommand();
+                p4Cmd.CommandText = """
+                    INSERT INTO products (id, sku, barcode, name, unit_id, cost_price_cents, selling_price_cents,
+                                          stock_on_hand_x1000, reorder_level_x1000, track_stock, allow_discount, is_active, created_at, updated_at)
+                    VALUES ($id, 'DISCREPANCY-MULTI', '8800000000024', 'Historical Discrepancy Item', '00000000-0000-0000-0000-000000000101', 7000, 14000, 15000, 1000, 1, 1, 1, datetime('now'), datetime('now'));
+
+                    INSERT INTO product_stock_buckets (id, product_id, location_id, bucket_status, quantity_x1000, updated_at)
+                    VALUES ($bWh, $id, $locWh, 'Available', 9000, datetime('now'));
+                    """;
+                p4Cmd.Parameters.AddWithValue("$id", pHistoricalDiscrepancy.ToString("D"));
+                p4Cmd.Parameters.AddWithValue("$bWh", Guid.NewGuid().ToString("D"));
+                p4Cmd.Parameters.AddWithValue("$locWh", wh1LocId.ToString("D"));
+                p4Cmd.ExecuteNonQuery();
+            }
+
+            // 2. Apply v28 migration
+            MigrationRunner runnerV28 = new(connectionFactory, new IDatabaseMigration[] { new ProcureToPayR2HardeningMigration() });
+            runnerV28.RunPendingMigrations();
+
+            // 3. Verify assertions on all 4 products
+            using (SqliteConnection conn = connectionFactory.CreateConnection())
+            {
+                conn.Open();
+
+                // Product 1: Warehouse only
+                long p1Stock = ReadStockOnHand(tempPaths.DatabasePath, pWarehouseOnly);
+                long p1WhBucket = ReadLocationBucketQty(tempPaths.DatabasePath, pWarehouseOnly, "WAREHOUSE-1", "Available");
+                long p1MainBucket = ReadLocationBucketQty(tempPaths.DatabasePath, pWarehouseOnly, "MAIN-STORE", "Available");
+                Require(p1Stock == 10_000, $"Product 1 stock must be 10000, got {p1Stock}");
+                Require(p1WhBucket == 10_000, $"Product 1 WAREHOUSE-1 bucket must remain 10000, got {p1WhBucket}");
+                Require(p1MainBucket == 0,
+                    $"Product 1 MAIN-STORE bucket must be 0 (P1-R3-02: must NOT duplicate warehouse stock into MAIN-STORE), got {p1MainBucket}");
+
+                // Product 2: Legacy product without buckets
+                long p2Stock = ReadStockOnHand(tempPaths.DatabasePath, pLegacyNoBucket);
+                long p2MainBucket = ReadLocationBucketQty(tempPaths.DatabasePath, pLegacyNoBucket, "MAIN-STORE", "Available");
+                Require(p2Stock == 7_500, $"Product 2 stock must be 7500, got {p2Stock}");
+                Require(p2MainBucket == 7_500, $"Product 2 MAIN-STORE bucket must be backfilled with 7500, got {p2MainBucket}");
+
+                // Product 3: Already consistent multiple locations
+                long p3Stock = ReadStockOnHand(tempPaths.DatabasePath, pAlreadyConsistent);
+                long p3MainBucket = ReadLocationBucketQty(tempPaths.DatabasePath, pAlreadyConsistent, "MAIN-STORE", "Available");
+                long p3WhBucket = ReadLocationBucketQty(tempPaths.DatabasePath, pAlreadyConsistent, "WAREHOUSE-1", "Available");
+                Require(p3Stock == 12_000, $"Product 3 stock must be 12000, got {p3Stock}");
+                Require(p3MainBucket == 4_000, $"Product 3 MAIN-STORE bucket must remain 4000, got {p3MainBucket}");
+                Require(p3WhBucket == 8_000, $"Product 3 WAREHOUSE-1 bucket must remain 8000, got {p3WhBucket}");
+
+                // Product 4: Historical discrepancy preserved without manufacturing fake stock
+                long p4Stock = ReadStockOnHand(tempPaths.DatabasePath, pHistoricalDiscrepancy);
+                long p4WhBucket = ReadLocationBucketQty(tempPaths.DatabasePath, pHistoricalDiscrepancy, "WAREHOUSE-1", "Available");
+                long p4MainBucket = ReadLocationBucketQty(tempPaths.DatabasePath, pHistoricalDiscrepancy, "MAIN-STORE", "Available");
+                Require(p4Stock == 15_000, $"Product 4 stock must remain 15000, got {p4Stock}");
+                Require(p4WhBucket == 9_000, $"Product 4 WAREHOUSE-1 bucket must remain 9000, got {p4WhBucket}");
+                Require(p4MainBucket == 0,
+                    $"Product 4 MAIN-STORE bucket must remain 0 (no fake stock manufactured to force reconciliation), got {p4MainBucket}");
+            }
+
+            // 4. Backup and restore verification
+            SqliteBackupRecoveryService recovery = new(tempPaths);
+            Result<string> backupRes = recovery.CreateBackup();
+            Require(backupRes.IsSuccess, $"Backup on upgraded v28 database must succeed: {backupRes.ErrorDetail?.Message}");
+            string backupPath = backupRes.Value;
+            Require(File.Exists(backupPath), "Backup file must exist on disk.");
+
+            Result<BackupVerificationSummary> verifyRes = recovery.VerifyBackup(backupPath);
+            Require(verifyRes.IsSuccess && verifyRes.Value.MigrationVersionCompatible,
+                $"Backup verification must pass on v28 schema: {verifyRes.ErrorDetail?.Message}");
+
+            Console.WriteLine("P1-R3-02: Migration v28 Duplicates Existing Warehouse Stock verified PASS.");
             await Task.CompletedTask;
         }
         finally

@@ -69,6 +69,31 @@ public sealed class ProcureToPayR2HardeningMigration : IDatabaseMigration
         SqliteConnection connection,
         SqliteTransaction transaction)
     {
+        // 1. Report discrepancies for historical records that already have inconsistent multi-location totals
+        using SqliteCommand checkDiscrepanciesCmd = connection.CreateCommand();
+        checkDiscrepanciesCmd.Transaction = transaction;
+        checkDiscrepanciesCmd.CommandText = """
+            SELECT p.id, p.name, p.stock_on_hand_x1000, COALESCE(SUM(b.quantity_x1000), 0) AS total_bucket_stock
+            FROM products p
+            LEFT JOIN product_stock_buckets b ON b.product_id = p.id
+            WHERE p.track_stock = 1 AND p.is_active = 1
+            GROUP BY p.id, p.name, p.stock_on_hand_x1000
+            HAVING p.stock_on_hand_x1000 != COALESCE(SUM(b.quantity_x1000), 0)
+               AND EXISTS (SELECT 1 FROM product_stock_buckets b2 WHERE b2.product_id = p.id);
+            """;
+        using (SqliteDataReader reader = checkDiscrepanciesCmd.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                string prodId = reader.GetString(0);
+                string prodName = reader.GetString(1);
+                long productStock = reader.GetInt64(2);
+                long bucketStock = reader.GetInt64(3);
+                Console.WriteLine($"[Migration v28 WARNING] Inconsistent stock total for product '{prodName}' ({prodId}): product stock_on_hand={productStock / 1000.0:F3}, location buckets total={bucketStock / 1000.0:F3}. Discrepancy preserved without manufacturing fictitious stock.");
+            }
+        }
+
+        // 2. Only backfill a legacy product when it has NO location buckets anywhere (P1-R3-02)
         using SqliteCommand backfillCmd = connection.CreateCommand();
         backfillCmd.Transaction = transaction;
         backfillCmd.CommandText = """
@@ -79,12 +104,15 @@ public sealed class ProcureToPayR2HardeningMigration : IDatabaseMigration
                 loc.id,
                 'Available',
                 p.stock_on_hand_x1000,
-                p.updated_at
+                COALESCE(p.updated_at, p.created_at, datetime('now'))
             FROM products p
             CROSS JOIN inventory_locations loc
             WHERE loc.code = 'MAIN-STORE'
               AND p.track_stock = 1
-              AND p.is_active = 1;
+              AND p.is_active = 1
+              AND NOT EXISTS (
+                  SELECT 1 FROM product_stock_buckets b WHERE b.product_id = p.id
+              );
             """;
         backfillCmd.ExecuteNonQuery();
     }

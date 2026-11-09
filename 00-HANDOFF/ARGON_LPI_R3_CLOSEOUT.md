@@ -201,3 +201,127 @@ Screenshots freshly captured on candidate head:
   - PR #24 worktree and commits: **UNCHANGED**
   - Licensing subsystem source: **UNCHANGED**
 - **PR Status:** PR #26 remains in **Draft** status. No merge or rebase.
+
+
+---
+
+# KIRION FORGE — ARGON LPI R3b STOCK INTEGRITY ADDENDUM
+
+**Mission:** `ARGON-SALRYN-LPI-PR26-STOCK-INTEGRITY-R3B`  
+**Role:** Single-Writer Stock Integrity Maintainer (Argon)  
+**Technical Authority:** Kirch Ivan Balite, Engineer  
+**Product:** Base Salryn Retail POS — Logistics, Procurement & Inventory Management  
+**Repository:** `Kirjane/Salryn`  
+**Pull Request:** [#26](https://github.com/Kirjane/Salryn/pull/26) (Draft Candidate)  
+**Baseline SHA:** `964cc8106fcc3df46b0970c5341fc52e2abbd6db`  
+**Review Reference:** [PR #26 Review Comment 6749218995](https://github.com/Kirjane/Salryn/pull/26#issuecomment-6749218995)  
+**Worktree:** `C:\Salryn-Argon-LPI`  
+**Branch:** `antigravity/argon-salryn-procure-to-pay-r1`  
+**Timestamp:** November 10, 2026  
+
+---
+
+## 1. Executive Summary (R3b)
+
+Argon has reproduced, corrected, and verified the two additional P1 stock-integrity defects identified in review comment `6749218995`:
+
+1. **P1-R3-01 — First Stock-In Doubles Location Inventory:**
+   - **Root Cause:** When an active stock-tracked product without an existing `product_stock_buckets` row received its initial stock movement via `InventoryWriteRepository.AddStockMovementAsync`, `products.stock_on_hand_x1000` was updated to `newStockOnHand = oldStockOnHand + quantityDeltaX1000` before calling `StockBucketSyncHelper.SyncAvailableStockBucket`. The helper subsequently queried `products.stock_on_hand_x1000` (which already contained the post-movement stock) and re-applied `quantityDeltaX1000`, causing the movement to be counted twice in `MAIN-STORE`.
+   - **Repair Implemented:**
+     - `SqliteProductWriteRepository.AddAsync`: Atomically initializes the `product_stock_buckets` record for `MAIN-STORE` (`bucket_status = 'Available'`) with the product's initial `StockOnHand` inside the product creation transaction.
+     - `StockBucketSyncHelper.SyncAvailableStockBucket`: When handling legacy products created without buckets, correctly reads the pre-movement stock (`postMovementStock - quantityDeltaX1000`) before applying the delta, ensuring `newQuantityX1000 = postMovementStock`.
+     - `SqliteProcureToPayService.Receiving.cs` (`RecordStockCountAdjustmentAsync`): Explicitly sets the location bucket quantity to `request.ActualCountedQtyX1000` via `UPSERT`, guaranteeing atomic parity between counted quantity, location bucket, and product stock on hand.
+   - **Before / After SQLite Stock Values:**
+     | Scenario | Before (R3 Head) | After (R3b Repair) | Expected Parity |
+     | :--- | :--- | :--- | :--- |
+     | Fast Add (Initial 0) | Prod: 0, MAIN-STORE: 0 | Prod: 0, MAIN-STORE: 0 | $\sum \text{Buckets} = \text{Product Stock} = 0$ |
+     | Fast Add (+5 units) | Prod: 5,000, MAIN-STORE: **10,000** (DOUBLED) | Prod: 5,000, MAIN-STORE: **5,000** | $\sum \text{Buckets} = \text{Product Stock} = 5,000$ |
+     | Legacy Stock-In (+5 on 10) | Prod: 15,000, MAIN-STORE: **20,000** (DOUBLED) | Prod: 15,000, MAIN-STORE: **15,000** | $\sum \text{Buckets} = \text{Product Stock} = 15,000$ |
+     | Sale (-2 units) | Prod: 13,000, MAIN-STORE: 13,000 | Prod: 13,000, MAIN-STORE: 13,000 | $\sum \text{Buckets} = \text{Product Stock} = 13,000$ |
+     | Sale Void (+2 units) | Prod: 15,000, MAIN-STORE: 15,000 | Prod: 15,000, MAIN-STORE: 15,000 | $\sum \text{Buckets} = \text{Product Stock} = 15,000$ |
+     | Count Adjustment (18 units) | Prod: 18,000, MAIN-STORE: 18,000 | Prod: 18,000, MAIN-STORE: 18,000 | $\sum \text{Buckets} = \text{Product Stock} = 18,000$ |
+
+2. **P1-R3-02 — Migration v28 Duplicates Existing Warehouse Stock:**
+   - **Root Cause:** In migration v28 (`ProcureToPayR2HardeningMigration.cs`), `BackfillLegacyProductStockBuckets` used `INSERT OR IGNORE` into `MAIN-STORE` based solely on `(product_id, location_id, bucket_status)` without checking whether the product already held stock buckets in other warehouse locations. For products received into `WAREHOUSE-1` in R1 v27 (e.g. 10 units in WAREHOUSE-1, 0 in MAIN-STORE), applying v28 inserted the global stock into `MAIN-STORE` as well, doubling total bucket inventory to 20 units and creating fictitious POS counter-sale availability.
+   - **Repair Implemented:**
+     - In `ProcureToPayR2HardeningMigration.BackfillLegacyProductStockBuckets`, restricted the backfill with:
+       ```sql
+       AND NOT EXISTS (
+           SELECT 1 FROM product_stock_buckets b WHERE b.product_id = p.id
+       )
+       ```
+     - Added pre-upgrade discrepancy detection that audits and warns on historical discrepancies without manufacturing fictitious stock.
+     - Preserved immutable migration v27 byte-for-byte and maintained forward-only v28 architecture.
+   - **Before / After SQLite Stock Values:**
+     | Product Profile | Before Migration v28 | Faulty v28 Behavior | Repaired v28 Behavior | Status |
+     | :--- | :--- | :--- | :--- | :--- |
+     | P1: Warehouse-only (10 units in WH-1) | Prod: 10k, WH-1: 10k, MAIN: 0 | Prod: 10k, WH-1: 10k, MAIN: **10k** (Sum=20k) | Prod: 10k, WH-1: 10k, MAIN: **0** (Sum=10k) | **PASS** |
+     | P2: Legacy product without buckets | Prod: 7.5k, No buckets | Prod: 7.5k, MAIN: 7.5k | Prod: 7.5k, MAIN: 7.5k (Sum=7.5k) | **PASS** |
+     | P3: Consistent multi-location (4k Main, 8k WH-1) | Prod: 12k, Main: 4k, WH-1: 8k | Prod: 12k, Main: 4k, WH-1: 8k | Prod: 12k, Main: 4k, WH-1: 8k (Sum=12k) | **PASS** |
+     | P4: Historical Discrepancy (15k Prod, 9k WH-1) | Prod: 15k, WH-1: 9k, MAIN: 0 | Prod: 15k, WH-1: 9k, MAIN: **15k** | Prod: 15k, WH-1: 9k, MAIN: **0** (Discrepancy logged, no fake stock) | **PASS** |
+
+---
+
+## 2. Regression Proof & Raw Commands
+
+### Test 1: Full Solution Build
+```powershell
+dotnet build C:\Salryn-Argon-LPI\Salryn.sln
+# Output:
+# Build succeeded.
+#     8 Warning(s)
+#     0 Error(s)
+# Time Elapsed 00:00:28.60
+# Exit Code: 0
+```
+
+### Test 2: Extended LPI P1 Integrity Suite (P1-01 through P1-06 + P1-R3-01 + P1-R3-02)
+```powershell
+dotnet run --project C:\Salryn-Argon-LPI\tools\Salryn.Tools.CoreSmoke\Salryn.Tools.CoreSmoke.csproj -- --only lpi-p1-integrity
+# Output:
+# P1-R2-02: Forward migration v27 -> v28 and backup verified PASS.
+# Running P1-R3-01: First Stock-In Doubles Location Inventory verification...
+# P1-R3-01: First Stock-In Doubles Location Inventory verified PASS.
+# Running P1-R3-02: Migration v28 Duplicates Existing Warehouse Stock verification...
+# [Migration v28 WARNING] Inconsistent stock total for product 'Historical Discrepancy Item' (90c059df-2f80-4913-8ced-88551a8ff6c6): product stock_on_hand=15.000, location buckets total=9.000. Discrepancy preserved without manufacturing fictitious stock.
+# P1-R3-02: Migration v28 Duplicates Existing Warehouse Stock verified PASS.
+# LPI P1 Integrity: All findings (P1-01 through P1-06 and P1-R3-01/02) verified with full regression closure PASS.
+# SALRYN Core smoke checks passed.
+# Exit Code: 0
+```
+
+### Test 3: LPI Full Runtime Suite
+```powershell
+dotnet run --project C:\Salryn-Argon-LPI\tools\Salryn.Tools.CoreSmoke\Salryn.Tools.CoreSmoke.csproj -- --only lpi
+# Output:
+# LPI runtime: S0-S3 suppliers, PR split conversion, self-approval denial, PO lifecycle/cancel, partial/final RR, quarantine bucket, count adjustment, supplier return, 3-way match, duplicate invoice guard, partial/full AP payment, W4 isolation, and backup verification PASS.
+# SALRYN Core smoke checks passed.
+# Exit Code: 0
+```
+
+### Test 4: LPI Visual Evidence & Screenshot Capture
+```powershell
+dotnet run --project C:\Salryn-Argon-LPI\tools\Salryn.Tools.CoreSmoke\Salryn.Tools.CoreSmoke.csproj -- --only lpi-evidence
+# Output:
+# [LPI Screenshot Runner] All screenshots captured successfully.
+# [LPI Evidence] Screenshots successfully captured!
+# SALRYN Core smoke checks passed.
+# Exit Code: 0
+```
+
+### Test 5: Full CoreSmoke & Environment Blocker Disposition
+```powershell
+dotnet run --project C:\Salryn-Argon-LPI\tools\Salryn.Tools.CoreSmoke\Salryn.Tools.CoreSmoke.csproj
+# Output:
+# ... (all core tests up to checkout pass) ...
+# U1 AR: recurring ledger, collection/no-second-sale, atomic source boundary, and terminal denial PASS.
+# info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+#       Request finished HTTP/1.1 POST http://127.0.0.1:64949/api/checkout - 403 - application/json;+charset=utf-8
+# Unhandled exception. System.InvalidOperationException: Checkout without open shift must return 409. Expected 409, got 403. Body: {"code":"License.FeatureDenied","error":"Local license signature is invalid.","requiredFeature":"Pos","licenseStatus":3,"reasonCode":3,"enabledFeatures":[]}
+#    at Salryn.Tests.V2HostOperatorCheckoutApiChecks.AssertCheckoutStatusAsync(HttpClient client, HostOperatorCheckoutRequest request, HttpStatusCode expectedStatus, String message) in C:\Salryn-Argon-LPI\tests\Salryn.Tests\V2HostOperatorCheckoutApiChecks.cs:line 815
+# Exit Code: 1
+```
+
+**Environment Disposition (`BLOCKED_LICENSE_ENV`):**
+- **Cause:** The machine's physical file `C:\Users\arane\AppData\Local\Salryn\Licensing\license.json` contains a license installed for `TEST QA PAUL` during Windows installation testing with a cryptographic signature that fails validation against this machine's local hardware profile.
+- **Contract Boundary:** Under the single-writer custody rules, Argon will not bypass license verification, modify cryptographic verification keys, or alter canonical tests. The failure is recorded truthfully as `BLOCKED_LICENSE_ENV`. Targeted LPI PASS results are not falsely conflated with a passing full CoreSmoke suite.
