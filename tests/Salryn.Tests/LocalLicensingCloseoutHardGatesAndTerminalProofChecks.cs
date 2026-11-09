@@ -119,7 +119,7 @@ public static class LocalLicensingCloseoutHardGatesAndTerminalProofChecks
             RequireNotContains(pairing, "may not always send TerminalLicenseJson", "Optional terminal proof comment must be removed.");
             RequireContains(hostLan, "title=\"Terminal Management\"", "Internal host LAN UI must use Terminal Management naming.");
             RequireNotContains(hostLan, "TerminalLicenseJson", "Client copy must not expose the terminal proof field name.");
-            RequireContains(navigation, "{ id: \"host-lan-control\", label: \"LAN Terminals · Future Feature\", enabled: true, group: \"Admin\" }", "Normal Admin navigation must state the LAN future-feature boundary.");
+            RequireContains(navigation, "{ id: \"host-lan-control\", label: \"LAN Terminals · Future Feature\", enabled: true, group: \"Admin\", domain: \"Store & System\" }", "Normal Admin navigation must state the LAN future-feature boundary.");
             RequireContains(remoteClient, "terminalLicenseJson", "Remote client must send terminalLicenseJson.");
             RequireContains(remoteClient, "readInstalledTerminalLicense", "Remote client must load explicitly installed terminal license proof.");
 
