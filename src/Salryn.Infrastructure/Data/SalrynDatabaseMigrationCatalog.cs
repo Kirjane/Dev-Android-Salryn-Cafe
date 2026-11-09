@@ -2,7 +2,9 @@ namespace Salryn.Infrastructure.Data;
 
 internal static class SalrynDatabaseMigrationCatalog
 {
-    public const int SupportedMigrationVersion = 27;
+    public const int SupportedMigrationVersion = 29;
+    // SupportedMigrationVersion = 26
+    // SupportedMigrationVersion = 24
 
     private static readonly (int Version, string Table)[] CriticalTablesByIntroducingVersion =
     {
@@ -45,6 +47,16 @@ internal static class SalrynDatabaseMigrationCatalog
         (25, "cash_drawer_events"),
         (25, "cash_drawer_reconciliations"),
         (25, "cash_drawer_reviews"),
+        (28, "lpi_document_sequences"),
+        (28, "inventory_locations"),
+        (28, "product_stock_buckets"),
+        (28, "purchase_requisitions"),
+        (28, "purchase_orders"),
+        (28, "receiving_reports"),
+        (28, "supplier_invoices"),
+        (28, "supplier_payable_entries"),
+        (28, "supplier_payments"),
+        (29, "lpi_overdelivery_approvals"),
     };
 
     private static readonly string[] LegacyCoreTables =

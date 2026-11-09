@@ -159,6 +159,8 @@ public static class LocalApiApplicationFactory
         builder.Services.AddSingleton<UserAdminApiService>();
         builder.Services.AddSingleton<IAccountsReceivableService>(
             new SqliteAccountsReceivableService(composition.ConnectionFactory));
+        builder.Services.AddSingleton<IProcureToPayService>(
+            new SqliteProcureToPayService(composition.ConnectionFactory));
         builder.Services.AddSingleton<RemoteReadOnlyApiService>();
         builder.Services.AddSingleton<LocalApiLanRuntimeStatusService>();
         builder.Services.AddSingleton<LocalLanControlService>();
@@ -345,6 +347,7 @@ public static class LocalApiApplicationFactory
         app.MapLocalHostShiftEndpoints();
         app.MapLocalHostCheckoutEndpoints();
         app.MapLocalAccountsReceivableEndpoints();
+        app.MapLocalProcureToPayEndpoints();
         app.MapLocalReceiptPrinterEndpoints();
         app.MapLocalUserAdminEndpoints();
         app.MapRemoteReadOnlyEndpoints();

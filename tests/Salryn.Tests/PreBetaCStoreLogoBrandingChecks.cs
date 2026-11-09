@@ -62,7 +62,7 @@ public static class PreBetaCStoreLogoBrandingChecks
             using var cmd = connection.CreateCommand();
             cmd.CommandText = "SELECT COALESCE(MAX(version),0) FROM schema_migrations;";
             int max = Convert.ToInt32(cmd.ExecuteScalar());
-            RequireTrue(max == 26, "DB must migrate to version 26.");
+RequireTrue(max == 29, "DB must migrate to version 29.");
 
             HashSet<string> cols = new(StringComparer.OrdinalIgnoreCase);
             cmd.CommandText = "PRAGMA table_info(store_settings);";

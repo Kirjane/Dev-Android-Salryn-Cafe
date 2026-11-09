@@ -23,6 +23,20 @@ internal static class LocalApiPermissions
     public const string ReceivablesAdjust = "Receivables.Adjust";
     public const string ReceivablesExport = "Receivables.Export";
     public const string ReceivablesManageCustomers = "Receivables.ManageCustomers";
+    public const string ProcurementView = "Procurement.View";
+    public const string ProcurementRequest = "Procurement.Request";
+    public const string ProcurementApproveRequisition = "Procurement.ApproveRequisition";
+    public const string ProcurementManagePurchaseOrder = "Procurement.ManagePurchaseOrder";
+    public const string ProcurementApprovePurchaseOrder = "Procurement.ApprovePurchaseOrder";
+    public const string ReceivingView = "Receiving.View";
+    public const string ReceivingManage = "Receiving.Manage";
+    public const string ReceivingApproveException = "Receiving.ApproveException";
+    public const string InventoryManageReturns = "Inventory.ManageReturns";
+    public const string PayablesView = "Payables.View";
+    public const string PayablesManageInvoices = "Payables.ManageInvoices";
+    public const string PayablesApproveVariance = "Payables.ApproveVariance";
+    public const string PayablesRecordPayment = "Payables.RecordPayment";
+    public const string PayablesApprovePayment = "Payables.ApprovePayment";
 }
 
 internal static class LocalApiPermissionGuards
@@ -84,6 +98,11 @@ internal static class LocalApiPermissionGuards
             ? null
             : PermissionDenied(string.Join(", ", permissions));
     }
+
+    public static IResult? RequireSettingsManage(
+        HttpContext httpContext,
+        LocalApiSessionService sessions) =>
+        RequirePermission(httpContext, sessions, LocalApiPermissions.SettingsManage);
 
     private static LocalApiSession? GetSession(
         HttpContext httpContext,

@@ -33,6 +33,20 @@ export const Permissions = {
   ReceivablesCreateCreditSale: "Receivables.CreateCreditSale",
   ReceivablesCollect: "Receivables.Collect",
   ReceivablesAdjust: "Receivables.Adjust",
+  ProcurementView: "Procurement.View",
+  ProcurementRequest: "Procurement.Request",
+  ProcurementApproveRequisition: "Procurement.ApproveRequisition",
+  ProcurementManagePurchaseOrder: "Procurement.ManagePurchaseOrder",
+  ProcurementApprovePurchaseOrder: "Procurement.ApprovePurchaseOrder",
+  ReceivingView: "Receiving.View",
+  ReceivingManage: "Receiving.Manage",
+  ReceivingApproveException: "Receiving.ApproveException",
+  InventoryManageReturns: "Inventory.ManageReturns",
+  PayablesView: "Payables.View",
+  PayablesManageInvoices: "Payables.ManageInvoices",
+  PayablesApproveVariance: "Payables.ApproveVariance",
+  PayablesRecordPayment: "Payables.RecordPayment",
+  PayablesApprovePayment: "Payables.ApprovePayment",
 } as const;
 
 export type Permission = (typeof Permissions)[keyof typeof Permissions];
@@ -53,7 +67,8 @@ export type HostPage =
   | "host-lan-control"
   | "official-setup"
   | "traditional-reporting"
-  | "production-reports";
+  | "production-reports"
+  | "procure-to-pay";
 
 export type AppPage = HostPage;
 
@@ -74,6 +89,7 @@ export const implementedPages: readonly AppPage[] = [
   "official-setup",
   "traditional-reporting",
   "production-reports",
+  "procure-to-pay",
 ] as const;
 
 const RoleIds = {
@@ -106,7 +122,12 @@ const pagePermissions: Partial<Record<AppPage, readonly Permission[]>> = {
   // Host-only traditional reporting lab; not in standard manager navigation.
   "traditional-reporting": [Permissions.ReportsView, Permissions.OfficialReadingView, Permissions.OfficialEvidenceExport],
   // Host-only internal artifact export spine; no remote POS client access.
-  "production-reports": [Permissions.ReportsView, Permissions.OfficialReadingView],
+"production-reports": [Permissions.ReportsView, Permissions.OfficialReadingView],
+  "procure-to-pay": [
+    Permissions.ProcurementView,
+    Permissions.ReceivingView,
+    Permissions.PayablesView,
+  ],
 };
 
 export function hasPermission(session: SessionState | null | undefined, permission: Permission): boolean {
@@ -133,7 +154,7 @@ export function canAccessPage(session: SessionState | null | undefined, page: Ap
 
   const roleId = session.user.roleId.toLowerCase();
   const cashierPages: readonly AppPage[] = ["checkout", "sales"];
-  const managerPages: readonly AppPage[] = ["dashboard", "checkout", "products", "inventory", "sales", "receivables", "owner-reports", "audit"];
+  const managerPages: readonly AppPage[] = ["dashboard", "checkout", "products", "inventory", "sales", "receivables", "owner-reports", "audit", "procure-to-pay"];
   if (roleId === RoleIds.Cashier && !cashierPages.includes(page)) return false;
   if (roleId === RoleIds.Manager && !managerPages.includes(page)) return false;
 

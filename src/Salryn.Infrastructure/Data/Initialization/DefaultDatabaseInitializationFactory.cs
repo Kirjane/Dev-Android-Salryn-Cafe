@@ -1,4 +1,4 @@
-﻿using Salryn.Infrastructure.Data.Bootstrap;
+using Salryn.Infrastructure.Data.Bootstrap;
 using Salryn.Infrastructure.Data.Migrations;
 using Salryn.Infrastructure.Data.Seeding;
 using Salryn.Infrastructure.Paths;
@@ -44,6 +44,8 @@ public static class DefaultDatabaseInitializationFactory
         // Version 22 adds the U1 accounts receivable ledger.
         // Version 23 adds durable host checkout request reconciliation.
         // Version 24 adds durable receivable collection request reconciliation.
+        // Version 25-26 add W4 cash drawer reconciliation and close replay payload.
+        // Version 27 adds LPI procure-to-pay foundation schema.
         IDatabaseMigration[] migrations =
         {
             new InitialSchemaMigration(),
@@ -72,7 +74,9 @@ public static class DefaultDatabaseInitializationFactory
             new ReceivableCollectionRequestSchemaMigration(),
             new CashDrawerReconciliationSchemaMigration(),
             new CashDrawerCloseReplaySchemaMigration(),
-            new SaleVoidAuditReconciliationMigration()
+            new SaleVoidAuditReconciliationMigration(),
+            new ProcureToPaySchemaMigration(),
+            new ProcureToPayR2HardeningMigration()
         };
 
         MigrationRunner migrationRunner = new(connectionFactory, migrations);

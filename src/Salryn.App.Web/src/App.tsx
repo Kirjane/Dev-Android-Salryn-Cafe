@@ -30,6 +30,7 @@ import { OfficialSetupPage } from "./pages/OfficialSetupPage";
 import { TraditionalReportingPage } from "./pages/TraditionalReportingPage";
 import { UsersPage } from "./pages/UsersPage";
 import { ReceivablesPage } from "./pages/ReceivablesPage";
+import { ProcureToPayPage } from "./pages/ProcureToPayPage";
 import { canAccessPage, getFirstAllowedPage, implementedPages } from "./security/permissions";
 import { isRemoteClientBrowserLocation } from "./utils/lanEntry";
 import { readInstalledTerminalLicense } from "./utils/terminalLicenseStorage";
@@ -119,6 +120,8 @@ function renderPage(page: AppPage, session: SessionState, onLogout: () => void, 
       return <TraditionalReportingPage />;
     case "production-reports":
       return <ProductionReportsPage />;
+    case "procure-to-pay":
+      return <ProcureToPayPage />;
     default: {
       const exhaustiveCheck: never = page;
       return exhaustiveCheck;
@@ -179,7 +182,7 @@ function ConsoleApp() {
   const queryClient = useQueryClient();
   const sessionQuery = useAppSession();
   const licenseStatusQuery = useQuery({ queryKey: ["license-status"], queryFn: fetchLicenseStatus, retry: false });
-  const [currentPage, setCurrentPage] = useState<AppPage>(() => readPageFromUrl() ?? "dashboard");
+  const [currentPage, setCurrentPage] = useState<AppPage>("dashboard");
   const [bootstrapStatus, setBootstrapStatus] = useState<BootstrapStatus | null>(null);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [isBootstrapLoading, setIsBootstrapLoading] = useState(true);
@@ -201,7 +204,7 @@ function ConsoleApp() {
     });
   }
 
-  useEffect(() => { void refreshBootstrapStatus(); }, []);
+  useEffect(() => { void refreshBootstrapStatus(); const urlPage = readPageFromUrl(); if (urlPage) setCurrentPage(urlPage); }, []);
   useEffect(() => {
     const restore = (event: PopStateEvent) => {
       const page = (event.state?.page as AppPage | undefined) ?? readPageFromUrl() ?? "dashboard";

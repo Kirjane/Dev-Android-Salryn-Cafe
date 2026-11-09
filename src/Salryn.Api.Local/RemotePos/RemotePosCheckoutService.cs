@@ -355,6 +355,8 @@ public sealed class RemotePosCheckoutService
                 "A valid client request id (idempotency key) is required.", duplicate: false);
         }
 
+        // Kirch: why - serialize submits sharing an idempotency key so a LAN drop + retry cannot
+        // race two host writes. The DB sales.receipt_no UNIQUE constraint is the final backstop.
         string key = BuildIdempotencyKey(session, request.ClientRequestId);
         IdempotencyGate gate = RentIdempotencyGate(key);
 
@@ -544,6 +546,7 @@ public sealed class RemotePosCheckoutService
             Duplicate: false,
             Message: "Remote sale completed on host.");
 
+        // Kirch: why - memoize the committed success IMMEDIATELY before invoking any non-atomic side effects
         // Persist the committed result before any best-effort side effect. If this update itself is
         // interrupted, reconciliation uses the stable receipt recorded before posting and repairs
         // the ledger from the authoritative sale row.

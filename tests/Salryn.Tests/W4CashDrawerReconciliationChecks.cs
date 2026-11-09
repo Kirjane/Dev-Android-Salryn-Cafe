@@ -50,6 +50,6 @@ public static class W4CashDrawerReconciliationChecks
     private static void Exec(SalrynLocalComposition c,string sql,params(string,object)[] p){using var x=c.ConnectionFactory.CreateConnection();x.Open();using var q=x.CreateCommand();q.CommandText=sql;foreach(var a in p)q.Parameters.AddWithValue(a.Item1,a.Item2);q.ExecuteNonQuery();}
     private static long Scalar(SalrynLocalComposition c,string sql,params(string,object)[] p){using var x=c.ConnectionFactory.CreateConnection();x.Open();using var q=x.CreateCommand();q.CommandText=sql;foreach(var a in p)q.Parameters.AddWithValue(a.Item1,a.Item2);return Convert.ToInt64(q.ExecuteScalar());}
     private static long Count(SalrynLocalComposition c,string table)=>Scalar(c,$"SELECT COUNT(*) FROM {table}");
-    private static string Root(){string? p=Directory.GetCurrentDirectory();while(p is not null&&!File.Exists(Path.Combine(p,"Salryn.sln")))p=Directory.GetParent(p)?.FullName;return p!;}
+    private static string Root(){string[] candidates={AppContext.BaseDirectory,Directory.GetCurrentDirectory()};foreach(var s in candidates){string? p=s;while(p is not null&&!File.Exists(Path.Combine(p,"Salryn.sln")))p=Directory.GetParent(p)?.FullName;if(p is not null)return p;}return Directory.GetCurrentDirectory();}
     private static void Require(bool ok,string message){if(!ok)throw new InvalidOperationException(message);}
 }
