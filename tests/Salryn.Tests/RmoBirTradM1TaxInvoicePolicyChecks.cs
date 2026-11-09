@@ -216,7 +216,7 @@ public static class RmoBirTradM1TaxInvoicePolicyChecks
             Result<DatabaseInitializationSummary> init =
                 DefaultDatabaseInitializationFactory.Create(paths).InitializeDatabase();
             RequireTrue(init.IsSuccess, "Init must succeed: " + (init.IsFailure ? init.ErrorDetail.Message : ""));
-            RequireTrue(ReadMaxMigration(paths.DatabasePath) == 24, "Max migration must be 24.");
+            RequireTrue(ReadMaxMigration(paths.DatabasePath) == 26, "Max migration must be 26.");
             RequireTrue(ColumnExists(paths.DatabasePath, "bir_machine_profiles", "vat_registration_mode"),
                 "vat_registration_mode column required.");
 
@@ -277,7 +277,7 @@ public static class RmoBirTradM1TaxInvoicePolicyChecks
             Result<DatabaseInitializationSummary> upgraded =
                 DefaultDatabaseInitializationFactory.Create(upgradePaths).InitializeDatabase();
             RequireTrue(upgraded.IsSuccess, "v14→v15 must succeed.");
-            RequireTrue(ReadMaxMigration(upgradePaths.DatabasePath) == 24, "After upgrade max 24.");
+            RequireTrue(ReadMaxMigration(upgradePaths.DatabasePath) == 26, "After upgrade max 26.");
             RequireTrue(ColumnExists(upgradePaths.DatabasePath, "bir_machine_profiles", "vat_registration_mode"),
                 "v15 column after upgrade.");
         }
