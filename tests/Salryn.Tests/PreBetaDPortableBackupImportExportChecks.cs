@@ -119,7 +119,7 @@ public static class PreBetaDPortableBackupImportExportChecks
                     VALUES ($v, 'future-probe', $ts);
                     """;
                 // Probe one version beyond the runtime-supported migration catalog.
-                cmd.Parameters.AddWithValue("$v", 28);
+                cmd.Parameters.AddWithValue("$v", 30);
                 cmd.Parameters.AddWithValue("$ts", DateTimeOffset.UtcNow.ToString("O"));
                 cmd.ExecuteNonQuery();
             }
@@ -133,7 +133,7 @@ public static class PreBetaDPortableBackupImportExportChecks
             {
                 BackupId = "backup-future-probe",
                 CreatedAt = DateTimeOffset.UtcNow,
-                SchemaVersion = 28,
+                SchemaVersion = 30,
                 Files = new[]
                 {
                     new { RelativePath = "salryn.db", SizeBytes = futureSize, Sha256 = futureHash }
