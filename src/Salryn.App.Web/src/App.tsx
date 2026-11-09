@@ -30,6 +30,7 @@ import { OfficialSetupPage } from "./pages/OfficialSetupPage";
 import { TraditionalReportingPage } from "./pages/TraditionalReportingPage";
 import { UsersPage } from "./pages/UsersPage";
 import { ReceivablesPage } from "./pages/ReceivablesPage";
+import { ProcureToPayPage } from "./pages/ProcureToPayPage";
 import { canAccessPage, getFirstAllowedPage, implementedPages } from "./security/permissions";
 import { isRemoteClientBrowserLocation } from "./utils/lanEntry";
 import { readInstalledTerminalLicense } from "./utils/terminalLicenseStorage";
@@ -119,6 +120,8 @@ function renderPage(page: AppPage, session: SessionState, onLogout: () => void, 
       return <TraditionalReportingPage />;
     case "production-reports":
       return <ProductionReportsPage />;
+    case "procure-to-pay":
+      return <ProcureToPayPage />;
     default: {
       const exhaustiveCheck: never = page;
       return exhaustiveCheck;

@@ -28,6 +28,7 @@ export const navItems: NavItemConfig[] = [
   { id: "owner-reports", label: "Reports", enabled: true, group: "Manager", domain: "Finance & Analytics" },
   { id: "products", label: "Product Catalog", enabled: true, group: "Manager", domain: "Catalog & Stock" },
   { id: "inventory", label: "Stock Movements", enabled: true, group: "Manager", domain: "Catalog & Stock" },
+  { id: "procure-to-pay", label: "Procurement & Payables", enabled: true, group: "Manager", domain: "Catalog & Stock" },
   { id: "users", label: "Users", enabled: true, group: "Admin", domain: "Store & System" },
   { id: "audit", label: "Audit", enabled: true, group: "Admin", domain: "Store & System" },
   { id: "settings", label: "Store Settings", enabled: true, group: "Admin", domain: "Store & System" },
