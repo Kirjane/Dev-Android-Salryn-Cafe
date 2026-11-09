@@ -25,7 +25,7 @@ public static class PreBetaCStoreLogoBrandingChecks
         string installer = File.ReadAllText(Path.Combine(root, "installer", "SalrynSetup.iss"));
         string installerBuild = File.ReadAllText(Path.Combine(root, "tools", "installer", "Build-SalrynBetaRc1Installer.ps1"));
 
-        RequireContains(catalog, "SupportedMigrationVersion = 24", "Catalog must include the collection request migration.");
+        RequireContains(catalog, "SupportedMigrationVersion = 26", "Catalog must include the collection request and W4 migrations.");
         RequireContains(factory, "StoreLogoBrandingSchemaMigration", "Factory must register store logo migration.");
         RequireContains(migration, "logo_content_type", "Migration must add logo_content_type.");
         RequireContains(migration, "logo_bytes", "Migration must add logo_bytes.");
