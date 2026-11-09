@@ -36,6 +36,7 @@ internal static class LocalApiPermissions
     public const string PayablesManageInvoices = "Payables.ManageInvoices";
     public const string PayablesApproveVariance = "Payables.ApproveVariance";
     public const string PayablesRecordPayment = "Payables.RecordPayment";
+    public const string PayablesApprovePayment = "Payables.ApprovePayment";
 }
 
 internal static class LocalApiPermissionGuards

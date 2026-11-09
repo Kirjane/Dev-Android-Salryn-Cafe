@@ -230,6 +230,7 @@ public sealed class ProcureToPaySchemaMigration : IDatabaseMigration
                 posted_by_user_id TEXT NULL,
                 posted_at TEXT NULL,
                 client_request_id TEXT NULL UNIQUE,
+                request_payload_hash TEXT NULL,
                 notes TEXT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
@@ -430,9 +431,12 @@ public sealed class ProcureToPaySchemaMigration : IDatabaseMigration
                 check_no TEXT NULL,
                 bank_name TEXT NULL,
                 remarks TEXT NULL,
+                status TEXT NOT NULL DEFAULT 'Settled',
                 recorded_by_user_id TEXT NOT NULL,
                 approved_by_user_id TEXT NULL,
+                approved_at TEXT NULL,
                 client_request_id TEXT NULL UNIQUE,
+                request_payload_hash TEXT NULL,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (supplier_invoice_id) REFERENCES supplier_invoices(id) ON DELETE RESTRICT,
                 FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE RESTRICT,
@@ -440,10 +444,31 @@ public sealed class ProcureToPaySchemaMigration : IDatabaseMigration
                 FOREIGN KEY (approved_by_user_id) REFERENCES users(id) ON DELETE RESTRICT
             );
             CREATE INDEX IF NOT EXISTS idx_supplier_payments_invoice ON supplier_payments(supplier_invoice_id, payment_date);
+
+            CREATE TABLE IF NOT EXISTS lpi_overdelivery_approvals (
+                id TEXT PRIMARY KEY,
+                receiving_report_id TEXT NOT NULL,
+                purchase_order_id TEXT NOT NULL,
+                approver_user_id TEXT NOT NULL,
+                approval_reason TEXT NOT NULL,
+                approved_lines_json TEXT NOT NULL,
+                approved_at TEXT NOT NULL,
+                is_revoked INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (receiving_report_id) REFERENCES receiving_reports(id) ON DELETE RESTRICT,
+                FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE RESTRICT,
+                FOREIGN KEY (approver_user_id) REFERENCES users(id) ON DELETE RESTRICT
+            );
+            CREATE INDEX IF NOT EXISTS idx_lpi_overdelivery_approvals_rr ON lpi_overdelivery_approvals(receiving_report_id, is_revoked);
             """;
         command.ExecuteNonQuery();
 
+        AddColumnIfMissing(connection, transaction, "receiving_reports", "request_payload_hash", "TEXT NULL");
+        AddColumnIfMissing(connection, transaction, "supplier_payments", "status", "TEXT NOT NULL DEFAULT 'Settled'");
+        AddColumnIfMissing(connection, transaction, "supplier_payments", "approved_at", "TEXT NULL");
+        AddColumnIfMissing(connection, transaction, "supplier_payments", "request_payload_hash", "TEXT NULL");
+
         SeedDefaultLocationsAndSequences(connection, transaction);
+        BackfillLegacyProductStockBuckets(connection, transaction);
     }
 
     private static void AddColumnIfMissing(
@@ -514,5 +539,29 @@ public sealed class ProcureToPaySchemaMigration : IDatabaseMigration
             seqCmd.Parameters.AddWithValue("$now", now);
             seqCmd.ExecuteNonQuery();
         }
+    }
+
+    private static void BackfillLegacyProductStockBuckets(
+        SqliteConnection connection,
+        SqliteTransaction transaction)
+    {
+        using SqliteCommand backfillCmd = connection.CreateCommand();
+        backfillCmd.Transaction = transaction;
+        backfillCmd.CommandText = """
+            INSERT OR IGNORE INTO product_stock_buckets (id, product_id, location_id, bucket_status, quantity_x1000, updated_at)
+            SELECT
+                lower(hex(randomblob(16))),
+                p.id,
+                loc.id,
+                'Available',
+                p.stock_on_hand_x1000,
+                p.updated_at
+            FROM products p
+            CROSS JOIN inventory_locations loc
+            WHERE loc.code = 'MAIN-STORE'
+              AND p.track_stock = 1
+              AND p.is_active = 1;
+            """;
+        backfillCmd.ExecuteNonQuery();
     }
 }

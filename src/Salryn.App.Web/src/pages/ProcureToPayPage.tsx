@@ -32,7 +32,13 @@ import {
   type PurchaseRequisition,
   type PurchaseOrder,
   type SupplierInvoice,
+  fetchSupplierPayments,
+  approveSupplierPayment,
+  approveOverdelivery,
+  type SupplierPayment,
+  type ReceivingReport,
 } from "../api/procureToPay";
+import { Permissions, hasPermission } from "../security/permissions";
 import {
   Alert,
   Button,
@@ -80,6 +86,15 @@ export function ProcureToPayPage() {
   const stockCards = useQuery({ queryKey: ["lpi-stock-cards"], queryFn: fetchStockCards });
   const supplierReturns = useQuery({ queryKey: ["lpi-returns"], queryFn: () => fetchSupplierReturns() });
   const invoices = useQuery({ queryKey: ["lpi-invoices"], queryFn: () => fetchSupplierInvoices() });
+  const payments = useQuery({ queryKey: ["lpi-payments"], queryFn: () => fetchSupplierPayments() });
+
+  const [paymentApproveModalOpen, setPaymentApproveModalOpen] = useState(false);
+  const [paymentToApprove, setPaymentToApprove] = useState<SupplierPayment | null>(null);
+  const [paymentApprovalRemarks, setPaymentApprovalRemarks] = useState("");
+
+  const [overdeliveryModalOpen, setOverdeliveryModalOpen] = useState(false);
+  const [rrToApprove, setRrToApprove] = useState<ReceivingReport | null>(null);
+  const [overdeliveryReason, setOverdeliveryReason] = useState("");
 
   // Dialog States
   const [supplierModalOpen, setSupplierModalOpen] = useState(false);
@@ -208,6 +223,7 @@ export function ProcureToPayPage() {
     void queryClient.invalidateQueries({ queryKey: ["lpi-stock-cards"] });
     void queryClient.invalidateQueries({ queryKey: ["lpi-returns"] });
     void queryClient.invalidateQueries({ queryKey: ["lpi-invoices"] });
+    void queryClient.invalidateQueries({ queryKey: ["lpi-payments"] });
     void queryClient.invalidateQueries({ queryKey: ["lpi-ap-aging"] });
   };
 
@@ -793,26 +809,47 @@ export function ProcureToPayPage() {
                       <th className="p-3">Rejected Qty</th>
                       <th className="p-3">Accepted Cost</th>
                       <th className="p-3">Status</th>
+                      <th className="p-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {(receivingReports.data ?? []).map((rr) => (
-                      <tr key={rr.id} className="hover:bg-slate-50">
-                        <td className="p-3 font-mono font-bold text-slate-900">{rr.rrNumber}</td>
-                        <td className="p-3 text-xs">{formatDateTime(rr.receivedDate)}</td>
-                        <td className="p-3 font-mono text-xs">{rr.poNumber}</td>
-                        <td className="p-3 font-medium">{rr.supplierName}</td>
-                        <td className="p-3 font-mono">{rr.totalDeliveredQuantityX1000 / 1000}</td>
-                        <td className="p-3 font-mono text-emerald-600 font-semibold">{rr.totalAcceptedQuantityX1000 / 1000}</td>
-                        <td className="p-3 font-mono text-amber-600">{rr.totalRejectedQuantityX1000 / 1000}</td>
-                        <td className="p-3 font-semibold">{money(rr.totalAcceptedCostCents)}</td>
-                        <td className="p-3">
-                          <StatusPill tone={rr.isOverdelivery ? "warning" : "success"}>
-                            {rr.status} {rr.isOverdelivery ? "· Overdelivered" : ""}
-                          </StatusPill>
-                        </td>
-                      </tr>
-                    ))}
+                    {(receivingReports.data ?? []).map((rr) => {
+                      const isPreparer = currentUserId === rr.receivedByUserId;
+                      const canApproveEx = hasPermission(session.data, Permissions.ReceivingApproveException);
+                      return (
+                        <tr key={rr.id} className="hover:bg-slate-50">
+                          <td className="p-3 font-mono font-bold text-slate-900">{rr.rrNumber}</td>
+                          <td className="p-3 text-xs">{formatDateTime(rr.receivedDate)}</td>
+                          <td className="p-3 font-mono text-xs">{rr.poNumber}</td>
+                          <td className="p-3 font-medium">{rr.supplierName}</td>
+                          <td className="p-3 font-mono">{rr.totalDeliveredQuantityX1000 / 1000}</td>
+                          <td className="p-3 font-mono text-emerald-600 font-semibold">{rr.totalAcceptedQuantityX1000 / 1000}</td>
+                          <td className="p-3 font-mono text-amber-600">{rr.totalRejectedQuantityX1000 / 1000}</td>
+                          <td className="p-3 font-semibold">{money(rr.totalAcceptedCostCents)}</td>
+                          <td className="p-3">
+                            <StatusPill tone={rr.isOverdelivery ? "warning" : "success"}>
+                              {rr.status} {rr.isOverdelivery ? "· Overdelivery" : ""}
+                            </StatusPill>
+                          </td>
+                          <td className="p-3 text-right">
+                            {rr.isOverdelivery && rr.status !== "Posted" && rr.status !== "Cancelled" && (
+                              <Button
+                                variant="secondary"
+                                disabled={isPreparer || !canApproveEx}
+                                title={isPreparer ? "Separation of duties: receiving clerk cannot approve own overdelivery exception" : !canApproveEx ? "Requires Receiving.ApproveException permission" : undefined}
+                                onClick={() => {
+                                  setRrToApprove(rr);
+                                  setOverdeliveryReason("Authorized delivery tolerance variance");
+                                  setOverdeliveryModalOpen(true);
+                                }}
+                              >
+                                Approve Overdelivery
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1030,6 +1067,8 @@ export function ProcureToPayPage() {
                             tone={
                               inv.matchStatus === "Matched" || inv.matchStatus === "VarianceApproved"
                                 ? "success"
+                                : inv.matchStatus === "PendingDocuments"
+                                ? "warning"
                                 : "danger"
                             }
                           >
@@ -1080,6 +1119,78 @@ export function ProcureToPayPage() {
               </div>
             </CardBody>
           </Card>
+
+          {/* Supplier Payments & Disbursements Card */}
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-semibold text-slate-900">Supplier Payments & Disbursements (Separation of Duties)</h2>
+            </div>
+            <Card>
+              <CardBody className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-slate-700 uppercase font-semibold text-xs border-b">
+                      <tr>
+                        <th className="p-3">Payment #</th>
+                        <th className="p-3">Date</th>
+                        <th className="p-3">Supplier</th>
+                        <th className="p-3">Method</th>
+                        <th className="p-3">Reference / Bank</th>
+                        <th className="p-3 text-right">Amount</th>
+                        <th className="p-3">Status</th>
+                        <th className="p-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(payments.data ?? []).length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="p-4 text-center text-slate-500">
+                            No supplier payments recorded.
+                          </td>
+                        </tr>
+                      ) : (
+                        (payments.data ?? []).map((pay) => {
+                          const isPreparer = currentUserId === pay.recordedByUserId;
+                          const canApprovePay = hasPermission(session.data, Permissions.PayablesApprovePayment);
+                          return (
+                            <tr key={pay.id} className="hover:bg-slate-50">
+                              <td className="p-3 font-mono font-bold text-slate-900">{pay.paymentNumber}</td>
+                              <td className="p-3 text-xs">{pay.paymentDate}</td>
+                              <td className="p-3 font-medium">{pay.supplierName}</td>
+                              <td className="p-3 text-xs">{pay.paymentMethod}</td>
+                              <td className="p-3 font-mono text-xs">{pay.referenceNumber || pay.bankAccount || "—"}</td>
+                              <td className="p-3 text-right font-bold text-slate-900">{money(pay.amountCents)}</td>
+                              <td className="p-3">
+                                <StatusPill tone={pay.status === "Settled" ? "success" : "warning"}>
+                                  {pay.status === "PendingApproval" ? "Pending Approval" : pay.status}
+                                </StatusPill>
+                              </td>
+                              <td className="p-3 text-right space-x-2">
+                                {pay.status === "PendingApproval" && (
+                                  <Button
+                                    variant="primary"
+                                    disabled={isPreparer || !canApprovePay}
+                                    title={isPreparer ? "Separation of duties: payment preparer cannot approve settlement" : !canApprovePay ? "Requires Payables.ApprovePayment permission" : undefined}
+                                    onClick={() => {
+                                      setPaymentToApprove(pay);
+                                      setPaymentApprovalRemarks("Verified against invoice and disbursement schedule");
+                                      setPaymentApproveModalOpen(true);
+                                    }}
+                                  >
+                                    Approve Settlement
+                                  </Button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </CardBody>
+            </Card>
+          </div>
         </div>
       )}
 
@@ -2092,7 +2203,7 @@ export function ProcureToPayPage() {
                     bankAccount: paymentForm.bankAccount,
                     notes: paymentForm.notes,
                   });
-                  notify.success("Supplier payment posted! AP ledger balance updated.");
+                  notify.success("Supplier payment recorded in Pending Approval status! Awaiting independent manager authorization.");
                   setPaymentModalOpen(false);
                   refreshAll();
                 } catch (e) {
@@ -2100,7 +2211,109 @@ export function ProcureToPayPage() {
                 }
               }}
             >
-              Post Payment
+              Submit for Approval
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* DIALOG: Approve Supplier Payment (Separation of Duties) */}
+      <Dialog
+        open={paymentApproveModalOpen}
+        onClose={() => setPaymentApproveModalOpen(false)}
+        title="Authorize Supplier Payment Settlement"
+      >
+        <div className="space-y-4">
+          <Alert tone="info">
+            <strong>Dual-Control Authorization:</strong> Independent approval posts the payment to the AP ledger and deducts the outstanding invoice balance.
+          </Alert>
+          {paymentToApprove && (
+            <div className="rounded-lg bg-slate-50 p-3 space-y-1 text-sm border">
+              <div><strong>Payment #:</strong> {paymentToApprove.paymentNumber}</div>
+              <div><strong>Supplier:</strong> {paymentToApprove.supplierName}</div>
+              <div><strong>Amount:</strong> {money(paymentToApprove.amountCents)}</div>
+              <div><strong>Method:</strong> {paymentToApprove.paymentMethod}</div>
+              <div><strong>Disbursement Date:</strong> {paymentToApprove.paymentDate}</div>
+            </div>
+          )}
+          <div>
+            <label className="block text-xs font-medium text-slate-700">Approval Remarks / Authorization Audit Notes</label>
+            <TextInput
+              value={paymentApprovalRemarks}
+              onChange={(e) => setPaymentApprovalRemarks(e.target.value)}
+              placeholder="e.g., Authorized per disbursement schedule"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <Button variant="secondary" onClick={() => setPaymentApproveModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={async () => {
+                if (!paymentToApprove) return;
+                try {
+                  await approveSupplierPayment(paymentToApprove.id, paymentApprovalRemarks);
+                  notify.success("Supplier payment settled and posted to Accounts Payable!");
+                  setPaymentApproveModalOpen(false);
+                  refreshAll();
+                } catch (e) {
+                  notify.error((e as Error).message);
+                }
+              }}
+            >
+              Authorize Settlement
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* DIALOG: Approve Goods Receiving Overdelivery */}
+      <Dialog
+        open={overdeliveryModalOpen}
+        onClose={() => setOverdeliveryModalOpen(false)}
+        title="Approve Goods Receiving Overdelivery Exception"
+      >
+        <div className="space-y-4">
+          <Alert tone="warning">
+            <strong>Overdelivery Exception:</strong> Explicit supervisory authorization is required before stock is received into warehouse inventory.
+          </Alert>
+          {rrToApprove && (
+            <div className="rounded-lg bg-slate-50 p-3 space-y-1 text-sm border">
+              <div><strong>Receiving Report #:</strong> {rrToApprove.rrNumber}</div>
+              <div><strong>Purchase Order #:</strong> {rrToApprove.poNumber}</div>
+              <div><strong>Supplier:</strong> {rrToApprove.supplierName}</div>
+              <div><strong>Delivered Qty:</strong> {rrToApprove.totalDeliveredQuantityX1000 / 1000}</div>
+              <div><strong>Accepted Qty:</strong> {rrToApprove.totalAcceptedQuantityX1000 / 1000}</div>
+            </div>
+          )}
+          <div>
+            <label className="block text-xs font-medium text-slate-700">Exception Approval Reason / Commercial Justification</label>
+            <TextInput
+              value={overdeliveryReason}
+              onChange={(e) => setOverdeliveryReason(e.target.value)}
+              placeholder="e.g., Supplier bulk packaging tolerance accepted"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <Button variant="secondary" onClick={() => setOverdeliveryModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                if (!rrToApprove) return;
+                try {
+                  await approveOverdelivery(rrToApprove.id, overdeliveryReason);
+                  notify.success("Overdelivery approved! Receiving report posted to inventory.");
+                  setOverdeliveryModalOpen(false);
+                  refreshAll();
+                } catch (e) {
+                  notify.error((e as Error).message);
+                }
+              }}
+            >
+              Approve & Post Exception
             </Button>
           </div>
         </div>

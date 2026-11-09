@@ -93,6 +93,10 @@ public interface IProcureToPayService
         PostReceivingReportRequest request,
         CancellationToken cancellationToken = default);
 
+    Task<Result<ReceivingReportModel>> ApproveOverdeliveryAsync(
+        ApproveOverdeliveryRequest request,
+        CancellationToken cancellationToken = default);
+
     Task<Result<IReadOnlyList<StockCountAdjustmentModel>>> GetStockCountAdjustmentsAsync(
         Guid? productId = null,
         CancellationToken cancellationToken = default);
@@ -142,6 +146,10 @@ public interface IProcureToPayService
 
     Task<Result<SupplierPaymentModel>> RecordSupplierPaymentAsync(
         RecordSupplierPaymentRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<Result<SupplierPaymentModel>> ApproveSupplierPaymentAsync(
+        ApproveSupplierPaymentRequest request,
         CancellationToken cancellationToken = default);
 
     Task<Result<IReadOnlyList<SupplierPaymentModel>>> GetSupplierPaymentsAsync(

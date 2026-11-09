@@ -50,4 +50,5 @@ public static class SalrynPermissions
     public const string PayablesManageInvoices = "Payables.ManageInvoices";
     public const string PayablesApproveVariance = "Payables.ApproveVariance";
     public const string PayablesRecordPayment = "Payables.RecordPayment";
+    public const string PayablesApprovePayment = "Payables.ApprovePayment";
 }

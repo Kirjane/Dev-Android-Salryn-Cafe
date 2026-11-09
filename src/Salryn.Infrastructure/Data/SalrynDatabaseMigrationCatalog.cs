@@ -55,6 +55,7 @@ internal static class SalrynDatabaseMigrationCatalog
         (27, "supplier_invoices"),
         (27, "supplier_payable_entries"),
         (27, "supplier_payments"),
+        (27, "lpi_overdelivery_approvals"),
     };
 
     private static readonly string[] LegacyCoreTables =

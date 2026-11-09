@@ -39,7 +39,25 @@ internal static class LocalProcureToPayEndpoints
         {
             if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
                 return denied;
-            return ToResult(await service.GetDashboardOverviewAsync(ct));
+            var result = await service.GetDashboardOverviewAsync(ct);
+            if (!result.IsSuccess)
+                return ToResult(result);
+
+            LocalApiSession session = RequiredSession(context, sessions);
+            bool canViewPayables = session.Permissions.Contains(LocalApiPermissions.PayablesView, StringComparer.Ordinal);
+            if (!canViewPayables)
+            {
+                var redacted = result.Value with
+                {
+                    TotalOpenPayablesCents = 0L,
+                    OverduePayablesCents = 0L,
+                    VarianceFlaggedInvoiceCount = 0,
+                    TotalPaymentsDisbursedCents = 0L,
+                    ApAging = new ApAgingSummaryModel(0L, 0L, 0L, 0L, 0L, 0L, 0, 0, 0, Array.Empty<SupplierInvoiceModel>())
+                };
+                return Results.Ok(redacted);
+            }
+            return Results.Ok(result.Value);
         });
 
         app.MapGet("/api/lpi/suppliers", async (
@@ -339,10 +357,6 @@ internal static class LocalProcureToPayEndpoints
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ReceivingManage) is IResult denied)
                 return denied;
             LocalApiSession session = RequiredSession(context, sessions);
-            Guid? overdeliveryApprover = request.ApproveOverdelivery == true &&
-                                         session.Permissions.Contains(LocalApiPermissions.ReceivingApproveException, StringComparer.Ordinal)
-                ? session.UserId
-                : null;
             return ToResult(
                 await service.CreateReceivingReportAsync(new CreateReceivingReportRequest(
                     request.PurchaseOrderId,
@@ -352,13 +366,30 @@ internal static class LocalProcureToPayEndpoints
                     request.CarrierOrDriver,
                     request.ReceivedDate,
                     request.PostImmediately ?? true,
-                    overdeliveryApprover,
-                    request.OverdeliveryApprovalReason,
+                    null,
+                    null,
                     request.ClientRequestId,
                     request.Notes,
                     request.Lines,
                     session.UserId), ct),
                 StatusCodes.Status201Created);
+        });
+
+        app.MapPost("/api/lpi/receiving-reports/{id:guid}/approve-overdelivery", async (
+            Guid id,
+            ApproveOverdeliveryApiRequest request,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ReceivingApproveException) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            return ToResult(await service.ApproveOverdeliveryAsync(new ApproveOverdeliveryRequest(
+                id,
+                request.ApprovalReason,
+                session.UserId), ct));
         });
 
         app.MapPost("/api/lpi/receiving-reports/{id:guid}/post", async (
@@ -372,13 +403,9 @@ internal static class LocalProcureToPayEndpoints
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ReceivingManage) is IResult denied)
                 return denied;
             LocalApiSession session = RequiredSession(context, sessions);
-            Guid? overdeliveryApprover = request.ApproveOverdelivery == true &&
-                                         session.Permissions.Contains(LocalApiPermissions.ReceivingApproveException, StringComparer.Ordinal)
-                ? session.UserId
-                : null;
             return ToResult(await service.PostReceivingReportAsync(new PostReceivingReportRequest(
                 id,
-                overdeliveryApprover,
+                null,
                 request.OverdeliveryApprovalReason,
                 request.ClientRequestId,
                 session.UserId), ct));
@@ -484,7 +511,7 @@ internal static class LocalProcureToPayEndpoints
             IProcureToPayService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.PayablesView) is IResult denied)
                 return denied;
             return ToResult(await service.GetSupplierInvoicesAsync(supplierId, status, ct));
         });
@@ -496,7 +523,7 @@ internal static class LocalProcureToPayEndpoints
             IProcureToPayService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.PayablesView) is IResult denied)
                 return denied;
             return ToResult(await service.GetSupplierInvoiceByIdAsync(id, ct));
         });
@@ -567,7 +594,7 @@ internal static class LocalProcureToPayEndpoints
             IProcureToPayService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.PayablesView) is IResult denied)
                 return denied;
             return ToResult(await service.GetSupplierPaymentsAsync(supplierId, supplierInvoiceId, ct));
         });
@@ -595,8 +622,25 @@ internal static class LocalProcureToPayEndpoints
                     request.Remarks,
                     request.ClientRequestId,
                     session.UserId,
-                    session.UserId), ct),
+                    null), ct),
                 StatusCodes.Status201Created);
+        });
+
+        app.MapPost("/api/lpi/payments/{id:guid}/approve", async (
+            Guid id,
+            ApproveSupplierPaymentApiRequest request,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.PayablesApprovePayment) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            return ToResult(await service.ApproveSupplierPaymentAsync(new ApproveSupplierPaymentRequest(
+                id,
+                session.UserId,
+                request.Remarks), ct));
         });
 
         app.MapGet("/api/lpi/payables/ledger", async (
@@ -606,7 +650,7 @@ internal static class LocalProcureToPayEndpoints
             IProcureToPayService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.PayablesView) is IResult denied)
                 return denied;
             return ToResult(await service.GetSupplierPayableLedgerAsync(supplierId, ct));
         });
@@ -618,7 +662,7 @@ internal static class LocalProcureToPayEndpoints
             IProcureToPayService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.PayablesView) is IResult denied)
                 return denied;
             return ToResult(await service.GetApAgingSummaryAsync(asOfDate, ct));
         });
@@ -773,4 +817,10 @@ internal static class LocalProcureToPayEndpoints
         string? BankName,
         string? Remarks,
         string? ClientRequestId);
+
+    internal sealed record ApproveSupplierPaymentApiRequest(
+        string? Remarks);
+
+    internal sealed record ApproveOverdeliveryApiRequest(
+        string ApprovalReason);
 }

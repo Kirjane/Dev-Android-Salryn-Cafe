@@ -46,6 +46,7 @@ export const Permissions = {
   PayablesManageInvoices: "Payables.ManageInvoices",
   PayablesApproveVariance: "Payables.ApproveVariance",
   PayablesRecordPayment: "Payables.RecordPayment",
+  PayablesApprovePayment: "Payables.ApprovePayment",
 } as const;
 
 export type Permission = (typeof Permissions)[keyof typeof Permissions];

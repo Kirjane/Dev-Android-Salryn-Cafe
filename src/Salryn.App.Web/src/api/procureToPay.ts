@@ -254,11 +254,14 @@ export interface SupplierPayment {
   paymentDate: string;
   amountCents: number;
   paymentMethod: string;
+  status: string;
   referenceNumber: string | null;
   bankAccount: string | null;
   checkNumber: string | null;
   notes: string | null;
   recordedByUserId: string;
+  approvedByUserId: string | null;
+  approvedAt: string | null;
   createdAt: string;
 }
 
@@ -750,4 +753,22 @@ export async function recordSupplierPayment(data: {
 export async function fetchApAging(): Promise<ApAgingSummary[]> {
   const response = await fetch("/api/lpi/ap-aging");
   return readJson<ApAgingSummary[]>(response);
+}
+
+export async function approveSupplierPayment(paymentId: string, remarks?: string): Promise<SupplierPayment> {
+  const response = await fetch(`/api/lpi/payments/${paymentId}/approve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ remarks }),
+  });
+  return readJson<SupplierPayment>(response);
+}
+
+export async function approveOverdelivery(receivingReportId: string, approvalReason: string): Promise<ReceivingReport> {
+  const response = await fetch(`/api/lpi/receiving-reports/${receivingReportId}/approve-overdelivery`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ approvalReason }),
+  });
+  return readJson<ReceivingReport>(response);
 }

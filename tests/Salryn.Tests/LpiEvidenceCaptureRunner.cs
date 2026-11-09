@@ -209,9 +209,11 @@ public static class LpiEvidenceCaptureRunner
             Console.WriteLine($"[LPI Evidence] Host started on {boundUrl} with session {session.SessionId}");
 
             // Execute capture script
-            string scriptPath = Path.GetFullPath("scripts/capture-lpi-screenshots.mjs");
+            string repoRoot = FindRepoRoot() ?? Directory.GetCurrentDirectory();
+            string scriptPath = Path.Combine(repoRoot, "scripts", "capture-lpi-screenshots.mjs");
             ProcessStartInfo psi = new("node", $"\"{scriptPath}\" {boundUrl} {session.SessionId}")
             {
+                WorkingDirectory = repoRoot,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false
@@ -247,6 +249,24 @@ public static class LpiEvidenceCaptureRunner
             }
             catch { }
         }
+    }
+
+    private static string? FindRepoRoot()
+    {
+        string[] candidates = { AppContext.BaseDirectory, Directory.GetCurrentDirectory() };
+        foreach (string candidate in candidates)
+        {
+            DirectoryInfo? current = new(candidate);
+            while (current is not null)
+            {
+                if (File.Exists(Path.Combine(current.FullName, "Salryn.sln")))
+                {
+                    return current.FullName;
+                }
+                current = current.Parent;
+            }
+        }
+        return null;
     }
 
     private sealed class FakeEvidenceLicenseService : ILocalLicenseService

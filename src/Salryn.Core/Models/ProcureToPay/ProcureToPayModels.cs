@@ -35,9 +35,26 @@ public static class PurchaseClassifications
     }
 
     public static bool CanAffectSellableStock(string classification) =>
-        string.Equals(classification, Resale, StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(classification, RawMaterial, StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(classification, Consumable, StringComparison.OrdinalIgnoreCase);
+        string.Equals(classification, Resale, StringComparison.OrdinalIgnoreCase);
+}
+
+public static class SupplierInvoiceMatchStatuses
+{
+    public const string PendingDocuments = "PendingDocuments";
+    public const string Matched = "Matched";
+    public const string VarianceFlagged = "VarianceFlagged";
+    public const string PriceVariance = "PriceVariance";
+    public const string QtyVariance = "QtyVariance";
+    public const string QtyAndPriceVariance = "QtyAndPriceVariance";
+    public const string Overbilled = "Overbilled";
+}
+
+public static class SupplierPaymentStatuses
+{
+    public const string PendingApproval = "PendingApproval";
+    public const string Settled = "Settled";
+    public const string Rejected = "Rejected";
+    public const string Cancelled = "Cancelled";
 }
 
 public static class StockBucketStatuses
@@ -395,7 +412,8 @@ public sealed record ReceivingReportModel(
     string? Notes,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    IReadOnlyList<ReceivingReportLineModel> Lines);
+    IReadOnlyList<ReceivingReportLineModel> Lines,
+    string? RequestPayloadHash = null);
 
 public sealed record CreateReceivingReportLineInput(
     Guid PurchaseOrderLineId,
@@ -420,14 +438,38 @@ public sealed record CreateReceivingReportRequest(
     string? ClientRequestId,
     string? Notes,
     IReadOnlyList<CreateReceivingReportLineInput> Lines,
-    Guid ReceivedByUserId);
+    Guid ReceivedByUserId,
+    string? RequestPayloadHash = null);
 
 public sealed record PostReceivingReportRequest(
     Guid ReceivingReportId,
     Guid? OverdeliveryApproverUserId,
     string? OverdeliveryApprovalReason,
     string? ClientRequestId,
-    Guid ActorUserId);
+    Guid ActorUserId,
+    string? RequestPayloadHash = null);
+
+public sealed record OverdeliveryApprovedLineModel(
+    Guid PurchaseOrderLineId,
+    Guid? ProductId,
+    string ItemDescription,
+    long ApprovedQtyX1000);
+
+public sealed record OverdeliveryApprovalModel(
+    Guid Id,
+    Guid ReceivingReportId,
+    Guid PurchaseOrderId,
+    Guid ApproverUserId,
+    string ApproverName,
+    string ApprovalReason,
+    IReadOnlyList<OverdeliveryApprovedLineModel> ApprovedLines,
+    DateTimeOffset ApprovedAt,
+    bool IsRevoked);
+
+public sealed record ApproveOverdeliveryRequest(
+    Guid ReceivingReportId,
+    string ApprovalReason,
+    Guid ApproverUserId);
 
 public sealed record StockCountAdjustmentModel(
     Guid Id,
@@ -619,8 +661,11 @@ public sealed record SupplierPaymentModel(
     string? CheckNo,
     string? BankName,
     string? Remarks,
+    string Status,
     Guid RecordedByUserId,
     Guid? ApprovedByUserId,
+    DateTimeOffset? ApprovedAt,
+    string? RequestPayloadHash,
     DateTimeOffset CreatedAt);
 
 public sealed record RecordSupplierPaymentRequest(
@@ -635,7 +680,13 @@ public sealed record RecordSupplierPaymentRequest(
     string? Remarks,
     string? ClientRequestId,
     Guid RecordedByUserId,
-    Guid? ApprovedByUserId);
+    Guid? ApprovedByUserId,
+    string? RequestPayloadHash = null);
+
+public sealed record ApproveSupplierPaymentRequest(
+    Guid PaymentId,
+    Guid ApproverUserId,
+    string? Remarks = null);
 
 public sealed record ApAgingSummaryModel(
     long TotalOpenPayablesCents,

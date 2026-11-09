@@ -78,15 +78,33 @@ public sealed partial class SqliteProcureToPayService
         await connection.OpenAsync(cancellationToken);
         SqlitePragma.Apply(connection);
 
+        string payloadHash = ComputeReceivingPayloadHash(
+            request.PurchaseOrderId,
+            request.LocationId,
+            request.DeliveryReceiptNo,
+            request.Lines);
+
         string? clientReqId = Clean(request.ClientRequestId);
         if (!string.IsNullOrWhiteSpace(clientReqId))
         {
             await using SqliteCommand checkCmd = connection.CreateCommand();
-            checkCmd.CommandText = "SELECT id FROM receiving_reports WHERE client_request_id = $reqId LIMIT 1;";
+            checkCmd.CommandText = "SELECT id, request_payload_hash FROM receiving_reports WHERE client_request_id = $reqId LIMIT 1;";
             checkCmd.Parameters.AddWithValue("$reqId", clientReqId);
-            object? existingIdObj = await checkCmd.ExecuteScalarAsync(cancellationToken);
-            if (existingIdObj is string existingIdStr && Guid.TryParse(existingIdStr, out Guid existingRrId))
+            await using SqliteDataReader checkReader = await checkCmd.ExecuteReaderAsync(cancellationToken);
+            if (await checkReader.ReadAsync(cancellationToken))
             {
+                Guid existingRrId = Guid.Parse(checkReader.GetString(0));
+                string? existingHash = checkReader.IsDBNull(1) ? null : checkReader.GetString(1);
+                checkReader.Close();
+
+                if (existingHash is not null && !string.Equals(existingHash, payloadHash, StringComparison.Ordinal))
+                {
+                    return Result<ReceivingReportModel>.Fail(
+                        Error.Conflict(
+                            "Lpi.Receiving.IdempotencyConflict",
+                            $"A receiving report with client_request_id '{clientReqId}' was already submitted with different lines or quantities."));
+                }
+
                 ReceivingReportModel? replay = await LoadReceivingReportAsync(connection, null, existingRrId, cancellationToken);
                 if (replay is not null) return Result<ReceivingReportModel>.Success(replay);
             }
@@ -137,19 +155,12 @@ public sealed partial class SqliteProcureToPayService
             }
         }
 
-        if (hasOverdelivery && request.PostImmediately)
+        // Separation of duties enforcement:
+        if (hasOverdelivery && request.OverdeliveryApproverUserId.HasValue && request.OverdeliveryApproverUserId.Value == request.ReceivedByUserId)
         {
-            if (!request.OverdeliveryApproverUserId.HasValue ||
-                request.OverdeliveryApproverUserId.Value == Guid.Empty ||
-                string.IsNullOrWhiteSpace(request.OverdeliveryApprovalReason))
-            {
-                return Result<ReceivingReportModel>.Fail(
-                    Error.Conflict(
-                        "Lpi.Receiving.OverdeliveryApprovalRequired",
-                        "Overdelivery detected: accepted quantity exceeds remaining PO quantity. Supervised overdelivery approval and reason are required before posting."));
-            }
+            return Result<ReceivingReportModel>.Fail(
+                Error.Validation("Lpi.Receiving.SelfApprovalForbidden", "Separation of duties required: receiving operator cannot approve their own overdelivery exception."));
         }
-
         string rrNumber = await AllocateSequenceInTransactionAsync(connection, transaction, "RR", cancellationToken);
         Guid rrId = Guid.NewGuid();
         Guid locationId = request.LocationId ?? po.DeliveryLocationId;
@@ -169,7 +180,7 @@ public sealed partial class SqliteProcureToPayService
                     received_date, status, has_overdelivery,
                     overdelivery_approved_by_user_id, overdelivery_approval_reason,
                     received_by_user_id, inspected_by_user_id, client_request_id,
-                    notes, created_at, updated_at
+                    request_payload_hash, notes, created_at, updated_at
                 )
                 VALUES (
                     $id, $rrNo, $poId, $supId, $locId,
@@ -177,7 +188,7 @@ public sealed partial class SqliteProcureToPayService
                     $recDate, $status, $hasOver,
                     $overAppBy, $overReason,
                     $recBy, $recBy, $clientReqId,
-                    $notes, $now, $now
+                    $hash, $notes, $now, $now
                 );
                 """;
             cmd.Parameters.AddWithValue("$id", rrId.ToString("D"));
@@ -195,6 +206,7 @@ public sealed partial class SqliteProcureToPayService
             cmd.Parameters.AddWithValue("$overReason", (object?)Clean(request.OverdeliveryApprovalReason) ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$recBy", request.ReceivedByUserId.ToString("D"));
             cmd.Parameters.AddWithValue("$clientReqId", (object?)clientReqId ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$hash", payloadHash);
             cmd.Parameters.AddWithValue("$notes", (object?)Clean(request.Notes) ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$now", now.ToString("O"));
             await cmd.ExecuteNonQueryAsync(cancellationToken);
@@ -364,14 +376,65 @@ public sealed partial class SqliteProcureToPayService
             return Result.Fail(Error.Conflict("Lpi.Receiving.Cancelled", "Cannot post a cancelled receiving report."));
         }
 
-        Guid? effectiveApprover = overdeliveryApproverId ?? rr.OverdeliveryApprovedByUserId;
-        string? effectiveReason = Clean(overdeliveryReason) ?? rr.OverdeliveryApprovalReason;
+        Guid? effectiveApprover = null;
+        string? effectiveReason = null;
 
-        if (rr.HasOverdelivery && (!effectiveApprover.HasValue || effectiveApprover.Value == Guid.Empty || string.IsNullOrWhiteSpace(effectiveReason)))
+        if (rr.HasOverdelivery)
         {
-            return Result.Fail(Error.Conflict(
-                "Lpi.Receiving.OverdeliveryApprovalRequired",
-                $"Receiving report '{rr.RrNumber}' contains overdelivery quantities and requires supervised approval before posting."));
+            await using SqliteCommand checkAppCmd = connection.CreateCommand();
+            checkAppCmd.Transaction = transaction;
+            checkAppCmd.CommandText = """
+                SELECT approver_user_id, approval_reason, approved_lines_json
+                FROM lpi_overdelivery_approvals
+                WHERE receiving_report_id = $rrId AND is_revoked = 0
+                ORDER BY approved_at DESC LIMIT 1;
+                """;
+            checkAppCmd.Parameters.AddWithValue("$rrId", rr.Id.ToString("D"));
+            await using SqliteDataReader appReader = await checkAppCmd.ExecuteReaderAsync(cancellationToken);
+            if (!await appReader.ReadAsync(cancellationToken))
+            {
+                return Result.Fail(Error.Conflict(
+                    "Lpi.Receiving.OverdeliveryApprovalRequired",
+                    $"Receiving report '{rr.RrNumber}' contains overdelivery quantities and requires an independent approved exception before posting."));
+            }
+
+            Guid approverId = Guid.Parse(appReader.GetString(0));
+            effectiveReason = appReader.GetString(1);
+            string approvedLinesJson = appReader.GetString(2);
+            appReader.Close();
+
+            // Separation of duties enforcement:
+            if (approverId == actorUserId || approverId == rr.ReceivedByUserId)
+            {
+                return Result.Fail(Error.Validation(
+                    "Lpi.Receiving.SelfApprovalForbidden",
+                    "Separation of duties required: receiving operator cannot approve their own overdelivery exception."));
+            }
+
+            // Verify quantities were not modified after approval
+            try
+            {
+                var approvedLines = System.Text.Json.JsonSerializer.Deserialize<List<OverdeliveryApprovedLineModel>>(approvedLinesJson);
+                var approvedMap = approvedLines?.ToDictionary(x => x.PurchaseOrderLineId) ?? new();
+                foreach (var line in rr.Lines)
+                {
+                    if (approvedMap.TryGetValue(line.PurchaseOrderLineId, out var appLine))
+                    {
+                        if (line.AcceptedQtyX1000 > appLine.ApprovedQtyX1000)
+                        {
+                            return Result.Fail(Error.Conflict(
+                                "Lpi.Receiving.OverdeliveryQuantityChanged",
+                                $"Receiving report '{rr.RrNumber}' line '{line.ItemDescription}' quantity ({line.AcceptedQtyX1000 / 1000m:N2}) exceeds approved overdelivery quantity ({appLine.ApprovedQtyX1000 / 1000m:N2}); independent re-approval is required."));
+                        }
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is not InvalidOperationException)
+            {
+                // Json parsing fallback safety
+            }
+
+            effectiveApprover = approverId;
         }
 
         foreach (ReceivingReportLineModel line in rr.Lines)
@@ -1258,6 +1321,130 @@ public sealed partial class SqliteProcureToPayService
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
+
+    public async Task<Result<ReceivingReportModel>> ApproveOverdeliveryAsync(
+        ApproveOverdeliveryRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.ReceivingReportId == Guid.Empty || request.ApproverUserId == Guid.Empty || string.IsNullOrWhiteSpace(request.ApprovalReason))
+        {
+            return Result<ReceivingReportModel>.Fail(
+                Error.Validation("Lpi.Receiving.ApprovalReasonRequired", "Receiving report ID, approver user, and approval reason are required."));
+        }
+
+        await using SqliteConnection connection = _connections.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        SqlitePragma.Apply(connection);
+
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        ReceivingReportModel? rr = await LoadReceivingReportAsync(connection, transaction, request.ReceivingReportId, cancellationToken);
+        if (rr is null)
+        {
+            return Result<ReceivingReportModel>.Fail(Error.NotFound("Lpi.Receiving.NotFound", "Receiving report was not found."));
+        }
+        if (rr.Status is not ("Draft" or "PendingExceptionApproval"))
+        {
+            return Result<ReceivingReportModel>.Fail(
+                Error.Conflict("Lpi.Receiving.InvalidStatus", $"Cannot approve overdelivery on receiving report in '{rr.Status}' status."));
+        }
+        if (!rr.HasOverdelivery)
+        {
+            return Result<ReceivingReportModel>.Fail(
+                Error.Validation("Lpi.Receiving.NoOverdelivery", $"Receiving report '{rr.RrNumber}' does not contain overdelivery quantities."));
+        }
+
+        // Separation of duties enforcement:
+        if (rr.ReceivedByUserId == request.ApproverUserId)
+        {
+            return Result<ReceivingReportModel>.Fail(
+                Error.Validation("Lpi.Receiving.SelfApprovalForbidden", "Separation of duties required: receiving operator cannot approve their own overdelivery exception."));
+        }
+
+        DateTimeOffset now = _timeProvider.GetUtcNow();
+
+        var approvedLines = rr.Lines.Select(l => new OverdeliveryApprovedLineModel(
+            l.PurchaseOrderLineId,
+            l.ProductId,
+            l.ItemDescription,
+            l.AcceptedQtyX1000)).ToList();
+
+        string linesJson = System.Text.Json.JsonSerializer.Serialize(approvedLines);
+
+        await using (SqliteCommand appCmd = connection.CreateCommand())
+        {
+            appCmd.Transaction = transaction;
+            appCmd.CommandText = """
+                INSERT INTO lpi_overdelivery_approvals (
+                    id, receiving_report_id, purchase_order_id, approver_user_id,
+                    approval_reason, approved_lines_json, approved_at, is_revoked
+                )
+                VALUES (
+                    $id, $rrId, $poId, $appBy,
+                    $reason, $lines, $now, 0
+                );
+                """;
+            appCmd.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("D"));
+            appCmd.Parameters.AddWithValue("$rrId", rr.Id.ToString("D"));
+            appCmd.Parameters.AddWithValue("$poId", rr.PurchaseOrderId.ToString("D"));
+            appCmd.Parameters.AddWithValue("$appBy", request.ApproverUserId.ToString("D"));
+            appCmd.Parameters.AddWithValue("$reason", request.ApprovalReason.Trim());
+            appCmd.Parameters.AddWithValue("$lines", linesJson);
+            appCmd.Parameters.AddWithValue("$now", now.ToString("O"));
+            await appCmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (SqliteCommand updRr = connection.CreateCommand())
+        {
+            updRr.Transaction = transaction;
+            updRr.CommandText = """
+                UPDATE receiving_reports
+                SET overdelivery_approved_by_user_id = $appBy,
+                    overdelivery_approval_reason = $reason,
+                    status = 'Draft',
+                    updated_at = $now
+                WHERE id = $id;
+                """;
+            updRr.Parameters.AddWithValue("$appBy", request.ApproverUserId.ToString("D"));
+            updRr.Parameters.AddWithValue("$reason", request.ApprovalReason.Trim());
+            updRr.Parameters.AddWithValue("$now", now.ToString("O"));
+            updRr.Parameters.AddWithValue("$id", rr.Id.ToString("D"));
+            await updRr.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await WriteAuditAsync(
+            connection,
+            transaction,
+            request.ApproverUserId,
+            "LPI_RR_OVERDELIVERY_APPROVED",
+            "ReceivingReport",
+            rr.Id.ToString("D"),
+            new { rr.RrNumber, rr.PoNumber, request.ApprovalReason, ApproverUserId = request.ApproverUserId },
+            null,
+            $"Approved overdelivery exception for receiving report {rr.RrNumber}: {request.ApprovalReason.Trim()}",
+            now,
+            cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        ReceivingReportModel? updated = await LoadReceivingReportAsync(connection, null, rr.Id, cancellationToken);
+        return Result<ReceivingReportModel>.Success(updated!);
+    }
+
+    private static string ComputeReceivingPayloadHash(
+        Guid poId,
+        Guid? locationId,
+        string? deliveryReceiptNo,
+        IReadOnlyList<CreateReceivingReportLineInput> lines)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"{poId:D}|{locationId?.ToString("D")}|{deliveryReceiptNo?.Trim()}|");
+        foreach (var line in lines.OrderBy(l => l.PurchaseOrderLineId))
+        {
+            sb.Append($"{line.PurchaseOrderLineId:D}:{line.ActualDeliveredQtyX1000}:{line.AcceptedQtyX1000}:{line.RejectedQtyX1000};");
+        }
+        using var sha = System.Security.Cryptography.SHA256.Create();
+        return Convert.ToHexString(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(sb.ToString())));
+    }
     private static async Task<ReceivingReportModel?> LoadReceivingReportAsync(
         SqliteConnection connection,
         SqliteTransaction? transaction,
@@ -1274,7 +1461,7 @@ public sealed partial class SqliteProcureToPayService
                    rr.overdelivery_approved_by_user_id, rr.overdelivery_approval_reason,
                    rr.received_by_user_id, COALESCE(u.display_name, u.username, 'Operator'),
                    rr.inspected_by_user_id, rr.posted_by_user_id, rr.posted_at,
-                   rr.notes, rr.created_at, rr.updated_at
+                   rr.notes, rr.request_payload_hash, rr.created_at, rr.updated_at
             FROM receiving_reports rr
             JOIN purchase_orders po ON po.id = rr.purchase_order_id
             JOIN suppliers s ON s.id = rr.supplier_id
@@ -1286,7 +1473,7 @@ public sealed partial class SqliteProcureToPayService
 
         Guid id, poId, supId, locId, recById;
         string rrNo, poNo, supName, locName, drNo, status, recByName;
-        string? invRef, carrier, overReason, notes;
+        string? invRef, carrier, overReason, notes, payloadHash;
         DateOnly recDate;
         bool hasOver;
         Guid? overAppBy, inspBy, postBy;
@@ -1318,8 +1505,9 @@ public sealed partial class SqliteProcureToPayService
             postBy = reader.IsDBNull(19) ? null : Guid.Parse(reader.GetString(19));
             postAt = reader.IsDBNull(20) ? null : DateTimeOffset.Parse(reader.GetString(20));
             notes = reader.IsDBNull(21) ? null : reader.GetString(21);
-            createdAt = DateTimeOffset.Parse(reader.GetString(22));
-            updatedAt = DateTimeOffset.Parse(reader.GetString(23));
+            payloadHash = reader.IsDBNull(22) ? null : reader.GetString(22);
+            createdAt = DateTimeOffset.Parse(reader.GetString(23));
+            updatedAt = DateTimeOffset.Parse(reader.GetString(24));
         }
 
         List<ReceivingReportLineModel> lines = new();
@@ -1369,7 +1557,7 @@ public sealed partial class SqliteProcureToPayService
         return new ReceivingReportModel(
             id, rrNo, poId, poNo, supId, supName, locId, locName, drNo, invRef, carrier,
             recDate, status, hasOver, overAppBy, overReason, recById, recByName, inspBy,
-            postBy, postAt, notes, createdAt, updatedAt, lines);
+            postBy, postAt, notes, createdAt, updatedAt, lines, payloadHash);
     }
 
     private static async Task<SupplierReturnModel?> LoadSupplierReturnAsync(

@@ -61,6 +61,7 @@ public static class DefaultSeedData
         public const string PayablesManageInvoices = "Payables.ManageInvoices";
         public const string PayablesApproveVariance = "Payables.ApproveVariance";
         public const string PayablesRecordPayment = "Payables.RecordPayment";
+        public const string PayablesApprovePayment = "Payables.ApprovePayment";
     }
 
     public static IReadOnlyList<SeedRole> Roles { get; } = new SeedRole[]
@@ -124,7 +125,8 @@ public static class DefaultSeedData
         Permissions.PayablesView,
         Permissions.PayablesManageInvoices,
         Permissions.PayablesApproveVariance,
-        Permissions.PayablesRecordPayment
+        Permissions.PayablesRecordPayment,
+        Permissions.PayablesApprovePayment
     };
 
     public static IReadOnlyList<string> ManagerPermissions { get; } = new string[]
@@ -159,7 +161,8 @@ public static class DefaultSeedData
         Permissions.PayablesView,
         Permissions.PayablesManageInvoices,
         Permissions.PayablesApproveVariance,
-        Permissions.PayablesRecordPayment
+        Permissions.PayablesRecordPayment,
+        Permissions.PayablesApprovePayment
     };
 
     public static IReadOnlyList<string> CashierPermissions { get; } = new string[]
@@ -181,7 +184,6 @@ public static class DefaultSeedData
         Permissions.ProcurementRequest,
         Permissions.ProcurementManagePurchaseOrder,
         Permissions.ReceivingView,
-        Permissions.PayablesView,
         Permissions.ReportsView
     };
 
@@ -230,6 +232,7 @@ public static class DefaultSeedData
         Permissions.PayablesManageInvoices,
         Permissions.PayablesApproveVariance,
         Permissions.PayablesRecordPayment,
+        Permissions.PayablesApprovePayment,
         Permissions.ReportsView,
         Permissions.AuditView
     };

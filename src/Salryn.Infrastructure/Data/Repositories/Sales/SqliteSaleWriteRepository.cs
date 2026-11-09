@@ -579,6 +579,13 @@ public sealed class SqliteSaleWriteRepository :
             movement,
             signedQuantityChange);
 
+        StockBucketSyncHelper.SyncAvailableStockBucket(
+            connection,
+            transaction,
+            movement.ProductId,
+            signedQuantityChange,
+            DateTimeOffset.UtcNow);
+
         return Result.Success();
     }
 
