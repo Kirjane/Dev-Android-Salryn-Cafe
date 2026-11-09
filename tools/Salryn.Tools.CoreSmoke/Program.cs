@@ -338,6 +338,9 @@ public static class Program
     {
         switch (checkName.ToLowerInvariant())
         {
+            case "pos-stab-b3-production-db-writability":
+                PosStabB3ProductionDbWritabilityChecks.Run();
+                return;
             case "pos-m1-receipt-snapshot-file-receipt":
                 PosM1ReceiptSnapshotFileReceiptChecks.Run();
                 return;

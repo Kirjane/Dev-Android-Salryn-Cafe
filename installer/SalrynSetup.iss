@@ -68,6 +68,19 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
 
+[Dirs]
+; The local API runs as the signed-in Windows operator after Setup exits. Grant
+; standard users Modify on the shared data tree so SQLite can create and update
+; its -wal/-shm sidecars. Re-applying these entries on upgrade also repairs
+; installations whose sidecars inherited read-only Users access from ProgramData.
+Name: "{commonappdata}\Salryn"; Permissions: users-modify
+Name: "{commonappdata}\Salryn\data"; Permissions: users-modify
+Name: "{commonappdata}\Salryn\backups"; Permissions: users-modify
+Name: "{commonappdata}\Salryn\config"; Permissions: users-modify
+Name: "{commonappdata}\Salryn\exports"; Permissions: users-modify
+Name: "{commonappdata}\Salryn\logs"; Permissions: users-modify
+Name: "{commonappdata}\Salryn\receipts"; Permissions: users-modify
+
 [Files]
 ; Harvest everything from the staging folder (exe, DLLs, dist\, assets\, config).
 ; ignoreversion replaces existing app files on upgrade without touching ProgramData.

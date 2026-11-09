@@ -10,6 +10,7 @@ public static class PosStabB3ProductionDbWritabilityChecks
         string launchResolverText = ReadRequiredFile(repoRoot, "src", "Salryn.App.WinForms", "SalrynAppLaunchModeResolver.cs");
         string appServicesText = ReadRequiredFile(repoRoot, "src", "Salryn.App.WinForms", "Composition", "SalrynAppServices.cs");
         string dbPathsText = ReadRequiredFile(repoRoot, "src", "Salryn.Infrastructure", "Paths", "DbPaths.cs");
+        string installerText = ReadRequiredFile(repoRoot, "installer", "SalrynSetup.iss");
         string coreSmokeText = ReadRequiredFile(repoRoot, "tools", "Salryn.Tools.CoreSmoke", "Program.cs");
 
         RequireContains(programText, "SalrynAppLaunchModeResolver.CreateServices(args);", "B3 startup must preserve the app launch resolver composition entry point.");
@@ -42,6 +43,11 @@ public static class PosStabB3ProductionDbWritabilityChecks
         RequireContains(dbPathsText, "Database path: ", "B3 production writability validation must include the target database path.");
         RequireContains(dbPathsText, "ProgramData\\\\Salryn", "B3 production writability validation must guide operators to fix production folder permissions.");
         RequireContains(dbPathsText, "--dev only for development", "B3 production writability validation must not suggest silent fallback paths.");
+
+        RequireContains(installerText, "[Dirs]", "B3 installer must provision the production data directories explicitly.");
+        RequireContains(installerText, "{commonappdata}\\Salryn", "B3 installer must target the production ProgramData root.");
+        RequireContains(installerText, "{commonappdata}\\Salryn\\data", "B3 installer must provision the SQLite data directory.");
+        RequireContains(installerText, "Permissions: users-modify", "B3 installer must allow the non-elevated local API to write SQLite WAL/SHM files.");
 
         RequireContains(coreSmokeText, "PosStabB3ProductionDbWritabilityChecks.Run();", "CoreSmoke must run POS-STAB-B3 production DB writability checks.");
     }
