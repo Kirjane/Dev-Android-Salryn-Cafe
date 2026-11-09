@@ -11,9 +11,11 @@ using Salryn.Core.Common;
 using Salryn.Core.Models;
 using Salryn.Core.Models.ProcureToPay;
 using Salryn.Core.Security;
+using Salryn.Core.Services;
 using Salryn.Core.ValueObjects;
 using Salryn.Infrastructure.Data;
 using Salryn.Infrastructure.Data.Bootstrap;
+using Salryn.Infrastructure.Data.Migrations;
 using Salryn.Infrastructure.Data.Services;
 using Salryn.Infrastructure.Paths;
 
@@ -63,6 +65,7 @@ public static class LpiP1IntegrityReproductionChecks
             await TestP104TransactionIdempotencyAsync(service, apClerkId, financeMgrId, receiverId, resaleProdId);
             await TestP105InventoryConsistencyAcrossPosAsync(composition, service, paths, receiverId, supervisorId, resaleProdId, nonResaleProdId);
             await TestP106OverdeliveryApprovalAuthorityAsync(service, paths, receiverId, supervisorId, resaleProdId);
+            await TestP1R202ForwardMigrationV28Async(paths);
 
             Console.WriteLine("LPI P1 Integrity: All 6 P1 findings (P1-01 through P1-06) verified with full regression closure PASS.");
         }
@@ -134,6 +137,24 @@ public static class LpiP1IntegrityReproductionChecks
             cmd.Parameters.AddWithValue("$ref", sourceFreeInvoice.Id.ToString("D"));
             long count = Convert.ToInt64(cmd.ExecuteScalar());
             Require(count == 0, "Source-free invoice must NOT post any entries to supplier_payable_entries.");
+        }
+
+        // P1-R2-01: Manual-posting bypass rejection:
+        // Attempting to manually post the unverified / source-free invoice must fail closed.
+        Result<SupplierInvoiceModel> manualPostBypass = await service.PostSupplierInvoiceToApAsync(sourceFreeInvoice.Id, apClerkId);
+        Require(manualPostBypass.IsFailure, "Manual posting of source-free invoice must fail.");
+        Require(manualPostBypass.ErrorDetail.Code == "Lpi.Payables.UnverifiedPostingForbidden" || manualPostBypass.ErrorDetail.Code == "Lpi.Payables.MissingSourceDocuments",
+            $"Manual posting must be rejected with UnverifiedPostingForbidden/MissingSourceDocuments, got '{manualPostBypass.ErrorDetail?.Code}'.");
+
+        // Verify AP ledger remains 0
+        using (SqliteConnection conn = new($"Data Source={paths.DatabasePath}"))
+        {
+            conn.Open();
+            using SqliteCommand cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM supplier_payable_entries WHERE supplier_invoice_id = $ref;";
+            cmd.Parameters.AddWithValue("$ref", sourceFreeInvoice.Id.ToString("D"));
+            long count = Convert.ToInt64(cmd.ExecuteScalar());
+            Require(count == 0, "Supplier payable entries must remain 0 after rejected manual posting bypass attempt.");
         }
 
         // 2. Setup genuine PO and RR for Supplier A (10 units ordered and accepted)
@@ -684,6 +705,135 @@ public static class LpiP1IntegrityReproductionChecks
         long bucketAfterCount = ReadLocationBucketQty(paths.DatabasePath, resaleProdId, "MAIN-STORE", "Available");
         Require(stockAfterCount == 9_500 && bucketAfterCount == 9_500,
             $"LPI physical count adjustment must atomically reconcile stock and MAIN-STORE bucket (stock={stockAfterCount}, bucket={bucketAfterCount}).");
+
+        // 8. P1-R2-03 Multi-Location POS stock isolation and no silent clamping:
+        // Create product with 0 in MAIN-STORE, receive stock exclusively in WAREHOUSE-1.
+        using (SqliteConnection locConn = new($"Data Source={paths.DatabasePath}"))
+        {
+            locConn.Open();
+            using SqliteCommand locCmd = locConn.CreateCommand();
+            locCmd.CommandText = "INSERT OR IGNORE INTO inventory_locations (id, code, name, location_type, is_active, created_at) VALUES ('00000000-0000-0000-0000-000000000505', 'WAREHOUSE-1', 'Secondary Warehouse', 'SellableStorage', 1, '2026-01-01T00:00:00Z');";
+            locCmd.ExecuteNonQuery();
+        }
+        foundation = RequireSuccess(await service.GetFoundationCatalogAsync(), "foundation refresh");
+        Guid warehouse1LocId = foundation.Locations.First(l => l.Code == "WAREHOUSE-1").Id;
+        Guid multiLocProdId = SeedProduct(paths.DatabasePath, "P1-05-MULTILOC", "9900003000099", "Multi-Location Test Item", 30_000, 60_000, 0, 1_000);
+
+        PurchaseOrderModel whPo = RequireSuccess(
+            await service.CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest(
+                nonResaleSup.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7)), warehouse1LocId, 30, 0, "Standard", null, true,
+                new[] { new CreatePurchaseOrderLineInput(null, multiLocProdId, "P1-05-MULTILOC", "Multi-Location Test Item", PurchaseClassifications.Resale, "pcs", 10_000, 30_000, 0, 0, null) },
+                receiverId)),
+            "seed multi-loc PO");
+
+        ReceivingReportModel whRr = RequireSuccess(
+            await service.CreateReceivingReportAsync(new CreateReceivingReportRequest(
+                whPo.Id, warehouse1LocId, "DR-WH1-01", null, "Carrier", DateOnly.FromDateTime(DateTime.UtcNow), true, null, null, "RR-WH1-01", null,
+                new[] { new CreateReceivingReportLineInput(whPo.Lines[0].Id, 10_000, 10_000, 0, null, null, null, null) },
+                receiverId)),
+            "receive goods at WAREHOUSE-1");
+
+        long mlStockTotal = ReadStockOnHand(paths.DatabasePath, multiLocProdId);
+        long mlWh1Bucket = ReadLocationBucketQty(paths.DatabasePath, multiLocProdId, "WAREHOUSE-1", "Available");
+        long mlMainBucket = ReadLocationBucketQty(paths.DatabasePath, multiLocProdId, "MAIN-STORE", "Available");
+
+        Require(mlStockTotal == 10_000, $"Total stock on hand must be 10, got {mlStockTotal}.");
+        Require(mlWh1Bucket == 10_000, $"WAREHOUSE-1 bucket must have 10, got {mlWh1Bucket}.");
+        Require(mlMainBucket == 0, $"MAIN-STORE bucket must have 0, got {mlMainBucket}.");
+
+        // Attempt POS checkout sale of 2 units: since MAIN-STORE has 0 available, sale must fail closed with InsufficientLocationStock!
+        Guid mlSaleId = Guid.NewGuid();
+        Sale mlSale = new()
+        {
+            Id = mlSaleId,
+            ReceiptNumber = "OR-P1-00002",
+            CashierUserId = cashierId,
+            Subtotal = Money.FromCents(120_000),
+            Total = Money.FromCents(120_000),
+            AmountPaid = Money.FromCents(120_000),
+            Change = Money.Zero,
+            Status = SaleStatus.Completed,
+            ReceiptSnapshot = "Snapshot"
+        };
+        SaleItem mlSaleItem = new()
+        {
+            SaleId = mlSaleId,
+            ProductId = multiLocProdId,
+            ProductNameSnapshot = "Multi-Location Test Item",
+            BarcodeSnapshot = "9900003000099",
+            UnitNameSnapshot = "pcs",
+            Quantity = Quantity.FromX1000(2_000).Value,
+            UnitPrice = Money.FromCents(60_000),
+            CostPrice = Money.FromCents(30_000),
+            LineTotal = Money.FromCents(120_000)
+        };
+        Payment mlPayment = new() { SaleId = mlSaleId, Amount = Money.FromCents(120_000) };
+        StockMovement mlMovement = new()
+        {
+            ProductId = multiLocProdId,
+            MovementType = StockMovementType.Sale,
+            QuantityChange = Quantity.FromX1000(2_000).Value,
+            CostPrice = Money.FromCents(30_000),
+            ReferenceType = "SALE",
+            ReferenceId = mlSaleId,
+            Reason = "POS Sale Insufficient Test",
+            UserId = cashierId
+        };
+
+        Result mlSaleResult = await composition.SaleWriteRepository.AddCompletedSaleAsync(
+            mlSale, new[] { mlSaleItem }, new[] { mlPayment }, new[] { mlMovement });
+
+        Require(mlSaleResult.IsFailure && mlSaleResult.ErrorDetail.Code == "Sales.InsufficientLocationStock",
+            $"POS checkout sale must fail with Sales.InsufficientLocationStock when MAIN-STORE bucket has 0, got '{mlSaleResult.ErrorDetail?.Code}'.");
+
+        // Verify stock and buckets did NOT change
+        Require(ReadStockOnHand(paths.DatabasePath, multiLocProdId) == 10_000, "Total stock must remain unchanged after failed sale.");
+        Require(ReadLocationBucketQty(paths.DatabasePath, multiLocProdId, "WAREHOUSE-1", "Available") == 10_000, "WAREHOUSE-1 bucket must remain 10.");
+        Require(ReadLocationBucketQty(paths.DatabasePath, multiLocProdId, "MAIN-STORE", "Available") == 0, "MAIN-STORE bucket must remain 0.");
+
+        // Now stock-in 5 units to MAIN-STORE
+        Result<StockWriteResponse> mlStockIn = await invService.StockInAsync(
+            new StockInRequest(multiLocProdId, 5.0m, "Stock-in to main store", "REF-ML-IN"), invSession);
+        Require(mlStockIn.IsSuccess, "Stock-in to main store must succeed.");
+
+        long mlStockAfterIn = ReadStockOnHand(paths.DatabasePath, multiLocProdId);
+        long mlMainAfterIn = ReadLocationBucketQty(paths.DatabasePath, multiLocProdId, "MAIN-STORE", "Available");
+        long mlWh1AfterIn = ReadLocationBucketQty(paths.DatabasePath, multiLocProdId, "WAREHOUSE-1", "Available");
+        Require(mlStockAfterIn == 15_000 && mlMainAfterIn == 5_000 && mlWh1AfterIn == 10_000,
+            $"After stock-in: total={mlStockAfterIn}, MAIN-STORE={mlMainAfterIn}, WAREHOUSE-1={mlWh1AfterIn}.");
+        Require(mlMainAfterIn + mlWh1AfterIn == mlStockAfterIn, "Sum of sellable buckets must equal total stock on hand.");
+
+        // Now POS checkout sale of 2 units succeeds
+        Result mlSaleSuccess = await composition.SaleWriteRepository.AddCompletedSaleAsync(
+            mlSale, new[] { mlSaleItem }, new[] { mlPayment }, new[] { mlMovement });
+        Require(mlSaleSuccess.IsSuccess, "POS sale must succeed when MAIN-STORE has sufficient stock.");
+
+        long mlStockAfterSale = ReadStockOnHand(paths.DatabasePath, multiLocProdId);
+        long mlMainAfterSale = ReadLocationBucketQty(paths.DatabasePath, multiLocProdId, "MAIN-STORE", "Available");
+        long mlWh1AfterSale = ReadLocationBucketQty(paths.DatabasePath, multiLocProdId, "WAREHOUSE-1", "Available");
+        Require(mlStockAfterSale == 13_000 && mlMainAfterSale == 3_000 && mlWh1AfterSale == 10_000,
+            $"After sale: total={mlStockAfterSale}, MAIN-STORE={mlMainAfterSale}, WAREHOUSE-1={mlWh1AfterSale}.");
+        Require(mlMainAfterSale + mlWh1AfterSale == mlStockAfterSale, "Sum of sellable buckets must strictly equal total stock on hand.");
+
+        // Void the sale
+        Result<SaleVoidResponse> mlVoidRes = await voidService.VoidAsync(mlSaleId, new SaleVoidRequest("Customer return"), cashierSession);
+        Require(mlVoidRes.IsSuccess, "Sale void must succeed.");
+        Require(ReadStockOnHand(paths.DatabasePath, multiLocProdId) == 15_000, "Total stock restored to 15.");
+        Require(ReadLocationBucketQty(paths.DatabasePath, multiLocProdId, "MAIN-STORE", "Available") == 5_000, "MAIN-STORE restored to 5.");
+
+        // Physical count at WAREHOUSE-1: count 8 units (variance = -2_000)
+        StockCountAdjustmentModel whCountAdj = RequireSuccess(
+            await service.RecordStockCountAdjustmentAsync(new RecordStockCountAdjustmentRequest(
+                multiLocProdId, warehouse1LocId, 8_000, "CYCLE_COUNT", "Warehouse count discrepancy", receiverId, supervisorId)),
+            "WAREHOUSE-1 physical count adjustment");
+
+        long mlStockFinal = ReadStockOnHand(paths.DatabasePath, multiLocProdId);
+        long mlWh1Final = ReadLocationBucketQty(paths.DatabasePath, multiLocProdId, "WAREHOUSE-1", "Available");
+        long mlMainFinal = ReadLocationBucketQty(paths.DatabasePath, multiLocProdId, "MAIN-STORE", "Available");
+        Require(mlWh1Final == 8_000, $"WAREHOUSE-1 bucket must be reconciled to 8_000, got {mlWh1Final}.");
+        Require(mlMainFinal == 5_000, $"MAIN-STORE bucket must remain 5_000, got {mlMainFinal}.");
+        Require(mlStockFinal == 13_000, $"Total stock must be 13_000, got {mlStockFinal}.");
+        Require(mlMainFinal + mlWh1Final == mlStockFinal, "Sum of sellable buckets must strictly match total stock on hand.");
     }
 
     /// <summary>
@@ -753,6 +903,72 @@ public static class LpiP1IntegrityReproductionChecks
 
         Require(approvedRr.OverdeliveryApprovedByUserId == supervisorId, "OverdeliveryApprovedByUserId must match supervisor.");
 
+        // P1-R2-04: Overdelivery approval snapshot validation fail-closed tests
+        // 4a. Tampered snapshot: Malformed/corrupted JSON
+        using (SqliteConnection conn = new($"Data Source={paths.DatabasePath}"))
+        {
+            conn.Open();
+            using SqliteCommand tamperCmd = conn.CreateCommand();
+            tamperCmd.CommandText = "UPDATE lpi_overdelivery_approvals SET approved_lines_json = '{ corrupted json' WHERE receiving_report_id = $rrId;";
+            tamperCmd.Parameters.AddWithValue("$rrId", rr.Id.ToString("D"));
+            tamperCmd.ExecuteNonQuery();
+        }
+
+        Result<ReceivingReportModel> postCorrupted = await service.PostReceivingReportAsync(new PostReceivingReportRequest(
+            rr.Id, null, null, null, receiverId));
+        Require(postCorrupted.IsFailure && postCorrupted.ErrorDetail.Code == "Lpi.Receiving.InvalidApprovalSnapshot",
+            $"Posting with corrupted snapshot JSON must fail with InvalidApprovalSnapshot, got '{postCorrupted.ErrorDetail?.Code}'.");
+
+        // 4b. Tampered snapshot: Empty array []
+        using (SqliteConnection conn = new($"Data Source={paths.DatabasePath}"))
+        {
+            conn.Open();
+            using SqliteCommand tamperCmd = conn.CreateCommand();
+            tamperCmd.CommandText = "UPDATE lpi_overdelivery_approvals SET approved_lines_json = '[]' WHERE receiving_report_id = $rrId;";
+            tamperCmd.Parameters.AddWithValue("$rrId", rr.Id.ToString("D"));
+            tamperCmd.ExecuteNonQuery();
+        }
+
+        Result<ReceivingReportModel> postEmpty = await service.PostReceivingReportAsync(new PostReceivingReportRequest(
+            rr.Id, null, null, null, receiverId));
+        Require(postEmpty.IsFailure && (postEmpty.ErrorDetail.Code == "Lpi.Receiving.InvalidApprovalSnapshot" || postEmpty.ErrorDetail.Code == "Lpi.Receiving.UnapprovedLineDetected"),
+            $"Posting with empty snapshot lines must fail, got '{postEmpty.ErrorDetail?.Code}'.");
+
+        // 4c. Tampered snapshot: Approved qty less than RR delivered qty (11_000 approved vs 12_000 delivered)
+        string lowerQtyJson = JsonSerializer.Serialize(new[]
+        {
+            new OverdeliveryApprovedLineModel(po.Lines[0].Id, productId, "P1-06 Resale Item", 11_000L)
+        });
+        using (SqliteConnection conn = new($"Data Source={paths.DatabasePath}"))
+        {
+            conn.Open();
+            using SqliteCommand tamperCmd = conn.CreateCommand();
+            tamperCmd.CommandText = "UPDATE lpi_overdelivery_approvals SET approved_lines_json = $json WHERE receiving_report_id = $rrId;";
+            tamperCmd.Parameters.AddWithValue("$json", lowerQtyJson);
+            tamperCmd.Parameters.AddWithValue("$rrId", rr.Id.ToString("D"));
+            tamperCmd.ExecuteNonQuery();
+        }
+
+        Result<ReceivingReportModel> postLowerQty = await service.PostReceivingReportAsync(new PostReceivingReportRequest(
+            rr.Id, null, null, null, receiverId));
+        Require(postLowerQty.IsFailure && postLowerQty.ErrorDetail.Code == "Lpi.Receiving.OverdeliveryQuantityChanged",
+            $"Posting with approved quantity lower than delivered must fail with OverdeliveryQuantityChanged, got '{postLowerQty.ErrorDetail?.Code}'.");
+
+        // 4d. Restore authentic snapshot
+        string validSnapshotJson = JsonSerializer.Serialize(new[]
+        {
+            new OverdeliveryApprovedLineModel(po.Lines[0].Id, productId, "P1-06 Resale Item", 12_000L)
+        });
+        using (SqliteConnection conn = new($"Data Source={paths.DatabasePath}"))
+        {
+            conn.Open();
+            using SqliteCommand restoreCmd = conn.CreateCommand();
+            restoreCmd.CommandText = "UPDATE lpi_overdelivery_approvals SET approved_lines_json = $json WHERE receiving_report_id = $rrId;";
+            restoreCmd.Parameters.AddWithValue("$json", validSnapshotJson);
+            restoreCmd.Parameters.AddWithValue("$rrId", rr.Id.ToString("D"));
+            restoreCmd.ExecuteNonQuery();
+        }
+
         // 5. Post approved receiving report
         ReceivingReportModel postedRr = RequireSuccess(
             await service.PostReceivingReportAsync(new PostReceivingReportRequest(
@@ -779,6 +995,145 @@ public static class LpiP1IntegrityReproductionChecks
             long revoked = reader.GetInt64(2);
             Require(recordedApprover == supervisorId, "Recorded approver must match supervisorId.");
             Require(revoked == 0, "Approval must be active (is_revoked = 0).");
+        }
+    }
+
+    /// <summary>
+    /// P1-R2-02: Forward migration v28 verification.
+    /// Invariants:
+    /// - Database at v27 contains LPI base tables but NOT lpi_overdelivery_approvals or v28 columns.
+    /// - Running migration v28 applies schema changes cleanly and backfills legacy product stock buckets.
+    /// - Supported migration version is 28.
+    /// - Database backup and restore succeeds on v28.
+    /// </summary>
+    private static async Task TestP1R202ForwardMigrationV28Async(DbPaths originalPaths)
+    {
+        string testDir = Path.Combine(Path.GetTempPath(), "salryn-migration-v28-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(testDir);
+        try
+        {
+            DbPaths tempPaths = DbPaths.CreateDevelopment(testDir);
+            SqliteConnectionFactory connectionFactory = new(tempPaths);
+
+            // 1. Run migrations up to v27 only (ProcureToPaySchemaMigration)
+            IDatabaseMigration[] v27Migrations = new IDatabaseMigration[]
+            {
+                new InitialSchemaMigration(),
+                new BirMachineProfileSchemaMigration(),
+                new BirOfficialDocumentSequenceSchemaMigration(),
+                new BirElectronicJournalSchemaMigration(),
+                new BirElectronicJournalSchemaHardeningMigration(),
+                new BirZReadingSchemaMigration(),
+                new BirElectronicJournalCorrectionEventSchemaMigration(),
+                new ProductTaxClassificationSchemaMigration(),
+                new DeploymentIdentitySchemaMigration(),
+                new TerminalRegistrySchemaMigration(),
+                new LanRemoteTransportSchemaMigration(),
+                new TerminalCredentialHandshakeSchemaMigration(),
+                new OfficialReceiptProfileSchemaMigration(),
+                new OfficialDryRunPackageSchemaMigration(),
+                new VatRegistrationModeSchemaMigration(),
+                new OfficialDocumentLifecycleCompletionSchemaMigration(),
+                new OfficialDocumentLifecycleAccountingSchemaMigration(),
+                new StorePrinterModeSchemaMigration(),
+                new WindowsPrinterNameSchemaMigration(),
+                new StoreLogoBrandingSchemaMigration(),
+                new RemotePosCheckoutRequestSchemaMigration(),
+                new AccountsReceivableSchemaMigration(),
+                new HostCheckoutRequestSchemaMigration(),
+                new ReceivableCollectionRequestSchemaMigration(),
+                new CashDrawerReconciliationSchemaMigration(),
+                new CashDrawerCloseReplaySchemaMigration(),
+                new ProcureToPaySchemaMigration() // v27!
+            };
+
+            MigrationRunner runnerV27 = new(connectionFactory, v27Migrations);
+            runnerV27.RunPendingMigrations();
+
+            // Verify v27 state: lpi_overdelivery_approvals does NOT exist yet
+            using (SqliteConnection conn = connectionFactory.CreateConnection())
+            {
+                conn.Open();
+                using SqliteCommand checkTable = conn.CreateCommand();
+                checkTable.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='lpi_overdelivery_approvals';";
+                long tableCount = Convert.ToInt64(checkTable.ExecuteScalar());
+                Require(tableCount == 0, "lpi_overdelivery_approvals must NOT exist in v27 baseline.");
+
+                // Seed a unit and a legacy product in v27 without product_stock_buckets row
+                using SqliteCommand seedUnit = conn.CreateCommand();
+                seedUnit.CommandText = "INSERT OR IGNORE INTO units (id, name, abbreviation, allows_decimal_quantity, is_active) VALUES ('00000000-0000-0000-0000-000000000101', 'Piece', 'pcs', 0, 1);";
+                seedUnit.ExecuteNonQuery();
+
+                using SqliteCommand seedProd = conn.CreateCommand();
+                seedProd.CommandText = """
+                    INSERT INTO products (id, sku, barcode, name, unit_id, cost_price_cents, selling_price_cents, stock_on_hand_x1000, reorder_level_x1000, track_stock, allow_discount, is_active, created_at, updated_at)
+                    VALUES ('11111111-1111-1111-1111-111111111111', 'LEGACY-SKU', '9999999999999', 'Legacy Product',
+                            (SELECT id FROM units LIMIT 1), 10000, 20000, 7500, 1000, 1, 1, 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+                    """;
+                seedProd.ExecuteNonQuery();
+
+                // Check bucket count for this product before v28: 0
+                using SqliteCommand checkBucket = conn.CreateCommand();
+                checkBucket.CommandText = "SELECT COUNT(*) FROM product_stock_buckets WHERE product_id = '11111111-1111-1111-1111-111111111111';";
+                long bCountBefore = Convert.ToInt64(checkBucket.ExecuteScalar());
+                Require(bCountBefore == 0, "Legacy product has no bucket before v28.");
+            }
+
+            // 2. Apply v28 migration
+            MigrationRunner runnerV28 = new(connectionFactory, new IDatabaseMigration[] { new ProcureToPayR2HardeningMigration() });
+            runnerV28.RunPendingMigrations();
+
+            // Verify v28 state: lpi_overdelivery_approvals EXISTS, columns exist, legacy product backfilled
+            using (SqliteConnection conn = connectionFactory.CreateConnection())
+            {
+                conn.Open();
+                using SqliteCommand checkTable = conn.CreateCommand();
+                checkTable.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='lpi_overdelivery_approvals';";
+                long tableCount = Convert.ToInt64(checkTable.ExecuteScalar());
+                Require(tableCount == 1, "lpi_overdelivery_approvals MUST exist after v28 migration.");
+
+                // Check legacy product was backfilled in product_stock_buckets with 7500
+                using SqliteCommand checkBucket = conn.CreateCommand();
+                checkBucket.CommandText = """
+                    SELECT quantity_x1000 FROM product_stock_buckets
+                    WHERE product_id = '11111111-1111-1111-1111-111111111111' AND bucket_status = 'Available';
+                    """;
+                object? val = checkBucket.ExecuteScalar();
+                Require(val is not null && Convert.ToInt64(val) == 7500, $"Legacy product must be backfilled with quantity 7500, got '{val}'.");
+
+                // Check receiving_reports.request_payload_hash exists
+                using SqliteCommand checkCol = conn.CreateCommand();
+                checkCol.CommandText = "PRAGMA table_info(receiving_reports);";
+                using SqliteDataReader r = checkCol.ExecuteReader();
+                bool hasHash = false;
+                while (r.Read())
+                {
+                    if (string.Equals(r.GetString(1), "request_payload_hash", StringComparison.OrdinalIgnoreCase)) hasHash = true;
+                }
+                Require(hasHash, "receiving_reports must have request_payload_hash column after v28.");
+            }
+
+            // 3. Test backup and restore verification using SqliteBackupRecoveryService
+            SqliteBackupRecoveryService recovery = new(tempPaths);
+            Result<string> backupRes = recovery.CreateBackup();
+            Require(backupRes.IsSuccess, $"Backup on v28 database must succeed: {backupRes.ErrorDetail?.Message}");
+            string backupPath = backupRes.Value;
+            Require(File.Exists(backupPath), "Backup file must exist on disk.");
+
+            Result<BackupVerificationSummary> verifyRes = recovery.VerifyBackup(backupPath);
+            Require(verifyRes.IsSuccess && verifyRes.Value.MigrationVersionCompatible,
+                $"Backup verification must pass on v28 schema: {verifyRes.ErrorDetail?.Message}");
+
+            Console.WriteLine("P1-R2-02: Forward migration v27 -> v28 and backup verified PASS.");
+            await Task.CompletedTask;
+        }
+        finally
+        {
+            SqliteConnectionFactory.ClearAllPools();
+            if (Directory.Exists(testDir))
+            {
+                try { Directory.Delete(testDir, recursive: true); } catch { }
+            }
         }
     }
 

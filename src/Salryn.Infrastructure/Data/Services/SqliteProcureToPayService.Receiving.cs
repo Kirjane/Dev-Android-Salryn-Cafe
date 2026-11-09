@@ -411,27 +411,59 @@ public sealed partial class SqliteProcureToPayService
                     "Separation of duties required: receiving operator cannot approve their own overdelivery exception."));
             }
 
-            // Verify quantities were not modified after approval
+            // Fail-closed approval snapshot validation
+            if (string.IsNullOrWhiteSpace(approvedLinesJson))
+            {
+                return Result.Fail(Error.Conflict(
+                    "Lpi.Receiving.InvalidApprovalSnapshot",
+                    "Overdelivery approval snapshot is missing or empty. Posting cannot proceed."));
+            }
+
+            List<OverdeliveryApprovedLineModel>? approvedLines;
             try
             {
-                var approvedLines = System.Text.Json.JsonSerializer.Deserialize<List<OverdeliveryApprovedLineModel>>(approvedLinesJson);
-                var approvedMap = approvedLines?.ToDictionary(x => x.PurchaseOrderLineId) ?? new();
-                foreach (var line in rr.Lines)
+                approvedLines = System.Text.Json.JsonSerializer.Deserialize<List<OverdeliveryApprovedLineModel>>(approvedLinesJson);
+            }
+            catch (Exception ex)
+            {
+                return Result.Fail(Error.Conflict(
+                    "Lpi.Receiving.InvalidApprovalSnapshot",
+                    $"Overdelivery approval snapshot contains invalid JSON: {ex.Message}"));
+            }
+
+            if (approvedLines is null || approvedLines.Count == 0)
+            {
+                return Result.Fail(Error.Conflict(
+                    "Lpi.Receiving.InvalidApprovalSnapshot",
+                    "Overdelivery approval snapshot contains no approved lines."));
+            }
+
+            Dictionary<Guid, OverdeliveryApprovedLineModel> approvedMap = new();
+            foreach (var appLine in approvedLines)
+            {
+                if (!approvedMap.TryAdd(appLine.PurchaseOrderLineId, appLine))
                 {
-                    if (approvedMap.TryGetValue(line.PurchaseOrderLineId, out var appLine))
-                    {
-                        if (line.AcceptedQtyX1000 > appLine.ApprovedQtyX1000)
-                        {
-                            return Result.Fail(Error.Conflict(
-                                "Lpi.Receiving.OverdeliveryQuantityChanged",
-                                $"Receiving report '{rr.RrNumber}' line '{line.ItemDescription}' quantity ({line.AcceptedQtyX1000 / 1000m:N2}) exceeds approved overdelivery quantity ({appLine.ApprovedQtyX1000 / 1000m:N2}); independent re-approval is required."));
-                        }
-                    }
+                    return Result.Fail(Error.Conflict(
+                        "Lpi.Receiving.InvalidApprovalSnapshot",
+                        $"Overdelivery approval snapshot contains duplicate purchase order line '{appLine.PurchaseOrderLineId}'."));
                 }
             }
-            catch (Exception ex) when (ex is not InvalidOperationException)
+
+            foreach (var line in rr.Lines)
             {
-                // Json parsing fallback safety
+                if (!approvedMap.TryGetValue(line.PurchaseOrderLineId, out var appLine))
+                {
+                    return Result.Fail(Error.Conflict(
+                        "Lpi.Receiving.UnapprovedLineDetected",
+                        $"Receiving report line '{line.ItemDescription}' (POLine: {line.PurchaseOrderLineId}) has no entry in the approved snapshot."));
+                }
+
+                if (line.AcceptedQtyX1000 > appLine.ApprovedQtyX1000)
+                {
+                    return Result.Fail(Error.Conflict(
+                        "Lpi.Receiving.OverdeliveryQuantityChanged",
+                        $"Receiving report '{rr.RrNumber}' line '{line.ItemDescription}' quantity ({line.AcceptedQtyX1000 / 1000m:N2}) exceeds approved overdelivery quantity ({appLine.ApprovedQtyX1000 / 1000m:N2}); independent re-approval is required."));
+                }
             }
 
             effectiveApprover = approverId;
@@ -737,16 +769,53 @@ public sealed partial class SqliteProcureToPayService
                 Error.Validation("Lpi.Adjustment.ProductNotTracked", "Target product was not found or does not track stock."));
         }
 
-        long varianceQtyX1000 = request.ActualCountedQtyX1000 - systemQtyX1000;
-        long varianceValueCents = (varianceQtyX1000 * unitCostCents) / 1000L;
-        string adjNumber = await AllocateSequenceInTransactionAsync(connection, transaction, "ADJ", cancellationToken);
-        Guid adjId = Guid.NewGuid();
         Guid locationId = request.LocationId ?? Guid.Parse(DefaultMainLocationId);
         DateTimeOffset now = _timeProvider.GetUtcNow();
+
+        long currentLocQtyX1000 = 0;
+        await using (SqliteCommand locReadCmd = connection.CreateCommand())
+        {
+            locReadCmd.Transaction = transaction;
+            locReadCmd.CommandText = """
+                SELECT quantity_x1000 FROM product_stock_buckets
+                WHERE product_id = $prodId AND location_id = $locId AND bucket_status = 'Available'
+                LIMIT 1;
+                """;
+            locReadCmd.Parameters.AddWithValue("$prodId", request.ProductId.ToString("D"));
+            locReadCmd.Parameters.AddWithValue("$locId", locationId.ToString("D"));
+            object? val = await locReadCmd.ExecuteScalarAsync(cancellationToken);
+            if (val is not null && val is not DBNull)
+            {
+                currentLocQtyX1000 = Convert.ToInt64(val);
+            }
+            else
+            {
+                await using (SqliteCommand anyBucketCmd = connection.CreateCommand())
+                {
+                    anyBucketCmd.Transaction = transaction;
+                    anyBucketCmd.CommandText = "SELECT COUNT(*) FROM product_stock_buckets WHERE product_id = $prodId;";
+                    anyBucketCmd.Parameters.AddWithValue("$prodId", request.ProductId.ToString("D"));
+                    long bucketCount = Convert.ToInt64(await anyBucketCmd.ExecuteScalarAsync(cancellationToken));
+                    currentLocQtyX1000 = bucketCount == 0 ? systemQtyX1000 : 0L;
+                }
+            }
+        }
+
+        long locationVarianceQtyX1000 = request.ActualCountedQtyX1000 - currentLocQtyX1000;
+        long varianceValueCents = (locationVarianceQtyX1000 * unitCostCents) / 1000L;
+        string adjNumber = await AllocateSequenceInTransactionAsync(connection, transaction, "ADJ", cancellationToken);
+        Guid adjId = Guid.NewGuid();
         Guid? movementId = null;
 
-        if (varianceQtyX1000 != 0)
+        if (locationVarianceQtyX1000 != 0)
         {
+            long newProductStockX1000 = checked(systemQtyX1000 + locationVarianceQtyX1000);
+            if (newProductStockX1000 < 0)
+            {
+                return Result<StockCountAdjustmentModel>.Fail(
+                    Error.Conflict("Lpi.Adjustment.NegativeProductStock", "Count adjustment would make total product stock negative."));
+            }
+
             await using (SqliteCommand updProd = connection.CreateCommand())
             {
                 updProd.Transaction = transaction;
@@ -756,7 +825,7 @@ public sealed partial class SqliteProcureToPayService
                         updated_at = $now
                     WHERE id = $prodId;
                     """;
-                updProd.Parameters.AddWithValue("$actual", request.ActualCountedQtyX1000);
+                updProd.Parameters.AddWithValue("$actual", newProductStockX1000);
                 updProd.Parameters.AddWithValue("$now", now.ToString("O"));
                 updProd.Parameters.AddWithValue("$prodId", request.ProductId.ToString("D"));
                 await updProd.ExecuteNonQueryAsync(cancellationToken);
@@ -768,12 +837,12 @@ public sealed partial class SqliteProcureToPayService
                 request.ProductId,
                 locationId,
                 StockBucketStatuses.Available,
-                varianceQtyX1000,
+                locationVarianceQtyX1000,
                 now,
                 cancellationToken);
 
             movementId = Guid.NewGuid();
-            StockMovementType movType = varianceQtyX1000 > 0
+            StockMovementType movType = locationVarianceQtyX1000 > 0
                 ? StockMovementType.AdjustmentAdd
                 : (request.ReasonCode.Contains("Damage", StringComparison.OrdinalIgnoreCase)
                     ? StockMovementType.Damage
@@ -797,7 +866,7 @@ public sealed partial class SqliteProcureToPayService
                 movCmd.Parameters.AddWithValue("$id", movementId.Value.ToString("D"));
                 movCmd.Parameters.AddWithValue("$prodId", request.ProductId.ToString("D"));
                 movCmd.Parameters.AddWithValue("$movType", (int)movType);
-                movCmd.Parameters.AddWithValue("$delta", varianceQtyX1000);
+                movCmd.Parameters.AddWithValue("$delta", locationVarianceQtyX1000);
                 movCmd.Parameters.AddWithValue("$unitCost", unitCostCents);
                 movCmd.Parameters.AddWithValue("$refId", adjId.ToString("D"));
                 movCmd.Parameters.AddWithValue("$reason", $"{adjNumber} ({request.ReasonCode.Trim()}): {Clean(request.Notes) ?? "Physical count reconciliation"}");
@@ -832,7 +901,7 @@ public sealed partial class SqliteProcureToPayService
             ins.Parameters.AddWithValue("$locId", locationId.ToString("D"));
             ins.Parameters.AddWithValue("$sysQty", systemQtyX1000);
             ins.Parameters.AddWithValue("$actQty", request.ActualCountedQtyX1000);
-            ins.Parameters.AddWithValue("$varQty", varianceQtyX1000);
+            ins.Parameters.AddWithValue("$varQty", locationVarianceQtyX1000);
             ins.Parameters.AddWithValue("$unitCost", unitCostCents);
             ins.Parameters.AddWithValue("$varVal", varianceValueCents);
             ins.Parameters.AddWithValue("$reason", request.ReasonCode.Trim());
@@ -851,7 +920,7 @@ public sealed partial class SqliteProcureToPayService
             OperatorAuditActions.StockAdjustmentRecorded,
             "StockCountAdjustment",
             adjId.ToString("D"),
-            new { adjNumber, systemQtyX1000, request.ActualCountedQtyX1000, varianceQtyX1000, varianceValueCents, request.ReasonCode },
+            new { adjNumber, systemQtyX1000, request.ActualCountedQtyX1000, locationVarianceQtyX1000, varianceValueCents, request.ReasonCode },
             new { systemQtyX1000 },
             $"Physical count adjustment {adjNumber}: {request.ReasonCode}",
             now,
@@ -1303,20 +1372,56 @@ public sealed partial class SqliteProcureToPayService
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
+        long currentQtyX1000 = 0;
+        bool exists = false;
+        await using (SqliteCommand readCmd = connection.CreateCommand())
+        {
+            readCmd.Transaction = transaction;
+            readCmd.CommandText = """
+                SELECT quantity_x1000 FROM product_stock_buckets
+                WHERE product_id = $prodId AND location_id = $locId AND bucket_status = $status
+                LIMIT 1;
+                """;
+            readCmd.Parameters.AddWithValue("$prodId", productId.ToString("D"));
+            readCmd.Parameters.AddWithValue("$locId", locationId.ToString("D"));
+            readCmd.Parameters.AddWithValue("$status", bucketStatus);
+            object? val = await readCmd.ExecuteScalarAsync(cancellationToken);
+            if (val is not null && val is not DBNull)
+            {
+                exists = true;
+                currentQtyX1000 = Convert.ToInt64(val);
+            }
+        }
+
+        long newQtyX1000 = checked(currentQtyX1000 + deltaQtyX1000);
+        if (newQtyX1000 < 0)
+        {
+            throw new InvalidOperationException($"Lpi.Inventory.InsufficientBucketStock: Insufficient stock in bucket '{bucketStatus}' at location '{locationId}'. In-bucket available: {currentQtyX1000 / 1000.0:F3}, requested deduction: {(-deltaQtyX1000) / 1000.0:F3}.");
+        }
+
         await using SqliteCommand cmd = connection.CreateCommand();
         cmd.Transaction = transaction;
-        cmd.CommandText = """
-            INSERT INTO product_stock_buckets (id, product_id, location_id, bucket_status, quantity_x1000, updated_at)
-            VALUES ($id, $prodId, $locId, $status, MAX(0, $delta), $now)
-            ON CONFLICT(product_id, location_id, bucket_status)
-            DO UPDATE SET quantity_x1000 = MAX(0, quantity_x1000 + $delta),
-                          updated_at = $now;
-            """;
-        cmd.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("D"));
+        if (exists)
+        {
+            cmd.CommandText = """
+                UPDATE product_stock_buckets
+                SET quantity_x1000 = $newQty,
+                    updated_at = $now
+                WHERE product_id = $prodId AND location_id = $locId AND bucket_status = $status;
+                """;
+        }
+        else
+        {
+            cmd.CommandText = """
+                INSERT INTO product_stock_buckets (id, product_id, location_id, bucket_status, quantity_x1000, updated_at)
+                VALUES ($id, $prodId, $locId, $status, $newQty, $now);
+                """;
+            cmd.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("D"));
+        }
         cmd.Parameters.AddWithValue("$prodId", productId.ToString("D"));
         cmd.Parameters.AddWithValue("$locId", locationId.ToString("D"));
         cmd.Parameters.AddWithValue("$status", bucketStatus);
-        cmd.Parameters.AddWithValue("$delta", deltaQtyX1000);
+        cmd.Parameters.AddWithValue("$newQty", newQtyX1000);
         cmd.Parameters.AddWithValue("$now", now.ToString("O"));
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }

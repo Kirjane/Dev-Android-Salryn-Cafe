@@ -47,6 +47,7 @@ public static class SupplierInvoiceMatchStatuses
     public const string QtyVariance = "QtyVariance";
     public const string QtyAndPriceVariance = "QtyAndPriceVariance";
     public const string Overbilled = "Overbilled";
+    public const string VarianceApproved = "VarianceApproved";
 }
 
 public static class SupplierPaymentStatuses

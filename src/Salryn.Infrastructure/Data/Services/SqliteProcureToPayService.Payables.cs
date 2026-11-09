@@ -514,14 +514,25 @@ public sealed partial class SqliteProcureToPayService
         {
             return Result<SupplierInvoiceModel>.Fail(Error.NotFound("Lpi.Payables.InvoiceNotFound", "Supplier invoice was not found."));
         }
-        if (existing.Status == "VarianceFlagged")
-        {
-            return Result<SupplierInvoiceModel>.Fail(
-                Error.Conflict("Lpi.Payables.VarianceApprovalRequired", "Cannot post a variance-flagged invoice to Accounts Payable until the 3-way match variance is approved."));
-        }
         if (existing.Status is "PostedOpen" or "PartiallyPaid" or "Paid")
         {
             return Result<SupplierInvoiceModel>.Success(existing);
+        }
+
+        if (existing.Status is not ("Matched" or "VarianceApproved"))
+        {
+            return Result<SupplierInvoiceModel>.Fail(
+                Error.Conflict(
+                    "Lpi.Payables.UnverifiedPostingForbidden",
+                    $"Cannot post invoice '{existing.SupplierInvoiceNo}' in '{existing.Status}' status to Accounts Payable. Only Matched or VarianceApproved invoices with verified purchasing and receiving documentation may post."));
+        }
+
+        if (!existing.PurchaseOrderId.HasValue || !existing.ReceivingReportId.HasValue)
+        {
+            return Result<SupplierInvoiceModel>.Fail(
+                Error.Validation(
+                    "Lpi.Payables.MissingSourceDocuments",
+                    $"Cannot post invoice '{existing.SupplierInvoiceNo}' without verified Purchase Order and Receiving Report references."));
         }
 
         await PostSupplierInvoiceInternalAsync(

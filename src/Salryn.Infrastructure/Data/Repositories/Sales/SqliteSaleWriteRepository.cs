@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Salryn.Core.Common;
 using Salryn.Core.Models;
 using Salryn.Core.Repositories;
@@ -579,12 +579,17 @@ public sealed class SqliteSaleWriteRepository :
             movement,
             signedQuantityChange);
 
-        StockBucketSyncHelper.SyncAvailableStockBucket(
+        Result syncResult = StockBucketSyncHelper.SyncAvailableStockBucket(
             connection,
             transaction,
             movement.ProductId,
             signedQuantityChange,
             DateTimeOffset.UtcNow);
+
+        if (syncResult.IsFailure)
+        {
+            return syncResult;
+        }
 
         return Result.Success();
     }

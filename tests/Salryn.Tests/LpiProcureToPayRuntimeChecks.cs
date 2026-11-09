@@ -616,6 +616,17 @@ public static class LpiProcureToPayRuntimeChecks
                 ($id,$sku,$barcode,$name,
                  (SELECT id FROM units WHERE is_active=1 ORDER BY name LIMIT 1),
                  $cost,$sell,$stock,$reorder,1,1,1,$at);
+
+            INSERT OR IGNORE INTO product_stock_buckets (id, product_id, location_id, bucket_status, quantity_x1000, updated_at)
+            SELECT
+                lower(hex(randomblob(16))),
+                $id,
+                loc.id,
+                'Available',
+                $stock,
+                $at
+            FROM inventory_locations loc
+            WHERE loc.code = 'MAIN-STORE';
             """;
         command.Parameters.AddWithValue("$id", id.ToString("D"));
         command.Parameters.AddWithValue("$sku", sku);
