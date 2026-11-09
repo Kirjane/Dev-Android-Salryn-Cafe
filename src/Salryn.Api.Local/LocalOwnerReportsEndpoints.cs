@@ -22,7 +22,7 @@ internal static class LocalOwnerReportsEndpoints
                 return denied;
             }
 
-            if (await ApiLicenseGuard.RequireLicensedFeatureAsync(LicenseFeatures.Reports, cancellationToken)
+            if (await ApiLicenseGuard.RequireLicensedFeatureAsync(licensing, LicenseFeatures.Reports, cancellationToken)
                     .ConfigureAwait(false) is IResult licenseDenied)
             {
                 return licenseDenied;

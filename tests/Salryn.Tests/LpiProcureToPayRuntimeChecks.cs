@@ -572,7 +572,7 @@ public static class LpiProcureToPayRuntimeChecks
         }
     }
 
-    private static Guid SeedUser(string databasePath, string username, string displayName)
+    internal static Guid SeedUser(string databasePath, string username, string displayName)
     {
         Guid id = Guid.NewGuid();
         using SqliteConnection connection = new($"Data Source={databasePath}");
@@ -592,7 +592,7 @@ public static class LpiProcureToPayRuntimeChecks
         return id;
     }
 
-    private static Guid SeedProduct(
+    internal static Guid SeedProduct(
         string databasePath,
         string sku,
         string barcode,

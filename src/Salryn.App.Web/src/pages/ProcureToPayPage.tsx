@@ -60,7 +60,15 @@ export function ProcureToPayPage() {
 
   const [activeTab, setActiveTab] = useState<
     "overview" | "suppliers" | "pr" | "quotations" | "po" | "rr" | "inventory" | "ap"
-  >("overview");
+  >(() => {
+    if (typeof window !== "undefined") {
+      const t = new URLSearchParams(window.location.search).get("tab");
+      if (t && ["overview", "suppliers", "pr", "quotations", "po", "rr", "inventory", "ap"].includes(t)) {
+        return t as any;
+      }
+    }
+    return "overview";
+  });
 
   // Queries
   const foundation = useQuery({ queryKey: ["lpi-foundation"], queryFn: () => fetchLpiFoundation(true) });
