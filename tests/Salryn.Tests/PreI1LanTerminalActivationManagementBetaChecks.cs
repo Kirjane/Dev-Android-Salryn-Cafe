@@ -42,7 +42,7 @@ public static class PreI1LanTerminalActivationManagementBetaChecks
         RequireContains(app, "readInstalledTerminalLicense() ? \"landing\" : \"activation\"", "Remote client entry must be activation-first.");
         RequireNotContains(landing, "showInternalRemotePos", "Remote POS must be a normal beta client surface.");
         RequireContains(landing, "Terminal License", "Client entry must allow review/replacement of its Terminal license.");
-        RequireContains(navigation, "{ id: \"host-lan-control\", label: \"LAN Terminals · Future Feature\", enabled: true, group: \"Admin\" }", "Normal Admin navigation must state the LAN future-feature boundary.");
+        RequireContains(navigation, "{ id: \"host-lan-control\", label: \"LAN Terminals · Future Feature\", enabled: true, group: \"Admin\", domain: \"Store & System\" }", "Normal Admin navigation must state the LAN future-feature boundary.");
         RequireNotContains(hostManagement, "Terminal activation is not ready for client use", "Completed activation must not retain incomplete UX copy.");
         RequireContains(hostManagement, "Each terminal device needs its own Terminal license", "Host guidance must state one Terminal license per device.");
         RequireContains(hostManagement, "Terminal licenses are issued from the Host license context", "Host guidance must state Host-context issuance.");

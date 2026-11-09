@@ -146,7 +146,7 @@ public static class LanM16RcBEntryBoundaryChecks
         AssertNotContains(appShell, "Salryn read-only operator console", "Host shell must remove stale read-only operator label.");
         AssertNotContains(dashboardPage, "Open Host LAN Control", "Dashboard must not expose incomplete terminal controls.");
         AssertNotContains(dashboardPage, "canOpenHostLanControl", "Dashboard must not carry stale LAN-card props.");
-        AssertContains(navigation, "{ id: \"host-lan-control\", label: \"LAN Terminals · Future Feature\", enabled: true, group: \"Admin\" }", "Normal Admin navigation must state the LAN future-feature boundary.");
+        AssertContains(navigation, "{ id: \"host-lan-control\", label: \"LAN Terminals · Future Feature\", enabled: true, group: \"Admin\", domain: \"Store & System\" }", "Normal Admin navigation must state the LAN future-feature boundary.");
         AssertContains(navigation, "VITE_SALRYN_INTERNAL_SURFACES", "Report Artifacts must retain its internal-mode boundary.");
         AssertNotContains(navigation, "Remote POS Client", "Host navigation must not show Remote POS Client.");
         AssertNotContains(navigation, "Remote Read-Only Client", "Host navigation must not show Remote Read-Only Client.");
