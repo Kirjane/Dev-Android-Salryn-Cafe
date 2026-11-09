@@ -16,6 +16,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 
 export type NotificationTone = "success" | "error" | "warning" | "info";
 
@@ -87,7 +88,10 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   return (
     <NotificationContext.Provider value={value}>
       {children}
-      <NotificationViewport notifications={notifications} onDismiss={dismiss} />
+      {createPortal(
+        <NotificationViewport notifications={notifications} onDismiss={dismiss} />,
+        document.body,
+      )}
     </NotificationContext.Provider>
   );
 }
@@ -120,12 +124,16 @@ export function NotificationViewport({
       document.body.style.setProperty("--salryn-notification-height", `${clearance}px`);
       document.body.dataset.hasNotifications = "true";
       if (horizontalOverlap) document.body.dataset.notificationOverlap = "true";
+      else delete document.body.dataset.notificationOverlap;
     };
     const observer = new ResizeObserver(updateClearance);
+    const bodyObserver = new MutationObserver(updateClearance);
     observer.observe(viewport);
+    bodyObserver.observe(document.body, { attributes: true, attributeFilter: ["data-modal-open"] });
     updateClearance();
     return () => {
       observer.disconnect();
+      bodyObserver.disconnect();
       document.body.style.removeProperty("--salryn-notification-height");
       delete document.body.dataset.hasNotifications;
       delete document.body.dataset.notificationOverlap;

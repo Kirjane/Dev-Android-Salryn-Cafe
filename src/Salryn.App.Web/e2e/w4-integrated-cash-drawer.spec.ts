@@ -134,6 +134,42 @@ test.describe("I1 W4 integrated cash drawer UX", () => {
   });
 
   for (const viewport of [
+    { label: "mobile", width: 390, height: 844 },
+    { label: "desktop", width: 1366, height: 768 },
+  ]) {
+    test(`toast created before the W4 dialog stays visible while the application root is inert on ${viewport.label}`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      await installMockSalrynApi(page, { persona: "admin", hasOpenShift: false });
+      await page.goto("/?page=checkout");
+      await page.getByRole("button", { name: "Open Shift" }).click();
+      const toast = page.locator('[data-notification-viewport] [role="status"]');
+      await expect(toast).toContainText("Shift opened");
+      await page.getByRole("button", { name: "Count & Close Shift" }).click();
+
+      const dialog = page.getByRole("dialog", { name: "Physical drawer count" });
+      await expect(dialog).toBeVisible();
+      await expect(toast).toBeVisible();
+      await expect(page.locator("#root")).toHaveAttribute("inert", "");
+      expect(await page.evaluate(() => document.querySelector('[data-notification-viewport]')?.parentElement === document.body)).toBe(true);
+      expect(await page.evaluate(() => {
+        const backgroundButton = document.querySelector<HTMLElement>("#root button");
+        backgroundButton?.focus();
+        return document.activeElement === backgroundButton;
+      })).toBe(false);
+
+      const toastBox = await toast.boundingBox();
+      const titleBox = await dialog.getByRole("heading", { name: "Physical drawer count" }).boundingBox();
+      const submitBox = await dialog.getByRole("button", { name: "Submit immutable count & close" }).boundingBox();
+      expect(toastBox).not.toBeNull();
+      expect(titleBox).not.toBeNull();
+      expect(submitBox).not.toBeNull();
+      expect(rectanglesOverlap(toastBox!, titleBox!)).toBe(false);
+      expect(rectanglesOverlap(toastBox!, submitBox!)).toBe(false);
+      await page.screenshot({ path: testInfo.outputPath(`toast-before-w4-${viewport.label}.png`), fullPage: true });
+    });
+  }
+
+  for (const viewport of [
     { label: "390x844", width: 390, height: 844, zoom: "1" },
     { label: "1024x768", width: 1024, height: 768, zoom: "1" },
     { label: "1366x768-125pct", width: 1366, height: 768, zoom: "1.25" },

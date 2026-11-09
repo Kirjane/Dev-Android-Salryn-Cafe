@@ -218,4 +218,71 @@ test.describe("MOCKED_UI Keyboard, Navigation, Accessibility & UX Defect Verific
     await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
     await expect(page).toHaveURL(/page=owner-reports/);
   });
+
+  test("mobile Reports content remains usable after the navigation drawer is closed", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await installMockSalrynApi(page, { persona: "admin", u1Entitled: true });
+    await page.goto("/?page=owner-reports");
+    await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
+    await expect(page.getByText("Sales trend", { exact: true })).toBeVisible();
+    await expect(page.locator("aside")).toBeHidden();
+    await page.screenshot({ path: testInfo.outputPath("mobile-reports-drawer-closed.png"), fullPage: true });
+  });
+
+  test("nested dialogs keep the application inert until the last dialog closes", async ({ page }) => {
+    await installMockSalrynApi(page, { persona: "admin" });
+    await page.goto("/");
+    await page.evaluate(async () => {
+      const reactModule = await import("/node_modules/.vite/deps/react.js");
+      const React = reactModule.default ?? reactModule;
+      const reactDomClient = await import("/node_modules/.vite/deps/react-dom_client.js");
+      const createRoot = reactDomClient.createRoot ?? reactDomClient.default.createRoot;
+      const { Dialog } = await import("/src/components/ui/Dialog.tsx");
+      const mount = document.createElement("div");
+      mount.id = "nested-dialog-regression-root";
+      document.body.appendChild(mount);
+      function Harness() {
+        const [outerOpen, setOuterOpen] = React.useState(true);
+        const [innerOpen, setInnerOpen] = React.useState(false);
+        return React.createElement(
+          Dialog,
+          {
+            open: outerOpen,
+            title: "Outer regression dialog",
+            onClose: () => setOuterOpen(false),
+          },
+          React.createElement("button", { type: "button", onClick: () => setInnerOpen(true) }, "Open nested dialog"),
+          React.createElement(
+            Dialog,
+            {
+              open: innerOpen,
+              title: "Inner regression dialog",
+              onClose: () => setInnerOpen(false),
+            },
+            React.createElement("p", null, "Nested content"),
+          ),
+        );
+      }
+      createRoot(mount).render(React.createElement(Harness));
+    });
+
+    const outer = page.getByRole("dialog", { name: "Outer regression dialog" });
+    await expect(outer).toBeVisible();
+    await outer.getByRole("button", { name: "Open nested dialog" }).click();
+    const inner = page.getByRole("dialog", { name: "Inner regression dialog" });
+    await expect(inner).toBeVisible();
+    await expect(outer.locator("..")).toHaveAttribute("inert", "");
+    await expect(page.locator("#root")).toHaveAttribute("inert", "");
+
+    await page.keyboard.press("Escape");
+    await expect(inner).toBeHidden();
+    await expect(outer).toBeVisible();
+    await expect(outer.locator("..")).not.toHaveAttribute("inert", "");
+    await expect(page.locator("#root")).toHaveAttribute("inert", "");
+
+    await page.keyboard.press("Escape");
+    await expect(outer).toBeHidden();
+    await expect(page.locator("#root")).not.toHaveAttribute("inert", "");
+    await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("");
+  });
 });

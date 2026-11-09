@@ -35,7 +35,28 @@ interface DialogStackItem {
 }
 
 const dialogStack: DialogStackItem[] = [];
+const inertReferenceCounts = new Map<HTMLElement, number>();
+const initiallyInertElements = new WeakSet<HTMLElement>();
 let originalBodyOverflow = "";
+
+function acquireInert(element: HTMLElement) {
+  const count = inertReferenceCounts.get(element) ?? 0;
+  if (count === 0 && element.hasAttribute("inert")) initiallyInertElements.add(element);
+  inertReferenceCounts.set(element, count + 1);
+  element.setAttribute("data-dialog-inert", "true");
+  element.setAttribute("inert", "");
+}
+
+function releaseInert(element: HTMLElement) {
+  const count = inertReferenceCounts.get(element) ?? 0;
+  if (count > 1) {
+    inertReferenceCounts.set(element, count - 1);
+    return;
+  }
+  inertReferenceCounts.delete(element);
+  element.removeAttribute("data-dialog-inert");
+  if (!initiallyInertElements.has(element)) element.removeAttribute("inert");
+}
 
 function getBackgroundElementsToInert(container: HTMLElement): HTMLElement[] {
   const elements: HTMLElement[] = [];
@@ -47,8 +68,7 @@ function getBackgroundElementsToInert(container: HTMLElement): HTMLElement[] {
         if (
           sibling !== curr &&
           sibling instanceof HTMLElement &&
-          !sibling.hasAttribute("data-notification-viewport") &&
-          !sibling.querySelector?.("[data-notification-viewport]")
+          !sibling.hasAttribute("data-notification-viewport")
         ) {
           elements.push(sibling);
         }
@@ -67,13 +87,12 @@ function pushDialog(item: Omit<DialogStackItem, "inertElements">) {
   } else {
     // If a dialog is already open, make the previous dialog container inert
     const prev = dialogStack[dialogStack.length - 1];
-    prev.container.setAttribute("inert", "");
+    acquireInert(prev.container);
   }
 
-  const inertElements = getBackgroundElementsToInert(item.container);
+  const inertElements = [...new Set(getBackgroundElementsToInert(item.container))];
   for (const el of inertElements) {
-    el.setAttribute("data-dialog-inert", "true");
-    el.setAttribute("inert", "");
+    acquireInert(el);
   }
 
   dialogStack.push({ ...item, inertElements });
@@ -84,8 +103,7 @@ function popDialog(id: string) {
   if (index !== -1) {
     const [removed] = dialogStack.splice(index, 1);
     for (const el of removed.inertElements) {
-      el.removeAttribute("data-dialog-inert");
-      el.removeAttribute("inert");
+      releaseInert(el);
     }
   }
   if (dialogStack.length === 0) {
@@ -94,7 +112,7 @@ function popDialog(id: string) {
   } else {
     // Topmost dialog is active and not inert
     const top = dialogStack[dialogStack.length - 1];
-    top.container.removeAttribute("inert");
+    releaseInert(top.container);
   }
 }
 
