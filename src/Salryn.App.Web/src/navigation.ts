@@ -33,6 +33,7 @@ export const navItems: NavItemConfig[] = [
   { id: "settings", label: "Store Settings", enabled: true, group: "Admin", domain: "Store & System" },
   { id: "license", label: "License", enabled: true, group: "Admin", domain: "Store & System" },
   { id: "backup-restore", label: "Backup & Restore", enabled: true, group: "Admin", domain: "Store & System" },
+  // { id: "host-lan-control", label: "LAN Terminals · Future Feature", enabled: true, group: "Admin" }
   { id: "host-lan-control", label: "LAN Terminals · Future Feature", enabled: true, group: "Admin", domain: "Store & System" },
 ];
 

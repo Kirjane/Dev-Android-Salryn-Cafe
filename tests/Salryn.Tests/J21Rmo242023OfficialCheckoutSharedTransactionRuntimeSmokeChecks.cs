@@ -51,7 +51,9 @@ public static class J21Rmo242023OfficialCheckoutSharedTransactionRuntimeSmokeChe
                     new BirMachineProfileSchemaMigration(),
                     new BirOfficialDocumentSequenceSchemaMigration(),
                     new BirElectronicJournalSchemaMigration(),
-                    new BirElectronicJournalSchemaHardeningMigration()
+                    new BirElectronicJournalSchemaHardeningMigration(),
+                    new AccountsReceivableSchemaMigration(),
+                    new CashDrawerReconciliationSchemaMigration()
                 });
 
             runner.RunPendingMigrations();

@@ -179,7 +179,7 @@ function ConsoleApp() {
   const queryClient = useQueryClient();
   const sessionQuery = useAppSession();
   const licenseStatusQuery = useQuery({ queryKey: ["license-status"], queryFn: fetchLicenseStatus, retry: false });
-  const [currentPage, setCurrentPage] = useState<AppPage>(() => readPageFromUrl() ?? "dashboard");
+  const [currentPage, setCurrentPage] = useState<AppPage>("dashboard");
   const [bootstrapStatus, setBootstrapStatus] = useState<BootstrapStatus | null>(null);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [isBootstrapLoading, setIsBootstrapLoading] = useState(true);
@@ -201,7 +201,7 @@ function ConsoleApp() {
     });
   }
 
-  useEffect(() => { void refreshBootstrapStatus(); }, []);
+  useEffect(() => { void refreshBootstrapStatus(); const urlPage = readPageFromUrl(); if (urlPage) setCurrentPage(urlPage); }, []);
   useEffect(() => {
     const restore = (event: PopStateEvent) => {
       const page = (event.state?.page as AppPage | undefined) ?? readPageFromUrl() ?? "dashboard";

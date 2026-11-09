@@ -1,0 +1,776 @@
+using Salryn.Api.Local.Auth;
+using Salryn.Core.Common;
+using Salryn.Core.Models.ProcureToPay;
+using Salryn.Core.Services;
+
+namespace Salryn.Api.Local;
+
+internal static class LocalProcureToPayEndpoints
+{
+    private static readonly string[] AnyLpiViewPermissions =
+    {
+        LocalApiPermissions.ProcurementView,
+        LocalApiPermissions.ReceivingView,
+        LocalApiPermissions.PayablesView,
+        LocalApiPermissions.InventoryView,
+        LocalApiPermissions.ReportsView
+    };
+
+    public static WebApplication MapLocalProcureToPayEndpoints(this WebApplication app)
+    {
+        // S0: Foundation & Supplier CRUD
+        app.MapGet("/api/lpi/foundation", async (
+            bool? includeInactiveSuppliers,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+                return denied;
+            return ToResult(await service.GetFoundationCatalogAsync(includeInactiveSuppliers ?? true, ct));
+        });
+
+        app.MapGet("/api/lpi/overview", async (
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+                return denied;
+            return ToResult(await service.GetDashboardOverviewAsync(ct));
+        });
+
+        app.MapGet("/api/lpi/suppliers", async (
+            string? search,
+            bool? includeInactive,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+                return denied;
+            return ToResult(await service.GetSuppliersAsync(search, includeInactive ?? true, ct));
+        });
+
+        app.MapPost("/api/lpi/suppliers", async (
+            SupplierWriteApiRequest request,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementManagePurchaseOrder) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            return ToResult(
+                await service.CreateSupplierAsync(new CreateLpiSupplierRequest(
+                    request.Code,
+                    request.Name,
+                    request.ContactPerson,
+                    request.ContactNumber,
+                    request.Email,
+                    request.Address,
+                    request.Tin,
+                    request.PaymentTermsDays ?? 30,
+                    request.LeadTimeDays ?? 3,
+                    request.Notes,
+                    session.UserId), ct),
+                StatusCodes.Status201Created);
+        });
+
+        app.MapPut("/api/lpi/suppliers/{id:guid}", async (
+            Guid id,
+            SupplierUpdateApiRequest request,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementManagePurchaseOrder) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            return ToResult(
+                await service.UpdateSupplierAsync(id, new UpdateLpiSupplierRequest(
+                    request.Code,
+                    request.Name,
+                    request.ContactPerson,
+                    request.ContactNumber,
+                    request.Email,
+                    request.Address,
+                    request.Tin,
+                    request.PaymentTermsDays ?? 30,
+                    request.LeadTimeDays ?? 3,
+                    request.Notes,
+                    request.IsActive ?? true,
+                    session.UserId), ct));
+        });
+
+        // S1: Purchase Requisitions (PR), Quotations & Purchase Orders (PO)
+        app.MapGet("/api/lpi/requisitions", async (
+            string? status,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+                return denied;
+            return ToResult(await service.GetPurchaseRequisitionsAsync(status, ct));
+        });
+
+        app.MapGet("/api/lpi/requisitions/{id:guid}", async (
+            Guid id,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+                return denied;
+            return ToResult(await service.GetPurchaseRequisitionByIdAsync(id, ct));
+        });
+
+        app.MapPost("/api/lpi/requisitions", async (
+            CreateRequisitionApiRequest request,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementRequest) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            DateOnly needed = request.DateNeeded ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7));
+            return ToResult(
+                await service.CreatePurchaseRequisitionAsync(new CreatePurchaseRequisitionRequest(
+                    request.DepartmentName,
+                    needed,
+                    request.Priority ?? "Normal",
+                    request.Purpose,
+                    request.Notes,
+                    request.SubmitImmediately ?? true,
+                    request.Lines,
+                    session.UserId), ct),
+                StatusCodes.Status201Created);
+        });
+
+        app.MapPost("/api/lpi/requisitions/{id:guid}/submit", async (
+            Guid id,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementRequest) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            return ToResult(await service.SubmitPurchaseRequisitionAsync(id, session.UserId, ct));
+        });
+
+        app.MapPost("/api/lpi/requisitions/{id:guid}/review", async (
+            Guid id,
+            ReviewRequisitionApiRequest request,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementApproveRequisition) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            return ToResult(await service.ReviewPurchaseRequisitionAsync(new ReviewPurchaseRequisitionRequest(
+                id,
+                request.Decision,
+                request.Reason,
+                request.LineDecisions,
+                session.UserId), ct));
+        });
+
+        app.MapGet("/api/lpi/quotations", async (
+            Guid? requisitionId,
+            Guid? productId,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+                return denied;
+            return ToResult(await service.GetSupplierQuotationsAsync(requisitionId, productId, ct));
+        });
+
+        app.MapPost("/api/lpi/quotations", async (
+            RecordQuotationApiRequest request,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementManagePurchaseOrder) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            return ToResult(
+                await service.RecordSupplierQuotationAsync(new RecordSupplierQuotationRequest(
+                    request.RequisitionId,
+                    request.RequisitionLineId,
+                    request.SupplierId,
+                    request.ProductId,
+                    request.ItemDescription,
+                    request.QuotedUnitCostCents,
+                    request.MinimumOrderQtyX1000 ?? 1000L,
+                    request.LeadTimeDays ?? 3,
+                    request.PaymentTermsDays ?? 30,
+                    request.ValidityDate,
+                    request.IsSelected ?? false,
+                    request.SelectionReason,
+                    session.UserId), ct),
+                StatusCodes.Status201Created);
+        });
+
+        app.MapGet("/api/lpi/purchase-orders", async (
+            string? status,
+            Guid? supplierId,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+                return denied;
+            return ToResult(await service.GetPurchaseOrdersAsync(status, supplierId, ct));
+        });
+
+        app.MapGet("/api/lpi/purchase-orders/{id:guid}", async (
+            Guid id,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+                return denied;
+            return ToResult(await service.GetPurchaseOrderByIdAsync(id, ct));
+        });
+
+        app.MapPost("/api/lpi/purchase-orders", async (
+            CreatePurchaseOrderApiRequest request,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementManagePurchaseOrder) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            DateOnly expDate = request.ExpectedDeliveryDate ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(5));
+            return ToResult(
+                await service.CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest(
+                    request.SupplierId,
+                    request.SourceRequisitionId,
+                    expDate,
+                    request.DeliveryLocationId,
+                    request.PaymentTermsDays,
+                    request.ShippingCents ?? 0L,
+                    request.TermsAndConditions,
+                    request.Notes,
+                    request.SubmitAndApproveImmediately ?? false,
+                    request.Lines,
+                    session.UserId), ct),
+                StatusCodes.Status201Created);
+        });
+
+        app.MapPost("/api/lpi/purchase-orders/{id:guid}/status", async (
+            Guid id,
+            PurchaseOrderStatusApiRequest request,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            string requiredPerm = string.Equals(request.Action, "Approve", StringComparison.OrdinalIgnoreCase) ||
+                                  string.Equals(request.Action, "Cancel", StringComparison.OrdinalIgnoreCase)
+                ? LocalApiPermissions.ProcurementApprovePurchaseOrder
+                : LocalApiPermissions.ProcurementManagePurchaseOrder;
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, requiredPerm) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            return ToResult(await service.TransitionPurchaseOrderStatusAsync(new PurchaseOrderStatusActionRequest(
+                id,
+                request.Action,
+                request.Reason,
+                session.UserId), ct));
+        });
+
+        // S2: Receiving Reports (RR), Stock Posting, Count Adjustments & Supplier Returns
+        app.MapGet("/api/lpi/receiving-reports", async (
+            Guid? purchaseOrderId,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+                return denied;
+            return ToResult(await service.GetReceivingReportsAsync(purchaseOrderId, ct));
+        });
+
+        app.MapGet("/api/lpi/receiving-reports/{id:guid}", async (
+            Guid id,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+                return denied;
+            return ToResult(await service.GetReceivingReportByIdAsync(id, ct));
+        });
+
+        app.MapPost("/api/lpi/receiving-reports", async (
+            CreateReceivingReportApiRequest request,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ReceivingManage) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            Guid? overdeliveryApprover = request.ApproveOverdelivery == true &&
+                                         session.Permissions.Contains(LocalApiPermissions.ReceivingApproveException, StringComparer.Ordinal)
+                ? session.UserId
+                : null;
+            return ToResult(
+                await service.CreateReceivingReportAsync(new CreateReceivingReportRequest(
+                    request.PurchaseOrderId,
+                    request.LocationId,
+                    request.DeliveryReceiptNo,
+                    request.SupplierInvoiceRef,
+                    request.CarrierOrDriver,
+                    request.ReceivedDate,
+                    request.PostImmediately ?? true,
+                    overdeliveryApprover,
+                    request.OverdeliveryApprovalReason,
+                    request.ClientRequestId,
+                    request.Notes,
+                    request.Lines,
+                    session.UserId), ct),
+                StatusCodes.Status201Created);
+        });
+
+        app.MapPost("/api/lpi/receiving-reports/{id:guid}/post", async (
+            Guid id,
+            PostReceivingReportApiRequest request,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ReceivingManage) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            Guid? overdeliveryApprover = request.ApproveOverdelivery == true &&
+                                         session.Permissions.Contains(LocalApiPermissions.ReceivingApproveException, StringComparer.Ordinal)
+                ? session.UserId
+                : null;
+            return ToResult(await service.PostReceivingReportAsync(new PostReceivingReportRequest(
+                id,
+                overdeliveryApprover,
+                request.OverdeliveryApprovalReason,
+                request.ClientRequestId,
+                session.UserId), ct));
+        });
+
+        app.MapGet("/api/lpi/inventory/stock-card/{productId:guid}", async (
+            Guid productId,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+                return denied;
+            return ToResult(await service.GetProductStockCardAsync(productId, ct));
+        });
+
+        app.MapGet("/api/lpi/inventory/buckets", async (
+            Guid? productId,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+                return denied;
+            return ToResult(await service.GetProductStockBucketsAsync(productId, ct));
+        });
+
+        app.MapGet("/api/lpi/inventory/adjustments", async (
+            Guid? productId,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+                return denied;
+            return ToResult(await service.GetStockCountAdjustmentsAsync(productId, ct));
+        });
+
+        app.MapPost("/api/lpi/inventory/adjustments", async (
+            RecordStockAdjustmentApiRequest request,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.InventoryAdjust) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            return ToResult(
+                await service.RecordStockCountAdjustmentAsync(new RecordStockCountAdjustmentRequest(
+                    request.ProductId,
+                    request.LocationId,
+                    request.ActualCountedQtyX1000,
+                    request.ReasonCode,
+                    request.Notes,
+                    session.UserId,
+                    session.UserId), ct),
+                StatusCodes.Status201Created);
+        });
+
+        app.MapGet("/api/lpi/supplier-returns", async (
+            Guid? supplierId,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+                return denied;
+            return ToResult(await service.GetSupplierReturnsAsync(supplierId, ct));
+        });
+
+        app.MapPost("/api/lpi/supplier-returns", async (
+            CreateSupplierReturnApiRequest request,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.InventoryManageReturns) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            return ToResult(
+                await service.CreateSupplierReturnAsync(new CreateSupplierReturnRequest(
+                    request.ReceivingReportId,
+                    request.SupplierInvoiceId,
+                    request.Reason,
+                    request.Lines,
+                    session.UserId,
+                    session.UserId), ct),
+                StatusCodes.Status201Created);
+        });
+
+        // S3: Supplier Accounts Payable, 3-Way Match & Payments
+        app.MapGet("/api/lpi/invoices", async (
+            Guid? supplierId,
+            string? status,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+                return denied;
+            return ToResult(await service.GetSupplierInvoicesAsync(supplierId, status, ct));
+        });
+
+        app.MapGet("/api/lpi/invoices/{id:guid}", async (
+            Guid id,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+                return denied;
+            return ToResult(await service.GetSupplierInvoiceByIdAsync(id, ct));
+        });
+
+        app.MapPost("/api/lpi/invoices", async (
+            CreateSupplierInvoiceApiRequest request,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.PayablesManageInvoices) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            DateOnly invDate = request.InvoiceDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            return ToResult(
+                await service.CreateSupplierInvoiceAsync(new CreateSupplierInvoiceRequest(
+                    request.SupplierId,
+                    request.SupplierInvoiceNo,
+                    request.PurchaseOrderId,
+                    request.ReceivingReportId,
+                    invDate,
+                    request.DueDate,
+                    request.DiscountCents ?? 0L,
+                    request.WithholdingTaxCents ?? 0L,
+                    request.PostToApIfMatched ?? true,
+                    request.Lines,
+                    session.UserId), ct),
+                StatusCodes.Status201Created);
+        });
+
+        app.MapPost("/api/lpi/invoices/{id:guid}/approve-variance", async (
+            Guid id,
+            ApproveVarianceApiRequest request,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.PayablesApproveVariance) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            return ToResult(await service.ApproveInvoiceVarianceAsync(new ApproveInvoiceVarianceRequest(
+                id,
+                request.ApprovalReason,
+                request.PostToApImmediately ?? true,
+                session.UserId), ct));
+        });
+
+        app.MapPost("/api/lpi/invoices/{id:guid}/post", async (
+            Guid id,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.PayablesManageInvoices) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            return ToResult(await service.PostSupplierInvoiceToApAsync(id, session.UserId, ct));
+        });
+
+        app.MapGet("/api/lpi/payments", async (
+            Guid? supplierId,
+            Guid? supplierInvoiceId,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+                return denied;
+            return ToResult(await service.GetSupplierPaymentsAsync(supplierId, supplierInvoiceId, ct));
+        });
+
+        app.MapPost("/api/lpi/payments", async (
+            RecordSupplierPaymentApiRequest request,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.PayablesRecordPayment) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            return ToResult(
+                await service.RecordSupplierPaymentAsync(new RecordSupplierPaymentRequest(
+                    request.SupplierInvoiceId,
+                    request.PaymentDate,
+                    request.AmountCents,
+                    request.PaymentMethod ?? "BankTransfer",
+                    request.DisbursementSource ?? "HeadOfficeBank",
+                    request.ReferenceNo,
+                    request.CheckNo,
+                    request.BankName,
+                    request.Remarks,
+                    request.ClientRequestId,
+                    session.UserId,
+                    session.UserId), ct),
+                StatusCodes.Status201Created);
+        });
+
+        app.MapGet("/api/lpi/payables/ledger", async (
+            Guid? supplierId,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+                return denied;
+            return ToResult(await service.GetSupplierPayableLedgerAsync(supplierId, ct));
+        });
+
+        app.MapGet("/api/lpi/payables/aging", async (
+            DateOnly? asOfDate,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+                return denied;
+            return ToResult(await service.GetApAgingSummaryAsync(asOfDate, ct));
+        });
+
+        return app;
+    }
+
+    private static LocalApiSession RequiredSession(HttpContext context, LocalApiSessionService sessions) =>
+        sessions.GetRequiredSession(context.Request.Cookies[LocalApiSessionService.SessionCookieName])!;
+
+    private static IResult ToResult<T>(Result<T> result, int successStatus = StatusCodes.Status200OK) =>
+        result.IsSuccess ? Results.Json(result.Value, statusCode: successStatus) : ToError(result.ErrorDetail);
+
+    private static IResult ToError(Error error)
+    {
+        int status = error.Type switch
+        {
+            ErrorType.NotFound => StatusCodes.Status404NotFound,
+            ErrorType.Conflict => StatusCodes.Status409Conflict,
+            ErrorType.Forbidden => StatusCodes.Status403Forbidden,
+            ErrorType.Unauthorized => StatusCodes.Status401Unauthorized,
+            _ => StatusCodes.Status400BadRequest
+        };
+        return Results.Json(new { error = error.Message, code = error.Code }, statusCode: status);
+    }
+
+    internal sealed record SupplierWriteApiRequest(
+        string? Code,
+        string Name,
+        string? ContactPerson,
+        string? ContactNumber,
+        string? Email,
+        string? Address,
+        string? Tin,
+        int? PaymentTermsDays,
+        int? LeadTimeDays,
+        string? Notes);
+
+    internal sealed record SupplierUpdateApiRequest(
+        string? Code,
+        string Name,
+        string? ContactPerson,
+        string? ContactNumber,
+        string? Email,
+        string? Address,
+        string? Tin,
+        int? PaymentTermsDays,
+        int? LeadTimeDays,
+        string? Notes,
+        bool? IsActive);
+
+    internal sealed record CreateRequisitionApiRequest(
+        string DepartmentName,
+        DateOnly? DateNeeded,
+        string? Priority,
+        string Purpose,
+        string? Notes,
+        bool? SubmitImmediately,
+        IReadOnlyList<CreatePurchaseRequisitionLineInput> Lines);
+
+    internal sealed record ReviewRequisitionApiRequest(
+        string Decision,
+        string? Reason,
+        IReadOnlyList<ReviewPurchaseRequisitionLineDecision>? LineDecisions);
+
+    internal sealed record RecordQuotationApiRequest(
+        Guid? RequisitionId,
+        Guid? RequisitionLineId,
+        Guid SupplierId,
+        Guid? ProductId,
+        string ItemDescription,
+        long QuotedUnitCostCents,
+        long? MinimumOrderQtyX1000,
+        int? LeadTimeDays,
+        int? PaymentTermsDays,
+        DateOnly? ValidityDate,
+        bool? IsSelected,
+        string? SelectionReason);
+
+    internal sealed record CreatePurchaseOrderApiRequest(
+        Guid SupplierId,
+        Guid? SourceRequisitionId,
+        DateOnly? ExpectedDeliveryDate,
+        Guid? DeliveryLocationId,
+        int? PaymentTermsDays,
+        long? ShippingCents,
+        string? TermsAndConditions,
+        string? Notes,
+        bool? SubmitAndApproveImmediately,
+        IReadOnlyList<CreatePurchaseOrderLineInput> Lines);
+
+    internal sealed record PurchaseOrderStatusApiRequest(
+        string Action,
+        string? Reason);
+
+    internal sealed record CreateReceivingReportApiRequest(
+        Guid PurchaseOrderId,
+        Guid? LocationId,
+        string DeliveryReceiptNo,
+        string? SupplierInvoiceRef,
+        string? CarrierOrDriver,
+        DateOnly? ReceivedDate,
+        bool? PostImmediately,
+        bool? ApproveOverdelivery,
+        string? OverdeliveryApprovalReason,
+        string? ClientRequestId,
+        string? Notes,
+        IReadOnlyList<CreateReceivingReportLineInput> Lines);
+
+    internal sealed record PostReceivingReportApiRequest(
+        bool? ApproveOverdelivery,
+        string? OverdeliveryApprovalReason,
+        string? ClientRequestId);
+
+    internal sealed record RecordStockAdjustmentApiRequest(
+        Guid ProductId,
+        Guid? LocationId,
+        long ActualCountedQtyX1000,
+        string ReasonCode,
+        string? Notes);
+
+    internal sealed record CreateSupplierReturnApiRequest(
+        Guid ReceivingReportId,
+        Guid? SupplierInvoiceId,
+        string Reason,
+        IReadOnlyList<CreateSupplierReturnLineInput> Lines);
+
+    internal sealed record CreateSupplierInvoiceApiRequest(
+        Guid SupplierId,
+        string SupplierInvoiceNo,
+        Guid? PurchaseOrderId,
+        Guid? ReceivingReportId,
+        DateOnly? InvoiceDate,
+        DateOnly? DueDate,
+        long? DiscountCents,
+        long? WithholdingTaxCents,
+        bool? PostToApIfMatched,
+        IReadOnlyList<CreateSupplierInvoiceLineInput> Lines);
+
+    internal sealed record ApproveVarianceApiRequest(
+        string ApprovalReason,
+        bool? PostToApImmediately);
+
+    internal sealed record RecordSupplierPaymentApiRequest(
+        Guid SupplierInvoiceId,
+        DateOnly? PaymentDate,
+        long AmountCents,
+        string? PaymentMethod,
+        string? DisbursementSource,
+        string ReferenceNo,
+        string? CheckNo,
+        string? BankName,
+        string? Remarks,
+        string? ClientRequestId);
+}

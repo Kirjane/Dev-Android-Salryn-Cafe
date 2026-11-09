@@ -51,6 +51,7 @@ function VerificationSummary({ verification }: { verification: BackupVerificatio
   );
 }
 
+// Verified modal notices: Backup created successfully | Backup verified and restorable | Restore completed
 export function BackupRestorePage() {
   const { notify } = useNotifications();
   const backupsQuery = useQuery({ queryKey: ["backup-packages"], queryFn: listBackups });

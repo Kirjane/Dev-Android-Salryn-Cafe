@@ -57,7 +57,9 @@ public static class J21Rmo242023OfficialCheckoutReadinessGateChecks
                     new BirMachineProfileSchemaMigration(),
                     new BirOfficialDocumentSequenceSchemaMigration(),
                     new BirElectronicJournalSchemaMigration(),
-                    new BirElectronicJournalSchemaHardeningMigration()
+                    new BirElectronicJournalSchemaHardeningMigration(),
+                    new AccountsReceivableSchemaMigration(),
+                    new CashDrawerReconciliationSchemaMigration()
                 });
 
             runner.RunPendingMigrations();

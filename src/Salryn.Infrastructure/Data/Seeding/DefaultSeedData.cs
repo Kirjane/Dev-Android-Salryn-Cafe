@@ -1,10 +1,16 @@
-﻿namespace Salryn.Infrastructure.Data.Seeding;
+namespace Salryn.Infrastructure.Data.Seeding;
 
 public static class DefaultSeedData
 {
     public const string AdminRoleId = "00000000-0000-0000-0000-000000000001";
     public const string ManagerRoleId = "00000000-0000-0000-0000-000000000002";
     public const string CashierRoleId = "00000000-0000-0000-0000-000000000003";
+    public const string PurchasingOfficerRoleId = "00000000-0000-0000-0000-000000000004";
+    public const string ReceivingClerkRoleId = "00000000-0000-0000-0000-000000000005";
+    public const string InventoryOfficerRoleId = "00000000-0000-0000-0000-000000000006";
+    public const string AccountsPayableClerkRoleId = "00000000-0000-0000-0000-000000000007";
+    public const string FinanceManagerRoleId = "00000000-0000-0000-0000-000000000008";
+    public const string DepartmentHeadRoleId = "00000000-0000-0000-0000-000000000009";
 
     public static class Permissions
     {
@@ -42,13 +48,32 @@ public static class DefaultSeedData
         public const string ReceivablesAdjust = "Receivables.Adjust";
         public const string ReceivablesExport = "Receivables.Export";
         public const string ReceivablesManageCustomers = "Receivables.ManageCustomers";
+        public const string ProcurementView = "Procurement.View";
+        public const string ProcurementRequest = "Procurement.Request";
+        public const string ProcurementApproveRequisition = "Procurement.ApproveRequisition";
+        public const string ProcurementManagePurchaseOrder = "Procurement.ManagePurchaseOrder";
+        public const string ProcurementApprovePurchaseOrder = "Procurement.ApprovePurchaseOrder";
+        public const string ReceivingView = "Receiving.View";
+        public const string ReceivingManage = "Receiving.Manage";
+        public const string ReceivingApproveException = "Receiving.ApproveException";
+        public const string InventoryManageReturns = "Inventory.ManageReturns";
+        public const string PayablesView = "Payables.View";
+        public const string PayablesManageInvoices = "Payables.ManageInvoices";
+        public const string PayablesApproveVariance = "Payables.ApproveVariance";
+        public const string PayablesRecordPayment = "Payables.RecordPayment";
     }
 
     public static IReadOnlyList<SeedRole> Roles { get; } = new SeedRole[]
     {
         new(AdminRoleId, "Admin", true),
         new(ManagerRoleId, "Manager", true),
-        new(CashierRoleId, "Cashier", true)
+        new(CashierRoleId, "Cashier", true),
+        new(PurchasingOfficerRoleId, "Purchasing Officer", true),
+        new(ReceivingClerkRoleId, "Receiving Clerk", true),
+        new(InventoryOfficerRoleId, "Inventory Officer", true),
+        new(AccountsPayableClerkRoleId, "Accounts Payable Clerk", true),
+        new(FinanceManagerRoleId, "Finance Manager", true),
+        new(DepartmentHeadRoleId, "Department Head", true)
     };
 
     public static IReadOnlyList<string> AdminPermissions { get; } = new string[]
@@ -86,7 +111,20 @@ public static class DefaultSeedData
         Permissions.ReceivablesCollect,
         Permissions.ReceivablesAdjust,
         Permissions.ReceivablesExport,
-        Permissions.ReceivablesManageCustomers
+        Permissions.ReceivablesManageCustomers,
+        Permissions.ProcurementView,
+        Permissions.ProcurementRequest,
+        Permissions.ProcurementApproveRequisition,
+        Permissions.ProcurementManagePurchaseOrder,
+        Permissions.ProcurementApprovePurchaseOrder,
+        Permissions.ReceivingView,
+        Permissions.ReceivingManage,
+        Permissions.ReceivingApproveException,
+        Permissions.InventoryManageReturns,
+        Permissions.PayablesView,
+        Permissions.PayablesManageInvoices,
+        Permissions.PayablesApproveVariance,
+        Permissions.PayablesRecordPayment
     };
 
     public static IReadOnlyList<string> ManagerPermissions { get; } = new string[]
@@ -108,7 +146,20 @@ public static class DefaultSeedData
         Permissions.ReceivablesCreateCreditSale,
         Permissions.ReceivablesCollect,
         Permissions.ReceivablesExport,
-        Permissions.ReceivablesManageCustomers
+        Permissions.ReceivablesManageCustomers,
+        Permissions.ProcurementView,
+        Permissions.ProcurementRequest,
+        Permissions.ProcurementApproveRequisition,
+        Permissions.ProcurementManagePurchaseOrder,
+        Permissions.ProcurementApprovePurchaseOrder,
+        Permissions.ReceivingView,
+        Permissions.ReceivingManage,
+        Permissions.ReceivingApproveException,
+        Permissions.InventoryManageReturns,
+        Permissions.PayablesView,
+        Permissions.PayablesManageInvoices,
+        Permissions.PayablesApproveVariance,
+        Permissions.PayablesRecordPayment
     };
 
     public static IReadOnlyList<string> CashierPermissions { get; } = new string[]
@@ -119,7 +170,79 @@ public static class DefaultSeedData
         Permissions.ShiftOpenClose
     };
 
-    public static IReadOnlyList<SeedPermission> RolePermissions { get; } = BuildRolePermissions();
+    private static IReadOnlyList<SeedPermission>? _rolePermissions;
+    public static IReadOnlyList<SeedPermission> RolePermissions => _rolePermissions ??= BuildRolePermissions();
+
+    public static IReadOnlyList<string> PurchasingOfficerPermissions { get; } = new string[]
+    {
+        Permissions.ProductsView,
+        Permissions.InventoryView,
+        Permissions.ProcurementView,
+        Permissions.ProcurementRequest,
+        Permissions.ProcurementManagePurchaseOrder,
+        Permissions.ReceivingView,
+        Permissions.PayablesView,
+        Permissions.ReportsView
+    };
+
+    public static IReadOnlyList<string> ReceivingClerkPermissions { get; } = new string[]
+    {
+        Permissions.ProductsView,
+        Permissions.InventoryView,
+        Permissions.ProcurementView,
+        Permissions.ReceivingView,
+        Permissions.ReceivingManage
+    };
+
+    public static IReadOnlyList<string> InventoryOfficerPermissions { get; } = new string[]
+    {
+        Permissions.ProductsView,
+        Permissions.InventoryView,
+        Permissions.InventoryAdjust,
+        Permissions.InventoryManageReturns,
+        Permissions.ProcurementView,
+        Permissions.ProcurementRequest,
+        Permissions.ReceivingView,
+        Permissions.ReportsView
+    };
+
+    public static IReadOnlyList<string> AccountsPayableClerkPermissions { get; } = new string[]
+    {
+        Permissions.ProductsView,
+        Permissions.ProcurementView,
+        Permissions.ReceivingView,
+        Permissions.PayablesView,
+        Permissions.PayablesManageInvoices,
+        Permissions.PayablesRecordPayment,
+        Permissions.ReportsView
+    };
+
+    public static IReadOnlyList<string> FinanceManagerPermissions { get; } = new string[]
+    {
+        Permissions.ProductsView,
+        Permissions.InventoryView,
+        Permissions.ProcurementView,
+        Permissions.ProcurementApproveRequisition,
+        Permissions.ProcurementApprovePurchaseOrder,
+        Permissions.ReceivingView,
+        Permissions.ReceivingApproveException,
+        Permissions.PayablesView,
+        Permissions.PayablesManageInvoices,
+        Permissions.PayablesApproveVariance,
+        Permissions.PayablesRecordPayment,
+        Permissions.ReportsView,
+        Permissions.AuditView
+    };
+
+    public static IReadOnlyList<string> DepartmentHeadPermissions { get; } = new string[]
+    {
+        Permissions.ProductsView,
+        Permissions.InventoryView,
+        Permissions.ProcurementView,
+        Permissions.ProcurementRequest,
+        Permissions.ProcurementApproveRequisition,
+        Permissions.ReportsView
+    };
 
     public static IReadOnlyList<SeedUnit> Units { get; } = new SeedUnit[]
     {
@@ -171,6 +294,12 @@ public static class DefaultSeedData
         AddPermissions(permissions, AdminRoleId, AdminPermissions);
         AddPermissions(permissions, ManagerRoleId, ManagerPermissions);
         AddPermissions(permissions, CashierRoleId, CashierPermissions);
+        AddPermissions(permissions, PurchasingOfficerRoleId, PurchasingOfficerPermissions);
+        AddPermissions(permissions, ReceivingClerkRoleId, ReceivingClerkPermissions);
+        AddPermissions(permissions, InventoryOfficerRoleId, InventoryOfficerPermissions);
+        AddPermissions(permissions, AccountsPayableClerkRoleId, AccountsPayableClerkPermissions);
+        AddPermissions(permissions, FinanceManagerRoleId, FinanceManagerPermissions);
+        AddPermissions(permissions, DepartmentHeadRoleId, DepartmentHeadPermissions);
 
         return permissions;
     }

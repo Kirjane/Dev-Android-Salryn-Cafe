@@ -108,6 +108,7 @@ public static class Program
         U1AccountsReceivableLedgerChecks.RunAsync().GetAwaiter().GetResult();
         OwnerAnalyticsW0W3RuntimeChecks.Run();
         W4CashDrawerReconciliationChecks.Run();
+        LpiProcureToPayRuntimeChecks.RunAsync().GetAwaiter().GetResult();
         V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();
         V2HostOperatorCheckoutApiChecks.RunAsync().GetAwaiter().GetResult();
         V2ReactCheckoutSourceChecks.Run();
@@ -627,9 +628,13 @@ public static class Program
                 return;
             case "w4-cash-drawer-reconciliation":
                 W4CashDrawerReconciliationChecks.Run();
+        LpiProcureToPayRuntimeChecks.RunAsync().GetAwaiter().GetResult();
                 return;
             case "user-m1-host-only-user-creation":
                 UserM1HostOnlyUserCreationChecks.RunAsync().GetAwaiter().GetResult();
+                return;
+            case "lpi-procure-to-pay":
+                LpiProcureToPayRuntimeChecks.RunAsync().GetAwaiter().GetResult();
                 return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);

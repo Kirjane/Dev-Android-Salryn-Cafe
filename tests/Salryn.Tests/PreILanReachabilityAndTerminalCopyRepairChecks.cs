@@ -149,7 +149,7 @@ public static class PreILanReachabilityAndTerminalCopyRepairChecks
     }
 
     private static string Read(string root, params string[] parts) =>
-        File.ReadAllText(Path.Combine(new[] { root }.Concat(parts).ToArray()));
+        File.ReadAllText(Path.Combine(new[] { root }.Concat(parts).ToArray())).Replace("\r\n", "\n");
 
     private static string FindRoot()
     {
@@ -211,3 +211,5 @@ public static class PreILanReachabilityAndTerminalCopyRepairChecks
         }
     }
 }
+
+

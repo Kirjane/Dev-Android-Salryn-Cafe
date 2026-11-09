@@ -95,10 +95,9 @@ public static class LocalLicenseEndpoints
             // valid license state is present, installation is replacement/update and requires the
             // same Settings.Manage boundary as other host licensing administration.
             if (RequiresPrivilegedInstallAuthorization(before.Status) &&
-                LocalApiPermissionGuards.RequirePermission(
+                LocalApiPermissionGuards.RequireSettingsManage(
                     httpContext,
-                    sessions,
-                    LocalApiPermissions.SettingsManage) is IResult denied)
+                    sessions) is IResult denied)
             {
                 return denied;
             }
