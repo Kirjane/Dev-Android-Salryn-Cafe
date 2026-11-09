@@ -6,6 +6,7 @@ namespace Salryn.Core.Services;
 public static class OperatorAuditActions
 {
     public const string SaleCompleted = "SALE_COMPLETED";
+    public const string SaleVoided = "SALE_VOIDED";
     public const string ProductCreated = "PRODUCT_CREATED";
     public const string ProductUpdated = "PRODUCT_UPDATED";
     public const string ProductDeactivated = "PRODUCT_DEACTIVATED";

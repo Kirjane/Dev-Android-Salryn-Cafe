@@ -276,6 +276,7 @@ public static class PosR1OwnerReportsChecks
         string page = File.ReadAllText(Path.Combine(root.FullName, "src", "Salryn.App.Web", "src", "pages", "OwnerReportsPage.tsx"));
         string permissions = File.ReadAllText(Path.Combine(root.FullName, "src", "Salryn.App.Web", "src", "security", "permissions.ts"));
         string navigation = File.ReadAllText(Path.Combine(root.FullName, "src", "Salryn.App.Web", "src", "navigation.ts"));
+        string salesApi = File.ReadAllText(Path.Combine(root.FullName, "src", "Salryn.App.Web", "src", "api", "sales.ts"));
 
         Require(endpoints.Contains("LocalApiPermissions.ReportsView", StringComparison.Ordinal), "Detailed reports endpoint must require Reports.View.");
         Require(service.Contains("WHERE s.status = $completedStatus", StringComparison.Ordinal), "Detailed reports totals must filter active completed sales.");
@@ -295,6 +296,8 @@ public static class PosR1OwnerReportsChecks
         Require(permissions.Contains("\"owner-reports\": [Permissions.ReportsView]", StringComparison.Ordinal), "Detailed reports direct page access must be gated by Reports.View.");
         Require(navigation.Contains("label: \"Reports\"", StringComparison.Ordinal), "Reports must be reachable from store navigation.");
         Require(!navigation.Contains("label: \"Owner Reports\"", StringComparison.Ordinal), "Old Owner Reports nav label must not remain.");
+        Require(salesApi.Contains("T00:00:00+08:00", StringComparison.Ordinal), "Sales drill-down start date must use the Asia/Manila store-day boundary.");
+        Require(salesApi.Contains("T23:59:59.9999999+08:00", StringComparison.Ordinal), "Sales drill-down end date must include the complete Asia/Manila store day.");
     }
 
     private static DirectoryInfo FindRoot()

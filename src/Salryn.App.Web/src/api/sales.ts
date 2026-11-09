@@ -68,13 +68,27 @@ function toQuery(params: Record<string, string | number | undefined>): string {
   return text ? `?${text}` : "";
 }
 
+function storeDateStartUtcBoundary(value: string | undefined): string | undefined {
+  return value && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? `${value}T00:00:00+08:00`
+    : value;
+}
+
+function storeDateEndUtcBoundary(value: string | undefined): string | undefined {
+  return value && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? `${value}T23:59:59.9999999+08:00`
+    : value;
+}
+
 export async function fetchSalesHistory(
   params: SaleSearchParams = {},
 ): Promise<PagedResponse<SaleHistoryItem>> {
   const response = await fetch(
     `/api/sales/history${toQuery({
-      from: params.from,
-      to: params.to,
+      // Sales & Receipts date controls are store dates, matching Reports. The
+      // repository accepts instants, so send explicit Asia/Manila boundaries.
+      from: storeDateStartUtcBoundary(params.from),
+      to: storeDateEndUtcBoundary(params.to),
       status: params.status,
       receiptNo: params.receiptNo,
       page: params.page ?? 1,

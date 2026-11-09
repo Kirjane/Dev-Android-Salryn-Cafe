@@ -118,9 +118,13 @@ test.describe("MOCKED_UI Keyboard, Navigation, Accessibility & UX Defect Verific
     await page.goto("/");
     await sidebarNavButton(page, "Reports").click();
 
+    const salesRequest = page.waitForRequest((request) => request.url().includes("/api/sales/history"));
     await page.getByRole("button", { name: /2026-04-19/i }).first().click();
     await expect(page.getByRole("heading", { name: "Sales & Receipts" })).toBeVisible();
     expect(page.url()).toContain("salesFrom=2026-04-19");
+    const requestUrl = new URL((await salesRequest).url());
+    expect(requestUrl.searchParams.get("from")).toBe("2026-04-19T00:00:00+08:00");
+    expect(requestUrl.searchParams.get("to")).toBe("2026-04-19T23:59:59.9999999+08:00");
   });
 
   test("UX-001 & UX-002 FIXED: Utang mode disables Cash tendered and never shows false 'Insufficient cash' warning", async ({

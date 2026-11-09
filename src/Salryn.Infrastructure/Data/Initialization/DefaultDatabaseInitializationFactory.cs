@@ -71,7 +71,8 @@ public static class DefaultDatabaseInitializationFactory
             new HostCheckoutRequestSchemaMigration(),
             new ReceivableCollectionRequestSchemaMigration(),
             new CashDrawerReconciliationSchemaMigration(),
-            new CashDrawerCloseReplaySchemaMigration()
+            new CashDrawerCloseReplaySchemaMigration(),
+            new SaleVoidAuditReconciliationMigration()
         };
 
         MigrationRunner migrationRunner = new(connectionFactory, migrations);

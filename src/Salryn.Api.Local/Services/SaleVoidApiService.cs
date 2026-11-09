@@ -4,6 +4,7 @@ using Salryn.Composition.Local;
 using Salryn.Core.Common;
 using Salryn.Core.Models;
 using Salryn.Core.ReadModels;
+using Salryn.Core.Services;
 using Salryn.Core.ValueObjects;
 
 namespace Salryn.Api.Local.Services;
@@ -115,6 +116,24 @@ public sealed class SaleVoidApiService
                 ? updatedResult.ErrorDetail
                 : Error.Unexpected("Sales.VoidReadbackMissing", "Voided sale readback failed."));
         }
+
+        await OperatorAuditTrail.TryWriteAsync(
+                _composition.ConnectionFactory,
+                session.UserId,
+                OperatorAuditActions.SaleVoided,
+                "Sale",
+                sale.Id.ToString("D"),
+                new
+                {
+                    saleId = sale.Id.ToString("D"),
+                    sale.ReceiptNo,
+                    status = SaleStatus.Voided.ToString(),
+                    reversalMovementCount = reversals.Count
+                },
+                oldValue: new { status = SaleStatus.Completed.ToString() },
+                reason: reason,
+                cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
 
         return Result<SaleVoidResponse>.Success(new SaleVoidResponse(
             "POS_M7_SALE_VOIDED",

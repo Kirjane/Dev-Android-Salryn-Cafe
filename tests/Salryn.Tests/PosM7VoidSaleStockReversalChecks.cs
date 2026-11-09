@@ -10,6 +10,7 @@ using Salryn.Core.Services;
 using Salryn.Core.ValueObjects;
 using Salryn.Infrastructure.Data;
 using Salryn.Infrastructure.Data.Bootstrap;
+using Salryn.Infrastructure.Data.Migrations;
 using Salryn.Infrastructure.Paths;
 
 namespace Salryn.Tests;
@@ -112,6 +113,19 @@ public static class PosM7VoidSaleStockReversalChecks
             Require(GetScalar(composition, "SELECT COUNT(*) FROM stock_movements WHERE reference_id=$id AND movement_type=2", saleId) == 1, "Void must persist one VoidSale movement.");
             Require(GetScalar(composition, "SELECT COUNT(*) FROM payments WHERE sale_id=$id", saleId) == paymentCount, "Void must not duplicate payment.");
             Require(GetScalar(composition, "SELECT COUNT(*) FROM sales WHERE id=$id", saleId) == saleCount, "Void must not duplicate sale.");
+            Require(GetScalar(composition, "SELECT COUNT(*) FROM audit_logs WHERE entity_id=$id AND action='SALE_VOIDED'", saleId) == 1, "Successful void must append one searchable SALE_VOIDED audit record.");
+            Require(GetText(composition, "SELECT reason FROM audit_logs WHERE entity_id=$id AND action='SALE_VOIDED'", saleId) == "Customer cancelled completed sale", "Void audit must preserve the operator reason.");
+
+            Execute(composition, "DELETE FROM audit_logs WHERE entity_id=$id AND action='SALE_VOIDED'", saleId);
+            using (SqliteConnection migrationConnection = new($"Data Source={composition.DbPaths.DatabasePath}"))
+            {
+                migrationConnection.Open();
+                using SqliteTransaction transaction = migrationConnection.BeginTransaction();
+                new SaleVoidAuditReconciliationMigration().Up(migrationConnection, transaction);
+                transaction.Commit();
+            }
+            Require(GetScalar(composition, "SELECT COUNT(*) FROM audit_logs WHERE entity_id=$id AND action='SALE_VOIDED'", saleId) == 1, "Migration must reconcile a missing historical void audit row exactly once.");
+            Require(GetText(composition, "SELECT new_value_json FROM audit_logs WHERE entity_id=$id AND action='SALE_VOIDED'", saleId).Contains("reconciledFromSaleRecord", StringComparison.Ordinal), "Reconciled historical audit must be explicitly marked.");
 
             Result<SaleVoidResponse> duplicate = service.VoidAsync(
                 saleId, new SaleVoidRequest("Second void"), session).GetAwaiter().GetResult();
@@ -145,6 +159,28 @@ public static class PosM7VoidSaleStockReversalChecks
         Require(endpoints.Contains("LocalApiPermissions.SalesVoid", StringComparison.Ordinal), "Void endpoint must require Sales.Void.");
         Require(page.Contains("Reprint blocked: VOIDED", StringComparison.Ordinal), "Voided sale reprint behavior must be explicit.");
         Require(page.Contains("Void reason", StringComparison.Ordinal), "Void UI must require a reason.");
+        string service = File.ReadAllText(Path.Combine(root.FullName, "src", "Salryn.Api.Local", "Services", "SaleVoidApiService.cs"));
+        Require(service.Contains("OperatorAuditActions.SaleVoided", StringComparison.Ordinal), "Successful sale void must append an operator audit record.");
+    }
+
+    private static string GetText(SalrynLocalComposition composition, string sql, Guid id)
+    {
+        using SqliteConnection connection = new($"Data Source={composition.DbPaths.DatabasePath}");
+        connection.Open();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.Parameters.AddWithValue("$id", id.ToString("D"));
+        return Convert.ToString(command.ExecuteScalar()) ?? string.Empty;
+    }
+
+    private static void Execute(SalrynLocalComposition composition, string sql, Guid id)
+    {
+        using SqliteConnection connection = new($"Data Source={composition.DbPaths.DatabasePath}");
+        connection.Open();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.Parameters.AddWithValue("$id", id.ToString("D"));
+        command.ExecuteNonQuery();
     }
 
     private static DirectoryInfo FindRoot()
