@@ -9,8 +9,8 @@ namespace Salryn.Tests;
 public static class PreILicenseKeyRotationCanonicalBetaChecks
 {
     private const string Gate = "pre-i-license-key-rotation-canonical-beta";
-    private const string CanonicalFingerprint = "97bd9399360ec1bb95e52abf7b02acf9c195852afa8dd837ffa454d735d36a59";
-    private const string RetiredFingerprint = "10149b43f8dcb6c82e4c8fdd538572faaa78fd126af2caaa29cad997e67bc284";
+    private const string CanonicalFingerprint = "30153dcb1de6cbfa775316292f93ba50eab0dd89e8eae84d785cbfd0168008f4";
+    private const string RetiredFingerprint = "97bd9399360ec1bb95e52abf7b02acf9c195852afa8dd837ffa454d735d36a59";
     private static readonly DateTimeOffset FixedNow = new(2026, 7, 18, 16, 0, 0, TimeSpan.Zero);
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -70,6 +70,8 @@ public static class PreILicenseKeyRotationCanonicalBetaChecks
             Require((await terminalService.InstallAsync(new(terminalJson))).InstallStatus == "Installed", "canonical Terminal local validation");
             LicenseEnforcementDecision hostFeature = await new LocalLicenseEnforcementService(terminalService).RequireFeatureAsync(LicenseFeatures.Pos);
             Require(!hostFeature.Allowed && hostFeature.ReasonCode == LicenseEnforcementReason.WrongLicenseType, "Terminal must not unlock Host POS feature");
+
+            await VerifyOptionalLocallyIssuedHostAsync(root);
         }
         finally
         {
@@ -81,6 +83,34 @@ public static class PreILicenseKeyRotationCanonicalBetaChecks
         Require(!verifierSource.Contains("fallback", StringComparison.OrdinalIgnoreCase), "no fallback verification key");
         AssertNoCommittedPrivateKey(repo);
         Console.WriteLine($"PASS {Gate}");
+    }
+
+    private static async Task VerifyOptionalLocallyIssuedHostAsync(string root)
+    {
+        string? licensePath = Environment.GetEnvironmentVariable("SALRYN_QA_HOST_LICENSE_PATH")?.Trim();
+        string? machineCode = Environment.GetEnvironmentVariable("SALRYN_QA_HOST_MACHINE_CODE")?.Trim();
+        if (string.IsNullOrWhiteSpace(licensePath) && string.IsNullOrWhiteSpace(machineCode)) return;
+
+        Require(!string.IsNullOrWhiteSpace(licensePath) && File.Exists(licensePath), "QA Host license path");
+        Require(!string.IsNullOrWhiteSpace(machineCode), "QA Host machine code");
+        string raw = File.ReadAllText(licensePath!);
+        LocalLicenseDocument document = DeserializeFlat(raw, LicenseType.Host);
+        Require(document.MachineBinding == machineCode, "QA Host machine binding");
+        Require(LocalLicenseSignatureVerifier.Verify(document), "QA Host signature");
+
+        LocalLicenseService service = new(
+            new LocalLicenseFileStore(new LocalLicenseFileStoreOptions(Path.Combine(root, "issued-qa"), null)),
+            new LocalLicenseValidator(new LocalLicenseValidatorOptions
+            {
+                MachineFingerprint = machineCode,
+                SignatureVerifier = LocalLicenseSignatureVerifier.Verify
+            }),
+            () => DateTimeOffset.UtcNow);
+        LocalLicenseInstallResponse installed = await service.InstallAsync(new(raw));
+        Require(installed.InstallStatus == "Installed" && installed.ValidationStatus == LicenseStatus.Licensed, "locally issued QA Host install");
+        LicenseEnforcementDecision pos = await new LocalLicenseEnforcementService(service).RequireFeatureAsync(LicenseFeatures.Pos);
+        Require(pos.Allowed, "locally issued QA Host POS entitlement");
+        Console.WriteLine("PASS locally-issued-qa-host");
     }
 
     private static LocalLicenseDocument DeserializeFlat(string raw, LicenseType expectedType)

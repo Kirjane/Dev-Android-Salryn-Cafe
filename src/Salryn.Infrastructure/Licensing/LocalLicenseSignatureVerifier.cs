@@ -11,16 +11,16 @@ public static class LocalLicenseSignatureVerifier
     // Canonical PRE-I beta verification key. Public verification material only.
     // Signing material stays outside the POS repository (LicensingOps secrets).
     public const string TrustedPublicKeySpkiSha256 =
-        "97bd9399360ec1bb95e52abf7b02acf9c195852afa8dd837ffa454d735d36a59";
+        "30153dcb1de6cbfa775316292f93ba50eab0dd89e8eae84d785cbfd0168008f4";
 
     private const string PublicKeyPem = "-----BEGIN PUBLIC KEY-----\n" +
-        "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA/EF2fGqnPKhCmwOkv8Ib\n" +
-        "jUdYycma6PcdCxJfEQZCqxeJLi6qbabtqVsRUUvnd0HXN0tHqQTrtTjHEOKfYW0R\n" +
-        "tWm/ZM/yADyQrTpqjsif+z1CNmYldNe+lECVIWFj7ZKF5adYwEZQENQW+5WIeId+\n" +
-        "ooqwHJvMgCGouYSzgzZcLrEEUfAIwosW/q6/M4HDDcB2z40AbjvJ37+DI86sZv20\n" +
-        "sJDA0mYOQY/LwXJfVN7Jaj5FZzUalqTaN7VT8EOhHVubGzt0E769fIOSt9n0JbRv\n" +
-        "V+qlbweAo1ZuR6tmA5v6e3KkYK7PKs5B8DPdPRoNUvCDJhiql4fZjYI56s0Gy9ZB\n" +
-        "bwIDAQAB\n" +
+        "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0wlZMUtjZTr8uC/sGrs1\n" +
+        "wMVUkexpcH3DQUX4SIvKkZucgUoSmi65gH76qldGLd2V2uiipmMf+N7f5S5WLt3g\n" +
+        "fXRm9XOhnqE+HzaCFFSmoTgFfTrcldXhJ56ODjdfjv5e2YKxhXlLkZ+aOd3DCy5z\n" +
+        "sgh4cqJ98iHinuo4pLCrnjY8n0zrzrN+Q5BNQjPMtFu16q2cn7DBVymKUKNWtaXF\n" +
+        "TcfFnvq6/uEkUXjB2zvQuWdmJwSVdqGo3JuJCEwZv/EAoIbBf11Uf7Nz9E+lzKqO\n" +
+        "lbFkxWbqU5F6cGKHEw1R7jfYO5kkgH2rhgbbqWE/tCel9Daw4mlt62MOXRJmKrGn\n" +
+        "CQIDAQAB\n" +
         "-----END PUBLIC KEY-----";
 
     private static readonly JsonSerializerOptions JsonOptions = new()

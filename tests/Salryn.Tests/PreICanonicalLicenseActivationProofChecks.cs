@@ -9,7 +9,7 @@ namespace Salryn.Tests;
 public static class PreICanonicalLicenseActivationProofChecks
 {
     private const string Gate = "pre-i-canonical-license-activation-proof";
-    private const string CanonicalFingerprint = "97bd9399360ec1bb95e52abf7b02acf9c195852afa8dd837ffa454d735d36a59";
+    private const string CanonicalFingerprint = "30153dcb1de6cbfa775316292f93ba50eab0dd89e8eae84d785cbfd0168008f4";
     private const string ManifestEnvironmentVariable = "SALRYN_CANONICAL_LICENSE_PROOF_MANIFEST";
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
