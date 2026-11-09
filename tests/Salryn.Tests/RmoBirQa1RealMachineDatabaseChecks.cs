@@ -68,7 +68,7 @@ public static class RmoBirQa1RealMachineDatabaseChecks
     }
 
     private const int CurrentSupportedMigrationVersion = 26;
-    private const int FutureProbeMigrationVersion = 25;
+    private const int FutureProbeMigrationVersion = 27;
 
     private static void RunCleanCurrent(string qaRoot)
     {
