@@ -381,13 +381,12 @@ export function CheckoutPage() {
 
   return (
     <div className="min-w-0 space-y-3">
-      <CommandBar
-        compact
-        title="POS Checkout"
+      <CommandBar compact title="POS Checkout" subtitle="Scan, sell, and take payment."
         status={
           <div className="flex flex-wrap items-center gap-2">
             <StatusPill tone={sessionQuery.data?.isAuthenticated ? "success" : "warning"}>{operatorLabel} · {roleLabel}</StatusPill>
             <StatusPill tone={shiftOpen ? "success" : "warning"}>Shift {shift?.shiftState ?? "Unknown"}</StatusPill>
+            {shiftOpen ? <Button size="sm" variant="danger" onClick={() => setShowCloseShift(true)} disabled={isClosingShift}>Count & Close Shift</Button> : null}
             <details className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600">
               <summary className="cursor-pointer font-medium text-slate-700">Shift details</summary>
               <div className="mt-2 space-y-1">
@@ -399,12 +398,9 @@ export function CheckoutPage() {
           </div>
         }
         actions={
-          <>
-            <Button size="sm" variant="secondary" onClick={() => void refreshShiftAndProducts()} disabled={shiftQuery.isFetching || productsQuery.isFetching || sessionQuery.isFetching}>
-              {shiftQuery.isFetching || productsQuery.isFetching || sessionQuery.isFetching ? "Refreshing..." : "Refresh"}
-            </Button>
-            {shiftOpen ? <Button size="sm" variant="danger" onClick={() => setShowCloseShift(true)} disabled={isClosingShift}>Count & Close Shift</Button> : null}
-          </>
+          <Button size="sm" variant="secondary" onClick={() => void refreshShiftAndProducts()} disabled={shiftQuery.isFetching || productsQuery.isFetching || sessionQuery.isFetching}>
+            {shiftQuery.isFetching || productsQuery.isFetching || sessionQuery.isFetching ? "Refreshing..." : "Refresh"}
+          </Button>
         }
       />
       <UiDialog open={showCloseShift} title="Physical drawer count" subtitle="Financial policy pending Kirch approval" size="md" busy={isClosingShift} onClose={()=>{if(!isClosingShift){setShowCloseShift(false);}}} footer={<><Button variant="secondary" disabled={isClosingShift} onClick={()=>setShowCloseShift(false)}>Cancel</Button>{closeRetryPending?<Button variant="secondary" disabled={isClosingShift} onClick={resetCloseAttempt}>Change count</Button>:null}<Button variant="danger" disabled={!countConfirmed||countedCash.trim()===""||!Number.isFinite(Number(countedCash))||toCents(countedCash)<0||isClosingShift} onClick={()=>void handleCloseShift()}>{isClosingShift?"Submitting…":closeRetryPending?"Retry unchanged":"Submit immutable count & close"}</Button></>}><div className="space-y-4"><Alert tone="warning" title="Physical count required">Count the cash physically present. This value is never prefilled from expected cash and becomes immutable after submission.</Alert><div><label htmlFor="drawer-counted-cash" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Actual counted cash</label><TextInput id="drawer-counted-cash" data-dialog-initial-focus value={countedCash} disabled={isClosingShift||closeRetryPending} onChange={e=>{setCountedCash(e.target.value);setCountConfirmed(false);resetCloseAttempt();}} inputMode="decimal" placeholder="0.00" /></div><div><label htmlFor="drawer-close-note" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Count note (optional)</label><TextInput id="drawer-close-note" value={closeNote} disabled={isClosingShift||closeRetryPending} onChange={e=>{setCloseNote(e.target.value);resetCloseAttempt();}} /></div><label className="flex gap-2 text-sm text-slate-700"><input type="checkbox" checked={countConfirmed} disabled={isClosingShift||closeRetryPending} onChange={e=>setCountConfirmed(e.target.checked)} />I physically counted this drawer and confirm the amount.</label>{closeRetryPending?<Alert tone="warning" title="Host response uncertain">Retry unchanged reuses the same request ID. Choose Change count only for a deliberate new submission.</Alert>:null}<p className="text-xs text-slate-500">Any nonzero variance is PendingReview and requires a distinct authorized reviewer. No force-close is available.</p></div></UiDialog>
@@ -414,7 +410,7 @@ export function CheckoutPage() {
       {!shiftOpen ? (
         <Card className="border-amber-300 bg-amber-50/70"><CardHeader><CardTitle>Cashier workstation locked</CardTitle></CardHeader><CardBody className="grid gap-4 text-sm text-amber-950 lg:grid-cols-[1fr_auto] lg:items-end"><div><label htmlFor="checkout-opening-cash" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-amber-900">Opening cash</label><TextInput id="checkout-opening-cash" value={openingCash} onChange={(event) => setOpeningCash(event.target.value)} /><p className="mt-2 text-xs text-amber-800">Open a cashier shift before product search, cart, payment, and checkout controls become available.</p></div><Button onClick={() => void handleOpenShift()} disabled={isOpeningShift || shiftQuery.isLoading}>{isOpeningShift ? "Opening..." : "Open Shift"}</Button></CardBody></Card>
       ) : (
-        <div className="grid min-h-0 min-w-0 gap-3 md:grid-cols-2 xl:h-[calc(100dvh-14rem)] xl:grid-cols-[minmax(0,0.85fr)_minmax(0,0.95fr)_minmax(20rem,1.2fr)]">
+        <div className="grid min-h-0 min-w-0 gap-3 md:grid-cols-2 xl:h-[calc(100dvh-14rem)] xl:grid-cols-[minmax(0,0.85fr)_minmax(0,0.95fr)_minmax(21rem,1.2fr)]">
           <Card className="flex min-w-0 flex-col xl:min-h-0 xl:overflow-hidden">
             <CardHeader className="shrink-0"><div className="flex items-center justify-between gap-3"><CardTitle>Scan / search</CardTitle>{productResponse ? <span className="text-xs font-semibold text-slate-500">{productResponse.totalCount} result{productResponse.totalCount === 1 ? "" : "s"}</span> : null}</div></CardHeader>
             <CardBody className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">

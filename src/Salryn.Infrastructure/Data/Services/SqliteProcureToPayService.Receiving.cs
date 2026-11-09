@@ -1009,10 +1009,28 @@ public sealed partial class SqliteProcureToPayService
                 return Result<SupplierReturnModel>.Fail(
                     Error.Validation("Lpi.SupplierReturn.InvalidLine", "Return line must reference an accepted product line on the Receiving Report."));
             }
-            if (line.ReturnQtyX1000 <= 0 || line.ReturnQtyX1000 > rrLine.AcceptedQtyX1000)
+            long previouslyReturnedX1000 = 0;
+            await using (SqliteCommand priorRetCmd = connection.CreateCommand())
+            {
+                priorRetCmd.Transaction = transaction;
+                priorRetCmd.CommandText = """
+                    SELECT COALESCE(SUM(srl.return_qty_x1000), 0)
+                    FROM supplier_return_lines srl
+                    INNER JOIN supplier_returns sr ON sr.id = srl.supplier_return_id
+                    WHERE srl.receiving_report_line_id = $rrLineId
+                      AND sr.status = 'Posted';
+                    """;
+                priorRetCmd.Parameters.AddWithValue("$rrLineId", line.ReceivingReportLineId.ToString("D"));
+                previouslyReturnedX1000 = Convert.ToInt64(await priorRetCmd.ExecuteScalarAsync(cancellationToken) ?? 0L);
+            }
+
+            long remainingAcceptedX1000 = Math.Max(0L, rrLine.AcceptedQtyX1000 - previouslyReturnedX1000);
+
+            if (line.ReturnQtyX1000 <= 0 || line.ReturnQtyX1000 > remainingAcceptedX1000)
             {
                 return Result<SupplierReturnModel>.Fail(
-                    Error.Validation("Lpi.SupplierReturn.InvalidQty", $"Return quantity for '{rrLine.ItemDescription}' must be between 1 and accepted quantity ({rrLine.AcceptedQtyX1000})."));
+                    Error.Validation("Lpi.SupplierReturn.InvalidQty",
+                        $"Return quantity for '{rrLine.ItemDescription}' ({line.ReturnQtyX1000}) exceeds remaining accepted quantity ({remainingAcceptedX1000}). Previously returned: {previouslyReturnedX1000}."));
             }
             totalReturnCents += (line.ReturnQtyX1000 * rrLine.UnitCostCents) / 1000L;
         }
@@ -1188,6 +1206,60 @@ public sealed partial class SqliteProcureToPayService
 
         SupplierReturnModel? created = await LoadSupplierReturnAsync(connection, null, sretId, cancellationToken);
         return Result<SupplierReturnModel>.Success(created!);
+    }
+
+    public async Task<Result<IReadOnlyList<ProductStockCardModel>>> GetProductStockCardsAsync(
+        string? search = null,
+        Guid? locationId = null,
+        CancellationToken cancellationToken = default)
+    {
+        await using SqliteConnection connection = _connections.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        List<Guid> productIds = new();
+        await using (SqliteCommand listCmd = connection.CreateCommand())
+        {
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                listCmd.CommandText = """
+                    SELECT id FROM products
+                    WHERE is_active = 1
+                      AND (name LIKE $s OR sku LIKE $s OR barcode LIKE $s)
+                    ORDER BY name ASC;
+                    """;
+                listCmd.Parameters.AddWithValue("$s", $"%{search.Trim()}%");
+            }
+            else
+            {
+                listCmd.CommandText = "SELECT id FROM products WHERE is_active = 1 ORDER BY name ASC;";
+            }
+
+            await using SqliteDataReader reader = await listCmd.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                productIds.Add(Guid.Parse(reader.GetString(0)));
+            }
+        }
+
+        List<ProductStockCardModel> cards = new();
+        foreach (Guid prodId in productIds)
+        {
+            Result<ProductStockCardModel> cardRes = await GetProductStockCardAsync(prodId, cancellationToken);
+            if (cardRes.IsSuccess)
+            {
+                if (locationId.HasValue)
+                {
+                    bool matchesLocation = cardRes.Value.Buckets.Any(b => b.LocationId == locationId.Value);
+                    if (matchesLocation) cards.Add(cardRes.Value);
+                }
+                else
+                {
+                    cards.Add(cardRes.Value);
+                }
+            }
+        }
+
+        return Result<IReadOnlyList<ProductStockCardModel>>.Success(cards);
     }
 
     public async Task<Result<ProductStockCardModel>> GetProductStockCardAsync(

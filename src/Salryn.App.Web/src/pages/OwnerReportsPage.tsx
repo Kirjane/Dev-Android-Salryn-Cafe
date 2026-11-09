@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   analyticsExportUrl,
@@ -21,6 +21,13 @@ import {
   TextInput,
 } from "../components/ui";
 import { formatMoney } from "../utils/format";
+import {
+  SalesTrendChart,
+  SalesVsVoidChart,
+  PaymentMixChart,
+  TopProductsChart,
+  ArAgingDistributionChart,
+} from "../components/analytics/AnalyticsCharts";
 
 const peso = (cents: number | null | undefined) =>
   cents == null ? "Unavailable" : formatMoney(cents / 100);
@@ -261,14 +268,7 @@ export function OwnerReportsPage({
     mix.error,
     top.error,
   ].find(Boolean) as Error | undefined;
-  const trendRows = useMemo(
-    () =>
-      (trend.data?.points ?? []).map((p) => ({
-        label: p.storeDate,
-        value: p.salesTotalCents,
-      })),
-    [trend.data],
-  );
+
   const averageTicketCents = overview.data?.current.completedSaleCount
     ? Math.round(overview.data.current.salesTotalCents / overview.data.current.completedSaleCount)
     : null;
@@ -472,42 +472,49 @@ export function OwnerReportsPage({
               </CardBody>
             </Card>
           </div>
-          <div className="grid gap-3 xl:grid-cols-2">
-            <Bars
-              title="Sales trend"
-              rows={trendRows}
-              onSelect={(day) => onOpenSales?.(day, day)}
-            />
-            <Bars
-              title="Cash received by store day"
-              rows={(trend.data?.points ?? []).map((p) => ({
-                label: p.storeDate,
-                value: p.cashOnSalesCents,
-              }))}
-              onSelect={(day) => onOpenSales?.(day, day)}
-            />
-            <Bars
-              title="Utang originated by store day"
-              rows={(trend.data?.points ?? []).map((p) => ({
-                label: p.storeDate,
-                value: p.creditOriginatedCents,
-              }))}
-              onSelect={(day) => onOpenSales?.(day, day)}
-            />
-            <Bars
-              title="Payment mix"
-              rows={(mix.data?.rows ?? []).map((r) => ({
-                label: `${r.method} — ${r.scope}`,
-                value: r.amountCents,
-              }))}
-            />
-            <Bars
-              title="Top products (historical label)"
-              rows={(top.data?.products ?? []).map((r) => ({
-                label: r.historicalLabel,
-                value: r.lineRevenueCents,
-              }))}
-            />
+          <div className="grid gap-4 xl:grid-cols-2">
+            <Card className="col-span-1 xl:col-span-2">
+              <CardHeader>
+                <CardTitle>Sales trend</CardTitle>
+              </CardHeader>
+              <CardBody>
+                <SalesTrendChart
+                  points={trend.data?.points ?? []}
+                  onSelectDay={(day) => onOpenSales?.(day, day)}
+                />
+              </CardBody>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Payment Mix Breakdown</CardTitle>
+              </CardHeader>
+              <CardBody>
+                <PaymentMixChart rows={mix.data?.rows ?? []} />
+              </CardBody>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Sales vs Void Audit Activity</CardTitle>
+              </CardHeader>
+              <CardBody>
+                <SalesVsVoidChart
+                  points={trend.data?.points ?? []}
+                  onSelectDay={(day) => onOpenSales?.(day, day)}
+                />
+              </CardBody>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Top Products by Revenue</CardTitle>
+              </CardHeader>
+              <CardBody>
+                <TopProductsChart products={top.data?.products ?? []} />
+              </CardBody>
+            </Card>
+
             <Bars
               title="Current category classification"
               rows={(top.data?.categories ?? []).map((r) => ({
@@ -534,21 +541,10 @@ export function OwnerReportsPage({
             <CardTitle>Accounts Receivable aging</CardTitle>
           </CardHeader>
           <CardBody>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-              {ar.data.buckets.map((b) => (
-                <button
-                  type="button"
-                  onClick={onOpenReceivables}
-                  key={b.key}
-                  className="rounded-lg border border-slate-200 bg-slate-50/70 p-3 text-left transition-colors hover:border-blue-300 hover:bg-blue-50/40"
-                >
-                  <p className="text-xs font-medium text-slate-500">{b.label}</p>
-                  <p className="mt-1 font-bold tabular-nums text-slate-950">
-                    {peso(b.outstandingCents)}
-                  </p>
-                </button>
-              ))}
-            </div>
+            <ArAgingDistributionChart
+              buckets={ar.data.buckets}
+              onSelectBucket={() => onOpenReceivables?.()}
+            />
             <p className="mt-3 text-xs text-slate-500">
               Outstanding {peso(ar.data.outstandingCents)} is stock as of the
               report boundary. Collections{" "}

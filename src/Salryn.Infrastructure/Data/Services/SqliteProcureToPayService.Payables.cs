@@ -1139,6 +1139,15 @@ public sealed partial class SqliteProcureToPayService
         long totalValuationCents = await ScalarLongAsync(connection, "SELECT COALESCE(SUM((MAX(0, stock_on_hand_x1000) * cost_price_cents) / 1000), 0) FROM products WHERE is_active = 1 AND track_stock = 1;", cancellationToken);
         long totalPaymentsCents = await ScalarLongAsync(connection, "SELECT COALESCE(SUM(amount_cents), 0) FROM supplier_payments;", cancellationToken);
 
+        int missingCostProductCount = await ScalarIntAsync(connection, """
+            SELECT COUNT(*) FROM products
+            WHERE is_active = 1
+              AND track_stock = 1
+              AND stock_on_hand_x1000 > 0
+              AND (cost_price_cents IS NULL OR cost_price_cents = 0);
+            """, cancellationToken);
+        bool costCoverageIncomplete = missingCostProductCount > 0;
+
         ApAgingSummaryModel aging = agingResult.Value;
         long overdueCents = aging.Days1To30Cents + aging.Days31To60Cents + aging.Days61To90Cents + aging.DaysOver90Cents;
 
@@ -1156,7 +1165,9 @@ public sealed partial class SqliteProcureToPayService
             overdueCents,
             aging.VarianceFlaggedInvoiceCount,
             totalPaymentsCents,
-            aging));
+            aging,
+            costCoverageIncomplete,
+            missingCostProductCount));
     }
 
     private async Task PostSupplierInvoiceInternalAsync(

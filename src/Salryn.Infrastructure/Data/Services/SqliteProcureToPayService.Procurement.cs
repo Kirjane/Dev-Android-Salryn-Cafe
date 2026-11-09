@@ -619,6 +619,169 @@ public sealed partial class SqliteProcureToPayService
             : Result<PurchaseOrderModel>.Fail(Error.NotFound("Lpi.PurchaseOrder.NotFound", "Purchase order was not found."));
     }
 
+    public async Task<Result<PurchaseOrderModel>> ConvertRequisitionToPurchaseOrderAsync(
+        Guid requisitionId,
+        Guid supplierId,
+        IReadOnlyList<Guid>? requisitionLineIds = null,
+        Guid? deliveryLocationId = null,
+        DateOnly? expectedDeliveryDate = null,
+        Guid actorUserId = default,
+        CancellationToken cancellationToken = default)
+    {
+        await using SqliteConnection connection = _connections.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        SqlitePragma.Apply(connection);
+
+        PurchaseRequisitionModel? pr = await LoadPurchaseRequisitionAsync(connection, null, requisitionId, cancellationToken);
+        if (pr is null)
+        {
+            return Result<PurchaseOrderModel>.Fail(Error.NotFound("Lpi.Requisition.NotFound", "Requisition not found."));
+        }
+
+        if (pr.Status is not ("Approved" or "PartiallyConverted"))
+        {
+            return Result<PurchaseOrderModel>.Fail(Error.Conflict("Lpi.Requisition.NotApproved", $"Requisition '{pr.PrNumber}' is not in Approved status (current: {pr.Status})."));
+        }
+
+        HashSet<Guid>? allowedLineIds = requisitionLineIds is not null && requisitionLineIds.Count > 0
+            ? new HashSet<Guid>(requisitionLineIds)
+            : null;
+
+        List<CreatePurchaseOrderLineInput> poLines = new();
+        foreach (var line in pr.Lines)
+        {
+            if (allowedLineIds is not null && !allowedLineIds.Contains(line.Id))
+                continue;
+
+            long remainingToConvertX1000 = Math.Max(0L, line.ApprovedQtyX1000 - line.ConvertedPoQtyX1000);
+            if (remainingToConvertX1000 <= 0)
+                continue;
+
+            poLines.Add(new CreatePurchaseOrderLineInput(
+                RequisitionLineId: line.Id,
+                ProductId: line.ProductId,
+                ItemCode: string.IsNullOrWhiteSpace(line.ItemCode) ? $"PR-{line.LineNumber:D2}" : line.ItemCode,
+                ItemDescription: line.ItemDescription,
+                PurchaseClassification: line.PurchaseClassification,
+                UnitName: line.UnitName,
+                OrderedQtyX1000: remainingToConvertX1000,
+                UnitCostCents: line.EstimatedUnitCostCents,
+                DiscountCents: 0,
+                TaxRateBp: 0,
+                Notes: line.Notes));
+        }
+
+        if (poLines.Count == 0)
+        {
+            return Result<PurchaseOrderModel>.Fail(Error.Validation("Lpi.Requisition.NoLinesToConvert", "No remaining approved requisition lines available to convert."));
+        }
+
+        DateOnly deliveryDate = expectedDeliveryDate ?? pr.DateNeeded;
+        var poRequest = new CreatePurchaseOrderRequest(
+            SupplierId: supplierId,
+            SourceRequisitionId: requisitionId,
+            ExpectedDeliveryDate: deliveryDate,
+            DeliveryLocationId: deliveryLocationId,
+            PaymentTermsDays: null,
+            ShippingCents: 0,
+            TermsAndConditions: null,
+            Notes: $"Converted from PR {pr.PrNumber}",
+            SubmitAndApproveImmediately: true,
+            Lines: poLines,
+            ActorUserId: actorUserId == Guid.Empty ? pr.RequestedByUserId : actorUserId);
+
+        return await CreatePurchaseOrderAsync(poRequest, cancellationToken);
+    }
+
+    private static async Task<SupplierQuotationModel?> LoadQuotationAsync(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        Guid quotationId,
+        CancellationToken cancellationToken)
+    {
+        await using SqliteCommand cmd = connection.CreateCommand();
+        if (transaction is not null) cmd.Transaction = transaction;
+        cmd.CommandText = """
+            SELECT q.id, q.requisition_id, q.requisition_line_id, q.supplier_id, s.name,
+                   q.product_id, q.item_description, q.quoted_unit_cost_cents, q.minimum_order_qty_x1000,
+                   q.lead_time_days, q.payment_terms_days, q.validity_date, q.is_selected,
+                   q.selection_reason, q.recorded_by_user_id, q.created_at
+            FROM supplier_quotations q
+            JOIN suppliers s ON s.id = q.supplier_id
+            WHERE q.id = $id;
+            """;
+        cmd.Parameters.AddWithValue("$id", quotationId.ToString("D"));
+        await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        if (await reader.ReadAsync(cancellationToken))
+        {
+            return new SupplierQuotationModel(
+                Guid.Parse(reader.GetString(0)),
+                reader.IsDBNull(1) ? null : Guid.Parse(reader.GetString(1)),
+                reader.IsDBNull(2) ? null : Guid.Parse(reader.GetString(2)),
+                Guid.Parse(reader.GetString(3)),
+                reader.GetString(4),
+                reader.IsDBNull(5) ? null : Guid.Parse(reader.GetString(5)),
+                reader.GetString(6),
+                reader.GetInt64(7),
+                reader.GetInt64(8),
+                reader.GetInt32(9),
+                reader.GetInt32(10),
+                reader.IsDBNull(11) ? null : DateOnly.Parse(reader.GetString(11)),
+                reader.GetInt64(12) == 1,
+                reader.IsDBNull(13) ? null : reader.GetString(13),
+                Guid.Parse(reader.GetString(14)),
+                DateTimeOffset.Parse(reader.GetString(15)));
+        }
+        return null;
+    }
+
+    public async Task<Result<SupplierQuotationModel>> SelectWinningQuotationAsync(
+        Guid quotationId,
+        string? reason = null,
+        Guid actorUserId = default,
+        CancellationToken cancellationToken = default)
+    {
+        await using SqliteConnection connection = _connections.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        SqlitePragma.Apply(connection);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+
+        SupplierQuotationModel? quote = await LoadQuotationAsync(connection, transaction, quotationId, cancellationToken);
+        if (quote is null)
+        {
+            return Result<SupplierQuotationModel>.Fail(Error.NotFound("Lpi.Quotation.NotFound", "Quotation not found."));
+        }
+
+        if (quote.RequisitionLineId.HasValue)
+        {
+            await using SqliteCommand unselectCmd = connection.CreateCommand();
+            unselectCmd.Transaction = transaction;
+            unselectCmd.CommandText = """
+                UPDATE supplier_quotations
+                SET is_selected = 0, selection_reason = NULL
+                WHERE requisition_line_id = $reqLineId;
+                """;
+            unselectCmd.Parameters.AddWithValue("$reqLineId", quote.RequisitionLineId.Value.ToString("D"));
+            await unselectCmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using SqliteCommand selectCmd = connection.CreateCommand();
+        selectCmd.Transaction = transaction;
+        selectCmd.CommandText = """
+            UPDATE supplier_quotations
+            SET is_selected = 1, selection_reason = $reason
+            WHERE id = $id;
+            """;
+        selectCmd.Parameters.AddWithValue("$id", quotationId.ToString("D"));
+        selectCmd.Parameters.AddWithValue("$reason", (object?)Clean(reason) ?? "Selected winning quotation");
+        await selectCmd.ExecuteNonQueryAsync(cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        SupplierQuotationModel? updated = await LoadQuotationAsync(connection, null, quotationId, cancellationToken);
+        return Result<SupplierQuotationModel>.Success(updated!);
+    }
+
     public async Task<Result<PurchaseOrderModel>> CreatePurchaseOrderAsync(
         CreatePurchaseOrderRequest request,
         CancellationToken cancellationToken = default)

@@ -161,16 +161,16 @@ internal static class LocalProcureToPayEndpoints
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementRequest) is IResult denied)
                 return denied;
             LocalApiSession session = RequiredSession(context, sessions);
-            DateOnly needed = request.DateNeeded ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7));
+            DateOnly needed = request.ResolvedDateNeeded ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7));
             return ToResult(
                 await service.CreatePurchaseRequisitionAsync(new CreatePurchaseRequisitionRequest(
-                    request.DepartmentName,
+                    request.ResolvedDepartment,
                     needed,
                     request.Priority ?? "Normal",
-                    request.Purpose,
+                    request.Purpose ?? "Requisition",
                     request.Notes,
                     request.SubmitImmediately ?? true,
-                    request.Lines,
+                    request.ResolvedLines,
                     session.UserId), ct),
                 StatusCodes.Status201Created);
         });
@@ -205,6 +205,84 @@ internal static class LocalProcureToPayEndpoints
                 request.Reason,
                 request.LineDecisions,
                 session.UserId), ct));
+        });
+
+        app.MapPost("/api/lpi/requisitions/{id:guid}/approve", async (
+            Guid id,
+            NotesOnlyApiRequest? request,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementApproveRequisition) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            return ToResult(await service.ReviewPurchaseRequisitionAsync(new ReviewPurchaseRequisitionRequest(
+                id,
+                "Approved",
+                request?.Notes ?? "Approved via web",
+                null,
+                session.UserId), ct));
+        });
+
+        app.MapPost("/api/lpi/requisitions/{id:guid}/reject", async (
+            Guid id,
+            ReasonOnlyApiRequest? request,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementApproveRequisition) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            return ToResult(await service.ReviewPurchaseRequisitionAsync(new ReviewPurchaseRequisitionRequest(
+                id,
+                "Rejected",
+                request?.Reason ?? "Rejected via web",
+                null,
+                session.UserId), ct));
+        });
+
+        app.MapPost("/api/lpi/requisitions/{id:guid}/revise", async (
+            Guid id,
+            RevisionOnlyApiRequest? request,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementApproveRequisition) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            return ToResult(await service.ReviewPurchaseRequisitionAsync(new ReviewPurchaseRequisitionRequest(
+                id,
+                "NeedsRevision",
+                request?.RevisionNotes ?? request?.Reason ?? "Needs revision via web",
+                null,
+                session.UserId), ct));
+        });
+
+        app.MapPost("/api/lpi/requisitions/{id:guid}/convert-to-po", async (
+            Guid id,
+            ConvertToPoApiRequest request,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementManagePurchaseOrder) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            return ToResult(await service.ConvertRequisitionToPurchaseOrderAsync(
+                id,
+                request.SupplierId,
+                request.RequisitionLineIds,
+                request.DeliveryLocationId,
+                request.ExpectedDeliveryDate,
+                session.UserId,
+                ct), StatusCodes.Status201Created);
         });
 
         app.MapGet("/api/lpi/quotations", async (
@@ -248,6 +326,24 @@ internal static class LocalProcureToPayEndpoints
                 StatusCodes.Status201Created);
         });
 
+        app.MapPost("/api/lpi/quotations/{id:guid}/select-winner", async (
+            Guid id,
+            SelectWinnerApiRequest? request,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementManagePurchaseOrder) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            return ToResult(await service.SelectWinningQuotationAsync(
+                id,
+                request?.Justification ?? request?.Reason,
+                session.UserId,
+                ct));
+        });
+
         app.MapGet("/api/lpi/purchase-orders", async (
             string? status,
             Guid? supplierId,
@@ -287,7 +383,7 @@ internal static class LocalProcureToPayEndpoints
             return ToResult(
                 await service.CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest(
                     request.SupplierId,
-                    request.SourceRequisitionId,
+                    request.ResolvedRequisitionId,
                     expDate,
                     request.DeliveryLocationId,
                     request.PaymentTermsDays,
@@ -295,7 +391,7 @@ internal static class LocalProcureToPayEndpoints
                     request.TermsAndConditions,
                     request.Notes,
                     request.SubmitAndApproveImmediately ?? false,
-                    request.Lines,
+                    request.ResolvedLines,
                     session.UserId), ct),
                 StatusCodes.Status201Created);
         });
@@ -319,6 +415,59 @@ internal static class LocalProcureToPayEndpoints
                 id,
                 request.Action,
                 request.Reason,
+                session.UserId), ct));
+        });
+
+        app.MapPost("/api/lpi/purchase-orders/{id:guid}/approve", async (
+            Guid id,
+            ReasonOnlyApiRequest? request,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementApprovePurchaseOrder) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            return ToResult(await service.TransitionPurchaseOrderStatusAsync(new PurchaseOrderStatusActionRequest(
+                id,
+                "Approve",
+                request?.Reason ?? request?.Notes,
+                session.UserId), ct));
+        });
+
+        app.MapPost("/api/lpi/purchase-orders/{id:guid}/mark-sent", async (
+            Guid id,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementManagePurchaseOrder) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            return ToResult(await service.TransitionPurchaseOrderStatusAsync(new PurchaseOrderStatusActionRequest(
+                id,
+                "Send",
+                null,
+                session.UserId), ct));
+        });
+
+        app.MapPost("/api/lpi/purchase-orders/{id:guid}/cancel", async (
+            Guid id,
+            ReasonOnlyApiRequest? request,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementApprovePurchaseOrder) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            return ToResult(await service.TransitionPurchaseOrderStatusAsync(new PurchaseOrderStatusActionRequest(
+                id,
+                "Cancel",
+                request?.Reason,
                 session.UserId), ct));
         });
 
@@ -411,6 +560,44 @@ internal static class LocalProcureToPayEndpoints
                 session.UserId), ct));
         });
 
+        app.MapGet("/api/lpi/stock-cards", async (
+            string? search,
+            Guid? locationId,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+                return denied;
+            return ToResult(await service.GetProductStockCardsAsync(search, locationId, ct));
+        });
+
+        app.MapGet("/api/lpi/inventory/stock-cards", async (
+            string? search,
+            Guid? locationId,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+                return denied;
+            return ToResult(await service.GetProductStockCardsAsync(search, locationId, ct));
+        });
+
+        app.MapGet("/api/lpi/stock-cards/{productId:guid}", async (
+            Guid productId,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+                return denied;
+            return ToResult(await service.GetProductStockCardAsync(productId, ct));
+        });
+
         app.MapGet("/api/lpi/inventory/stock-card/{productId:guid}", async (
             Guid productId,
             HttpContext context,
@@ -461,8 +648,30 @@ internal static class LocalProcureToPayEndpoints
                 await service.RecordStockCountAdjustmentAsync(new RecordStockCountAdjustmentRequest(
                     request.ProductId,
                     request.LocationId,
-                    request.ActualCountedQtyX1000,
-                    request.ReasonCode,
+                    request.ResolvedActualQty,
+                    request.ReasonCode ?? "CycleCount",
+                    request.Notes,
+                    session.UserId,
+                    session.UserId), ct),
+                StatusCodes.Status201Created);
+        });
+
+        app.MapPost("/api/lpi/inventory-adjustments", async (
+            RecordStockAdjustmentApiRequest request,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.InventoryAdjust) is IResult denied)
+                return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
+            return ToResult(
+                await service.RecordStockCountAdjustmentAsync(new RecordStockCountAdjustmentRequest(
+                    request.ProductId,
+                    request.LocationId,
+                    request.ResolvedActualQty,
+                    request.ReasonCode ?? "CycleCount",
                     request.Notes,
                     session.UserId,
                     session.UserId), ct),
@@ -542,7 +751,7 @@ internal static class LocalProcureToPayEndpoints
             return ToResult(
                 await service.CreateSupplierInvoiceAsync(new CreateSupplierInvoiceRequest(
                     request.SupplierId,
-                    request.SupplierInvoiceNo,
+                    request.ResolvedInvoiceNo,
                     request.PurchaseOrderId,
                     request.ReceivingReportId,
                     invDate,
@@ -550,7 +759,7 @@ internal static class LocalProcureToPayEndpoints
                     request.DiscountCents ?? 0L,
                     request.WithholdingTaxCents ?? 0L,
                     request.PostToApIfMatched ?? true,
-                    request.Lines,
+                    request.ResolvedLines,
                     session.UserId), ct),
                 StatusCodes.Status201Created);
         });
@@ -611,12 +820,12 @@ internal static class LocalProcureToPayEndpoints
             LocalApiSession session = RequiredSession(context, sessions);
             return ToResult(
                 await service.RecordSupplierPaymentAsync(new RecordSupplierPaymentRequest(
-                    request.SupplierInvoiceId,
+                    request.ResolvedInvoiceId,
                     request.PaymentDate,
                     request.AmountCents,
                     request.PaymentMethod ?? "BankTransfer",
                     request.DisbursementSource ?? "HeadOfficeBank",
-                    request.ReferenceNo,
+                    request.ResolvedReferenceNo,
                     request.CheckNo,
                     request.BankName,
                     request.Remarks,
@@ -656,6 +865,18 @@ internal static class LocalProcureToPayEndpoints
         });
 
         app.MapGet("/api/lpi/payables/aging", async (
+            DateOnly? asOfDate,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.PayablesView) is IResult denied)
+                return denied;
+            return ToResult(await service.GetApAgingSummaryAsync(asOfDate, ct));
+        });
+
+        app.MapGet("/api/lpi/ap-aging", async (
             DateOnly? asOfDate,
             HttpContext context,
             LocalApiSessionService sessions,
@@ -714,14 +935,63 @@ internal static class LocalProcureToPayEndpoints
         string? Notes,
         bool? IsActive);
 
+    internal sealed record NotesOnlyApiRequest(string? Notes);
+    internal sealed record ReasonOnlyApiRequest(string? Reason, string? Notes);
+    internal sealed record RevisionOnlyApiRequest(string? RevisionNotes, string? Reason);
+    internal sealed record SelectWinnerApiRequest(string? Justification, string? Reason);
+    internal sealed record ConvertToPoApiRequest(
+        Guid SupplierId,
+        DateOnly? ExpectedDeliveryDate,
+        Guid? DeliveryLocationId,
+        IReadOnlyList<Guid>? RequisitionLineIds);
+
+    internal sealed record CreateRequisitionItemInput(
+        Guid? ProductId,
+        string? ItemCode,
+        string? ItemDescription,
+        string? CategoryName,
+        string? PurchaseClassification,
+        string? UnitName,
+        string? UomId,
+        long? RequestedQtyX1000,
+        long? RequestedQuantityX1000,
+        long? EstimatedUnitCostCents,
+        long? EstimatedCostCents,
+        Guid? PreferredSupplierId,
+        string? Specifications,
+        string? Notes)
+    {
+        public CreatePurchaseRequisitionLineInput ToLineInput() => new(
+            ProductId: ProductId,
+            ItemCode: ItemCode,
+            ItemDescription: ItemDescription ?? "Requested Item",
+            CategoryName: CategoryName,
+            PurchaseClassification: PurchaseClassification ?? "Merchandise",
+            UnitName: UnitName ?? "pc",
+            RequestedQtyX1000: RequestedQtyX1000 ?? RequestedQuantityX1000 ?? 1000L,
+            EstimatedUnitCostCents: EstimatedUnitCostCents ?? EstimatedCostCents ?? 0L,
+            PreferredSupplierId: PreferredSupplierId,
+            Specifications: Specifications,
+            Notes: Notes);
+    }
+
     internal sealed record CreateRequisitionApiRequest(
-        string DepartmentName,
+        string? DepartmentName,
+        string? Department,
         DateOnly? DateNeeded,
+        DateOnly? RequiredDate,
         string? Priority,
-        string Purpose,
+        string? Purpose,
         string? Notes,
         bool? SubmitImmediately,
-        IReadOnlyList<CreatePurchaseRequisitionLineInput> Lines);
+        IReadOnlyList<CreatePurchaseRequisitionLineInput>? Lines,
+        IReadOnlyList<CreateRequisitionItemInput>? Items)
+    {
+        public string ResolvedDepartment => DepartmentName ?? Department ?? "General";
+        public DateOnly? ResolvedDateNeeded => DateNeeded ?? RequiredDate;
+        public IReadOnlyList<CreatePurchaseRequisitionLineInput> ResolvedLines =>
+            Lines ?? Items?.Select(i => i.ToLineInput()).ToList() ?? (IReadOnlyList<CreatePurchaseRequisitionLineInput>)Array.Empty<CreatePurchaseRequisitionLineInput>();
+    }
 
     internal sealed record ReviewRequisitionApiRequest(
         string Decision,
@@ -745,6 +1015,7 @@ internal static class LocalProcureToPayEndpoints
     internal sealed record CreatePurchaseOrderApiRequest(
         Guid SupplierId,
         Guid? SourceRequisitionId,
+        Guid? RequisitionId,
         DateOnly? ExpectedDeliveryDate,
         Guid? DeliveryLocationId,
         int? PaymentTermsDays,
@@ -752,7 +1023,13 @@ internal static class LocalProcureToPayEndpoints
         string? TermsAndConditions,
         string? Notes,
         bool? SubmitAndApproveImmediately,
-        IReadOnlyList<CreatePurchaseOrderLineInput> Lines);
+        IReadOnlyList<CreatePurchaseOrderLineInput>? Lines,
+        IReadOnlyList<CreatePurchaseOrderLineInput>? Items)
+    {
+        public Guid? ResolvedRequisitionId => SourceRequisitionId ?? RequisitionId;
+        public IReadOnlyList<CreatePurchaseOrderLineInput> ResolvedLines =>
+            Lines ?? Items ?? (IReadOnlyList<CreatePurchaseOrderLineInput>)Array.Empty<CreatePurchaseOrderLineInput>();
+    }
 
     internal sealed record PurchaseOrderStatusApiRequest(
         string Action,
@@ -780,9 +1057,13 @@ internal static class LocalProcureToPayEndpoints
     internal sealed record RecordStockAdjustmentApiRequest(
         Guid ProductId,
         Guid? LocationId,
-        long ActualCountedQtyX1000,
-        string ReasonCode,
-        string? Notes);
+        long? ActualCountedQtyX1000,
+        long? ActualQuantityX1000,
+        string? ReasonCode,
+        string? Notes)
+    {
+        public long ResolvedActualQty => ActualCountedQtyX1000 ?? ActualQuantityX1000 ?? 0L;
+    }
 
     internal sealed record CreateSupplierReturnApiRequest(
         Guid ReceivingReportId,
@@ -792,7 +1073,8 @@ internal static class LocalProcureToPayEndpoints
 
     internal sealed record CreateSupplierInvoiceApiRequest(
         Guid SupplierId,
-        string SupplierInvoiceNo,
+        string? SupplierInvoiceNo,
+        string? InvoiceNumber,
         Guid? PurchaseOrderId,
         Guid? ReceivingReportId,
         DateOnly? InvoiceDate,
@@ -800,23 +1082,35 @@ internal static class LocalProcureToPayEndpoints
         long? DiscountCents,
         long? WithholdingTaxCents,
         bool? PostToApIfMatched,
-        IReadOnlyList<CreateSupplierInvoiceLineInput> Lines);
+        IReadOnlyList<CreateSupplierInvoiceLineInput>? Lines,
+        IReadOnlyList<CreateSupplierInvoiceLineInput>? Items)
+    {
+        public string ResolvedInvoiceNo => SupplierInvoiceNo ?? InvoiceNumber ?? $"INV-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+        public IReadOnlyList<CreateSupplierInvoiceLineInput> ResolvedLines =>
+            Lines ?? Items ?? (IReadOnlyList<CreateSupplierInvoiceLineInput>)Array.Empty<CreateSupplierInvoiceLineInput>();
+    }
 
     internal sealed record ApproveVarianceApiRequest(
         string ApprovalReason,
         bool? PostToApImmediately);
 
     internal sealed record RecordSupplierPaymentApiRequest(
-        Guid SupplierInvoiceId,
+        Guid? SupplierInvoiceId,
+        Guid? InvoiceId,
         DateOnly? PaymentDate,
         long AmountCents,
         string? PaymentMethod,
         string? DisbursementSource,
-        string ReferenceNo,
+        string? ReferenceNo,
+        string? ReferenceNumber,
         string? CheckNo,
         string? BankName,
         string? Remarks,
-        string? ClientRequestId);
+        string? ClientRequestId)
+    {
+        public Guid ResolvedInvoiceId => SupplierInvoiceId ?? InvoiceId ?? Guid.Empty;
+        public string ResolvedReferenceNo => ReferenceNo ?? ReferenceNumber ?? $"PMT-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+    }
 
     internal sealed record ApproveSupplierPaymentApiRequest(
         string? Remarks);

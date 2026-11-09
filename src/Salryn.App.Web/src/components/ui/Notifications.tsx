@@ -37,7 +37,7 @@ type NotificationContextValue = {
 const NotificationContext = createContext<NotificationContextValue | null>(null);
 const maxVisibleNotifications = 4;
 const durationByTone: Record<NotificationTone, number> = {
-  success: 4000,
+  success: 7000,
   info: 4500,
   warning: 7000,
   error: 9000,

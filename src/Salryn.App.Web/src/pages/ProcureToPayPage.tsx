@@ -313,10 +313,18 @@ export function ProcureToPayPage() {
             />
             <MetricCard
               title="Total Stock Valuation"
-              value={money(overview.data?.totalInventoryValuationCents ?? 0)}
-              tone="success"
+              value={overview.data?.costCoverageIncomplete ? "Coverage Incomplete" : money(overview.data?.totalInventoryValuationCents ?? 0)}
+              tone={overview.data?.costCoverageIncomplete ? "warning" : "success"}
             />
           </div>
+
+          {overview.data?.costCoverageIncomplete && (
+            <Alert tone="warning" title="Inventory Cost Coverage Incomplete">
+              Valuation accounts only for inventory with established purchase costs.{" "}
+              {overview.data.missingCostProductCount ?? 0} active product(s) hold positive stock without recorded unit costs.
+              Salryn refuses to fabricate estimated costs to avoid corrupting fiscal records.
+            </Alert>
+          )}
 
           {/* Aging Schedule Table */}
           <Card>

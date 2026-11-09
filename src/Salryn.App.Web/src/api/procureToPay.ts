@@ -303,6 +303,8 @@ export interface LpiDashboardOverview {
   totalAccountsPayableCents: number;
   overduePayablesCents: number;
   totalInventoryValuationCents: number;
+  costCoverageIncomplete?: boolean;
+  missingCostProductCount?: number;
   quarantineStockQuantityX1000: number;
   recentOrders: PurchaseOrder[];
   agingSummary: ApAgingSummary[];

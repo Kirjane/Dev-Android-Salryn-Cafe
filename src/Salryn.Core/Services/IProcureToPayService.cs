@@ -113,6 +113,26 @@ public interface IProcureToPayService
         CreateSupplierReturnRequest request,
         CancellationToken cancellationToken = default);
 
+    Task<Result<IReadOnlyList<ProductStockCardModel>>> GetProductStockCardsAsync(
+        string? search = null,
+        Guid? locationId = null,
+        CancellationToken cancellationToken = default);
+
+    Task<Result<PurchaseOrderModel>> ConvertRequisitionToPurchaseOrderAsync(
+        Guid requisitionId,
+        Guid supplierId,
+        IReadOnlyList<Guid>? requisitionLineIds = null,
+        Guid? deliveryLocationId = null,
+        DateOnly? expectedDeliveryDate = null,
+        Guid actorUserId = default,
+        CancellationToken cancellationToken = default);
+
+    Task<Result<SupplierQuotationModel>> SelectWinningQuotationAsync(
+        Guid quotationId,
+        string? reason = null,
+        Guid actorUserId = default,
+        CancellationToken cancellationToken = default);
+
     Task<Result<ProductStockCardModel>> GetProductStockCardAsync(
         Guid productId,
         CancellationToken cancellationToken = default);

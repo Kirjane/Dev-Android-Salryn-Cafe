@@ -744,4 +744,6 @@ public sealed record LpiDashboardOverviewModel(
     long OverduePayablesCents,
     int VarianceFlaggedInvoiceCount,
     long TotalPaymentsDisbursedCents,
-    ApAgingSummaryModel ApAging);
+    ApAgingSummaryModel ApAging,
+    bool CostCoverageIncomplete = false,
+    int MissingCostProductCount = 0);
