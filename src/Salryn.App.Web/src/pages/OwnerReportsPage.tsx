@@ -24,6 +24,8 @@ import { formatMoney } from "../utils/format";
 
 const peso = (cents: number | null | undefined) =>
   cents == null ? "Unavailable" : formatMoney(cents / 100);
+const percent = (value: number | null) =>
+  value == null ? "Not available" : `${value.toFixed(1)}%`;
 const iso = (date: Date) =>
   date.toLocaleDateString("en-CA", { timeZone: "Asia/Manila" });
 const shift = (days: number) => {
@@ -99,6 +101,32 @@ function Metric({
   );
 }
 
+function SummaryStat({
+  label,
+  value,
+  note,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  note: string;
+  tone?: "neutral" | "positive" | "warning";
+}) {
+  const toneClass =
+    tone === "positive"
+      ? "border-emerald-200 bg-emerald-50/60"
+      : tone === "warning"
+        ? "border-amber-200 bg-amber-50/70"
+        : "border-slate-200 bg-slate-50/70";
+  return (
+    <div className={`rounded-xl border p-4 ${toneClass}`}>
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-1 text-xl font-bold tabular-nums text-slate-950">{value}</p>
+      <p className="mt-1 text-xs leading-5 text-slate-600">{note}</p>
+    </div>
+  );
+}
+
 function Bars({
   title,
   rows,
@@ -143,7 +171,7 @@ function Bars({
                   <div className="mt-1 h-3 rounded bg-slate-100">
                     <div
                       className="h-3 rounded bg-blue-600"
-                      style={{ width: `${Math.max(2, (row.value / max) * 100)}%` }}
+                      style={{ width: row.value === 0 ? "0%" : `${Math.max(2, (row.value / max) * 100)}%` }}
                     />
                   </div>
                 </button>
@@ -241,6 +269,18 @@ export function OwnerReportsPage({
       })),
     [trend.data],
   );
+  const averageTicketCents = overview.data?.current.completedSaleCount
+    ? Math.round(overview.data.current.salesTotalCents / overview.data.current.completedSaleCount)
+    : null;
+  const cashRealizationPercent = overview.data?.current.salesTotalCents
+    ? (overview.data.current.cashOnSalesCents / overview.data.current.salesTotalCents) * 100
+    : null;
+  const costCoverageTotal = overview.data
+    ? overview.data.margin.costedItemCount + overview.data.margin.missingCostItemCount
+    : 0;
+  const costCoveragePercent = costCoverageTotal > 0 && overview.data
+    ? (overview.data.margin.costedItemCount / costCoverageTotal) * 100
+    : null;
 
   return (
     <div className="space-y-4">
@@ -341,6 +381,42 @@ export function OwnerReportsPage({
       {firstError ? <ErrorState message={firstError.message} /> : null}
       {overview.data ? (
         <>
+          <Card>
+            <CardHeader>
+              <CardTitle>Financial snapshot</CardTitle>
+            </CardHeader>
+            <CardBody>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                <SummaryStat
+                  label="Completed sales"
+                  value={overview.data.current.completedSaleCount.toLocaleString()}
+                  note="Committed sales inside the selected store-date period."
+                />
+                <SummaryStat
+                  label="Average ticket"
+                  value={peso(averageTicketCents)}
+                  note="Completed sales total divided by completed sale count."
+                />
+                <SummaryStat
+                  label="Cash realization"
+                  value={percent(cashRealizationPercent)}
+                  note="Cash recorded on sales ÷ completed sales value; excludes later AR collections."
+                  tone="positive"
+                />
+                <SummaryStat
+                  label="AR outstanding"
+                  value={ar.data ? peso(ar.data.outstandingCents) : "Entitlement required"}
+                  note={ar.data ? "Open receivable stock at the report boundary." : "Requires Receivables.View and signed U1 entitlement."}
+                  tone={ar.data && ar.data.outstandingCents > 0 ? "warning" : "neutral"}
+                />
+                <SummaryStat
+                  label="AR collections"
+                  value={ar.data ? peso(ar.data.collectionsInPeriodCents) : "Entitlement required"}
+                  note="Collections received during the selected period; not sales cash."
+                />
+              </div>
+            </CardBody>
+          </Card>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Metric
               label="Sales"
@@ -365,9 +441,8 @@ export function OwnerReportsPage({
           </div>
           {!overview.data.margin.isAvailable ? (
             <Alert tone="warning" title="Gross margin unavailable">
-              {overview.data.margin.basis} Missing historical cost on{" "}
-              {overview.data.margin.missingCostItemCount} item row(s); current
-              catalog cost was not substituted.
+              {overview.data.margin.basis} Cost coverage is {percent(costCoveragePercent)} ({overview.data.margin.costedItemCount} of {costCoverageTotal} item rows). Missing historical cost on{" "}
+              {overview.data.margin.missingCostItemCount} item row(s). Salryn will not substitute today&apos;s catalog cost because that would rewrite the economics of completed sales.
             </Alert>
           ) : (
             <Alert tone="info">

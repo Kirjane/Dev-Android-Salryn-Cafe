@@ -285,6 +285,12 @@ public static class PosR1OwnerReportsChecks
         Require(!page.Contains("Dashboard remains the owner home summary", StringComparison.Ordinal), "Reports must not show internal product-boundary copy.");
         Require(!page.Contains("Not an official or regulatory filing", StringComparison.Ordinal), "Reports must not show regulatory disclaimer walls.");
         Require(page.Contains("Read-only", StringComparison.Ordinal), "Reports UI must remain visibly read-only.");
+        Require(page.Contains("Financial snapshot", StringComparison.Ordinal), "Reports must expose a concise financial snapshot.");
+        Require(page.Contains("Average ticket", StringComparison.Ordinal), "Reports must expose average completed-sale value.");
+        Require(page.Contains("Cash realization", StringComparison.Ordinal), "Reports must distinguish sales cash realization from later collections.");
+        Require(page.Contains("AR outstanding", StringComparison.Ordinal), "Reports must expose entitled AR stock separately from sales flow.");
+        Require(page.Contains("row.value === 0 ? \"0%\"", StringComparison.Ordinal), "Zero-value bars must not render a misleading positive-width bar.");
+        Require(page.Contains("will not substitute today&apos;s catalog cost", StringComparison.Ordinal), "Missing historical cost must remain fail-closed and operator-readable.");
         Require(!page.Contains("Coming soon", StringComparison.Ordinal), "Developer-only disabled nav copy must not be reintroduced to Detailed Reports.");
         Require(permissions.Contains("\"owner-reports\": [Permissions.ReportsView]", StringComparison.Ordinal), "Detailed reports direct page access must be gated by Reports.View.");
         Require(navigation.Contains("label: \"Reports\"", StringComparison.Ordinal), "Reports must be reachable from store navigation.");
