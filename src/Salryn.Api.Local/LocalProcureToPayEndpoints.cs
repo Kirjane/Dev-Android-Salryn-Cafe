@@ -510,16 +510,16 @@ internal static class LocalProcureToPayEndpoints
                 await service.CreateReceivingReportAsync(new CreateReceivingReportRequest(
                     request.PurchaseOrderId,
                     request.LocationId,
-                    request.DeliveryReceiptNo,
+                    request.ResolvedDeliveryReceiptNo,
                     request.SupplierInvoiceRef,
-                    request.CarrierOrDriver,
+                    request.ResolvedCarrierOrDriver,
                     request.ReceivedDate,
                     request.PostImmediately ?? true,
                     null,
                     null,
                     request.ClientRequestId,
                     request.Notes,
-                    request.Lines,
+                    request.ResolvedLines,
                     session.UserId), ct),
                 StatusCodes.Status201Created);
         });
@@ -777,7 +777,7 @@ internal static class LocalProcureToPayEndpoints
             LocalApiSession session = RequiredSession(context, sessions);
             return ToResult(await service.ApproveInvoiceVarianceAsync(new ApproveInvoiceVarianceRequest(
                 id,
-                request.ApprovalReason,
+                request.ResolvedApprovalReason,
                 request.PostToApImmediately ?? true,
                 session.UserId), ct));
         });
@@ -826,9 +826,9 @@ internal static class LocalProcureToPayEndpoints
                     request.PaymentMethod ?? "BankTransfer",
                     request.DisbursementSource ?? "HeadOfficeBank",
                     request.ResolvedReferenceNo,
-                    request.CheckNo,
-                    request.BankName,
-                    request.Remarks,
+                    request.ResolvedCheckNo,
+                    request.ResolvedBankName,
+                    request.ResolvedRemarks,
                     request.ClientRequestId,
                     session.UserId,
                     null), ct),
@@ -1035,19 +1035,65 @@ internal static class LocalProcureToPayEndpoints
         string Action,
         string? Reason);
 
+    internal sealed record CreateReceivingReportLineApiInput(
+        Guid? PurchaseOrderLineId,
+        Guid? PoItemId,
+        long? ActualDeliveredQtyX1000,
+        long? DeliveredQuantityX1000,
+        long? AcceptedQtyX1000,
+        long? AcceptedQuantityX1000,
+        long? RejectedQtyX1000,
+        long? RejectedQuantityX1000,
+        string? RejectionReason,
+        string? RejectionDisposition,
+        string? LotOrBatchNo,
+        DateOnly? ExpiryDate)
+    {
+        public CreateReceivingReportLineInput ToCoreInput() => new(
+            PurchaseOrderLineId ?? PoItemId ?? Guid.Empty,
+            ActualDeliveredQtyX1000 ?? DeliveredQuantityX1000 ?? 0L,
+            AcceptedQtyX1000 ?? AcceptedQuantityX1000 ?? 0L,
+            RejectedQtyX1000 ?? RejectedQuantityX1000 ?? 0L,
+            RejectionReason,
+            RejectionDisposition,
+            LotOrBatchNo,
+            ExpiryDate);
+    }
+
     internal sealed record CreateReceivingReportApiRequest(
         Guid PurchaseOrderId,
         Guid? LocationId,
-        string DeliveryReceiptNo,
+        string? DeliveryReceiptNo,
+        string? DeliveryReceiptNumber,
         string? SupplierInvoiceRef,
         string? CarrierOrDriver,
+        string? Carrier,
+        string? DriverName,
         DateOnly? ReceivedDate,
         bool? PostImmediately,
         bool? ApproveOverdelivery,
         string? OverdeliveryApprovalReason,
         string? ClientRequestId,
         string? Notes,
-        IReadOnlyList<CreateReceivingReportLineInput> Lines);
+        IReadOnlyList<CreateReceivingReportLineApiInput>? Lines,
+        IReadOnlyList<CreateReceivingReportLineApiInput>? Items)
+    {
+        public string ResolvedDeliveryReceiptNo =>
+            !string.IsNullOrWhiteSpace(DeliveryReceiptNo) ? DeliveryReceiptNo :
+            !string.IsNullOrWhiteSpace(DeliveryReceiptNumber) ? DeliveryReceiptNumber :
+            $"DR-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+
+        public string? ResolvedCarrierOrDriver =>
+            !string.IsNullOrWhiteSpace(CarrierOrDriver) ? CarrierOrDriver :
+            !string.IsNullOrWhiteSpace(Carrier) && !string.IsNullOrWhiteSpace(DriverName) ? $"{Carrier} - {DriverName}" :
+            !string.IsNullOrWhiteSpace(Carrier) ? Carrier :
+            DriverName;
+
+        public IReadOnlyList<CreateReceivingReportLineInput> ResolvedLines =>
+            (Lines ?? Items ?? Array.Empty<CreateReceivingReportLineApiInput>())
+                .Select(l => l.ToCoreInput())
+                .ToList();
+    }
 
     internal sealed record PostReceivingReportApiRequest(
         bool? ApproveOverdelivery,
@@ -1071,6 +1117,30 @@ internal static class LocalProcureToPayEndpoints
         string Reason,
         IReadOnlyList<CreateSupplierReturnLineInput> Lines);
 
+    internal sealed record CreateSupplierInvoiceLineApiInput(
+        Guid? PurchaseOrderLineId,
+        Guid? PoItemId,
+        Guid? ReceivingReportLineId,
+        Guid? RrItemId,
+        Guid? ProductId,
+        string? ItemDescription,
+        string? ProductName,
+        long? InvoicedQtyX1000,
+        long? InvoicedQuantityX1000,
+        long? InvoicedUnitCostCents,
+        long? UnitCostCents,
+        long? TaxCents)
+    {
+        public CreateSupplierInvoiceLineInput ToCoreInput() => new(
+            PurchaseOrderLineId ?? PoItemId,
+            ReceivingReportLineId ?? RrItemId,
+            ProductId,
+            ItemDescription ?? ProductName ?? "Invoice Line",
+            InvoicedQtyX1000 ?? InvoicedQuantityX1000 ?? 0L,
+            InvoicedUnitCostCents ?? UnitCostCents ?? 0L,
+            TaxCents ?? 0L);
+    }
+
     internal sealed record CreateSupplierInvoiceApiRequest(
         Guid SupplierId,
         string? SupplierInvoiceNo,
@@ -1082,17 +1152,28 @@ internal static class LocalProcureToPayEndpoints
         long? DiscountCents,
         long? WithholdingTaxCents,
         bool? PostToApIfMatched,
-        IReadOnlyList<CreateSupplierInvoiceLineInput>? Lines,
-        IReadOnlyList<CreateSupplierInvoiceLineInput>? Items)
+        IReadOnlyList<CreateSupplierInvoiceLineApiInput>? Lines,
+        IReadOnlyList<CreateSupplierInvoiceLineApiInput>? Items)
     {
         public string ResolvedInvoiceNo => SupplierInvoiceNo ?? InvoiceNumber ?? $"INV-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
         public IReadOnlyList<CreateSupplierInvoiceLineInput> ResolvedLines =>
-            Lines ?? Items ?? (IReadOnlyList<CreateSupplierInvoiceLineInput>)Array.Empty<CreateSupplierInvoiceLineInput>();
+            (Lines ?? Items ?? Array.Empty<CreateSupplierInvoiceLineApiInput>())
+                .Select(l => l.ToCoreInput())
+                .ToList();
     }
 
     internal sealed record ApproveVarianceApiRequest(
-        string ApprovalReason,
-        bool? PostToApImmediately);
+        string? ApprovalReason,
+        string? Notes,
+        string? Reason,
+        bool? PostToApImmediately)
+    {
+        public string ResolvedApprovalReason =>
+            !string.IsNullOrWhiteSpace(ApprovalReason) ? ApprovalReason :
+            !string.IsNullOrWhiteSpace(Notes) ? Notes :
+            !string.IsNullOrWhiteSpace(Reason) ? Reason :
+            "Variance approved via web";
+    }
 
     internal sealed record RecordSupplierPaymentApiRequest(
         Guid? SupplierInvoiceId,
@@ -1104,12 +1185,18 @@ internal static class LocalProcureToPayEndpoints
         string? ReferenceNo,
         string? ReferenceNumber,
         string? CheckNo,
+        string? CheckNumber,
         string? BankName,
+        string? BankAccount,
         string? Remarks,
+        string? Notes,
         string? ClientRequestId)
     {
         public Guid ResolvedInvoiceId => SupplierInvoiceId ?? InvoiceId ?? Guid.Empty;
         public string ResolvedReferenceNo => ReferenceNo ?? ReferenceNumber ?? $"PMT-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+        public string? ResolvedCheckNo => CheckNo ?? CheckNumber;
+        public string? ResolvedBankName => BankName ?? BankAccount;
+        public string? ResolvedRemarks => Remarks ?? Notes;
     }
 
     internal sealed record ApproveSupplierPaymentApiRequest(

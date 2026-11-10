@@ -68,6 +68,7 @@ public static class LpiP1IntegrityReproductionChecks
             await TestP1R202ForwardMigrationV28Async(paths);
             await TestP1R301FirstStockInDoublesLocationInventoryAsync(composition, service, paths, receiverId, supervisorId);
             await TestP1R302MigrationV28NoStockDuplicationAsync();
+            await TestW5R2QuotationPreservationAndContractFallbacksAsync(service, paths, requesterId, supervisorId, resaleProdId);
 
             Console.WriteLine("LPI P1 Integrity: All findings (P1-01 through P1-06 and P1-R3-01/02) verified with full regression closure PASS.");
         }
@@ -1539,6 +1540,118 @@ public static class LpiP1IntegrityReproductionChecks
                 try { Directory.Delete(testDir, recursive: true); } catch { }
             }
         }
+    }
+
+    /// <summary>
+    /// W5-R2: Winning Quotation Preservation & API Contract Fallbacks.
+    /// Invariants:
+    /// - PR to PO conversion must bind winning supplier quotation unit cost, payment terms, and lead time.
+    /// - API request records must resolve contract aliases for RR, variance approval, and supplier payment.
+    /// </summary>
+    private static async Task TestW5R2QuotationPreservationAndContractFallbacksAsync(
+        SqliteProcureToPayService service,
+        DbPaths paths,
+        Guid requesterId,
+        Guid supervisorId,
+        Guid productId)
+    {
+        // 1. Seed winning quotation supplier
+        LpiSupplier quoteSupplier = RequireSuccess(
+            await service.CreateSupplierAsync(new CreateLpiSupplierRequest(
+                "W5-SUP-QUOTE", "Competitive Quotation Supplier Corp", "Alex", "0918000001", "quotes@supplier.ph",
+                "Cebu IT Park", "555-666-777", 45, 7, "Preferred quote test supplier", requesterId)),
+            "W5-R2 seed quote supplier");
+
+        // 2. Create PR with baseline estimated unit cost = 50,000 cents
+        PurchaseRequisitionModel pr = RequireSuccess(
+            await service.CreatePurchaseRequisitionAsync(new CreatePurchaseRequisitionRequest(
+                "Engineering QA",
+                new DateOnly(2026, 12, 1),
+                "Normal",
+                "Quotation preservation regression test PR",
+                "W5 R2 unit cost preservation proof",
+                true,
+                new[]
+                {
+                    new CreatePurchaseRequisitionLineInput(
+                        productId, "W5-RESALE-01", "P1 Commercial Resale Item", "Commercial", "Resale",
+                        "box", 10_000, 50_000, quoteSupplier.Id, "Item quotation test", "Preserve winning price")
+                },
+                requesterId)),
+            "W5-R2 create and submit PR");
+
+        // 3. Supervisor approves PR
+        pr = RequireSuccess(
+            await service.ReviewPurchaseRequisitionAsync(new ReviewPurchaseRequisitionRequest(
+                pr.Id, "Approve", "Approved for quotation comparison", null, supervisorId)),
+            "W5-R2 approve PR");
+
+        // 4. Record winning quotation with lower negotiated unit cost (42,000 cents), 45 payment terms, 7 lead time days
+        SupplierQuotationModel quote = RequireSuccess(
+            await service.RecordSupplierQuotationAsync(new RecordSupplierQuotationRequest(
+                pr.Id,
+                pr.Lines[0].Id,
+                quoteSupplier.Id,
+                productId,
+                "P1 Commercial Resale Item",
+                42_000, // Negotiated unit cost
+                5_000,  // Minimum order quantity
+                7,      // Lead time days
+                45,     // Payment terms days
+                new DateOnly(2027, 1, 31),
+                true,   // Winning quotation!
+                "Winning negotiated quotation at 42,000 cents",
+                requesterId)),
+            "W5-R2 record winning quotation");
+
+        Require(quote.IsSelected, "W5-R2 quotation must be selected as winner.");
+
+        // 5. Convert Requisition to PO using ConvertRequisitionToPurchaseOrderAsync
+        PurchaseOrderModel po = RequireSuccess(
+            await service.ConvertRequisitionToPurchaseOrderAsync(
+                pr.Id,
+                quoteSupplier.Id,
+                requisitionLineIds: null,
+                deliveryLocationId: null,
+                expectedDeliveryDate: null,
+                actorUserId: requesterId),
+            "W5-R2 convert PR to PO");
+
+        // 6. Verify that PO line unit cost matches the winning quotation (42,000 cents), NOT estimated PR cost (50,000 cents)
+        Require(po.Lines.Count == 1, "W5-R2 PO must contain 1 converted line.");
+        PurchaseOrderLineModel poLine = po.Lines[0];
+        Require(poLine.UnitCostCents == 42_000,
+            $"W5-R2 PO line unit cost MUST preserve winning quotation price of 42,000 cents (actual: {poLine.UnitCostCents}).");
+        Require(poLine.LineTotalCents == 420_000,
+            $"W5-R2 PO line total must be 420,000 cents (actual: {poLine.LineTotalCents}).");
+        Require(po.TotalAmountCents == 420_000,
+            $"W5-R2 PO total amount must reflect winning quotation total (actual: {po.TotalAmountCents}).");
+        Require(po.PaymentTermsDays == 45,
+            $"W5-R2 PO payment terms must reflect winning quotation terms of 45 days (actual: {po.PaymentTermsDays}).");
+
+        DateOnly expectedDelivery = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7));
+        Require(po.ExpectedDeliveryDate == expectedDelivery,
+            $"W5-R2 PO expected delivery date must calculate based on lead time of 7 days (actual: {po.ExpectedDeliveryDate}, expected: {expectedDelivery}).");
+
+        // 7. Verify API request contract aliases
+        LocalProcureToPayEndpoints.CreateReceivingReportLineApiInput rrLineInput = new(
+            poLine.Id, null, 10_000, null, 10_000, null, 0, null, null, null, null, null);
+        Require(rrLineInput.PurchaseOrderLineId == poLine.Id && rrLineInput.ActualDeliveredQtyX1000 == 10_000,
+            "W5-R2 rrLineInput must bind aliases correctly.");
+
+        LocalProcureToPayEndpoints.CreateReceivingReportApiRequest rrReq = new(
+            po.Id, Guid.NewGuid(), "DR-LEGACY-01", null, "SI-LEGACY-01", null, "Carrier-1", null,
+            new DateOnly(2026, 12, 5), true, null, null, "req-1", "notes", new[] { rrLineInput }, null);
+        Require(rrReq.ResolvedDeliveryReceiptNo == "DR-LEGACY-01" && rrReq.ResolvedCarrierOrDriver == "Carrier-1",
+            "W5-R2 rrReq must resolve legacy delivery receipt and carrier aliases.");
+
+        LocalProcureToPayEndpoints.ApproveVarianceApiRequest varianceReq = new(ApprovalReason: null, Notes: null, Reason: "Legacy reason notes", PostToApImmediately: false);
+        Require(varianceReq.ResolvedApprovalReason == "Legacy reason notes",
+            "W5-R2 varianceReq must resolve Reason alias.");
+
+        LocalProcureToPayEndpoints.RecordSupplierPaymentApiRequest payReq = new(SupplierInvoiceId: null, InvoiceId: Guid.NewGuid(), PaymentDate: new DateOnly(2026, 12, 10), AmountCents: 10_000, PaymentMethod: "Check", DisbursementSource: null, ReferenceNo: null, ReferenceNumber: "REF-123", CheckNo: null, CheckNumber: "CHK-123", BankName: null, BankAccount: "BDO", Remarks: null, Notes: "Payment note", ClientRequestId: "idem-1");
+        Require(payReq.ResolvedBankName == "BDO" && payReq.ResolvedCheckNo == "CHK-123" && payReq.ResolvedRemarks == "Payment note",
+            "W5-R2 payReq must resolve bank, check, and remarks aliases.");
     }
 
     #region Helpers

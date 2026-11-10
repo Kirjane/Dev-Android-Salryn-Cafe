@@ -647,6 +647,42 @@ public sealed partial class SqliteProcureToPayService
             ? new HashSet<Guid>(requisitionLineIds)
             : null;
 
+        Dictionary<Guid, (long UnitCost, int Terms, int LeadTime)> winningQuotesByLine = new();
+        Dictionary<Guid, (long UnitCost, int Terms, int LeadTime)> winningQuotesByProduct = new();
+        int? winningPaymentTermsDays = null;
+        int? winningLeadTimeDays = null;
+        await using (SqliteCommand quoteCmd = connection.CreateCommand())
+        {
+            quoteCmd.CommandText = """
+                SELECT q.requisition_line_id, q.product_id, q.quoted_unit_cost_cents, q.payment_terms_days, q.lead_time_days
+                FROM supplier_quotations q
+                WHERE q.requisition_id = $reqId
+                  AND q.supplier_id = $supId
+                  AND q.is_selected = 1;
+                """;
+            quoteCmd.Parameters.AddWithValue("$reqId", requisitionId.ToString("D"));
+            quoteCmd.Parameters.AddWithValue("$supId", supplierId.ToString("D"));
+            await using SqliteDataReader qReader = await quoteCmd.ExecuteReaderAsync(cancellationToken);
+            while (await qReader.ReadAsync(cancellationToken))
+            {
+                long unitCost = qReader.GetInt64(2);
+                int terms = qReader.GetInt32(3);
+                int leadTime = qReader.GetInt32(4);
+                if (!qReader.IsDBNull(0))
+                {
+                    Guid lineId = Guid.Parse(qReader.GetString(0));
+                    winningQuotesByLine[lineId] = (unitCost, terms, leadTime);
+                }
+                if (!qReader.IsDBNull(1))
+                {
+                    Guid prodId = Guid.Parse(qReader.GetString(1));
+                    winningQuotesByProduct[prodId] = (unitCost, terms, leadTime);
+                }
+                winningPaymentTermsDays ??= terms > 0 ? terms : null;
+                winningLeadTimeDays ??= leadTime > 0 ? leadTime : null;
+            }
+        }
+
         List<CreatePurchaseOrderLineInput> poLines = new();
         foreach (var line in pr.Lines)
         {
@@ -665,7 +701,9 @@ public sealed partial class SqliteProcureToPayService
                 PurchaseClassification: line.PurchaseClassification,
                 UnitName: line.UnitName,
                 OrderedQtyX1000: remainingToConvertX1000,
-                UnitCostCents: line.EstimatedUnitCostCents,
+                UnitCostCents: winningQuotesByLine.TryGetValue(line.Id, out var winLine)
+                    ? winLine.UnitCost
+                    : (line.ProductId.HasValue && winningQuotesByProduct.TryGetValue(line.ProductId.Value, out var winProd) ? winProd.UnitCost : line.EstimatedUnitCostCents),
                 DiscountCents: 0,
                 TaxRateBp: 0,
                 Notes: line.Notes));
@@ -676,13 +714,14 @@ public sealed partial class SqliteProcureToPayService
             return Result<PurchaseOrderModel>.Fail(Error.Validation("Lpi.Requisition.NoLinesToConvert", "No remaining approved requisition lines available to convert."));
         }
 
-        DateOnly deliveryDate = expectedDeliveryDate ?? pr.DateNeeded;
+        DateOnly deliveryDate = expectedDeliveryDate
+            ?? (winningLeadTimeDays.HasValue ? DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime).AddDays(winningLeadTimeDays.Value) : pr.DateNeeded);
         var poRequest = new CreatePurchaseOrderRequest(
             SupplierId: supplierId,
             SourceRequisitionId: requisitionId,
             ExpectedDeliveryDate: deliveryDate,
             DeliveryLocationId: deliveryLocationId,
-            PaymentTermsDays: null,
+            PaymentTermsDays: winningPaymentTermsDays,
             ShippingCents: 0,
             TermsAndConditions: null,
             Notes: $"Converted from PR {pr.PrNumber}",

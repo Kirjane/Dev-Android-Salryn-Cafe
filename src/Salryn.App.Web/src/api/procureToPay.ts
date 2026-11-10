@@ -440,6 +440,128 @@ function normalizeSupplierReturn(raw: JsonRecord): SupplierReturnSummary {
   };
 }
 
+function normalizeQuotation(raw: JsonRecord): SupplierQuotation {
+  return {
+    id: raw.id,
+    requisitionId: raw.requisitionId ?? "",
+    supplierId: raw.supplierId ?? "",
+    supplierName: raw.supplierName ?? "Supplier",
+    quoteReference: raw.selectionReason ?? raw.quoteReference ?? ("Q-" + (raw.id?.slice(0, 8) ?? "REF")),
+    quoteDate: raw.createdAt ? new Date(raw.createdAt).toISOString().slice(0, 10) : (raw.quoteDate ?? ""),
+    validUntil: raw.validityDate ?? raw.validUntil ?? null,
+    totalQuotedCostCents: raw.totalQuotedCostCents ?? raw.quotedUnitCostCents ?? 0,
+    leadTimeDays: raw.leadTimeDays ?? 0,
+    paymentTermsDays: raw.paymentTermsDays ?? 0,
+    status: raw.isSelected ? "Selected" : (raw.status ?? "Submitted"),
+    isWinner: raw.isSelected ?? raw.isWinner ?? false,
+    selectionJustification: raw.selectionReason ?? raw.selectionJustification ?? null,
+    notes: raw.notes ?? null,
+    createdAt: raw.createdAt ?? "",
+    items: (raw.items ?? []).map((it: JsonRecord) => ({
+      id: it.id,
+      quotationId: raw.id,
+      prItemId: it.requisitionLineId ?? it.prItemId ?? "",
+      productId: it.productId ?? "",
+      productName: it.itemDescription ?? it.productName ?? "Quoted Item",
+      quantityX1000: it.quantityX1000 ?? 1000,
+      quotedUnitCostCents: it.quotedUnitCostCents ?? raw.quotedUnitCostCents ?? 0,
+      quotedTotalCents: it.quotedTotalCents ?? raw.quotedUnitCostCents ?? 0,
+      leadTimeDays: it.leadTimeDays ?? raw.leadTimeDays ?? 0,
+      notes: it.notes ?? null,
+    })),
+  };
+}
+
+function normalizePurchaseOrder(raw: JsonRecord): PurchaseOrder {
+  const lines = raw.lines ?? raw.items ?? [];
+  return {
+    id: raw.id,
+    poNumber: raw.poNumber ?? "",
+    supplierId: raw.supplierId ?? "",
+    supplierName: raw.supplierName ?? "Supplier",
+    supplierCode: raw.supplierCode ?? null,
+    sourceRequisitionId: raw.sourceRequisitionId ?? null,
+    sourcePrNumber: raw.sourcePrNumber ?? null,
+    poDate: raw.orderDate ?? raw.poDate ?? (raw.createdAt ? new Date(raw.createdAt).toISOString().slice(0, 10) : ""),
+    expectedDeliveryDate: raw.expectedDeliveryDate ?? null,
+    deliveryLocationId: raw.deliveryLocationId ?? "",
+    deliveryLocationName: raw.deliveryLocationName ?? "Main Store",
+    paymentTermsDays: raw.paymentTermsDays ?? 0,
+    status: raw.status ?? "Draft",
+    totalCents: raw.totalAmountCents ?? raw.totalCents ?? 0,
+    items: lines.map((line: JsonRecord) => ({
+      id: line.id,
+      poId: raw.id,
+      prItemId: line.requisitionLineId ?? line.prItemId ?? null,
+      productId: line.productId ?? "",
+      productName: line.itemDescription ?? line.productName ?? "Item",
+      productSku: line.itemCode ?? line.productSku ?? null,
+      uomId: line.unitId ?? line.uomId ?? "",
+      uomName: line.unitName ?? line.uomName ?? "pc",
+      orderedQuantityX1000: line.orderedQtyX1000 ?? line.orderedQuantityX1000 ?? 0,
+      receivedQuantityX1000: line.receivedQtyX1000 ?? line.receivedQuantityX1000 ?? 0,
+      unitCostCents: line.unitCostCents ?? 0,
+      totalCostCents: line.lineTotalCents ?? line.totalCostCents ?? 0,
+    })),
+  } as unknown as PurchaseOrder;
+}
+
+function normalizeSupplierInvoice(raw: JsonRecord): SupplierInvoice {
+  const lines = raw.lines ?? raw.items ?? [];
+  return {
+    id: raw.id,
+    apvNumber: raw.apVoucherNumber ?? raw.apvNumber ?? ("APV-" + (raw.id?.slice(0, 8) ?? "0000")),
+    supplierId: raw.supplierId ?? "",
+    supplierName: raw.supplierName ?? "Supplier",
+    invoiceNumber: raw.supplierInvoiceNo ?? raw.invoiceNumber ?? ("INV-" + (raw.id?.slice(0, 8) ?? "0000")),
+    purchaseOrderId: raw.purchaseOrderId ?? null,
+    receivingReportId: raw.receivingReportId ?? null,
+    invoiceDate: raw.invoiceDate ?? "",
+    dueDate: raw.dueDate ?? "",
+    subtotalCents: raw.subtotalCents ?? 0,
+    taxCents: raw.taxCents ?? 0,
+    totalCents: raw.totalInvoiceCents ?? raw.totalCents ?? 0,
+    balanceDueCents: raw.remainingBalanceCents ?? raw.balanceDueCents ?? 0,
+    matchStatus: raw.matchStatus ?? "PendingDocuments",
+    status: raw.status ?? "Draft",
+    notes: raw.notes ?? raw.varianceNotes ?? null,
+    items: lines.map((line: JsonRecord) => ({
+      id: line.id,
+      invoiceId: raw.id,
+      poItemId: line.purchaseOrderLineId ?? line.poItemId ?? null,
+      rrItemId: line.receivingReportLineId ?? line.rrItemId ?? null,
+      productId: line.productId ?? "",
+      productName: line.itemDescription ?? line.productName ?? "Item",
+      invoicedQuantityX1000: line.invoicedQtyX1000 ?? line.invoicedQuantityX1000 ?? 0,
+      unitCostCents: line.invoicedUnitCostCents ?? line.unitCostCents ?? 0,
+      totalCostCents: line.lineTotalCents ?? line.totalCostCents ?? 0,
+    })),
+  } as unknown as SupplierInvoice;
+}
+
+function normalizeSupplierPayment(raw: JsonRecord): SupplierPayment {
+  return {
+    id: raw.id,
+    paymentNumber: raw.paymentNumber ?? "",
+    supplierId: raw.supplierId ?? "",
+    supplierName: raw.supplierName ?? "Supplier",
+    invoiceId: raw.supplierInvoiceId ?? raw.invoiceId ?? "",
+    invoiceNumber: raw.supplierInvoiceNo ?? raw.invoiceNumber ?? raw.apVoucherNumber ?? "",
+    paymentDate: raw.paymentDate ?? "",
+    amountCents: raw.amountCents ?? 0,
+    paymentMethod: raw.paymentMethod ?? "BankTransfer",
+    status: raw.status ?? "PendingApproval",
+    referenceNumber: raw.referenceNo ?? raw.referenceNumber ?? null,
+    bankAccount: raw.bankName ?? raw.bankAccount ?? null,
+    checkNumber: raw.checkNo ?? raw.checkNumber ?? null,
+    notes: raw.remarks ?? raw.notes ?? null,
+    recordedByUserId: raw.recordedByUserId ?? "",
+    approvedByUserId: raw.approvedByUserId ?? null,
+    approvedAt: raw.approvedAt ?? null,
+    createdAt: raw.createdAt ?? "",
+  } as unknown as SupplierPayment;
+}
+
 export interface SupplierReturnSummary {
   id: string;
   returnNumber: string;
@@ -472,28 +594,58 @@ export async function fetchLpiOverview(): Promise<LpiDashboardOverview> {
   const response = await fetch("/api/lpi/overview");
   const raw = await readJson<JsonRecord>(response);
   const aging = raw.apAging ?? {};
+  const openInvoices: JsonRecord[] = aging.openInvoices ?? [];
+
+  const supplierMap = new Map<string, ApAgingSummary>();
+  for (const inv of openInvoices) {
+    const sId = inv.supplierId || "unknown";
+    const sName = inv.supplierName || "Supplier";
+    const cur = supplierMap.get(sId) ?? {
+      supplierId: sId,
+      supplierName: sName,
+      currentCents: 0,
+      days1To30Cents: 0,
+      days31To60Cents: 0,
+      days61To90Cents: 0,
+      over90DaysCents: 0,
+      totalOutstandingCents: 0,
+    };
+    const rem = inv.remainingBalanceCents ?? 0;
+    const pastDue = inv.daysPastDue ?? 0;
+    cur.totalOutstandingCents += rem;
+    if (pastDue <= 0) cur.currentCents += rem;
+    else if (pastDue <= 30) cur.days1To30Cents += rem;
+    else if (pastDue <= 60) cur.days31To60Cents += rem;
+    else if (pastDue <= 90) cur.days61To90Cents += rem;
+    else cur.over90DaysCents += rem;
+    supplierMap.set(sId, cur);
+  }
+
+  const computedAging = Array.from(supplierMap.values());
+  const fallbackAging = (aging.totalOpenPayablesCents ?? raw.totalOpenPayablesCents ?? 0) > 0 ? [{
+    supplierId: "all-open-payables",
+    supplierName: "All Open Accounts Payable",
+    currentCents: aging.currentBucketCents ?? 0,
+    days1To30Cents: aging.days1To30Cents ?? 0,
+    days31To60Cents: aging.days31To60Cents ?? 0,
+    days61To90Cents: aging.days61To90Cents ?? 0,
+    over90DaysCents: aging.daysOver90Cents ?? 0,
+    totalOutstandingCents: aging.totalOpenPayablesCents ?? raw.totalOpenPayablesCents ?? 0,
+  }] : [];
+
   return {
-    totalActiveSuppliers: raw.activeSupplierCount ?? 0,
-    pendingPurchaseRequisitions: raw.pendingRequisitionCount ?? 0,
-    openPurchaseOrders: raw.openPurchaseOrderCount ?? 0,
-    unmatchedInvoices: raw.varianceFlaggedInvoiceCount ?? 0,
-    totalAccountsPayableCents: raw.totalOpenPayablesCents ?? 0,
+    totalActiveSuppliers: raw.activeSupplierCount ?? raw.totalActiveSuppliers ?? 0,
+    pendingPurchaseRequisitions: raw.pendingRequisitionCount ?? raw.pendingPurchaseRequisitions ?? 0,
+    openPurchaseOrders: raw.openPurchaseOrderCount ?? raw.openPurchaseOrders ?? 0,
+    unmatchedInvoices: raw.varianceFlaggedInvoiceCount ?? raw.unmatchedInvoices ?? 0,
+    totalAccountsPayableCents: raw.totalOpenPayablesCents ?? raw.totalAccountsPayableCents ?? 0,
     overduePayablesCents: raw.overduePayablesCents ?? 0,
     totalInventoryValuationCents: raw.totalInventoryValuationCents ?? 0,
     costCoverageIncomplete: raw.costCoverageIncomplete ?? false,
     missingCostProductCount: raw.missingCostProductCount ?? 0,
     quarantineStockQuantityX1000: raw.quarantineStockQuantityX1000 ?? 0,
-    recentOrders: raw.recentOrders ?? [],
-    agingSummary: (aging.openInvoiceCount ?? 0) === 0 ? [] : [{
-      supplierId: "all-open-payables",
-      supplierName: "All suppliers",
-      currentCents: aging.currentBucketCents ?? 0,
-      days1To30Cents: aging.days1To30Cents ?? 0,
-      days31To60Cents: aging.days31To60Cents ?? 0,
-      days61To90Cents: aging.days61To90Cents ?? 0,
-      over90DaysCents: aging.daysOver90Cents ?? 0,
-      totalOutstandingCents: aging.totalOpenPayablesCents ?? raw.totalOpenPayablesCents ?? 0,
-    }],
+    recentOrders: (raw.recentOrders ?? []).map(normalizePurchaseOrder),
+    agingSummary: computedAging.length > 0 ? computedAging : fallbackAging,
   };
 }
 
@@ -635,7 +787,7 @@ export async function convertRequisitionToPo(id: string, allocations: Array<{
 
 export async function fetchQuotations(requisitionId: string): Promise<SupplierQuotation[]> {
   const response = await fetch(`/api/lpi/quotations?requisitionId=${requisitionId}`);
-  return readJson<SupplierQuotation[]>(response);
+  return (await readJson<JsonRecord[]>(response)).map(normalizeQuotation);
 }
 
 export async function createQuotation(data: {
@@ -677,12 +829,12 @@ export async function fetchPurchaseOrders(status?: string, supplierId?: string):
   if (status) params.set("status", status);
   if (supplierId) params.set("supplierId", supplierId);
   const response = await fetch(`/api/lpi/purchase-orders?${params.toString()}`);
-  return readJson<PurchaseOrder[]>(response);
+  return (await readJson<JsonRecord[]>(response)).map(normalizePurchaseOrder);
 }
 
 export async function fetchPurchaseOrderById(id: string): Promise<PurchaseOrder> {
   const response = await fetch(`/api/lpi/purchase-orders/${id}`);
-  return readJson<PurchaseOrder>(response);
+  return normalizePurchaseOrder(await readJson<JsonRecord>(response));
 }
 
 export async function createPurchaseOrder(data: {
@@ -715,12 +867,12 @@ export async function approvePurchaseOrder(id: string, notes?: string): Promise<
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ notes }),
   });
-  return readJson<PurchaseOrder>(response);
+  return normalizePurchaseOrder(await readJson<JsonRecord>(response));
 }
 
 export async function markPurchaseOrderSent(id: string): Promise<PurchaseOrder> {
   const response = await fetch(`/api/lpi/purchase-orders/${id}/mark-sent`, { method: "POST" });
-  return readJson<PurchaseOrder>(response);
+  return normalizePurchaseOrder(await readJson<JsonRecord>(response));
 }
 
 export async function cancelPurchaseOrder(id: string, reason: string): Promise<PurchaseOrder> {
@@ -729,7 +881,7 @@ export async function cancelPurchaseOrder(id: string, reason: string): Promise<P
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ reason }),
   });
-  return readJson<PurchaseOrder>(response);
+  return normalizePurchaseOrder(await readJson<JsonRecord>(response));
 }
 
 export async function fetchReceivingReports(poId?: string): Promise<ReceivingReport[]> {
@@ -763,12 +915,27 @@ export async function createReceivingReport(data: {
     dispositionNotes?: string;
   }>;
 }): Promise<ReceivingReport> {
+  const payload = {
+    purchaseOrderId: data.purchaseOrderId,
+    deliveryReceiptNo: data.deliveryReceiptNumber || `DR-${Date.now().toString().slice(-4)}`,
+    carrierOrDriver: [data.carrier, data.driverName].filter(Boolean).join(" - ") || "Dock Carrier",
+    postImmediately: true,
+    notes: data.notes,
+    lines: data.items.map((it) => ({
+      purchaseOrderLineId: it.poItemId,
+      actualDeliveredQtyX1000: it.deliveredQuantityX1000,
+      acceptedQtyX1000: it.acceptedQuantityX1000,
+      rejectedQtyX1000: it.rejectedQuantityX1000,
+      rejectionReason: it.rejectionReason || null,
+      rejectionDisposition: it.dispositionNotes || null,
+    })),
+  };
   const response = await fetch("/api/lpi/receiving-reports", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: JSON.stringify(payload),
   });
-  return readJson<ReceivingReport>(response);
+  return normalizeReceivingReport(await readJson<JsonRecord>(response));
 }
 
 export async function fetchStockCards(): Promise<ProductStockCard[]> {
@@ -832,12 +999,12 @@ export async function fetchSupplierInvoices(status?: string, supplierId?: string
   if (status) params.set("status", status);
   if (supplierId) params.set("supplierId", supplierId);
   const response = await fetch(`/api/lpi/invoices?${params.toString()}`);
-  return readJson<SupplierInvoice[]>(response);
+  return (await readJson<JsonRecord[]>(response)).map(normalizeSupplierInvoice);
 }
 
 export async function fetchSupplierInvoiceById(id: string): Promise<SupplierInvoice> {
   const response = await fetch(`/api/lpi/invoices/${id}`);
-  return readJson<SupplierInvoice>(response);
+  return normalizeSupplierInvoice(await readJson<JsonRecord>(response));
 }
 
 export async function createSupplierInvoice(data: {
@@ -859,21 +1026,44 @@ export async function createSupplierInvoice(data: {
     rrItemId?: string;
   }>;
 }): Promise<SupplierInvoice> {
+  const payload = {
+    supplierId: data.supplierId,
+    invoiceNumber: data.invoiceNumber,
+    supplierInvoiceNo: data.invoiceNumber,
+    invoiceDate: data.invoiceDate,
+    dueDate: data.dueDate,
+    purchaseOrderId: data.purchaseOrderId || null,
+    receivingReportId: data.receivingReportId || null,
+    notes: data.notes,
+    postToApIfMatched: true,
+    lines: data.items.map((it) => ({
+      purchaseOrderLineId: it.poItemId || null,
+      receivingReportLineId: it.rrItemId || null,
+      productId: it.productId,
+      itemDescription: "Invoice Line",
+      invoicedQtyX1000: it.invoicedQuantityX1000,
+      invoicedUnitCostCents: it.unitCostCents,
+      taxCents: 0,
+    })),
+  };
   const response = await fetch("/api/lpi/invoices", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: JSON.stringify(payload),
   });
-  return readJson<SupplierInvoice>(response);
+  return normalizeSupplierInvoice(await readJson<JsonRecord>(response));
 }
 
 export async function approveInvoiceVariance(id: string, notes?: string): Promise<SupplierInvoice> {
   const response = await fetch(`/api/lpi/invoices/${id}/approve-variance`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ notes }),
+    body: JSON.stringify({
+      approvalReason: notes || "Variance approved via web",
+      postToApImmediately: true,
+    }),
   });
-  return readJson<SupplierInvoice>(response);
+  return normalizeSupplierInvoice(await readJson<JsonRecord>(response));
 }
 
 export async function fetchSupplierPayments(supplierId?: string, invoiceId?: string): Promise<SupplierPayment[]> {
@@ -881,7 +1071,7 @@ export async function fetchSupplierPayments(supplierId?: string, invoiceId?: str
   if (supplierId) params.set("supplierId", supplierId);
   if (invoiceId) params.set("invoiceId", invoiceId);
   const response = await fetch(`/api/lpi/payments?${params.toString()}`);
-  return readJson<SupplierPayment[]>(response);
+  return (await readJson<JsonRecord[]>(response)).map(normalizeSupplierPayment);
 }
 
 export async function recordSupplierPayment(data: {
@@ -894,17 +1084,52 @@ export async function recordSupplierPayment(data: {
   checkNumber?: string;
   notes?: string;
 }): Promise<SupplierPayment> {
+  const payload = {
+    supplierInvoiceId: data.invoiceId,
+    amountCents: data.amountCents,
+    paymentMethod: data.paymentMethod,
+    referenceNo: data.referenceNumber,
+    bankName: data.bankAccount,
+    checkNo: data.checkNumber,
+    remarks: data.notes,
+  };
   const response = await fetch("/api/lpi/payments", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: JSON.stringify(payload),
   });
-  return readJson<SupplierPayment>(response);
+  return normalizeSupplierPayment(await readJson<JsonRecord>(response));
 }
 
 export async function fetchApAging(): Promise<ApAgingSummary[]> {
   const response = await fetch("/api/lpi/ap-aging");
-  return readJson<ApAgingSummary[]>(response);
+  const raw = await readJson<JsonRecord>(response);
+  const openInvoices: JsonRecord[] = raw.openInvoices ?? [];
+  const supplierMap = new Map<string, ApAgingSummary>();
+  for (const inv of openInvoices) {
+    const sId = inv.supplierId || "unknown";
+    const sName = inv.supplierName || "Supplier";
+    const cur = supplierMap.get(sId) ?? {
+      supplierId: sId,
+      supplierName: sName,
+      currentCents: 0,
+      days1To30Cents: 0,
+      days31To60Cents: 0,
+      days61To90Cents: 0,
+      over90DaysCents: 0,
+      totalOutstandingCents: 0,
+    };
+    const rem = inv.remainingBalanceCents ?? 0;
+    const pastDue = inv.daysPastDue ?? 0;
+    cur.totalOutstandingCents += rem;
+    if (pastDue <= 0) cur.currentCents += rem;
+    else if (pastDue <= 30) cur.days1To30Cents += rem;
+    else if (pastDue <= 60) cur.days31To60Cents += rem;
+    else if (pastDue <= 90) cur.days61To90Cents += rem;
+    else cur.over90DaysCents += rem;
+    supplierMap.set(sId, cur);
+  }
+  return Array.from(supplierMap.values());
 }
 
 export async function approveSupplierPayment(paymentId: string, remarks?: string): Promise<SupplierPayment> {
@@ -913,7 +1138,7 @@ export async function approveSupplierPayment(paymentId: string, remarks?: string
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ remarks }),
   });
-  return readJson<SupplierPayment>(response);
+  return normalizeSupplierPayment(await readJson<JsonRecord>(response));
 }
 
 export async function approveOverdelivery(receivingReportId: string, approvalReason: string): Promise<ReceivingReport> {

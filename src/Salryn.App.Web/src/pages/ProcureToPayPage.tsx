@@ -63,6 +63,16 @@ export function ProcureToPayPage() {
   const { notify } = useNotifications();
   const session = useAppSession();
   const currentUserId = session.data?.user?.userId ?? "";
+  const canRequestPr = hasPermission(session.data, Permissions.ProcurementRequest);
+  const canApprovePr = hasPermission(session.data, Permissions.ProcurementApproveRequisition);
+  const canManagePo = hasPermission(session.data, Permissions.ProcurementManagePurchaseOrder);
+  const canApprovePo = hasPermission(session.data, Permissions.ProcurementApprovePurchaseOrder);
+  const canManageReceiving = hasPermission(session.data, Permissions.ReceivingManage);
+  const canAdjustInventory = hasPermission(session.data, Permissions.InventoryAdjust);
+  const canManageReturns = hasPermission(session.data, Permissions.InventoryManageReturns);
+  const canManageInvoices = hasPermission(session.data, Permissions.PayablesManageInvoices);
+  const canApproveVariance = hasPermission(session.data, Permissions.PayablesApproveVariance);
+  const canRecordPayment = hasPermission(session.data, Permissions.PayablesRecordPayment);
 
   const [activeTab, setActiveTab] = useState<
     "overview" | "suppliers" | "pr" | "quotations" | "po" | "rr" | "inventory" | "ap"
@@ -377,27 +387,29 @@ export function ProcureToPayPage() {
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <h2 className="text-lg font-semibold text-slate-900">Supplier Directory</h2>
-            <Button
-              onClick={() => {
-                setEditingSupplier(null);
-                setSupplierForm({
-                  code: `SUP-${Date.now().toString().slice(-4)}`,
-                  name: "",
-                  contactPerson: "",
-                  contactNumber: "",
-                  email: "",
-                  address: "",
-                  tin: "",
-                  paymentTermsDays: "30",
-                  leadTimeDays: "3",
-                  notes: "",
-                  isActive: true,
-                });
-                setSupplierModalOpen(true);
-              }}
-            >
-              + Add Supplier
-            </Button>
+            {canManagePo && (
+              <Button
+                onClick={() => {
+                  setEditingSupplier(null);
+                  setSupplierForm({
+                    code: `SUP-${Date.now().toString().slice(-4)}`,
+                    name: "",
+                    contactPerson: "",
+                    contactNumber: "",
+                    email: "",
+                    address: "",
+                    tin: "",
+                    paymentTermsDays: "30",
+                    leadTimeDays: "3",
+                    notes: "",
+                    isActive: true,
+                  });
+                  setSupplierModalOpen(true);
+                }}
+              >
+                + Add Supplier
+              </Button>
+            )}
           </div>
 
           <Card>
@@ -434,28 +446,30 @@ export function ProcureToPayPage() {
                           </StatusPill>
                         </td>
                         <td className="p-3 text-right">
-                          <Button
-                            variant="secondary"
-                            onClick={() => {
-                              setEditingSupplier(sup);
-                              setSupplierForm({
-                                code: sup.code,
-                                name: sup.name,
-                                contactPerson: sup.contactPerson || "",
-                                contactNumber: sup.contactNumber || "",
-                                email: sup.email || "",
-                                address: sup.address || "",
-                                tin: sup.tin || "",
-                                paymentTermsDays: sup.paymentTermsDays.toString(),
-                                leadTimeDays: sup.leadTimeDays.toString(),
-                                notes: sup.notes || "",
-                                isActive: sup.isActive,
-                              });
-                              setSupplierModalOpen(true);
-                            }}
-                          >
-                            Edit
-                          </Button>
+                          {canManagePo && (
+                            <Button
+                              variant="secondary"
+                              onClick={() => {
+                                setEditingSupplier(sup);
+                                setSupplierForm({
+                                  code: sup.code,
+                                  name: sup.name,
+                                  contactPerson: sup.contactPerson || "",
+                                  contactNumber: sup.contactNumber || "",
+                                  email: sup.email || "",
+                                  address: sup.address || "",
+                                  tin: sup.tin || "",
+                                  paymentTermsDays: sup.paymentTermsDays.toString(),
+                                  leadTimeDays: sup.leadTimeDays.toString(),
+                                  notes: sup.notes || "",
+                                  isActive: sup.isActive,
+                                });
+                                setSupplierModalOpen(true);
+                              }}
+                            >
+                              Edit
+                            </Button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -472,30 +486,32 @@ export function ProcureToPayPage() {
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <h2 className="text-lg font-semibold text-slate-900">Purchase Requisitions (PR)</h2>
-            <Button
-              onClick={() => {
-                const prod = foundation.data?.products[0];
-                const uom = foundation.data?.unitsOfMeasure[0];
-                setPrForm({
-                  department: "Store Operations",
-                  purpose: "Restock fast-moving grocery inventory",
-                  requiredDate: new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10),
-                  notes: "Urgent store replenishment",
-                  items: [
-                    {
-                      productId: prod?.id ?? "",
-                      uomId: uom?.id ?? "",
-                      quantity: "100",
-                      estimatedCost: prod ? (prod.costPriceCents / 100).toFixed(2) : "10",
-                      preferredSupplierId: "",
-                    },
-                  ],
-                });
-                setPrModalOpen(true);
-              }}
-            >
-              + Create Requisition
-            </Button>
+            {canRequestPr && (
+              <Button
+                onClick={() => {
+                  const prod = foundation.data?.products[0];
+                  const uom = foundation.data?.unitsOfMeasure[0];
+                  setPrForm({
+                    department: "Store Operations",
+                    purpose: "Restock fast-moving grocery inventory",
+                    requiredDate: new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10),
+                    notes: "Urgent store replenishment",
+                    items: [
+                      {
+                        productId: prod?.id ?? "",
+                        uomId: uom?.id ?? "",
+                        quantity: "100",
+                        estimatedCost: prod ? (prod.costPriceCents / 100).toFixed(2) : "10",
+                        preferredSupplierId: "",
+                      },
+                    ],
+                  });
+                  setPrModalOpen(true);
+                }}
+              >
+                + Create Requisition
+              </Button>
+            )}
           </div>
 
           <Card>
@@ -537,7 +553,7 @@ export function ProcureToPayPage() {
                           </StatusPill>
                         </td>
                         <td className="p-3 text-right space-x-2">
-                          {pr.status === "Draft" && (
+                          {canRequestPr && pr.status === "Draft" && (
                             <Button
                               variant="secondary"
                               onClick={async () => {
@@ -553,7 +569,7 @@ export function ProcureToPayPage() {
                               Submit
                             </Button>
                           )}
-                          {pr.status === "Submitted" && (
+                          {canApprovePr && pr.status === "Submitted" && (
                             <>
                               <Button
                                 variant="primary"
@@ -585,7 +601,7 @@ export function ProcureToPayPage() {
                               </Button>
                             </>
                           )}
-                          {pr.status === "Approved" && (
+                          {canManagePo && pr.status === "Approved" && (
                             <Button
                               variant="secondary"
                               onClick={() => {
@@ -690,7 +706,7 @@ export function ProcureToPayPage() {
                           </StatusPill>
                         </td>
                         <td className="p-3 text-right space-x-2">
-                          {po.status === "Draft" && (
+                          {canApprovePo && po.status === "Draft" && (
                             <Button
                               variant="primary"
                               onClick={async () => {
@@ -706,7 +722,7 @@ export function ProcureToPayPage() {
                               Approve
                             </Button>
                           )}
-                          {po.status === "Approved" && (
+                          {canManagePo && po.status === "Approved" && (
                             <Button
                               variant="secondary"
                               onClick={async () => {
@@ -722,7 +738,7 @@ export function ProcureToPayPage() {
                               Mark Sent
                             </Button>
                           )}
-                          {(po.status === "Draft" || po.status === "Approved" || po.status === "Sent") && (
+                          {canManagePo && (po.status === "Draft" || po.status === "Approved" || po.status === "Sent") && (
                             <Button
                               variant="danger"
                               onClick={async () => {
@@ -757,47 +773,52 @@ export function ProcureToPayPage() {
           <div className="flex justify-between items-center">
             <h2 className="text-lg font-semibold text-slate-900">Goods Receiving Reports (RR)</h2>
             <div className="flex items-center gap-2">
-              <Select
-                onChange={(e) => {
-                  const po = purchaseOrders.data?.find((p) => p.id === e.target.value);
-                  if (po) {
-                    setSelectedPoForRr(po);
-                    setRrForm({
-                      deliveryReceiptNumber: `DR-${Date.now().toString().slice(-4)}`,
-                      carrier: "Supplier Trucking",
-                      driverName: "Carrier Dispatch Driver",
-                      isOverdeliveryApproved: false,
-                      notes: "Dock delivery inspection",
-                      items: po.items.map((item) => {
-                        const remaining = (item.orderedQuantityX1000 - item.receivedQuantityX1000) / 1000;
-                        return {
-                          poItemId: item.id,
-                          productId: item.productId,
-                          productName: item.productName,
-                          uomId: item.uomId,
-                          orderedQty: item.orderedQuantityX1000 / 1000,
-                          deliveredQty: remaining > 0 ? remaining.toString() : "0",
-                          acceptedQty: remaining > 0 ? remaining.toString() : "0",
-                          rejectedQty: "0",
-                          rejectionReason: "",
-                          targetLocationId: mainStoreLocation?.id ?? "",
-                          quarantineLocationId: quarantineLocation?.id ?? "",
-                        };
-                      }),
-                    });
-                    setRrModalOpen(true);
-                  }
-                }}
-              >
-                <option value="">Receive Goods Against PO...</option>
-                {(purchaseOrders.data ?? [])
-                  .filter((p) => p.status === "Approved" || p.status === "Sent" || p.status === "PartiallyReceived")
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.poNumber} ({p.supplierName} - {p.status})
-                    </option>
-                  ))}
-              </Select>
+              {canManageReceiving && (
+                <Select
+                  onChange={(e) => {
+                    const po = purchaseOrders.data?.find((p) => p.id === e.target.value);
+                    if (po) {
+                      setSelectedPoForRr(po);
+                      const poLineItems = ((po.items ?? (po as any).lines ?? []) as any[]);
+                      setRrForm({
+                        deliveryReceiptNumber: `DR-${Date.now().toString().slice(-4)}`,
+                        carrier: "Supplier Trucking",
+                        driverName: "Carrier Dispatch Driver",
+                        isOverdeliveryApproved: false,
+                        notes: "Dock delivery inspection",
+                        items: poLineItems.map((item) => {
+                          const ordered = Number(item.orderedQuantityX1000 ?? item.orderedQtyX1000 ?? 0);
+                          const received = Number(item.receivedQuantityX1000 ?? item.receivedQtyX1000 ?? 0);
+                          const remaining = (ordered - received) / 1000;
+                          return {
+                            poItemId: item.id ?? item.poItemId,
+                            productId: item.productId,
+                            productName: item.productName ?? item.itemDescription ?? "Item",
+                            uomId: item.uomId ?? item.unitId ?? "",
+                            orderedQty: ordered / 1000,
+                            deliveredQty: remaining > 0 ? remaining.toString() : "0",
+                            acceptedQty: remaining > 0 ? remaining.toString() : "0",
+                            rejectedQty: "0",
+                            rejectionReason: "",
+                            targetLocationId: mainStoreLocation?.id ?? "",
+                            quarantineLocationId: quarantineLocation?.id ?? "",
+                          };
+                        }),
+                      });
+                      setRrModalOpen(true);
+                    }
+                  }}
+                >
+                  <option value="">Receive Goods Against PO...</option>
+                  {(purchaseOrders.data ?? [])
+                    .filter((p) => p.status === "Approved" || p.status === "Sent" || p.status === "PartiallyReceived")
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.poNumber} ({p.supplierName} - {p.status})
+                      </option>
+                    ))}
+                </Select>
+              )}
             </div>
           </div>
 
@@ -871,44 +892,48 @@ export function ProcureToPayPage() {
           <div className="flex justify-between items-center">
             <h2 className="text-lg font-semibold text-slate-900">Multi-Location Stock Cards & Valuation</h2>
             <div className="flex gap-2">
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  const card = stockCards.data?.[0];
-                  setStockAdjForm({
-                    productId: card?.productId ?? "",
-                    locationId: mainStoreLocation?.id ?? "",
-                    systemQty: card ? (card.totalQuantityX1000 / 1000).toString() : "0",
-                    actualQty: card ? (card.totalQuantityX1000 / 1000).toString() : "0",
-                    unitCost: card ? (card.averageUnitCostCents / 100).toFixed(2) : "0",
-                    reason: "Monthly Physical Inventory Cycle Count",
-                  });
-                  setStockAdjModalOpen(true);
-                }}
-              >
-                + Count Adjustment (ADJ)
-              </Button>
-              <Button
-                variant="danger"
-                onClick={() => {
-                  const report = (receivingReports.data ?? []).find((candidate) =>
-                    candidate.status === "Posted" && candidate.items.some((line) => line.productId)
-                  );
-                  if (!report) {
-                    notify.error("A posted receiving report with a product line is required before goods can be returned.");
-                    return;
-                  }
-                  setReturnForm({
-                    receivingReportId: report.id,
-                    receivingReportLineId: report.items[0]?.id ?? "",
-                    quantity: "1",
-                    reason: "Post-acceptance latent defect discovered in quarantine",
-                  });
-                  setReturnModalOpen(true);
-                }}
-              >
-                + Supplier Return (SRET)
-              </Button>
+              {canAdjustInventory && (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    const card = stockCards.data?.[0];
+                    setStockAdjForm({
+                      productId: card?.productId ?? "",
+                      locationId: mainStoreLocation?.id ?? "",
+                      systemQty: card ? (card.totalQuantityX1000 / 1000).toString() : "0",
+                      actualQty: card ? (card.totalQuantityX1000 / 1000).toString() : "0",
+                      unitCost: card ? (card.averageUnitCostCents / 100).toFixed(2) : "0",
+                      reason: "Monthly Physical Inventory Cycle Count",
+                    });
+                    setStockAdjModalOpen(true);
+                  }}
+                >
+                  + Count Adjustment (ADJ)
+                </Button>
+              )}
+              {canManageReturns && (
+                <Button
+                  variant="danger"
+                  onClick={() => {
+                    const report = (receivingReports.data ?? []).find((candidate) =>
+                      candidate.status === "Posted" && candidate.items.some((line) => line.productId)
+                    );
+                    if (!report) {
+                      notify.error("A posted receiving report with a product line is required before goods can be returned.");
+                      return;
+                    }
+                    setReturnForm({
+                      receivingReportId: report.id,
+                      receivingReportLineId: report.items[0]?.id ?? "",
+                      quantity: "1",
+                      reason: "Post-acceptance latent defect discovered in quarantine",
+                    });
+                    setReturnModalOpen(true);
+                  }}
+                >
+                  + Supplier Return (SRET)
+                </Button>
+              )}
             </div>
           </div>
 
@@ -1009,32 +1034,34 @@ export function ProcureToPayPage() {
           <div className="flex justify-between items-center">
             <h2 className="text-lg font-semibold text-slate-900">Supplier Invoices & 3-Way Match</h2>
             <div className="flex items-center gap-2">
-              <Button
-                onClick={() => {
-                  const sup = foundation.data?.suppliers[0];
-                  const prod = foundation.data?.products[0];
-                  setInvoiceForm({
-                    supplierId: sup?.id ?? "",
-                    invoiceNumber: `INV-${Date.now().toString().slice(-5)}`,
-                    invoiceDate: new Date().toISOString().slice(0, 10),
-                    dueDate: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
-                    purchaseOrderId: "",
-                    receivingReportId: "",
-                    notes: "Supplier accounts payable voucher",
-                    items: [
-                      {
-                        productId: prod?.id ?? "",
-                        productName: prod?.name ?? "Item",
-                        invoicedQty: "10",
-                        unitCost: prod ? (prod.costPriceCents / 100).toFixed(2) : "10",
-                      },
-                    ],
-                  });
-                  setInvoiceModalOpen(true);
-                }}
-              >
-                + Intake Supplier Invoice
-              </Button>
+              {canManageInvoices && (
+                <Button
+                  onClick={() => {
+                    const sup = foundation.data?.suppliers[0];
+                    const prod = foundation.data?.products[0];
+                    setInvoiceForm({
+                      supplierId: sup?.id ?? "",
+                      invoiceNumber: `INV-${Date.now().toString().slice(-5)}`,
+                      invoiceDate: new Date().toISOString().slice(0, 10),
+                      dueDate: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+                      purchaseOrderId: "",
+                      receivingReportId: "",
+                      notes: "Supplier accounts payable voucher",
+                      items: [
+                        {
+                          productId: prod?.id ?? "",
+                          productName: prod?.name ?? "Item",
+                          invoicedQty: "10",
+                          unitCost: prod ? (prod.costPriceCents / 100).toFixed(2) : "10",
+                        },
+                      ],
+                    });
+                    setInvoiceModalOpen(true);
+                  }}
+                >
+                  + Intake Supplier Invoice
+                </Button>
+              )}
             </div>
           </div>
 
@@ -1081,7 +1108,7 @@ export function ProcureToPayPage() {
                           <StatusPill tone={inv.status === "Paid" ? "success" : "neutral"}>{inv.status}</StatusPill>
                         </td>
                         <td className="p-3 text-right space-x-2">
-                          {(inv.matchStatus === "PriceVariance" || inv.matchStatus === "QuantityVariance") && (
+                          {canApproveVariance && (inv.matchStatus === "PriceVariance" || inv.matchStatus === "QuantityVariance") && (
                             <Button
                               variant="danger"
                               onClick={() => {
@@ -1093,7 +1120,7 @@ export function ProcureToPayPage() {
                               Approve Variance
                             </Button>
                           )}
-                          {inv.balanceDueCents > 0 &&
+                          {canRecordPayment && inv.balanceDueCents > 0 &&
                             (inv.matchStatus === "Matched" || inv.matchStatus === "VarianceApproved") && (
                               <Button
                                 variant="primary"
@@ -2279,6 +2306,8 @@ export function ProcureToPayPage() {
 // Subcomponent for Quotation view
 function QuotationListView({ requisitionId, onRefresh }: { requisitionId: string; onRefresh: () => void }) {
   const { notify } = useNotifications();
+  const session = useAppSession();
+  const canManagePo = hasPermission(session.data, Permissions.ProcurementManagePurchaseOrder);
   const quotations = useQuery({
     queryKey: ["lpi-quotations", requisitionId],
     queryFn: () => fetchQuotations(requisitionId),
@@ -2326,7 +2355,7 @@ function QuotationListView({ requisitionId, onRefresh }: { requisitionId: string
                       </StatusPill>
                     </td>
                     <td className="p-3 text-right">
-                      {!q.isWinner && (
+                      {!q.isWinner && canManagePo && (
                         <Button
                           variant="secondary"
                           onClick={async () => {
