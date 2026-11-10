@@ -72,7 +72,9 @@ public static class LpiRealHostAcceptanceRunner
                 "SUP-PACK-02", "Metro Packaging Solutions Corp.", "Carlo Reyes", "09171234502", "sales@metropack.ph",
                 "Pasig Logistics Hub, Metro Manila", "987-654-321-000", 15, 3, "Packaging and consumables vendor", mgrId));
 
-            // 5. Start real Host
+            string testToken = $"DISPOSABLE-TEST-{Guid.NewGuid():N}";
+
+            // 5. Start real Host with authenticated TestHostNonce (SAFETY-01 / HOST-ID-02)
             await using WebApplication app = await LocalApiApplicationFactory.CreateAsync(
                 new[] { "--dev" },
                 new LocalApiApplicationOptions
@@ -81,7 +83,8 @@ public static class LpiRealHostAcceptanceRunner
                     Composition = composition,
                     LicenseService = new FakeAcceptanceLicenseService(),
                     EnableStaticWebAssets = true,
-                    WriteDevelopmentDatabasePath = false
+                    WriteDevelopmentDatabasePath = false,
+                    TestHostNonce = testToken
                 }).ConfigureAwait(false);
 
             await app.StartAsync().ConfigureAwait(false);
@@ -94,23 +97,24 @@ public static class LpiRealHostAcceptanceRunner
 
             Console.WriteLine($"[LPI Acceptance] Live Host started on {boundUrl}");
 
-            // 6. Generate Disposable Test Environment Marker (SAFETY-01)
-            string testToken = $"DISPOSABLE-TEST-{Guid.NewGuid():N}";
+            // 6. Generate Disposable Test Environment Marker with Host URL & Process ID (SAFETY-01 / HOST-ID-02)
             string markerPath = Path.Combine(root, "disposable-test-marker.json");
             await File.WriteAllTextAsync(markerPath, JsonSerializer.Serialize(new
             {
                 token = testToken,
                 isDisposableTest = true,
                 databasePath = paths.DatabasePath,
+                hostUrl = boundUrl,
+                processId = Environment.ProcessId,
                 createdAtUtc = DateTime.UtcNow
             })).ConfigureAwait(false);
 
             string repoRoot = FindRepoRoot() ?? Directory.GetCurrentDirectory();
             string webRoot = Path.Combine(repoRoot, "src", "Salryn.App.Web");
 
-            // 6b. Run Negative Safety Gate Tests (SAFETY-01)
+            // 6b. Run Negative Safety Gate Tests (SAFETY-01 / HOST-ID-02)
             // Verify that acceptance test execution fails closed if targeting port 5299, missing token, or corrupt marker
-            await RunNegativeSafetyTestsAsync(webRoot, markerPath, testToken).ConfigureAwait(false);
+            await RunNegativeSafetyTestsAsync(webRoot, markerPath, testToken, boundUrl).ConfigureAwait(false);
 
             // 6c. Run Positive Playwright End-to-End Suite against Verified Live Host
             ProcessStartInfo psi = new("cmd.exe", "/c npx playwright test e2e/integrated-host-lpi-acceptance.spec.ts --project=integrated-host")
@@ -204,7 +208,7 @@ public static class LpiRealHostAcceptanceRunner
                 {
                     cmd.CommandText = "SELECT status FROM purchase_orders LIMIT 1;";
                     string? poStatus = cmd.ExecuteScalar()?.ToString();
-                    if (poStatus != "Approved" && poStatus != "PartiallyReceived" && poStatus != "Received")
+                    if (poStatus != "Approved" && poStatus != "PartiallyReceived" && poStatus != "FullyReceived" && poStatus != "Received")
                     {
                         throw new InvalidOperationException($"Unexpected PO status: '{poStatus}'.");
                     }
@@ -254,6 +258,21 @@ public static class LpiRealHostAcceptanceRunner
                     if (invStatus != "Paid" || matchStatus != "VarianceApproved" || balanceDue != 0)
                     {
                         throw new InvalidOperationException($"Invoice mismatch: status={invStatus}, matchStatus={matchStatus}, balanceDue={balanceDue}");
+                    }
+                }
+
+                // Validate Duplicate Line Regression Invoice (FINANCIAL-02)
+                using (SqliteCommand cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "SELECT status, match_status, remaining_balance_cents FROM supplier_invoices WHERE supplier_invoice_no = 'INV-DUP-LINEB-001';";
+                    using SqliteDataReader reader = cmd.ExecuteReader();
+                    if (!reader.Read()) throw new InvalidOperationException("Duplicate line invoice 'INV-DUP-LINEB-001' not found in SQLite database.");
+                    string dupStatus = reader.GetString(0);
+                    string dupMatch = reader.GetString(1);
+                    long dupBalance = reader.GetInt64(2);
+                    if (dupMatch != "Matched" || dupBalance != 1000000L)
+                    {
+                        throw new InvalidOperationException($"Duplicate line invoice match mismatch: status={dupStatus}, matchStatus={dupMatch}, balanceDue={dupBalance}");
                     }
                 }
 
@@ -319,7 +338,7 @@ public static class LpiRealHostAcceptanceRunner
         return id;
     }
 
-    private static async Task RunNegativeSafetyTestsAsync(string webRoot, string markerPath, string validToken)
+    private static async Task RunNegativeSafetyTestsAsync(string webRoot, string markerPath, string validToken, string validHostUrl)
     {
         Console.WriteLine("[LPI Acceptance] Running SAFETY-01 negative gate checks...");
 
@@ -334,7 +353,7 @@ public static class LpiRealHostAcceptanceRunner
         // Case B: Missing disposable marker
         await AssertSafetyRejectionAsync(webRoot, new Dictionary<string, string>
         {
-            ["SALRYN_INTEGRATED_HOST_URL"] = "http://127.0.0.1:59999",
+            ["SALRYN_INTEGRATED_HOST_URL"] = validHostUrl,
             ["SALRYN_DISPOSABLE_TEST_TOKEN"] = "",
             ["SALRYN_DISPOSABLE_MARKER_PATH"] = "",
         }, "FAIL-CLOSED SAFETY VIOLATION: Both SALRYN_DISPOSABLE_TEST_TOKEN and SALRYN_DISPOSABLE_MARKER_PATH must be provided").ConfigureAwait(false);
@@ -342,10 +361,18 @@ public static class LpiRealHostAcceptanceRunner
         // Case C: Mismatched marker token
         await AssertSafetyRejectionAsync(webRoot, new Dictionary<string, string>
         {
-            ["SALRYN_INTEGRATED_HOST_URL"] = "http://127.0.0.1:59999",
+            ["SALRYN_INTEGRATED_HOST_URL"] = validHostUrl,
             ["SALRYN_DISPOSABLE_TEST_TOKEN"] = "DISPOSABLE-TEST-WRONG-TOKEN",
             ["SALRYN_DISPOSABLE_MARKER_PATH"] = markerPath,
         }, "FAIL-CLOSED SAFETY VIOLATION: Disposable test environment marker token mismatch").ConfigureAwait(false);
+
+        // Case D: Host URL mismatch with marker (HOST-ID-02)
+        await AssertSafetyRejectionAsync(webRoot, new Dictionary<string, string>
+        {
+            ["SALRYN_INTEGRATED_HOST_URL"] = "http://127.0.0.1:59998",
+            ["SALRYN_DISPOSABLE_TEST_TOKEN"] = validToken,
+            ["SALRYN_DISPOSABLE_MARKER_PATH"] = markerPath,
+        }, "FAIL-CLOSED SAFETY VIOLATION: Host URL mismatch").ConfigureAwait(false);
 
         Console.WriteLine("[LPI Acceptance] SAFETY-01 negative gate checks PASSED: all unsafe invocations failed closed.");
     }

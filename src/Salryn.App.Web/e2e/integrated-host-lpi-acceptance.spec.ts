@@ -95,6 +95,27 @@ function validateTestEnvironmentSafety(): string {
     );
   }
 
+  // Verify marker hostUrl matches environment hostUrl (HOST-ID-02)
+  if (markerData.hostUrl) {
+    const markerHostUrl = String(markerData.hostUrl).trim().replace(/\/+$/, "").toLowerCase();
+    if (markerHostUrl !== hostUrl.toLowerCase()) {
+      throw new Error(
+        `FAIL-CLOSED SAFETY VIOLATION: Host URL mismatch. Env specifies '${hostUrl}', but marker binds '${markerData.hostUrl}'.`
+      );
+    }
+  } else {
+    throw new Error(
+      "FAIL-CLOSED SAFETY VIOLATION: Disposable marker must include bound hostUrl."
+    );
+  }
+
+  // Verify processId (HOST-ID-02)
+  if (!markerData.processId || typeof markerData.processId !== "number") {
+    throw new Error(
+      "FAIL-CLOSED SAFETY VIOLATION: Disposable marker must include valid processId."
+    );
+  }
+
   return hostUrl;
 }
 
@@ -128,6 +149,23 @@ test.describe.configure({ mode: "serial" });
 
 test.describe("INTEGRATED_HOST LPI End-to-End Acceptance Suite @integrated", () => {
   const uncaughtErrors: string[] = [];
+
+  test.beforeAll(async ({ request }) => {
+    // Authenticated Host Identity probe (SAFETY-01 / HOST-ID-02)
+    const res = await request.get(`${HOST_URL}/api/test/host-identity`);
+    if (!res.ok()) {
+      throw new Error(
+        `FAIL-CLOSED SAFETY VIOLATION: Host identity check failed with HTTP ${res.status()}. Target '${HOST_URL}' is not a verified test host.`
+      );
+    }
+    const identity = await res.json();
+    const testToken = process.env.SALRYN_DISPOSABLE_TEST_TOKEN;
+    if (identity.testHostNonce !== testToken) {
+      throw new Error(
+        `FAIL-CLOSED SAFETY VIOLATION: Host identity nonce mismatch. Target is not the runner's ephemeral host.`
+      );
+    }
+  });
 
   test.beforeEach(({ page }) => {
     uncaughtErrors.length = 0;
@@ -346,20 +384,20 @@ test.describe("INTEGRATED_HOST LPI End-to-End Acceptance Suite @integrated", () 
     const invDialog = page.getByRole("dialog", { name: /Supplier Invoice Intake/i });
     await expect(invDialog).toBeVisible();
 
-    // Select Supplier: Apex Roasters (index 0)
-    await invDialog.locator("select").first().selectOption({ index: 0 });
+    // Select Supplier: Apex Roasters
+    await invDialog.getByTestId("invoice-supplier-select").selectOption({ index: 0 });
     // Fill Invoice #
-    await invDialog.locator("input").first().fill("INV-REALHOST-2026-001");
+    await invDialog.getByTestId("invoice-number-input").fill("INV-REALHOST-2026-001");
     // Dates
-    await invDialog.locator("input[type='date']").nth(0).fill("2026-11-10");
-    await invDialog.locator("input[type='date']").nth(1).fill("2026-11-25");
+    await invDialog.getByTestId("invoice-date-input").fill("2026-11-10");
+    await invDialog.getByTestId("invoice-due-date-input").fill("2026-11-25");
 
-    // Product line: Alpha Coffee Beans (index 0), 8 units @ 465.00 (triggers price variance against PO 450.00)
-    await invDialog.locator("select").nth(1).selectOption({ index: 0 });
-    await invDialog.locator("input[type='number']").nth(0).fill("8");
-    await invDialog.locator("input[type='number']").nth(1).fill("465.00");
+    // Product line: Alpha Coffee Beans, 8 units @ 465.00 (triggers price variance against PO 450.00)
+    await invDialog.getByTestId("invoice-item-0-product-select").selectOption({ index: 0 });
+    await invDialog.getByTestId("invoice-item-0-qty-input").fill("8");
+    await invDialog.getByTestId("invoice-item-0-cost-input").fill("465.00");
 
-    await invDialog.getByRole("button", { name: "Post Invoice & Run 3-Way Match" }).click();
+    await invDialog.getByTestId("invoice-submit-button").click();
     await expect(invDialog).toBeHidden();
 
     // Verify invoice created with price variance
@@ -468,5 +506,224 @@ test.describe("INTEGRATED_HOST LPI End-to-End Acceptance Suite @integrated", () 
     await expect(page.locator("table").first()).toContainText("INV-REALHOST-2026-001");
     await expect(page.locator("table").first()).toContainText("Paid");
     await expect(page.locator("table").nth(1)).toContainText("Settled");
+  });
+
+  test("Focused UI & DB Regression: Duplicate-Product Same-PO Line Disambiguation & Line Isolation", async ({ page, request }) => {
+    test.setTimeout(90000);
+
+    // 1. Authenticate as Manager via API to seed a PO with TWO lines for the same product at different costs
+    const loginRes = await request.post(`${HOST_URL}/api/auth/login`, {
+      data: { username: MANAGER_USER, password: MANAGER_PASS },
+    });
+    expect(loginRes.ok()).toBeTruthy();
+
+    const foundationRes = await request.get(`${HOST_URL}/api/lpi/foundation`);
+    expect(foundationRes.ok()).toBeTruthy();
+    const foundation = await foundationRes.json();
+    const sup = foundation.suppliers[0]; // Apex Roasters
+    const prod = foundation.products[0]; // Alpha Coffee Beans
+    const uom = foundation.unitsOfMeasure[0];
+    const loc = foundation.locations[0];
+
+    // Create PO with 2 distinct lines for the same product:
+    // Line A: 10 units @ 400.00 (40000 cents)
+    // Line B: 20 units @ 500.00 (50000 cents)
+    const poRes = await request.post(`${HOST_URL}/api/lpi/purchase-orders`, {
+      data: {
+        supplierId: sup.id,
+        expectedDeliveryDate: new Date(Date.now() + 86400000 * 7).toISOString().slice(0, 10),
+        deliveryLocationId: loc.id,
+        paymentTermsDays: 30,
+        notes: "Dual-tier same-product PO test",
+        submitAndApproveImmediately: true,
+        lines: [
+          {
+            productId: prod.id,
+            itemDescription: `${prod.name} (Tier A)`,
+            orderedQtyX1000: 10000,
+            unitCostCents: 40000,
+            notes: "Tier A lot",
+          },
+          {
+            productId: prod.id,
+            itemDescription: `${prod.name} (Tier B)`,
+            orderedQtyX1000: 20000,
+            unitCostCents: 50000,
+            notes: "Tier B lot",
+          },
+        ],
+      },
+    });
+    if (!poRes.ok()) {
+      const err = await poRes.text();
+      throw new Error(`PO creation failed: HTTP ${poRes.status()} - ${err}`);
+    }
+    const createdPo = await poRes.json();
+    const poLines = createdPo.lines ?? createdPo.items;
+    const lineA = poLines[0];
+    const lineB = poLines[1];
+
+    // Create Receiving Report matching both lines
+    const rrRes = await request.post(`${HOST_URL}/api/lpi/receiving-reports`, {
+      data: {
+        purchaseOrderId: createdPo.id,
+        supplierId: sup.id,
+        receivedDate: new Date().toISOString().slice(0, 10),
+        deliveryReceiptNumber: "DR-DUP-TEST-001",
+        carrierOrDriver: "Apex Logistics / Juan Driver",
+        locationId: loc.id,
+        postImmediately: true,
+        notes: "Received both lots",
+        lines: [
+          {
+            purchaseOrderLineId: lineA.id,
+            actualDeliveredQtyX1000: 10000,
+            acceptedQtyX1000: 10000,
+            rejectedQtyX1000: 0,
+          },
+          {
+            purchaseOrderLineId: lineB.id,
+            actualDeliveredQtyX1000: 20000,
+            acceptedQtyX1000: 20000,
+            rejectedQtyX1000: 0,
+          },
+        ],
+      },
+    });
+    if (!rrRes.ok()) {
+      const err = await rrRes.text();
+      throw new Error(`RR creation failed: HTTP ${rrRes.status()} - ${err}`);
+    }
+    const createdRr = await rrRes.json();
+    const rrLines = createdRr.lines ?? createdRr.items;
+    const rrLineA = rrLines[0];
+    const rrLineB = rrLines[1];
+
+    // 2. AP Clerk logs in and opens Invoice Intake Dialog
+    await login(page, APCLERK_USER, APCLERK_PASS);
+    await page.goto(`${HOST_URL}/?page=procure-to-pay&tab=ap`);
+    await expect(page.getByRole("heading", { name: "Supplier Invoices & 3-Way Match" })).toBeVisible();
+
+    await page.getByRole("button", { name: "+ Intake Supplier Invoice" }).click();
+    const invDialog = page.getByRole("dialog", { name: /Supplier Invoice Intake/i });
+    await expect(invDialog).toBeVisible();
+
+    // Select the duplicate PO and RR
+    await invDialog.getByTestId("invoice-po-select").selectOption(createdPo.id);
+    await invDialog.getByTestId("invoice-rr-select").selectOption(createdRr.id);
+
+    // Verify initial form state for duplicate product:
+    // Form detects ambiguity, does NOT auto-bind an arbitrary line ID, and disables submission
+    const poLineSelect = invDialog.getByTestId("invoice-item-0-po-line-select");
+    const rrLineSelect = invDialog.getByTestId("invoice-item-0-rr-line-select");
+    await expect(poLineSelect).toBeVisible();
+    await expect(rrLineSelect).toBeVisible();
+    expect(await poLineSelect.inputValue()).toBe("");
+    expect(await rrLineSelect.inputValue()).toBe("");
+
+    // Submit button must be disabled due to ambiguity
+    const submitBtn = invDialog.getByTestId("invoice-submit-button");
+    await expect(submitBtn).toBeDisabled();
+    await expect(invDialog.getByTestId("invoice-ambiguity-warning")).toBeVisible();
+
+    // Verify changing product resets/invalidates line bindings
+    const prodSelect = invDialog.getByTestId("invoice-item-0-product-select");
+    await prodSelect.selectOption({ index: 1 });
+    await prodSelect.selectOption({ index: 0 });
+    expect(await poLineSelect.inputValue()).toBe("");
+    expect(await rrLineSelect.inputValue()).toBe("");
+    await expect(submitBtn).toBeDisabled();
+
+    // 3. Operator explicitly selects Line B (20 pcs @ 500.00) in both PO and RR selectors
+    await poLineSelect.selectOption(lineB.id);
+    await rrLineSelect.selectOption(rrLineB.id);
+
+    // Fill Invoice details for Line B
+    await invDialog.getByTestId("invoice-number-input").fill("INV-DUP-LINEB-001");
+    await invDialog.getByTestId("invoice-item-0-qty-input").fill("20");
+    await invDialog.getByTestId("invoice-item-0-cost-input").fill("500.00");
+
+    // Submit button is now enabled
+    await expect(submitBtn).toBeEnabled();
+    await expect(invDialog.getByTestId("invoice-ambiguity-warning")).toHaveCount(0);
+
+    // Submit the disambiguated invoice
+    await submitBtn.click();
+    await expect(invDialog).toBeHidden();
+
+    // Verify invoice appeared in table with status Matched (0 variance)
+    const invTable = page.locator("table").first();
+    await expect(invTable).toContainText("INV-DUP-LINEB-001", { timeout: 10000 });
+    await expect(invTable).toContainText("Matched");
+
+    // 4. Verify DB / API: invoice line is linked strictly to Line B, and Line A is completely unbilled
+    const invoicesRes = await request.get(`${HOST_URL}/api/lpi/invoices`);
+    expect(invoicesRes.ok()).toBeTruthy();
+    const invoicesList = await invoicesRes.json();
+    const targetInv = invoicesList.find(
+      (i: any) => i.supplierInvoiceNo === "INV-DUP-LINEB-001" || i.invoiceNumber === "INV-DUP-LINEB-001"
+    );
+    expect(targetInv).toBeDefined();
+    expect(targetInv.matchStatus).toBe("Matched");
+    const invLines = targetInv.lines ?? targetInv.items;
+    const invLine0 = invLines[0];
+    const poLineId = invLine0.purchaseOrderLineId ?? invLine0.poItemId;
+    const rrLineId = invLine0.receivingReportLineId ?? invLine0.rrItemId;
+    expect(poLineId).toBe(lineB.id);
+    expect(rrLineId).toBe(rrLineB.id);
+    expect(poLineId).not.toBe(lineA.id);
+
+    // 5. Negative check: API rejects ambiguous intake without explicit line IDs
+    const apClerkAuthRes = await request.post(`${HOST_URL}/api/auth/login`, {
+      data: { username: APCLERK_USER, password: APCLERK_PASS },
+    });
+    expect(apClerkAuthRes.ok()).toBeTruthy();
+
+    const negAmbiguousRes = await request.post(`${HOST_URL}/api/lpi/invoices`, {
+      data: {
+        supplierId: sup.id,
+        invoiceNumber: "INV-DUP-REJECT-001",
+        invoiceDate: "2026-11-10",
+        dueDate: "2026-11-25",
+        purchaseOrderId: createdPo.id,
+        receivingReportId: createdRr.id,
+        subtotalCents: 500000,
+        totalCents: 500000,
+        items: [
+          {
+            productId: prod.id,
+            invoicedQuantityX1000: 10000,
+            unitCostCents: 40000,
+          },
+        ],
+      },
+    });
+    expect(negAmbiguousRes.status()).toBe(400);
+
+    // Negative check: API rejects cross-mismatched line pairing (Line B PO with Line A RR)
+    const negMismatchRes = await request.post(`${HOST_URL}/api/lpi/invoices`, {
+      data: {
+        supplierId: sup.id,
+        invoiceNumber: "INV-DUP-MISMATCH-001",
+        invoiceDate: "2026-11-10",
+        dueDate: "2026-11-25",
+        purchaseOrderId: createdPo.id,
+        receivingReportId: createdRr.id,
+        subtotalCents: 500000,
+        totalCents: 500000,
+        items: [
+          {
+            productId: prod.id,
+            invoicedQuantityX1000: 10000,
+            unitCostCents: 40000,
+            poItemId: lineB.id,
+            rrItemId: rrLineA.id,
+          },
+        ],
+      },
+    });
+    expect(negMismatchRes.status()).toBe(400);
+
+    await logout(page);
   });
 });

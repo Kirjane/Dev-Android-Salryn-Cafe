@@ -1079,13 +1079,15 @@ export function ProcureToPayPage() {
                     const sup = foundation.data?.suppliers[0];
                     const prod = foundation.data?.products[0];
                     const matchingPo = (purchaseOrders.data ?? []).find(
-                      (po) => po.supplierId === sup?.id && (po.status === "Approved" || po.status === "Sent" || po.status === "Fulfilled")
+                      (po) => po.supplierId === sup?.id && (po.status !== "Draft" && po.status !== "Cancelled")
                     );
                     const matchingRr = (receivingReports.data ?? []).find(
-                      (rr) => rr.supplierId === sup?.id && rr.status === "Posted"
+                      (rr) => rr.supplierId === sup?.id && rr.status === "Posted" && (!matchingPo || rr.purchaseOrderId === matchingPo.id)
                     );
-                    const poLine = matchingPo?.items.find((item) => item.productId === prod?.id) ?? matchingPo?.items[0];
-                    const rrLine = matchingRr?.items.find((item) => item.productId === prod?.id) ?? matchingRr?.items[0];
+                    const matchingPoLines = matchingPo?.items.filter((item) => item.productId === prod?.id) ?? [];
+                    const matchingRrLines = matchingRr?.items.filter((item) => item.productId === prod?.id) ?? [];
+                    const poLine = matchingPoLines.length === 1 ? matchingPoLines[0] : undefined;
+                    const rrLine = matchingRrLines.length === 1 ? matchingRrLines[0] : undefined;
                     setInvoiceForm({
                       supplierId: sup?.id ?? "",
                       invoiceNumber: `INV-${Date.now().toString().slice(-5)}`,
@@ -1995,8 +1997,32 @@ export function ProcureToPayPage() {
             <div>
               <label className="block text-xs font-medium text-slate-700">Supplier</label>
               <Select
+                data-testid="invoice-supplier-select"
                 value={invoiceForm.supplierId}
-                onChange={(e) => setInvoiceForm({ ...invoiceForm, supplierId: e.target.value })}
+                onChange={(e) => {
+                  const newSupId = e.target.value;
+                  const newPo = (purchaseOrders.data ?? []).find(
+                    (po) => po.supplierId === newSupId && (po.status !== "Draft" && po.status !== "Cancelled")
+                  );
+                  const newRr = (receivingReports.data ?? []).find(
+                    (rr) => rr.supplierId === newSupId && rr.status === "Posted" && (!newPo || rr.purchaseOrderId === newPo.id)
+                  );
+                  setInvoiceForm((prev) => ({
+                    ...prev,
+                    supplierId: newSupId,
+                    purchaseOrderId: newPo?.id ?? "",
+                    receivingReportId: newRr?.id ?? "",
+                    items: prev.items.map((it) => {
+                      const poLines = newPo?.items.filter((l) => l.productId === it.productId) ?? [];
+                      const rrLines = newRr?.items.filter((l) => l.productId === it.productId) ?? [];
+                      return {
+                        ...it,
+                        poItemId: poLines.length === 1 ? poLines[0].id : undefined,
+                        rrItemId: rrLines.length === 1 ? rrLines[0].id : undefined,
+                      };
+                    }),
+                  }));
+                }}
               >
                 {(foundation.data?.suppliers ?? []).map((s) => (
                   <option key={s.id} value={s.id}>
@@ -2008,6 +2034,7 @@ export function ProcureToPayPage() {
             <div>
               <label className="block text-xs font-medium text-slate-700">Supplier Invoice #</label>
               <TextInput
+                data-testid="invoice-number-input"
                 value={invoiceForm.invoiceNumber}
                 onChange={(e) => setInvoiceForm({ ...invoiceForm, invoiceNumber: e.target.value })}
               />
@@ -2016,8 +2043,94 @@ export function ProcureToPayPage() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
+              <label className="block text-xs font-medium text-slate-700">Purchase Order (PO)</label>
+              <Select
+                data-testid="invoice-po-select"
+                value={invoiceForm.purchaseOrderId}
+                onChange={(e) => {
+                  const newPoId = e.target.value;
+                  const newPo = (purchaseOrders.data ?? []).find((p) => p.id === newPoId);
+                  const currentRr = (receivingReports.data ?? []).find((r) => r.id === invoiceForm.receivingReportId);
+                  const nextRrId = currentRr && (!newPoId || currentRr.purchaseOrderId === newPoId) ? invoiceForm.receivingReportId : "";
+                  const nextRr = (receivingReports.data ?? []).find((r) => r.id === nextRrId);
+
+                  setInvoiceForm((prev) => ({
+                    ...prev,
+                    purchaseOrderId: newPoId,
+                    receivingReportId: nextRrId,
+                    items: prev.items.map((it) => {
+                      const poLines = newPo?.items.filter((item) => item.productId === it.productId) ?? [];
+                      const rrLines = nextRr?.items.filter((item) => item.productId === it.productId) ?? [];
+                      return {
+                        ...it,
+                        poItemId: poLines.length === 1 ? poLines[0].id : undefined,
+                        rrItemId: rrLines.length === 1 ? rrLines[0].id : undefined,
+                      };
+                    }),
+                  }));
+                }}
+              >
+                <option value="">-- None / Standalone Invoice --</option>
+                {(purchaseOrders.data ?? [])
+                  .filter(
+                    (po) =>
+                      po.supplierId === invoiceForm.supplierId &&
+                      (po.status !== "Draft" && po.status !== "Cancelled")
+                  )
+                  .map((po) => (
+                    <option key={po.id} value={po.id}>
+                      {po.poNumber} ({po.status}) - {money(po.totalCents)}
+                    </option>
+                  ))}
+              </Select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700">Goods Receiving Report (RR)</label>
+              <Select
+                data-testid="invoice-rr-select"
+                value={invoiceForm.receivingReportId}
+                onChange={(e) => {
+                  const newRrId = e.target.value;
+                  const newRr = (receivingReports.data ?? []).find((r) => r.id === newRrId);
+                  const currentPo = (purchaseOrders.data ?? []).find((p) => p.id === invoiceForm.purchaseOrderId);
+
+                  setInvoiceForm((prev) => ({
+                    ...prev,
+                    receivingReportId: newRrId,
+                    items: prev.items.map((it) => {
+                      const poLines = currentPo?.items.filter((item) => item.productId === it.productId) ?? [];
+                      const rrLines = newRr?.items.filter((item) => item.productId === it.productId) ?? [];
+                      return {
+                        ...it,
+                        poItemId: poLines.length === 1 ? poLines[0].id : undefined,
+                        rrItemId: rrLines.length === 1 ? rrLines[0].id : undefined,
+                      };
+                    }),
+                  }));
+                }}
+              >
+                <option value="">-- None / No RR Link --</option>
+                {(receivingReports.data ?? [])
+                  .filter(
+                    (rr) =>
+                      rr.supplierId === invoiceForm.supplierId &&
+                      rr.status === "Posted" &&
+                      (!invoiceForm.purchaseOrderId || rr.purchaseOrderId === invoiceForm.purchaseOrderId)
+                  )
+                  .map((rr) => (
+                    <option key={rr.id} value={rr.id}>
+                      {rr.rrNumber} (PO: {rr.poNumber})
+                    </option>
+                  ))}
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
               <label className="block text-xs font-medium text-slate-700">Invoice Date</label>
               <TextInput
+                data-testid="invoice-date-input"
                 type="date"
                 value={invoiceForm.invoiceDate}
                 onChange={(e) => setInvoiceForm({ ...invoiceForm, invoiceDate: e.target.value })}
@@ -2026,6 +2139,7 @@ export function ProcureToPayPage() {
             <div>
               <label className="block text-xs font-medium text-slate-700">Due Date</label>
               <TextInput
+                data-testid="invoice-due-date-input"
                 type="date"
                 value={invoiceForm.dueDate}
                 onChange={(e) => setInvoiceForm({ ...invoiceForm, dueDate: e.target.value })}
@@ -2033,112 +2147,226 @@ export function ProcureToPayPage() {
             </div>
           </div>
 
-          <div className="border-t pt-3 space-y-2">
+          <div className="border-t pt-3 space-y-3">
             <h4 className="text-xs font-semibold uppercase text-slate-500">Invoice Lines</h4>
-            {invoiceForm.items.map((item, idx) => (
-              <div key={idx} className="grid grid-cols-4 gap-2 items-end">
-                <div className="col-span-2">
-                  <label className="block text-xs font-medium text-slate-700">Product</label>
-                  <Select
-                    value={item.productId}
-                    onChange={(e) => {
-                      const prod = foundation.data?.products.find((p) => p.id === e.target.value);
-                      const updated = [...invoiceForm.items];
-                      updated[idx].productId = e.target.value;
-                      if (prod) {
-                        updated[idx].productName = prod.name;
-                        updated[idx].unitCost = (prod.costPriceCents / 100).toFixed(2);
-                      }
-                      setInvoiceForm({ ...invoiceForm, items: updated });
-                    }}
-                  >
-                    {(foundation.data?.products ?? []).map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </Select>
+            {invoiceForm.items.map((item, idx) => {
+              const selectedPo = (purchaseOrders.data ?? []).find((p) => p.id === invoiceForm.purchaseOrderId);
+              const selectedRr = (receivingReports.data ?? []).find((r) => r.id === invoiceForm.receivingReportId);
+              const matchingPoLines = selectedPo?.items.filter((l) => l.productId === item.productId) ?? [];
+              const matchingRrLines = selectedRr?.items.filter((l) => l.productId === item.productId) ?? [];
+
+              return (
+                <div key={idx} className="space-y-2 border-b pb-3">
+                  <div className="grid grid-cols-4 gap-2 items-end">
+                    <div className="col-span-2">
+                      <label className="block text-xs font-medium text-slate-700">Product</label>
+                      <Select
+                        data-testid={`invoice-item-${idx}-product-select`}
+                        value={item.productId}
+                        onChange={(e) => {
+                          const newProdId = e.target.value;
+                          const prod = foundation.data?.products.find((p) => p.id === newProdId);
+                          const currentPo = (purchaseOrders.data ?? []).find((p) => p.id === invoiceForm.purchaseOrderId);
+                          const currentRr = (receivingReports.data ?? []).find((r) => r.id === invoiceForm.receivingReportId);
+                          const poLines = currentPo?.items.filter((l) => l.productId === newProdId) ?? [];
+                          const rrLines = currentRr?.items.filter((l) => l.productId === newProdId) ?? [];
+
+                          const updated = [...invoiceForm.items];
+                          updated[idx] = {
+                            ...updated[idx],
+                            productId: newProdId,
+                            productName: prod ? prod.name : "Item",
+                            unitCost: prod ? (prod.costPriceCents / 100).toFixed(2) : updated[idx].unitCost,
+                            poItemId: poLines.length === 1 ? poLines[0].id : undefined,
+                            rrItemId: rrLines.length === 1 ? rrLines[0].id : undefined,
+                          };
+                          setInvoiceForm({ ...invoiceForm, items: updated });
+                        }}
+                      >
+                        {(foundation.data?.products ?? []).map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700">Qty</label>
+                      <TextInput
+                        data-testid={`invoice-item-${idx}-qty-input`}
+                        type="number"
+                        value={item.invoicedQty}
+                        onChange={(e) => {
+                          const updated = [...invoiceForm.items];
+                          updated[idx].invoicedQty = e.target.value;
+                          setInvoiceForm({ ...invoiceForm, items: updated });
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700">Unit Cost (₱)</label>
+                      <TextInput
+                        data-testid={`invoice-item-${idx}-cost-input`}
+                        type="number"
+                        step="0.01"
+                        value={item.unitCost}
+                        onChange={(e) => {
+                          const updated = [...invoiceForm.items];
+                          updated[idx].unitCost = e.target.value;
+                          setInvoiceForm({ ...invoiceForm, items: updated });
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Explicit Line Selectors for Disambiguation */}
+                  {selectedPo && matchingPoLines.length > 1 && (
+                    <div className="p-2 bg-amber-50 border border-amber-300 rounded text-xs space-y-1">
+                      <div className="font-semibold text-amber-900 flex items-center justify-between">
+                        <span>Multiple PO lines for this product. Select target PO line:</span>
+                        {!item.poItemId && <span className="text-red-600 font-bold">Selection Required</span>}
+                      </div>
+                      <Select
+                        data-testid={`invoice-item-${idx}-po-line-select`}
+                        value={item.poItemId ?? ""}
+                        onChange={(e) => {
+                          const updated = [...invoiceForm.items];
+                          updated[idx].poItemId = e.target.value || undefined;
+                          setInvoiceForm({ ...invoiceForm, items: updated });
+                        }}
+                      >
+                        <option value="">-- Choose matching PO line --</option>
+                        {matchingPoLines.map((poLine, lineIdx) => (
+                          <option key={poLine.id} value={poLine.id}>
+                            Line #{poLine.lineNumber || lineIdx + 1}: {(poLine.orderedQuantityX1000 / 1000).toFixed(0)} ordered @ ₱{(poLine.unitCostCents / 100).toFixed(2)} (Total: ₱{(poLine.totalCostCents / 100).toFixed(2)})
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                  )}
+                  {selectedPo && matchingPoLines.length === 1 && (
+                    <div className="text-[11px] text-slate-500">
+                      Linked PO Line: Line #{matchingPoLines[0].lineNumber || 1} ({(matchingPoLines[0].orderedQuantityX1000 / 1000).toFixed(0)} ordered @ ₱{(matchingPoLines[0].unitCostCents / 100).toFixed(2)})
+                    </div>
+                  )}
+
+                  {selectedRr && matchingRrLines.length > 1 && (
+                    <div className="p-2 bg-amber-50 border border-amber-300 rounded text-xs space-y-1">
+                      <div className="font-semibold text-amber-900 flex items-center justify-between">
+                        <span>Multiple RR lines for this product. Select target RR line:</span>
+                        {!item.rrItemId && <span className="text-red-600 font-bold">Selection Required</span>}
+                      </div>
+                      <Select
+                        data-testid={`invoice-item-${idx}-rr-line-select`}
+                        value={item.rrItemId ?? ""}
+                        onChange={(e) => {
+                          const updated = [...invoiceForm.items];
+                          updated[idx].rrItemId = e.target.value || undefined;
+                          setInvoiceForm({ ...invoiceForm, items: updated });
+                        }}
+                      >
+                        <option value="">-- Choose matching RR line --</option>
+                        {matchingRrLines.map((rrLine, lineIdx) => (
+                          <option key={rrLine.id} value={rrLine.id}>
+                            Line #{lineIdx + 1}: Accepted {(rrLine.acceptedQuantityX1000 / 1000).toFixed(0)} @ ₱{(rrLine.unitCostCents / 100).toFixed(2)}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                  )}
+                  {selectedRr && matchingRrLines.length === 1 && (
+                    <div className="text-[11px] text-slate-500">
+                      Linked RR Line: Accepted {(matchingRrLines[0].acceptedQuantityX1000 / 1000).toFixed(0)} @ ₱{(matchingRrLines[0].unitCostCents / 100).toFixed(2)}
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700">Qty</label>
-                  <TextInput
-                    type="number"
-                    value={item.invoicedQty}
-                    onChange={(e) => {
-                      const updated = [...invoiceForm.items];
-                      updated[idx].invoicedQty = e.target.value;
-                      setInvoiceForm({ ...invoiceForm, items: updated });
-                    }}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700">Unit Cost (₱)</label>
-                  <TextInput
-                    type="number"
-                    step="0.01"
-                    value={item.unitCost}
-                    onChange={(e) => {
-                      const updated = [...invoiceForm.items];
-                      updated[idx].unitCost = e.target.value;
-                      setInvoiceForm({ ...invoiceForm, items: updated });
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
-          <div className="flex justify-end gap-2 pt-4 border-t">
-            <Button variant="secondary" onClick={() => setInvoiceModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={async () => {
-                try {
-                  const subtotalCents = invoiceForm.items.reduce(
-                    (sum, it) => sum + Math.round(parseFloat(it.invoicedQty || "0") * parseFloat(it.unitCost || "0") * 100),
-                    0
-                  );
-                  await createSupplierInvoice({
-                    supplierId: invoiceForm.supplierId,
-                    invoiceNumber: invoiceForm.invoiceNumber,
-                    invoiceDate: invoiceForm.invoiceDate,
-                    dueDate: invoiceForm.dueDate,
-                    purchaseOrderId: invoiceForm.purchaseOrderId || undefined,
-                    receivingReportId: invoiceForm.receivingReportId || undefined,
-                    subtotalCents,
-                    totalCents: subtotalCents,
-                    notes: invoiceForm.notes,
-                    items: invoiceForm.items.map((it) => {
-                      const matchingPoLines = (purchaseOrders.data ?? [])
-                        .find((po) => po.id === invoiceForm.purchaseOrderId)
-                        ?.items.filter((item) => item.productId === it.productId) ?? [];
-                      const matchingRrLines = (receivingReports.data ?? [])
-                        .find((rr) => rr.id === invoiceForm.receivingReportId)
-                        ?.items.filter((item) => item.productId === it.productId) ?? [];
-                      const uniquePoLine = matchingPoLines.length === 1 ? matchingPoLines[0] : undefined;
-                      const uniqueRrLine = matchingRrLines.length === 1 ? matchingRrLines[0] : undefined;
-                      return {
-                        productId: it.productId,
-                        invoicedQuantityX1000: Math.round(parseFloat(it.invoicedQty || "0") * 1000),
-                        unitCostCents: Math.round(parseFloat(it.unitCost || "0") * 100),
-                        poItemId: it.poItemId || uniquePoLine?.id,
-                        rrItemId: it.rrItemId || uniqueRrLine?.id,
-                      };
-                    }),
-                  });
-                  notify.success("Supplier Invoice recorded in AP Ledger!");
-                  setInvoiceModalOpen(false);
-                  refreshAll();
-                  setActiveTab("ap");
-                } catch (e) {
-                  notify.error((e as Error).message);
-                }
-              }}
-            >
-              Post Invoice & Run 3-Way Match
-            </Button>
-          </div>
+          {(() => {
+            const hasAmbiguity = invoiceForm.items.some((item) => {
+              const selectedPo = (purchaseOrders.data ?? []).find((p) => p.id === invoiceForm.purchaseOrderId);
+              const selectedRr = (receivingReports.data ?? []).find((r) => r.id === invoiceForm.receivingReportId);
+              const matchingPoLines = selectedPo?.items.filter((l) => l.productId === item.productId) ?? [];
+              const matchingRrLines = selectedRr?.items.filter((l) => l.productId === item.productId) ?? [];
+              if (matchingPoLines.length > 1 && !item.poItemId) return true;
+              if (matchingRrLines.length > 1 && !item.rrItemId) return true;
+              return false;
+            });
+
+            return (
+              <div className="flex flex-col items-end gap-2 pt-4 border-t">
+                {hasAmbiguity && (
+                  <div className="text-xs text-red-600 font-semibold" data-testid="invoice-ambiguity-warning">
+                    Cannot post invoice: Multiple PO/RR candidate lines exist for one or more items. Explicit line selection is required.
+                  </div>
+                )}
+                <div className="flex justify-end gap-2">
+                  <Button variant="secondary" onClick={() => setInvoiceModalOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    data-testid="invoice-submit-button"
+                    disabled={hasAmbiguity}
+                    onClick={async () => {
+                      try {
+                        const subtotalCents = invoiceForm.items.reduce(
+                          (sum, it) => sum + Math.round(parseFloat(it.invoicedQty || "0") * parseFloat(it.unitCost || "0") * 100),
+                          0
+                        );
+                        await createSupplierInvoice({
+                          supplierId: invoiceForm.supplierId,
+                          invoiceNumber: invoiceForm.invoiceNumber,
+                          invoiceDate: invoiceForm.invoiceDate,
+                          dueDate: invoiceForm.dueDate,
+                          purchaseOrderId: invoiceForm.purchaseOrderId || undefined,
+                          receivingReportId: invoiceForm.receivingReportId || undefined,
+                          subtotalCents,
+                          totalCents: subtotalCents,
+                          notes: invoiceForm.notes,
+                          items: invoiceForm.items.map((it) => {
+                            const matchingPoLines = (purchaseOrders.data ?? [])
+                              .find((po) => po.id === invoiceForm.purchaseOrderId)
+                              ?.items.filter((item) => item.productId === it.productId) ?? [];
+                            const matchingRrLines = (receivingReports.data ?? [])
+                              .find((rr) => rr.id === invoiceForm.receivingReportId)
+                              ?.items.filter((item) => item.productId === it.productId) ?? [];
+
+                            if (matchingPoLines.length > 1 && !it.poItemId) {
+                              throw new Error(`Ambiguous PO lines for product '${it.productName}'. Explicit line selection is required.`);
+                            }
+                            if (matchingRrLines.length > 1 && !it.rrItemId) {
+                              throw new Error(`Ambiguous RR lines for product '${it.productName}'. Explicit line selection is required.`);
+                            }
+
+                            const effectivePoItemId = it.poItemId ?? (matchingPoLines.length === 1 ? matchingPoLines[0].id : undefined);
+                            const effectiveRrItemId = it.rrItemId ?? (matchingRrLines.length === 1 ? matchingRrLines[0].id : undefined);
+
+                            return {
+                              productId: it.productId,
+                              invoicedQuantityX1000: Math.round(parseFloat(it.invoicedQty || "0") * 1000),
+                              unitCostCents: Math.round(parseFloat(it.unitCost || "0") * 100),
+                              poItemId: effectivePoItemId,
+                              rrItemId: effectiveRrItemId,
+                            };
+                          }),
+                        });
+                        notify.success("Supplier Invoice recorded in AP Ledger!");
+                        setInvoiceModalOpen(false);
+                        refreshAll();
+                        setActiveTab("ap");
+                      } catch (e) {
+                        notify.error((e as Error).message);
+                      }
+                    }}
+                  >
+                    Post Invoice & Run 3-Way Match
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </Dialog>
 

@@ -36,6 +36,12 @@ public sealed class LocalApiApplicationOptions
     /// default is fail-closed even when an older database persisted LAN as enabled.
     /// </summary>
     public bool EnableLanRemoteTransportForInternalQa { get; init; }
+
+    /// <summary>
+    /// Optional ephemeral test host identity nonce. When set, enables /api/test/host-identity
+    /// to prove process and database identity to acceptance test runners.
+    /// </summary>
+    public string? TestHostNonce { get; init; }
 }
 
 public static class LocalApiApplicationFactory
@@ -222,6 +228,26 @@ public static class LocalApiApplicationFactory
             status = "ok",
             service = "Salryn.Api.Local"
         }));
+
+        if (!string.IsNullOrWhiteSpace(options.TestHostNonce))
+        {
+            string testNonce = options.TestHostNonce;
+            app.MapGet("/api/test/host-identity", (HttpContext httpContext) =>
+            {
+                if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult localOnly)
+                {
+                    return localOnly;
+                }
+
+                return Results.Ok(new
+                {
+                    status = "ok",
+                    testHostNonce = testNonce,
+                    processId = Environment.ProcessId,
+                    databasePath = composition.DbPaths.DatabasePath
+                });
+            });
+        }
 
         app.MapPost("/api/auth/login", async (
             LoginApiRequest request,

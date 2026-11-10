@@ -1036,6 +1036,36 @@ internal static class LocalProcureToPayEndpoints
         bool? IsSelected,
         string? SelectionReason);
 
+    internal sealed record CreatePurchaseOrderLineApiInput(
+        Guid? RequisitionLineId,
+        Guid? ProductId,
+        string? ItemCode,
+        string? ItemDescription,
+        string? ProductName,
+        string? PurchaseClassification,
+        string? UnitName,
+        string? UomName,
+        long? OrderedQtyX1000,
+        long? OrderedQuantityX1000,
+        long? UnitCostCents,
+        long? DiscountCents,
+        int? TaxRateBp,
+        string? Notes)
+    {
+        public CreatePurchaseOrderLineInput ToCoreInput() => new(
+            RequisitionLineId,
+            ProductId,
+            ItemCode,
+            !string.IsNullOrWhiteSpace(ItemDescription) ? ItemDescription : (!string.IsNullOrWhiteSpace(ProductName) ? ProductName : "Purchased Item"),
+            !string.IsNullOrWhiteSpace(PurchaseClassification) ? PurchaseClassification : "DirectMaterials",
+            !string.IsNullOrWhiteSpace(UnitName) ? UnitName : (!string.IsNullOrWhiteSpace(UomName) ? UomName : "Unit"),
+            OrderedQtyX1000 ?? OrderedQuantityX1000 ?? 0L,
+            UnitCostCents ?? 0L,
+            DiscountCents ?? 0L,
+            TaxRateBp ?? 0,
+            Notes);
+    }
+
     internal sealed record CreatePurchaseOrderApiRequest(
         Guid SupplierId,
         Guid? SourceRequisitionId,
@@ -1047,12 +1077,14 @@ internal static class LocalProcureToPayEndpoints
         string? TermsAndConditions,
         string? Notes,
         bool? SubmitAndApproveImmediately,
-        IReadOnlyList<CreatePurchaseOrderLineInput>? Lines,
-        IReadOnlyList<CreatePurchaseOrderLineInput>? Items)
+        IReadOnlyList<CreatePurchaseOrderLineApiInput>? Lines,
+        IReadOnlyList<CreatePurchaseOrderLineApiInput>? Items)
     {
         public Guid? ResolvedRequisitionId => SourceRequisitionId ?? RequisitionId;
         public IReadOnlyList<CreatePurchaseOrderLineInput> ResolvedLines =>
-            Lines ?? Items ?? (IReadOnlyList<CreatePurchaseOrderLineInput>)Array.Empty<CreatePurchaseOrderLineInput>();
+            (Lines ?? Items ?? Array.Empty<CreatePurchaseOrderLineApiInput>())
+                .Select(l => l.ToCoreInput())
+                .ToList();
     }
 
     internal sealed record PurchaseOrderStatusApiRequest(
