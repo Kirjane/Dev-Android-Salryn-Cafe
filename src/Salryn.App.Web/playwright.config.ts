@@ -73,7 +73,7 @@ export default defineConfig({
       testMatch: /integrated-host.*\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
-        baseURL: process.env.SALRYN_INTEGRATED_HOST_URL ?? "http://127.0.0.1:5299",
+        baseURL: process.env.SALRYN_INTEGRATED_HOST_URL || undefined,
         viewport: { width: 1366, height: 768 },
         deviceScaleFactor: 1,
       },

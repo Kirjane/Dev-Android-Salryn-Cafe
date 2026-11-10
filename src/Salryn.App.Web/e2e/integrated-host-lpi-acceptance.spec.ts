@@ -1,8 +1,9 @@
+import fs from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 
 /**
  * INTEGRATED_HOST Real-Host Acceptance Test Suite:
- * Procure-to-Pay End-to-End Vertical Acceptance (R21-REVIEW-01).
+ * Procure-to-Pay End-to-End Vertical Acceptance (R21-REVIEW-01 / SAFETY-01).
  *
  * Requirements:
  * - Real live Local API Host on dedicated port with disposable SQLite database.
@@ -22,7 +23,82 @@ import { expect, test, type Page } from "@playwright/test";
  * - Fail-closed: zero unhandled JS exceptions, zero console errors, zero 500s.
  */
 
-const HOST_URL = (process.env.SALRYN_INTEGRATED_HOST_URL ?? "http://127.0.0.1:5299").replace(/\/+$/, "");
+function validateTestEnvironmentSafety(): string {
+  const rawHostUrl = process.env.SALRYN_INTEGRATED_HOST_URL;
+  if (!rawHostUrl || !rawHostUrl.trim()) {
+    throw new Error(
+      "FAIL-CLOSED SAFETY VIOLATION: SALRYN_INTEGRATED_HOST_URL environment variable is required. Acceptance suite cannot run against an implicit or default host."
+    );
+  }
+
+  const hostUrl = rawHostUrl.trim().replace(/\/+$/, "");
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(hostUrl);
+  } catch {
+    throw new Error(`FAIL-CLOSED SAFETY VIOLATION: Invalid SALRYN_INTEGRATED_HOST_URL '${hostUrl}'.`);
+  }
+
+  // Reject production operator default port 5299
+  if (parsedUrl.port === "5299" || (!parsedUrl.port && parsedUrl.protocol === "http:")) {
+    throw new Error(
+      `FAIL-CLOSED SAFETY VIOLATION: Acceptance suite cannot target port 5299 or default port ('${hostUrl}'). It must target an ephemeral, test-owned loopback host.`
+    );
+  }
+
+  // Must be loopback
+  if (parsedUrl.hostname !== "127.0.0.1" && parsedUrl.hostname !== "localhost") {
+    throw new Error(
+      `FAIL-CLOSED SAFETY VIOLATION: Acceptance suite cannot target non-loopback host ('${hostUrl}').`
+    );
+  }
+
+  const testToken = process.env.SALRYN_DISPOSABLE_TEST_TOKEN;
+  const markerPath = process.env.SALRYN_DISPOSABLE_MARKER_PATH;
+  if (!testToken || !markerPath) {
+    throw new Error(
+      "FAIL-CLOSED SAFETY VIOLATION: Both SALRYN_DISPOSABLE_TEST_TOKEN and SALRYN_DISPOSABLE_MARKER_PATH must be provided by the acceptance runner."
+    );
+  }
+
+  if (!fs.existsSync(markerPath)) {
+    throw new Error(
+      `FAIL-CLOSED SAFETY VIOLATION: Disposable test environment marker file does not exist at '${markerPath}'.`
+    );
+  }
+
+  let markerData: any;
+  try {
+    markerData = JSON.parse(fs.readFileSync(markerPath, "utf-8"));
+  } catch (e) {
+    throw new Error(
+      `FAIL-CLOSED SAFETY VIOLATION: Failed to parse test marker file at '${markerPath}': ${(e as Error).message}`
+    );
+  }
+
+  if (
+    !markerData ||
+    markerData.token !== testToken ||
+    !markerData.isDisposableTest ||
+    !markerData.databasePath
+  ) {
+    throw new Error(
+      "FAIL-CLOSED SAFETY VIOLATION: Disposable test environment marker token mismatch or missing isDisposableTest declaration."
+    );
+  }
+
+  // Ensure the database path does not point to operator's production directory
+  const dbPath = String(markerData.databasePath).toLowerCase();
+  if (dbPath.includes("programdata\\salryn") || dbPath.includes("program files\\")) {
+    throw new Error(
+      `FAIL-CLOSED SAFETY VIOLATION: Test marker database path targets production/installed location: '${markerData.databasePath}'.`
+    );
+  }
+
+  return hostUrl;
+}
+
+const HOST_URL = validateTestEnvironmentSafety();
 const REQUESTER_USER = process.env.SALRYN_QA_REQUESTER_USER ?? "lpi-requester";
 const REQUESTER_PASS = process.env.SALRYN_QA_REQUESTER_PASS ?? "Requester123!";
 const APCLERK_USER = process.env.SALRYN_QA_APCLERK_USER ?? "lpi-apclerk";

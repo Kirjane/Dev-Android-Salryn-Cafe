@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Diagnostics;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Data.Sqlite;
@@ -93,10 +94,25 @@ public static class LpiRealHostAcceptanceRunner
 
             Console.WriteLine($"[LPI Acceptance] Live Host started on {boundUrl}");
 
-            // 6. Run Playwright End-to-End Suite against Live Host
+            // 6. Generate Disposable Test Environment Marker (SAFETY-01)
+            string testToken = $"DISPOSABLE-TEST-{Guid.NewGuid():N}";
+            string markerPath = Path.Combine(root, "disposable-test-marker.json");
+            await File.WriteAllTextAsync(markerPath, JsonSerializer.Serialize(new
+            {
+                token = testToken,
+                isDisposableTest = true,
+                databasePath = paths.DatabasePath,
+                createdAtUtc = DateTime.UtcNow
+            })).ConfigureAwait(false);
+
             string repoRoot = FindRepoRoot() ?? Directory.GetCurrentDirectory();
             string webRoot = Path.Combine(repoRoot, "src", "Salryn.App.Web");
 
+            // 6b. Run Negative Safety Gate Tests (SAFETY-01)
+            // Verify that acceptance test execution fails closed if targeting port 5299, missing token, or corrupt marker
+            await RunNegativeSafetyTestsAsync(webRoot, markerPath, testToken).ConfigureAwait(false);
+
+            // 6c. Run Positive Playwright End-to-End Suite against Verified Live Host
             ProcessStartInfo psi = new("cmd.exe", "/c npx playwright test e2e/integrated-host-lpi-acceptance.spec.ts --project=integrated-host")
             {
                 WorkingDirectory = webRoot,
@@ -105,6 +121,8 @@ public static class LpiRealHostAcceptanceRunner
                 UseShellExecute = false
             };
             psi.Environment["SALRYN_INTEGRATED_HOST_URL"] = boundUrl;
+            psi.Environment["SALRYN_DISPOSABLE_TEST_TOKEN"] = testToken;
+            psi.Environment["SALRYN_DISPOSABLE_MARKER_PATH"] = markerPath;
             psi.Environment["SALRYN_QA_REQUESTER_USER"] = "lpi-requester";
             psi.Environment["SALRYN_QA_REQUESTER_PASS"] = "Requester123!";
             psi.Environment["SALRYN_QA_APCLERK_USER"] = "lpi-apclerk";
@@ -299,6 +317,68 @@ public static class LpiRealHostAcceptanceRunner
         command.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O"));
         command.ExecuteNonQuery();
         return id;
+    }
+
+    private static async Task RunNegativeSafetyTestsAsync(string webRoot, string markerPath, string validToken)
+    {
+        Console.WriteLine("[LPI Acceptance] Running SAFETY-01 negative gate checks...");
+
+        // Case A: Missing host URL or targeting port 5299
+        await AssertSafetyRejectionAsync(webRoot, new Dictionary<string, string>
+        {
+            ["SALRYN_INTEGRATED_HOST_URL"] = "http://127.0.0.1:5299",
+            ["SALRYN_DISPOSABLE_TEST_TOKEN"] = validToken,
+            ["SALRYN_DISPOSABLE_MARKER_PATH"] = markerPath,
+        }, "FAIL-CLOSED SAFETY VIOLATION: Acceptance suite cannot target port 5299").ConfigureAwait(false);
+
+        // Case B: Missing disposable marker
+        await AssertSafetyRejectionAsync(webRoot, new Dictionary<string, string>
+        {
+            ["SALRYN_INTEGRATED_HOST_URL"] = "http://127.0.0.1:59999",
+            ["SALRYN_DISPOSABLE_TEST_TOKEN"] = "",
+            ["SALRYN_DISPOSABLE_MARKER_PATH"] = "",
+        }, "FAIL-CLOSED SAFETY VIOLATION: Both SALRYN_DISPOSABLE_TEST_TOKEN and SALRYN_DISPOSABLE_MARKER_PATH must be provided").ConfigureAwait(false);
+
+        // Case C: Mismatched marker token
+        await AssertSafetyRejectionAsync(webRoot, new Dictionary<string, string>
+        {
+            ["SALRYN_INTEGRATED_HOST_URL"] = "http://127.0.0.1:59999",
+            ["SALRYN_DISPOSABLE_TEST_TOKEN"] = "DISPOSABLE-TEST-WRONG-TOKEN",
+            ["SALRYN_DISPOSABLE_MARKER_PATH"] = markerPath,
+        }, "FAIL-CLOSED SAFETY VIOLATION: Disposable test environment marker token mismatch").ConfigureAwait(false);
+
+        Console.WriteLine("[LPI Acceptance] SAFETY-01 negative gate checks PASSED: all unsafe invocations failed closed.");
+    }
+
+    private static async Task AssertSafetyRejectionAsync(string webRoot, Dictionary<string, string> env, string expectedErrorSubstring)
+    {
+        ProcessStartInfo psi = new("cmd.exe", "/c npx playwright test e2e/integrated-host-lpi-acceptance.spec.ts --project=integrated-host")
+        {
+            WorkingDirectory = webRoot,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        foreach (var kv in env)
+        {
+            psi.Environment[kv.Key] = kv.Value;
+        }
+
+        using Process? proc = Process.Start(psi);
+        if (proc is null) throw new InvalidOperationException("Failed to launch test process for safety check.");
+        string stdout = await proc.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
+        string stderr = await proc.StandardError.ReadToEndAsync().ConfigureAwait(false);
+        await proc.WaitForExitAsync().ConfigureAwait(false);
+
+        string output = stdout + "\n" + stderr;
+        if (proc.ExitCode == 0)
+        {
+            throw new InvalidOperationException($"SAFETY GATE FAILURE: Unsafe test execution was expected to fail, but succeeded with Exit 0! Output:\n{output}");
+        }
+        if (!output.Contains(expectedErrorSubstring, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"SAFETY GATE FAILURE: Process exited with {proc.ExitCode} but did not contain expected error '{expectedErrorSubstring}'. Output:\n{output}");
+        }
     }
 
     private static string? FindRepoRoot()

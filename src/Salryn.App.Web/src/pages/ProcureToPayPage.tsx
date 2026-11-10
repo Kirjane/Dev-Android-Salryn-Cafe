@@ -2110,18 +2110,20 @@ export function ProcureToPayPage() {
                     totalCents: subtotalCents,
                     notes: invoiceForm.notes,
                     items: invoiceForm.items.map((it) => {
-                      const poLine = (purchaseOrders.data ?? [])
+                      const matchingPoLines = (purchaseOrders.data ?? [])
                         .find((po) => po.id === invoiceForm.purchaseOrderId)
-                        ?.items.find((item) => item.productId === it.productId);
-                      const rrLine = (receivingReports.data ?? [])
+                        ?.items.filter((item) => item.productId === it.productId) ?? [];
+                      const matchingRrLines = (receivingReports.data ?? [])
                         .find((rr) => rr.id === invoiceForm.receivingReportId)
-                        ?.items.find((item) => item.productId === it.productId);
+                        ?.items.filter((item) => item.productId === it.productId) ?? [];
+                      const uniquePoLine = matchingPoLines.length === 1 ? matchingPoLines[0] : undefined;
+                      const uniqueRrLine = matchingRrLines.length === 1 ? matchingRrLines[0] : undefined;
                       return {
                         productId: it.productId,
                         invoicedQuantityX1000: Math.round(parseFloat(it.invoicedQty || "0") * 1000),
                         unitCostCents: Math.round(parseFloat(it.unitCost || "0") * 100),
-                        poItemId: it.poItemId || poLine?.id,
-                        rrItemId: it.rrItemId || rrLine?.id,
+                        poItemId: it.poItemId || uniquePoLine?.id,
+                        rrItemId: it.rrItemId || uniqueRrLine?.id,
                       };
                     }),
                   });

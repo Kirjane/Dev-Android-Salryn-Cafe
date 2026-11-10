@@ -172,15 +172,37 @@ public sealed partial class SqliteProcureToPayService
 
             if (poLine is null && line.ProductId.HasValue && po is not null)
             {
-                poLine = po.Lines.FirstOrDefault(x => x.ProductId == line.ProductId.Value);
+                var matchingPoLines = po.Lines.Where(x => x.ProductId == line.ProductId.Value).ToList();
+                if (matchingPoLines.Count == 1)
+                {
+                    poLine = matchingPoLines[0];
+                }
+                else if (matchingPoLines.Count > 1)
+                {
+                    return Result<SupplierInvoiceModel>.Fail(
+                        Error.Validation(
+                            "Lpi.Payables.AmbiguousPoLine",
+                            $"Multiple Purchase Order lines found for product '{line.ItemDescription}' on PO '{po.PoNumber}'. Explicit PurchaseOrderLineId is required to disambiguate."));
+                }
             }
 
             if (rrLine is null && line.ProductId.HasValue && rr is not null)
             {
-                rrLine = rr.Lines.FirstOrDefault(x => x.ProductId == line.ProductId.Value);
-                if (poLine is null && rrLine is not null && poLineMap.TryGetValue(rrLine.PurchaseOrderLineId, out var derivedPlFromRr))
+                var matchingRrLines = rr.Lines.Where(x => x.ProductId == line.ProductId.Value).ToList();
+                if (matchingRrLines.Count == 1)
                 {
-                    poLine = derivedPlFromRr;
+                    rrLine = matchingRrLines[0];
+                    if (poLine is null && poLineMap.TryGetValue(rrLine.PurchaseOrderLineId, out var derivedPlFromRr))
+                    {
+                        poLine = derivedPlFromRr;
+                    }
+                }
+                else if (matchingRrLines.Count > 1)
+                {
+                    return Result<SupplierInvoiceModel>.Fail(
+                        Error.Validation(
+                            "Lpi.Payables.AmbiguousRrLine",
+                            $"Multiple Receiving Report lines found for product '{line.ItemDescription}' on RR '{rr.RrNumber}'. Explicit ReceivingReportLineId is required to disambiguate."));
                 }
             }
 

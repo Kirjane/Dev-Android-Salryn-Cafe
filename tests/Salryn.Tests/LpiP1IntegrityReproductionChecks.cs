@@ -70,6 +70,7 @@ public static class LpiP1IntegrityReproductionChecks
             await TestP1R302MigrationV28NoStockDuplicationAsync();
             await TestW5R2QuotationPreservationAndContractFallbacksAsync(service, paths, requesterId, supervisorId, resaleProdId);
             await TestW5R21ReconciliationIntegrityAsync(service, paths, requesterId, supervisorId, apClerkId, resaleProdId);
+            await TestW5R21DuplicateProductAmbiguityAndFinancialIntegrityAsync(service, paths, requesterId, supervisorId, apClerkId, resaleProdId);
 
             Console.WriteLine("LPI P1 Integrity: All findings (P1-01 through P1-06 and P1-R3-01/02) verified with full regression closure PASS.");
         }
@@ -2012,6 +2013,203 @@ public static class LpiP1IntegrityReproductionChecks
         {
             await app.StopAsync().ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// FINANCIAL-02: Duplicate-product PO/RR line disambiguation, ambiguity rejection, line isolation, and cumulative overbilling protection.
+    /// </summary>
+    private static async Task TestW5R21DuplicateProductAmbiguityAndFinancialIntegrityAsync(
+        SqliteProcureToPayService service,
+        DbPaths paths,
+        Guid requesterId,
+        Guid supervisorId,
+        Guid apClerkId,
+        Guid resaleProdId)
+    {
+        // 1. Create a supplier
+        LpiSupplier supplier = RequireSuccess(
+            await service.CreateSupplierAsync(new CreateLpiSupplierRequest(
+                "SUP-DUPE-PROD-01", "Dupe Product Specialty Roasters", "Ana Tan", "09181234599", "ana@duperoasters.ph",
+                "Mandaluyong City", "111-222-333-000", 30, 7, "Duplicate line regression vendor", requesterId)),
+            "create dupe supplier");
+
+        // 2. Create PO directly with 2 lines for resaleProdId:
+        // Line A: 5 units @ ₱400 (40,000 cents)
+        // Line B: 5 units @ ₱500 (50,000 cents)
+        PurchaseOrderModel po = RequireSuccess(
+            await service.CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest(
+                supplier.Id,
+                SourceRequisitionId: null,
+                ExpectedDeliveryDate: DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7)),
+                DeliveryLocationId: null,
+                PaymentTermsDays: 30,
+                ShippingCents: 0,
+                TermsAndConditions: "Standard",
+                Notes: null,
+                SubmitAndApproveImmediately: true,
+                Lines: new[]
+                {
+                    new CreatePurchaseOrderLineInput(null, resaleProdId, "P1-PROD-RESALE", "P1 Commercial Resale Item Lot A", PurchaseClassifications.Resale, "pcs", 5_000, 40_000, 0, 0, null),
+                    new CreatePurchaseOrderLineInput(null, resaleProdId, "P1-PROD-RESALE", "P1 Commercial Resale Item Lot B", PurchaseClassifications.Resale, "pcs", 5_000, 50_000, 0, 0, null)
+                },
+                ActorUserId: supervisorId)),
+            "create dupe PO");
+
+        Require(po.Lines.Count == 2, $"Expected 2 PO lines, got {po.Lines.Count}");
+        PurchaseOrderLineModel poLineA = po.Lines[0]; // ₱400
+        PurchaseOrderLineModel poLineB = po.Lines[1]; // ₱500
+        Require(poLineA.UnitCostCents == 40_000, $"PO Line A cost must be 40000, got {poLineA.UnitCostCents}");
+        Require(poLineB.UnitCostCents == 50_000, $"PO Line B cost must be 50000, got {poLineB.UnitCostCents}");
+
+        // 3. Post Receiving Report for both lines
+        ReceivingReportModel rr = RequireSuccess(
+            await service.CreateReceivingReportAsync(new CreateReceivingReportRequest(
+                po.Id,
+                LocationId: null,
+                DeliveryReceiptNo: "DR-DUPE-001",
+                SupplierInvoiceRef: null,
+                CarrierOrDriver: "Fleet-1",
+                ReceivedDate: DateOnly.FromDateTime(DateTime.UtcNow),
+                PostImmediately: true,
+                OverdeliveryApproverUserId: null,
+                OverdeliveryApprovalReason: null,
+                ClientRequestId: "RR-DUPE-001-REQ",
+                Notes: null,
+                Lines: new[]
+                {
+                    new CreateReceivingReportLineInput(poLineA.Id, 5_000, 5_000, 0, null, null, null, null),
+                    new CreateReceivingReportLineInput(poLineB.Id, 5_000, 5_000, 0, null, null, null, null)
+                },
+                ReceivedByUserId: apClerkId)),
+            "create dupe RR");
+
+        Require(rr.Lines.Count == 2, $"Expected 2 RR lines, got {rr.Lines.Count}");
+        ReceivingReportLineModel rrLineA = rr.Lines.First(l => l.PurchaseOrderLineId == poLineA.Id);
+        ReceivingReportLineModel rrLineB = rr.Lines.First(l => l.PurchaseOrderLineId == poLineB.Id);
+
+        // 4. ATTEMPT 1: Ambiguous Invoice Intake (Omits Line IDs, specifies only ProductId)
+        // Must FAIL with AmbiguousPoLine error
+        Result<SupplierInvoiceModel> ambiguousResult = await service.CreateSupplierInvoiceAsync(new CreateSupplierInvoiceRequest(
+            supplier.Id,
+            "INV-AMBIG-001",
+            po.Id,
+            rr.Id,
+            DateOnly.FromDateTime(DateTime.UtcNow),
+            DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)),
+            0, 0, true,
+            new[]
+            {
+                new CreateSupplierInvoiceLineInput(null, null, resaleProdId, "P1 Commercial Resale Item", 5_000, 50_000, 0)
+            },
+            apClerkId));
+
+        Require(ambiguousResult.IsFailure, "Ambiguous invoice intake without explicit line IDs MUST FAIL.");
+        Require(ambiguousResult.ErrorDetail?.Code == "Lpi.Payables.AmbiguousPoLine",
+            $"Expected error code 'Lpi.Payables.AmbiguousPoLine', got '{ambiguousResult.ErrorDetail?.Code}'");
+
+        // 5. ATTEMPT 2: Mismatched Line Pairing (PO Line A paired with RR Line B)
+        // Must FAIL with LinePoMismatch error
+        Result<SupplierInvoiceModel> mismatchResult = await service.CreateSupplierInvoiceAsync(new CreateSupplierInvoiceRequest(
+            supplier.Id,
+            "INV-MISMATCH-001",
+            po.Id,
+            rr.Id,
+            DateOnly.FromDateTime(DateTime.UtcNow),
+            DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)),
+            0, 0, true,
+            new[]
+            {
+                new CreateSupplierInvoiceLineInput(poLineA.Id, rrLineB.Id, resaleProdId, "P1 Commercial Resale Item", 5_000, 50_000, 0)
+            },
+            apClerkId));
+
+        Require(mismatchResult.IsFailure, "Mismatched PO and RR line pairing MUST FAIL.");
+        Require(mismatchResult.ErrorDetail?.Code == "Lpi.Payables.LinePoMismatch",
+            $"Expected error code 'Lpi.Payables.LinePoMismatch', got '{mismatchResult.ErrorDetail?.Code}'");
+
+        // 6. ATTEMPT 3: Valid Disambiguated Invoice for Line B (₱500)
+        // Must succeed with Matched status (0 variance against PO Line B's ₱500 cost)
+        SupplierInvoiceModel invBeta = RequireSuccess(
+            await service.CreateSupplierInvoiceAsync(new CreateSupplierInvoiceRequest(
+                supplier.Id,
+                "INV-DISAMBIG-BETA-001",
+                po.Id,
+                rr.Id,
+                DateOnly.FromDateTime(DateTime.UtcNow),
+                DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)),
+                0, 0, true,
+                new[]
+                {
+                    new CreateSupplierInvoiceLineInput(poLineB.Id, rrLineB.Id, resaleProdId, "P1 Commercial Resale Item", 5_000, 50_000, 0)
+                },
+                apClerkId)),
+            "create disambiguated invoice for Line B");
+
+        Require(invBeta.MatchStatus == SupplierInvoiceMatchStatuses.Matched,
+            $"Expected Matched match status for Line B, got {invBeta.MatchStatus}");
+        Require(invBeta.TotalInvoiceCents == 250_000,
+            $"Expected total invoice 250,000 cents, got {invBeta.TotalInvoiceCents}");
+
+        // 7. ATTEMPT 4: Prove Financial Isolation — Line A is NOT affected or billed by Line B's invoice
+        // Line A must still have all 5 units unbilled
+        SupplierInvoiceModel invAlpha = RequireSuccess(
+            await service.CreateSupplierInvoiceAsync(new CreateSupplierInvoiceRequest(
+                supplier.Id,
+                "INV-DISAMBIG-ALPHA-001",
+                po.Id,
+                rr.Id,
+                DateOnly.FromDateTime(DateTime.UtcNow),
+                DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)),
+                0, 0, true,
+                new[]
+                {
+                    new CreateSupplierInvoiceLineInput(poLineA.Id, rrLineA.Id, resaleProdId, "P1 Commercial Resale Item", 5_000, 45_000, 0)
+                },
+                apClerkId)),
+            "create disambiguated invoice for Line A");
+
+        Require(invAlpha.MatchStatus == SupplierInvoiceMatchStatuses.PriceVariance,
+            $"Expected PriceVariance match status for Line A, got {invAlpha.MatchStatus}");
+        Require(invAlpha.Status == "VarianceFlagged",
+            $"Expected VarianceFlagged status for Line A, got {invAlpha.Status}");
+
+        // Approving Line A's variance does NOT alter Line B's invoice status or balance
+        RequireSuccess(
+            await service.ApproveInvoiceVarianceAsync(new ApproveInvoiceVarianceRequest(
+                invAlpha.Id, "Authorized higher tier cost for lot A", true, supervisorId)),
+            "approve variance for Line A");
+
+        SupplierInvoiceModel reloadedBeta = RequireSuccess(
+            await service.GetSupplierInvoiceByIdAsync(invBeta.Id),
+            "reload invBeta");
+        Require(reloadedBeta.MatchStatus == SupplierInvoiceMatchStatuses.Matched,
+            "Line B match status must remain Matched after Line A variance approval.");
+        Require(reloadedBeta.RemainingBalanceCents == 250_000,
+            "Line B remaining balance must remain intact.");
+
+        // 8. ATTEMPT 5: Cumulative Overbilling Prevention on Line B
+        SupplierInvoiceModel invBetaDuplicate = RequireSuccess(
+            await service.CreateSupplierInvoiceAsync(new CreateSupplierInvoiceRequest(
+                supplier.Id,
+                "INV-DISAMBIG-BETA-DUPE",
+                po.Id,
+                rr.Id,
+                DateOnly.FromDateTime(DateTime.UtcNow),
+                DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)),
+                0, 0, true,
+                new[]
+                {
+                    new CreateSupplierInvoiceLineInput(poLineB.Id, rrLineB.Id, resaleProdId, "P1 Commercial Resale Item", 5_000, 50_000, 0)
+                },
+                apClerkId)),
+            "attempt duplicate billing on Line B");
+
+        Require(invBetaDuplicate.MatchStatus == SupplierInvoiceMatchStatuses.QtyVariance,
+            $"Expected QtyVariance match status for duplicate billing on Line B, got {invBetaDuplicate.MatchStatus}");
+        Require(invBetaDuplicate.Status == "VarianceFlagged",
+            $"Expected VarianceFlagged status for overbilled invoice, got {invBetaDuplicate.Status}");
+
+        Console.WriteLine("P1-R21-02: Duplicate-product same-PO line ambiguity rejection, line isolation, variance segregation, and cumulative overbilling protection verified PASS.");
     }
 
     #region Helpers

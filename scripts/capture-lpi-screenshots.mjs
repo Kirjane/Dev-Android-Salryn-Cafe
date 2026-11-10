@@ -162,6 +162,10 @@ async function run() {
         } else if (data.method === "Log.entryAdded") {
           const entry = data.params?.entry;
           if (entry?.level === "error") {
+            // Documented exclusions: ignore benign favicon.ico 404 requests triggered by browser UI
+            if (entry.text && entry.text.includes("favicon.ico")) {
+              return;
+            }
             console.error(`[CDP CONSOLE ERROR] [${currentTab}]:`, entry.text);
             consoleErrors.push({ tab: currentTab, text: entry.text });
           }
@@ -233,6 +237,12 @@ async function run() {
         throw new Error(`FAIL-CLOSED: Tab '${t.tab}' threw ${tabExceptions.length} uncaught JS exception(s): ${JSON.stringify(tabExceptions)}`);
       }
 
+      // 5. Assert no console errors logged during tab operation (GATE-03)
+      const tabConsoleErrors = consoleErrors.filter((e) => e.tab === t.tab);
+      if (tabConsoleErrors.length > 0) {
+        throw new Error(`FAIL-CLOSED: Tab '${t.tab}' logged ${tabConsoleErrors.length} console error(s): ${JSON.stringify(tabConsoleErrors)}`);
+      }
+
       console.log(`[LPI Screenshot Runner] Tab '${t.tab}' verified healthy. Capturing screenshot...`);
 
       const shot = await send("Page.captureScreenshot", {
@@ -248,6 +258,10 @@ async function run() {
 
     if (unhandledExceptions.length > 0) {
       throw new Error(`FAIL-CLOSED: Run completed with ${unhandledExceptions.length} uncaught exceptions: ${JSON.stringify(unhandledExceptions)}`);
+    }
+
+    if (consoleErrors.length > 0) {
+      throw new Error(`FAIL-CLOSED: Run completed with ${consoleErrors.length} console error(s): ${JSON.stringify(consoleErrors)}`);
     }
 
     if (networkFailures.length > 0) {
