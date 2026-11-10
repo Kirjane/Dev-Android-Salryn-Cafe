@@ -169,7 +169,7 @@ internal static class LocalProcureToPayEndpoints
                     request.Priority ?? "Normal",
                     request.Purpose ?? "Requisition",
                     request.Notes,
-                    request.SubmitImmediately ?? true,
+                    request.SubmitImmediately ?? false,
                     request.ResolvedLines,
                     session.UserId), ct),
                 StatusCodes.Status201Created);
@@ -220,7 +220,7 @@ internal static class LocalProcureToPayEndpoints
             LocalApiSession session = RequiredSession(context, sessions);
             return ToResult(await service.ReviewPurchaseRequisitionAsync(new ReviewPurchaseRequisitionRequest(
                 id,
-                "Approved",
+                "Approve",
                 request?.Notes ?? "Approved via web",
                 null,
                 session.UserId), ct));
@@ -239,7 +239,7 @@ internal static class LocalProcureToPayEndpoints
             LocalApiSession session = RequiredSession(context, sessions);
             return ToResult(await service.ReviewPurchaseRequisitionAsync(new ReviewPurchaseRequisitionRequest(
                 id,
-                "Rejected",
+                "Reject",
                 request?.Reason ?? "Rejected via web",
                 null,
                 session.UserId), ct));
@@ -258,7 +258,7 @@ internal static class LocalProcureToPayEndpoints
             LocalApiSession session = RequiredSession(context, sessions);
             return ToResult(await service.ReviewPurchaseRequisitionAsync(new ReviewPurchaseRequisitionRequest(
                 id,
-                "NeedsRevision",
+                "RequestRevision",
                 request?.RevisionNotes ?? request?.Reason ?? "Needs revision via web",
                 null,
                 session.UserId), ct));

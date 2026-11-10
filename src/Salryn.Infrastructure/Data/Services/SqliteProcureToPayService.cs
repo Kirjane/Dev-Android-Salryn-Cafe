@@ -67,11 +67,59 @@ public sealed partial class SqliteProcureToPayService : IProcureToPayService
             }
         }
 
+        List<LpiFoundationUnit> units = new();
+        await using (SqliteCommand unitCmd = connection.CreateCommand())
+        {
+            unitCmd.CommandText = """
+                SELECT id, COALESCE(NULLIF(TRIM(abbreviation), ''), name), name, allows_decimal_quantity
+                FROM units
+                WHERE is_active = 1
+                ORDER BY name;
+                """;
+            await using SqliteDataReader reader = await unitCmd.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                units.Add(new LpiFoundationUnit(
+                    Guid.Parse(reader.GetString(0)),
+                    reader.GetString(1),
+                    reader.GetString(2),
+                    reader.GetInt64(3) == 1));
+            }
+        }
+
+        List<LpiFoundationProduct> products = new();
+        await using (SqliteCommand productCmd = connection.CreateCommand())
+        {
+            productCmd.CommandText = """
+                SELECT p.id, p.name, p.barcode, p.unit_id, u.name,
+                       COALESCE(p.cost_price_cents, 0), p.selling_price_cents, p.stock_on_hand_x1000
+                FROM products p
+                INNER JOIN units u ON u.id = p.unit_id
+                WHERE p.is_active = 1
+                ORDER BY p.name;
+                """;
+            await using SqliteDataReader reader = await productCmd.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                products.Add(new LpiFoundationProduct(
+                    Guid.Parse(reader.GetString(0)),
+                    reader.GetString(1),
+                    reader.IsDBNull(2) ? null : reader.GetString(2),
+                    Guid.Parse(reader.GetString(3)),
+                    reader.GetString(4),
+                    reader.GetInt64(5),
+                    reader.GetInt64(6),
+                    reader.GetInt64(7)));
+            }
+        }
+
         return Result<LpiFoundationCatalog>.Success(new LpiFoundationCatalog(
             suppliers.Value,
             locations,
             PurchaseClassifications.All,
-            sequences));
+            sequences,
+            units,
+            products));
     }
 
     public async Task<Result<IReadOnlyList<LpiSupplier>>> GetSuppliersAsync(

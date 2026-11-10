@@ -163,11 +163,10 @@ export function ProcureToPayPage() {
 
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [returnForm, setReturnForm] = useState({
-    supplierId: "",
-    purchaseOrderId: "",
     receivingReportId: "",
+    receivingReportLineId: "",
+    quantity: "1",
     reason: "Defective goods returned post-acceptance",
-    items: [{ productId: "", uomId: "", quantity: "1", unitCost: "0", sourceLocationId: "" }],
   });
 
   const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
@@ -892,23 +891,18 @@ export function ProcureToPayPage() {
               <Button
                 variant="danger"
                 onClick={() => {
-                  const sup = foundation.data?.suppliers[0];
-                  const prod = foundation.data?.products[0];
-                  const uom = foundation.data?.unitsOfMeasure[0];
+                  const report = (receivingReports.data ?? []).find((candidate) =>
+                    candidate.status === "Posted" && candidate.items.some((line) => line.productId)
+                  );
+                  if (!report) {
+                    notify.error("A posted receiving report with a product line is required before goods can be returned.");
+                    return;
+                  }
                   setReturnForm({
-                    supplierId: sup?.id ?? "",
-                    purchaseOrderId: "",
-                    receivingReportId: "",
+                    receivingReportId: report.id,
+                    receivingReportLineId: report.items[0]?.id ?? "",
+                    quantity: "1",
                     reason: "Post-acceptance latent defect discovered in quarantine",
-                    items: [
-                      {
-                        productId: prod?.id ?? "",
-                        uomId: uom?.id ?? "",
-                        quantity: "5",
-                        unitCost: prod ? (prod.costPriceCents / 100).toFixed(2) : "10",
-                        sourceLocationId: quarantineLocation?.id ?? mainStoreLocation?.id ?? "",
-                      },
-                    ],
                   });
                   setReturnModalOpen(true);
                 }}
@@ -1836,14 +1830,17 @@ export function ProcureToPayPage() {
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-slate-700">Supplier</label>
+            <label className="block text-xs font-medium text-slate-700">Posted Receiving Report</label>
             <Select
-              value={returnForm.supplierId}
-              onChange={(e) => setReturnForm({ ...returnForm, supplierId: e.target.value })}
+              value={returnForm.receivingReportId}
+              onChange={(e) => {
+                const report = (receivingReports.data ?? []).find((candidate) => candidate.id === e.target.value);
+                setReturnForm({ ...returnForm, receivingReportId: e.target.value, receivingReportLineId: report?.items[0]?.id ?? "" });
+              }}
             >
-              {(foundation.data?.suppliers ?? []).map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} ({s.code})
+              {(receivingReports.data ?? []).filter((report) => report.status === "Posted").map((report) => (
+                <option key={report.id} value={report.id}>
+                  {report.rrNumber} · {report.supplierName}
                 </option>
               ))}
             </Select>
@@ -1857,63 +1854,19 @@ export function ProcureToPayPage() {
             />
           </div>
 
-          <div className="border-t pt-3 space-y-2">
-            <h4 className="text-xs font-semibold uppercase text-slate-500">Return Items</h4>
-            {returnForm.items.map((item, idx) => (
-              <div key={idx} className="grid grid-cols-4 gap-2 items-end">
-                <div className="col-span-2">
-                  <label className="block text-xs font-medium text-slate-700">Product</label>
-                  <Select
-                    value={item.productId}
-                    onChange={(e) => {
-                      const prod = foundation.data?.products.find((p) => p.id === e.target.value);
-                      const updated = [...returnForm.items];
-                      updated[idx].productId = e.target.value;
-                      if (prod) {
-                        updated[idx].uomId = prod.unitId;
-                        updated[idx].unitCost = (prod.costPriceCents / 100).toFixed(2);
-                      }
-                      setReturnForm({ ...returnForm, items: updated });
-                    }}
-                  >
-                    {(foundation.data?.products ?? []).map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700">Qty</label>
-                  <TextInput
-                    type="number"
-                    value={item.quantity}
-                    onChange={(e) => {
-                      const updated = [...returnForm.items];
-                      updated[idx].quantity = e.target.value;
-                      setReturnForm({ ...returnForm, items: updated });
-                    }}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700">Source Bucket</label>
-                  <Select
-                    value={item.sourceLocationId}
-                    onChange={(e) => {
-                      const updated = [...returnForm.items];
-                      updated[idx].sourceLocationId = e.target.value;
-                      setReturnForm({ ...returnForm, items: updated });
-                    }}
-                  >
-                    {(foundation.data?.locations ?? []).map((loc) => (
-                      <option key={loc.id} value={loc.id}>
-                        {loc.name}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-              </div>
-            ))}
+          <div className="grid grid-cols-3 gap-3 border-t pt-3">
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-slate-700">Accepted Receiving Line</label>
+              <Select value={returnForm.receivingReportLineId} onChange={(e) => setReturnForm({ ...returnForm, receivingReportLineId: e.target.value })}>
+                {((receivingReports.data ?? []).find((report) => report.id === returnForm.receivingReportId)?.items ?? []).map((line) => (
+                  <option key={line.id} value={line.id}>{line.productName} · accepted {line.acceptedQuantityX1000 / 1000}</option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700">Return Qty</label>
+              <TextInput type="number" min="0.001" step="0.001" value={returnForm.quantity} onChange={(e) => setReturnForm({ ...returnForm, quantity: e.target.value })} />
+            </div>
           </div>
 
           <div className="flex justify-end gap-2 pt-4 border-t">
@@ -1924,21 +1877,14 @@ export function ProcureToPayPage() {
               variant="danger"
               onClick={async () => {
                 try {
-                  const defaultUom = foundation.data?.unitsOfMeasure[0]?.id ?? "";
-                  const defaultLoc = quarantineLocation?.id ?? mainStoreLocation?.id ?? "";
+                  const returnQtyX1000 = Math.round(Number(returnForm.quantity) * 1000);
+                  if (!returnForm.receivingReportId || !returnForm.receivingReportLineId || returnQtyX1000 <= 0) {
+                    throw new Error("Choose a posted receiving line and enter a positive return quantity.");
+                  }
                   await createSupplierReturn({
-                    supplierId: returnForm.supplierId,
-                    purchaseOrderId: returnForm.purchaseOrderId || undefined,
-                    receivingReportId: returnForm.receivingReportId || undefined,
+                    receivingReportId: returnForm.receivingReportId,
                     reason: returnForm.reason,
-                    items: returnForm.items.map((it) => ({
-                      productId: it.productId,
-                      uomId: it.uomId || defaultUom,
-                      quantityX1000: Math.round(parseFloat(it.quantity) * 1000),
-                      unitCostCents: Math.round(parseFloat(it.unitCost) * 100),
-                      sourceLocationId: it.sourceLocationId || defaultLoc,
-                      reason: returnForm.reason,
-                    })),
+                    lines: [{ receivingReportLineId: returnForm.receivingReportLineId, returnQtyX1000, reason: returnForm.reason }],
                   });
                   notify.success("Supplier return processed and debit memo issued!");
                   setReturnModalOpen(false);

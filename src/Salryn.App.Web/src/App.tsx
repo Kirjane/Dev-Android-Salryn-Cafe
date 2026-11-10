@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Layers3 } from "lucide-react";
 import { fetchBootstrapStatus, type BootstrapStatus } from "./api/bootstrap";
@@ -46,6 +46,38 @@ function AccessDenied({ currentPage, onGoHome }: { currentPage: AppPage; onGoHom
       <Card><CardBody className="space-y-4"><p className="text-sm text-slate-600">The page request was blocked before rendering: <span className="font-medium">{currentPage}</span>.</p><Button variant="secondary" onClick={onGoHome}>Go to allowed page</Button></CardBody></Card>
     </div>
   );
+}
+
+class RouteErrorBoundary extends Component<
+  { children: ReactNode; page: AppPage; onRecover: () => void },
+  { error: Error | null }
+> {
+  state = { error: null as Error | null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("Salryn route render failed", { page: this.props.page, error, componentStack: info.componentStack });
+  }
+
+  componentDidUpdate(previous: Readonly<{ page: AppPage }>) {
+    if (previous.page !== this.props.page && this.state.error) this.setState({ error: null });
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <Card>
+        <CardBody className="space-y-4 p-6">
+          <h1 className="text-xl font-semibold text-slate-950">This workspace could not be displayed</h1>
+          <p className="text-sm text-slate-600">Salryn contained the page error so the rest of the application remains available.</p>
+          <Button onClick={() => { this.setState({ error: null }); this.props.onRecover(); }}>Return to Dashboard</Button>
+        </CardBody>
+      </Card>
+    );
+  }
 }
 
 function readPageFromUrl(): AppPage | null {
@@ -241,7 +273,7 @@ function ConsoleApp() {
   const u1Licensed = licenseStatus.enabledFeatures.includes("ReceivablesUtangLedger");
   const pageAllowed = canAccessPage(session, currentPage) && (currentPage !== "receivables" || u1Licensed);
   const pageContent = pageAllowed ? renderPage(currentPage, session, () => void handleLogout(), handleNavigate) : <AccessDenied currentPage={currentPage} onGoHome={() => firstAllowedPage && handleNavigate(firstAllowedPage)} />;
-  return <AppShell session={session} licenseStatus={licenseStatus} currentPage={currentPage} onNavigate={handleNavigate} onLogout={() => void handleLogout()}>{pageContent}</AppShell>;
+  return <AppShell session={session} licenseStatus={licenseStatus} currentPage={currentPage} onNavigate={handleNavigate} onLogout={() => void handleLogout()}><RouteErrorBoundary page={currentPage} onRecover={() => handleNavigate("dashboard")}>{pageContent}</RouteErrorBoundary></AppShell>;
 }
 
 function isHostLicenseReady(status: LocalLicenseStatus | undefined): boolean {

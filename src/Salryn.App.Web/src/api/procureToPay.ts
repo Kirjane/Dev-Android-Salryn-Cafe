@@ -326,6 +326,142 @@ export interface LpiFoundationCatalog {
   }>;
 }
 
+type JsonRecord = Record<string, any>;
+
+function normalizeRequisition(raw: JsonRecord): PurchaseRequisition {
+  const lines = (raw.lines ?? raw.items ?? []).map((line: JsonRecord) => ({
+    id: line.id,
+    requisitionId: line.requisitionId,
+    lineNumber: line.lineNumber,
+    productId: line.productId ?? "",
+    productName: line.itemDescription ?? line.productName ?? "Requested item",
+    productSku: line.itemCode ?? null,
+    uomId: line.uomId ?? "",
+    uomName: line.unitName ?? line.uomName ?? "pc",
+    requestedQuantityX1000: line.requestedQtyX1000 ?? line.requestedQuantityX1000 ?? 0,
+    approvedQuantityX1000: line.approvedQtyX1000 ?? line.approvedQuantityX1000 ?? 0,
+    orderedQuantityX1000: line.convertedPoQtyX1000 ?? line.orderedQuantityX1000 ?? 0,
+    receivedQuantityX1000: line.receivedQuantityX1000 ?? 0,
+    estimatedCostCents: line.estimatedUnitCostCents ?? line.estimatedCostCents ?? 0,
+    estimatedTotalCents: line.estimatedLineTotalCents ?? line.estimatedTotalCents ?? 0,
+    preferredSupplierId: line.preferredSupplierId ?? null,
+    preferredSupplierName: line.preferredSupplierName ?? null,
+    notes: line.notes ?? null,
+  }));
+  return {
+    ...raw,
+    requisitionDate: raw.dateRequested ?? raw.requisitionDate,
+    requiredDate: raw.dateNeeded ?? raw.requiredDate ?? null,
+    department: raw.departmentName ?? raw.department ?? null,
+    requestedByUserName: raw.requestedByName ?? raw.requestedByUserName ?? null,
+    approvedByUserName: raw.approvedByName ?? raw.approvedByUserName ?? null,
+    rejectionReason: raw.rejectionOrRevisionReason ?? raw.rejectionReason ?? null,
+    totalEstimatedCostCents: raw.estimatedTotalCents ?? raw.totalEstimatedCostCents ?? 0,
+    items: lines,
+  } as PurchaseRequisition;
+}
+
+function normalizeStockCard(raw: JsonRecord): ProductStockCard {
+  return {
+    productId: raw.productId,
+    productName: raw.productName,
+    productBarcode: raw.barcode ?? raw.sku ?? "",
+    unitName: raw.unitName,
+    totalQuantityX1000: raw.currentStockOnHandX1000 ?? raw.totalQuantityX1000 ?? 0,
+    totalValuationCents: raw.inventoryValuationCents ?? raw.totalValuationCents ?? 0,
+    averageUnitCostCents: raw.currentCostPriceCents ?? raw.averageUnitCostCents ?? 0,
+    locationBalances: (raw.buckets ?? raw.locationBalances ?? []).map((bucket: JsonRecord) => ({
+      locationId: bucket.locationId,
+      locationCode: bucket.locationCode,
+      locationName: bucket.locationName,
+      quantityX1000: bucket.quantityX1000 ?? 0,
+      valuationCents: (bucket.quantityX1000 ?? 0) * (raw.currentCostPriceCents ?? 0) / 1000,
+    })),
+  };
+}
+
+function normalizeReceivingReport(raw: JsonRecord): ReceivingReport {
+  const lines = raw.lines ?? raw.items ?? [];
+  return {
+    ...raw,
+    deliveryReceiptNumber: raw.deliveryReceiptNo ?? raw.deliveryReceiptNumber ?? null,
+    carrier: raw.carrierOrDriver ?? raw.carrier ?? null,
+    driverName: raw.carrierOrDriver ?? raw.driverName ?? null,
+    totalDeliveredQuantityX1000: lines.reduce((sum: number, line: JsonRecord) => sum + (line.actualDeliveredQtyX1000 ?? line.deliveredQuantityX1000 ?? 0), 0),
+    totalAcceptedQuantityX1000: lines.reduce((sum: number, line: JsonRecord) => sum + (line.acceptedQtyX1000 ?? line.acceptedQuantityX1000 ?? 0), 0),
+    totalRejectedQuantityX1000: lines.reduce((sum: number, line: JsonRecord) => sum + (line.rejectedQtyX1000 ?? line.rejectedQuantityX1000 ?? 0), 0),
+    totalAcceptedCostCents: lines.reduce((sum: number, line: JsonRecord) => sum + (line.acceptedLineTotalCents ?? line.totalAcceptedCostCents ?? 0), 0),
+    isOverdelivery: raw.hasOverdelivery ?? raw.isOverdelivery ?? false,
+    receivedByUserName: raw.receivedByName ?? raw.receivedByUserName ?? null,
+    items: lines.map((line: JsonRecord) => ({
+      id: line.id,
+      receivingReportId: line.receivingReportId,
+      poItemId: line.purchaseOrderLineId ?? line.poItemId,
+      productId: line.productId ?? "",
+      productName: line.itemDescription ?? line.productName ?? "Received item",
+      uomId: line.uomId ?? "",
+      uomName: line.unitName ?? line.uomName ?? "pc",
+      deliveredQuantityX1000: line.actualDeliveredQtyX1000 ?? line.deliveredQuantityX1000 ?? 0,
+      acceptedQuantityX1000: line.acceptedQtyX1000 ?? line.acceptedQuantityX1000 ?? 0,
+      rejectedQuantityX1000: line.rejectedQtyX1000 ?? line.rejectedQuantityX1000 ?? 0,
+      unitCostCents: line.unitCostCents ?? 0,
+      totalAcceptedCostCents: line.acceptedLineTotalCents ?? line.totalAcceptedCostCents ?? 0,
+      targetLocationId: raw.locationId ?? "",
+      targetLocationName: raw.locationName ?? "",
+      quarantineLocationId: null,
+      quarantineLocationName: null,
+      rejectionReason: line.rejectionReason ?? null,
+      dispositionNotes: line.rejectionDisposition ?? line.dispositionNotes ?? null,
+    })),
+  } as ReceivingReport;
+}
+
+function normalizeSupplierReturn(raw: JsonRecord): SupplierReturnSummary {
+  return {
+    id: raw.id,
+    returnNumber: raw.returnNumber,
+    supplierId: raw.supplierId,
+    supplierName: raw.supplierName,
+    purchaseOrderId: raw.purchaseOrderId ?? null,
+    receivingReportId: raw.receivingReportId ?? null,
+    returnDate: raw.returnDate,
+    totalCostCents: raw.totalReturnAmountCents ?? raw.totalCostCents ?? 0,
+    reason: raw.reason ?? "",
+    status: raw.status,
+    items: (raw.lines ?? raw.items ?? []).map((line: JsonRecord) => ({
+      productId: line.productId,
+      productName: line.productName,
+      quantityX1000: line.returnQtyX1000 ?? line.quantityX1000 ?? 0,
+      unitCostCents: line.unitCostCents ?? 0,
+      totalCostCents: line.lineTotalCents ?? line.totalCostCents ?? 0,
+      sourceLocationId: line.sourceLocationId ?? "",
+      reason: line.reason ?? raw.reason ?? "",
+    })),
+  };
+}
+
+export interface SupplierReturnSummary {
+  id: string;
+  returnNumber: string;
+  supplierId: string;
+  supplierName: string;
+  purchaseOrderId: string | null;
+  receivingReportId: string | null;
+  returnDate: string;
+  totalCostCents: number;
+  reason: string;
+  status: string;
+  items: Array<{
+    productId: string;
+    productName: string;
+    quantityX1000: number;
+    unitCostCents: number;
+    totalCostCents: number;
+    sourceLocationId: string;
+    reason: string;
+  }>;
+}
+
 // API functions
 export async function fetchLpiFoundation(includeInactiveSuppliers = false): Promise<LpiFoundationCatalog> {
   const response = await fetch(`/api/lpi/foundation?includeInactiveSuppliers=${includeInactiveSuppliers}`);
@@ -334,7 +470,31 @@ export async function fetchLpiFoundation(includeInactiveSuppliers = false): Prom
 
 export async function fetchLpiOverview(): Promise<LpiDashboardOverview> {
   const response = await fetch("/api/lpi/overview");
-  return readJson<LpiDashboardOverview>(response);
+  const raw = await readJson<JsonRecord>(response);
+  const aging = raw.apAging ?? {};
+  return {
+    totalActiveSuppliers: raw.activeSupplierCount ?? 0,
+    pendingPurchaseRequisitions: raw.pendingRequisitionCount ?? 0,
+    openPurchaseOrders: raw.openPurchaseOrderCount ?? 0,
+    unmatchedInvoices: raw.varianceFlaggedInvoiceCount ?? 0,
+    totalAccountsPayableCents: raw.totalOpenPayablesCents ?? 0,
+    overduePayablesCents: raw.overduePayablesCents ?? 0,
+    totalInventoryValuationCents: raw.totalInventoryValuationCents ?? 0,
+    costCoverageIncomplete: raw.costCoverageIncomplete ?? false,
+    missingCostProductCount: raw.missingCostProductCount ?? 0,
+    quarantineStockQuantityX1000: raw.quarantineStockQuantityX1000 ?? 0,
+    recentOrders: raw.recentOrders ?? [],
+    agingSummary: (aging.openInvoiceCount ?? 0) === 0 ? [] : [{
+      supplierId: "all-open-payables",
+      supplierName: "All suppliers",
+      currentCents: aging.currentBucketCents ?? 0,
+      days1To30Cents: aging.days1To30Cents ?? 0,
+      days31To60Cents: aging.days31To60Cents ?? 0,
+      days61To90Cents: aging.days61To90Cents ?? 0,
+      over90DaysCents: aging.daysOver90Cents ?? 0,
+      totalOutstandingCents: aging.totalOpenPayablesCents ?? raw.totalOpenPayablesCents ?? 0,
+    }],
+  };
 }
 
 export async function fetchSuppliers(search?: string, includeInactive = false): Promise<LpiSupplier[]> {
@@ -389,12 +549,12 @@ export async function updateSupplier(id: string, data: {
 export async function fetchRequisitions(status?: string): Promise<PurchaseRequisition[]> {
   const url = status ? `/api/lpi/requisitions?status=${encodeURIComponent(status)}` : "/api/lpi/requisitions";
   const response = await fetch(url);
-  return readJson<PurchaseRequisition[]>(response);
+  return (await readJson<JsonRecord[]>(response)).map(normalizeRequisition);
 }
 
 export async function fetchRequisitionById(id: string): Promise<PurchaseRequisition> {
   const response = await fetch(`/api/lpi/requisitions/${id}`);
-  return readJson<PurchaseRequisition>(response);
+  return normalizeRequisition(await readJson<JsonRecord>(response));
 }
 
 export async function createRequisition(data: {
@@ -416,12 +576,12 @@ export async function createRequisition(data: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  return readJson<PurchaseRequisition>(response);
+  return normalizeRequisition(await readJson<JsonRecord>(response));
 }
 
 export async function submitRequisition(id: string): Promise<PurchaseRequisition> {
   const response = await fetch(`/api/lpi/requisitions/${id}/submit`, { method: "POST" });
-  return readJson<PurchaseRequisition>(response);
+  return normalizeRequisition(await readJson<JsonRecord>(response));
 }
 
 export async function approveRequisition(id: string, notes?: string): Promise<PurchaseRequisition> {
@@ -430,7 +590,7 @@ export async function approveRequisition(id: string, notes?: string): Promise<Pu
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ notes }),
   });
-  return readJson<PurchaseRequisition>(response);
+  return normalizeRequisition(await readJson<JsonRecord>(response));
 }
 
 export async function rejectRequisition(id: string, reason: string): Promise<PurchaseRequisition> {
@@ -439,7 +599,7 @@ export async function rejectRequisition(id: string, reason: string): Promise<Pur
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ reason }),
   });
-  return readJson<PurchaseRequisition>(response);
+  return normalizeRequisition(await readJson<JsonRecord>(response));
 }
 
 export async function reviseRequisition(id: string, revisionNotes: string): Promise<PurchaseRequisition> {
@@ -457,12 +617,20 @@ export async function convertRequisitionToPo(id: string, allocations: Array<{
   expectedDeliveryDate?: string;
   notes?: string;
 }>): Promise<PurchaseOrder[]> {
-  const response = await fetch(`/api/lpi/requisitions/${id}/convert-to-po`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ allocations }),
-  });
-  return readJson<PurchaseOrder[]>(response);
+  const created: PurchaseOrder[] = [];
+  for (const allocation of allocations) {
+    const response = await fetch(`/api/lpi/requisitions/${id}/convert-to-po`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        supplierId: allocation.supplierId,
+        requisitionLineIds: allocation.prItemIds,
+        expectedDeliveryDate: allocation.expectedDeliveryDate,
+      }),
+    });
+    created.push(await readJson<PurchaseOrder>(response));
+  }
+  return created;
 }
 
 export async function fetchQuotations(requisitionId: string): Promise<SupplierQuotation[]> {
@@ -567,12 +735,12 @@ export async function cancelPurchaseOrder(id: string, reason: string): Promise<P
 export async function fetchReceivingReports(poId?: string): Promise<ReceivingReport[]> {
   const url = poId ? `/api/lpi/receiving-reports?purchaseOrderId=${poId}` : "/api/lpi/receiving-reports";
   const response = await fetch(url);
-  return readJson<ReceivingReport[]>(response);
+  return (await readJson<JsonRecord[]>(response)).map(normalizeReceivingReport);
 }
 
 export async function fetchReceivingReportById(id: string): Promise<ReceivingReport> {
   const response = await fetch(`/api/lpi/receiving-reports/${id}`);
-  return readJson<ReceivingReport>(response);
+  return normalizeReceivingReport(await readJson<JsonRecord>(response));
 }
 
 export async function createReceivingReport(data: {
@@ -605,12 +773,12 @@ export async function createReceivingReport(data: {
 
 export async function fetchStockCards(): Promise<ProductStockCard[]> {
   const response = await fetch("/api/lpi/stock-cards");
-  return readJson<ProductStockCard[]>(response);
+  return (await readJson<JsonRecord[]>(response)).map(normalizeStockCard);
 }
 
 export async function fetchStockCardByProduct(productId: string): Promise<ProductStockCard> {
   const response = await fetch(`/api/lpi/stock-cards/${productId}`);
-  return readJson<ProductStockCard>(response);
+  return normalizeStockCard(await readJson<JsonRecord>(response));
 }
 
 export async function createStockAdjustment(data: {
@@ -624,48 +792,30 @@ export async function createStockAdjustment(data: {
   const response = await fetch("/api/lpi/inventory-adjustments", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: JSON.stringify({
+      productId: data.productId,
+      locationId: data.locationId,
+      actualCountedQtyX1000: data.actualQuantityX1000,
+      reasonCode: "CycleCount",
+      notes: data.reason,
+    }),
   });
   return readJson(response);
 }
 
-export async function fetchSupplierReturns(supplierId?: string): Promise<Array<{
-  id: string;
-  returnNumber: string;
-  supplierId: string;
-  supplierName: string;
-  purchaseOrderId: string | null;
-  receivingReportId: string | null;
-  returnDate: string;
-  totalCostCents: number;
-  reason: string;
-  status: string;
-  items: Array<{
-    productId: string;
-    productName: string;
-    quantityX1000: number;
-    unitCostCents: number;
-    totalCostCents: number;
-    sourceLocationId: string;
-    reason: string;
-  }>;
-}>> {
+export async function fetchSupplierReturns(supplierId?: string): Promise<SupplierReturnSummary[]> {
   const url = supplierId ? `/api/lpi/supplier-returns?supplierId=${supplierId}` : "/api/lpi/supplier-returns";
   const response = await fetch(url);
-  return readJson(response);
+  return (await readJson<JsonRecord[]>(response)).map(normalizeSupplierReturn);
 }
 
 export async function createSupplierReturn(data: {
-  supplierId: string;
-  purchaseOrderId?: string;
-  receivingReportId?: string;
+  receivingReportId: string;
+  supplierInvoiceId?: string;
   reason: string;
-  items: Array<{
-    productId: string;
-    uomId: string;
-    quantityX1000: number;
-    unitCostCents: number;
-    sourceLocationId: string;
+  lines: Array<{
+    receivingReportLineId: string;
+    returnQtyX1000: number;
     reason: string;
   }>;
 }): Promise<unknown> {

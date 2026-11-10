@@ -138,7 +138,25 @@ public sealed record LpiFoundationCatalog(
     IReadOnlyList<LpiSupplier> Suppliers,
     IReadOnlyList<InventoryLocationModel> Locations,
     IReadOnlyList<string> PurchaseClassifications,
-    IReadOnlyDictionary<string, long> SequenceCounters);
+    IReadOnlyDictionary<string, long> SequenceCounters,
+    IReadOnlyList<LpiFoundationUnit> UnitsOfMeasure,
+    IReadOnlyList<LpiFoundationProduct> Products);
+
+public sealed record LpiFoundationUnit(
+    Guid Id,
+    string Code,
+    string Name,
+    bool AllowsDecimalQuantity);
+
+public sealed record LpiFoundationProduct(
+    Guid Id,
+    string Name,
+    string? Barcode,
+    Guid UnitId,
+    string UnitName,
+    long CostPriceCents,
+    long SellingPriceCents,
+    long StockOnHandX1000);
 
 // S1: Purchase Requisitions (PR), Quotations & Purchase Orders (PO)
 public sealed record PurchaseRequisitionLineModel(
