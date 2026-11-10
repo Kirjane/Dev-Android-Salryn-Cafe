@@ -506,6 +506,8 @@ internal static class LocalProcureToPayEndpoints
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ReceivingManage) is IResult denied)
                 return denied;
             LocalApiSession session = RequiredSession(context, sessions);
+            if (string.IsNullOrWhiteSpace(request.ResolvedDeliveryReceiptNo))
+                return Results.BadRequest(new { error = "Delivery receipt number is mandatory." });
             return ToResult(
                 await service.CreateReceivingReportAsync(new CreateReceivingReportRequest(
                     request.PurchaseOrderId,
@@ -747,6 +749,8 @@ internal static class LocalProcureToPayEndpoints
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.PayablesManageInvoices) is IResult denied)
                 return denied;
             LocalApiSession session = RequiredSession(context, sessions);
+            if (string.IsNullOrWhiteSpace(request.ResolvedInvoiceNo))
+                return Results.BadRequest(new { error = "Supplier invoice number is mandatory." });
             DateOnly invDate = request.InvoiceDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
             return ToResult(
                 await service.CreateSupplierInvoiceAsync(new CreateSupplierInvoiceRequest(
@@ -775,6 +779,8 @@ internal static class LocalProcureToPayEndpoints
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.PayablesApproveVariance) is IResult denied)
                 return denied;
             LocalApiSession session = RequiredSession(context, sessions);
+            if (string.IsNullOrWhiteSpace(request.ResolvedApprovalReason))
+                return Results.BadRequest(new { error = "Variance approval reason is mandatory." });
             return ToResult(await service.ApproveInvoiceVarianceAsync(new ApproveInvoiceVarianceRequest(
                 id,
                 request.ResolvedApprovalReason,
@@ -798,6 +804,7 @@ internal static class LocalProcureToPayEndpoints
         app.MapGet("/api/lpi/payments", async (
             Guid? supplierId,
             Guid? supplierInvoiceId,
+            Guid? invoiceId,
             HttpContext context,
             LocalApiSessionService sessions,
             IProcureToPayService service,
@@ -805,7 +812,8 @@ internal static class LocalProcureToPayEndpoints
         {
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.PayablesView) is IResult denied)
                 return denied;
-            return ToResult(await service.GetSupplierPaymentsAsync(supplierId, supplierInvoiceId, ct));
+            Guid? targetInvoiceId = supplierInvoiceId ?? invoiceId;
+            return ToResult(await service.GetSupplierPaymentsAsync(supplierId, targetInvoiceId, ct));
         });
 
         app.MapPost("/api/lpi/payments", async (
@@ -818,13 +826,29 @@ internal static class LocalProcureToPayEndpoints
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.PayablesRecordPayment) is IResult denied)
                 return denied;
             LocalApiSession session = RequiredSession(context, sessions);
+            if (request.ResolvedInvoiceId == Guid.Empty)
+                return Results.BadRequest(new { error = "Supplier invoice ID is mandatory." });
+            if (string.IsNullOrWhiteSpace(request.ResolvedReferenceNo))
+                return Results.BadRequest(new { error = "Payment reference number is mandatory." });
+
+            string disbursementSource = !string.IsNullOrWhiteSpace(request.DisbursementSource)
+                ? request.DisbursementSource.Trim()
+                : "OperatingAccount";
+
+            if (disbursementSource.Contains("Drawer", StringComparison.OrdinalIgnoreCase) ||
+                disbursementSource.Contains("Cashier", StringComparison.OrdinalIgnoreCase) ||
+                disbursementSource.Contains("ShiftDrawer", StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.BadRequest(new { error = "Cashier shift drawer cannot be used as a procurement disbursement source." });
+            }
+
             return ToResult(
                 await service.RecordSupplierPaymentAsync(new RecordSupplierPaymentRequest(
                     request.ResolvedInvoiceId,
                     request.PaymentDate,
                     request.AmountCents,
                     request.PaymentMethod ?? "BankTransfer",
-                    request.DisbursementSource ?? "HeadOfficeBank",
+                    disbursementSource,
                     request.ResolvedReferenceNo,
                     request.ResolvedCheckNo,
                     request.ResolvedBankName,
@@ -1078,10 +1102,10 @@ internal static class LocalProcureToPayEndpoints
         IReadOnlyList<CreateReceivingReportLineApiInput>? Lines,
         IReadOnlyList<CreateReceivingReportLineApiInput>? Items)
     {
-        public string ResolvedDeliveryReceiptNo =>
-            !string.IsNullOrWhiteSpace(DeliveryReceiptNo) ? DeliveryReceiptNo :
-            !string.IsNullOrWhiteSpace(DeliveryReceiptNumber) ? DeliveryReceiptNumber :
-            $"DR-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+        public string? ResolvedDeliveryReceiptNo =>
+            !string.IsNullOrWhiteSpace(DeliveryReceiptNo) ? DeliveryReceiptNo.Trim() :
+            !string.IsNullOrWhiteSpace(DeliveryReceiptNumber) ? DeliveryReceiptNumber.Trim() :
+            null;
 
         public string? ResolvedCarrierOrDriver =>
             !string.IsNullOrWhiteSpace(CarrierOrDriver) ? CarrierOrDriver :
@@ -1155,7 +1179,10 @@ internal static class LocalProcureToPayEndpoints
         IReadOnlyList<CreateSupplierInvoiceLineApiInput>? Lines,
         IReadOnlyList<CreateSupplierInvoiceLineApiInput>? Items)
     {
-        public string ResolvedInvoiceNo => SupplierInvoiceNo ?? InvoiceNumber ?? $"INV-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+        public string? ResolvedInvoiceNo =>
+            !string.IsNullOrWhiteSpace(SupplierInvoiceNo) ? SupplierInvoiceNo.Trim() :
+            !string.IsNullOrWhiteSpace(InvoiceNumber) ? InvoiceNumber.Trim() :
+            null;
         public IReadOnlyList<CreateSupplierInvoiceLineInput> ResolvedLines =>
             (Lines ?? Items ?? Array.Empty<CreateSupplierInvoiceLineApiInput>())
                 .Select(l => l.ToCoreInput())
@@ -1168,11 +1195,11 @@ internal static class LocalProcureToPayEndpoints
         string? Reason,
         bool? PostToApImmediately)
     {
-        public string ResolvedApprovalReason =>
-            !string.IsNullOrWhiteSpace(ApprovalReason) ? ApprovalReason :
-            !string.IsNullOrWhiteSpace(Notes) ? Notes :
-            !string.IsNullOrWhiteSpace(Reason) ? Reason :
-            "Variance approved via web";
+        public string? ResolvedApprovalReason =>
+            !string.IsNullOrWhiteSpace(ApprovalReason) ? ApprovalReason.Trim() :
+            !string.IsNullOrWhiteSpace(Notes) ? Notes.Trim() :
+            !string.IsNullOrWhiteSpace(Reason) ? Reason.Trim() :
+            null;
     }
 
     internal sealed record RecordSupplierPaymentApiRequest(
@@ -1193,7 +1220,10 @@ internal static class LocalProcureToPayEndpoints
         string? ClientRequestId)
     {
         public Guid ResolvedInvoiceId => SupplierInvoiceId ?? InvoiceId ?? Guid.Empty;
-        public string ResolvedReferenceNo => ReferenceNo ?? ReferenceNumber ?? $"PMT-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+        public string? ResolvedReferenceNo =>
+            !string.IsNullOrWhiteSpace(ReferenceNo) ? ReferenceNo.Trim() :
+            !string.IsNullOrWhiteSpace(ReferenceNumber) ? ReferenceNumber.Trim() :
+            null;
         public string? ResolvedCheckNo => CheckNo ?? CheckNumber;
         public string? ResolvedBankName => BankName ?? BankAccount;
         public string? ResolvedRemarks => Remarks ?? Notes;

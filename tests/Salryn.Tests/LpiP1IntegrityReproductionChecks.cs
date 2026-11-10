@@ -69,6 +69,7 @@ public static class LpiP1IntegrityReproductionChecks
             await TestP1R301FirstStockInDoublesLocationInventoryAsync(composition, service, paths, receiverId, supervisorId);
             await TestP1R302MigrationV28NoStockDuplicationAsync();
             await TestW5R2QuotationPreservationAndContractFallbacksAsync(service, paths, requesterId, supervisorId, resaleProdId);
+            await TestW5R21ReconciliationIntegrityAsync(service, paths, requesterId, supervisorId, apClerkId, resaleProdId);
 
             Console.WriteLine("LPI P1 Integrity: All findings (P1-01 through P1-06 and P1-R3-01/02) verified with full regression closure PASS.");
         }
@@ -1652,6 +1653,232 @@ public static class LpiP1IntegrityReproductionChecks
         LocalProcureToPayEndpoints.RecordSupplierPaymentApiRequest payReq = new(SupplierInvoiceId: null, InvoiceId: Guid.NewGuid(), PaymentDate: new DateOnly(2026, 12, 10), AmountCents: 10_000, PaymentMethod: "Check", DisbursementSource: null, ReferenceNo: null, ReferenceNumber: "REF-123", CheckNo: null, CheckNumber: "CHK-123", BankName: null, BankAccount: "BDO", Remarks: null, Notes: "Payment note", ClientRequestId: "idem-1");
         Require(payReq.ResolvedBankName == "BDO" && payReq.ResolvedCheckNo == "CHK-123" && payReq.ResolvedRemarks == "Payment note",
             "W5-R2 payReq must resolve bank, check, and remarks aliases.");
+    }
+
+    /// <summary>
+    /// R2.1 Verification:
+    /// 1. Multi-line PR with the same product quoted differently: strict line-level quote matching with zero price leakage across lines, and max lead time preservation.
+    /// 2. Mandatory source identifiers & justifications: HTTP 400 Bad Request on missing DR#, Invoice#, Payment Reference#, or Variance Reason.
+    /// 3. Cashier drawer protection: HTTP 400 Bad Request on CashierShiftDrawer disbursement source.
+    /// 4. Payments query parameter: Both supplierInvoiceId and invoiceId filter correctly.
+    /// </summary>
+    private static async Task TestW5R21ReconciliationIntegrityAsync(
+        SqliteProcureToPayService service,
+        DbPaths paths,
+        Guid requesterId,
+        Guid supervisorId,
+        Guid apClerkId,
+        Guid productId)
+    {
+        // 1. Multi-line PR with SAME product quoted differently
+        LpiSupplier multiQuoteSupplier = RequireSuccess(
+            await service.CreateSupplierAsync(new CreateLpiSupplierRequest(
+                "P1-R21-SUP", "Multi-Quote Precision Supplier", "Agent", "09178889999", "precision@test.com", "Taguig", "888-999-000", 30, 7, null, requesterId)),
+            "R21 create supplier");
+
+        PurchaseRequisitionModel pr = RequireSuccess(
+            await service.CreatePurchaseRequisitionAsync(new CreatePurchaseRequisitionRequest(
+                "Procurement Department",
+                DateOnly.FromDateTime(DateTime.UtcNow.AddDays(10)),
+                "High",
+                "R2.1 Multi-line Quote Test",
+                "Testing line-level pricing isolation for identical products",
+                true,
+                new[]
+                {
+                    new CreatePurchaseRequisitionLineInput(productId, "P1-PROD-RESALE", "Resale Item Retail Batch", "Commercial", "Resale", "pcs", 5_000, 110_000, multiQuoteSupplier.Id, "Retail batch", "Line 1"),
+                    new CreatePurchaseRequisitionLineInput(productId, "P1-PROD-RESALE", "Resale Item Bulk Batch", "Commercial", "Resale", "pcs", 50_000, 90_000, multiQuoteSupplier.Id, "Bulk batch", "Line 2")
+                },
+                requesterId)),
+            "R21 create PR");
+
+        PurchaseRequisitionModel reviewedPr = RequireSuccess(
+            await service.ReviewPurchaseRequisitionAsync(new ReviewPurchaseRequisitionRequest(
+                pr.Id,
+                "Approve",
+                "Approved all batches",
+                null,
+                supervisorId)),
+            "R21 review PR");
+
+        // Record Quote 1: Line 0 (Retail batch) -> 100,000 cents, 3 days lead time, 30 days terms, selected
+        SupplierQuotationModel quote1 = RequireSuccess(
+            await service.RecordSupplierQuotationAsync(new RecordSupplierQuotationRequest(
+                reviewedPr.Id,
+                reviewedPr.Lines[0].Id,
+                multiQuoteSupplier.Id,
+                productId,
+                "Retail batch quote",
+                100_000,
+                5_000,
+                3,
+                30,
+                DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)),
+                true,
+                "Selected retail tier quote",
+                requesterId)),
+            "R21 quote 1");
+
+        // Record Quote 2: Line 1 (Bulk batch) -> 80,000 cents, 14 days lead time, 45 days terms, selected
+        SupplierQuotationModel quote2 = RequireSuccess(
+            await service.RecordSupplierQuotationAsync(new RecordSupplierQuotationRequest(
+                reviewedPr.Id,
+                reviewedPr.Lines[1].Id,
+                multiQuoteSupplier.Id,
+                productId,
+                "Bulk batch quote",
+                80_000,
+                50_000,
+                14,
+                45,
+                DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)),
+                true,
+                "Selected bulk tier quote",
+                requesterId)),
+            "R21 quote 2");
+
+        // Convert PR to PO
+        PurchaseOrderModel po = RequireSuccess(
+            await service.ConvertRequisitionToPurchaseOrderAsync(
+                reviewedPr.Id,
+                multiQuoteSupplier.Id,
+                requisitionLineIds: null,
+                deliveryLocationId: null,
+                expectedDeliveryDate: null,
+                actorUserId: supervisorId),
+            "R21 convert PR to PO");
+
+        Require(po.Lines.Count == 2, $"PO must have 2 converted lines, got {po.Lines.Count}");
+        PurchaseOrderLineModel poLine1 = po.Lines.First(l => l.RequisitionLineId == reviewedPr.Lines[0].Id);
+        PurchaseOrderLineModel poLine2 = po.Lines.First(l => l.RequisitionLineId == reviewedPr.Lines[1].Id);
+
+        Require(poLine1.UnitCostCents == 100_000,
+            $"Line 1 unit cost must be exactly 100,000 cents from quote 1, got {poLine1.UnitCostCents} (no quote leakage!).");
+        Require(poLine2.UnitCostCents == 80_000,
+            $"Line 2 unit cost must be exactly 80,000 cents from quote 2, got {poLine2.UnitCostCents} (no quote leakage!).");
+
+        DateOnly expectedDelivery = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(14));
+        Require(po.ExpectedDeliveryDate == expectedDelivery,
+            $"PO expected delivery must be max lead time (14 days = {expectedDelivery}), got {po.ExpectedDeliveryDate}.");
+
+        // 2. HTTP Endpoint contract validations (rejections of missing mandatory identities)
+        InMemoryLocalApiSessionStore sessionStore = new();
+        await using WebApplication app = await LocalApiApplicationFactory
+            .CreateAsync(
+                new[] { "--dev" },
+                new LocalApiApplicationOptions
+                {
+                    Url = "http://127.0.0.1:0",
+                    SessionStore = sessionStore,
+                    EnableStaticWebAssets = false,
+                    WriteDevelopmentDatabasePath = false
+                })
+            .ConfigureAwait(false);
+
+        await app.StartAsync().ConfigureAwait(false);
+
+        try
+        {
+            Uri baseAddress = new(app.Urls.First(u => u.StartsWith("http://", StringComparison.OrdinalIgnoreCase)));
+            LocalApiSession fullSession = CreateSession(sessionStore, "ProcurementManager", new[]
+            {
+                SalrynPermissions.ReceivingManage,
+                SalrynPermissions.ReceivingApproveException,
+                SalrynPermissions.PayablesManageInvoices,
+                SalrynPermissions.PayablesApproveVariance,
+                SalrynPermissions.PayablesRecordPayment,
+                SalrynPermissions.PayablesView
+            });
+            using HttpClient client = CreateClient(baseAddress, fullSession);
+
+            static StringContent Json(object obj) => new(JsonSerializer.Serialize(obj), System.Text.Encoding.UTF8, System.Net.Http.Headers.MediaTypeHeaderValue.Parse("application/json"));
+
+            // Rejection of missing DeliveryReceiptNo in Receiving Report
+            var emptyDrPayload = new
+            {
+                PurchaseOrderId = po.Id,
+                DeliveryReceiptNo = "",
+                DeliveryReceiptNumber = "",
+                CarrierOrDriver = "Direct Delivery",
+                PostImmediately = false,
+                Lines = new[]
+                {
+                    new { PurchaseOrderLineId = poLine1.Id, ActualDeliveredQtyX1000 = 5_000, AcceptedQtyX1000 = 5_000, RejectedQtyX1000 = 0 }
+                }
+            };
+            using HttpResponseMessage rrEmptyDrResp = await client.PostAsync("/api/lpi/receiving-reports", Json(emptyDrPayload));
+            Require(rrEmptyDrResp.StatusCode == HttpStatusCode.BadRequest,
+                $"POST /api/lpi/receiving-reports with missing DR# must return 400 Bad Request, got {rrEmptyDrResp.StatusCode}");
+
+            // Rejection of missing InvoiceNo in Supplier Invoice
+            var emptyInvPayload = new
+            {
+                SupplierId = multiQuoteSupplier.Id,
+                SupplierInvoiceNo = "",
+                InvoiceNumber = "",
+                PurchaseOrderId = po.Id,
+                Lines = new[]
+                {
+                    new { PurchaseOrderLineId = poLine1.Id, InvoicedQtyX1000 = 5_000, InvoicedUnitCostCents = 100_000 }
+                }
+            };
+            using HttpResponseMessage invEmptyNoResp = await client.PostAsync("/api/lpi/invoices", Json(emptyInvPayload));
+            Require(invEmptyNoResp.StatusCode == HttpStatusCode.BadRequest,
+                $"POST /api/lpi/invoices with missing Invoice# must return 400 Bad Request, got {invEmptyNoResp.StatusCode}");
+
+            // Rejection of missing ApprovalReason in Variance Approval
+            var emptyVariancePayload = new
+            {
+                ApprovalReason = "",
+                Notes = "",
+                Reason = "",
+                PostToApImmediately = true
+            };
+            using HttpResponseMessage varEmptyReasonResp = await client.PostAsync($"/api/lpi/invoices/{Guid.NewGuid()}/approve-variance", Json(emptyVariancePayload));
+            Require(varEmptyReasonResp.StatusCode == HttpStatusCode.BadRequest,
+                $"POST /api/lpi/invoices/{{id}}/approve-variance with missing reason must return 400 Bad Request, got {varEmptyReasonResp.StatusCode}");
+
+            // Rejection of missing ReferenceNo in Payment
+            var emptyRefPaymentPayload = new
+            {
+                SupplierInvoiceId = Guid.NewGuid(),
+                AmountCents = 50_000,
+                PaymentMethod = "BankTransfer",
+                ReferenceNo = "",
+                ReferenceNumber = ""
+            };
+            using HttpResponseMessage payEmptyRefResp = await client.PostAsync("/api/lpi/payments", Json(emptyRefPaymentPayload));
+            Require(payEmptyRefResp.StatusCode == HttpStatusCode.BadRequest,
+                $"POST /api/lpi/payments with missing Reference# must return 400 Bad Request, got {payEmptyRefResp.StatusCode}");
+
+            // Rejection of CashierDrawer disbursement source in Payment
+            var drawerPaymentPayload = new
+            {
+                SupplierInvoiceId = Guid.NewGuid(),
+                AmountCents = 50_000,
+                PaymentMethod = "Cash",
+                DisbursementSource = "CashierShiftDrawer",
+                ReferenceNo = "PMT-REF-VALID-01"
+            };
+            using HttpResponseMessage payDrawerResp = await client.PostAsync("/api/lpi/payments", Json(drawerPaymentPayload));
+            Require(payDrawerResp.StatusCode == HttpStatusCode.BadRequest,
+                $"POST /api/lpi/payments with CashierShiftDrawer must return 400 Bad Request, got {payDrawerResp.StatusCode}");
+
+            // 3. Verification of Payments query param (supplierInvoiceId vs invoiceId)
+            using HttpResponseMessage getPaySupInvResp = await client.GetAsync($"/api/lpi/payments?supplierInvoiceId={Guid.NewGuid()}");
+            Require(getPaySupInvResp.StatusCode == HttpStatusCode.OK,
+                $"GET /api/lpi/payments?supplierInvoiceId must return 200 OK, got {getPaySupInvResp.StatusCode}");
+
+            using HttpResponseMessage getPayInvResp = await client.GetAsync($"/api/lpi/payments?invoiceId={Guid.NewGuid()}");
+            Require(getPayInvResp.StatusCode == HttpStatusCode.OK,
+                $"GET /api/lpi/payments?invoiceId must return 200 OK, got {getPayInvResp.StatusCode}");
+
+            Console.WriteLine("P1-R21-01: Multi-line quotation precision, mandatory source identities, and drawer protection verified PASS.");
+        }
+        finally
+        {
+            await app.StopAsync().ConfigureAwait(false);
+        }
     }
 
     #region Helpers

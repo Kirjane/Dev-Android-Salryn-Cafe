@@ -144,7 +144,7 @@ export function ProcureToPayPage() {
     deliveryReceiptNumber: "",
     carrier: "Direct Delivery",
     driverName: "",
-    isOverdeliveryApproved: false,
+    locationId: "",
     notes: "",
     items: [] as Array<{
       poItemId: string;
@@ -780,16 +780,20 @@ export function ProcureToPayPage() {
                     if (po) {
                       setSelectedPoForRr(po);
                       const poLineItems = ((po.items ?? (po as any).lines ?? []) as any[]);
+                      const targetLocId = po.deliveryLocationId || mainStoreLocation?.id || foundation.data?.locations?.[0]?.id || "";
                       setRrForm({
-                        deliveryReceiptNumber: `DR-${Date.now().toString().slice(-4)}`,
+                        deliveryReceiptNumber: "",
                         carrier: "Supplier Trucking",
                         driverName: "Carrier Dispatch Driver",
-                        isOverdeliveryApproved: false,
+                        locationId: targetLocId,
                         notes: "Dock delivery inspection",
                         items: poLineItems.map((item) => {
                           const ordered = Number(item.orderedQuantityX1000 ?? item.orderedQtyX1000 ?? 0);
-                          const received = Number(item.receivedQuantityX1000 ?? item.receivedQtyX1000 ?? 0);
-                          const remaining = (ordered - received) / 1000;
+                          const accepted = Number(item.receivedAcceptedQtyX1000 ?? item.receivedQuantityX1000 ?? item.receivedQtyX1000 ?? 0);
+                          const outstanding = item.outstandingQuantityX1000 != null
+                            ? Number(item.outstandingQuantityX1000)
+                            : Math.max(0, ordered - accepted);
+                          const remaining = outstanding / 1000;
                           return {
                             poItemId: item.id ?? item.poItemId,
                             productId: item.productId,
@@ -800,7 +804,7 @@ export function ProcureToPayPage() {
                             acceptedQty: remaining > 0 ? remaining.toString() : "0",
                             rejectedQty: "0",
                             rejectionReason: "",
-                            targetLocationId: mainStoreLocation?.id ?? "",
+                            targetLocationId: targetLocId,
                             quarantineLocationId: quarantineLocation?.id ?? "",
                           };
                         }),
@@ -1601,13 +1605,29 @@ export function ProcureToPayPage() {
         title={`Receive Goods against PO: ${selectedPoForRr?.poNumber}`}
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-700">Delivery Receipt (DR) #</label>
+              <label className="block text-xs font-medium text-slate-700">Delivery Receipt (DR) # *</label>
               <TextInput
                 value={rrForm.deliveryReceiptNumber}
                 onChange={(e) => setRrForm({ ...rrForm, deliveryReceiptNumber: e.target.value })}
+                placeholder="e.g. DR-2026-9901"
               />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700">Receiving Location</label>
+              <Select
+                value={rrForm.locationId}
+                onChange={(e) => {
+                  const locId = e.target.value;
+                  const updatedItems = rrForm.items.map(it => ({ ...it, targetLocationId: locId }));
+                  setRrForm({ ...rrForm, locationId: locId, items: updatedItems });
+                }}
+              >
+                {(foundation.data?.locations ?? []).map((loc) => (
+                  <option key={loc.id} value={loc.id}>{loc.name} ({loc.code})</option>
+                ))}
+              </Select>
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-700">Carrier / Trucker</label>
@@ -1684,18 +1704,6 @@ export function ProcureToPayPage() {
             ))}
           </div>
 
-          <div className="flex items-center gap-2 pt-2">
-            <input
-              type="checkbox"
-              id="overdelivery"
-              checked={rrForm.isOverdeliveryApproved}
-              onChange={(e) => setRrForm({ ...rrForm, isOverdeliveryApproved: e.target.checked })}
-            />
-            <label htmlFor="overdelivery" className="text-xs text-slate-700">
-              Approve overdelivery exception if delivered quantity exceeds ordered PO quantity
-            </label>
-          </div>
-
           <div className="flex justify-end gap-2 pt-4 border-t">
             <Button variant="secondary" onClick={() => setRrModalOpen(false)}>
               Cancel
@@ -1703,13 +1711,17 @@ export function ProcureToPayPage() {
             <Button
               onClick={async () => {
                 if (!selectedPoForRr) return;
+                if (!rrForm.deliveryReceiptNumber.trim()) {
+                  notify.error("Delivery receipt number is mandatory.");
+                  return;
+                }
                 try {
                   await createReceivingReport({
                     purchaseOrderId: selectedPoForRr.id,
-                    deliveryReceiptNumber: rrForm.deliveryReceiptNumber,
+                    locationId: rrForm.locationId,
+                    deliveryReceiptNumber: rrForm.deliveryReceiptNumber.trim(),
                     carrier: rrForm.carrier,
                     driverName: rrForm.driverName,
-                    isOverdeliveryApproved: rrForm.isOverdeliveryApproved,
                     notes: rrForm.notes,
                     items: rrForm.items.map((it) => ({
                       poItemId: it.poItemId,
@@ -1718,7 +1730,7 @@ export function ProcureToPayPage() {
                       deliveredQuantityX1000: Math.round(parseFloat(it.deliveredQty || "0") * 1000),
                       acceptedQuantityX1000: Math.round(parseFloat(it.acceptedQty || "0") * 1000),
                       rejectedQuantityX1000: Math.round(parseFloat(it.rejectedQty || "0") * 1000),
-                      targetLocationId: it.targetLocationId,
+                      targetLocationId: rrForm.locationId || it.targetLocationId,
                       quarantineLocationId: it.quarantineLocationId,
                       rejectionReason: it.rejectionReason || undefined,
                     })),
@@ -2152,17 +2164,19 @@ export function ProcureToPayPage() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-700">Reference # / Check #</label>
+              <label className="block text-xs font-medium text-slate-700">Reference # / Check # *</label>
               <TextInput
                 value={paymentForm.referenceNumber}
                 onChange={(e) => setPaymentForm({ ...paymentForm, referenceNumber: e.target.value })}
+                placeholder="e.g. TR-2026-8801 / CHK-1092"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-700">Bank Account</label>
+              <label className="block text-xs font-medium text-slate-700">Disbursement Source</label>
               <TextInput
-                value={paymentForm.bankAccount}
-                onChange={(e) => setPaymentForm({ ...paymentForm, bankAccount: e.target.value })}
+                value={paymentForm.paymentMethod === "Cash" ? "TreasuryFund (Corporate Cash - Non-POS)" : "OperatingAccount (Operating Bank Account)"}
+                readOnly
+                className="bg-slate-100 text-slate-600"
               />
             </div>
           </div>
@@ -2172,15 +2186,22 @@ export function ProcureToPayPage() {
               Cancel
             </Button>
             <Button
+              disabled={!paymentForm.referenceNumber.trim() || !paymentForm.amount || parseFloat(paymentForm.amount) <= 0}
               onClick={async () => {
                 if (!selectedInvoiceForPayment) return;
+                if (!paymentForm.referenceNumber.trim()) {
+                  notify.error("Payment reference number is mandatory.");
+                  return;
+                }
                 try {
+                  const source = paymentForm.paymentMethod === "Cash" ? "TreasuryFund" : "OperatingAccount";
                   await recordSupplierPayment({
                     supplierId: selectedInvoiceForPayment.supplierId,
                     invoiceId: selectedInvoiceForPayment.id,
                     amountCents: Math.round(parseFloat(paymentForm.amount) * 100),
                     paymentMethod: paymentForm.paymentMethod,
-                    referenceNumber: paymentForm.referenceNumber,
+                    disbursementSource: source,
+                    referenceNumber: paymentForm.referenceNumber.trim(),
                     bankAccount: paymentForm.bankAccount,
                     notes: paymentForm.notes,
                   });
@@ -2328,7 +2349,9 @@ function QuotationListView({ requisitionId, onRefresh }: { requisitionId: string
                 <th className="p-3">Valid Until</th>
                 <th className="p-3">Lead Time</th>
                 <th className="p-3">Terms</th>
-                <th className="p-3 text-right">Quoted Total</th>
+                <th className="p-3 text-right">Unit Price</th>
+                <th className="p-3 text-right">Min Qty</th>
+                <th className="p-3 text-right">Quote Extended Total</th>
                 <th className="p-3">Status</th>
                 <th className="p-3 text-right">Actions</th>
               </tr>
@@ -2336,7 +2359,7 @@ function QuotationListView({ requisitionId, onRefresh }: { requisitionId: string
             <tbody className="divide-y divide-slate-100">
               {(quotations.data ?? []).length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-4 text-center text-slate-500">
+                  <td colSpan={10} className="p-4 text-center text-slate-500">
                     No supplier quotations recorded for this requisition.
                   </td>
                 </tr>
@@ -2348,6 +2371,8 @@ function QuotationListView({ requisitionId, onRefresh }: { requisitionId: string
                     <td className="p-3 text-xs">{q.validUntil || "—"}</td>
                     <td className="p-3">{q.leadTimeDays} days</td>
                     <td className="p-3">{q.paymentTermsDays} days</td>
+                    <td className="p-3 text-right font-medium">{money(q.quotedUnitCostCents)}</td>
+                    <td className="p-3 text-right font-medium">{(q.minimumOrderQtyX1000 / 1000).toLocaleString()}</td>
                     <td className="p-3 text-right font-bold">{money(q.totalQuotedCostCents)}</td>
                     <td className="p-3">
                       <StatusPill tone={q.isWinner ? "success" : "neutral"}>

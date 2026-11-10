@@ -96,6 +96,8 @@ export interface SupplierQuotation {
   quoteReference: string | null;
   quoteDate: string;
   validUntil: string | null;
+  quotedUnitCostCents: number;
+  minimumOrderQtyX1000: number;
   totalQuotedCostCents: number;
   leadTimeDays: number;
   paymentTermsDays: number;
@@ -121,6 +123,9 @@ export interface PurchaseOrderItem {
   unitCostCents: number;
   totalCostCents: number;
   receivedQuantityX1000: number;
+  receivedAcceptedQtyX1000?: number;
+  receivedRejectedQtyX1000?: number;
+  outstandingQuantityX1000?: number;
   returnedQuantityX1000: number;
   invoicedQuantityX1000: number;
   notes: string | null;
@@ -135,6 +140,8 @@ export interface PurchaseOrder {
   supplierName: string;
   supplierCode: string;
   expectedDeliveryDate: string | null;
+  deliveryLocationId?: string | null;
+  deliveryLocationName?: string | null;
   paymentTermsDays: number;
   deliveryAddress: string | null;
   status: string;
@@ -441,6 +448,9 @@ function normalizeSupplierReturn(raw: JsonRecord): SupplierReturnSummary {
 }
 
 function normalizeQuotation(raw: JsonRecord): SupplierQuotation {
+  const quotedUnitCostCents = raw.quotedUnitCostCents ?? raw.unitCostCents ?? 0;
+  const minimumOrderQtyX1000 = raw.minimumOrderQtyX1000 ?? raw.quantityX1000 ?? 1000;
+  const totalQuotedCostCents = raw.totalQuotedCostCents ?? Math.round(quotedUnitCostCents * Math.max(minimumOrderQtyX1000, 1000) / 1000);
   return {
     id: raw.id,
     requisitionId: raw.requisitionId ?? "",
@@ -449,7 +459,9 @@ function normalizeQuotation(raw: JsonRecord): SupplierQuotation {
     quoteReference: raw.selectionReason ?? raw.quoteReference ?? ("Q-" + (raw.id?.slice(0, 8) ?? "REF")),
     quoteDate: raw.createdAt ? new Date(raw.createdAt).toISOString().slice(0, 10) : (raw.quoteDate ?? ""),
     validUntil: raw.validityDate ?? raw.validUntil ?? null,
-    totalQuotedCostCents: raw.totalQuotedCostCents ?? raw.quotedUnitCostCents ?? 0,
+    quotedUnitCostCents,
+    minimumOrderQtyX1000,
+    totalQuotedCostCents,
     leadTimeDays: raw.leadTimeDays ?? 0,
     paymentTermsDays: raw.paymentTermsDays ?? 0,
     status: raw.isSelected ? "Selected" : (raw.status ?? "Submitted"),
@@ -463,9 +475,9 @@ function normalizeQuotation(raw: JsonRecord): SupplierQuotation {
       prItemId: it.requisitionLineId ?? it.prItemId ?? "",
       productId: it.productId ?? "",
       productName: it.itemDescription ?? it.productName ?? "Quoted Item",
-      quantityX1000: it.quantityX1000 ?? 1000,
-      quotedUnitCostCents: it.quotedUnitCostCents ?? raw.quotedUnitCostCents ?? 0,
-      quotedTotalCents: it.quotedTotalCents ?? raw.quotedUnitCostCents ?? 0,
+      quantityX1000: it.quantityX1000 ?? minimumOrderQtyX1000,
+      quotedUnitCostCents: it.quotedUnitCostCents ?? quotedUnitCostCents,
+      quotedTotalCents: it.quotedTotalCents ?? totalQuotedCostCents,
       leadTimeDays: it.leadTimeDays ?? raw.leadTimeDays ?? 0,
       notes: it.notes ?? null,
     })),
@@ -489,20 +501,29 @@ function normalizePurchaseOrder(raw: JsonRecord): PurchaseOrder {
     paymentTermsDays: raw.paymentTermsDays ?? 0,
     status: raw.status ?? "Draft",
     totalCents: raw.totalAmountCents ?? raw.totalCents ?? 0,
-    items: lines.map((line: JsonRecord) => ({
-      id: line.id,
-      poId: raw.id,
-      prItemId: line.requisitionLineId ?? line.prItemId ?? null,
-      productId: line.productId ?? "",
-      productName: line.itemDescription ?? line.productName ?? "Item",
-      productSku: line.itemCode ?? line.productSku ?? null,
-      uomId: line.unitId ?? line.uomId ?? "",
-      uomName: line.unitName ?? line.uomName ?? "pc",
-      orderedQuantityX1000: line.orderedQtyX1000 ?? line.orderedQuantityX1000 ?? 0,
-      receivedQuantityX1000: line.receivedQtyX1000 ?? line.receivedQuantityX1000 ?? 0,
-      unitCostCents: line.unitCostCents ?? 0,
-      totalCostCents: line.lineTotalCents ?? line.totalCostCents ?? 0,
-    })),
+    items: lines.map((line: JsonRecord) => {
+      const ordered = line.orderedQtyX1000 ?? line.orderedQuantityX1000 ?? 0;
+      const accepted = line.receivedAcceptedQtyX1000 ?? line.receivedQtyX1000 ?? line.receivedQuantityX1000 ?? 0;
+      const rejected = line.receivedRejectedQtyX1000 ?? 0;
+      const outstanding = line.outstandingQtyX1000 ?? Math.max(0, ordered - accepted);
+      return {
+        id: line.id,
+        poId: raw.id,
+        prItemId: line.requisitionLineId ?? line.prItemId ?? null,
+        productId: line.productId ?? "",
+        productName: line.itemDescription ?? line.productName ?? "Item",
+        productSku: line.itemCode ?? line.productSku ?? null,
+        uomId: line.unitId ?? line.uomId ?? "",
+        uomName: line.unitName ?? line.uomName ?? "pc",
+        orderedQuantityX1000: ordered,
+        receivedQuantityX1000: accepted,
+        receivedAcceptedQtyX1000: accepted,
+        receivedRejectedQtyX1000: rejected,
+        outstandingQuantityX1000: outstanding,
+        unitCostCents: line.unitCostCents ?? 0,
+        totalCostCents: line.lineTotalCents ?? line.totalCostCents ?? 0,
+      };
+    }),
   } as unknown as PurchaseOrder;
 }
 
@@ -897,10 +918,11 @@ export async function fetchReceivingReportById(id: string): Promise<ReceivingRep
 
 export async function createReceivingReport(data: {
   purchaseOrderId: string;
+  locationId?: string;
   deliveryReceiptNumber?: string;
+  deliveryReceiptNo?: string;
   carrier?: string;
   driverName?: string;
-  isOverdeliveryApproved?: boolean;
   notes?: string;
   items: Array<{
     poItemId: string;
@@ -909,7 +931,7 @@ export async function createReceivingReport(data: {
     deliveredQuantityX1000: number;
     acceptedQuantityX1000: number;
     rejectedQuantityX1000: number;
-    targetLocationId: string;
+    targetLocationId?: string;
     quarantineLocationId?: string;
     rejectionReason?: string;
     dispositionNotes?: string;
@@ -917,8 +939,9 @@ export async function createReceivingReport(data: {
 }): Promise<ReceivingReport> {
   const payload = {
     purchaseOrderId: data.purchaseOrderId,
-    deliveryReceiptNo: data.deliveryReceiptNumber || `DR-${Date.now().toString().slice(-4)}`,
-    carrierOrDriver: [data.carrier, data.driverName].filter(Boolean).join(" - ") || "Dock Carrier",
+    locationId: data.locationId || data.items?.[0]?.targetLocationId || null,
+    deliveryReceiptNo: data.deliveryReceiptNumber || data.deliveryReceiptNo,
+    carrierOrDriver: [data.carrier, data.driverName].filter(Boolean).join(" - ") || (data.carrier || "Dock Carrier"),
     postImmediately: true,
     notes: data.notes,
     lines: data.items.map((it) => ({
@@ -1054,12 +1077,12 @@ export async function createSupplierInvoice(data: {
   return normalizeSupplierInvoice(await readJson<JsonRecord>(response));
 }
 
-export async function approveInvoiceVariance(id: string, notes?: string): Promise<SupplierInvoice> {
+export async function approveInvoiceVariance(id: string, notes: string): Promise<SupplierInvoice> {
   const response = await fetch(`/api/lpi/invoices/${id}/approve-variance`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      approvalReason: notes || "Variance approved via web",
+      approvalReason: notes,
       postToApImmediately: true,
     }),
   });
@@ -1069,7 +1092,10 @@ export async function approveInvoiceVariance(id: string, notes?: string): Promis
 export async function fetchSupplierPayments(supplierId?: string, invoiceId?: string): Promise<SupplierPayment[]> {
   const params = new URLSearchParams();
   if (supplierId) params.set("supplierId", supplierId);
-  if (invoiceId) params.set("invoiceId", invoiceId);
+  if (invoiceId) {
+    params.set("supplierInvoiceId", invoiceId);
+    params.set("invoiceId", invoiceId);
+  }
   const response = await fetch(`/api/lpi/payments?${params.toString()}`);
   return (await readJson<JsonRecord[]>(response)).map(normalizeSupplierPayment);
 }
@@ -1079,16 +1105,21 @@ export async function recordSupplierPayment(data: {
   invoiceId: string;
   amountCents: number;
   paymentMethod: string;
+  disbursementSource?: string;
   referenceNumber?: string;
   bankAccount?: string;
   checkNumber?: string;
   notes?: string;
 }): Promise<SupplierPayment> {
+  const disbursementSource = data.disbursementSource || (data.paymentMethod === "Cash" ? "TreasuryFund" : "OperatingAccount");
   const payload = {
     supplierInvoiceId: data.invoiceId,
+    invoiceId: data.invoiceId,
     amountCents: data.amountCents,
     paymentMethod: data.paymentMethod,
+    disbursementSource: disbursementSource,
     referenceNo: data.referenceNumber,
+    referenceNumber: data.referenceNumber,
     bankName: data.bankAccount,
     checkNo: data.checkNumber,
     remarks: data.notes,
