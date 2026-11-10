@@ -1760,15 +1760,101 @@ public static class LpiP1IntegrityReproductionChecks
         DateOnly expectedDelivery = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(14));
         Require(po.ExpectedDeliveryDate == expectedDelivery,
             $"PO expected delivery must be max lead time (14 days = {expectedDelivery}), got {po.ExpectedDeliveryDate}.");
+        Require(po.PaymentTermsDays == 30,
+            $"PO payment terms must be conservative minimum (30 days from quote 1, not 45 from quote 2), got {po.PaymentTermsDays}.");
+
+        // Setup 2 real invoices and 2 real payments for R21-REVIEW-03 scoped filtering
+        // Note: ConvertRequisitionToPurchaseOrderAsync creates the PO already in Approved status.
+
+        ReceivingReportModel p1Rr = RequireSuccess(await service.CreateReceivingReportAsync(new CreateReceivingReportRequest(
+            po.Id,
+            LocationId: null,
+            DeliveryReceiptNo: "DR-P1-R21-001",
+            SupplierInvoiceRef: null,
+            CarrierOrDriver: "Precision Logistics",
+            ReceivedDate: DateOnly.FromDateTime(DateTime.UtcNow),
+            PostImmediately: true,
+            OverdeliveryApproverUserId: null,
+            OverdeliveryApprovalReason: null,
+            ClientRequestId: "rr-p1-r21-req",
+            Notes: null,
+            Lines: new[]
+            {
+                new CreateReceivingReportLineInput(poLine1.Id, 5_000, 5_000, 0, null, null, "BATCH-R21-1", null),
+                new CreateReceivingReportLineInput(poLine2.Id, 50_000, 50_000, 0, null, null, "BATCH-R21-2", null)
+            },
+            ReceivedByUserId: requesterId)), "Create RR for multi-invoice testing");
+
+        SupplierInvoiceModel invAlpha = RequireSuccess(await service.CreateSupplierInvoiceAsync(new CreateSupplierInvoiceRequest(
+            multiQuoteSupplier.Id,
+            "SI-R21-ALPHA-01",
+            PurchaseOrderId: po.Id,
+            ReceivingReportId: p1Rr.Id,
+            InvoiceDate: DateOnly.FromDateTime(DateTime.UtcNow),
+            DueDate: DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)),
+            DiscountCents: 0,
+            WithholdingTaxCents: 0,
+            PostToApIfMatched: true,
+            Lines: new[]
+            {
+                new CreateSupplierInvoiceLineInput(poLine1.Id, p1Rr.Lines.First(l => l.PurchaseOrderLineId == poLine1.Id).Id, productId, "Line 1 Goods", 5_000, 100_000, 0)
+            },
+            RecordedByUserId: apClerkId)), "Create invAlpha");
+
+        SupplierInvoiceModel invBeta = RequireSuccess(await service.CreateSupplierInvoiceAsync(new CreateSupplierInvoiceRequest(
+            multiQuoteSupplier.Id,
+            "SI-R21-BETA-02",
+            PurchaseOrderId: po.Id,
+            ReceivingReportId: p1Rr.Id,
+            InvoiceDate: DateOnly.FromDateTime(DateTime.UtcNow),
+            DueDate: DateOnly.FromDateTime(DateTime.UtcNow.AddDays(45)),
+            DiscountCents: 0,
+            WithholdingTaxCents: 0,
+            PostToApIfMatched: true,
+            Lines: new[]
+            {
+                new CreateSupplierInvoiceLineInput(poLine2.Id, p1Rr.Lines.First(l => l.PurchaseOrderLineId == poLine2.Id).Id, productId, "Line 2 Goods", 50_000, 80_000, 0)
+            },
+            RecordedByUserId: apClerkId)), "Create invBeta");
+
+        SupplierPaymentModel pmtAlpha = RequireSuccess(await service.RecordSupplierPaymentAsync(new RecordSupplierPaymentRequest(
+            invAlpha.Id,
+            DateOnly.FromDateTime(DateTime.UtcNow),
+            120_000,
+            "BankTransfer",
+            "OperatingAccount",
+            "REF-R21-ALPHA-PAY",
+            null,
+            "BPI Main",
+            "Settlement for invAlpha",
+            "pmt-alpha-req",
+            apClerkId,
+            supervisorId)), "Seed pmtAlpha");
+
+        SupplierPaymentModel pmtBeta = RequireSuccess(await service.RecordSupplierPaymentAsync(new RecordSupplierPaymentRequest(
+            invBeta.Id,
+            DateOnly.FromDateTime(DateTime.UtcNow),
+            350_000,
+            "Cash",
+            "TreasuryFund",
+            "REF-R21-BETA-PAY",
+            null,
+            null,
+            "Settlement for invBeta",
+            "pmt-beta-req",
+            apClerkId,
+            supervisorId)), "Seed pmtBeta");
 
         // 2. HTTP Endpoint contract validations (rejections of missing mandatory identities)
         InMemoryLocalApiSessionStore sessionStore = new();
+        SalrynLocalComposition comp = SalrynLocalComposition.Create(paths);
         await using WebApplication app = await LocalApiApplicationFactory
             .CreateAsync(
                 new[] { "--dev" },
                 new LocalApiApplicationOptions
                 {
                     Url = "http://127.0.0.1:0",
+                    Composition = comp,
                     SessionStore = sessionStore,
                     EnableStaticWebAssets = false,
                     WriteDevelopmentDatabasePath = false
@@ -1864,16 +1950,63 @@ public static class LpiP1IntegrityReproductionChecks
             Require(payDrawerResp.StatusCode == HttpStatusCode.BadRequest,
                 $"POST /api/lpi/payments with CashierShiftDrawer must return 400 Bad Request, got {payDrawerResp.StatusCode}");
 
-            // 3. Verification of Payments query param (supplierInvoiceId vs invoiceId)
-            using HttpResponseMessage getPaySupInvResp = await client.GetAsync($"/api/lpi/payments?supplierInvoiceId={Guid.NewGuid()}");
+            // 3. Verification of Payments scoped query filtering (R21-REVIEW-03)
+            // Query by supplierInvoiceId -> must return only invAlpha's payment with exact IDs and amounts
+            using HttpResponseMessage getPaySupInvResp = await client.GetAsync($"/api/lpi/payments?supplierInvoiceId={invAlpha.Id}");
             Require(getPaySupInvResp.StatusCode == HttpStatusCode.OK,
                 $"GET /api/lpi/payments?supplierInvoiceId must return 200 OK, got {getPaySupInvResp.StatusCode}");
+            string alphaJson = await getPaySupInvResp.Content.ReadAsStringAsync();
+            using JsonDocument alphaDoc = JsonDocument.Parse(alphaJson);
+            Require(alphaDoc.RootElement.ValueKind == JsonValueKind.Array, "Response must be a JSON array.");
+            Require(alphaDoc.RootElement.GetArrayLength() == 1, $"Filter by invAlpha must return exactly 1 payment, got {alphaDoc.RootElement.GetArrayLength()}.");
+            JsonElement pmtAlphaElem = alphaDoc.RootElement[0];
+            Require(Guid.Parse(pmtAlphaElem.GetProperty("id").GetString()!) == pmtAlpha.Id,
+                $"Returned payment ID must match pmtAlpha {pmtAlpha.Id}, got {pmtAlphaElem.GetProperty("id").GetString()}");
+            Require(pmtAlphaElem.GetProperty("amountCents").GetInt64() == 120_000,
+                $"Returned payment amount must be 120,000, got {pmtAlphaElem.GetProperty("amountCents").GetInt64()}");
+            Require(pmtAlphaElem.GetProperty("referenceNo").GetString() == "REF-R21-ALPHA-PAY",
+                $"Returned reference number must match REF-R21-ALPHA-PAY, got {pmtAlphaElem.GetProperty("referenceNo").GetString()}");
+            Require(Guid.Parse(pmtAlphaElem.GetProperty("supplierInvoiceId").GetString()!) == invAlpha.Id,
+                "Returned supplier invoice ID must match invAlpha.");
 
-            using HttpResponseMessage getPayInvResp = await client.GetAsync($"/api/lpi/payments?invoiceId={Guid.NewGuid()}");
+            // Query by invoiceId alias -> must return only invBeta's payment with exact IDs and amounts
+            using HttpResponseMessage getPayInvResp = await client.GetAsync($"/api/lpi/payments?invoiceId={invBeta.Id}");
             Require(getPayInvResp.StatusCode == HttpStatusCode.OK,
                 $"GET /api/lpi/payments?invoiceId must return 200 OK, got {getPayInvResp.StatusCode}");
+            string betaJson = await getPayInvResp.Content.ReadAsStringAsync();
+            using JsonDocument betaDoc = JsonDocument.Parse(betaJson);
+            Require(betaDoc.RootElement.ValueKind == JsonValueKind.Array, "Response must be a JSON array.");
+            Require(betaDoc.RootElement.GetArrayLength() == 1, $"Filter by invBeta must return exactly 1 payment, got {betaDoc.RootElement.GetArrayLength()}.");
+            JsonElement pmtBetaElem = betaDoc.RootElement[0];
+            Require(Guid.Parse(pmtBetaElem.GetProperty("id").GetString()!) == pmtBeta.Id,
+                $"Returned payment ID must match pmtBeta {pmtBeta.Id}, got {pmtBetaElem.GetProperty("id").GetString()}");
+            Require(pmtBetaElem.GetProperty("amountCents").GetInt64() == 350_000,
+                $"Returned payment amount must be 350,000, got {pmtBetaElem.GetProperty("amountCents").GetInt64()}");
+            Require(pmtBetaElem.GetProperty("referenceNo").GetString() == "REF-R21-BETA-PAY",
+                $"Returned reference number must match REF-R21-BETA-PAY, got {pmtBetaElem.GetProperty("referenceNo").GetString()}");
+            Require(Guid.Parse(pmtBetaElem.GetProperty("supplierInvoiceId").GetString()!) == invBeta.Id,
+                "Returned supplier invoice ID must match invBeta.");
 
-            Console.WriteLine("P1-R21-01: Multi-line quotation precision, mandatory source identities, and drawer protection verified PASS.");
+            // Query by unrelated invoice -> must return empty list (0 payments)
+            using HttpResponseMessage getEmptyResp = await client.GetAsync($"/api/lpi/payments?supplierInvoiceId={Guid.NewGuid()}");
+            Require(getEmptyResp.StatusCode == HttpStatusCode.OK, "Unrelated invoice query must return 200 OK.");
+            using JsonDocument emptyDoc = JsonDocument.Parse(await getEmptyResp.Content.ReadAsStringAsync());
+            Require(emptyDoc.RootElement.GetArrayLength() == 0, "Unrelated invoice query must return 0 payments.");
+
+            // Unauthenticated request -> must return 401 Unauthorized
+            using HttpClient anonClient = new() { BaseAddress = baseAddress };
+            using HttpResponseMessage anonResp = await anonClient.GetAsync($"/api/lpi/payments?supplierInvoiceId={invAlpha.Id}");
+            Require(anonResp.StatusCode == HttpStatusCode.Unauthorized,
+                $"Unauthenticated GET /api/lpi/payments must return 401 Unauthorized, got {anonResp.StatusCode}");
+
+            // Unauthorized request (session without PayablesView) -> must return 403 Forbidden
+            LocalApiSession unauthSession = CreateSession(sessionStore, "ViewerOnly", new[] { SalrynPermissions.ProductsView });
+            using HttpClient unauthClient = CreateClient(baseAddress, unauthSession);
+            using HttpResponseMessage unauthResp = await unauthClient.GetAsync($"/api/lpi/payments?supplierInvoiceId={invAlpha.Id}");
+            Require(unauthResp.StatusCode == HttpStatusCode.Forbidden,
+                $"Unauthorized GET /api/lpi/payments without PayablesView must return 403 Forbidden, got {unauthResp.StatusCode}");
+
+            Console.WriteLine("P1-R21-01: Multi-line quotation precision, deterministic payment terms, mandatory identities, and scoped AP payment filtering verified PASS.");
         }
         finally
         {

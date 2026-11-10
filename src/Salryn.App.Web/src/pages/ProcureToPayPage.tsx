@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchLpiFoundation,
@@ -13,6 +13,7 @@ import {
   rejectRequisition,
   convertRequisitionToPo,
   fetchQuotations,
+  createQuotation,
   selectWinningQuotation,
   fetchPurchaseOrders,
   approvePurchaseOrder,
@@ -63,6 +64,10 @@ export function ProcureToPayPage() {
   const { notify } = useNotifications();
   const session = useAppSession();
   const currentUserId = session.data?.user?.userId ?? "";
+  const canViewProcurement = hasPermission(session.data, Permissions.ProcurementView);
+  const canViewReceiving = hasPermission(session.data, Permissions.ReceivingView);
+  const canViewInventory = hasPermission(session.data, Permissions.InventoryView);
+  const canViewPayables = hasPermission(session.data, Permissions.PayablesView);
   const canRequestPr = hasPermission(session.data, Permissions.ProcurementRequest);
   const canApprovePr = hasPermission(session.data, Permissions.ProcurementApproveRequisition);
   const canManagePo = hasPermission(session.data, Permissions.ProcurementManagePurchaseOrder);
@@ -86,17 +91,31 @@ export function ProcureToPayPage() {
     return "overview";
   });
 
+  useEffect(() => {
+    const syncTabFromUrl = () => {
+      if (typeof window !== "undefined") {
+        const t = new URLSearchParams(window.location.search).get("tab");
+        if (t && ["overview", "suppliers", "pr", "quotations", "po", "rr", "inventory", "ap"].includes(t)) {
+          setActiveTab(t as any);
+        }
+      }
+    };
+    syncTabFromUrl();
+    window.addEventListener("popstate", syncTabFromUrl);
+    return () => window.removeEventListener("popstate", syncTabFromUrl);
+  }, []);
+
   // Queries
-  const foundation = useQuery({ queryKey: ["lpi-foundation"], queryFn: () => fetchLpiFoundation(true) });
-  const overview = useQuery({ queryKey: ["lpi-overview"], queryFn: fetchLpiOverview });
-  const suppliers = useQuery({ queryKey: ["lpi-suppliers"], queryFn: () => fetchSuppliers("", true) });
-  const requisitions = useQuery({ queryKey: ["lpi-requisitions"], queryFn: () => fetchRequisitions() });
-  const purchaseOrders = useQuery({ queryKey: ["lpi-pos"], queryFn: () => fetchPurchaseOrders() });
-  const receivingReports = useQuery({ queryKey: ["lpi-rrs"], queryFn: () => fetchReceivingReports() });
-  const stockCards = useQuery({ queryKey: ["lpi-stock-cards"], queryFn: fetchStockCards });
-  const supplierReturns = useQuery({ queryKey: ["lpi-returns"], queryFn: () => fetchSupplierReturns() });
-  const invoices = useQuery({ queryKey: ["lpi-invoices"], queryFn: () => fetchSupplierInvoices() });
-  const payments = useQuery({ queryKey: ["lpi-payments"], queryFn: () => fetchSupplierPayments() });
+  const foundation = useQuery({ queryKey: ["lpi-foundation"], queryFn: () => fetchLpiFoundation(true), enabled: canViewProcurement });
+  const overview = useQuery({ queryKey: ["lpi-overview"], queryFn: fetchLpiOverview, enabled: canViewProcurement });
+  const suppliers = useQuery({ queryKey: ["lpi-suppliers"], queryFn: () => fetchSuppliers("", true), enabled: canViewProcurement });
+  const requisitions = useQuery({ queryKey: ["lpi-requisitions"], queryFn: () => fetchRequisitions(), enabled: canViewProcurement });
+  const purchaseOrders = useQuery({ queryKey: ["lpi-pos"], queryFn: () => fetchPurchaseOrders(), enabled: canViewProcurement });
+  const receivingReports = useQuery({ queryKey: ["lpi-rrs"], queryFn: () => fetchReceivingReports(), enabled: canViewReceiving });
+  const stockCards = useQuery({ queryKey: ["lpi-stock-cards"], queryFn: fetchStockCards, enabled: canViewInventory });
+  const supplierReturns = useQuery({ queryKey: ["lpi-returns"], queryFn: () => fetchSupplierReturns(), enabled: canViewInventory });
+  const invoices = useQuery({ queryKey: ["lpi-invoices"], queryFn: () => fetchSupplierInvoices(), enabled: canViewPayables });
+  const payments = useQuery({ queryKey: ["lpi-payments"], queryFn: () => fetchSupplierPayments(), enabled: canViewPayables });
 
   const [paymentApproveModalOpen, setPaymentApproveModalOpen] = useState(false);
   const [paymentToApprove, setPaymentToApprove] = useState<SupplierPayment | null>(null);
@@ -132,7 +151,18 @@ export function ProcureToPayPage() {
     items: [{ productId: "", uomId: "", quantity: "1", estimatedCost: "0", preferredSupplierId: "" }],
   });
 
-  const [selectedPrForQuote, setSelectedPrForQuote] = useState<string>("");
+  const [selectedPrForQuote, setSelectedPrForQuote] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return new URLSearchParams(window.location.search).get("prId") || "";
+    }
+    return "";
+  });
+
+  useEffect(() => {
+    if (!selectedPrForQuote && (requisitions.data ?? []).length > 0) {
+      setSelectedPrForQuote(requisitions.data![0].id);
+    }
+  }, [requisitions.data, selectedPrForQuote]);
 
   const [splitPoModalOpen, setSplitPoModalOpen] = useState(false);
   const [splitPr, setSplitPr] = useState<PurchaseRequisition | null>(null);
@@ -653,7 +683,12 @@ export function ProcureToPayPage() {
           {!selectedPrForQuote ? (
             <Alert tone="info">Please select a Purchase Requisition above to view or compare supplier quotations.</Alert>
           ) : (
-            <QuotationListView requisitionId={selectedPrForQuote} onRefresh={refreshAll} />
+            <QuotationListView
+              requisitionId={selectedPrForQuote}
+              requisition={(requisitions.data ?? []).find((r) => r.id === selectedPrForQuote)}
+              suppliers={suppliers.data ?? []}
+              onRefresh={refreshAll}
+            />
           )}
         </div>
       )}
@@ -1043,13 +1078,21 @@ export function ProcureToPayPage() {
                   onClick={() => {
                     const sup = foundation.data?.suppliers[0];
                     const prod = foundation.data?.products[0];
+                    const matchingPo = (purchaseOrders.data ?? []).find(
+                      (po) => po.supplierId === sup?.id && (po.status === "Approved" || po.status === "Sent" || po.status === "Fulfilled")
+                    );
+                    const matchingRr = (receivingReports.data ?? []).find(
+                      (rr) => rr.supplierId === sup?.id && rr.status === "Posted"
+                    );
+                    const poLine = matchingPo?.items.find((item) => item.productId === prod?.id) ?? matchingPo?.items[0];
+                    const rrLine = matchingRr?.items.find((item) => item.productId === prod?.id) ?? matchingRr?.items[0];
                     setInvoiceForm({
                       supplierId: sup?.id ?? "",
                       invoiceNumber: `INV-${Date.now().toString().slice(-5)}`,
                       invoiceDate: new Date().toISOString().slice(0, 10),
                       dueDate: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
-                      purchaseOrderId: "",
-                      receivingReportId: "",
+                      purchaseOrderId: matchingPo?.id ?? "",
+                      receivingReportId: matchingRr?.id ?? "",
                       notes: "Supplier accounts payable voucher",
                       items: [
                         {
@@ -1057,6 +1100,8 @@ export function ProcureToPayPage() {
                           productName: prod?.name ?? "Item",
                           invoicedQty: "10",
                           unitCost: prod ? (prod.costPriceCents / 100).toFixed(2) : "10",
+                          poItemId: poLine?.id,
+                          rrItemId: rrLine?.id,
                         },
                       ],
                     });
@@ -2059,14 +2104,26 @@ export function ProcureToPayPage() {
                     invoiceNumber: invoiceForm.invoiceNumber,
                     invoiceDate: invoiceForm.invoiceDate,
                     dueDate: invoiceForm.dueDate,
+                    purchaseOrderId: invoiceForm.purchaseOrderId || undefined,
+                    receivingReportId: invoiceForm.receivingReportId || undefined,
                     subtotalCents,
                     totalCents: subtotalCents,
                     notes: invoiceForm.notes,
-                    items: invoiceForm.items.map((it) => ({
-                      productId: it.productId,
-                      invoicedQuantityX1000: Math.round(parseFloat(it.invoicedQty || "0") * 1000),
-                      unitCostCents: Math.round(parseFloat(it.unitCost || "0") * 100),
-                    })),
+                    items: invoiceForm.items.map((it) => {
+                      const poLine = (purchaseOrders.data ?? [])
+                        .find((po) => po.id === invoiceForm.purchaseOrderId)
+                        ?.items.find((item) => item.productId === it.productId);
+                      const rrLine = (receivingReports.data ?? [])
+                        .find((rr) => rr.id === invoiceForm.receivingReportId)
+                        ?.items.find((item) => item.productId === it.productId);
+                      return {
+                        productId: it.productId,
+                        invoicedQuantityX1000: Math.round(parseFloat(it.invoicedQty || "0") * 1000),
+                        unitCostCents: Math.round(parseFloat(it.unitCost || "0") * 100),
+                        poItemId: it.poItemId || poLine?.id,
+                        rrItemId: it.rrItemId || rrLine?.id,
+                      };
+                    }),
                   });
                   notify.success("Supplier Invoice recorded in AP Ledger!");
                   setInvoiceModalOpen(false);
@@ -2325,7 +2382,17 @@ export function ProcureToPayPage() {
 }
 
 // Subcomponent for Quotation view
-function QuotationListView({ requisitionId, onRefresh }: { requisitionId: string; onRefresh: () => void }) {
+function QuotationListView({
+  requisitionId,
+  requisition,
+  suppliers,
+  onRefresh,
+}: {
+  requisitionId: string;
+  requisition?: PurchaseRequisition;
+  suppliers?: LpiSupplier[];
+  onRefresh: () => void;
+}) {
   const { notify } = useNotifications();
   const session = useAppSession();
   const canManagePo = hasPermission(session.data, Permissions.ProcurementManagePurchaseOrder);
@@ -2334,10 +2401,40 @@ function QuotationListView({ requisitionId, onRefresh }: { requisitionId: string
     queryFn: () => fetchQuotations(requisitionId),
   });
 
+  const safeSuppliers: LpiSupplier[] = suppliers ?? [];
+  const [recordModalOpen, setRecordModalOpen] = useState(false);
+  const [quoteForm, setQuoteForm] = useState({
+    supplierId: safeSuppliers[0]?.id || "",
+    requisitionLineId: requisition?.items[0]?.id || "",
+    unitCost: "45.00",
+    minQty: "1",
+    leadTime: "5",
+    terms: "30",
+    isSelected: true,
+    selectionReason: "Best value and delivery lead time",
+  });
+
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex justify-between items-center">
         <CardTitle>Received Supplier Quotations</CardTitle>
+        {canManagePo && (
+          <Button variant="secondary" onClick={() => {
+            setQuoteForm({
+              supplierId: safeSuppliers[0]?.id || "",
+              requisitionLineId: requisition?.items[0]?.id || "",
+              unitCost: "45.00",
+              minQty: "1",
+              leadTime: "5",
+              terms: "30",
+              isSelected: true,
+              selectionReason: "Best value and delivery lead time",
+            });
+            setRecordModalOpen(true);
+          }}>
+            + Record Quotation
+          </Button>
+        )}
       </CardHeader>
       <CardBody className="p-0">
         <div className="overflow-x-auto">
@@ -2406,6 +2503,127 @@ function QuotationListView({ requisitionId, onRefresh }: { requisitionId: string
           </table>
         </div>
       </CardBody>
+      <Dialog
+        open={recordModalOpen}
+        onClose={() => setRecordModalOpen(false)}
+        title="Record Supplier Quotation"
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-700">Supplier</label>
+              <Select
+                value={quoteForm.supplierId}
+                onChange={(e) => setQuoteForm({ ...quoteForm, supplierId: e.target.value })}
+              >
+                <option value="">Select Supplier...</option>
+                {safeSuppliers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.code})
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700">Requisition Item</label>
+              <Select
+                value={quoteForm.requisitionLineId}
+                onChange={(e) => setQuoteForm({ ...quoteForm, requisitionLineId: e.target.value })}
+              >
+                <option value="">Select PR Line...</option>
+                {(requisition?.items ?? []).map((it) => (
+                  <option key={it.id} value={it.id}>
+                    {it.productName || it.notes || "Item"} (Req: {(it.requestedQuantityX1000 / 1000).toLocaleString()})
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-700">Quoted Unit Price (₱)</label>
+              <TextInput
+                type="number"
+                step="0.01"
+                value={quoteForm.unitCost}
+                onChange={(e) => setQuoteForm({ ...quoteForm, unitCost: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700">Lead Time (Days)</label>
+              <TextInput
+                type="number"
+                value={quoteForm.leadTime}
+                onChange={(e) => setQuoteForm({ ...quoteForm, leadTime: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700">Payment Terms (Days)</label>
+              <TextInput
+                type="number"
+                value={quoteForm.terms}
+                onChange={(e) => setQuoteForm({ ...quoteForm, terms: e.target.value })}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={quoteForm.isSelected}
+                onChange={(e) => setQuoteForm({ ...quoteForm, isSelected: e.target.checked })}
+              />
+              Select as winning quote immediately
+            </label>
+          </div>
+          {quoteForm.isSelected && (
+            <div>
+              <label className="block text-xs font-medium text-slate-700">Selection Justification Reason</label>
+              <TextInput
+                value={quoteForm.selectionReason}
+                onChange={(e) => setQuoteForm({ ...quoteForm, selectionReason: e.target.value })}
+              />
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <Button variant="secondary" onClick={() => setRecordModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!quoteForm.supplierId) {
+                  notify.error("Please select a supplier.");
+                  return;
+                }
+                const selectedLine = (requisition?.items ?? []).find((it) => it.id === quoteForm.requisitionLineId);
+                try {
+                  await createQuotation({
+                    requisitionId,
+                    requisitionLineId: quoteForm.requisitionLineId || undefined,
+                    supplierId: quoteForm.supplierId,
+                    productId: selectedLine?.productId,
+                    itemDescription: selectedLine?.productName || selectedLine?.notes || "Quoted Goods",
+                    quotedUnitCostCents: Math.round(parseFloat(quoteForm.unitCost || "0") * 100),
+                    minimumOrderQtyX1000: Math.round(parseFloat(quoteForm.minQty || "1") * 1000),
+                    leadTimeDays: parseInt(quoteForm.leadTime || "0", 10),
+                    paymentTermsDays: parseInt(quoteForm.terms || "0", 10),
+                    isSelected: quoteForm.isSelected,
+                    selectionReason: quoteForm.isSelected ? quoteForm.selectionReason : undefined,
+                  });
+                  notify.success("Supplier quotation recorded successfully.");
+                  setRecordModalOpen(false);
+                  quotations.refetch();
+                  onRefresh();
+                } catch (e) {
+                  notify.error((e as Error).message);
+                }
+              }}
+            >
+              Save Quotation
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </Card>
   );
 }

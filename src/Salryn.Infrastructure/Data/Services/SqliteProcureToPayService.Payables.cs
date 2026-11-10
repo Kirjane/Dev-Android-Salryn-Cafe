@@ -170,6 +170,20 @@ public sealed partial class SqliteProcureToPayService
                 poLine = derivedPl;
             }
 
+            if (poLine is null && line.ProductId.HasValue && po is not null)
+            {
+                poLine = po.Lines.FirstOrDefault(x => x.ProductId == line.ProductId.Value);
+            }
+
+            if (rrLine is null && line.ProductId.HasValue && rr is not null)
+            {
+                rrLine = rr.Lines.FirstOrDefault(x => x.ProductId == line.ProductId.Value);
+                if (poLine is null && rrLine is not null && poLineMap.TryGetValue(rrLine.PurchaseOrderLineId, out var derivedPlFromRr))
+                {
+                    poLine = derivedPlFromRr;
+                }
+            }
+
             if (po is not null && poLine is null)
             {
                 return Result<SupplierInvoiceModel>.Fail(

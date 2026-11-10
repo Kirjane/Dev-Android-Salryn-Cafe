@@ -57,7 +57,7 @@ export default defineConfig({
   projects: [
     {
       name: "mocked-ui",
-      testIgnore: /integrated-host\.spec\.ts/,
+      testIgnore: /integrated-host.*\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         channel: undefined, // Playwright-bundled Chromium only (pinned by @playwright/test in package-lock.json)
@@ -70,7 +70,7 @@ export default defineConfig({
     },
     {
       name: "integrated-host",
-      testMatch: /integrated-host\.spec\.ts/,
+      testMatch: /integrated-host.*\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         baseURL: process.env.SALRYN_INTEGRATED_HOST_URL ?? "http://127.0.0.1:5299",

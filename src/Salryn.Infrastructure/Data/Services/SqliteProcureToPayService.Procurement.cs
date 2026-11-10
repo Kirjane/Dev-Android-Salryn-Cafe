@@ -648,7 +648,8 @@ public sealed partial class SqliteProcureToPayService
             : null;
 
         Dictionary<Guid, (long UnitCost, int Terms, int LeadTime)> winningQuotesByLine = new();
-        int? winningPaymentTermsDays = null;
+        int minPaymentTermsDays = int.MaxValue;
+        bool hasWinningPaymentTerms = false;
         int maxLeadTimeDays = 0;
         bool hasWinningLeadTime = false;
         await using (SqliteCommand quoteCmd = connection.CreateCommand())
@@ -658,7 +659,8 @@ public sealed partial class SqliteProcureToPayService
                 FROM supplier_quotations q
                 WHERE q.requisition_id = $reqId
                   AND q.supplier_id = $supId
-                  AND q.is_selected = 1;
+                  AND q.is_selected = 1
+                ORDER BY q.requisition_line_id ASC;
                 """;
             quoteCmd.Parameters.AddWithValue("$reqId", requisitionId.ToString("D"));
             quoteCmd.Parameters.AddWithValue("$supId", supplierId.ToString("D"));
@@ -674,12 +676,17 @@ public sealed partial class SqliteProcureToPayService
                     winningQuotesByLine[lineId] = (unitCost, terms, leadTime);
                     if (allowedLineIds is null || allowedLineIds.Contains(lineId))
                     {
-                        if (terms > 0 && winningPaymentTermsDays is null)
+                        if (terms > 0)
                         {
-                            winningPaymentTermsDays = terms;
+                            // Invariant: Consolidated PO adopts the most conservative (minimum) payment terms
+                            // across converted lines to guarantee timely payment compliance without defaulting on any line.
+                            minPaymentTermsDays = Math.Min(minPaymentTermsDays, terms);
+                            hasWinningPaymentTerms = true;
                         }
                         if (leadTime > 0)
                         {
+                            // Invariant: Consolidated PO adopts the maximum delivery lead time across converted lines
+                            // ensuring delivery is not expected before the slowest item can arrive.
                             maxLeadTimeDays = Math.Max(maxLeadTimeDays, leadTime);
                             hasWinningLeadTime = true;
                         }
@@ -687,6 +694,7 @@ public sealed partial class SqliteProcureToPayService
                 }
             }
         }
+        int? winningPaymentTermsDays = hasWinningPaymentTerms ? minPaymentTermsDays : null;
 
         List<CreatePurchaseOrderLineInput> poLines = new();
         foreach (var line in pr.Lines)

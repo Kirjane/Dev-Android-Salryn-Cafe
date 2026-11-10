@@ -811,27 +811,48 @@ export async function fetchQuotations(requisitionId: string): Promise<SupplierQu
   return (await readJson<JsonRecord[]>(response)).map(normalizeQuotation);
 }
 
-export async function createQuotation(data: {
+export interface RecordQuotationPayload {
   requisitionId: string;
+  requisitionLineId?: string;
   supplierId: string;
-  quoteReference?: string;
-  validUntil?: string;
+  productId?: string;
+  itemDescription?: string;
+  quotedUnitCostCents?: number;
+  minimumOrderQtyX1000?: number;
   leadTimeDays?: number;
   paymentTermsDays?: number;
-  notes?: string;
-  items: Array<{
-    prItemId: string;
-    productId: string;
-    quantityX1000: number;
-    quotedUnitCostCents: number;
+  validityDate?: string;
+  isSelected?: boolean;
+  selectionReason?: string;
+  items?: Array<{
+    prItemId?: string;
+    productId?: string;
+    quantityX1000?: number;
+    quotedUnitCostCents?: number;
     leadTimeDays?: number;
     notes?: string;
   }>;
-}): Promise<SupplierQuotation> {
+}
+
+export async function createQuotation(data: RecordQuotationPayload): Promise<SupplierQuotation> {
+  const payload = {
+    requisitionId: data.requisitionId,
+    requisitionLineId: data.requisitionLineId ?? (data.items && data.items.length > 0 ? data.items[0].prItemId : undefined),
+    supplierId: data.supplierId,
+    productId: data.productId ?? (data.items && data.items.length > 0 ? data.items[0].productId : undefined),
+    itemDescription: data.itemDescription ?? (data.items && data.items.length > 0 ? data.items[0].notes : "Quoted Item"),
+    quotedUnitCostCents: data.quotedUnitCostCents ?? (data.items && data.items.length > 0 ? data.items[0].quotedUnitCostCents : 0),
+    minimumOrderQtyX1000: data.minimumOrderQtyX1000 ?? (data.items && data.items.length > 0 ? data.items[0].quantityX1000 : 1000),
+    leadTimeDays: data.leadTimeDays,
+    paymentTermsDays: data.paymentTermsDays,
+    validityDate: data.validityDate,
+    isSelected: data.isSelected,
+    selectionReason: data.selectionReason,
+  };
   const response = await fetch("/api/lpi/quotations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: JSON.stringify(payload),
   });
   return readJson<SupplierQuotation>(response);
 }

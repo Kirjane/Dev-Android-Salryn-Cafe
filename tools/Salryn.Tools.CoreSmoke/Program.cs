@@ -647,6 +647,10 @@ public static class Program
             case "lpi-evidence":
                 LpiEvidenceCaptureRunner.RunAsync().GetAwaiter().GetResult();
                 return;
+            case "lpi-acceptance":
+            case "lpi-real-host":
+                LpiRealHostAcceptanceRunner.RunAsync().GetAwaiter().GetResult();
+                return;
             default:
                 throw new InvalidOperationException("Unknown CoreSmoke --only check: " + checkName);
         }
