@@ -81,6 +81,9 @@ internal static class LocalProcureToPayEndpoints
         {
             if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
                 return denied;
+            // Procurement.View is part of the default cashier role; it does not grant
+            // access to supplier/receiving/financial inventory summaries.
+            if (IsCashier(RequiredSession(context, sessions))) return Results.StatusCode(403);
             var result = await service.GetDashboardOverviewAsync(ct);
             if (!result.IsSuccess)
                 return ToResult(result);
@@ -537,6 +540,9 @@ internal static class LocalProcureToPayEndpoints
         {
             if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
                 return denied;
+            // Procurement.View is part of the default cashier role; it does not grant
+            // access to supplier/receiving/financial inventory summaries.
+            if (IsCashier(RequiredSession(context, sessions))) return Results.StatusCode(403);
             return ToResult(await service.GetReceivingReportsAsync(purchaseOrderId, ct));
         });
 
@@ -549,6 +555,9 @@ internal static class LocalProcureToPayEndpoints
         {
             if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
                 return denied;
+            // Procurement.View is part of the default cashier role; it does not grant
+            // access to supplier/receiving/financial inventory summaries.
+            if (IsCashier(RequiredSession(context, sessions))) return Results.StatusCode(403);
             return ToResult(await service.GetReceivingReportByIdAsync(id, ct));
         });
 
@@ -628,6 +637,9 @@ internal static class LocalProcureToPayEndpoints
         {
             if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
                 return denied;
+            // Procurement.View is part of the default cashier role; it does not grant
+            // access to supplier/receiving/financial inventory summaries.
+            if (IsCashier(RequiredSession(context, sessions))) return Results.StatusCode(403);
             return ToResult(await service.GetProductStockCardsAsync(search, locationId, ct));
         });
 
@@ -641,6 +653,9 @@ internal static class LocalProcureToPayEndpoints
         {
             if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
                 return denied;
+            // Procurement.View is part of the default cashier role; it does not grant
+            // access to supplier/receiving/financial inventory summaries.
+            if (IsCashier(RequiredSession(context, sessions))) return Results.StatusCode(403);
             return ToResult(await service.GetProductStockCardsAsync(search, locationId, ct));
         });
 
@@ -653,6 +668,9 @@ internal static class LocalProcureToPayEndpoints
         {
             if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
                 return denied;
+            // Procurement.View is part of the default cashier role; it does not grant
+            // access to supplier/receiving/financial inventory summaries.
+            if (IsCashier(RequiredSession(context, sessions))) return Results.StatusCode(403);
             return ToResult(await service.GetProductStockCardAsync(productId, ct));
         });
 
@@ -665,6 +683,9 @@ internal static class LocalProcureToPayEndpoints
         {
             if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
                 return denied;
+            // Procurement.View is part of the default cashier role; it does not grant
+            // access to supplier/receiving/financial inventory summaries.
+            if (IsCashier(RequiredSession(context, sessions))) return Results.StatusCode(403);
             return ToResult(await service.GetProductStockCardAsync(productId, ct));
         });
 
@@ -677,6 +698,9 @@ internal static class LocalProcureToPayEndpoints
         {
             if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
                 return denied;
+            // Procurement.View is part of the default cashier role; it does not grant
+            // access to supplier/receiving/financial inventory summaries.
+            if (IsCashier(RequiredSession(context, sessions))) return Results.StatusCode(403);
             return ToResult(await service.GetProductStockBucketsAsync(productId, ct));
         });
 
@@ -689,6 +713,9 @@ internal static class LocalProcureToPayEndpoints
         {
             if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
                 return denied;
+            // Procurement.View is part of the default cashier role; it does not grant
+            // access to supplier/receiving/financial inventory summaries.
+            if (IsCashier(RequiredSession(context, sessions))) return Results.StatusCode(403);
             return ToResult(await service.GetStockCountAdjustmentsAsync(productId, ct));
         });
 
@@ -745,6 +772,9 @@ internal static class LocalProcureToPayEndpoints
         {
             if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
                 return denied;
+            // Procurement.View is part of the default cashier role; it does not grant
+            // access to supplier/receiving/financial inventory summaries.
+            if (IsCashier(RequiredSession(context, sessions))) return Results.StatusCode(403);
             return ToResult(await service.GetSupplierReturnsAsync(supplierId, ct));
         });
 
