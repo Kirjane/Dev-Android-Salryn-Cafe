@@ -291,7 +291,10 @@ public static class CeoPrToPoReproductionChecks
                 using var doc = JsonDocument.Parse(body);
                 poNumber = doc.RootElement.GetProperty("poNumber").GetString()!;
                 poId = Guid.Parse(doc.RootElement.GetProperty("id").GetString()!);
-                Console.WriteLine($"[CEO Repro] Created PO: {poNumber} (ID: {poId})");
+                string convertedPoStatus = doc.RootElement.GetProperty("status").GetString()!;
+                if (convertedPoStatus != "Approved")
+                    throw new InvalidOperationException($"R1-PO-01 converted PO must already be Approved; got '{convertedPoStatus}'.");
+                Console.WriteLine($"[CEO Repro] Created already-approved PO: {poNumber} (ID: {poId})");
             }
 
             // -------------------------------------------------------------
@@ -312,15 +315,8 @@ public static class CeoPrToPoReproductionChecks
                     throw new InvalidOperationException($"Expected 400/409 for duplicate conversion, got {resp.StatusCode}");
             }
 
-            // R1-PO-01: approval followed by public Send alias must transition to Sent.
-            using (var approveRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/lpi/purchase-orders/{poId}/approve"))
-            {
-                approveRequest.Headers.Add("Cookie", approverCookie);
-                approveRequest.Content = JsonContent.Create(new { reason = "Approve CEO QA purchase order" });
-                using var response = await client.SendAsync(approveRequest);
-                if (response.StatusCode != HttpStatusCode.OK)
-                    throw new InvalidOperationException($"R1-PO-01 approve failed: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync()}");
-            }
+            // R1-PO-01: successful PR conversion already created an Approved PO.
+            // Do not approve it again: Approved -> Approved must remain a 409 transition.
 
             // R1-PO-02: cashier cannot mark the PO as sent.
             using (var forbiddenRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/lpi/purchase-orders/{poId}/mark-sent"))
@@ -351,7 +347,35 @@ public static class CeoPrToPoReproductionChecks
                 if (response.StatusCode != HttpStatusCode.Conflict)
                     throw new InvalidOperationException($"R1-PO-04 duplicate dispatch expected 409, got {(int)response.StatusCode}");
             }
-            Console.WriteLine("[CEO R1 PO] Mark Sent alias, cashier denial, status and duplicate replay assertions PASS.");
+            // R1-PO-05: dispatch persisted exactly once in status, history and audit, with actor.
+            using (SqliteConnection conn = new($"Data Source={paths.DatabasePath}"))
+            {
+                conn.Open();
+                using SqliteCommand check = conn.CreateCommand();
+                check.CommandText = "SELECT status FROM purchase_orders WHERE id=$po;";
+                check.Parameters.AddWithValue("$po", poId.ToString("D"));
+                if (check.ExecuteScalar() as string != "Sent")
+                    throw new InvalidOperationException("R1-PO-05 persisted PO status is not Sent.");
+
+                check.CommandText = """
+                    SELECT COUNT(*) FROM purchase_order_history
+                    WHERE purchase_order_id=$po AND action_type='MarkSent'
+                      AND previous_status='Approved' AND new_status='Sent'
+                      AND actor_user_id=$actor;
+                    """;
+                check.Parameters.AddWithValue("$actor", approverId.ToString("D"));
+                if (Convert.ToInt64(check.ExecuteScalar()) != 1)
+                    throw new InvalidOperationException("R1-PO-05 expected one actor-attributed MarkSent history entry.");
+
+                check.CommandText = """
+                    SELECT COUNT(*) FROM audit_logs
+                    WHERE entity_type='PurchaseOrder' AND entity_id=$po
+                      AND action='PO_SENT' AND user_id=$actor;
+                    """;
+                if (Convert.ToInt64(check.ExecuteScalar()) != 1)
+                    throw new InvalidOperationException("R1-PO-05 expected one actor-attributed PO_SENT audit entry.");
+            }
+            Console.WriteLine("[CEO R1 PO] Approved conversion, cashier 403, Send 200, duplicate 409, persisted status/history/audit assertions PASS.");
 
             await app.StopAsync().ConfigureAwait(false);
             Console.WriteLine("[CEO Repro] ALL REPRODUCTION & CONVERSION CHECKS PASSED!");
