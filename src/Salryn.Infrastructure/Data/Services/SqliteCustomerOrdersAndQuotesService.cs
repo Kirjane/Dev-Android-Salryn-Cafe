@@ -349,6 +349,46 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
                     promisedDate, notes, total, st, saleId, userId, userName, createdAt, fulfilledAt,
                     Array.Empty<CustomerOrderLine>()));
             }
+            await reader.CloseAsync().ConfigureAwait(false);
+
+            // Hydrate every list entry in one additional query, rather than performing
+            // one detail query per order. Parent and child fields match GetOrderByIdAsync.
+            // An actually missing child stays missing so the UI can flag corruption.
+            var linesByOrder = list.ToDictionary(order => order.Id, _ => new List<CustomerOrderLine>());
+            if (list.Count > 0)
+            {
+                await using var lineCmd = connection.CreateCommand();
+                lineCmd.CommandText = """
+                    SELECT l.id, l.order_id, l.product_id, l.product_name_snapshot,
+                           l.barcode_snapshot, l.unit_name_snapshot, l.quantity_x1000,
+                           l.unit_price_cents, l.line_total_cents
+                    FROM customer_order_lines l
+                    INNER JOIN customer_orders o ON o.id = l.order_id
+                    WHERE ($status = '' OR o.status = $status)
+                    ORDER BY l.order_id, l.rowid;
+                    """;
+                lineCmd.Parameters.AddWithValue("$status", status?.Trim() ?? string.Empty);
+                await using var lineReader = await lineCmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                while (await lineReader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    Guid orderId = Guid.Parse(lineReader.GetString(1));
+                    if (!linesByOrder.TryGetValue(orderId, out List<CustomerOrderLine>? orderLines))
+                        continue;
+                    orderLines.Add(new CustomerOrderLine(
+                        Guid.Parse(lineReader.GetString(0)),
+                        orderId,
+                        Guid.Parse(lineReader.GetString(2)),
+                        lineReader.GetString(3),
+                        lineReader.IsDBNull(4) ? null : lineReader.GetString(4),
+                        lineReader.GetString(5),
+                        lineReader.GetInt64(6),
+                        lineReader.GetInt64(7),
+                        lineReader.GetInt64(8)));
+                }
+            }
+
+            for (int i = 0; i < list.Count; i++)
+                list[i] = list[i] with { Lines = linesByOrder[list[i].Id] };
 
             return Result<IReadOnlyList<CustomerOrder>>.Success(list);
         }
@@ -464,13 +504,31 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
 
             foreach (var line in request.Lines)
             {
+                if (line is null || line.ProductId == Guid.Empty ||
+                    string.IsNullOrWhiteSpace(line.ProductNameSnapshot) ||
+                    string.IsNullOrWhiteSpace(line.UnitNameSnapshot) || line.UnitPriceCents < 0)
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return Result<CustomerOrder>.Fail(Error.Validation("CustomerOrder.InvalidLine",
+                        "Each item needs a product, description, unit and non-negative unit price."));
+                }
                 if (line.QuantityX1000 <= 0)
                 {
                     await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                     return Result<CustomerOrder>.Fail(Error.Validation("CustomerOrder.InvalidQuantity", "Item quantity must be greater than zero."));
                 }
-                long lineTotalCents = (line.QuantityX1000 * line.UnitPriceCents + 500) / 1000;
-                totalCents += lineTotalCents;
+                long lineTotalCents;
+                try
+                {
+                    lineTotalCents = checked((checked(line.QuantityX1000 * line.UnitPriceCents) + 500L) / 1000L);
+                    totalCents = checked(totalCents + lineTotalCents);
+                }
+                catch (OverflowException)
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return Result<CustomerOrder>.Fail(Error.Validation("CustomerOrder.AmountOverflow",
+                        "Order quantity and price exceed the supported amount range."));
+                }
 
                 Guid lineId = Guid.NewGuid();
                 CustomerOrderLine orderLine = new(
@@ -531,6 +589,27 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
                 insertLine.Parameters.AddWithValue("$unitPrice", oLine.UnitPriceCents);
                 insertLine.Parameters.AddWithValue("$lineTotal", oLine.LineTotalCents);
                 await insertLine.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            // Do not commit a Confirmed parent unless its actual persisted child rows
+            // match the exact line count and derived cent total in the same transaction.
+            await using (var verify = connection.CreateCommand())
+            {
+                verify.Transaction = transaction;
+                verify.CommandText = """
+                    SELECT COUNT(*), COALESCE(SUM(line_total_cents), 0)
+                    FROM customer_order_lines WHERE order_id = $orderId;
+                    """;
+                verify.Parameters.AddWithValue("$orderId", orderId.ToString("D"));
+                await using var verifiedRows = await verify.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                if (!await verifiedRows.ReadAsync(cancellationToken).ConfigureAwait(false) ||
+                    verifiedRows.GetInt64(0) != lines.Count || verifiedRows.GetInt64(1) != totalCents)
+                {
+                    await verifiedRows.CloseAsync().ConfigureAwait(false);
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return Result<CustomerOrder>.Fail(Error.Conflict("CustomerOrder.PersistedLinesMismatch",
+                        "Confirmed order lines did not persist with the expected count and total."));
+                }
             }
 
             await WriteAuditAsync(connection, transaction, userId, "CUSTOMER_ORDER_CREATED",
