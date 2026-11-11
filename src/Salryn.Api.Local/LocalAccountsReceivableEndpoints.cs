@@ -33,9 +33,10 @@ internal static class LocalAccountsReceivableEndpoints
         {
             ILocalLicenseEnforcementService licensing = context.RequestServices.GetRequiredService<ILocalLicenseEnforcementService>();
             if (await Guard(context, sessions, licensing, LocalApiPermissions.ReceivablesManageCustomers, ct) is IResult denied) return denied;
+            LocalApiSession session = RequiredSession(context, sessions);
             return ToResult(await service.UpdateCustomerAsync(id, new(
                 request.FullName, request.Phone, request.Address, request.Note,
-                request.CreditLimitCents, request.IsActive), ct));
+                request.CreditLimitCents, request.IsActive), ct, session.UserId));
         });
 
         app.MapGet("/api/receivables/summary", async (HttpContext context, LocalApiSessionService sessions,
