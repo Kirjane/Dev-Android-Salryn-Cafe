@@ -147,7 +147,9 @@ export interface PurchaseOrder {
   status: string;
   notes: string | null;
   subtotalCents: number;
+  discountCents: number;
   taxCents: number;
+  shippingCents: number;
   totalCents: number;
   approvedByUserId: string | null;
   approvedByUserName: string | null;
@@ -315,6 +317,18 @@ export interface LpiDashboardOverview {
   quarantineStockQuantityX1000: number;
   recentOrders: PurchaseOrder[];
   agingSummary: ApAgingSummary[];
+}
+
+// PR requester catalog intentionally excludes suppliers, costs, terms, finance and stock.
+export interface LpiRequesterCatalog {
+  unitsOfMeasure: LpiUnitOfMeasure[];
+  products: Array<{
+    id: string;
+    name: string;
+    barcode: string | null;
+    unitId: string;
+    unitName: string;
+  }>;
 }
 
 export interface LpiFoundationCatalog {
@@ -486,11 +500,15 @@ function normalizeQuotation(raw: JsonRecord): SupplierQuotation {
 
 function normalizePurchaseOrder(raw: JsonRecord): PurchaseOrder {
   const lines = raw.lines ?? raw.items ?? [];
-  // The printable PO requires explicit monetary fields, not an unchecked type assertion.
-  // Derive a missing subtotal from the authoritative total and tax rather than displaying NaN.
-  const totalCents = Number(raw.totalAmountCents ?? raw.totalCents ?? 0);
-  const taxCents = Number(raw.taxCents ?? raw.totalTaxCents ?? 0);
-  const subtotalCents = Number(raw.subtotalCents ?? raw.subtotalAmountCents ?? totalCents - taxCents);
+  // Required authoritative cents must stay explicit. Never derive or fabricate them.
+  // Missing or malformed amounts normalize to NaN so the print gate fails closed.
+  const amount = (value: unknown): number =>
+    typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : Number.NaN;
+  const totalCents = amount(raw.totalAmountCents ?? raw.totalCents);
+  const taxCents = amount(raw.taxCents ?? raw.totalTaxCents);
+  const subtotalCents = amount(raw.subtotalCents ?? raw.subtotalAmountCents);
+  const discountCents = amount(raw.discountCents);
+  const shippingCents = amount(raw.shippingCents);
   return {
     id: raw.id,
     poNumber: raw.poNumber ?? "",
@@ -506,7 +524,9 @@ function normalizePurchaseOrder(raw: JsonRecord): PurchaseOrder {
     paymentTermsDays: raw.paymentTermsDays ?? 0,
     status: raw.status ?? "Draft",
     subtotalCents,
+    discountCents,
     taxCents,
+    shippingCents,
     totalCents,
     items: lines.map((line: JsonRecord) => {
       const ordered = line.orderedQtyX1000 ?? line.orderedQuantityX1000 ?? 0;
@@ -527,8 +547,8 @@ function normalizePurchaseOrder(raw: JsonRecord): PurchaseOrder {
         receivedAcceptedQtyX1000: accepted,
         receivedRejectedQtyX1000: rejected,
         outstandingQuantityX1000: outstanding,
-        unitCostCents: line.unitCostCents ?? 0,
-        totalCostCents: line.lineTotalCents ?? line.totalCostCents ?? 0,
+        unitCostCents: amount(line.unitCostCents),
+        totalCostCents: amount(line.lineTotalCents ?? line.totalCostCents),
       };
     }),
   } as unknown as PurchaseOrder;
@@ -616,6 +636,11 @@ export interface SupplierReturnSummary {
 export async function fetchLpiFoundation(includeInactiveSuppliers = false): Promise<LpiFoundationCatalog> {
   const response = await fetch(`/api/lpi/foundation?includeInactiveSuppliers=${includeInactiveSuppliers}`);
   return readJson<LpiFoundationCatalog>(response);
+}
+
+export async function fetchLpiRequesterCatalog(): Promise<LpiRequesterCatalog> {
+  const response = await fetch("/api/lpi/requisition-catalog");
+  return readJson<LpiRequesterCatalog>(response);
 }
 
 export async function fetchLpiOverview(): Promise<LpiDashboardOverview> {
