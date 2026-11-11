@@ -10,10 +10,13 @@ interface Props {
   storeSettings?: StoreSettings | null;
 }
 
-const money = (cents: number) => formatMoney(cents / 100);
+// Do not print a fictitious amount when the backend supplied invalid financial data.
+const money = (cents: number) => Number.isFinite(cents) ? formatMoney(cents / 100) : "Amount unavailable";
 
 export function PrintablePurchaseOrderModal({ open, onClose, po, storeSettings }: Props) {
   if (!po) return null;
+  const hasValidAmounts = [po.subtotalCents, po.taxCents, po.totalCents,
+    ...po.items.flatMap((item) => [item.unitCostCents, item.totalCostCents])].every(Number.isFinite);
 
   const handlePrint = () => {
     window.print();
@@ -28,7 +31,7 @@ export function PrintablePurchaseOrderModal({ open, onClose, po, storeSettings }
             <Button variant="secondary" onClick={onClose}>
               Close
             </Button>
-            <Button variant="primary" onClick={handlePrint}>
+            <Button variant="primary" onClick={handlePrint} disabled={!hasValidAmounts}>
               🖨️ Print Purchase Order
             </Button>
           </div>
@@ -88,6 +91,12 @@ export function PrintablePurchaseOrderModal({ open, onClose, po, storeSettings }
               <p className="text-slate-600">{po.deliveryAddress || storeSettings?.address || "Main Receiving Dock"}</p>
             </div>
           </div>
+
+          {!hasValidAmounts && (
+            <p role="alert" className="text-sm font-semibold text-red-700 print:hidden">
+              This purchase order contains invalid monetary values. Printing is disabled until the amounts are corrected.
+            </p>
+          )}
 
           {/* Line Items Table */}
           <table className="w-full text-left text-xs border border-slate-200">
