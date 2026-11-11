@@ -122,10 +122,10 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
   const activeTab = prDeskOnly ? "pr" : selectedTab;
 
   // Queries
-  const foundation = useQuery({ queryKey: ["lpi-foundation"], queryFn: () => fetchLpiFoundation(true), enabled: canViewProcurement });
+  const foundation = useQuery({ queryKey: ["lpi-foundation"], queryFn: () => fetchLpiFoundation(true), enabled: canViewProcurement || canRequestPr });
   const overview = useQuery({ queryKey: ["lpi-overview"], queryFn: fetchLpiOverview, enabled: canViewProcurement });
-  const suppliers = useQuery({ queryKey: ["lpi-suppliers"], queryFn: () => fetchSuppliers("", true), enabled: canViewProcurement });
-  const requisitions = useQuery({ queryKey: ["lpi-requisitions"], queryFn: () => fetchRequisitions(), enabled: canViewProcurement });
+  const suppliers = useQuery({ queryKey: ["lpi-suppliers"], queryFn: () => fetchSuppliers("", true), enabled: canViewProcurement || canRequestPr });
+  const requisitions = useQuery({ queryKey: ["lpi-requisitions"], queryFn: () => fetchRequisitions(), enabled: canViewProcurement || canRequestPr });
   const purchaseOrders = useQuery({ queryKey: ["lpi-pos"], queryFn: () => fetchPurchaseOrders(), enabled: canViewProcurement });
   const receivingReports = useQuery({ queryKey: ["lpi-rrs"], queryFn: () => fetchReceivingReports(), enabled: canViewReceiving });
   const stockCards = useQuery({ queryKey: ["lpi-stock-cards"], queryFn: fetchStockCards, enabled: canViewInventory });
