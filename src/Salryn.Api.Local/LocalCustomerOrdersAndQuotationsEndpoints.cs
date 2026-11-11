@@ -125,7 +125,19 @@ internal static class LocalCustomerOrdersAndQuotationsEndpoints
         {
             if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, new[] { LocalApiPermissions.SalesCreate }) is IResult denied)
                 return denied;
-            return ToResult(await service.FulfillOrderAsync(id, request.SaleId, ct).ConfigureAwait(false));
+
+            string? refText = !string.IsNullOrWhiteSpace(request.SaleId) ? request.SaleId : request.SaleReference;
+            if (string.IsNullOrWhiteSpace(refText))
+            {
+                return Results.Json(new { error = "Valid completed sale ID or receipt number is required to fulfill a customer order.", code = "CustomerOrder.SaleRequired" }, statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (Guid.TryParse(refText.Trim(), out Guid saleId))
+            {
+                return ToResult(await service.FulfillOrderAsync(id, saleId, ct).ConfigureAwait(false));
+            }
+
+            return ToResult(await service.FulfillOrderByReferenceAsync(id, refText.Trim(), ct).ConfigureAwait(false));
         });
 
         return app;
@@ -155,5 +167,5 @@ internal static class LocalCustomerOrdersAndQuotationsEndpoints
     }
 
     public sealed record UpdateStatusRequest(string Status);
-    public sealed record FulfillOrderRequest(Guid SaleId);
+    public sealed record FulfillOrderRequest(string? SaleId, string? SaleReference);
 }

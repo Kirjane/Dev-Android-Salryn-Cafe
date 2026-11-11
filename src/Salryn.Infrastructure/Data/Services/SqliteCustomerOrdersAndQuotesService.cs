@@ -560,28 +560,212 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
         }
     }
 
+    public async Task<Result<CustomerOrder>> FulfillOrderByReferenceAsync(Guid orderId, string saleReference, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(saleReference))
+        {
+            return Result<CustomerOrder>.Fail(Error.Validation("CustomerOrder.SaleRequired", "Valid completed sale ID or receipt number is required."));
+        }
+
+        if (Guid.TryParse(saleReference.Trim(), out Guid saleId))
+        {
+            return await FulfillOrderAsync(orderId, saleId, cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            await using var connection = _connectionFactory.CreateConnection();
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = "SELECT id FROM sales WHERE receipt_no = $rec LIMIT 1;";
+            cmd.Parameters.AddWithValue("$rec", saleReference.Trim());
+            object? found = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            if (found is null || found is DBNull || !Guid.TryParse(found.ToString(), out Guid resolvedId))
+            {
+                return Result<CustomerOrder>.Fail(Error.NotFound("CustomerOrder.SaleNotFound", $"Referenced receipt '{saleReference}' does not exist."));
+            }
+
+            return await FulfillOrderAsync(orderId, resolvedId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return Result<CustomerOrder>.Fail(Error.Unexpected("CustomerOrder.ResolveSaleFailed", ex.Message));
+        }
+    }
+
     public async Task<Result<CustomerOrder>> FulfillOrderAsync(Guid orderId, Guid saleId, CancellationToken cancellationToken = default)
     {
         try
         {
             await using var connection = _connectionFactory.CreateConnection();
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await using var transaction = connection.BeginTransaction();
 
-            await using var cmd = connection.CreateCommand();
-            cmd.CommandText = """
+            // 1. Fetch order details
+            await using var orderCmd = connection.CreateCommand();
+            orderCmd.Transaction = transaction;
+            orderCmd.CommandText = """
+                SELECT status, customer_id, total_cents
+                FROM customer_orders
+                WHERE id = $orderId;
+                """;
+            orderCmd.Parameters.AddWithValue("$orderId", orderId.ToString("D"));
+            string? orderStatus = null;
+            Guid? orderCustomerId = null;
+            long orderTotalCents = 0;
+            await using (var orderReader = await orderCmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+            {
+                if (await orderReader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    orderStatus = orderReader.GetString(0);
+                    orderCustomerId = orderReader.IsDBNull(1) ? null : Guid.Parse(orderReader.GetString(1));
+                    orderTotalCents = orderReader.GetInt64(2);
+                }
+            }
+
+            if (orderStatus is null)
+            {
+                return Result<CustomerOrder>.Fail(Error.NotFound("CustomerOrder.NotFound", "Customer order not found."));
+            }
+            if (string.Equals(orderStatus, "Cancelled", StringComparison.OrdinalIgnoreCase))
+            {
+                return Result<CustomerOrder>.Fail(Error.Conflict("CustomerOrder.OrderCancelled", "Cannot fulfill a cancelled customer order."));
+            }
+            if (string.Equals(orderStatus, "Fulfilled", StringComparison.OrdinalIgnoreCase))
+            {
+                return Result<CustomerOrder>.Fail(Error.Conflict("CustomerOrder.AlreadyFulfilled", "Customer order is already fulfilled."));
+            }
+
+            // 2. Validate sale exists, is completed, not voided
+            await using var saleCmd = connection.CreateCommand();
+            saleCmd.Transaction = transaction;
+            saleCmd.CommandText = """
+                SELECT status, voided_at, customer_id, total_cents
+                FROM sales
+                WHERE id = $saleId;
+                """;
+            saleCmd.Parameters.AddWithValue("$saleId", saleId.ToString("D"));
+            int? saleStatus = null;
+            bool isVoided = false;
+            Guid? saleCustomerId = null;
+            long saleTotalCents = 0;
+            await using (var saleReader = await saleCmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+            {
+                if (await saleReader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    saleStatus = saleReader.GetInt32(0);
+                    isVoided = !saleReader.IsDBNull(1) || saleStatus == (int)SaleStatus.Voided;
+                    saleCustomerId = saleReader.IsDBNull(2) ? null : Guid.Parse(saleReader.GetString(2));
+                    saleTotalCents = saleReader.GetInt64(3);
+                }
+            }
+
+            if (!saleStatus.HasValue)
+            {
+                return Result<CustomerOrder>.Fail(Error.NotFound("CustomerOrder.SaleNotFound", "Referenced sale does not exist."));
+            }
+            if (saleStatus.Value != (int)SaleStatus.Completed || isVoided)
+            {
+                return Result<CustomerOrder>.Fail(Error.Conflict("CustomerOrder.SaleNotCompleted", "Referenced sale is voided or not in completed status."));
+            }
+
+            // 3. Customer match check (if both specify customer)
+            if (orderCustomerId.HasValue && saleCustomerId.HasValue && orderCustomerId.Value != saleCustomerId.Value)
+            {
+                return Result<CustomerOrder>.Fail(Error.Conflict("CustomerOrder.CustomerMismatch", "Referenced sale customer does not match the order customer."));
+            }
+
+            // 4. One-to-one uniqueness check (sale must not already be linked to another order)
+            await using var checkLinkCmd = connection.CreateCommand();
+            checkLinkCmd.Transaction = transaction;
+            checkLinkCmd.CommandText = """
+                SELECT id FROM customer_orders
+                WHERE sale_id = $saleId AND id != $orderId;
+                """;
+            checkLinkCmd.Parameters.AddWithValue("$saleId", saleId.ToString("D"));
+            checkLinkCmd.Parameters.AddWithValue("$orderId", orderId.ToString("D"));
+            var existingLink = await checkLinkCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            if (existingLink is not null && existingLink is not DBNull)
+            {
+                return Result<CustomerOrder>.Fail(Error.Conflict("CustomerOrder.SaleAlreadyLinked", "Referenced sale is already linked to another customer order."));
+            }
+
+            // 5. Line items match check
+            await using var orderLinesCmd = connection.CreateCommand();
+            orderLinesCmd.Transaction = transaction;
+            orderLinesCmd.CommandText = """
+                SELECT product_id, quantity_x1000
+                FROM customer_order_lines
+                WHERE order_id = $orderId;
+                """;
+            orderLinesCmd.Parameters.AddWithValue("$orderId", orderId.ToString("D"));
+            List<(Guid ProductId, long QtyX1000)> requiredLines = new();
+            await using (var r = await orderLinesCmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+            {
+                while (await r.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    requiredLines.Add((Guid.Parse(r.GetString(0)), r.GetInt64(1)));
+                }
+            }
+
+            await using var saleItemsCmd = connection.CreateCommand();
+            saleItemsCmd.Transaction = transaction;
+            saleItemsCmd.CommandText = """
+                SELECT product_id, qty_x1000
+                FROM sale_items
+                WHERE sale_id = $saleId;
+                """;
+            saleItemsCmd.Parameters.AddWithValue("$saleId", saleId.ToString("D"));
+            Dictionary<Guid, long> saleItems = new();
+            await using (var r = await saleItemsCmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+            {
+                while (await r.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    Guid pid = Guid.Parse(r.GetString(0));
+                    long qty = r.GetInt64(1);
+                    saleItems[pid] = saleItems.TryGetValue(pid, out long existingQty) ? existingQty + qty : qty;
+                }
+            }
+
+            foreach (var (pid, reqQty) in requiredLines)
+            {
+                if (!saleItems.TryGetValue(pid, out long actualQty) || actualQty < reqQty)
+                {
+                    return Result<CustomerOrder>.Fail(Error.Conflict(
+                        "CustomerOrder.SaleLineMismatch",
+                        $"Referenced sale does not contain required order items or sufficient quantity for product '{pid}'."));
+                }
+            }
+
+            // 6. Update order status and link sale
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            await using var updateCmd = connection.CreateCommand();
+            updateCmd.Transaction = transaction;
+            updateCmd.CommandText = """
                 UPDATE customer_orders
                 SET status = 'Fulfilled', sale_id = $saleId, fulfilled_at = $now
-                WHERE id = $id AND status != 'Fulfilled';
+                WHERE id = $orderId;
                 """;
-            cmd.Parameters.AddWithValue("$saleId", saleId.ToString("D"));
-            cmd.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
-            cmd.Parameters.AddWithValue("$id", orderId.ToString("D"));
+            updateCmd.Parameters.AddWithValue("$saleId", saleId.ToString("D"));
+            updateCmd.Parameters.AddWithValue("$now", now.ToString("O"));
+            updateCmd.Parameters.AddWithValue("$orderId", orderId.ToString("D"));
+            await updateCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
-            int affected = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            if (affected == 0)
-            {
-                return Result<CustomerOrder>.Fail(Error.Conflict("CustomerOrder.AlreadyFulfilledOrNotFound", "Order is already fulfilled or was not found."));
-            }
+            // 7. Audit log
+            await using var auditCmd = connection.CreateCommand();
+            auditCmd.Transaction = transaction;
+            auditCmd.CommandText = """
+                INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, new_value_json, reason, created_at)
+                VALUES ($id, NULL, 'CUSTOMER_ORDER_FULFILLED', 'customer_orders', $entityId, $newVal, $reason, $now);
+                """;
+            auditCmd.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("D"));
+            auditCmd.Parameters.AddWithValue("$entityId", orderId.ToString("D"));
+            auditCmd.Parameters.AddWithValue("$newVal", $"{{\"saleId\":\"{saleId:D}\",\"orderTotalCents\":{orderTotalCents},\"saleTotalCents\":{saleTotalCents}}}");
+            auditCmd.Parameters.AddWithValue("$reason", "Customer order fulfilled with matching completed POS sale.");
+            auditCmd.Parameters.AddWithValue("$now", now.ToString("O"));
+            await auditCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
             return await GetOrderByIdAsync(orderId, cancellationToken).ConfigureAwait(false);
         }

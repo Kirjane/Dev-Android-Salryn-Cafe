@@ -15,4 +15,5 @@ public interface ICustomerOrdersAndQuotesService
     Task<Result<CustomerOrder>> CreateOrderAsync(Guid userId, string userName, CreateCustomerOrderRequest request, CancellationToken cancellationToken = default);
     Task<Result<CustomerOrder>> UpdateOrderStatusAsync(Guid id, string status, CancellationToken cancellationToken = default);
     Task<Result<CustomerOrder>> FulfillOrderAsync(Guid orderId, Guid saleId, CancellationToken cancellationToken = default);
+    Task<Result<CustomerOrder>> FulfillOrderByReferenceAsync(Guid orderId, string saleReference, CancellationToken cancellationToken = default);
 }

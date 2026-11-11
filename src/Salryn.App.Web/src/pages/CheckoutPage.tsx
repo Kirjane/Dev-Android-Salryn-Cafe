@@ -233,7 +233,7 @@ export function CheckoutPage() {
 
   useEffect(() => { if (!fastAddUnitId && unitsQuery.data && unitsQuery.data.length > 0) setFastAddUnitId(unitsQuery.data[0].id); }, [fastAddUnitId, unitsQuery.data]);
   useEffect(() => {
-    if (!canCreateReceivable && paymentMode !== "Cash") {
+    if (!canCreateReceivable && (paymentMode === "Utang" || paymentMode === "CashUtang")) {
       setPaymentMode("Cash");
       setCustomerId("");
       setDueDate("");

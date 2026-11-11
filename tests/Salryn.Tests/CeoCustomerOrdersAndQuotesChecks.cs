@@ -50,8 +50,9 @@ public static class CeoCustomerOrdersAndQuotesChecks
                 cmd.ExecuteNonQuery();
             }
 
-            // 2. Seed test product
+            // 2. Seed test products
             Guid productId = LpiProcureToPayRuntimeChecks.SeedProduct(paths.DatabasePath, "PROD-QUO-1", "770001", "Industrial Tool Set", 50_000, 85_000, 20_000, 5_000);
+            Guid otherProductId = LpiProcureToPayRuntimeChecks.SeedProduct(paths.DatabasePath, "PROD-QUO-2", "770002", "Safety Goggles", 10_000, 15_000, 10_000, 5_000);
 
             // 3. Seed users
             string cashierHash = SalrynPasswordHasher.HashPassword("Cashier123!").Value!;
@@ -132,18 +133,51 @@ public static class CeoCustomerOrdersAndQuotesChecks
             Assert(order.TotalCents == 255_000, $"Expected order total 255,000 cents (3 * 85000), got {order.TotalCents}");
             Assert(order.Status == "Confirmed", $"Expected status Confirmed, got {order.Status}");
 
-            // Fulfill Order
-            Guid dummySaleId = Guid.NewGuid();
-            var fulfilledRes = await service.FulfillOrderAsync(order.Id, dummySaleId, CancellationToken.None);
-            Assert(fulfilledRes.IsSuccess, "Fulfill order failed: " + fulfilledRes.Error);
+            // Fulfill Order Invariants
+            // 1. Negative test: non-existent random GUID must fail
+            Guid randomSaleId = Guid.NewGuid();
+            var notFoundRes = await service.FulfillOrderAsync(order.Id, randomSaleId, CancellationToken.None);
+            Assert(!notFoundRes.IsSuccess, "Expected random saleId to fail");
+            Assert(notFoundRes.ErrorDetail.Code == "CustomerOrder.SaleNotFound", $"Expected CustomerOrder.SaleNotFound, got {notFoundRes.ErrorDetail.Code}");
+
+            // 2. Negative test: voided sale must fail
+            Guid voidedSaleId = SeedRealSale(paths.DatabasePath, "SL-VOID-1", cashierId, productId, "Industrial Tool Set", 3000, 85_000, 255_000, status: 3, isVoided: true);
+            var voidedRes = await service.FulfillOrderAsync(order.Id, voidedSaleId, CancellationToken.None);
+            Assert(!voidedRes.IsSuccess, "Expected voided sale to fail");
+            Assert(voidedRes.ErrorDetail.Code == "CustomerOrder.SaleNotCompleted", $"Expected CustomerOrder.SaleNotCompleted, got {voidedRes.ErrorDetail.Code}");
+
+            // 3. Negative test: mismatched items must fail
+            Guid mismatchSaleId = SeedRealSale(paths.DatabasePath, "SL-MISMATCH-1", cashierId, otherProductId, "Safety Goggles", 3000, 15_000, 45_000);
+            var mismatchRes = await service.FulfillOrderAsync(order.Id, mismatchSaleId, CancellationToken.None);
+            Assert(!mismatchRes.IsSuccess, "Expected mismatched items sale to fail");
+            Assert(mismatchRes.ErrorDetail.Code == "CustomerOrder.SaleLineMismatch", $"Expected CustomerOrder.SaleLineMismatch, got {mismatchRes.ErrorDetail.Code}");
+
+            // 4. Positive test: real matching sale succeeds
+            Guid realSaleId = SeedRealSale(paths.DatabasePath, "SL-REAL-1", cashierId, productId, "Industrial Tool Set", 3000, 85_000, 255_000);
+            var fulfilledRes = await service.FulfillOrderAsync(order.Id, realSaleId, CancellationToken.None);
+            Assert(fulfilledRes.IsSuccess, "Fulfill order with real sale failed: " + fulfilledRes.Error);
             Assert(fulfilledRes.Value.Status == "Fulfilled", $"Expected status Fulfilled, got {fulfilledRes.Value.Status}");
-            Assert(fulfilledRes.Value.SaleId == dummySaleId, "Fulfill saleId mismatch");
+            Assert(fulfilledRes.Value.SaleId == realSaleId, "Fulfill saleId mismatch");
             Assert(fulfilledRes.Value.FulfilledAt != null, "FulfilledAt timestamp must be set");
 
-            // Cancel Order Flow
+            // 5. Negative test: already fulfilled order cannot be fulfilled again
+            var alreadyFulfilledRes = await service.FulfillOrderAsync(order.Id, realSaleId, CancellationToken.None);
+            Assert(!alreadyFulfilledRes.IsSuccess && alreadyFulfilledRes.ErrorDetail.Code == "CustomerOrder.AlreadyFulfilled", "Expected CustomerOrder.AlreadyFulfilled");
+
+            // 6. Negative test: duplicate linkage (same sale cannot fulfill second order)
+            var secondOrderRes = await service.CreateOrderAsync(cashierId, "Cashier Jane", createOrderInput, CancellationToken.None);
+            Assert(secondOrderRes.IsSuccess, "Second order creation failed");
+            var dupLinkRes = await service.FulfillOrderAsync(secondOrderRes.Value.Id, realSaleId, CancellationToken.None);
+            Assert(!dupLinkRes.IsSuccess, "Expected duplicate sale linkage to fail");
+            Assert(dupLinkRes.ErrorDetail.Code == "CustomerOrder.SaleAlreadyLinked", $"Expected CustomerOrder.SaleAlreadyLinked, got {dupLinkRes.ErrorDetail.Code}");
+
+            // Cancel Order Flow & invariant check
             var orderToCancelRes = await service.CreateOrderAsync(cashierId, "Cashier Jane", createOrderInput, CancellationToken.None);
             var cancelledRes = await service.UpdateOrderStatusAsync(orderToCancelRes.Value.Id, "Cancelled", CancellationToken.None);
             Assert(cancelledRes.IsSuccess && cancelledRes.Value.Status == "Cancelled", "Expected status Cancelled");
+            Guid cancelTestSale = SeedRealSale(paths.DatabasePath, "SL-CANCEL-TEST", cashierId, productId, "Industrial Tool Set", 3000, 85_000, 255_000);
+            var fulfillCancelledRes = await service.FulfillOrderAsync(orderToCancelRes.Value.Id, cancelTestSale, CancellationToken.None);
+            Assert(!fulfillCancelledRes.IsSuccess && fulfillCancelledRes.ErrorDetail.Code == "CustomerOrder.OrderCancelled", "Expected CustomerOrder.OrderCancelled");
 
             // 5. Test Local HTTP API Endpoints
             string testToken = $"DISPOSABLE-TEST-{Guid.NewGuid():N}";
@@ -248,11 +282,17 @@ public static class CeoCustomerOrdersAndQuotesChecks
                 var createdOrder = await createOrderResp.Content.ReadFromJsonAsync<CustomerOrder>();
                 Assert(createdOrder != null, "Created order payload is null");
 
-                // Fulfill order via HTTP
-                HttpResponseMessage fulfillResp = await client.PostAsJsonAsync($"/api/customer-orders/{createdOrder.Id}/fulfill", new { saleId = Guid.NewGuid().ToString("D") });
+                // Negative test via HTTP: random sale ID returns 404
+                HttpResponseMessage unlinkedHttpFulfill = await client.PostAsJsonAsync($"/api/customer-orders/{createdOrder.Id}/fulfill", new { saleId = Guid.NewGuid().ToString("D") });
+                Assert(unlinkedHttpFulfill.StatusCode == HttpStatusCode.NotFound, $"Expected 404 for random saleId fulfillment, got {unlinkedHttpFulfill.StatusCode}");
+
+                // Positive test via HTTP: fulfill via receipt number reference
+                Guid httpSaleId = SeedRealSale(paths.DatabasePath, "SL-HTTP-0001", cashierId, productId, "Industrial Tool Set", 2000, 85_000, 170_000);
+                HttpResponseMessage fulfillResp = await client.PostAsJsonAsync($"/api/customer-orders/{createdOrder.Id}/fulfill", new { saleReference = "SL-HTTP-0001" });
                 Assert(fulfillResp.IsSuccessStatusCode, $"Fulfill order via HTTP failed: {fulfillResp.StatusCode}");
                 var fulfilledOrder = await fulfillResp.Content.ReadFromJsonAsync<CustomerOrder>();
                 Assert(fulfilledOrder != null && fulfilledOrder.Status == "Fulfilled", "Fulfilled order status check failed");
+                Assert(fulfilledOrder.SaleId == httpSaleId, "Linked saleId mismatch via HTTP fulfill");
             }
             finally
             {
@@ -274,6 +314,67 @@ public static class CeoCustomerOrdersAndQuotesChecks
                 // ignore temp cleanup
             }
         }
+    }
+
+    private static Guid SeedRealSale(
+        string dbPath,
+        string receiptNo,
+        Guid cashierId,
+        Guid productId,
+        string productName,
+        long qtyX1000,
+        long unitPriceCents,
+        long totalCents,
+        int status = 2,
+        bool isVoided = false,
+        Guid? customerId = null)
+    {
+        Guid saleId = Guid.NewGuid();
+        string now = DateTimeOffset.UtcNow.ToString("O");
+        using SqliteConnection conn = new($"Data Source={dbPath}");
+        conn.Open();
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText =
+            """
+            INSERT INTO sales (
+                id, receipt_no, sale_date, cashier_user_id, customer_id,
+                subtotal_cents, discount_cents, tax_cents, total_cents,
+                amount_paid_cents, change_cents, status, created_at, voided_at
+            ) VALUES (
+                $id, $receiptNo, $saleDate, $cashierUserId, $customerId,
+                $subtotalCents, 0, 0, $totalCents,
+                $totalCents, 0, $status, $createdAt, $voidedAt
+            );
+
+            INSERT INTO sale_items (
+                id, sale_id, product_id, product_name_snapshot, barcode_snapshot,
+                unit_name_snapshot, qty_x1000, unit_price_cents, cost_price_cents,
+                discount_cents, line_total_cents
+            ) VALUES (
+                $itemId, $id, $productId, $productName, NULL,
+                'pcs', $qtyX1000, $unitPriceCents, 0,
+                0, $totalCents
+            );
+            """;
+        cmd.Parameters.AddWithValue("$id", saleId.ToString("D"));
+        cmd.Parameters.AddWithValue("$receiptNo", receiptNo);
+        cmd.Parameters.AddWithValue("$saleDate", now);
+        cmd.Parameters.AddWithValue("$cashierUserId", cashierId.ToString("D"));
+        cmd.Parameters.AddWithValue("$customerId", customerId.HasValue ? customerId.Value.ToString("D") : DBNull.Value);
+        cmd.Parameters.AddWithValue("$subtotalCents", totalCents);
+        cmd.Parameters.AddWithValue("$totalCents", totalCents);
+        cmd.Parameters.AddWithValue("$status", status);
+        cmd.Parameters.AddWithValue("$createdAt", now);
+        cmd.Parameters.AddWithValue("$voidedAt", isVoided ? now : DBNull.Value);
+
+        cmd.Parameters.AddWithValue("$itemId", Guid.NewGuid().ToString("D"));
+        cmd.Parameters.AddWithValue("$productId", productId.ToString("D"));
+        cmd.Parameters.AddWithValue("$productName", productName);
+        cmd.Parameters.AddWithValue("$qtyX1000", qtyX1000);
+        cmd.Parameters.AddWithValue("$unitPriceCents", unitPriceCents);
+
+        cmd.ExecuteNonQuery();
+        return saleId;
     }
 
     private static Guid SeedUserWithPassword(string dbPath, string username, string displayName, string passwordHash, Guid roleId)

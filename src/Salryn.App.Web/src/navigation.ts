@@ -26,6 +26,7 @@ export const navItems: NavItemConfig[] = [
   { id: "customer-orders", label: "Customer Orders", enabled: true, group: "Cashier", domain: "Counter & Sales" },
   { id: "sales", label: "Sales & Receipts", enabled: true, group: "Cashier", domain: "Counter & Sales" },
   { id: "receivables", label: "Accounts Receivables", enabled: true, group: "Manager", domain: "Finance & Analytics" },
+  { id: "accounts-payable", label: "Accounts Payable", enabled: true, group: "Manager", domain: "Finance & Analytics" },
   { id: "dashboard", label: "Dashboard", enabled: true, group: "Manager", domain: "Finance & Analytics" },
   { id: "owner-reports", label: "Reports", enabled: true, group: "Manager", domain: "Finance & Analytics" },
   { id: "products", label: "Product Catalog", enabled: true, group: "Manager", domain: "Catalog & Stock" },

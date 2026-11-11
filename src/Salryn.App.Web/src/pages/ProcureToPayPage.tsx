@@ -64,7 +64,7 @@ import { formatDateTime, formatMoney } from "../utils/format";
 
 const money = (cents: number) => formatMoney(cents / 100);
 
-export function ProcureToPayPage() {
+export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "suppliers" | "pr" | "quotations" | "po" | "rr" | "inventory" | "ap" } = {}) {
   const queryClient = useQueryClient();
   const { notify } = useNotifications();
   const session = useAppSession();
@@ -89,7 +89,7 @@ export function ProcureToPayPage() {
   const canApproveVariance = hasPermission(session.data, Permissions.PayablesApproveVariance);
   const canRecordPayment = hasPermission(session.data, Permissions.PayablesRecordPayment);
 
-  const defaultInitialTab = (canManagePo || isExecutive) ? "overview" : "pr";
+  const defaultInitialTab = initialTab ?? ((canManagePo || isExecutive) ? "overview" : "pr");
 
   const [activeTab, setActiveTab] = useState<
     "overview" | "suppliers" | "pr" | "quotations" | "po" | "rr" | "inventory" | "ap"

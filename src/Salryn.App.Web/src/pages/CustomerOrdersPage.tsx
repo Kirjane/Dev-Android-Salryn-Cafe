@@ -188,9 +188,13 @@ export function CustomerOrdersPage() {
 
   const handleFulfillOrder = async () => {
     if (!fulfillOrderTarget) return;
+    const saleRef = fulfillSaleId.trim();
+    if (!saleRef) {
+      notify.error("Sale Reference Required", "Please enter the completed POS Checkout Sale ID or Receipt Number.");
+      return;
+    }
     try {
-      const saleId = fulfillSaleId.trim() || `MANUAL-${Date.now()}`;
-      await fulfillCustomerOrder(fulfillOrderTarget.id, saleId);
+      await fulfillCustomerOrder(fulfillOrderTarget.id, saleRef);
       queryClient.invalidateQueries({ queryKey: ["customer-orders"] });
       notify.success("Order Fulfilled", `Order ${fulfillOrderTarget.orderNumber} marked as Fulfilled.`);
       setFulfillOrderTarget(null);
@@ -494,13 +498,13 @@ export function CustomerOrdersPage() {
       >
         <div className="space-y-4">
           <p className="text-sm text-slate-600">
-            Complete fulfillment of this customer order. Optionally provide the POS Checkout Sale ID or Receipt Number.
+            Link this customer order to its completed POS Checkout Sale. Enter the Checkout Sale ID (GUID) or Receipt Number.
           </p>
-          <FormField label="Checkout Sale ID / Receipt # (Optional)">
+          <FormField label="Checkout Sale ID / Receipt # (Required)">
             <TextInput
               value={fulfillSaleId}
               onChange={(e) => setFulfillSaleId(e.target.value)}
-              placeholder="e.g. SL-20261111-0001 (Leave blank for direct fulfillment)"
+              placeholder="e.g. SL-20261111-0001 or Sale GUID"
             />
           </FormField>
           <div className="flex justify-end gap-3 pt-4 border-t">
