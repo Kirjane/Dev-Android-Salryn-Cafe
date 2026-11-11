@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Salryn.Core.Common;
 using Salryn.Core.Models;
@@ -122,7 +123,9 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
             Clean(request.Note), request.CreditLimitCents, true, request.CreatedByUserId, now, now);
         await using SqliteConnection connection = _connections.CreateConnection();
         await connection.OpenAsync(cancellationToken);
+        await using SqliteTransaction transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
         await using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText =
             """
             INSERT INTO customers
@@ -132,6 +135,11 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
             """;
         BindCustomer(command, customer);
         await command.ExecuteNonQueryAsync(cancellationToken);
+        await InsertBusinessAuditAsync(connection, transaction, request.CreatedByUserId, "AR_CUSTOMER_CREATED",
+            "customers", customer.Id, null,
+            JsonSerializer.Serialize(new { customer.CreditLimitCents, customer.IsActive }),
+            null, now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return Result<ReceivableCustomer>.Success(customer);
     }
 
@@ -153,7 +161,9 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
             Note = Clean(request.Note), CreditLimitCents = request.CreditLimitCents,
             IsActive = request.IsActive, UpdatedAt = _timeProvider.GetUtcNow()
         };
+        await using SqliteTransaction transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
         await using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText =
             """
             UPDATE customers SET full_name=$name, phone=$phone, address=$address, note=$note,
@@ -162,6 +172,9 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         BindCustomer(command, updated);
         command.Parameters.AddWithValue("$active", updated.IsActive ? 1 : 0);
         await command.ExecuteNonQueryAsync(cancellationToken);
+        // The request contract lacks an updater identity. Do not attribute this edit to the creator.
+        // Actor-aware customer updates require a follow-on API/service contract revision.
+        await transaction.CommitAsync(cancellationToken);
         return Result<ReceivableCustomer>.Success(updated);
     }
 
@@ -318,6 +331,11 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
             request.CollectedByUserId, now), cancellationToken);
         if(drawerSession is Guid session && string.Equals(collection.Method,"Cash",StringComparison.OrdinalIgnoreCase))
             await InsertDrawerEventAsync(connection,transaction,session,collection.Id,request.CollectedByUserId,request.AmountCents,request.ClientRequestId,now,cancellationToken);
+        await InsertBusinessAuditAsync(connection, transaction, request.CollectedByUserId, "AR_COLLECTION_RECORDED",
+            "accounts_receivable_collections", collection.Id,
+            JsonSerializer.Serialize(new { balanceCents = balance }),
+            JsonSerializer.Serialize(new { collection.CustomerId, collection.AmountCents, collection.Method, balanceCents = balance - request.AmountCents, drawerSessionId = drawerSession }),
+            null, now, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return Result<AccountsReceivableCollection>.Success(collection);
     }
@@ -383,6 +401,11 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
             request.IsDebit ? balance + request.AmountCents : balance - request.AmountCents,
             null, request.Note.Trim(), request.CreatedByUserId, _timeProvider.GetUtcNow());
         await InsertEntryAsync(connection, transaction, entry, cancellationToken);
+        await InsertBusinessAuditAsync(connection, transaction, request.CreatedByUserId, "AR_ADJUSTMENT_RECORDED",
+            "accounts_receivable_entries", entry.Id,
+            JsonSerializer.Serialize(new { balanceCents = balance }),
+            JsonSerializer.Serialize(new { entry.DebitCents, entry.CreditCents, entry.BalanceAfterCents }),
+            request.Note.Trim(), entry.CreatedAt, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return Result<AccountsReceivableEntry>.Success(entry);
     }
@@ -408,6 +431,23 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         Guid customerId = Guid.Parse(reader.GetString(0));
         long amount = reader.GetInt64(1);
         await reader.DisposeAsync();
+
+        // Only compensate a drawer event that originally existed. Never rewrite finalized shifts.
+        Guid? correctionSession = null;
+        await using (SqliteCommand originalDrawer = connection.CreateCommand())
+        {
+            originalDrawer.Transaction = transaction;
+            originalDrawer.CommandText = "SELECT cashier_session_id FROM cash_drawer_events WHERE source_type='ArCollection' AND source_id=$id AND event_type='ArCashCollection' LIMIT 1;";
+            originalDrawer.Parameters.AddWithValue("$id", collectionId.ToString("D"));
+            object? originalSessionId = await originalDrawer.ExecuteScalarAsync(cancellationToken);
+            if (originalSessionId is string)
+            {
+                correctionSession = await FindOpenSessionAsync(connection, transaction, voidedByUserId, cancellationToken);
+                if (correctionSession is null)
+                    return Result.Fail(Error.Conflict("Receivables.CashReversalRequiresOpenShift",
+                        "A cash collection reversal requires an open cash shift for the reversing operator; closed-shift history cannot be rewritten."));
+            }
+        }
         long balance = await GetBalanceAsync(connection, transaction, customerId, cancellationToken);
         DateTimeOffset now = _timeProvider.GetUtcNow();
         await using SqliteCommand update = connection.CreateCommand();
@@ -424,6 +464,13 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         await InsertEntryAsync(connection, transaction, new AccountsReceivableEntry(Guid.NewGuid(), customerId, null,
             collectionId, AccountsReceivableEntryType.CollectionReversal, amount, 0, balance + amount, null,
             reason.Trim(), voidedByUserId, now), cancellationToken);
+        if (correctionSession is Guid openSession)
+            await InsertDrawerReversalAsync(connection, transaction, openSession, collectionId, voidedByUserId, amount, now, cancellationToken);
+        await InsertBusinessAuditAsync(connection, transaction, voidedByUserId, "AR_COLLECTION_REVERSED",
+            "accounts_receivable_collections", collectionId,
+            JsonSerializer.Serialize(new { customerId, amountCents = amount, balanceCents = balance }),
+            JsonSerializer.Serialize(new { status = "Voided", balanceCents = balance + amount, correctionSessionId = correctionSession }),
+            reason.Trim(), now, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return Result.Success();
     }
@@ -465,6 +512,51 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
 
     private static async Task<Guid?> FindOpenSessionAsync(SqliteConnection c,SqliteTransaction t,Guid user,CancellationToken ct){await using SqliteCommand q=c.CreateCommand();q.Transaction=t;q.CommandText="SELECT id FROM cashier_sessions WHERE user_id=$user AND status=1 ORDER BY opened_at DESC LIMIT 1";q.Parameters.AddWithValue("$user",user.ToString("D"));object? v=await q.ExecuteScalarAsync(ct);return v is string s?Guid.Parse(s):null;}
     private static async Task InsertDrawerEventAsync(SqliteConnection c,SqliteTransaction t,Guid session,Guid collection,Guid actor,long amount,string request,DateTimeOffset at,CancellationToken ct){await using SqliteCommand q=c.CreateCommand();q.Transaction=t;q.CommandText="INSERT INTO cash_drawer_events(id,cashier_session_id,event_type,direction,amount_cents,source_type,source_id,actor_user_id,method,occurred_at,request_id,note) VALUES($id,$session,'ArCashCollection',1,$amount,'ArCollection',$source,$actor,'Cash',$at,$request,'Cash AR collection')";q.Parameters.AddWithValue("$id",Guid.NewGuid().ToString("D"));q.Parameters.AddWithValue("$session",session.ToString("D"));q.Parameters.AddWithValue("$amount",amount);q.Parameters.AddWithValue("$source",collection.ToString("D"));q.Parameters.AddWithValue("$actor",actor.ToString("D"));q.Parameters.AddWithValue("$at",at.ToString("O"));q.Parameters.AddWithValue("$request","ar:"+request);await q.ExecuteNonQueryAsync(ct);}
+
+    // Compensating cash movement is append-only, unique per original AR collection.
+    // It is posted to the reverser's live shift, not retroactively into a finalized shift.
+    private static async Task InsertDrawerReversalAsync(SqliteConnection c, SqliteTransaction t, Guid session,
+        Guid collection, Guid actor, long amount, DateTimeOffset at, CancellationToken ct)
+    {
+        await using SqliteCommand q = c.CreateCommand();
+        q.Transaction = t;
+        q.CommandText = """
+            INSERT INTO cash_drawer_events
+                (id,cashier_session_id,event_type,direction,amount_cents,source_type,source_id,actor_user_id,method,occurred_at,request_id,note)
+            VALUES ($id,$session,'ArCashCollectionReversal',-1,$amount,'ArCollection',$source,$actor,'Cash',$at,$request,'Cash AR collection reversal');
+            """;
+        q.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("D"));
+        q.Parameters.AddWithValue("$session", session.ToString("D"));
+        q.Parameters.AddWithValue("$amount", amount);
+        q.Parameters.AddWithValue("$source", collection.ToString("D"));
+        q.Parameters.AddWithValue("$actor", actor.ToString("D"));
+        q.Parameters.AddWithValue("$at", at.ToString("O"));
+        q.Parameters.AddWithValue("$request", "ar:void:" + collection.ToString("N"));
+        await q.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task InsertBusinessAuditAsync(SqliteConnection c, SqliteTransaction t, Guid actor,
+        string action, string entityType, Guid entityId, string? oldJson, string newJson,
+        string? reason, DateTimeOffset at, CancellationToken ct)
+    {
+        await using SqliteCommand q = c.CreateCommand();
+        q.Transaction = t;
+        q.CommandText = """
+            INSERT INTO audit_logs
+                (id,user_id,action,entity_type,entity_id,old_value_json,new_value_json,reason,created_at)
+            VALUES ($id,$user,$action,$entity,$entityId,$old,$new,$reason,$at);
+            """;
+        q.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("D"));
+        q.Parameters.AddWithValue("$user", actor.ToString("D"));
+        q.Parameters.AddWithValue("$action", action);
+        q.Parameters.AddWithValue("$entity", entityType);
+        q.Parameters.AddWithValue("$entityId", entityId.ToString("D"));
+        q.Parameters.AddWithValue("$old", (object?)oldJson ?? DBNull.Value);
+        q.Parameters.AddWithValue("$new", newJson);
+        q.Parameters.AddWithValue("$reason", (object?)reason ?? DBNull.Value);
+        q.Parameters.AddWithValue("$at", at.ToString("O"));
+        await q.ExecuteNonQueryAsync(ct);
+    }
 
     private static async Task<(AccountsReceivableCollection Collection, string RequestHash)?>
         FindCollectionByRequestAsync(
