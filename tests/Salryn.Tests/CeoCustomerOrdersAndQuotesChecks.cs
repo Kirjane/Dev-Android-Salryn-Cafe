@@ -309,9 +309,22 @@ public static class CeoCustomerOrdersAndQuotesChecks
                 HttpResponseMessage createQuoteResp = await client.PostAsJsonAsync("/api/customer-quotations", httpQuotePayload);
                 Assert(createQuoteResp.StatusCode == HttpStatusCode.Created, $"POST /api/customer-quotations failed with {createQuoteResp.StatusCode}");
 
-                // GET orders
-                HttpResponseMessage ordersResp = await client.GetAsync("/api/customer-orders");
-                Assert(ordersResp.IsSuccessStatusCode, $"GET /api/customer-orders failed with {ordersResp.StatusCode}");
+                // Manager owns Customer Orders; Cashier retains quotation access only.
+                using HttpClient managerClient = new(new HttpClientHandler { UseCookies = false })
+                {
+                    BaseAddress = new Uri(boundUrl)
+                };
+                HttpResponseMessage managerLoginResp = await managerClient.PostAsJsonAsync("/api/auth/login", new { username = "manager1", password = "Manager123!" });
+                Assert(managerLoginResp.IsSuccessStatusCode, "Manager login failed");
+                string? mgrCookieHeader = managerLoginResp.Headers.TryGetValues("Set-Cookie", out var mcv) ? mcv.FirstOrDefault() : null;
+                Assert(!string.IsNullOrEmpty(mgrCookieHeader), "Manager session cookie missing");
+                managerClient.DefaultRequestHeaders.Add("Cookie", mgrCookieHeader!.Split(';')[0]);
+
+                // Cashier must not browse, create, or fulfill manager-owned orders.
+                Assert((await client.GetAsync("/api/customer-orders")).StatusCode == HttpStatusCode.Forbidden,
+                    "Cashier GET /api/customer-orders must return 403.");
+                HttpResponseMessage ordersResp = await managerClient.GetAsync("/api/customer-orders");
+                Assert(ordersResp.IsSuccessStatusCode, $"Manager GET /api/customer-orders failed with {ordersResp.StatusCode}");
                 var ordersList = await ordersResp.Content.ReadFromJsonAsync<List<CustomerOrder>>();
                 Assert(ordersList != null && ordersList.Count >= 2, "Failed to retrieve orders list via HTTP");
 
@@ -334,25 +347,17 @@ public static class CeoCustomerOrdersAndQuotesChecks
                     }
                 };
 
-                HttpResponseMessage createOrderResp = await client.PostAsJsonAsync("/api/customer-orders", httpOrderPayload);
+                HttpResponseMessage createOrderResp = await managerClient.PostAsJsonAsync("/api/customer-orders", httpOrderPayload);
                 Assert(createOrderResp.StatusCode == HttpStatusCode.Created, $"POST /api/customer-orders failed with {createOrderResp.StatusCode}");
                 var createdOrder = await createOrderResp.Content.ReadFromJsonAsync<CustomerOrder>();
                 Assert(createdOrder != null, "Created order payload is null");
 
-                // 1. Negative test via HTTP: unauthorized cashier cannot mutate order status
+                // 1. Negative test via HTTP: cashier cannot create or mutate customer orders
+                Assert((await client.PostAsJsonAsync("/api/customer-orders", httpOrderPayload)).StatusCode == HttpStatusCode.Forbidden,
+                    "Cashier POST /api/customer-orders must return 403.");
+                // Unauthorized cashier cannot mutate order status
                 HttpResponseMessage cashierStatusResp = await client.PostAsJsonAsync($"/api/customer-orders/{createdOrder.Id}/status", new { status = "Cancelled" });
                 Assert(cashierStatusResp.StatusCode == HttpStatusCode.Forbidden, $"Expected 403 Forbidden for cashier order cancellation, got {cashierStatusResp.StatusCode}");
-
-                // 2. Login as Manager to test authorized status endpoints
-                using HttpClient managerClient = new(new HttpClientHandler { UseCookies = false })
-                {
-                    BaseAddress = new Uri(boundUrl)
-                };
-                HttpResponseMessage managerLoginResp = await managerClient.PostAsJsonAsync("/api/auth/login", new { username = "manager1", password = "Manager123!" });
-                Assert(managerLoginResp.IsSuccessStatusCode, "Manager login failed");
-                string? mgrCookieHeader = managerLoginResp.Headers.TryGetValues("Set-Cookie", out var mcv) ? mcv.FirstOrDefault() : null;
-                Assert(!string.IsNullOrEmpty(mgrCookieHeader), "Manager session cookie missing");
-                managerClient.DefaultRequestHeaders.Add("Cookie", mgrCookieHeader!.Split(';')[0]);
 
                 // 3. Negative test via HTTP: manager cannot directly write Fulfilled status
                 HttpResponseMessage mgrDirectFulfill = await managerClient.PostAsJsonAsync($"/api/customer-orders/{createdOrder.Id}/status", new { status = "Fulfilled" });
@@ -362,13 +367,31 @@ public static class CeoCustomerOrdersAndQuotesChecks
                 HttpResponseMessage mgrInvalidStatus = await managerClient.PostAsJsonAsync($"/api/customer-orders/{createdOrder.Id}/status", new { status = "BogusStatus" });
                 Assert(mgrInvalidStatus.StatusCode == HttpStatusCode.BadRequest, $"Expected 400 BadRequest for invalid status, got {mgrInvalidStatus.StatusCode}");
 
+                // Manager advance-state path is auditable and does not create a checkout sale.
+                var preparingResponse = await managerClient.PostAsJsonAsync($"/api/customer-orders/{createdOrder.Id}/status", new { status = "Preparing" });
+                Assert(preparingResponse.StatusCode == HttpStatusCode.OK, "Confirmed -> Preparing must succeed.");
+                var readyResponse = await managerClient.PostAsJsonAsync($"/api/customer-orders/{createdOrder.Id}/status", new { status = "Ready" });
+                Assert(readyResponse.StatusCode == HttpStatusCode.OK, "Preparing -> Ready must succeed.");
+                var invalidReadyReplay = await managerClient.PostAsJsonAsync($"/api/customer-orders/{createdOrder.Id}/status", new { status = "Ready" });
+                Assert(invalidReadyReplay.StatusCode == HttpStatusCode.Conflict, "Repeated Ready must fail closed.");
+                using (SqliteConnection auditConn = new($"Data Source={paths.DatabasePath}"))
+                {
+                    auditConn.Open();
+                    using SqliteCommand auditCmd = auditConn.CreateCommand();
+                    auditCmd.CommandText = "SELECT COUNT(*) FROM audit_logs WHERE entity_id=$orderId AND user_id=$actor AND action='CUSTOMER_ORDER_STATUS_CHANGED';";
+                    auditCmd.Parameters.AddWithValue("$orderId", createdOrder.Id.ToString("D"));
+                    auditCmd.Parameters.AddWithValue("$actor", managerId.ToString("D"));
+                    Assert(Convert.ToInt64(auditCmd.ExecuteScalar()) == 2,
+                        "Manager order state changes must have attributed and atomic audit entries.");
+                }
+
                 // 5. Negative test via HTTP: random sale ID returns 404
-                HttpResponseMessage unlinkedHttpFulfill = await client.PostAsJsonAsync($"/api/customer-orders/{createdOrder.Id}/fulfill", new { saleId = Guid.NewGuid().ToString("D") });
+                HttpResponseMessage unlinkedHttpFulfill = await managerClient.PostAsJsonAsync($"/api/customer-orders/{createdOrder.Id}/fulfill", new { saleId = Guid.NewGuid().ToString("D") });
                 Assert(unlinkedHttpFulfill.StatusCode == HttpStatusCode.NotFound, $"Expected 404 for random saleId fulfillment, got {unlinkedHttpFulfill.StatusCode}");
 
                 // 6. Positive test via HTTP: fulfill via receipt number reference
                 Guid httpSaleId = SeedRealSale(paths.DatabasePath, "SL-HTTP-0001", cashierId, productId, "Industrial Tool Set", 2000, 85_000, 170_000);
-                HttpResponseMessage fulfillResp = await client.PostAsJsonAsync($"/api/customer-orders/{createdOrder.Id}/fulfill", new { saleReference = "SL-HTTP-0001" });
+                HttpResponseMessage fulfillResp = await managerClient.PostAsJsonAsync($"/api/customer-orders/{createdOrder.Id}/fulfill", new { saleReference = "SL-HTTP-0001" });
                 Assert(fulfillResp.IsSuccessStatusCode, $"Fulfill order via HTTP failed: {fulfillResp.StatusCode}");
                 var fulfilledOrder = await fulfillResp.Content.ReadFromJsonAsync<CustomerOrder>();
                 Assert(fulfilledOrder != null && fulfilledOrder.Status == "Fulfilled", "Fulfilled order status check failed");
@@ -379,7 +402,7 @@ public static class CeoCustomerOrdersAndQuotesChecks
                 Assert(mgrCancelFulfilled.StatusCode == HttpStatusCode.Conflict, $"Expected 409 Conflict when cancelling fulfilled order, got {mgrCancelFulfilled.StatusCode}");
 
                 // 8. Positive test via HTTP: manager cancels a confirmed order
-                HttpResponseMessage createOrder2Resp = await client.PostAsJsonAsync("/api/customer-orders", httpOrderPayload);
+                HttpResponseMessage createOrder2Resp = await managerClient.PostAsJsonAsync("/api/customer-orders", httpOrderPayload);
                 Assert(createOrder2Resp.StatusCode == HttpStatusCode.Created, "Failed to create second order");
                 var createdOrder2 = await createOrder2Resp.Content.ReadFromJsonAsync<CustomerOrder>();
                 Assert(createdOrder2 != null, "Second order is null");
@@ -409,19 +432,19 @@ public static class CeoCustomerOrdersAndQuotesChecks
                     }
                 };
 
-                HttpResponseMessage createOrderAccountResp = await client.PostAsJsonAsync("/api/customer-orders", httpOrderWithAccountPayload);
+                HttpResponseMessage createOrderAccountResp = await managerClient.PostAsJsonAsync("/api/customer-orders", httpOrderWithAccountPayload);
                 Assert(createOrderAccountResp.StatusCode == HttpStatusCode.Created, "Failed to create account-linked order");
                 var orderWithAccount = await createOrderAccountResp.Content.ReadFromJsonAsync<CustomerOrder>();
                 Assert(orderWithAccount != null && orderWithAccount.CustomerId == customerA, "Order customerId mismatch");
 
                 // Scenario C: Negative test - fulfilling customerA's order with customerB's sale fails with 409 Conflict
                 Guid saleForCustBHttp = SeedRealSale(paths.DatabasePath, "SL-AR-CUST-B", cashierId, productId, "Industrial Tool Set", 2000, 85_000, 170_000, customerId: customerB);
-                HttpResponseMessage mismatchCustResp = await client.PostAsJsonAsync($"/api/customer-orders/{orderWithAccount.Id}/fulfill", new { saleReference = "SL-AR-CUST-B" });
+                HttpResponseMessage mismatchCustResp = await managerClient.PostAsJsonAsync($"/api/customer-orders/{orderWithAccount.Id}/fulfill", new { saleReference = "SL-AR-CUST-B" });
                 Assert(mismatchCustResp.StatusCode == HttpStatusCode.Conflict, $"Expected 409 Conflict for customer mismatch, got {mismatchCustResp.StatusCode}");
 
                 // Scenario B: Positive test - fulfilling customerA's order with customerA's AR sale succeeds
                 Guid saleForCustAHttp = SeedRealSale(paths.DatabasePath, "SL-AR-CUST-A", cashierId, productId, "Industrial Tool Set", 2000, 85_000, 170_000, customerId: customerA);
-                HttpResponseMessage matchCustResp = await client.PostAsJsonAsync($"/api/customer-orders/{orderWithAccount.Id}/fulfill", new { saleReference = "SL-AR-CUST-A" });
+                HttpResponseMessage matchCustResp = await managerClient.PostAsJsonAsync($"/api/customer-orders/{orderWithAccount.Id}/fulfill", new { saleReference = "SL-AR-CUST-A" });
                 Assert(matchCustResp.IsSuccessStatusCode, $"Fulfill account-linked order failed: {matchCustResp.StatusCode}");
                 var fulfilledAccountOrder = await matchCustResp.Content.ReadFromJsonAsync<CustomerOrder>();
                 Assert(fulfilledAccountOrder != null && fulfilledAccountOrder.Status == "Fulfilled", "Fulfilled account order status check failed");
