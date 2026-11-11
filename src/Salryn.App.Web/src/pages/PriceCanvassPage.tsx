@@ -38,6 +38,7 @@ export function PriceCanvassPage() {
   const queryClient = useQueryClient();
   const { notify } = useNotifications();
 
+  const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [productSearch, setProductSearch] = useState("");
   const [productPage, setProductPage] = useState(1);
   const [savingQuote, setSavingQuote] = useState(false);
@@ -62,7 +63,6 @@ export function PriceCanvassPage() {
   const products = productsData?.items ?? [];
 
   // Modals state
-  const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [viewingQuote, setViewingQuote] = useState<CustomerQuotation | null>(null);
 
   // New quote form state
