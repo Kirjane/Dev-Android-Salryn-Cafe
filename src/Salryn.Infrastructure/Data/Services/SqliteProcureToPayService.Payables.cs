@@ -156,10 +156,10 @@ public sealed partial class SqliteProcureToPayService
 
         foreach (var line in request.Lines)
         {
-            if (string.IsNullOrWhiteSpace(line.ItemDescription) || line.InvoicedQtyX1000 <= 0 || line.InvoicedUnitCostCents < 0 || line.TaxCents < 0)
+            if (string.IsNullOrWhiteSpace(line.ItemDescription) || line.InvoicedQtyX1000 <= 0 || line.InvoicedUnitCostCents <= 0 || line.TaxCents < 0)
             {
                 return Result<SupplierInvoiceModel>.Fail(
-                    Error.Validation("Lpi.Payables.InvalidLine", "Each invoice line requires description, positive invoiced quantity, and non-negative unit cost."));
+                    Error.Validation("Lpi.Payables.InvalidLine", "Each invoice line requires description, positive invoiced quantity, and positive unit cost."));
             }
 
             PurchaseOrderLineModel? poLine = line.PurchaseOrderLineId.HasValue && poLineMap.TryGetValue(line.PurchaseOrderLineId.Value, out var pl) ? pl : null;
@@ -295,6 +295,9 @@ public sealed partial class SqliteProcureToPayService
         }
 
         long totalInvoiceCents = Math.Max(0, subtotalCents - request.DiscountCents + totalTaxCents - request.WithholdingTaxCents);
+        if (totalInvoiceCents <= 0)
+            return Result<SupplierInvoiceModel>.Fail(Error.Validation(
+                "Lpi.Payables.ZeroValueInvoice", "Zero-value invoices cannot be posted or recorded as payable liabilities."));
 
         string overallMatchStatus;
         string initialStatus;
