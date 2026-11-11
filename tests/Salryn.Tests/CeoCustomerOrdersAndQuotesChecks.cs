@@ -523,6 +523,20 @@ public static class CeoCustomerOrdersAndQuotesChecks
                     confirmedList!.Single(o => o.Id == httpMulti.Id).Lines.SequenceEqual(httpMulti.Lines),
                     "CO-LINE-02 filtered HTTP list must contain exact child lines.");
 
+                // CO-LINE-05: Admin can create and advance; Manager and Admin have
+                // equivalent authorized order workflow access.
+                var adminCreateResp = await adminClient.PostAsJsonAsync("/api/customer-orders", httpOrderPayload);
+                Assert(adminCreateResp.StatusCode == HttpStatusCode.Created,
+                    "CO-LINE-05 admin create must return 201.");
+                var adminCreated = await adminCreateResp.Content.ReadFromJsonAsync<CustomerOrder>();
+                Assert(adminCreated != null && adminCreated.Lines.Count == 1 &&
+                       ReadPersistedOrderLines(paths.DatabasePath, adminCreated.Id).Count == 1,
+                    "CO-LINE-05 admin order must persist its product line.");
+                var adminAdvance = await adminClient.PostAsJsonAsync(
+                    $"/api/customer-orders/{adminCreated.Id}/status", new { status = "Preparing" });
+                Assert(adminAdvance.StatusCode == HttpStatusCode.OK,
+                    "CO-LINE-05 admin Confirmed -> Preparing must return 200.");
+
                 // CO-LINE-03/04: API validation failures are atomic (parent, children,
                 // creation audits, sales, payments, stock and drawer all unchanged).
                 var beforeInvalidHttp = ReadOrderMutationCounts(paths.DatabasePath);
