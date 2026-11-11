@@ -2,6 +2,7 @@ import { Dialog, Button } from "../ui";
 import type { CustomerOrder } from "../../api/customerOrdersAndQuotes";
 import type { StoreSettings } from "../../api/storeSettings";
 import { formatMoney } from "../../utils/format";
+import { customerOrderIntegrityIssue } from "../../utils/customerOrderIntegrity";
 
 interface Props {
   open: boolean;
@@ -15,7 +16,9 @@ const money = (cents: number) => formatMoney(cents / 100);
 export function PrintableCustomerOrderModal({ open, onClose, order, storeSettings }: Props) {
   if (!order) return null;
 
+  const printIssue = customerOrderIntegrityIssue(order);
   const handlePrint = () => {
+    if (printIssue) return;
     window.print();
   };
 
@@ -28,14 +31,19 @@ export function PrintableCustomerOrderModal({ open, onClose, order, storeSetting
             <Button variant="secondary" onClick={onClose}>
               Close
             </Button>
-            <Button variant="primary" onClick={handlePrint}>
+            <Button variant="primary" onClick={handlePrint} disabled={Boolean(printIssue)}>
               🖨️ Print Order Slip
             </Button>
           </div>
         </div>
 
-        {/* Printable Document Body */}
-        <div className="p-6 bg-white border rounded shadow-sm print:p-0 print:border-none print:shadow-none space-y-6">
+        {printIssue && (
+          <div role="alert" className="rounded border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800 print:hidden">
+            Order data cannot be printed: {printIssue}
+          </div>
+        )}
+        {/* Printable Document Body: hide invalid data even if browser print is invoked externally. */}
+        <div className={`p-6 bg-white border rounded shadow-sm print:p-0 print:border-none print:shadow-none space-y-6 ${printIssue ? "print:hidden" : ""}`}>
           {/* Company Letterhead */}
           <div className="border-b pb-4 text-center space-y-1">
             <h1 className="text-xl font-bold tracking-tight text-slate-900 uppercase">
