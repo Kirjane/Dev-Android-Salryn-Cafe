@@ -21,6 +21,16 @@ internal static class LocalProcureToPayEndpoints
     private static readonly string[] RequisitionReadPermissions =
         AnyLpiViewPermissions.Append(LocalApiPermissions.ProcurementRequest).ToArray();
 
+    private static readonly string[] PrivilegedSupplierReadPermissions =
+    {
+        LocalApiPermissions.ProcurementManagePurchaseOrder,
+        LocalApiPermissions.PayablesView
+    };
+
+    // The default cashier role has Procurement.View; never treat it as supplier-directory access.
+    private static bool IsCashier(LocalApiSession session) =>
+        session.RoleId == Guid.Parse("00000000-0000-0000-0000-000000000003");
+
     public static WebApplication MapLocalProcureToPayEndpoints(this WebApplication app)
     {
         // S0: Foundation & Supplier CRUD
@@ -31,8 +41,9 @@ internal static class LocalProcureToPayEndpoints
             IProcureToPayService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, PrivilegedSupplierReadPermissions) is IResult denied)
                 return denied;
+            if (IsCashier(RequiredSession(context, sessions))) return Results.StatusCode(403);
             return ToResult(await service.GetFoundationCatalogAsync(includeInactiveSuppliers ?? true, ct));
         });
 
@@ -99,8 +110,9 @@ internal static class LocalProcureToPayEndpoints
             IProcureToPayService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, new[] { LocalApiPermissions.ProcurementView, LocalApiPermissions.ProcurementManagePurchaseOrder }) is IResult denied)
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, PrivilegedSupplierReadPermissions) is IResult denied)
                 return denied;
+            if (IsCashier(RequiredSession(context, sessions))) return Results.StatusCode(403);
             return ToResult(await service.GetSuppliersAsync(search, includeInactive ?? true, ct));
         });
 
@@ -113,6 +125,7 @@ internal static class LocalProcureToPayEndpoints
         {
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementManagePurchaseOrder) is IResult denied)
                 return denied;
+            if (IsCashier(RequiredSession(context, sessions))) return Results.StatusCode(403);
             LocalApiSession session = RequiredSession(context, sessions);
             return ToResult(
                 await service.CreateSupplierAsync(new CreateLpiSupplierRequest(
@@ -140,6 +153,7 @@ internal static class LocalProcureToPayEndpoints
         {
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementManagePurchaseOrder) is IResult denied)
                 return denied;
+            if (IsCashier(RequiredSession(context, sessions))) return Results.StatusCode(403);
             LocalApiSession session = RequiredSession(context, sessions);
             return ToResult(
                 await service.UpdateSupplierAsync(id, new UpdateLpiSupplierRequest(
@@ -328,8 +342,9 @@ internal static class LocalProcureToPayEndpoints
             IProcureToPayService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, new[] { LocalApiPermissions.ProcurementView, LocalApiPermissions.ProcurementManagePurchaseOrder }) is IResult denied)
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, PrivilegedSupplierReadPermissions) is IResult denied)
                 return denied;
+            if (IsCashier(RequiredSession(context, sessions))) return Results.StatusCode(403);
             return ToResult(await service.GetSupplierQuotationsAsync(requisitionId, productId, ct));
         });
 
@@ -342,6 +357,7 @@ internal static class LocalProcureToPayEndpoints
         {
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementManagePurchaseOrder) is IResult denied)
                 return denied;
+            if (IsCashier(RequiredSession(context, sessions))) return Results.StatusCode(403);
             LocalApiSession session = RequiredSession(context, sessions);
             return ToResult(
                 await service.RecordSupplierQuotationAsync(new RecordSupplierQuotationRequest(
@@ -371,6 +387,7 @@ internal static class LocalProcureToPayEndpoints
         {
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementManagePurchaseOrder) is IResult denied)
                 return denied;
+            if (IsCashier(RequiredSession(context, sessions))) return Results.StatusCode(403);
             LocalApiSession session = RequiredSession(context, sessions);
             return ToResult(await service.SelectWinningQuotationAsync(
                 id,
