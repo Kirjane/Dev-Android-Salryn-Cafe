@@ -126,7 +126,7 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
   const overview = useQuery({ queryKey: ["lpi-overview"], queryFn: fetchLpiOverview, enabled: canViewProcurement });
   const suppliers = useQuery({ queryKey: ["lpi-suppliers"], queryFn: () => fetchSuppliers("", true), enabled: canViewProcurement || canRequestPr });
   const requisitions = useQuery({ queryKey: ["lpi-requisitions"], queryFn: () => fetchRequisitions(), enabled: canViewProcurement || canRequestPr });
-  const purchaseOrders = useQuery({ queryKey: ["lpi-pos"], queryFn: () => fetchPurchaseOrders(), enabled: canViewProcurement });
+  const purchaseOrders = useQuery({ queryKey: ["lpi-pos"], queryFn: () => fetchPurchaseOrders(), enabled: canManagePo || canApprovePo });
   const receivingReports = useQuery({ queryKey: ["lpi-rrs"], queryFn: () => fetchReceivingReports(), enabled: canViewReceiving });
   const stockCards = useQuery({ queryKey: ["lpi-stock-cards"], queryFn: fetchStockCards, enabled: canViewInventory });
   const supplierReturns = useQuery({ queryKey: ["lpi-returns"], queryFn: () => fetchSupplierReturns(), enabled: canViewInventory });
