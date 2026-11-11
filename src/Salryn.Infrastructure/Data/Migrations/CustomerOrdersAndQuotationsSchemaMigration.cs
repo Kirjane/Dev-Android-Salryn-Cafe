@@ -65,9 +65,6 @@ public sealed class CustomerOrdersAndQuotationsSchemaMigration : IDatabaseMigrat
                 FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE RESTRICT
             );
 
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_customer_orders_sale_id
-            ON customer_orders(sale_id) WHERE sale_id IS NOT NULL;
-
             CREATE TABLE IF NOT EXISTS customer_order_lines (
                 id TEXT PRIMARY KEY,
                 order_id TEXT NOT NULL,

@@ -537,20 +537,92 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
 
     public async Task<Result<CustomerOrder>> UpdateOrderStatusAsync(Guid id, string status, CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            return Result<CustomerOrder>.Fail(Error.Validation("CustomerOrder.InvalidStatus", "Status is required."));
+        }
+
+        string targetStatus = status.Trim();
+
+        // 1. Direct fulfillment write is strictly prohibited
+        if (string.Equals(targetStatus, "Fulfilled", StringComparison.OrdinalIgnoreCase))
+        {
+            return Result<CustomerOrder>.Fail(Error.Conflict(
+                "CustomerOrder.CannotSetFulfilledDirectly",
+                "Customer orders cannot be fulfilled via status update. Fulfillment requires verified sale completion via the /fulfill endpoint."));
+        }
+
+        // 2. Only permitted manual status change is Cancelled
+        if (!string.Equals(targetStatus, "Cancelled", StringComparison.OrdinalIgnoreCase))
+        {
+            return Result<CustomerOrder>.Fail(Error.Validation(
+                "CustomerOrder.InvalidStatusTransition",
+                $"Invalid order status transition to '{targetStatus}'. The only permitted manual status change is 'Cancelled'."));
+        }
+
         try
         {
             await using var connection = _connectionFactory.CreateConnection();
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await using var transaction = connection.BeginTransaction();
 
+            // 3. Fetch existing status
+            await using var checkCmd = connection.CreateCommand();
+            checkCmd.Transaction = transaction;
+            checkCmd.CommandText = "SELECT status FROM customer_orders WHERE id = $id;";
+            checkCmd.Parameters.AddWithValue("$id", id.ToString("D"));
+            object? currentStatusObj = await checkCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            if (currentStatusObj is null || currentStatusObj is DBNull)
+            {
+                return Result<CustomerOrder>.Fail(Error.NotFound("CustomerOrder.NotFound", "Customer order not found."));
+            }
+
+            string currentStatus = currentStatusObj.ToString()!;
+
+            // 4. Disallow modifying or reviving terminal states
+            if (string.Equals(currentStatus, "Cancelled", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(currentStatus, "Fulfilled", StringComparison.OrdinalIgnoreCase))
+            {
+                return Result<CustomerOrder>.Fail(Error.Conflict(
+                    "CustomerOrder.TerminalState",
+                    $"Cannot modify customer order in terminal status '{currentStatus}'. Reverting or modifying terminal states is disallowed."));
+            }
+
+            if (!string.Equals(currentStatus, "Confirmed", StringComparison.OrdinalIgnoreCase))
+            {
+                return Result<CustomerOrder>.Fail(Error.Conflict(
+                    "CustomerOrder.InvalidState",
+                    $"Customer order in status '{currentStatus}' cannot be cancelled."));
+            }
+
+            // 5. Update to Cancelled
             await using var cmd = connection.CreateCommand();
-            cmd.CommandText = "UPDATE customer_orders SET status = $status WHERE id = $id;";
-            cmd.Parameters.AddWithValue("$status", status.Trim());
+            cmd.Transaction = transaction;
+            cmd.CommandText = "UPDATE customer_orders SET status = 'Cancelled' WHERE id = $id AND status = 'Confirmed';";
             cmd.Parameters.AddWithValue("$id", id.ToString("D"));
             int affected = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             if (affected == 0)
             {
-                return Result<CustomerOrder>.Fail(Error.NotFound("CustomerOrder.NotFound", "Order not found."));
+                return Result<CustomerOrder>.Fail(Error.Conflict("CustomerOrder.UpdateConflict", "Order status could not be updated."));
             }
+
+            // 6. Audit log
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            await using var auditCmd = connection.CreateCommand();
+            auditCmd.Transaction = transaction;
+            auditCmd.CommandText = """
+                INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, old_value_json, new_value_json, reason, created_at)
+                VALUES ($id, NULL, 'CUSTOMER_ORDER_CANCELLED', 'customer_orders', $entityId, $oldVal, $newVal, $reason, $now);
+                """;
+            auditCmd.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("D"));
+            auditCmd.Parameters.AddWithValue("$entityId", id.ToString("D"));
+            auditCmd.Parameters.AddWithValue("$oldVal", $"{{\"status\":\"{currentStatus}\"}}");
+            auditCmd.Parameters.AddWithValue("$newVal", "{\"status\":\"Cancelled\"}");
+            auditCmd.Parameters.AddWithValue("$reason", "Customer order cancelled by authorized operator.");
+            auditCmd.Parameters.AddWithValue("$now", now.ToString("O"));
+            await auditCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
             return await GetOrderByIdAsync(id, cancellationToken).ConfigureAwait(false);
         }
@@ -635,6 +707,10 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
             {
                 return Result<CustomerOrder>.Fail(Error.Conflict("CustomerOrder.AlreadyFulfilled", "Customer order is already fulfilled."));
             }
+            if (!string.Equals(orderStatus, "Confirmed", StringComparison.OrdinalIgnoreCase))
+            {
+                return Result<CustomerOrder>.Fail(Error.Conflict("CustomerOrder.InvalidStateForFulfillment", $"Customer order in status '{orderStatus}' cannot be fulfilled."));
+            }
 
             // 2. Validate sale exists, is completed, not voided
             await using var saleCmd = connection.CreateCommand();
@@ -669,13 +745,23 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
                 return Result<CustomerOrder>.Fail(Error.Conflict("CustomerOrder.SaleNotCompleted", "Referenced sale is voided or not in completed status."));
             }
 
-            // 3. Customer match check (if both specify customer)
-            if (orderCustomerId.HasValue && saleCustomerId.HasValue && orderCustomerId.Value != saleCustomerId.Value)
+            // 3. Customer identity consistency check
+            if (orderCustomerId.HasValue && (!saleCustomerId.HasValue || orderCustomerId.Value != saleCustomerId.Value))
             {
-                return Result<CustomerOrder>.Fail(Error.Conflict("CustomerOrder.CustomerMismatch", "Referenced sale customer does not match the order customer."));
+                return Result<CustomerOrder>.Fail(Error.Conflict("CustomerOrder.CustomerMismatch", "Referenced sale customer account does not match the customer order account."));
+            }
+            if (saleCustomerId.HasValue && (!orderCustomerId.HasValue || saleCustomerId.Value != orderCustomerId.Value))
+            {
+                return Result<CustomerOrder>.Fail(Error.Conflict("CustomerOrder.CustomerMismatch", "Referenced sale is assigned to a customer account, but customer order is unassigned or mismatched."));
             }
 
-            // 4. One-to-one uniqueness check (sale must not already be linked to another order)
+            // 4. Financial amount verification (sale must cover full order total)
+            if (saleTotalCents < orderTotalCents)
+            {
+                return Result<CustomerOrder>.Fail(Error.Conflict("CustomerOrder.SaleTotalMismatch", $"Referenced sale total ({saleTotalCents} cents) does not cover order total ({orderTotalCents} cents)."));
+            }
+
+            // 5. One-to-one uniqueness check (sale must not already be linked to another order)
             await using var checkLinkCmd = connection.CreateCommand();
             checkLinkCmd.Transaction = transaction;
             checkLinkCmd.CommandText = """

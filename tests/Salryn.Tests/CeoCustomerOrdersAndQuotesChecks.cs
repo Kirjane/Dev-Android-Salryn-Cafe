@@ -10,6 +10,9 @@ using Salryn.Core.Common;
 using Salryn.Core.Models;
 using Salryn.Core.Security;
 using Salryn.Core.Services.Licensing;
+using Salryn.Infrastructure.Data;
+using Salryn.Infrastructure.Data.Initialization;
+using Salryn.Infrastructure.Data.Migrations;
 using Salryn.Infrastructure.Data.Seeding;
 using Salryn.Infrastructure.Data.Services;
 using Salryn.Infrastructure.Paths;
@@ -54,9 +57,14 @@ public static class CeoCustomerOrdersAndQuotesChecks
             Guid productId = LpiProcureToPayRuntimeChecks.SeedProduct(paths.DatabasePath, "PROD-QUO-1", "770001", "Industrial Tool Set", 50_000, 85_000, 20_000, 5_000);
             Guid otherProductId = LpiProcureToPayRuntimeChecks.SeedProduct(paths.DatabasePath, "PROD-QUO-2", "770002", "Safety Goggles", 10_000, 15_000, 10_000, 5_000);
 
-            // 3. Seed users
+            // 3. Seed users & customers
             string cashierHash = SalrynPasswordHasher.HashPassword("Cashier123!").Value!;
             Guid cashierId = SeedUserWithPassword(paths.DatabasePath, "cashier1", "Cashier Jane", cashierHash, Guid.Parse(DefaultSeedData.CashierRoleId));
+            string managerHash = SalrynPasswordHasher.HashPassword("Manager123!").Value!;
+            Guid managerId = SeedUserWithPassword(paths.DatabasePath, "manager1", "Manager Mike", managerHash, Guid.Parse(DefaultSeedData.ManagerRoleId));
+
+            Guid customerA = SeedCustomer(paths.DatabasePath, "Customer Alpha", "0917-111-2222", cashierId);
+            Guid customerB = SeedCustomer(paths.DatabasePath, "Customer Beta", "0917-333-4444", cashierId);
 
             // 4. Test Service Layer Directly
             SqliteCustomerOrdersAndQuotesService service = new(composition.ConnectionFactory);
@@ -133,26 +141,36 @@ public static class CeoCustomerOrdersAndQuotesChecks
             Assert(order.TotalCents == 255_000, $"Expected order total 255,000 cents (3 * 85000), got {order.TotalCents}");
             Assert(order.Status == "Confirmed", $"Expected status Confirmed, got {order.Status}");
 
-            // Fulfill Order Invariants
-            // 1. Negative test: non-existent random GUID must fail
+            // Fulfill Order Invariants & Explicit State Machine
+            // 1. Negative test: direct Fulfilled status write bypass must fail
+            var bypassRes = await service.UpdateOrderStatusAsync(order.Id, "Fulfilled", CancellationToken.None);
+            Assert(!bypassRes.IsSuccess, "Expected direct Fulfilled status write to fail");
+            Assert(bypassRes.ErrorDetail.Code == "CustomerOrder.CannotSetFulfilledDirectly", $"Expected CustomerOrder.CannotSetFulfilledDirectly, got {bypassRes.ErrorDetail.Code}");
+
+            // 2. Negative test: invalid status transition must fail
+            var bogusRes = await service.UpdateOrderStatusAsync(order.Id, "Completed", CancellationToken.None);
+            Assert(!bogusRes.IsSuccess, "Expected invalid status transition to fail");
+            Assert(bogusRes.ErrorDetail.Code == "CustomerOrder.InvalidStatusTransition", $"Expected CustomerOrder.InvalidStatusTransition, got {bogusRes.ErrorDetail.Code}");
+
+            // 3. Negative test: non-existent random GUID sale must fail
             Guid randomSaleId = Guid.NewGuid();
             var notFoundRes = await service.FulfillOrderAsync(order.Id, randomSaleId, CancellationToken.None);
             Assert(!notFoundRes.IsSuccess, "Expected random saleId to fail");
             Assert(notFoundRes.ErrorDetail.Code == "CustomerOrder.SaleNotFound", $"Expected CustomerOrder.SaleNotFound, got {notFoundRes.ErrorDetail.Code}");
 
-            // 2. Negative test: voided sale must fail
+            // 4. Negative test: voided sale must fail
             Guid voidedSaleId = SeedRealSale(paths.DatabasePath, "SL-VOID-1", cashierId, productId, "Industrial Tool Set", 3000, 85_000, 255_000, status: 3, isVoided: true);
             var voidedRes = await service.FulfillOrderAsync(order.Id, voidedSaleId, CancellationToken.None);
             Assert(!voidedRes.IsSuccess, "Expected voided sale to fail");
             Assert(voidedRes.ErrorDetail.Code == "CustomerOrder.SaleNotCompleted", $"Expected CustomerOrder.SaleNotCompleted, got {voidedRes.ErrorDetail.Code}");
 
-            // 3. Negative test: mismatched items must fail
-            Guid mismatchSaleId = SeedRealSale(paths.DatabasePath, "SL-MISMATCH-1", cashierId, otherProductId, "Safety Goggles", 3000, 15_000, 45_000);
+            // 5. Negative test: mismatched items must fail
+            Guid mismatchSaleId = SeedRealSale(paths.DatabasePath, "SL-MISMATCH-1", cashierId, otherProductId, "Safety Goggles", 3000, 85_000, 255_000);
             var mismatchRes = await service.FulfillOrderAsync(order.Id, mismatchSaleId, CancellationToken.None);
             Assert(!mismatchRes.IsSuccess, "Expected mismatched items sale to fail");
             Assert(mismatchRes.ErrorDetail.Code == "CustomerOrder.SaleLineMismatch", $"Expected CustomerOrder.SaleLineMismatch, got {mismatchRes.ErrorDetail.Code}");
 
-            // 4. Positive test: real matching sale succeeds
+            // 6. Positive test: real matching sale succeeds
             Guid realSaleId = SeedRealSale(paths.DatabasePath, "SL-REAL-1", cashierId, productId, "Industrial Tool Set", 3000, 85_000, 255_000);
             var fulfilledRes = await service.FulfillOrderAsync(order.Id, realSaleId, CancellationToken.None);
             Assert(fulfilledRes.IsSuccess, "Fulfill order with real sale failed: " + fulfilledRes.Error);
@@ -160,24 +178,63 @@ public static class CeoCustomerOrdersAndQuotesChecks
             Assert(fulfilledRes.Value.SaleId == realSaleId, "Fulfill saleId mismatch");
             Assert(fulfilledRes.Value.FulfilledAt != null, "FulfilledAt timestamp must be set");
 
-            // 5. Negative test: already fulfilled order cannot be fulfilled again
+            // 7. Negative test: terminal state reversal (cannot cancel or revive fulfilled order)
+            var cancelFulfilledRes = await service.UpdateOrderStatusAsync(order.Id, "Cancelled", CancellationToken.None);
+            Assert(!cancelFulfilledRes.IsSuccess, "Expected cancelling fulfilled order to fail");
+            Assert(cancelFulfilledRes.ErrorDetail.Code == "CustomerOrder.TerminalState", $"Expected CustomerOrder.TerminalState, got {cancelFulfilledRes.ErrorDetail.Code}");
+
             var alreadyFulfilledRes = await service.FulfillOrderAsync(order.Id, realSaleId, CancellationToken.None);
             Assert(!alreadyFulfilledRes.IsSuccess && alreadyFulfilledRes.ErrorDetail.Code == "CustomerOrder.AlreadyFulfilled", "Expected CustomerOrder.AlreadyFulfilled");
 
-            // 6. Negative test: duplicate linkage (same sale cannot fulfill second order)
+            // 8. Negative test: duplicate linkage (same sale cannot fulfill second order)
             var secondOrderRes = await service.CreateOrderAsync(cashierId, "Cashier Jane", createOrderInput, CancellationToken.None);
             Assert(secondOrderRes.IsSuccess, "Second order creation failed");
             var dupLinkRes = await service.FulfillOrderAsync(secondOrderRes.Value.Id, realSaleId, CancellationToken.None);
             Assert(!dupLinkRes.IsSuccess, "Expected duplicate sale linkage to fail");
             Assert(dupLinkRes.ErrorDetail.Code == "CustomerOrder.SaleAlreadyLinked", $"Expected CustomerOrder.SaleAlreadyLinked, got {dupLinkRes.ErrorDetail.Code}");
 
-            // Cancel Order Flow & invariant check
+            // 9. Cancel Order Flow & terminal-state invariant checks
             var orderToCancelRes = await service.CreateOrderAsync(cashierId, "Cashier Jane", createOrderInput, CancellationToken.None);
             var cancelledRes = await service.UpdateOrderStatusAsync(orderToCancelRes.Value.Id, "Cancelled", CancellationToken.None);
             Assert(cancelledRes.IsSuccess && cancelledRes.Value.Status == "Cancelled", "Expected status Cancelled");
+
+            var doubleCancelRes = await service.UpdateOrderStatusAsync(orderToCancelRes.Value.Id, "Cancelled", CancellationToken.None);
+            Assert(!doubleCancelRes.IsSuccess, "Expected double cancel to fail");
+            Assert(doubleCancelRes.ErrorDetail.Code == "CustomerOrder.TerminalState", $"Expected CustomerOrder.TerminalState, got {doubleCancelRes.ErrorDetail.Code}");
+
             Guid cancelTestSale = SeedRealSale(paths.DatabasePath, "SL-CANCEL-TEST", cashierId, productId, "Industrial Tool Set", 3000, 85_000, 255_000);
             var fulfillCancelledRes = await service.FulfillOrderAsync(orderToCancelRes.Value.Id, cancelTestSale, CancellationToken.None);
             Assert(!fulfillCancelledRes.IsSuccess && fulfillCancelledRes.ErrorDetail.Code == "CustomerOrder.OrderCancelled", "Expected CustomerOrder.OrderCancelled");
+
+            // 10. Customer identity & financial matching rules
+            var orderWithCustInput = new CreateCustomerOrderRequest(
+                customerA,
+                "Customer Alpha",
+                "0917-111-2222",
+                DateOnly.FromDateTime(DateTime.UtcNow.AddDays(5)),
+                "Account customer order",
+                orderLines);
+            var orderWithCustRes = await service.CreateOrderAsync(cashierId, "Cashier Jane", orderWithCustInput, CancellationToken.None);
+            Assert(orderWithCustRes.IsSuccess, "Customer order with customerId failed: " + orderWithCustRes.Error);
+
+            // 10a. Negative test: sale registered to different customer must fail
+            Guid saleForCustB = SeedRealSale(paths.DatabasePath, "SL-CUST-B", cashierId, productId, "Industrial Tool Set", 3000, 85_000, 255_000, customerId: customerB);
+            var custMismatchRes = await service.FulfillOrderAsync(orderWithCustRes.Value.Id, saleForCustB, CancellationToken.None);
+            Assert(!custMismatchRes.IsSuccess, "Expected customer mismatch to fail");
+            Assert(custMismatchRes.ErrorDetail.Code == "CustomerOrder.CustomerMismatch", $"Expected CustomerOrder.CustomerMismatch, got {custMismatchRes.ErrorDetail.Code}");
+
+            // 10b. Negative test: sale total insufficient (underpayment) must fail
+            Guid underpaidSale = SeedRealSale(paths.DatabasePath, "SL-UNDERPAID-1", cashierId, productId, "Industrial Tool Set", 3000, 85_000, 200_000, customerId: customerA);
+            var underpaidRes = await service.FulfillOrderAsync(orderWithCustRes.Value.Id, underpaidSale, CancellationToken.None);
+            Assert(!underpaidRes.IsSuccess, "Expected underpaid sale to fail");
+            Assert(underpaidRes.ErrorDetail.Code == "CustomerOrder.SaleTotalMismatch", $"Expected CustomerOrder.SaleTotalMismatch, got {underpaidRes.ErrorDetail.Code}");
+
+            // 10c. Positive test: matching customer + matching lines + covering total succeeds
+            Guid validCustSale = SeedRealSale(paths.DatabasePath, "SL-CUST-A", cashierId, productId, "Industrial Tool Set", 3000, 85_000, 255_000, customerId: customerA);
+            var validCustFulfillRes = await service.FulfillOrderAsync(orderWithCustRes.Value.Id, validCustSale, CancellationToken.None);
+            Assert(validCustFulfillRes.IsSuccess, "Expected customer order fulfillment with matching customer to succeed: " + validCustFulfillRes.Error);
+            Assert(validCustFulfillRes.Value.Status == "Fulfilled", "Status must be Fulfilled");
+            Assert(validCustFulfillRes.Value.SaleId == validCustSale, "SaleId must match");
 
             // 5. Test Local HTTP API Endpoints
             string testToken = $"DISPOSABLE-TEST-{Guid.NewGuid():N}";
@@ -282,23 +339,64 @@ public static class CeoCustomerOrdersAndQuotesChecks
                 var createdOrder = await createOrderResp.Content.ReadFromJsonAsync<CustomerOrder>();
                 Assert(createdOrder != null, "Created order payload is null");
 
-                // Negative test via HTTP: random sale ID returns 404
+                // 1. Negative test via HTTP: unauthorized cashier cannot mutate order status
+                HttpResponseMessage cashierStatusResp = await client.PostAsJsonAsync($"/api/customer-orders/{createdOrder.Id}/status", new { status = "Cancelled" });
+                Assert(cashierStatusResp.StatusCode == HttpStatusCode.Forbidden, $"Expected 403 Forbidden for cashier order cancellation, got {cashierStatusResp.StatusCode}");
+
+                // 2. Login as Manager to test authorized status endpoints
+                using HttpClient managerClient = new(new HttpClientHandler { UseCookies = false })
+                {
+                    BaseAddress = new Uri(boundUrl)
+                };
+                HttpResponseMessage managerLoginResp = await managerClient.PostAsJsonAsync("/api/auth/login", new { username = "manager1", password = "Manager123!" });
+                Assert(managerLoginResp.IsSuccessStatusCode, "Manager login failed");
+                string? mgrCookieHeader = managerLoginResp.Headers.TryGetValues("Set-Cookie", out var mcv) ? mcv.FirstOrDefault() : null;
+                Assert(!string.IsNullOrEmpty(mgrCookieHeader), "Manager session cookie missing");
+                managerClient.DefaultRequestHeaders.Add("Cookie", mgrCookieHeader!.Split(';')[0]);
+
+                // 3. Negative test via HTTP: manager cannot directly write Fulfilled status
+                HttpResponseMessage mgrDirectFulfill = await managerClient.PostAsJsonAsync($"/api/customer-orders/{createdOrder.Id}/status", new { status = "Fulfilled" });
+                Assert(mgrDirectFulfill.StatusCode == HttpStatusCode.Conflict, $"Expected 409 Conflict for direct Fulfilled status write, got {mgrDirectFulfill.StatusCode}");
+
+                // 4. Negative test via HTTP: invalid status transition rejected with 400
+                HttpResponseMessage mgrInvalidStatus = await managerClient.PostAsJsonAsync($"/api/customer-orders/{createdOrder.Id}/status", new { status = "BogusStatus" });
+                Assert(mgrInvalidStatus.StatusCode == HttpStatusCode.BadRequest, $"Expected 400 BadRequest for invalid status, got {mgrInvalidStatus.StatusCode}");
+
+                // 5. Negative test via HTTP: random sale ID returns 404
                 HttpResponseMessage unlinkedHttpFulfill = await client.PostAsJsonAsync($"/api/customer-orders/{createdOrder.Id}/fulfill", new { saleId = Guid.NewGuid().ToString("D") });
                 Assert(unlinkedHttpFulfill.StatusCode == HttpStatusCode.NotFound, $"Expected 404 for random saleId fulfillment, got {unlinkedHttpFulfill.StatusCode}");
 
-                // Positive test via HTTP: fulfill via receipt number reference
+                // 6. Positive test via HTTP: fulfill via receipt number reference
                 Guid httpSaleId = SeedRealSale(paths.DatabasePath, "SL-HTTP-0001", cashierId, productId, "Industrial Tool Set", 2000, 85_000, 170_000);
                 HttpResponseMessage fulfillResp = await client.PostAsJsonAsync($"/api/customer-orders/{createdOrder.Id}/fulfill", new { saleReference = "SL-HTTP-0001" });
                 Assert(fulfillResp.IsSuccessStatusCode, $"Fulfill order via HTTP failed: {fulfillResp.StatusCode}");
                 var fulfilledOrder = await fulfillResp.Content.ReadFromJsonAsync<CustomerOrder>();
                 Assert(fulfilledOrder != null && fulfilledOrder.Status == "Fulfilled", "Fulfilled order status check failed");
                 Assert(fulfilledOrder.SaleId == httpSaleId, "Linked saleId mismatch via HTTP fulfill");
+
+                // 7. Negative test via HTTP: cannot cancel an already fulfilled order
+                HttpResponseMessage mgrCancelFulfilled = await managerClient.PostAsJsonAsync($"/api/customer-orders/{createdOrder.Id}/status", new { status = "Cancelled" });
+                Assert(mgrCancelFulfilled.StatusCode == HttpStatusCode.Conflict, $"Expected 409 Conflict when cancelling fulfilled order, got {mgrCancelFulfilled.StatusCode}");
+
+                // 8. Positive test via HTTP: manager cancels a confirmed order
+                HttpResponseMessage createOrder2Resp = await client.PostAsJsonAsync("/api/customer-orders", httpOrderPayload);
+                Assert(createOrder2Resp.StatusCode == HttpStatusCode.Created, "Failed to create second order");
+                var createdOrder2 = await createOrder2Resp.Content.ReadFromJsonAsync<CustomerOrder>();
+                Assert(createdOrder2 != null, "Second order is null");
+
+                HttpResponseMessage mgrCancelConfirmed = await managerClient.PostAsJsonAsync($"/api/customer-orders/{createdOrder2.Id}/status", new { status = "Cancelled" });
+                Assert(mgrCancelConfirmed.IsSuccessStatusCode, $"Expected 200 OK when cancelling confirmed order, got {mgrCancelConfirmed.StatusCode}");
+                var cancelledOrder = await mgrCancelConfirmed.Content.ReadFromJsonAsync<CustomerOrder>();
+                Assert(cancelledOrder != null && cancelledOrder.Status == "Cancelled", "Order status must be Cancelled");
             }
             finally
             {
                 await app.StopAsync().ConfigureAwait(false);
                 await app.DisposeAsync().ConfigureAwait(false);
             }
+
+            // 6. Test genuine upgrade path from migration v30 to v31
+            await VerifyMigrationV30ToV31UpgradeAsync().ConfigureAwait(false);
         }
         finally
         {
@@ -375,6 +473,127 @@ public static class CeoCustomerOrdersAndQuotesChecks
 
         cmd.ExecuteNonQuery();
         return saleId;
+    }
+
+    private static Guid SeedCustomer(string dbPath, string fullName, string contactNumber, Guid createdByUserId)
+    {
+        Guid id = Guid.NewGuid();
+        string now = DateTimeOffset.UtcNow.ToString("O");
+        using SqliteConnection conn = new($"Data Source={dbPath}");
+        conn.Open();
+        using SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText =
+            """
+            INSERT INTO customers (id, full_name, phone, is_active, created_by_user_id, created_at, updated_at)
+            VALUES ($id, $fullName, $phone, 1, $createdByUserId, $now, $now);
+            """;
+        cmd.Parameters.AddWithValue("$id", id.ToString("D"));
+        cmd.Parameters.AddWithValue("$fullName", fullName);
+        cmd.Parameters.AddWithValue("$phone", contactNumber);
+        cmd.Parameters.AddWithValue("$createdByUserId", createdByUserId.ToString("D"));
+        cmd.Parameters.AddWithValue("$now", now);
+        cmd.ExecuteNonQuery();
+        return id;
+    }
+
+    private static Task VerifyMigrationV30ToV31UpgradeAsync()
+    {
+        string upgradeRoot = Path.Combine(Path.GetTempPath(), "salryn-migration-v30-v31-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            DbPaths paths = DbPaths.CreateDevelopment(upgradeRoot);
+            paths.EnsureDirectories();
+
+            // 1. Run migrations 1 through 30 only (simulating an existing v30 database)
+            SqliteConnectionFactory connectionFactory = new(paths);
+            IDatabaseMigration[] v30Migrations = new IDatabaseMigration[]
+            {
+                new InitialSchemaMigration(),
+                new BirMachineProfileSchemaMigration(),
+                new BirOfficialDocumentSequenceSchemaMigration(),
+                new BirElectronicJournalSchemaMigration(),
+                new BirElectronicJournalSchemaHardeningMigration(),
+                new BirZReadingSchemaMigration(),
+                new BirElectronicJournalCorrectionEventSchemaMigration(),
+                new ProductTaxClassificationSchemaMigration(),
+                new DeploymentIdentitySchemaMigration(),
+                new TerminalRegistrySchemaMigration(),
+                new LanRemoteTransportSchemaMigration(),
+                new TerminalCredentialHandshakeSchemaMigration(),
+                new OfficialReceiptProfileSchemaMigration(),
+                new OfficialDryRunPackageSchemaMigration(),
+                new VatRegistrationModeSchemaMigration(),
+                new OfficialDocumentLifecycleCompletionSchemaMigration(),
+                new OfficialDocumentLifecycleAccountingSchemaMigration(),
+                new StorePrinterModeSchemaMigration(),
+                new WindowsPrinterNameSchemaMigration(),
+                new StoreLogoBrandingSchemaMigration(),
+                new RemotePosCheckoutRequestSchemaMigration(),
+                new AccountsReceivableSchemaMigration(),
+                new HostCheckoutRequestSchemaMigration(),
+                new ReceivableCollectionRequestSchemaMigration(),
+                new CashDrawerReconciliationSchemaMigration(),
+                new CashDrawerCloseReplaySchemaMigration(),
+                new SaleVoidAuditReconciliationMigration(),
+                new ProcureToPaySchemaMigration(),
+                new ProcureToPayR2HardeningMigration(),
+                new CustomerOrdersAndQuotationsSchemaMigration()
+            };
+
+            MigrationRunner runnerV30 = new(connectionFactory, v30Migrations);
+            runnerV30.RunPendingMigrations();
+
+            // Verify database is exactly at version 30 and index uq_customer_orders_sale_id does not exist yet
+            using (SqliteConnection conn = new($"Data Source={paths.DatabasePath}"))
+            {
+                conn.Open();
+                using SqliteCommand cmd = conn.CreateCommand();
+                cmd.CommandText = "SELECT MAX(version) FROM schema_migrations;";
+                long maxV = Convert.ToInt64(cmd.ExecuteScalar());
+                Assert(maxV == 30, $"Expected max migration version 30 before upgrade, got {maxV}");
+
+                cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='uq_customer_orders_sale_id';";
+                long idxCount = Convert.ToInt64(cmd.ExecuteScalar());
+                Assert(idxCount == 0, $"Expected uq_customer_orders_sale_id index to NOT exist at v30, got {idxCount}");
+            }
+
+            // 2. Perform official upgrade using the full factory (advances from v30 to v31)
+            var factory = DefaultDatabaseInitializationFactory.Create(paths);
+            var initRes = factory.InitializeDatabase();
+            Assert(initRes.IsSuccess, "Upgrade from v30 to v31 failed: " + (initRes.IsFailure ? initRes.ErrorDetail.Message : ""));
+
+            // 3. Verify upgraded database
+            using (SqliteConnection conn = new($"Data Source={paths.DatabasePath}"))
+            {
+                conn.Open();
+                using SqliteCommand cmd = conn.CreateCommand();
+                cmd.CommandText = "SELECT MAX(version) FROM schema_migrations;";
+                long maxV = Convert.ToInt64(cmd.ExecuteScalar());
+                Assert(maxV == 31, $"Expected max migration version 31 after upgrade, got {maxV}");
+
+                cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='uq_customer_orders_sale_id';";
+                long idxCount = Convert.ToInt64(cmd.ExecuteScalar());
+                Assert(idxCount == 1, $"Expected uq_customer_orders_sale_id index to exist at v31, got {idxCount}");
+
+                cmd.CommandText = "PRAGMA integrity_check;";
+                string? integrity = cmd.ExecuteScalar()?.ToString();
+                Assert(integrity == "ok", $"Integrity check failed: {integrity}");
+
+                cmd.CommandText = "PRAGMA foreign_key_check;";
+                using SqliteDataReader fkReader = cmd.ExecuteReader();
+                Assert(!fkReader.HasRows, "Foreign key check failed: broken references found.");
+            }
+
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(upgradeRoot)) Directory.Delete(upgradeRoot, true);
+            }
+            catch { }
+        }
     }
 
     private static Guid SeedUserWithPassword(string dbPath, string username, string displayName, string passwordHash, Guid roleId)

@@ -77,7 +77,8 @@ public static class DefaultDatabaseInitializationFactory
             new SaleVoidAuditReconciliationMigration(),
             new ProcureToPaySchemaMigration(),
             new ProcureToPayR2HardeningMigration(),
-            new CustomerOrdersAndQuotationsSchemaMigration()
+            new CustomerOrdersAndQuotationsSchemaMigration(),
+            new CustomerOrdersHardeningSchemaMigration()
         };
 
         MigrationRunner migrationRunner = new(connectionFactory, migrations);
