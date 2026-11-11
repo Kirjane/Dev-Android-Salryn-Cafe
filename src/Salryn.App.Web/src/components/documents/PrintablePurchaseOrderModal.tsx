@@ -2,6 +2,7 @@ import { Dialog, Button } from "../ui";
 import type { PurchaseOrder } from "../../api/procureToPay";
 import type { StoreSettings } from "../../api/storeSettings";
 import { formatMoney } from "../../utils/format";
+import { purchaseOrderPrintIssue } from "../../utils/purchaseOrderPrint";
 
 interface Props {
   open: boolean;
@@ -15,10 +16,11 @@ const money = (cents: number) => Number.isFinite(cents) ? formatMoney(cents / 10
 
 export function PrintablePurchaseOrderModal({ open, onClose, po, storeSettings }: Props) {
   if (!po) return null;
-  const hasValidAmounts = [po.subtotalCents, po.taxCents, po.totalCents,
-    ...po.items.flatMap((item) => [item.unitCostCents, item.totalCostCents])].every(Number.isFinite);
+  const printIssue = purchaseOrderPrintIssue(po);
+  const hasValidAmounts = printIssue === null;
 
   const handlePrint = () => {
+    if (!hasValidAmounts) return;
     window.print();
   };
 
@@ -38,7 +40,7 @@ export function PrintablePurchaseOrderModal({ open, onClose, po, storeSettings }
         </div>
 
         {/* Printable Document Body */}
-        <div className="p-6 bg-white border rounded shadow-sm print:p-0 print:border-none print:shadow-none space-y-6">
+        <div className={`p-6 bg-white border rounded shadow-sm print:p-0 print:border-none print:shadow-none space-y-6 ${hasValidAmounts ? "" : "print:hidden"}`}>
           {/* Company Letterhead */}
           <div className="border-b pb-4 text-center space-y-1">
             <h1 className="text-xl font-bold tracking-tight text-slate-900 uppercase">
@@ -94,7 +96,7 @@ export function PrintablePurchaseOrderModal({ open, onClose, po, storeSettings }
 
           {!hasValidAmounts && (
             <p role="alert" className="text-sm font-semibold text-red-700 print:hidden">
-              This purchase order contains invalid monetary values. Printing is disabled until the amounts are corrected.
+              {printIssue} Printing is disabled until the source document is corrected.
             </p>
           )}
 
@@ -108,7 +110,7 @@ export function PrintablePurchaseOrderModal({ open, onClose, po, storeSettings }
                 <th className="p-2 border-r text-right">Ordered Qty</th>
                 <th className="p-2 border-r">Unit</th>
                 <th className="p-2 border-r text-right">Unit Price</th>
-                <th className="p-2 text-right">Amount</th>
+                <th className="p-2 text-right">Line Total (net + tax)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -135,12 +137,28 @@ export function PrintablePurchaseOrderModal({ open, onClose, po, storeSettings }
                 </td>
                 <td className="p-2 text-right font-mono text-slate-900">{money(po.subtotalCents)}</td>
               </tr>
+              {po.discountCents > 0 && (
+                <tr>
+                  <td colSpan={6} className="p-2 text-right uppercase">
+                    Discount:
+                  </td>
+                  <td className="p-2 text-right font-mono text-slate-900">−{money(po.discountCents)}</td>
+                </tr>
+              )}
               {po.taxCents > 0 && (
                 <tr>
                   <td colSpan={6} className="p-2 text-right uppercase">
                     Tax / VAT:
                   </td>
                   <td className="p-2 text-right font-mono text-slate-900">{money(po.taxCents)}</td>
+                </tr>
+              )}
+              {po.shippingCents > 0 && (
+                <tr>
+                  <td colSpan={6} className="p-2 text-right uppercase">
+                    Shipping / Freight:
+                  </td>
+                  <td className="p-2 text-right font-mono text-slate-900">{money(po.shippingCents)}</td>
                 </tr>
               )}
               <tr className="border-t">
