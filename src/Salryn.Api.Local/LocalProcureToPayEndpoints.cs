@@ -408,8 +408,12 @@ internal static class LocalProcureToPayEndpoints
             IProcureToPayService service,
             CancellationToken ct) =>
         {
-            string requiredPerm = string.Equals(request.Action, "Approve", StringComparison.OrdinalIgnoreCase) ||
-                                  string.Equals(request.Action, "Cancel", StringComparison.OrdinalIgnoreCase)
+            // Normalize the public action alias at the API boundary; the service uses MarkSent.
+            string action = string.Equals(request.Action, "Send", StringComparison.OrdinalIgnoreCase)
+                ? "MarkSent"
+                : request.Action;
+            string requiredPerm = string.Equals(action, "Approve", StringComparison.OrdinalIgnoreCase) ||
+                                  string.Equals(action, "Cancel", StringComparison.OrdinalIgnoreCase)
                 ? LocalApiPermissions.ProcurementApprovePurchaseOrder
                 : LocalApiPermissions.ProcurementManagePurchaseOrder;
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, requiredPerm) is IResult denied)
@@ -417,7 +421,7 @@ internal static class LocalProcureToPayEndpoints
             LocalApiSession session = RequiredSession(context, sessions);
             return ToResult(await service.TransitionPurchaseOrderStatusAsync(new PurchaseOrderStatusActionRequest(
                 id,
-                request.Action,
+                action,
                 request.Reason,
                 session.UserId), ct));
         });
@@ -452,7 +456,7 @@ internal static class LocalProcureToPayEndpoints
             LocalApiSession session = RequiredSession(context, sessions);
             return ToResult(await service.TransitionPurchaseOrderStatusAsync(new PurchaseOrderStatusActionRequest(
                 id,
-                "Send",
+                "MarkSent",
                 null,
                 session.UserId), ct));
         });
