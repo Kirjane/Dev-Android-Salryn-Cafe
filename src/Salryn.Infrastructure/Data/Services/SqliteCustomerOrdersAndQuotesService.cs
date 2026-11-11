@@ -884,22 +884,50 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
                 return Result<CustomerOrder>.Fail(Error.Conflict("CustomerOrder.SaleAlreadyLinked", "Referenced sale is already linked to another customer order."));
             }
 
-            // 5. Line items match check
+            // 5. Persisted order lines must be present and financially consistent.
+            // A historical Confirmed parent without children must not pass an
+            // empty requiredLines loop and attach an unrelated completed sale.
             await using var orderLinesCmd = connection.CreateCommand();
             orderLinesCmd.Transaction = transaction;
             orderLinesCmd.CommandText = """
-                SELECT product_id, quantity_x1000
+                SELECT product_id, quantity_x1000, unit_price_cents, line_total_cents
                 FROM customer_order_lines
                 WHERE order_id = $orderId;
                 """;
             orderLinesCmd.Parameters.AddWithValue("$orderId", orderId.ToString("D"));
             List<(Guid ProductId, long QtyX1000)> requiredLines = new();
+            long persistedOrderTotal = 0;
+            bool persistedLinesValid = true;
             await using (var r = await orderLinesCmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
             {
                 while (await r.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
-                    requiredLines.Add((Guid.Parse(r.GetString(0)), r.GetInt64(1)));
+                    Guid productId = Guid.Parse(r.GetString(0));
+                    long qty = r.GetInt64(1);
+                    long unitPrice = r.GetInt64(2);
+                    long lineTotal = r.GetInt64(3);
+                    requiredLines.Add((productId, qty));
+                    if (productId == Guid.Empty || qty <= 0 || unitPrice < 0 || lineTotal < 0)
+                    {
+                        persistedLinesValid = false;
+                        continue;
+                    }
+                    try
+                    {
+                        long computed = checked((checked(qty * unitPrice) + 500L) / 1000L);
+                        if (computed != lineTotal) persistedLinesValid = false;
+                        persistedOrderTotal = checked(persistedOrderTotal + lineTotal);
+                    }
+                    catch (OverflowException)
+                    {
+                        persistedLinesValid = false;
+                    }
                 }
+            }
+            if (requiredLines.Count == 0 || !persistedLinesValid || persistedOrderTotal != orderTotalCents)
+            {
+                return Result<CustomerOrder>.Fail(Error.Conflict("CustomerOrder.PersistedLinesInvalid",
+                    "Saved customer order lines are missing or inconsistent. Fulfillment is blocked pending review."));
             }
 
             await using var saleItemsCmd = connection.CreateCommand();
