@@ -361,7 +361,7 @@ internal static class LocalProcureToPayEndpoints
             IProcureToPayService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, new[] { LocalApiPermissions.ProcurementManagePurchaseOrder, LocalApiPermissions.ProcurementApprovePurchaseOrder }) is IResult denied)
                 return denied;
             return ToResult(await service.GetPurchaseOrdersAsync(status, supplierId, ct));
         });
@@ -373,7 +373,7 @@ internal static class LocalProcureToPayEndpoints
             IProcureToPayService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, new[] { LocalApiPermissions.ProcurementManagePurchaseOrder, LocalApiPermissions.ProcurementApprovePurchaseOrder }) is IResult denied)
                 return denied;
             return ToResult(await service.GetPurchaseOrderByIdAsync(id, ct));
         });
