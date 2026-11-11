@@ -72,7 +72,7 @@ internal static class LocalCustomerOrdersAndQuotationsEndpoints
             ICustomerOrdersAndQuotesService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, new[] { LocalApiPermissions.ProductsView, LocalApiPermissions.SalesCreate }) is IResult denied)
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProductsManage) is IResult denied)
                 return denied;
             return ToResult(await service.GetOrdersAsync(status, ct).ConfigureAwait(false));
         });
@@ -84,7 +84,7 @@ internal static class LocalCustomerOrdersAndQuotationsEndpoints
             ICustomerOrdersAndQuotesService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, new[] { LocalApiPermissions.ProductsView, LocalApiPermissions.SalesCreate }) is IResult denied)
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProductsManage) is IResult denied)
                 return denied;
             return ToResult(await service.GetOrderByIdAsync(id, ct).ConfigureAwait(false));
         });
@@ -96,7 +96,7 @@ internal static class LocalCustomerOrdersAndQuotationsEndpoints
             ICustomerOrdersAndQuotesService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, new[] { LocalApiPermissions.ProductsView, LocalApiPermissions.SalesCreate }) is IResult denied)
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProductsManage) is IResult denied)
                 return denied;
             LocalApiSession session = RequiredSession(context, sessions);
             return ToResult(await service.CreateOrderAsync(session.UserId, session.DisplayName ?? session.Username, request, ct).ConfigureAwait(false), StatusCodes.Status201Created);
@@ -123,7 +123,7 @@ internal static class LocalCustomerOrdersAndQuotationsEndpoints
             ICustomerOrdersAndQuotesService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, new[] { LocalApiPermissions.SalesCreate, LocalApiPermissions.ProductsManage }) is IResult denied)
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProductsManage) is IResult denied)
                 return denied;
 
             string? refText = !string.IsNullOrWhiteSpace(request.SaleId) ? request.SaleId : request.SaleReference;
