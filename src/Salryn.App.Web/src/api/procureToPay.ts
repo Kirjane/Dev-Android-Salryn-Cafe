@@ -486,6 +486,11 @@ function normalizeQuotation(raw: JsonRecord): SupplierQuotation {
 
 function normalizePurchaseOrder(raw: JsonRecord): PurchaseOrder {
   const lines = raw.lines ?? raw.items ?? [];
+  // The printable PO requires explicit monetary fields, not an unchecked type assertion.
+  // Derive a missing subtotal from the authoritative total and tax rather than displaying NaN.
+  const totalCents = Number(raw.totalAmountCents ?? raw.totalCents ?? 0);
+  const taxCents = Number(raw.taxCents ?? raw.totalTaxCents ?? 0);
+  const subtotalCents = Number(raw.subtotalCents ?? raw.subtotalAmountCents ?? totalCents - taxCents);
   return {
     id: raw.id,
     poNumber: raw.poNumber ?? "",
@@ -500,7 +505,9 @@ function normalizePurchaseOrder(raw: JsonRecord): PurchaseOrder {
     deliveryLocationName: raw.deliveryLocationName ?? "Main Store",
     paymentTermsDays: raw.paymentTermsDays ?? 0,
     status: raw.status ?? "Draft",
-    totalCents: raw.totalAmountCents ?? raw.totalCents ?? 0,
+    subtotalCents,
+    taxCents,
+    totalCents,
     items: lines.map((line: JsonRecord) => {
       const ordered = line.orderedQtyX1000 ?? line.orderedQuantityX1000 ?? 0;
       const accepted = line.receivedAcceptedQtyX1000 ?? line.receivedQtyX1000 ?? line.receivedQuantityX1000 ?? 0;
