@@ -512,6 +512,21 @@ public static class U1AccountsReceivableRuntimeChecks
                         .Contains("This collection was already reversed.", StringComparison.Ordinal) &&
                     Count(databasePath, "accounts_receivable_entries", "collection_id", collectionId.ToString("D")) == 2,
                 "Duplicate reversal must return the standard message and append only one reversal.");
+            using (SqliteConnection auditConnection = new($"Data Source={databasePath}"))
+            {
+                auditConnection.Open();
+                using SqliteCommand auditCommand = auditConnection.CreateCommand();
+                auditCommand.CommandText = """
+                    SELECT COUNT(*) FROM audit_logs
+                    WHERE entity_type = 'accounts_receivable_collections'
+                      AND entity_id = $collection AND user_id = $actor
+                      AND action = 'AR_COLLECTION_REVERSED';
+                    """;
+                auditCommand.Parameters.AddWithValue("$collection", collectionId.ToString("D"));
+                auditCommand.Parameters.AddWithValue("$actor", userId.ToString("D"));
+                Require(Convert.ToInt64(auditCommand.ExecuteScalar()) == 1,
+                    "AR reversal must retain exactly one authenticated actor audit attribution.");
+            }
         }
         finally
         {
