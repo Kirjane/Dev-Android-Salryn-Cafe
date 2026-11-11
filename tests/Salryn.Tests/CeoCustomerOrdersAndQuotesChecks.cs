@@ -207,6 +207,36 @@ public static class CeoCustomerOrdersAndQuotesChecks
             Assert(beforeInvalid == ReadOrderMutationCounts(paths.DatabasePath),
                 "CO-LINE-03/04 invalid order created parent, child, audit, sale, payment, stock or drawer mutation.");
 
+            // CO-LINE-08: synthetic historical corruption in this disposable DB only.
+            // This does NOT add a migration, modify the installed QA1 DB or fabricate a
+            // child row to make a persisted parent appear valid.
+            Guid syntheticCorruptId = Guid.NewGuid();
+            using (SqliteConnection fixture = new($"Data Source={paths.DatabasePath}"))
+            {
+                fixture.Open();
+                using SqliteCommand insert = fixture.CreateCommand();
+                insert.CommandText = """
+                    INSERT INTO customer_orders
+                        (id, order_number, customer_name, total_cents, status,
+                         created_by_user_id, created_by_user_name, created_at)
+                    VALUES ($id, $no, 'Synthetic Corruption', 7000, 'Confirmed',
+                            $userId, 'Manager Mike', $now);
+                    """;
+                insert.Parameters.AddWithValue("$id", syntheticCorruptId.ToString("D"));
+                insert.Parameters.AddWithValue("$no", "CO-SYNTHETIC-MISSING-LINES");
+                insert.Parameters.AddWithValue("$userId", managerId.ToString("D"));
+                insert.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
+                Assert(insert.ExecuteNonQuery() == 1, "CO-LINE-08 fixture insert failed.");
+            }
+            Assert(ReadPersistedOrderLines(paths.DatabasePath, syntheticCorruptId).Count == 0,
+                "CO-LINE-08 fixture unexpectedly has child lines.");
+            var corruptList = await freshService.GetOrdersAsync("Confirmed");
+            var corruptDetail = await freshService.GetOrderByIdAsync(syntheticCorruptId);
+            Assert(corruptList.IsSuccess && corruptDetail.IsSuccess &&
+                   corruptList.Value.Single(o => o.Id == syntheticCorruptId).Lines.Count == 0 &&
+                   corruptDetail.Value.Lines.Count == 0 && corruptDetail.Value.TotalCents == 7000,
+                "CO-LINE-08 corrupt historical order must remain visibly unhydrated, not receive invented lines.");
+
             // Fulfill Order Invariants & Explicit State Machine
             // 1. Negative test: direct Fulfilled status write bypass must fail
             var bypassRes = await service.UpdateOrderStatusAsync(order.Id, "Fulfilled", CancellationToken.None);
