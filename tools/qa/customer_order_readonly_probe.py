@@ -38,7 +38,7 @@ def inspect(database: Path, order_number: str) -> dict:
         ).fetchone()[0]
         line_total = sum(row[3] for row in lines)
         line_checks = [
-            len(row[0]) > 0 and row[1] > 0 and row[2] >= 0 and row[3] >= 0
+            bool(row[0]) and row[1] > 0 and row[2] >= 0 and row[3] >= 0
             and (row[1] * row[2] + 500) // 1000 == row[3]
             for row in lines
         ]
