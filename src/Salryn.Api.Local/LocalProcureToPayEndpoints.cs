@@ -31,9 +31,35 @@ internal static class LocalProcureToPayEndpoints
             IProcureToPayService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, RequisitionReadPermissions) is IResult denied)
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
                 return denied;
             return ToResult(await service.GetFoundationCatalogAsync(includeInactiveSuppliers ?? true, ct));
+        });
+
+        // PR requesters receive product identity and UOM only. Never serialize supplier,
+        // cost, stock, sales, financial or location data into this response.
+        app.MapGet("/api/lpi/requisition-catalog", async (
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementRequest) is IResult denied)
+                return denied;
+            var catalog = await service.GetFoundationCatalogAsync(false, ct);
+            if (!catalog.IsSuccess)
+                return ToResult(catalog);
+            return Results.Ok(new
+            {
+                unitsOfMeasure = catalog.Value.UnitsOfMeasure.Select(unit => new
+                {
+                    unit.Id, unit.Code, unit.Name, unit.AllowsDecimalQuantity
+                }),
+                products = catalog.Value.Products.Select(product => new
+                {
+                    product.Id, product.Name, product.Barcode, product.UnitId, product.UnitName
+                })
+            });
         });
 
         app.MapGet("/api/lpi/overview", async (
@@ -73,7 +99,7 @@ internal static class LocalProcureToPayEndpoints
             IProcureToPayService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, RequisitionReadPermissions) is IResult denied)
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, new[] { LocalApiPermissions.ProcurementView, LocalApiPermissions.ProcurementManagePurchaseOrder }) is IResult denied)
                 return denied;
             return ToResult(await service.GetSuppliersAsync(search, includeInactive ?? true, ct));
         });
@@ -302,7 +328,7 @@ internal static class LocalProcureToPayEndpoints
             IProcureToPayService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, new[] { LocalApiPermissions.ProcurementView, LocalApiPermissions.ProcurementManagePurchaseOrder }) is IResult denied)
                 return denied;
             return ToResult(await service.GetSupplierQuotationsAsync(requisitionId, productId, ct));
         });
@@ -314,7 +340,7 @@ internal static class LocalProcureToPayEndpoints
             IProcureToPayService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, new[] { LocalApiPermissions.ProcurementManagePurchaseOrder, LocalApiPermissions.ProcurementRequest }) is IResult denied)
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementManagePurchaseOrder) is IResult denied)
                 return denied;
             LocalApiSession session = RequiredSession(context, sessions);
             return ToResult(
