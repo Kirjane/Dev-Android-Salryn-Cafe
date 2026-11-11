@@ -59,10 +59,12 @@ public static class CeoPrToPoReproductionChecks
             string mgrHash = SalrynPasswordHasher.HashPassword("Manager123!").Value!;
             string cashierHash = SalrynPasswordHasher.HashPassword("Cashier123!").Value!;
             string approverHash = SalrynPasswordHasher.HashPassword("Approver123!").Value!;
+            string procurementManagerHash = SalrynPasswordHasher.HashPassword("ManagerProc123!").Value!;
 
             Guid mgrId = SeedUserWithPassword(paths.DatabasePath, "ceo-mgr", "CEO Manager", mgrHash, Guid.Parse(DefaultSeedData.PurchasingOfficerRoleId));
             Guid cashierId = SeedUserWithPassword(paths.DatabasePath, "ceo-cashier", "CEO Cashier", cashierHash, Guid.Parse(DefaultSeedData.CashierRoleId));
             Guid approverId = SeedUserWithPassword(paths.DatabasePath, "ceo-approver", "CEO Approver", approverHash, Guid.Parse(DefaultSeedData.AdminRoleId));
+            _ = SeedUserWithPassword(paths.DatabasePath, "ceo-proc-manager", "CEO Procurement Manager", procurementManagerHash, Guid.Parse(DefaultSeedData.ManagerRoleId));
 
             // 4. Seed supplier
             var supResult = await service.CreateSupplierAsync(new CreateLpiSupplierRequest(
@@ -178,19 +180,63 @@ public static class CeoPrToPoReproductionChecks
 
             string approverCookie = await LoginAsync("ceo-approver", "Approver123!");
             string cashierCookie = await LoginAsync("ceo-cashier", "Cashier123!");
+            string procurementManagerCookie = await LoginAsync("ceo-proc-manager", "ManagerProc123!");
 
             using HttpClient client = CreateClientForUser();
 
-            // R1-ROLE-01: PR requester may fetch required catalogs, but never the PO register.
-            foreach (string visiblePath in new[] { "/api/lpi/foundation", "/api/lpi/requisitions" })
+            // R1-ROLE-01: the cashier retains PR reads and a strictly projected product/UOM catalog.
+            foreach (string visiblePath in new[] { "/api/lpi/requisition-catalog", "/api/lpi/requisitions" })
             {
                 using var req = new HttpRequestMessage(HttpMethod.Get, visiblePath);
                 req.Headers.Add("Cookie", cashierCookie);
                 using var res = await client.SendAsync(req);
                 if (res.StatusCode != HttpStatusCode.OK)
                     throw new InvalidOperationException($"R1-ROLE-01 cashier required PR read {visiblePath}: {(int)res.StatusCode}");
+                if (visiblePath.EndsWith("requisition-catalog", StringComparison.Ordinal))
+                {
+                    using JsonDocument catalog = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+                    JsonElement rootJson = catalog.RootElement;
+                    if (!rootJson.TryGetProperty("products", out JsonElement products) || products.GetArrayLength() == 0 ||
+                        !rootJson.TryGetProperty("unitsOfMeasure", out JsonElement units) || units.GetArrayLength() == 0)
+                        throw new InvalidOperationException("R1-ROLE-01 requester catalog must provide product/UOM lookup.");
+                    string json = rootJson.GetRawText();
+                    foreach (string privateKey in new[] { "suppliers", "tin", "paymentTermsDays", "leadTimeDays",
+                        "openPayableBalanceCents", "activePurchaseOrderCount", "costPriceCents", "sellingPriceCents",
+                        "stockOnHandX1000", "locations", "sequenceCounters", "defaultCurrency" })
+                    {
+                        if (json.Contains($"\"{privateKey}\"", StringComparison.OrdinalIgnoreCase))
+                            throw new InvalidOperationException($"R1-ROLE-01 requester catalog leaked '{privateKey}'.");
+                    }
+                }
             }
-            foreach (string privatePath in new[] { "/api/lpi/purchase-orders", "/api/lpi/invoices", "/api/lpi/payments" })
+
+            // Cashiers must be able to create real PRs, not only view the requester catalog.
+            using (var cashierPrRequest = new HttpRequestMessage(HttpMethod.Post, "/api/lpi/requisitions"))
+            {
+                cashierPrRequest.Headers.Add("Cookie", cashierCookie);
+                cashierPrRequest.Content = JsonContent.Create(new
+                {
+                    department = "Cashier Restock",
+                    purpose = "Cashier purchase request authorization boundary",
+                    requiredDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(5)),
+                    submitImmediately = true,
+                    items = new[]
+                    {
+                        new { productId = productAlphaId, itemDescription = "Coffee Beans 1kg", requestedQuantityX1000 = 1000L, estimatedCostCents = 40000L }
+                    }
+                });
+                using var response = await client.SendAsync(cashierPrRequest);
+                if (response.StatusCode != HttpStatusCode.Created)
+                    throw new InvalidOperationException($"R1-ROLE-01 cashier PR creation failed: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync()}");
+                using JsonDocument created = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                if (created.RootElement.GetProperty("requestedByUserId").GetString() != cashierId.ToString("D"))
+                    throw new InvalidOperationException("R1-ROLE-01 cashier PR creator attribution failed.");
+            }
+
+            // R1-ROLE-02: cashier Procurement.View must not reveal supplier/commercial data
+            // or permit supplier bid/management mutations.
+            foreach (string privatePath in new[] { "/api/lpi/foundation", "/api/lpi/suppliers",
+                "/api/lpi/quotations", "/api/lpi/purchase-orders", "/api/lpi/invoices", "/api/lpi/payments" })
             {
                 using var req = new HttpRequestMessage(HttpMethod.Get, privatePath);
                 req.Headers.Add("Cookie", cashierCookie);
@@ -198,6 +244,55 @@ public static class CeoPrToPoReproductionChecks
                 if (res.StatusCode != HttpStatusCode.Forbidden)
                     throw new InvalidOperationException($"R1-ROLE-02 cashier reached privileged {privatePath}: {(int)res.StatusCode}");
             }
+            foreach (string privatePath in new[] { "/api/lpi/quotations", "/api/lpi/suppliers" })
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Post, privatePath);
+                req.Headers.Add("Cookie", cashierCookie);
+                req.Content = JsonContent.Create(new
+                {
+                    supplierId, productId = productAlphaId, itemDescription = "Cashier must not record quote",
+                    quotedUnitCostCents = 40000L, code = "BLOCKED-CASHIER", name = "Blocked supplier"
+                });
+                using var res = await client.SendAsync(req);
+                if (res.StatusCode != HttpStatusCode.Forbidden)
+                    throw new InvalidOperationException($"R1-ROLE-02 cashier wrote privileged {privatePath}: {(int)res.StatusCode}");
+            }
+            using (var request = new HttpRequestMessage(HttpMethod.Post, $"/api/lpi/quotations/{Guid.NewGuid()}/select-winner"))
+            {
+                request.Headers.Add("Cookie", cashierCookie);
+                request.Content = JsonContent.Create(new { justification = "Unauthorized supplier selection" });
+                using var response = await client.SendAsync(request);
+                if (response.StatusCode != HttpStatusCode.Forbidden)
+                    throw new InvalidOperationException("R1-ROLE-02 cashier selected a quotation winner.");
+            }
+
+            // R1-ROLE-03: manager and admin retain real privileged procurement reads.
+            foreach (string cookie in new[] { procurementManagerCookie, approverCookie })
+            {
+                foreach (string privilegedPath in new[] { "/api/lpi/foundation", "/api/lpi/suppliers", "/api/lpi/quotations" })
+                {
+                    using var request = new HttpRequestMessage(HttpMethod.Get, privilegedPath);
+                    request.Headers.Add("Cookie", cookie);
+                    using var response = await client.SendAsync(request);
+                    if (response.StatusCode != HttpStatusCode.OK)
+                        throw new InvalidOperationException($"R1-ROLE-03 manager/admin denied {privilegedPath}: {(int)response.StatusCode}");
+                }
+            }
+            using (var managerQuote = new HttpRequestMessage(HttpMethod.Post, "/api/lpi/quotations"))
+            {
+                managerQuote.Headers.Add("Cookie", procurementManagerCookie);
+                managerQuote.Content = JsonContent.Create(new
+                {
+                    requisitionId = prId, requisitionLineId = prLineId,
+                    supplierId, productId = productAlphaId, itemDescription = "Coffee Beans 1kg",
+                    quotedUnitCostCents = 42000L, minimumOrderQtyX1000 = 1000L,
+                    leadTimeDays = 3, paymentTermsDays = 30, isSelected = false
+                });
+                using var response = await client.SendAsync(managerQuote);
+                if (response.StatusCode != HttpStatusCode.Created)
+                    throw new InvalidOperationException($"R1-ROLE-03 manager quote recording failed: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync()}");
+            }
+            Console.WriteLine("[CEO R1 Roles] Cashier product/UOM+PR creation PASS; private supplier/quotation denial PASS; manager/admin procurement PASS.");
 
             // -------------------------------------------------------------
             // TEST 1: Cashier attempts to convert PR to PO -> Expect 403 Forbidden
