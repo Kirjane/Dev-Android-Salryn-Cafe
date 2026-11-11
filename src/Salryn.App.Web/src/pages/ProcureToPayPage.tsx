@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchLpiFoundation,
+  fetchLpiRequesterCatalog,
   fetchLpiOverview,
   fetchSuppliers,
   createSupplier,
@@ -122,9 +123,12 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
   const activeTab = prDeskOnly ? "pr" : selectedTab;
 
   // Queries
-  const foundation = useQuery({ queryKey: ["lpi-foundation"], queryFn: () => fetchLpiFoundation(true), enabled: canViewProcurement || canRequestPr });
-  const overview = useQuery({ queryKey: ["lpi-overview"], queryFn: fetchLpiOverview, enabled: canViewProcurement });
-  const suppliers = useQuery({ queryKey: ["lpi-suppliers"], queryFn: () => fetchSuppliers("", true), enabled: canViewProcurement || canRequestPr });
+  const foundation = useQuery({ queryKey: ["lpi-foundation"], queryFn: () => fetchLpiFoundation(true), enabled: !prDeskOnly && canViewProcurement });
+  const requesterCatalog = useQuery({ queryKey: ["lpi-requisition-catalog"], queryFn: fetchLpiRequesterCatalog, enabled: prDeskOnly && canRequestPr });
+  const prProducts = prDeskOnly ? requesterCatalog.data?.products : foundation.data?.products;
+  const prUnits = prDeskOnly ? requesterCatalog.data?.unitsOfMeasure : foundation.data?.unitsOfMeasure;
+  const overview = useQuery({ queryKey: ["lpi-overview"], queryFn: fetchLpiOverview, enabled: canViewProcurement && !prDeskOnly });
+  const suppliers = useQuery({ queryKey: ["lpi-suppliers"], queryFn: () => fetchSuppliers("", true), enabled: canViewProcurement && !prDeskOnly });
   const requisitions = useQuery({ queryKey: ["lpi-requisitions"], queryFn: () => fetchRequisitions(), enabled: canViewProcurement || canRequestPr });
   const purchaseOrders = useQuery({ queryKey: ["lpi-pos"], queryFn: () => fetchPurchaseOrders(), enabled: canManagePo || canApprovePo });
   const receivingReports = useQuery({ queryKey: ["lpi-rrs"], queryFn: () => fetchReceivingReports(), enabled: canViewReceiving });
@@ -276,6 +280,7 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
   // Invalidate all
   const refreshAll = () => {
     void queryClient.invalidateQueries({ queryKey: ["lpi-foundation"] });
+    void queryClient.invalidateQueries({ queryKey: ["lpi-requisition-catalog"] });
     void queryClient.invalidateQueries({ queryKey: ["lpi-overview"] });
     void queryClient.invalidateQueries({ queryKey: ["lpi-suppliers"] });
     void queryClient.invalidateQueries({ queryKey: ["lpi-requisitions"] });
@@ -541,8 +546,8 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
             {canRequestPr && (
               <Button
                 onClick={() => {
-                  const prod = foundation.data?.products[0];
-                  const uom = foundation.data?.unitsOfMeasure[0];
+                  const prod = prProducts?.[0];
+                  const uom = prUnits?.[0];
                   setPrForm({
                     department: "Store Operations",
                     purpose: "Restock fast-moving grocery inventory",
@@ -553,7 +558,9 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
                         productId: prod?.id ?? "",
                         uomId: uom?.id ?? "",
                         quantity: "100",
-                        estimatedCost: prod ? (prod.costPriceCents / 100).toFixed(2) : "10",
+                        estimatedCost: prod && "costPriceCents" in prod && typeof prod.costPriceCents === "number"
+                          ? (prod.costPriceCents / 100).toFixed(2)
+                          : "0",
                         preferredSupplierId: "",
                       },
                     ],
@@ -1496,20 +1503,22 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
                   <Select
                     value={item.productId}
                     onChange={(e) => {
-                      const prod = foundation.data?.products.find((p) => p.id === e.target.value);
+                      const prod = prProducts?.find((p) => p.id === e.target.value);
                       const updated = [...prForm.items];
                       updated[idx].productId = e.target.value;
                       if (prod) {
                         updated[idx].uomId = prod.unitId;
-                        updated[idx].estimatedCost = (prod.costPriceCents / 100).toFixed(2);
+                        updated[idx].estimatedCost = "costPriceCents" in prod && typeof prod.costPriceCents === "number"
+                          ? (prod.costPriceCents / 100).toFixed(2)
+                          : "0";
                       }
                       setPrForm({ ...prForm, items: updated });
                     }}
                   >
                     <option value="">Select product...</option>
-                    {(foundation.data?.products ?? []).map((p) => (
+                    {(prProducts ?? []).map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.name} ({money(p.costPriceCents)})
+                        {p.name}{"costPriceCents" in p && typeof p.costPriceCents === "number" ? ` (${money(p.costPriceCents)})` : ""}
                       </option>
                     ))}
                   </Select>
@@ -1550,7 +1559,7 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
             <Button
               onClick={async () => {
                 try {
-                  const defaultUom = foundation.data?.unitsOfMeasure[0]?.id ?? "";
+                  const defaultUom = prUnits?.[0]?.id ?? "";
                   await createRequisition({
                     department: prForm.department,
                     purpose: prForm.purpose,
