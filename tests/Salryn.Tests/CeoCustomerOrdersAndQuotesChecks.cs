@@ -62,6 +62,8 @@ public static class CeoCustomerOrdersAndQuotesChecks
             Guid cashierId = SeedUserWithPassword(paths.DatabasePath, "cashier1", "Cashier Jane", cashierHash, Guid.Parse(DefaultSeedData.CashierRoleId));
             string managerHash = SalrynPasswordHasher.HashPassword("Manager123!").Value!;
             Guid managerId = SeedUserWithPassword(paths.DatabasePath, "manager1", "Manager Mike", managerHash, Guid.Parse(DefaultSeedData.ManagerRoleId));
+            string adminHash = SalrynPasswordHasher.HashPassword("Admin123!").Value!;
+            _ = SeedUserWithPassword(paths.DatabasePath, "admin-co", "Admin Auditor", adminHash, Guid.Parse(DefaultSeedData.AdminRoleId));
 
             Guid customerA = SeedCustomer(paths.DatabasePath, "Customer Alpha", "0917-111-2222", cashierId);
             Guid customerB = SeedCustomer(paths.DatabasePath, "Customer Beta", "0917-333-4444", cashierId);
@@ -140,6 +142,70 @@ public static class CeoCustomerOrdersAndQuotesChecks
             Assert(order.CustomerName == "Maria Santos", "Customer name mismatch");
             Assert(order.TotalCents == 255_000, $"Expected order total 255,000 cents (3 * 85000), got {order.TotalCents}");
             Assert(order.Status == "Confirmed", $"Expected status Confirmed, got {order.Status}");
+
+            // CO-LINE-01/02: a persisted single child must survive list/detail
+            // hydration and a new service instance, without making N detail queries.
+            var oneLineDb = ReadPersistedOrderLines(paths.DatabasePath, order.Id);
+            Assert(oneLineDb.Count == 1 && oneLineDb.TotalCents == 255_000,
+                "CO-LINE-01 persisted single-line count / total mismatch.");
+            var listedInitial = await service.GetOrdersAsync();
+            Assert(listedInitial.IsSuccess, "CO-LINE-01 list GET failed.");
+            CustomerOrder listedOne = listedInitial.Value.Single(o => o.Id == order.Id);
+            Assert(listedOne.Lines.Count == 1 && listedOne.Lines[0].Id == order.Lines[0].Id &&
+                   listedOne.TotalCents == oneLineDb.TotalCents, "CO-LINE-01 list returned an unhydrated line.");
+            var detailInitial = await service.GetOrderByIdAsync(order.Id);
+            Assert(detailInitial.IsSuccess && detailInitial.Value.Lines.SequenceEqual(listedOne.Lines),
+                "CO-LINE-01 list/detail line identity differs.");
+            var multiInput = createOrderInput with
+            {
+                CustomerName = "Two-Line Order",
+                Lines = new List<CreateCustomerOrderLineRequest>
+                {
+                    new(productId, "Industrial Tool Set", "770001", "pcs", 2000, 85_000),
+                    new(otherProductId, "Safety Goggles", "770002", "pcs", 500, 15_000)
+                }
+            };
+            var multiCreated = await service.CreateOrderAsync(managerId, "Manager Mike", multiInput);
+            Assert(multiCreated.IsSuccess && multiCreated.Value.TotalCents == 177_500,
+                "CO-LINE-02 multi-line order creation or total failed.");
+            var multiDb = ReadPersistedOrderLines(paths.DatabasePath, multiCreated.Value.Id);
+            Assert(multiDb.Count == 2 && multiDb.TotalCents == 177_500,
+                "CO-LINE-02 persisted multi-line count / total mismatch.");
+            var freshService = new SqliteCustomerOrdersAndQuotesService(composition.ConnectionFactory);
+            var filteredOrders = await freshService.GetOrdersAsync("Confirmed");
+            Assert(filteredOrders.IsSuccess, "CO-LINE-02 filtered/reopened list failed.");
+            var multiListed = filteredOrders.Value.Single(o => o.Id == multiCreated.Value.Id);
+            var multiDetail = await freshService.GetOrderByIdAsync(multiCreated.Value.Id);
+            Assert(multiDetail.IsSuccess && multiListed.Lines.Count == 2 &&
+                   multiListed.Lines.SequenceEqual(multiDetail.Value.Lines) &&
+                   multiListed.Lines.Sum(line => line.LineTotalCents) == multiListed.TotalCents,
+                "CO-LINE-02 list/detail/print lines differ after fresh service read.");
+
+            // CO-LINE-03/04: rejected creates must be fully atomic and must not
+            // add parent/child/audit, checkout, stock, payment, or drawer records.
+            var beforeInvalid = ReadOrderMutationCounts(paths.DatabasePath);
+            var noLine = await service.CreateOrderAsync(managerId, "Manager Mike",
+                createOrderInput with { CustomerName = "Invalid Empty Order", Lines = Array.Empty<CreateCustomerOrderLineRequest>() });
+            Assert(!noLine.IsSuccess && noLine.ErrorDetail.Code == "CustomerOrder.LinesRequired",
+                "CO-LINE-03 empty order must be deterministically rejected.");
+            var invalidQuantity = await service.CreateOrderAsync(managerId, "Manager Mike",
+                createOrderInput with { Lines = new[] { new CreateCustomerOrderLineRequest(productId, "Tool", null, "pcs", 0, 85_000) } });
+            Assert(!invalidQuantity.IsSuccess && invalidQuantity.ErrorDetail.Code == "CustomerOrder.InvalidQuantity",
+                "CO-LINE-04 zero quantity must be rejected.");
+            var invalidProduct = await service.CreateOrderAsync(managerId, "Manager Mike",
+                createOrderInput with { Lines = new[] { new CreateCustomerOrderLineRequest(Guid.Empty, "Tool", null, "pcs", 1000, 85_000) } });
+            Assert(!invalidProduct.IsSuccess && invalidProduct.ErrorDetail.Code == "CustomerOrder.InvalidLine",
+                "CO-LINE-04 empty product ID must be rejected.");
+            var invalidPrice = await service.CreateOrderAsync(managerId, "Manager Mike",
+                createOrderInput with { Lines = new[] { new CreateCustomerOrderLineRequest(productId, "Tool", null, "pcs", 1000, -1) } });
+            Assert(!invalidPrice.IsSuccess && invalidPrice.ErrorDetail.Code == "CustomerOrder.InvalidLine",
+                "CO-LINE-04 negative price must be rejected.");
+            var overflowPrice = await service.CreateOrderAsync(managerId, "Manager Mike",
+                createOrderInput with { Lines = new[] { new CreateCustomerOrderLineRequest(productId, "Tool", null, "pcs", long.MaxValue, 85_000) } });
+            Assert(!overflowPrice.IsSuccess && overflowPrice.ErrorDetail.Code == "CustomerOrder.AmountOverflow",
+                "CO-LINE-04 overflowing amount must be rejected.");
+            Assert(beforeInvalid == ReadOrderMutationCounts(paths.DatabasePath),
+                "CO-LINE-03/04 invalid order created parent, child, audit, sale, payment, stock or drawer mutation.");
 
             // Fulfill Order Invariants & Explicit State Machine
             // 1. Negative test: direct Fulfilled status write bypass must fail
@@ -473,6 +539,42 @@ public static class CeoCustomerOrdersAndQuotesChecks
                 // ignore temp cleanup
             }
         }
+    }
+
+    private static (long Count, long TotalCents) ReadPersistedOrderLines(string databasePath, Guid orderId)
+    {
+        using SqliteConnection connection = new($"Data Source={databasePath};Mode=ReadOnly");
+        connection.Open();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*), COALESCE(SUM(line_total_cents), 0)
+            FROM customer_order_lines WHERE order_id = $id;
+            """;
+        command.Parameters.AddWithValue("$id", orderId.ToString("D"));
+        using SqliteDataReader reader = command.ExecuteReader();
+        if (!reader.Read()) throw new InvalidOperationException("Unable to inspect persisted order lines.");
+        return (reader.GetInt64(0), reader.GetInt64(1));
+    }
+
+    private static (long Orders, long Lines, long Audit, long Sales, long Payments, long Stock, long Cash)
+        ReadOrderMutationCounts(string databasePath)
+    {
+        using SqliteConnection connection = new($"Data Source={databasePath};Mode=ReadOnly");
+        connection.Open();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT (SELECT COUNT(*) FROM customer_orders),
+                   (SELECT COUNT(*) FROM customer_order_lines),
+                   (SELECT COUNT(*) FROM audit_logs WHERE action = 'CUSTOMER_ORDER_CREATED'),
+                   (SELECT COUNT(*) FROM sales),
+                   (SELECT COUNT(*) FROM payments),
+                   (SELECT COUNT(*) FROM stock_movements),
+                   (SELECT COUNT(*) FROM cash_drawer_events);
+            """;
+        using SqliteDataReader reader = command.ExecuteReader();
+        if (!reader.Read()) throw new InvalidOperationException("Unable to inspect order mutation counts.");
+        return (reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2), reader.GetInt64(3),
+            reader.GetInt64(4), reader.GetInt64(5), reader.GetInt64(6));
     }
 
     private static Guid SeedRealSale(
