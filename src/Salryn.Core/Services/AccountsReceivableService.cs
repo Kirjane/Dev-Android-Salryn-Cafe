@@ -72,7 +72,8 @@ public interface IAccountsReceivableService
     Task<Result<ReceivableCustomer>> UpdateCustomerAsync(
         Guid customerId,
         UpdateReceivableCustomerRequest request,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        Guid? actorUserId = null);
     Task<Result<ReceivableCustomer?>> FindCustomerAsync(
         Guid customerId,
         CancellationToken cancellationToken = default);
