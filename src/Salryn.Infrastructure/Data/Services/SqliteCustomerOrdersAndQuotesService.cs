@@ -567,12 +567,13 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
                 "Customer orders cannot be fulfilled via status update. Fulfillment requires verified sale completion via the /fulfill endpoint."));
         }
 
-        // 2. Only permitted manual status change is Cancelled
-        if (!string.Equals(targetStatus, "Cancelled", StringComparison.OrdinalIgnoreCase))
+        // Manager lifecycle: Confirmed -> Preparing -> Ready -> verified POS fulfillment.
+        // Cancellation is available from any nonterminal state; no status transition posts stock or money.
+        if (targetStatus is not ("Preparing" or "Ready" or "Cancelled"))
         {
             return Result<CustomerOrder>.Fail(Error.Validation(
                 "CustomerOrder.InvalidStatusTransition",
-                $"Invalid order status transition to '{targetStatus}'. The only permitted manual status change is 'Cancelled'."));
+                $"Invalid order status transition to '{targetStatus}'."));
         }
 
         try
@@ -603,17 +604,28 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
                     $"Cannot modify customer order in terminal status '{currentStatus}'. Reverting or modifying terminal states is disallowed."));
             }
 
-            if (!string.Equals(currentStatus, "Confirmed", StringComparison.OrdinalIgnoreCase))
+            bool validTransition = (currentStatus, targetStatus) switch
+            {
+                ("Confirmed", "Preparing") => true,
+                ("Preparing", "Ready") => true,
+                ("Confirmed", "Cancelled") => true,
+                ("Preparing", "Cancelled") => true,
+                ("Ready", "Cancelled") => true,
+                _ => false
+            };
+            if (!validTransition)
             {
                 return Result<CustomerOrder>.Fail(Error.Conflict(
                     "CustomerOrder.InvalidState",
-                    $"Customer order in status '{currentStatus}' cannot be cancelled."));
+                    $"Customer order cannot transition from '{currentStatus}' to '{targetStatus}'."));
             }
 
-            // 5. Update to Cancelled
+            // 5. Compare-and-set update prevents stale state changes.
             await using var cmd = connection.CreateCommand();
             cmd.Transaction = transaction;
-            cmd.CommandText = "UPDATE customer_orders SET status = 'Cancelled' WHERE id = $id AND status = 'Confirmed';";
+            cmd.CommandText = "UPDATE customer_orders SET status = $status WHERE id = $id AND status = $oldStatus;";
+            cmd.Parameters.AddWithValue("$status", targetStatus);
+            cmd.Parameters.AddWithValue("$oldStatus", currentStatus);
             cmd.Parameters.AddWithValue("$id", id.ToString("D"));
             int affected = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             if (affected == 0)
@@ -627,14 +639,15 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
             auditCmd.Transaction = transaction;
             auditCmd.CommandText = """
                 INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, old_value_json, new_value_json, reason, created_at)
-                VALUES ($id, $actor, 'CUSTOMER_ORDER_CANCELLED', 'customer_orders', $entityId, $oldVal, $newVal, $reason, $now);
+                VALUES ($id, $actor, $action, 'customer_orders', $entityId, $oldVal, $newVal, $reason, $now);
                 """;
             auditCmd.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("D"));
             auditCmd.Parameters.AddWithValue("$actor", (object?)actorUserId?.ToString("D") ?? DBNull.Value);
+            auditCmd.Parameters.AddWithValue("$action", targetStatus == "Cancelled" ? "CUSTOMER_ORDER_CANCELLED" : "CUSTOMER_ORDER_STATUS_CHANGED");
             auditCmd.Parameters.AddWithValue("$entityId", id.ToString("D"));
             auditCmd.Parameters.AddWithValue("$oldVal", $"{{\"status\":\"{currentStatus}\"}}");
-            auditCmd.Parameters.AddWithValue("$newVal", "{\"status\":\"Cancelled\"}");
-            auditCmd.Parameters.AddWithValue("$reason", "Customer order cancelled by authorized operator.");
+            auditCmd.Parameters.AddWithValue("$newVal", JsonSerializer.Serialize(new { status = targetStatus }));
+            auditCmd.Parameters.AddWithValue("$reason", "Authorized manager order transition.");
             auditCmd.Parameters.AddWithValue("$now", now.ToString("O"));
             await auditCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
@@ -723,7 +736,7 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
             {
                 return Result<CustomerOrder>.Fail(Error.Conflict("CustomerOrder.AlreadyFulfilled", "Customer order is already fulfilled."));
             }
-            if (!string.Equals(orderStatus, "Confirmed", StringComparison.OrdinalIgnoreCase))
+            if (orderStatus is not ("Confirmed" or "Ready"))
             {
                 return Result<CustomerOrder>.Fail(Error.Conflict("CustomerOrder.InvalidStateForFulfillment", $"Customer order in status '{orderStatus}' cannot be fulfilled."));
             }
