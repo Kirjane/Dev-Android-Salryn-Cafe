@@ -16,13 +16,9 @@ import {
   CardBody,
   CardHeader,
   CardTitle,
-  Dialog,
   EmptyState,
-  FormField,
   LoadingState,
-  Select,
   StatusPill,
-  TextInput,
   useNotifications,
 } from "../components/ui";
 import { formatDateTime, formatMoney, formatQuantity } from "../utils/format";
@@ -42,15 +38,20 @@ export function PriceCanvassPage() {
   const queryClient = useQueryClient();
   const { notify } = useNotifications();
 
+  const [productSearch, setProductSearch] = useState("");
+  const [productPage, setProductPage] = useState(1);
+  const [savingQuote, setSavingQuote] = useState(false);
+
   // Queries
   const { data: quotations = [], isLoading, error } = useQuery({
     queryKey: ["customer-quotations"],
     queryFn: fetchCustomerQuotations,
   });
 
-  const { data: productsData } = useQuery({
-    queryKey: ["products-for-canvass"],
-    queryFn: () => fetchProducts({ pageSize: 250 }),
+  const { data: productsData, isFetching: productsLoading } = useQuery({
+    queryKey: ["products-for-canvass", productSearch, productPage],
+    queryFn: () => fetchProducts({ search: productSearch, page: productPage, pageSize: 25, isActive: true }),
+    enabled: isNewModalOpen,
   });
 
   const { data: storeSettings } = useQuery({
@@ -101,9 +102,15 @@ export function PriceCanvassPage() {
     const prod = products.find((p) => p.id === selectedProductId);
     if (!prod) return;
 
-    const qty = parseFloat(lineQty) || 1;
-    const priceCents = Math.round((parseFloat(linePrice) || 0) * 100);
-    const discountCents = Math.round((parseFloat(lineDiscount) || 0) * 100);
+    const qty = Number(lineQty);
+    const priceCents = Math.round(Number(linePrice) * 100);
+    const discountCents = Math.round(Number(lineDiscount) * 100);
+    if (!Number.isFinite(qty) || qty <= 0 || !Number.isSafeInteger(Math.round(qty * 1000)) ||
+        !Number.isSafeInteger(priceCents) || priceCents < 0 || !Number.isSafeInteger(discountCents) ||
+        discountCents < 0 || discountCents > qty * priceCents) {
+      notify.error("Enter a positive quantity and valid price/discount values.");
+      return;
+    }
 
     const existingIndex = draftLines.findIndex((l) => l.productId === prod.id);
     if (existingIndex >= 0) {
@@ -146,11 +153,18 @@ export function PriceCanvassPage() {
       notify.error("Customer Name Required", "Please enter customer or company name.");
       return;
     }
-    if (draftLines.length === 0) {
-      notify.error("Lines Required", "Please add at least one product line item.");
+    if (draftLines.length === 0 || draftLines.some((line) =>
+      !Number.isFinite(line.quantity) || line.quantity <= 0 ||
+      !Number.isSafeInteger(Math.round(line.quantity * 1000)) ||
+      !Number.isSafeInteger(line.unitPriceCents) || line.unitPriceCents < 0 ||
+      !Number.isSafeInteger(line.discountCents) || line.discountCents < 0 ||
+      line.discountCents > line.quantity * line.unitPriceCents
+    )) {
+      notify.error("Valid Lines Required", "Each quote line needs a positive quantity and valid price/discount.");
       return;
     }
 
+    setSavingQuote(true);
     try {
       const days = parseInt(validUntilDays) || 14;
       const validUntil = new Date(Date.now() + days * 86400 * 1000).toISOString();
@@ -181,7 +195,7 @@ export function PriceCanvassPage() {
       setViewingQuote(created);
     } catch (err) {
       notify.error("Failed to Create Quotation", safeNotificationDescription(err, "Could not save quotation."));
-    }
+    } finally { setSavingQuote(false); }
   };
 
   const handleStatusUpdate = async (id: string, newStatus: string) => {
@@ -283,13 +297,6 @@ export function PriceCanvassPage() {
                         {q.status === "Issued" && (
                           <>
                             <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => handleStatusUpdate(q.id, "Converted")}
-                            >
-                              ✓ Converted
-                            </Button>
-                            <Button
                               variant="ghost"
                               size="sm"
                               onClick={() => handleStatusUpdate(q.id, "Expired")}
@@ -308,166 +315,104 @@ export function PriceCanvassPage() {
         </CardBody>
       </Card>
 
-      {/* New Quotation Dialog */}
-      <Dialog
-        open={isNewModalOpen}
-        onClose={() => setIsNewModalOpen(false)}
-        title="Create Customer Price Quotation"
-      >
-        <div className="space-y-6 max-h-[80vh] overflow-y-auto pr-1">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormField label="Customer / Company Name *">
-              <TextInput
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                placeholder="e.g. Commercial Client / Walk-in Buyer"
-              />
-            </FormField>
-            <FormField label="Contact Info (Phone / Email)">
-              <TextInput
-                value={customerContact}
-                onChange={(e) => setCustomerContact(e.target.value)}
-                placeholder="e.g. 0917-123-4567"
-              />
-            </FormField>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormField label="Validity Period">
-              <Select
-                value={validUntilDays}
-                onChange={(e) => setValidUntilDays(e.target.value)}
-              >
-                <option value="7">7 Days</option>
-                <option value="14">14 Days (Standard)</option>
-                <option value="30">30 Days</option>
-                <option value="60">60 Days</option>
-              </Select>
-            </FormField>
-            <FormField label="Notes / Special Terms">
-              <TextInput
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="e.g. Prices valid while supplies last. Cash on delivery."
-              />
-            </FormField>
-          </div>
-
-          {/* Add Line Items Section */}
-          <div className="border-t border-slate-200 pt-4 space-y-3">
-            <h3 className="font-semibold text-sm text-slate-800">Add Product Line</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
-              <div className="sm:col-span-5">
-                <FormField label="Product">
-                  <Select
-                    value={selectedProductId}
-                    onChange={(e) => handleProductSelect(e.target.value)}
-                  >
-                    <option value="">Select a product...</option>
-                    {products.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} {p.barcode ? `(${p.barcode})` : ""} - {formatMoney(p.sellingPrice)}
-                      </option>
+      {/* Quotation workstation: selection, draft quote and customer terms only.
+          Deliberately never invokes POS checkout, shift, stock or sale endpoints. */}
+      {isNewModalOpen && (
+        <div role="dialog" aria-modal="true" aria-label="New customer quotation" className="fixed inset-0 z-[70] overflow-y-auto bg-slate-950/80 p-3 sm:p-6">
+          <div className="mx-auto flex min-h-[90vh] w-full max-w-[1500px] flex-col overflow-hidden rounded-xl bg-slate-100 shadow-2xl">
+            <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-widest text-emerald-700">Quote workstation · No sale created</p>
+                <h2 className="text-2xl font-bold text-slate-900">New Price Quotation</h2>
+                <p className="text-sm text-slate-500">Select and price products as at Checkout; save a quotation, not a payment or sale.</p>
+              </div>
+              <Button variant="secondary" onClick={() => setIsNewModalOpen(false)}>Close workstation</Button>
+            </header>
+            <div className="grid flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-12">
+              <section className="min-w-0 space-y-4 lg:col-span-7" aria-label="Product finder">
+                <div className="rounded-lg border border-slate-200 bg-white p-4">
+                  <h3 className="mb-3 text-base font-bold text-slate-900">Find products</h3>
+                  <input
+                    className="w-full rounded-md border border-slate-300 px-4 py-3 text-base focus:border-emerald-600 focus:outline-none"
+                    placeholder="Search product name, SKU or scan barcode"
+                    aria-label="Search products or scan barcode"
+                    value={productSearch}
+                    onChange={(e) => { setProductSearch(e.target.value); setProductPage(1); setSelectedProductId(""); }}
+                    onKeyDown={(e) => { if (e.key === "Enter" && products.length === 1) handleProductSelect(products[0].id); }}
+                    autoFocus
+                  />
+                  <div className="mt-3 flex items-center justify-between gap-3 text-xs text-slate-500">
+                    <span>{productsLoading ? "Searching…" : (productsData?.totalCount ?? 0) + " catalog matches"}</span>
+                    <span>Page {productPage} of {Math.max(1, productsData?.totalPages ?? 1)}</span>
+                  </div>
+                  <div className="mt-3 grid max-h-[48vh] grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
+                    {products.map((product) => (
+                      <button type="button" key={product.id}
+                        className={"rounded-md border p-3 text-left transition-colors " + (selectedProductId === product.id ? "border-emerald-600 bg-emerald-50" : "border-slate-200 hover:border-slate-400 hover:bg-slate-50")}
+                        onClick={() => handleProductSelect(product.id)}>
+                        <p className="line-clamp-2 text-sm font-semibold text-slate-900">{product.name}</p>
+                        <p className="mt-1 text-xs text-slate-500">{product.sku ?? "No SKU"} {product.barcode ? " · " + product.barcode : ""}</p>
+                        <div className="mt-2 flex justify-between gap-2"><span className="text-sm font-bold text-slate-900">{formatMoney(product.sellingPrice)}</span><span className="text-xs text-slate-500">Stock {formatQuantity(product.stockOnHand)}</span></div>
+                      </button>
                     ))}
-                  </Select>
-                </FormField>
-              </div>
-              <div className="sm:col-span-2">
-                <FormField label="Qty">
-                  <TextInput
-                    type="number"
-                    min="1"
-                    value={lineQty}
-                    onChange={(e) => setLineQty(e.target.value)}
-                  />
-                </FormField>
-              </div>
-              <div className="sm:col-span-3">
-                <FormField label="Unit Price (₱)">
-                  <TextInput
-                    type="number"
-                    step="0.01"
-                    value={linePrice}
-                    onChange={(e) => setLinePrice(e.target.value)}
-                  />
-                </FormField>
-              </div>
-              <div className="sm:col-span-2">
-                <Button
-                  variant="primary"
-                  className="w-full"
-                  disabled={!selectedProductId}
-                  onClick={handleAddLine}
-                >
-                  + Add
-                </Button>
-              </div>
+                    {!productsLoading && products.length === 0 && <p className="col-span-full py-8 text-center text-sm text-slate-500">No matching products. Refine the search or scan a different barcode.</p>}
+                  </div>
+                  <div className="mt-3 flex justify-end gap-2">
+                    <Button variant="secondary" disabled={productPage <= 1} onClick={() => { setProductPage((page) => Math.max(1, page - 1)); setSelectedProductId(""); }}>Previous</Button>
+                    <Button variant="secondary" disabled={productPage >= (productsData?.totalPages ?? 1)} onClick={() => { setProductPage((page) => page + 1); setSelectedProductId(""); }}>Next</Button>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white p-4">
+                  <h3 className="mb-3 text-base font-semibold">Add selected product</h3>
+                  <p className="mb-3 text-sm text-slate-600">{products.find((item) => item.id === selectedProductId)?.name ?? "Choose a product from the catalog above."}</p>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <label className="text-xs font-semibold text-slate-600">Quantity<input type="number" min="0.001" step="0.001" value={lineQty} onChange={(e) => setLineQty(e.target.value)} className="mt-1 w-full rounded border px-3 py-2 text-sm" /></label>
+                    <label className="text-xs font-semibold text-slate-600">Unit price (PHP)<input type="number" min="0" step="0.01" value={linePrice} onChange={(e) => setLinePrice(e.target.value)} className="mt-1 w-full rounded border px-3 py-2 text-sm" /></label>
+                    <label className="text-xs font-semibold text-slate-600">Line discount (PHP)<input type="number" min="0" step="0.01" value={lineDiscount} onChange={(e) => setLineDiscount(e.target.value)} className="mt-1 w-full rounded border px-3 py-2 text-sm" /></label>
+                    <div className="flex items-end"><Button disabled={!selectedProductId} onClick={handleAddLine}>Add to quote</Button></div>
+                  </div>
+                </div>
+              </section>
+              <section className="min-w-0 space-y-4 lg:col-span-5" aria-label="Quotation cart and customer">
+                <div className="rounded-lg border border-slate-200 bg-white p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <h3 className="text-lg font-bold text-slate-900">Quotation cart</h3>
+                    <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{draftLines.length} lines</span>
+                  </div>
+                  <div className="max-h-[40vh] space-y-3 overflow-y-auto">
+                    {draftLines.length === 0 && <p className="rounded-md border border-dashed p-6 text-center text-sm text-slate-500">Select products to build a quotation.</p>}
+                    {draftLines.map((line, index) => (
+                      <div key={line.productId} className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                        <div className="flex items-start justify-between gap-2"><p className="text-sm font-semibold">{line.productName}</p><button type="button" className="text-xs font-semibold text-rose-600" onClick={() => handleRemoveLine(index)}>Remove</button></div>
+                        <div className="mt-2 grid grid-cols-3 gap-2">
+                          <label className="text-xs text-slate-600">Qty<input type="number" min="0.001" step="0.001" className="mt-1 w-full rounded border p-2 text-sm" value={line.quantity} onChange={(e) => setDraftLines((prev) => prev.map((item, i) => i === index ? { ...item, quantity: Number(e.target.value) } : item))} /></label>
+                          <label className="text-xs text-slate-600">Unit (PHP)<input type="number" min="0" step="0.01" className="mt-1 w-full rounded border p-2 text-sm" value={line.unitPriceCents / 100} onChange={(e) => setDraftLines((prev) => prev.map((item, i) => i === index ? { ...item, unitPriceCents: Math.round(Number(e.target.value) * 100) } : item))} /></label>
+                          <label className="text-xs text-slate-600">Discount (PHP)<input type="number" min="0" step="0.01" className="mt-1 w-full rounded border p-2 text-sm" value={line.discountCents / 100} onChange={(e) => setDraftLines((prev) => prev.map((item, i) => i === index ? { ...item, discountCents: Math.round(Number(e.target.value) * 100) } : item))} /></label>
+                        </div>
+                        <p className="mt-2 text-right text-sm font-semibold">{formatMoney(Math.max(0, Math.round(line.quantity * line.unitPriceCents) - line.discountCents) / 100)}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-4 flex items-center justify-between border-t pt-4"><span className="font-semibold">Quotation total</span><span className="text-xl font-bold text-emerald-700">{formatMoney(subtotalCents / 100)}</span></div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white p-4">
+                  <h3 className="mb-3 text-base font-semibold">Customer &amp; terms</h3>
+                  <div className="space-y-3">
+                    <label className="block text-xs font-semibold text-slate-600">Customer / Company *<input value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="mt-1 w-full rounded border p-2 text-sm" placeholder="Customer or organization" /></label>
+                    <label className="block text-xs font-semibold text-slate-600">Phone / Email<input value={customerContact} onChange={(e) => setCustomerContact(e.target.value)} className="mt-1 w-full rounded border p-2 text-sm" /></label>
+                    <label className="block text-xs font-semibold text-slate-600">Valid for<select value={validUntilDays} onChange={(e) => setValidUntilDays(e.target.value)} className="mt-1 w-full rounded border p-2 text-sm"><option value="7">7 days</option><option value="14">14 days</option><option value="30">30 days</option><option value="60">60 days</option></select></label>
+                    <label className="block text-xs font-semibold text-slate-600">Notes / terms<textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} className="mt-1 w-full rounded border p-2 text-sm" /></label>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white p-4">
+                  <p className="mb-3 text-xs text-slate-600">Saving generates a quotation document only. It does not reserve stock, create a POS sale or collect payment.</p>
+                  <div className="flex gap-2"><Button variant="secondary" onClick={() => setIsNewModalOpen(false)}>Cancel</Button><Button disabled={savingQuote || !customerName.trim() || draftLines.length === 0} onClick={() => void handleCreateQuotation()}>{savingQuote ? "Saving…" : "Save & print quotation"}</Button></div>
+                </div>
+              </section>
             </div>
-          </div>
-
-          {/* Lines Table */}
-          {draftLines.length > 0 && (
-            <div className="border border-slate-200 rounded overflow-hidden">
-              <table className="w-full text-xs text-left text-slate-700">
-                <thead className="bg-slate-100 font-semibold text-slate-600">
-                  <tr>
-                    <th className="p-2">Product</th>
-                    <th className="p-2 text-right">Qty</th>
-                    <th className="p-2 text-right">Price</th>
-                    <th className="p-2 text-right">Total</th>
-                    <th className="p-2 text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {draftLines.map((line, idx) => {
-                    const lineTotal = Math.max(0, Math.round(line.quantity * line.unitPriceCents) - line.discountCents);
-                    return (
-                      <tr key={idx}>
-                        <td className="p-2 font-medium">{line.productName}</td>
-                        <td className="p-2 text-right">{formatQuantity(line.quantity)} {line.unitName}</td>
-                        <td className="p-2 text-right">{formatMoney(line.unitPriceCents / 100)}</td>
-                        <td className="p-2 text-right font-semibold">{formatMoney(lineTotal / 100)}</td>
-                        <td className="p-2 text-center">
-                          <button
-                            type="button"
-                            className="text-rose-600 hover:text-rose-800 text-xs font-medium"
-                            onClick={() => handleRemoveLine(idx)}
-                          >
-                            Remove
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot className="bg-slate-50 font-semibold text-slate-900 border-t border-slate-200">
-                  <tr>
-                    <td colSpan={3} className="p-2 text-right">Quotation Total:</td>
-                    <td className="p-2 text-right font-bold text-sm text-emerald-700">
-                      {formatMoney(subtotalCents / 100)}
-                    </td>
-                    <td></td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
-
-          {/* Action Buttons */}
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
-            <Button variant="secondary" onClick={() => setIsNewModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              disabled={!customerName.trim() || draftLines.length === 0}
-              onClick={handleCreateQuotation}
-            >
-              Generate & Save Quotation
-            </Button>
           </div>
         </div>
-      </Dialog>
+      )}
 
       {/* Printable Document Modal */}
       <PrintableCustomerQuotationModal
