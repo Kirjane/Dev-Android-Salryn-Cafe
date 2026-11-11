@@ -236,7 +236,9 @@ public static class CeoPrToPoReproductionChecks
             // R1-ROLE-02: cashier Procurement.View must not reveal supplier/commercial data
             // or permit supplier bid/management mutations.
             foreach (string privatePath in new[] { "/api/lpi/foundation", "/api/lpi/suppliers",
-                "/api/lpi/quotations", "/api/lpi/purchase-orders", "/api/lpi/invoices", "/api/lpi/payments" })
+                "/api/lpi/quotations", "/api/lpi/overview", "/api/lpi/receiving-reports",
+                "/api/lpi/stock-cards", "/api/lpi/supplier-returns",
+                "/api/lpi/purchase-orders", "/api/lpi/invoices", "/api/lpi/payments" })
             {
                 using var req = new HttpRequestMessage(HttpMethod.Get, privatePath);
                 req.Headers.Add("Cookie", cashierCookie);
