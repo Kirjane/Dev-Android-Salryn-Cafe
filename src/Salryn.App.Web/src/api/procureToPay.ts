@@ -321,7 +321,12 @@ export interface LpiDashboardOverview {
 
 // PR requester catalog intentionally excludes suppliers, costs, terms, finance and stock.
 export interface LpiRequesterCatalog {
-  unitsOfMeasure: LpiUnitOfMeasure[];
+  unitsOfMeasure: Array<{
+    id: string;
+    code: string;
+    name: string;
+    allowsDecimalQuantity: boolean;
+  }>;
   products: Array<{
     id: string;
     name: string;
