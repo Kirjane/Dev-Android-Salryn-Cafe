@@ -644,6 +644,13 @@ public static class Program
             case "lpi-p1-integrity":
                 LpiP1IntegrityReproductionChecks.RunAsync().GetAwaiter().GetResult();
                 return;
+            case "ceo-repro":
+            case "ceo-pr-po-repro":
+                CeoPrToPoReproductionChecks.RunAsync().GetAwaiter().GetResult();
+                return;
+            case "ceo-orders-quotes":
+                CeoCustomerOrdersAndQuotesChecks.RunAsync().GetAwaiter().GetResult();
+                return;
             case "lpi-evidence":
                 LpiEvidenceCaptureRunner.RunAsync().GetAwaiter().GetResult();
                 return;

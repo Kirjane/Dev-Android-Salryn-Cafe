@@ -167,6 +167,8 @@ public static class LocalApiApplicationFactory
             new SqliteAccountsReceivableService(composition.ConnectionFactory));
         builder.Services.AddSingleton<IProcureToPayService>(
             new SqliteProcureToPayService(composition.ConnectionFactory));
+        builder.Services.AddSingleton<ICustomerOrdersAndQuotesService>(
+            new SqliteCustomerOrdersAndQuotesService(composition.ConnectionFactory));
         builder.Services.AddSingleton<RemoteReadOnlyApiService>();
         builder.Services.AddSingleton<LocalApiLanRuntimeStatusService>();
         builder.Services.AddSingleton<LocalLanControlService>();
@@ -374,6 +376,7 @@ public static class LocalApiApplicationFactory
         app.MapLocalHostCheckoutEndpoints();
         app.MapLocalAccountsReceivableEndpoints();
         app.MapLocalProcureToPayEndpoints();
+        app.MapLocalCustomerOrdersAndQuotationsEndpoints();
         app.MapLocalReceiptPrinterEndpoints();
         app.MapLocalUserAdminEndpoints();
         app.MapRemoteReadOnlyEndpoints();

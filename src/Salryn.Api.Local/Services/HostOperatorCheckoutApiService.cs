@@ -218,12 +218,24 @@ public sealed class HostOperatorCheckoutApiService
             {
                 method = PaymentMethod.AccountsReceivable;
             }
+            else if (string.Equals(payment.Method, "GCash", StringComparison.OrdinalIgnoreCase))
+            {
+                method = PaymentMethod.GCash;
+            }
+            else if (string.Equals(payment.Method, "Maya", StringComparison.OrdinalIgnoreCase))
+            {
+                method = PaymentMethod.Maya;
+            }
+            else if (string.Equals(payment.Method, "Debit", StringComparison.OrdinalIgnoreCase))
+            {
+                method = PaymentMethod.Debit;
+            }
             else
             {
                 return Fail(
                     "HostOperator.Checkout.UnsupportedPaymentMethod",
                     HostOperatorCheckoutStatus.ValidationFailed,
-                    "Payment method must be Cash or AccountsReceivable.");
+                    "Payment method must be Cash, AccountsReceivable, GCash, Maya, or Debit.");
             }
 
             if (payment.AmountCents <= 0)

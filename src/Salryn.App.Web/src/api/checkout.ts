@@ -29,7 +29,7 @@ export type CheckoutLineRequest = {
 };
 
 export type CheckoutPaymentRequest = {
-  method: "Cash" | "AccountsReceivable";
+  method: "Cash" | "AccountsReceivable" | "GCash" | "Maya" | "Debit";
   amountCents: number;
 };
 

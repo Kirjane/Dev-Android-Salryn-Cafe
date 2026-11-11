@@ -35,7 +35,7 @@ public static class RmoBirTradM4Rc1LifecycleRuntimeChecks
             Result<DatabaseInitializationSummary> init =
                 DefaultDatabaseInitializationFactory.Create(paths).InitializeDatabase();
             RequireTrue(init.IsSuccess, "Init must succeed: " + (init.IsFailure ? init.ErrorDetail.Message : ""));
-RequireTrue(ReadMaxVersion(paths.DatabasePath) == 29, "Migration max must be 29.");
+RequireTrue(ReadMaxVersion(paths.DatabasePath) == 30, "Migration max must be 30.");
 
             SeedAndPostOfficialSale(paths, out Guid saleId, out string docNumber, out Guid journalId, out Guid actorId, out long stockBefore, out Guid saleItemId);
 

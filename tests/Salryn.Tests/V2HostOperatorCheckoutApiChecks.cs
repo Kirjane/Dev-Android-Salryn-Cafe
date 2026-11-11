@@ -250,6 +250,9 @@ public static class V2HostOperatorCheckoutApiChecks
                 throw new InvalidOperationException("Sales readback receipt number must match checkout receipt.");
             }
 
+            await RunMultimodalPaymentChecksAsync(operatorClient, product, composition.DbPaths.DatabasePath)
+                .ConfigureAwait(false);
+
             await PostShiftCloseAsync(operatorClient).ConfigureAwait(false);
         }
         finally
@@ -646,6 +649,112 @@ public static class V2HostOperatorCheckoutApiChecks
                 operatorUserId,
                 Math.Max(initialStockX1000, SmokeTargetStockX1000))
             .ConfigureAwait(false);
+    }
+
+    private static async Task RunMultimodalPaymentChecksAsync(
+        HttpClient client,
+        ProductLookupReadModel product,
+        string databasePath)
+    {
+        // 1. Full GCash payment
+        HostOperatorCheckoutRequest gcashRequest = new(
+            Lines: new[] { new HostOperatorCheckoutLineRequest(product.Id, 1000) },
+            Payments: new[] { new HostOperatorCheckoutPaymentRequest("GCash", product.SellingPrice.Cents) },
+            ClientRequestId: Guid.NewGuid().ToString("D"));
+        JsonDocument gcashDoc = await PostCheckoutAsync(client, gcashRequest, product).ConfigureAwait(false);
+        string? gcashSaleId = gcashDoc.RootElement.GetProperty("checkout").GetProperty("saleId").GetString();
+        if (CountRows(databasePath, "SELECT COUNT(*) FROM payments WHERE sale_id = $value AND method = 3;", gcashSaleId!) != 1)
+        {
+            throw new InvalidOperationException("GCash sale must persist a payment row with method=3.");
+        }
+        if (CountRows(databasePath, "SELECT COUNT(*) FROM cash_drawer_events WHERE source_id = $value;", gcashSaleId!) != 0)
+        {
+            throw new InvalidOperationException("GCash sale must not create cash drawer events.");
+        }
+
+        // 2. Full Maya payment
+        HostOperatorCheckoutRequest mayaRequest = new(
+            Lines: new[] { new HostOperatorCheckoutLineRequest(product.Id, 1000) },
+            Payments: new[] { new HostOperatorCheckoutPaymentRequest("Maya", product.SellingPrice.Cents) },
+            ClientRequestId: Guid.NewGuid().ToString("D"));
+        JsonDocument mayaDoc = await PostCheckoutAsync(client, mayaRequest, product).ConfigureAwait(false);
+        string? mayaSaleId = mayaDoc.RootElement.GetProperty("checkout").GetProperty("saleId").GetString();
+        if (CountRows(databasePath, "SELECT COUNT(*) FROM payments WHERE sale_id = $value AND method = 4;", mayaSaleId!) != 1)
+        {
+            throw new InvalidOperationException("Maya sale must persist a payment row with method=4.");
+        }
+        if (CountRows(databasePath, "SELECT COUNT(*) FROM cash_drawer_events WHERE source_id = $value;", mayaSaleId!) != 0)
+        {
+            throw new InvalidOperationException("Maya sale must not create cash drawer events.");
+        }
+
+        // 3. Full Debit payment
+        HostOperatorCheckoutRequest debitRequest = new(
+            Lines: new[] { new HostOperatorCheckoutLineRequest(product.Id, 1000) },
+            Payments: new[] { new HostOperatorCheckoutPaymentRequest("Debit", product.SellingPrice.Cents) },
+            ClientRequestId: Guid.NewGuid().ToString("D"));
+        JsonDocument debitDoc = await PostCheckoutAsync(client, debitRequest, product).ConfigureAwait(false);
+        string? debitSaleId = debitDoc.RootElement.GetProperty("checkout").GetProperty("saleId").GetString();
+        if (CountRows(databasePath, "SELECT COUNT(*) FROM payments WHERE sale_id = $value AND method = 5;", debitSaleId!) != 1)
+        {
+            throw new InvalidOperationException("Debit sale must persist a payment row with method=5.");
+        }
+
+        // 4. Mixed tender: GCash + Cash with excess cash producing change
+        long totalCents = product.SellingPrice.Cents;
+        long halfCents = totalCents / 2;
+        long cashTender = totalCents;
+        long expectedChange = cashTender - (totalCents - halfCents);
+        HostOperatorCheckoutRequest mixedRequest = new(
+            Lines: new[] { new HostOperatorCheckoutLineRequest(product.Id, 1000) },
+            Payments: new[]
+            {
+                new HostOperatorCheckoutPaymentRequest("GCash", halfCents),
+                new HostOperatorCheckoutPaymentRequest("Cash", cashTender)
+            },
+            ClientRequestId: Guid.NewGuid().ToString("D"));
+        JsonDocument mixedDoc = await PostCheckoutAsync(client, mixedRequest, product).ConfigureAwait(false);
+        long actualChange = mixedDoc.RootElement.GetProperty("checkout").GetProperty("changeCents").GetInt64();
+        if (actualChange != expectedChange)
+        {
+            throw new InvalidOperationException($"Mixed tender expected change {expectedChange}, got {actualChange}.");
+        }
+        string? mixedSaleId = mixedDoc.RootElement.GetProperty("checkout").GetProperty("saleId").GetString();
+        using (SqliteConnection conn = new($"Data Source={databasePath}"))
+        {
+            conn.Open();
+            using SqliteCommand cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT amount_cents FROM cash_drawer_events WHERE source_id = $saleId;";
+            cmd.Parameters.AddWithValue("$saleId", mixedSaleId);
+            object? val = cmd.ExecuteScalar();
+            long drawerAmount = val is null || val is DBNull ? 0 : Convert.ToInt64(val);
+            if (drawerAmount != (cashTender - actualChange))
+            {
+                throw new InvalidOperationException($"Cash drawer event expected net cash {cashTender - actualChange}, got {drawerAmount}.");
+            }
+        }
+
+        // 5. Negative: Unsupported payment method -> 400
+        HostOperatorCheckoutRequest invalidMethodRequest = new(
+            Lines: new[] { new HostOperatorCheckoutLineRequest(product.Id, 1000) },
+            Payments: new[] { new HostOperatorCheckoutPaymentRequest("CryptoToken", totalCents) },
+            ClientRequestId: Guid.NewGuid().ToString("D"));
+        using HttpResponseMessage invalidResp = await client.PostAsJsonAsync("/api/checkout", invalidMethodRequest).ConfigureAwait(false);
+        if (invalidResp.StatusCode != HttpStatusCode.BadRequest)
+        {
+            throw new InvalidOperationException($"Unsupported payment method must return 400, got {(int)invalidResp.StatusCode}.");
+        }
+
+        // 6. Negative: Digital payment exceeding total -> 400
+        HostOperatorCheckoutRequest excessDigitalRequest = new(
+            Lines: new[] { new HostOperatorCheckoutLineRequest(product.Id, 1000) },
+            Payments: new[] { new HostOperatorCheckoutPaymentRequest("GCash", totalCents + 5000) },
+            ClientRequestId: Guid.NewGuid().ToString("D"));
+        using HttpResponseMessage excessResp = await client.PostAsJsonAsync("/api/checkout", excessDigitalRequest).ConfigureAwait(false);
+        if (excessResp.StatusCode != HttpStatusCode.BadRequest)
+        {
+            throw new InvalidOperationException($"Excess digital tender must return 400, got {(int)excessResp.StatusCode}.");
+        }
     }
 
     private static HostOperatorCheckoutRequest BuildCheckoutRequest(

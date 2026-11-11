@@ -39,6 +39,11 @@ import {
   type SupplierPayment,
   type ReceivingReport,
 } from "../api/procureToPay";
+import { fetchStoreSettings } from "../api/storeSettings";
+import { PrintablePurchaseRequisitionModal } from "../components/documents/PrintablePurchaseRequisitionModal";
+import { PrintablePurchaseOrderModal } from "../components/documents/PrintablePurchaseOrderModal";
+import { PrintableReceivingReportModal } from "../components/documents/PrintableReceivingReportModal";
+import { PrintableChequeDisbursementModal } from "../components/documents/PrintableChequeDisbursementModal";
 import { Permissions, hasPermission } from "../security/permissions";
 import {
   Alert,
@@ -64,6 +69,11 @@ export function ProcureToPayPage() {
   const { notify } = useNotifications();
   const session = useAppSession();
   const currentUserId = session.data?.user?.userId ?? "";
+  const userRoleId = session.data?.user?.roleId?.toLowerCase() ?? "";
+  const userRoleName = session.data?.user?.roleName?.toLowerCase() ?? "";
+  const isExecutive = userRoleName === "admin" || userRoleName === "manager" ||
+                      userRoleId === "00000000-0000-0000-0000-000000000001" ||
+                      userRoleId === "00000000-0000-0000-0000-000000000002";
   const canViewProcurement = hasPermission(session.data, Permissions.ProcurementView);
   const canViewReceiving = hasPermission(session.data, Permissions.ReceivingView);
   const canViewInventory = hasPermission(session.data, Permissions.InventoryView);
@@ -79,6 +89,8 @@ export function ProcureToPayPage() {
   const canApproveVariance = hasPermission(session.data, Permissions.PayablesApproveVariance);
   const canRecordPayment = hasPermission(session.data, Permissions.PayablesRecordPayment);
 
+  const defaultInitialTab = (canManagePo || isExecutive) ? "overview" : "pr";
+
   const [activeTab, setActiveTab] = useState<
     "overview" | "suppliers" | "pr" | "quotations" | "po" | "rr" | "inventory" | "ap"
   >(() => {
@@ -88,7 +100,7 @@ export function ProcureToPayPage() {
         return t as any;
       }
     }
-    return "overview";
+    return defaultInitialTab;
   });
 
   useEffect(() => {
@@ -116,6 +128,7 @@ export function ProcureToPayPage() {
   const supplierReturns = useQuery({ queryKey: ["lpi-returns"], queryFn: () => fetchSupplierReturns(), enabled: canViewInventory });
   const invoices = useQuery({ queryKey: ["lpi-invoices"], queryFn: () => fetchSupplierInvoices(), enabled: canViewPayables });
   const payments = useQuery({ queryKey: ["lpi-payments"], queryFn: () => fetchSupplierPayments(), enabled: canViewPayables });
+  const storeSettings = useQuery({ queryKey: ["store-settings"], queryFn: fetchStoreSettings });
 
   const [paymentApproveModalOpen, setPaymentApproveModalOpen] = useState(false);
   const [paymentToApprove, setPaymentToApprove] = useState<SupplierPayment | null>(null);
@@ -167,6 +180,11 @@ export function ProcureToPayPage() {
   const [splitPoModalOpen, setSplitPoModalOpen] = useState(false);
   const [splitPr, setSplitPr] = useState<PurchaseRequisition | null>(null);
   const [splitAllocations, setSplitAllocations] = useState<Array<{ supplierId: string; prItemIds: string[] }>>([]);
+  const [isConvertingPo, setIsConvertingPo] = useState(false);
+  const [selectedPrForPrint, setSelectedPrForPrint] = useState<PurchaseRequisition | null>(null);
+  const [selectedPoForPrint, setSelectedPoForPrint] = useState<PurchaseOrder | null>(null);
+  const [selectedRrForPrint, setSelectedRrForPrint] = useState<ReceivingReport | null>(null);
+  const [selectedPaymentForPrint, setSelectedPaymentForPrint] = useState<SupplierPayment | null>(null);
 
   const [rrModalOpen, setRrModalOpen] = useState(false);
   const [selectedPoForRr, setSelectedPoForRr] = useState<PurchaseOrder | null>(null);
@@ -288,15 +306,15 @@ export function ProcureToPayPage() {
       <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
         {(
           [
-            { id: "overview", label: "📊 Overview" },
-            { id: "suppliers", label: "🏢 Suppliers" },
-            { id: "pr", label: "📝 Requisitions (PR)" },
-            { id: "quotations", label: "📋 Quotations" },
-            { id: "po", label: "📦 Purchase Orders" },
-            { id: "rr", label: "🚚 Receiving (RR)" },
-            { id: "inventory", label: "📈 Stock & Returns" },
-            { id: "ap", label: "💳 Accounts Payable" },
-          ] as const
+            canViewProcurement && (canManagePo || isExecutive) && { id: "overview", label: "📊 Overview" },
+            canViewProcurement && { id: "suppliers", label: "🏢 Suppliers" },
+            canRequestPr && { id: "pr", label: "📝 Requisitions (PR)" },
+            canViewProcurement && { id: "quotations", label: "📋 Quotations" },
+            (canManagePo || canApprovePo) && { id: "po", label: "📦 Purchase Orders" },
+            canViewReceiving && { id: "rr", label: "🚚 Receiving (RR)" },
+            canViewInventory && { id: "inventory", label: "📈 Stock & Returns" },
+            canViewPayables && { id: "ap", label: "💳 Accounts Payable" },
+          ].filter(Boolean) as Array<{ id: typeof activeTab; label: string }>
         ).map((tab) => (
           <button
             key={tab.id}
@@ -554,6 +572,7 @@ export function ProcureToPayPage() {
                       <th className="p-3">Date</th>
                       <th className="p-3">Department</th>
                       <th className="p-3">Requested By</th>
+                      <th className="p-3">Approved By</th>
                       <th className="p-3">Estimated Total</th>
                       <th className="p-3">Status</th>
                       <th className="p-3 text-right">Actions</th>
@@ -565,7 +584,10 @@ export function ProcureToPayPage() {
                         <td className="p-3 font-mono font-bold text-slate-900">{pr.prNumber}</td>
                         <td className="p-3 text-xs">{formatDateTime(pr.requisitionDate)}</td>
                         <td className="p-3 font-medium">{pr.department}</td>
-                        <td className="p-3">{pr.requestedByUserName || "User"}</td>
+                        <td className="p-3 font-medium text-slate-900">{pr.requestedByUserName || "User"}</td>
+                        <td className="p-3 text-xs text-slate-600">
+                          {pr.approvedByUserName ? `${pr.approvedByUserName}` : "—"}
+                        </td>
                         <td className="p-3 font-semibold">{money(pr.totalEstimatedCostCents)}</td>
                         <td className="p-3">
                           <StatusPill
@@ -583,6 +605,12 @@ export function ProcureToPayPage() {
                           </StatusPill>
                         </td>
                         <td className="p-3 text-right space-x-2">
+                          <Button
+                            variant="secondary"
+                            onClick={() => setSelectedPrForPrint(pr)}
+                          >
+                            🖨️ Print PR
+                          </Button>
                           {canRequestPr && pr.status === "Draft" && (
                             <Button
                               variant="secondary"
@@ -604,13 +632,14 @@ export function ProcureToPayPage() {
                               <Button
                                 variant="primary"
                                 onClick={async () => {
-                                  if (pr.requestedByUserId === currentUserId) {
-                                    notify.warning("Self-approval denial: A requester cannot approve their own requisition.");
+                                  const isSelf = pr.requestedByUserId === currentUserId;
+                                  if (isSelf && !isExecutive) {
+                                    notify.warning("Self-approval denial: Standard requesters cannot approve their own requisition.");
                                     return;
                                   }
                                   try {
-                                    await approveRequisition(pr.id);
-                                    notify.success(`PR ${pr.prNumber} approved!`);
+                                    await approveRequisition(pr.id, isSelf ? "Executive self-approval by authorized manager" : undefined);
+                                    notify.success(isSelf ? `PR ${pr.prNumber} self-approved under executive policy.` : `PR ${pr.prNumber} approved!`);
                                     refreshAll();
                                   } catch (e) {
                                     notify.error((e as Error).message);
@@ -631,12 +660,12 @@ export function ProcureToPayPage() {
                               </Button>
                             </>
                           )}
-                          {canManagePo && pr.status === "Approved" && (
+                          {canManagePo && (pr.status === "Approved" || pr.status === "PartiallyConverted") && (
                             <Button
                               variant="secondary"
                               onClick={() => {
                                 setSplitPr(pr);
-                                const defaultSupplier = foundation.data?.suppliers[0]?.id ?? "";
+                                const defaultSupplier = foundation.data?.suppliers?.find((s) => s.isActive)?.id ?? "";
                                 setSplitAllocations([
                                   {
                                     supplierId: defaultSupplier,
@@ -741,6 +770,12 @@ export function ProcureToPayPage() {
                           </StatusPill>
                         </td>
                         <td className="p-3 text-right space-x-2">
+                          <Button
+                            variant="secondary"
+                            onClick={() => setSelectedPoForPrint(po)}
+                          >
+                            🖨️ Print PO
+                          </Button>
                           {canApprovePo && po.status === "Draft" && (
                             <Button
                               variant="primary"
@@ -898,7 +933,13 @@ export function ProcureToPayPage() {
                               {rr.status} {rr.isOverdelivery ? "· Overdelivery" : ""}
                             </StatusPill>
                           </td>
-                          <td className="p-3 text-right">
+                          <td className="p-3 text-right space-x-2">
+                            <Button
+                              variant="secondary"
+                              onClick={() => setSelectedRrForPrint(rr)}
+                            >
+                              🖨️ Print RR
+                            </Button>
                             {rr.isOverdelivery && rr.status !== "Posted" && rr.status !== "Cancelled" && (
                               <Button
                                 variant="secondary"
@@ -1246,6 +1287,12 @@ export function ProcureToPayPage() {
                                 </StatusPill>
                               </td>
                               <td className="p-3 text-right space-x-2">
+                                <Button
+                                  variant="secondary"
+                                  onClick={() => setSelectedPaymentForPrint(pay)}
+                                >
+                                  🖨️ Print Voucher
+                                </Button>
                                 {pay.status === "PendingApproval" && (
                                   <Button
                                     variant="primary"
@@ -1572,62 +1619,107 @@ export function ProcureToPayPage() {
       >
         <div className="space-y-4">
           <p className="text-xs text-slate-500">
-            Split PR into multiple Purchase Orders or assign all items to a selected supplier.
+            Assign requisition items to verified suppliers to generate Purchase Orders.
           </p>
-          {splitAllocations.map((alloc, idx) => (
-            <div key={idx} className="p-3 border rounded-md space-y-2 bg-slate-50">
-              <div>
-                <label className="block text-xs font-medium text-slate-700">Target Supplier</label>
-                <Select
-                  value={alloc.supplierId}
-                  onChange={(e) => {
-                    const updated = [...splitAllocations];
-                    updated[idx].supplierId = e.target.value;
-                    setSplitAllocations(updated);
-                  }}
-                >
-                  {(foundation.data?.suppliers ?? []).map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({s.code})
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-700">Allocated Items</label>
-                <div className="text-xs text-slate-600 space-y-1">
-                  {splitPr?.items.map((item) => (
-                    <div key={item.id} className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={alloc.prItemIds.includes(item.id)}
-                        onChange={(e) => {
-                          const updated = [...splitAllocations];
-                          if (e.target.checked) {
-                            updated[idx].prItemIds.push(item.id);
-                          } else {
-                            updated[idx].prItemIds = updated[idx].prItemIds.filter((id) => id !== item.id);
-                          }
-                          setSplitAllocations(updated);
-                        }}
-                      />
-                      <span>
-                        {item.productName} ({item.requestedQuantityX1000 / 1000} units)
-                      </span>
+          {((foundation.data?.suppliers ?? []).filter((s) => s.isActive).length === 0) ? (
+            <Alert tone="warning" title="No Active Suppliers Found">
+              You must register at least one active supplier in the Suppliers tab before generating Purchase Orders.
+            </Alert>
+          ) : (
+            <>
+              {splitAllocations.map((alloc, idx) => (
+                <div key={idx} className="p-3 border rounded-md space-y-2 bg-slate-50 relative">
+                  <div className="flex justify-between items-center">
+                    <label className="block text-xs font-semibold text-slate-700">Target Supplier *</label>
+                    {splitAllocations.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setSplitAllocations(splitAllocations.filter((_, i) => i !== idx))}
+                        className="text-xs text-red-600 hover:text-red-800 font-medium"
+                      >
+                        ✕ Remove Allocation
+                      </button>
+                    )}
+                  </div>
+                  <Select
+                    value={alloc.supplierId}
+                    onChange={(e) => {
+                      const updated = [...splitAllocations];
+                      updated[idx].supplierId = e.target.value;
+                      setSplitAllocations(updated);
+                    }}
+                  >
+                    <option value="">-- Select Target Supplier (Required) --</option>
+                    {(foundation.data?.suppliers ?? [])
+                      .filter((s) => s.isActive)
+                      .map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} ({s.code})
+                        </option>
+                      ))}
+                  </Select>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700">Allocated Items *</label>
+                    <div className="text-xs text-slate-600 space-y-1 mt-1">
+                      {splitPr?.items.map((item) => (
+                        <div key={item.id} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={alloc.prItemIds.includes(item.id)}
+                            onChange={(e) => {
+                              const updated = [...splitAllocations];
+                              if (e.target.checked) {
+                                updated[idx].prItemIds.push(item.id);
+                              } else {
+                                updated[idx].prItemIds = updated[idx].prItemIds.filter((id) => id !== item.id);
+                              }
+                              setSplitAllocations(updated);
+                            }}
+                          />
+                          <span>
+                            {item.productName} ({item.requestedQuantityX1000 / 1000} units)
+                          </span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  </div>
                 </div>
-              </div>
-            </div>
-          ))}
+              ))}
+
+              {splitPr && splitPr.items.length > 1 && (
+                <Button
+                  variant="secondary"
+                  onClick={() => setSplitAllocations([...splitAllocations, { supplierId: "", prItemIds: [] }])}
+                >
+                  + Split to Another Supplier
+                </Button>
+              )}
+            </>
+          )}
 
           <div className="flex justify-end gap-2 pt-4">
             <Button variant="secondary" onClick={() => setSplitPoModalOpen(false)}>
               Cancel
             </Button>
             <Button
+              disabled={
+                isConvertingPo ||
+                splitAllocations.length === 0 ||
+                splitAllocations.some((a) => !a.supplierId || a.supplierId.trim() === "" || a.prItemIds.length === 0)
+              }
               onClick={async () => {
                 if (!splitPr) return;
+                for (const alloc of splitAllocations) {
+                  if (!alloc.supplierId || alloc.supplierId.trim() === "") {
+                    notify.error("A target supplier must be selected for every purchase order.");
+                    return;
+                  }
+                  if (!alloc.prItemIds || alloc.prItemIds.length === 0) {
+                    notify.error("At least one item must be assigned to each supplier.");
+                    return;
+                  }
+                }
+                setIsConvertingPo(true);
                 try {
                   const created = await convertRequisitionToPo(splitPr.id, splitAllocations);
                   notify.success(`Successfully generated ${created.length} Purchase Order(s)!`);
@@ -1636,10 +1728,12 @@ export function ProcureToPayPage() {
                   setActiveTab("po");
                 } catch (e) {
                   notify.error((e as Error).message);
+                } finally {
+                  setIsConvertingPo(false);
                 }
               }}
             >
-              Generate PO(s)
+              {isConvertingPo ? "Generating PO(s)..." : "Generate PO(s)"}
             </Button>
           </div>
         </div>
@@ -2607,6 +2701,35 @@ export function ProcureToPayPage() {
           </div>
         </div>
       </Dialog>
+
+      {/* Printable Modals */}
+      <PrintablePurchaseRequisitionModal
+        open={Boolean(selectedPrForPrint)}
+        onClose={() => setSelectedPrForPrint(null)}
+        pr={selectedPrForPrint}
+        storeSettings={storeSettings.data}
+      />
+
+      <PrintablePurchaseOrderModal
+        open={Boolean(selectedPoForPrint)}
+        onClose={() => setSelectedPoForPrint(null)}
+        po={selectedPoForPrint}
+        storeSettings={storeSettings.data}
+      />
+
+      <PrintableReceivingReportModal
+        open={Boolean(selectedRrForPrint)}
+        onClose={() => setSelectedRrForPrint(null)}
+        rr={selectedRrForPrint}
+        storeSettings={storeSettings.data}
+      />
+
+      <PrintableChequeDisbursementModal
+        open={Boolean(selectedPaymentForPrint)}
+        onClose={() => setSelectedPaymentForPrint(null)}
+        payment={selectedPaymentForPrint}
+        storeSettings={storeSettings.data}
+      />
     </div>
   );
 }
@@ -2626,6 +2749,7 @@ function QuotationListView({
   const { notify } = useNotifications();
   const session = useAppSession();
   const canManagePo = hasPermission(session.data, Permissions.ProcurementManagePurchaseOrder);
+  const canRecordQuote = canManagePo || hasPermission(session.data, Permissions.ProcurementRequest);
   const quotations = useQuery({
     queryKey: ["lpi-quotations", requisitionId],
     queryFn: () => fetchQuotations(requisitionId),
@@ -2648,7 +2772,7 @@ function QuotationListView({
     <Card>
       <CardHeader className="flex justify-between items-center">
         <CardTitle>Received Supplier Quotations</CardTitle>
-        {canManagePo && (
+        {canRecordQuote && (
           <Button variant="secondary" onClick={() => {
             setQuoteForm({
               supplierId: safeSuppliers[0]?.id || "",

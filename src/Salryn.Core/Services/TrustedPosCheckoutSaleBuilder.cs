@@ -180,6 +180,10 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
             long cashTenderCents = request.Payments
                 .Where(payment => payment.Method == PaymentMethod.Cash)
                 .Sum(payment => payment.AmountCents);
+            long digitalCents = request.Payments
+                .Where(payment => payment.Method == PaymentMethod.GCash || payment.Method == PaymentMethod.Maya || payment.Method == PaymentMethod.Debit)
+                .Sum(payment => payment.AmountCents);
+
             if (receivableCents > 0 && (!request.CustomerId.HasValue || request.CustomerId.Value == Guid.Empty))
             {
                 return Result<TrustedPosCheckoutSaleBuildResult>.Fail(Error.Validation(
@@ -192,9 +196,32 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
                     "CheckoutBoundary.InvalidUtangAmount",
                     "Utang cannot exceed the sale total."));
             }
+            if (digitalCents > totalCents)
+            {
+                return Result<TrustedPosCheckoutSaleBuildResult>.Fail(Error.Validation(
+                    "CheckoutBoundary.InvalidDigitalAmount",
+                    "Digital payment cannot exceed the sale total."));
+            }
+            if (digitalCents + receivableCents > totalCents)
+            {
+                return Result<TrustedPosCheckoutSaleBuildResult>.Fail(Error.Validation(
+                    "CheckoutBoundary.InvalidNonCashAmount",
+                    "Digital and Utang payments combined cannot exceed the sale total."));
+            }
+
+            long nonCashCents = checked(digitalCents + receivableCents);
+            long cashDueCents = Math.Max(0L, totalCents - nonCashCents);
+
+            if (receivableCents > 0 && cashTenderCents > cashDueCents)
+            {
+                return Result<TrustedPosCheckoutSaleBuildResult>.Fail(Error.Validation(
+                    "CheckoutBoundary.UtangCannotProduceChange",
+                    "Utang credit sales cannot produce cash change."));
+            }
+
             long changeCents = receivableCents > 0
                 ? 0
-                : checked(cashTenderCents - totalCents);
+                : Math.Max(0L, cashTenderCents - cashDueCents);
             Money subtotal = Money.FromCents(subtotalCents);
             Money saleDiscount = Money.FromCents(request.SaleDiscountCents);
             Money tax = Money.FromCents(request.TaxCents);

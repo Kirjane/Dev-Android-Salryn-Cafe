@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Salryn.Core.Common;
 using Salryn.Core.Models.ProcureToPay;
+using Salryn.Infrastructure.Data.Seeding;
 
 namespace Salryn.Infrastructure.Data.Services;
 
@@ -299,26 +300,74 @@ public sealed partial class SqliteProcureToPayService
         DateTimeOffset now = _timeProvider.GetUtcNow();
         string decision = request.Decision?.Trim() ?? string.Empty;
 
-        // Separation of duties: requester cannot approve their own PR!
+        // Separation of duties: requester cannot approve their own PR, unless authorized executive (Admin / Store Manager)
         if (string.Equals(decision, "Approve", StringComparison.OrdinalIgnoreCase) &&
             existing.RequestedByUserId == request.ReviewerUserId)
         {
+            bool isPrivilegedSelfApprover = false;
+            await using (SqliteCommand roleCmd = connection.CreateCommand())
+            {
+                roleCmd.Transaction = transaction;
+                roleCmd.CommandText = """
+                    SELECT r.name, u.role_id
+                    FROM users u
+                    JOIN roles r ON r.id = u.role_id
+                    WHERE u.id = $userId AND u.status = 1;
+                    """;
+                roleCmd.Parameters.AddWithValue("$userId", request.ReviewerUserId.ToString("D"));
+                await using SqliteDataReader roleReader = await roleCmd.ExecuteReaderAsync(cancellationToken);
+                if (await roleReader.ReadAsync(cancellationToken))
+                {
+                    string roleName = roleReader.GetString(0);
+                    string userRoleId = roleReader.GetString(1);
+                    if (string.Equals(roleName, "Admin", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(roleName, "Manager", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(userRoleId, DefaultSeedData.AdminRoleId, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(userRoleId, DefaultSeedData.ManagerRoleId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        isPrivilegedSelfApprover = true;
+                    }
+                }
+            }
+
+            bool isExplicitExecutiveOverride = request.Reason != null &&
+                (request.Reason.Contains("Executive", StringComparison.OrdinalIgnoreCase) ||
+                 request.Reason.Contains("Self-Approved", StringComparison.OrdinalIgnoreCase) ||
+                 request.Reason.Contains("Executive self-approval", StringComparison.OrdinalIgnoreCase));
+
+            if (!isPrivilegedSelfApprover || !isExplicitExecutiveOverride)
+            {
+                await WriteAuditAsync(
+                    connection,
+                    transaction,
+                    request.ReviewerUserId,
+                    "PR_SELF_APPROVAL_DENIED",
+                    "PurchaseRequisition",
+                    existing.Id.ToString("D"),
+                    new { prNumber = existing.PrNumber, attemptedBy = request.ReviewerUserId },
+                    null,
+                    "Blocked self-approval of purchase requisition by unauthorized requester.",
+                    now,
+                    cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                return Result<PurchaseRequisitionModel>.Fail(
+                    Error.Forbidden("Lpi.Requisition.SelfApprovalDenied", "Separation of duties violation: standard requesters cannot approve their own purchase requisition."));
+            }
+
+            // Record explicit executive self-approval audit log
             await WriteAuditAsync(
                 connection,
                 transaction,
                 request.ReviewerUserId,
-                "PR_SELF_APPROVAL_DENIED",
+                "PR_SELF_APPROVED_BY_EXECUTIVE",
                 "PurchaseRequisition",
                 existing.Id.ToString("D"),
-                new { prNumber = existing.PrNumber, attemptedBy = request.ReviewerUserId },
+                new { prNumber = existing.PrNumber, approvedBy = request.ReviewerUserId, policy = "Admin/Manager Self-Confirmation" },
                 null,
-                "Blocked self-approval of purchase requisition.",
+                "Authorized executive self-approval of purchase requisition recorded with durable audit trail.",
                 now,
                 cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-
-            return Result<PurchaseRequisitionModel>.Fail(
-                Error.Forbidden("Lpi.Requisition.SelfApprovalDenied", "Separation of duties violation: the requester cannot approve their own purchase requisition."));
         }
 
         string newStatus;

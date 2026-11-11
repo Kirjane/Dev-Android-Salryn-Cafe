@@ -274,6 +274,10 @@ internal static class LocalProcureToPayEndpoints
         {
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementManagePurchaseOrder) is IResult denied)
                 return denied;
+            if (request is null || request.SupplierId == Guid.Empty)
+            {
+                return Results.Json(new { error = "A valid supplier must be selected to generate a Purchase Order.", code = "Lpi.PurchaseOrder.SupplierRequired" }, statusCode: StatusCodes.Status400BadRequest);
+            }
             LocalApiSession session = RequiredSession(context, sessions);
             return ToResult(await service.ConvertRequisitionToPurchaseOrderAsync(
                 id,
@@ -305,7 +309,7 @@ internal static class LocalProcureToPayEndpoints
             IProcureToPayService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementManagePurchaseOrder) is IResult denied)
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, new[] { LocalApiPermissions.ProcurementManagePurchaseOrder, LocalApiPermissions.ProcurementRequest }) is IResult denied)
                 return denied;
             LocalApiSession session = RequiredSession(context, sessions);
             return ToResult(

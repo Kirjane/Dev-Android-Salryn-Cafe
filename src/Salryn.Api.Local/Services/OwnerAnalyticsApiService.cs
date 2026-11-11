@@ -89,9 +89,44 @@ public sealed class OwnerAnalyticsApiService
         {
             using SqliteConnection connection = Open();
             OwnerAnalyticsPeriod period = ReadPeriod(connection, range.StartUtc, range.EndUtc);
+
+            using SqliteCommand digitalCmd = connection.CreateCommand();
+            digitalCmd.CommandText = """
+                SELECT p.method, COALESCE(SUM(p.amount_cents), 0)
+                FROM payments p
+                INNER JOIN sales s ON s.id = p.sale_id
+                WHERE s.status = $completed AND s.sale_date >= $start AND s.sale_date < $end
+                  AND p.method IN ($gcash, $maya, $debit)
+                GROUP BY p.method;
+                """;
+            BindRange(digitalCmd, range.StartUtc, range.EndUtc);
+            digitalCmd.Parameters.AddWithValue("$completed", (int)SaleStatus.Completed);
+            digitalCmd.Parameters.AddWithValue("$gcash", (int)PaymentMethod.GCash);
+            digitalCmd.Parameters.AddWithValue("$maya", (int)PaymentMethod.Maya);
+            digitalCmd.Parameters.AddWithValue("$debit", (int)PaymentMethod.Debit);
+
+            long gcashTotal = 0;
+            long mayaTotal = 0;
+            long debitTotal = 0;
+
+            using (SqliteDataReader reader = digitalCmd.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    int m = reader.GetInt32(0);
+                    long val = reader.GetInt64(1);
+                    if (m == (int)PaymentMethod.GCash) gcashTotal = val;
+                    else if (m == (int)PaymentMethod.Maya) mayaTotal = val;
+                    else if (m == (int)PaymentMethod.Debit) debitTotal = val;
+                }
+            }
+
             return Result<OwnerPaymentMixResponse>.Success(new(Scope(range), new[]
             {
                 new OwnerPaymentMixRow("Cash received on sales (net of change)", period.CashOnSalesCents, "period-flow"),
+                new OwnerPaymentMixRow("GCash payments", gcashTotal, "period-flow"),
+                new OwnerPaymentMixRow("Maya payments", mayaTotal, "period-flow"),
+                new OwnerPaymentMixRow("Debit card payments", debitTotal, "period-flow"),
                 new OwnerPaymentMixRow("Utang originated", period.CreditOriginatedCents, "period-flow")
             }));
         }

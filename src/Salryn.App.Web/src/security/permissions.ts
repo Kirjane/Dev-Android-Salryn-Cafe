@@ -68,7 +68,9 @@ export type HostPage =
   | "official-setup"
   | "traditional-reporting"
   | "production-reports"
-  | "procure-to-pay";
+  | "procure-to-pay"
+  | "price-canvass"
+  | "customer-orders";
 
 export type AppPage = HostPage;
 
@@ -90,6 +92,8 @@ export const implementedPages: readonly AppPage[] = [
   "traditional-reporting",
   "production-reports",
   "procure-to-pay",
+  "price-canvass",
+  "customer-orders",
 ] as const;
 
 const RoleIds = {
@@ -128,6 +132,8 @@ const pagePermissions: Partial<Record<AppPage, readonly Permission[]>> = {
     Permissions.ReceivingView,
     Permissions.PayablesView,
   ],
+  "price-canvass": [Permissions.SalesCreate, Permissions.ProductsView],
+  "customer-orders": [Permissions.SalesCreate, Permissions.SalesViewHistory],
 };
 
 export function hasPermission(session: SessionState | null | undefined, permission: Permission): boolean {
@@ -154,8 +160,10 @@ export function canAccessPage(session: SessionState | null | undefined, page: Ap
 
   const roleId = session.user.roleId.toLowerCase();
   const cashierPages: readonly AppPage[] = ["checkout", "sales"];
-  const managerPages: readonly AppPage[] = ["dashboard", "checkout", "products", "inventory", "sales", "receivables", "owner-reports", "audit", "procure-to-pay"];
-  if (roleId === RoleIds.Cashier && !cashierPages.includes(page)) return false;
+  const cashierCeoPages: readonly AppPage[] = ["procure-to-pay", "price-canvass", "customer-orders"];
+  const cashierAllowedPages: readonly AppPage[] = [...cashierPages, ...cashierCeoPages];
+  const managerPages: readonly AppPage[] = ["dashboard", "checkout", "products", "inventory", "sales", "receivables", "owner-reports", "audit", "procure-to-pay", "price-canvass", "customer-orders"];
+  if (roleId === RoleIds.Cashier && !cashierAllowedPages.includes(page)) return false;
   if (roleId === RoleIds.Manager && !managerPages.includes(page)) return false;
 
   if (authenticatedOnlyPages.has(page)) return roleId !== RoleIds.Cashier;

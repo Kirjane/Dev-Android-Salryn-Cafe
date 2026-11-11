@@ -76,7 +76,8 @@ public static class DefaultDatabaseInitializationFactory
             new CashDrawerCloseReplaySchemaMigration(),
             new SaleVoidAuditReconciliationMigration(),
             new ProcureToPaySchemaMigration(),
-            new ProcureToPayR2HardeningMigration()
+            new ProcureToPayR2HardeningMigration(),
+            new CustomerOrdersAndQuotationsSchemaMigration()
         };
 
         MigrationRunner migrationRunner = new(connectionFactory, migrations);

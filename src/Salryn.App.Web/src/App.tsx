@@ -31,6 +31,8 @@ import { TraditionalReportingPage } from "./pages/TraditionalReportingPage";
 import { UsersPage } from "./pages/UsersPage";
 import { ReceivablesPage } from "./pages/ReceivablesPage";
 import { ProcureToPayPage } from "./pages/ProcureToPayPage";
+import { PriceCanvassPage } from "./pages/PriceCanvassPage";
+import { CustomerOrdersPage } from "./pages/CustomerOrdersPage";
 import { canAccessPage, getFirstAllowedPage, implementedPages } from "./security/permissions";
 import { isRemoteClientBrowserLocation } from "./utils/lanEntry";
 import { readInstalledTerminalLicense } from "./utils/terminalLicenseStorage";
@@ -154,6 +156,10 @@ function renderPage(page: AppPage, session: SessionState, onLogout: () => void, 
       return <ProductionReportsPage />;
     case "procure-to-pay":
       return <ProcureToPayPage />;
+    case "price-canvass":
+      return <PriceCanvassPage />;
+    case "customer-orders":
+      return <CustomerOrdersPage />;
     default: {
       const exhaustiveCheck: never = page;
       return exhaustiveCheck;

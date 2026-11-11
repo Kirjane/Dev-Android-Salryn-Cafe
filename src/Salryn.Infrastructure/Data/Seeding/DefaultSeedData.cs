@@ -170,7 +170,9 @@ public static class DefaultSeedData
         Permissions.ProductsView,
         Permissions.SalesCreate,
         Permissions.SalesViewHistory,
-        Permissions.ShiftOpenClose
+        Permissions.ShiftOpenClose,
+        Permissions.ProcurementView,
+        Permissions.ProcurementRequest
     };
 
     private static IReadOnlyList<SeedPermission>? _rolePermissions;
