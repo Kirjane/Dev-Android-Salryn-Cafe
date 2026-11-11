@@ -181,6 +181,24 @@ public static class CeoPrToPoReproductionChecks
 
             using HttpClient client = CreateClientForUser();
 
+            // R1-ROLE-01: PR requester may fetch required catalogs, but never the PO register.
+            foreach (string visiblePath in new[] { "/api/lpi/foundation", "/api/lpi/requisitions" })
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Get, visiblePath);
+                req.Headers.Add("Cookie", cashierCookie);
+                using var res = await client.SendAsync(req);
+                if (res.StatusCode != HttpStatusCode.OK)
+                    throw new InvalidOperationException($"R1-ROLE-01 cashier required PR read {visiblePath}: {(int)res.StatusCode}");
+            }
+            foreach (string privatePath in new[] { "/api/lpi/purchase-orders", "/api/lpi/invoices", "/api/lpi/payments" })
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Get, privatePath);
+                req.Headers.Add("Cookie", cashierCookie);
+                using var res = await client.SendAsync(req);
+                if (res.StatusCode != HttpStatusCode.Forbidden)
+                    throw new InvalidOperationException($"R1-ROLE-02 cashier reached privileged {privatePath}: {(int)res.StatusCode}");
+            }
+
             // -------------------------------------------------------------
             // TEST 1: Cashier attempts to convert PR to PO -> Expect 403 Forbidden
             // -------------------------------------------------------------
