@@ -89,14 +89,15 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
   const canApproveVariance = hasPermission(session.data, Permissions.PayablesApproveVariance);
   const canRecordPayment = hasPermission(session.data, Permissions.PayablesRecordPayment);
 
+  const prDeskOnly = initialTab === "pr";
   const defaultInitialTab = initialTab ?? ((canManagePo || isExecutive) ? "overview" : "pr");
 
-  const [activeTab, setActiveTab] = useState<
+  const [selectedTab, setActiveTab] = useState<
     "overview" | "suppliers" | "pr" | "quotations" | "po" | "rr" | "inventory" | "ap"
   >(() => {
     if (typeof window !== "undefined") {
       const t = new URLSearchParams(window.location.search).get("tab");
-      if (t && ["overview", "suppliers", "pr", "quotations", "po", "rr", "inventory", "ap"].includes(t)) {
+      if (t && ["overview", "suppliers", "pr", "quotations", "po", "rr", "inventory"].includes(t)) {
         return t as any;
       }
     }
@@ -107,7 +108,7 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
     const syncTabFromUrl = () => {
       if (typeof window !== "undefined") {
         const t = new URLSearchParams(window.location.search).get("tab");
-        if (t && ["overview", "suppliers", "pr", "quotations", "po", "rr", "inventory", "ap"].includes(t)) {
+        if (t && ["overview", "suppliers", "pr", "quotations", "po", "rr", "inventory"].includes(t)) {
           setActiveTab(t as any);
         }
       }
@@ -116,6 +117,9 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
     window.addEventListener("popstate", syncTabFromUrl);
     return () => window.removeEventListener("popstate", syncTabFromUrl);
   }, []);
+
+  // The dedicated cashier PR desk cannot be overridden by forged query-string tabs.
+  const activeTab = prDeskOnly ? "pr" : selectedTab;
 
   // Queries
   const foundation = useQuery({ queryKey: ["lpi-foundation"], queryFn: () => fetchLpiFoundation(true), enabled: canViewProcurement });
@@ -289,10 +293,11 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
       {/* Header & Navigation */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b pb-4 border-slate-200">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Logistics, Procurement & Inventory</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">{prDeskOnly ? "Purchase Requests" : "Logistics, Procurement & Inventory"}</h1>
           <p className="text-sm text-slate-500">
-            End-to-end Procure-to-Pay vertical: Purchase Requisitions, Quotations, Purchase Orders, Receiving Reports,
-            3-Way Match, and AP Aging.
+            {prDeskOnly
+              ? "Record purchase needs for manager approval without ordering or settling supplier invoices."
+              : "Manage suppliers, purchase requisitions, quotations, purchase orders, receiving, and stock returns."}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -303,7 +308,7 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
       </div>
 
       {/* Tabs */}
-      <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
+      {!prDeskOnly && <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
         {(
           [
             canViewProcurement && (canManagePo || isExecutive) && { id: "overview", label: "📊 Overview" },
@@ -313,7 +318,6 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
             (canManagePo || canApprovePo) && { id: "po", label: "📦 Purchase Orders" },
             canViewReceiving && { id: "rr", label: "🚚 Receiving (RR)" },
             canViewInventory && { id: "inventory", label: "📈 Stock & Returns" },
-            canViewPayables && { id: "ap", label: "💳 Accounts Payable" },
           ].filter(Boolean) as Array<{ id: typeof activeTab; label: string }>
         ).map((tab) => (
           <button
@@ -329,7 +333,7 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
             {tab.label}
           </button>
         ))}
-      </div>
+      </div>}
 
       {/* TAB 1: OVERVIEW */}
       {activeTab === "overview" && (
