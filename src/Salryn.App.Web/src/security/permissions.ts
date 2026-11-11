@@ -69,6 +69,7 @@ export type HostPage =
   | "traditional-reporting"
   | "production-reports"
   | "procure-to-pay"
+  | "purchase-requests"
   | "price-canvass"
   | "customer-orders"
   | "accounts-payable";
@@ -93,6 +94,7 @@ export const implementedPages: readonly AppPage[] = [
   "traditional-reporting",
   "production-reports",
   "procure-to-pay",
+  "purchase-requests",
   "price-canvass",
   "customer-orders",
   "accounts-payable",
@@ -129,13 +131,14 @@ const pagePermissions: Partial<Record<AppPage, readonly Permission[]>> = {
   "traditional-reporting": [Permissions.ReportsView, Permissions.OfficialReadingView, Permissions.OfficialEvidenceExport],
   // Host-only internal artifact export spine; no remote POS client access.
 "production-reports": [Permissions.ReportsView, Permissions.OfficialReadingView],
+  "purchase-requests": [Permissions.ProcurementRequest],
   "procure-to-pay": [
     Permissions.ProcurementView,
     Permissions.ReceivingView,
     Permissions.PayablesView,
   ],
   "price-canvass": [Permissions.SalesCreate, Permissions.ProductsView],
-  "customer-orders": [Permissions.SalesCreate, Permissions.SalesViewHistory],
+  "customer-orders": [Permissions.ProductsManage],
   "accounts-payable": [Permissions.PayablesView],
 };
 
@@ -163,9 +166,9 @@ export function canAccessPage(session: SessionState | null | undefined, page: Ap
 
   const roleId = session.user.roleId.toLowerCase();
   const cashierPages: readonly AppPage[] = ["checkout", "sales"];
-  const cashierCeoPages: readonly AppPage[] = ["procure-to-pay", "price-canvass", "customer-orders"];
+  const cashierCeoPages: readonly AppPage[] = ["purchase-requests", "price-canvass"];
   const cashierAllowedPages: readonly AppPage[] = [...cashierPages, ...cashierCeoPages];
-  const managerPages: readonly AppPage[] = ["dashboard", "checkout", "products", "inventory", "sales", "receivables", "accounts-payable", "owner-reports", "audit", "procure-to-pay", "price-canvass", "customer-orders"];
+  const managerPages: readonly AppPage[] = ["dashboard", "checkout", "products", "inventory", "sales", "receivables", "accounts-payable", "owner-reports", "audit", "procure-to-pay", "purchase-requests", "price-canvass", "customer-orders"];
   if (roleId === RoleIds.Cashier && !cashierAllowedPages.includes(page)) return false;
   if (roleId === RoleIds.Manager && !managerPages.includes(page)) return false;
 
