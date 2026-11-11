@@ -202,7 +202,7 @@ export function AccountsPayablePage() {
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div><h2 className="text-lg font-semibold">Supplier Invoice Register</h2><p className="text-xs text-slate-500">Unmatched documents are pending verification, not automatically posted liabilities.</p></div>
             <select aria-label="Invoice status" className={inputClass} style={{ width: 190 }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-              {["All", "PendingVerification", "VarianceFlagged", "Matched", "Paid", "Cancelled"].map((status) => <option key={status}>{status}</option>)}
+              {["All", "PendingVerification", "VarianceFlagged", "PostedOpen", "PartiallyPaid", "Paid", "Cancelled"].map((status) => <option key={status}>{status}</option>)}
             </select>
           </div>
           <div className="overflow-x-auto">
