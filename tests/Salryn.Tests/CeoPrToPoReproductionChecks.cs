@@ -294,6 +294,47 @@ public static class CeoPrToPoReproductionChecks
                     throw new InvalidOperationException($"Expected 400/409 for duplicate conversion, got {resp.StatusCode}");
             }
 
+            // R1-PO-01: approval followed by public Send alias must transition to Sent.
+            using (var approveRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/lpi/purchase-orders/{poId}/approve"))
+            {
+                approveRequest.Headers.Add("Cookie", approverCookie);
+                approveRequest.Content = JsonContent.Create(new { reason = "Approve CEO QA purchase order" });
+                using var response = await client.SendAsync(approveRequest);
+                if (response.StatusCode != HttpStatusCode.OK)
+                    throw new InvalidOperationException($"R1-PO-01 approve failed: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync()}");
+            }
+
+            // R1-PO-02: cashier cannot mark the PO as sent.
+            using (var forbiddenRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/lpi/purchase-orders/{poId}/mark-sent"))
+            {
+                forbiddenRequest.Headers.Add("Cookie", cashierCookie);
+                using var response = await client.SendAsync(forbiddenRequest);
+                if (response.StatusCode != HttpStatusCode.Forbidden)
+                    throw new InvalidOperationException($"R1-PO-02 cashier sent PO unexpectedly: {(int)response.StatusCode}");
+            }
+
+            using (var sendRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/lpi/purchase-orders/{poId}/status"))
+            {
+                sendRequest.Headers.Add("Cookie", approverCookie);
+                sendRequest.Content = JsonContent.Create(new { action = "Send" });
+                using var response = await client.SendAsync(sendRequest);
+                if (response.StatusCode != HttpStatusCode.OK)
+                    throw new InvalidOperationException($"R1-PO-03 Send alias failed: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync()}");
+                using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                if (json.RootElement.GetProperty("status").GetString() != "Sent")
+                    throw new InvalidOperationException("R1-PO-03 Send alias did not transition PO to Sent.");
+            }
+
+            // R1-PO-04: repeated Send must not duplicate the transition.
+            using (var duplicateRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/lpi/purchase-orders/{poId}/mark-sent"))
+            {
+                duplicateRequest.Headers.Add("Cookie", approverCookie);
+                using var response = await client.SendAsync(duplicateRequest);
+                if (response.StatusCode != HttpStatusCode.Conflict)
+                    throw new InvalidOperationException($"R1-PO-04 duplicate dispatch expected 409, got {(int)response.StatusCode}");
+            }
+            Console.WriteLine("[CEO R1 PO] Mark Sent alias, cashier denial, status and duplicate replay assertions PASS.");
+
             await app.StopAsync().ConfigureAwait(false);
             Console.WriteLine("[CEO Repro] ALL REPRODUCTION & CONVERSION CHECKS PASSED!");
         }
