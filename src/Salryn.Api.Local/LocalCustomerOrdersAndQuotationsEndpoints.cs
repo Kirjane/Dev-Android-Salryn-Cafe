@@ -60,7 +60,8 @@ internal static class LocalCustomerOrdersAndQuotationsEndpoints
         {
             if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, new[] { LocalApiPermissions.ProductsView, LocalApiPermissions.SalesCreate }) is IResult denied)
                 return denied;
-            return ToResult(await service.UpdateQuotationStatusAsync(id, request.Status, ct).ConfigureAwait(false));
+            LocalApiSession session = RequiredSession(context, sessions);
+            return ToResult(await service.UpdateQuotationStatusAsync(id, request.Status, ct, session.UserId).ConfigureAwait(false));
         });
 
         // --- Customer Orders ---
@@ -112,7 +113,8 @@ internal static class LocalCustomerOrdersAndQuotationsEndpoints
         {
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProductsManage) is IResult denied)
                 return denied;
-            return ToResult(await service.UpdateOrderStatusAsync(id, request.Status, ct).ConfigureAwait(false));
+            LocalApiSession session = RequiredSession(context, sessions);
+            return ToResult(await service.UpdateOrderStatusAsync(id, request.Status, ct, session.UserId).ConfigureAwait(false));
         });
 
         app.MapPost("/api/customer-orders/{id:guid}/fulfill", async (
@@ -126,6 +128,7 @@ internal static class LocalCustomerOrdersAndQuotationsEndpoints
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProductsManage) is IResult denied)
                 return denied;
 
+            LocalApiSession session = RequiredSession(context, sessions);
             string? refText = !string.IsNullOrWhiteSpace(request.SaleId) ? request.SaleId : request.SaleReference;
             if (string.IsNullOrWhiteSpace(refText))
             {
@@ -134,10 +137,10 @@ internal static class LocalCustomerOrdersAndQuotationsEndpoints
 
             if (Guid.TryParse(refText.Trim(), out Guid saleId))
             {
-                return ToResult(await service.FulfillOrderAsync(id, saleId, ct).ConfigureAwait(false));
+                return ToResult(await service.FulfillOrderAsync(id, saleId, ct, session.UserId).ConfigureAwait(false));
             }
 
-            return ToResult(await service.FulfillOrderByReferenceAsync(id, refText.Trim(), ct).ConfigureAwait(false));
+            return ToResult(await service.FulfillOrderByReferenceAsync(id, refText.Trim(), ct, session.UserId).ConfigureAwait(false));
         });
 
         return app;
