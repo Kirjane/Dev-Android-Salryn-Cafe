@@ -91,6 +91,8 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
   const canRecordPayment = hasPermission(session.data, Permissions.PayablesRecordPayment);
 
   const prDeskOnly = initialTab === "pr";
+  const canViewSupplierData = userRoleId !== "00000000-0000-0000-0000-000000000003" &&
+    (canManagePo || canViewPayables);
   const defaultInitialTab = initialTab ?? ((canManagePo || isExecutive) ? "overview" : "pr");
 
   const [selectedTab, setActiveTab] = useState<
@@ -123,12 +125,12 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
   const activeTab = prDeskOnly ? "pr" : selectedTab;
 
   // Queries
-  const foundation = useQuery({ queryKey: ["lpi-foundation"], queryFn: () => fetchLpiFoundation(true), enabled: !prDeskOnly && canViewProcurement });
+  const foundation = useQuery({ queryKey: ["lpi-foundation"], queryFn: () => fetchLpiFoundation(true), enabled: !prDeskOnly && canViewSupplierData });
   const requesterCatalog = useQuery({ queryKey: ["lpi-requisition-catalog"], queryFn: fetchLpiRequesterCatalog, enabled: prDeskOnly && canRequestPr });
   const prProducts = prDeskOnly ? requesterCatalog.data?.products : foundation.data?.products;
   const prUnits = prDeskOnly ? requesterCatalog.data?.unitsOfMeasure : foundation.data?.unitsOfMeasure;
-  const overview = useQuery({ queryKey: ["lpi-overview"], queryFn: fetchLpiOverview, enabled: canViewProcurement && !prDeskOnly });
-  const suppliers = useQuery({ queryKey: ["lpi-suppliers"], queryFn: () => fetchSuppliers("", true), enabled: canViewProcurement && !prDeskOnly });
+  const overview = useQuery({ queryKey: ["lpi-overview"], queryFn: fetchLpiOverview, enabled: canViewSupplierData && !prDeskOnly });
+  const suppliers = useQuery({ queryKey: ["lpi-suppliers"], queryFn: () => fetchSuppliers("", true), enabled: canViewSupplierData && !prDeskOnly });
   const requisitions = useQuery({ queryKey: ["lpi-requisitions"], queryFn: () => fetchRequisitions(), enabled: canViewProcurement || canRequestPr });
   const purchaseOrders = useQuery({ queryKey: ["lpi-pos"], queryFn: () => fetchPurchaseOrders(), enabled: canManagePo || canApprovePo });
   const receivingReports = useQuery({ queryKey: ["lpi-rrs"], queryFn: () => fetchReceivingReports(), enabled: canViewReceiving });
@@ -317,9 +319,9 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
         {(
           [
             canViewProcurement && (canManagePo || isExecutive) && { id: "overview", label: "📊 Overview" },
-            canViewProcurement && { id: "suppliers", label: "🏢 Suppliers" },
+            canViewSupplierData && { id: "suppliers", label: "🏢 Suppliers" },
             canRequestPr && { id: "pr", label: "📝 Requisitions (PR)" },
-            canViewProcurement && { id: "quotations", label: "📋 Quotations" },
+            canManagePo && { id: "quotations", label: "📋 Quotations" },
             (canManagePo || canApprovePo) && { id: "po", label: "📦 Purchase Orders" },
             canViewReceiving && { id: "rr", label: "🚚 Receiving (RR)" },
             canViewInventory && { id: "inventory", label: "📈 Stock & Returns" },
@@ -2762,7 +2764,7 @@ function QuotationListView({
   const { notify } = useNotifications();
   const session = useAppSession();
   const canManagePo = hasPermission(session.data, Permissions.ProcurementManagePurchaseOrder);
-  const canRecordQuote = canManagePo || hasPermission(session.data, Permissions.ProcurementRequest);
+  const canRecordQuote = canManagePo;
   const quotations = useQuery({
     queryKey: ["lpi-quotations", requisitionId],
     queryFn: () => fetchQuotations(requisitionId),
