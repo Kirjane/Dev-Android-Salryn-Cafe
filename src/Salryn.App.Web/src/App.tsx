@@ -31,6 +31,7 @@ import { TraditionalReportingPage } from "./pages/TraditionalReportingPage";
 import { UsersPage } from "./pages/UsersPage";
 import { ReceivablesPage } from "./pages/ReceivablesPage";
 import { ProcureToPayPage } from "./pages/ProcureToPayPage";
+import { AccountsPayablePage } from "./pages/AccountsPayablePage";
 import { PriceCanvassPage } from "./pages/PriceCanvassPage";
 import { CustomerOrdersPage } from "./pages/CustomerOrdersPage";
 import { canAccessPage, getFirstAllowedPage, implementedPages } from "./security/permissions";
@@ -159,7 +160,7 @@ function renderPage(page: AppPage, session: SessionState, onLogout: () => void, 
     case "purchase-requests":
       return <ProcureToPayPage initialTab="pr" />;
     case "accounts-payable":
-      return <ProcureToPayPage initialTab="ap" />;
+      return <AccountsPayablePage />;
     case "price-canvass":
       return <PriceCanvassPage />;
     case "customer-orders":
