@@ -236,6 +236,20 @@ public static class CeoCustomerOrdersAndQuotesChecks
                    corruptList.Value.Single(o => o.Id == syntheticCorruptId).Lines.Count == 0 &&
                    corruptDetail.Value.Lines.Count == 0 && corruptDetail.Value.TotalCents == 7000,
                 "CO-LINE-08 corrupt historical order must remain visibly unhydrated, not receive invented lines.");
+            // Even a real completed sale with sufficient total must not fulfill a
+            // historical parent that has no persisted required products.
+            Guid corruptSale = SeedRealSale(paths.DatabasePath, "SL-CO-CORRUPT-TEST",
+                cashierId, productId, "Industrial Tool Set", 1000, 85_000, 85_000);
+            var beforeCorruptFulfill = ReadOrderMutationCounts(paths.DatabasePath);
+            var corruptFulfill = await service.FulfillOrderAsync(syntheticCorruptId, corruptSale);
+            Assert(!corruptFulfill.IsSuccess && corruptFulfill.ErrorDetail.Code == "CustomerOrder.PersistedLinesInvalid",
+                "CO-LINE-08 missing saved lines must prevent verified-sale fulfillment.");
+            Assert(beforeCorruptFulfill == ReadOrderMutationCounts(paths.DatabasePath),
+                "CO-LINE-08 blocked fulfillment must leave downstream data unchanged.");
+            var corruptAfter = await service.GetOrderByIdAsync(syntheticCorruptId);
+            Assert(corruptAfter.IsSuccess && corruptAfter.Value.Status == "Confirmed" &&
+                   !corruptAfter.Value.SaleId.HasValue,
+                "CO-LINE-08 corrupt historical parent must remain Confirmed and unlinked.");
 
             // Fulfill Order Invariants & Explicit State Machine
             // 1. Negative test: direct Fulfilled status write bypass must fail
