@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Salryn.Core.Common;
 using Salryn.Core.Models;
@@ -245,6 +246,10 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
                 await insertLine.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
+            await WriteAuditAsync(connection, transaction, userId, "CUSTOMER_QUOTATION_CREATED",
+                "customer_quotations", quoteId, null,
+                JsonSerializer.Serialize(new { quoteNumber, status = "Issued", totalCents, lineCount = lines.Count }),
+                "Quotation created; no sale, payment, or stock movement", now, cancellationToken);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
             return Result<CustomerQuotation>.Success(new CustomerQuotation(
@@ -258,23 +263,29 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
         }
     }
 
-    public async Task<Result<CustomerQuotation>> UpdateQuotationStatusAsync(Guid id, string status, CancellationToken cancellationToken = default)
+    public async Task<Result<CustomerQuotation>> UpdateQuotationStatusAsync(Guid id, string status, CancellationToken cancellationToken = default, Guid? actorUserId = null)
     {
         try
         {
+            if (status is null || (status.Trim() != "Expired" && status.Trim() != "Converted"))
+                return Result<CustomerQuotation>.Fail(Error.Validation("Quotation.InvalidStatus", "Only Issued quotations can be expired or marked converted."));
             await using var connection = _connectionFactory.CreateConnection();
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-
+            await using var transaction = connection.BeginTransaction();
             await using var cmd = connection.CreateCommand();
-            cmd.CommandText = "UPDATE customer_quotations SET status = $status WHERE id = $id;";
+            cmd.Transaction = transaction;
+            cmd.CommandText = "UPDATE customer_quotations SET status = $status WHERE id = $id AND status = 'Issued';";
             cmd.Parameters.AddWithValue("$status", status.Trim());
             cmd.Parameters.AddWithValue("$id", id.ToString("D"));
             int affected = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             if (affected == 0)
             {
-                return Result<CustomerQuotation>.Fail(Error.NotFound("Quotation.NotFound", "Quotation not found."));
+                return Result<CustomerQuotation>.Fail(Error.Conflict("Quotation.InvalidTransition", "Quotation was not Issued or no longer exists."));
             }
-
+            await WriteAuditAsync(connection, transaction, actorUserId, "CUSTOMER_QUOTATION_STATUS_CHANGED",
+                "customer_quotations", id, "{\"status\":\"Issued\"}",
+                JsonSerializer.Serialize(new { status = status.Trim() }), null, DateTimeOffset.UtcNow, cancellationToken);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             return await GetQuotationByIdAsync(id, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -522,6 +533,10 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
                 await insertLine.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
+            await WriteAuditAsync(connection, transaction, userId, "CUSTOMER_ORDER_CREATED",
+                "customer_orders", orderId, null,
+                JsonSerializer.Serialize(new { orderNumber, status = "Confirmed", totalCents, lineCount = lines.Count }),
+                "Manager order recorded; no stock or sale posted", now, cancellationToken);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
             return Result<CustomerOrder>.Success(new CustomerOrder(
@@ -535,7 +550,7 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
         }
     }
 
-    public async Task<Result<CustomerOrder>> UpdateOrderStatusAsync(Guid id, string status, CancellationToken cancellationToken = default)
+    public async Task<Result<CustomerOrder>> UpdateOrderStatusAsync(Guid id, string status, CancellationToken cancellationToken = default, Guid? actorUserId = null)
     {
         if (string.IsNullOrWhiteSpace(status))
         {
@@ -612,9 +627,10 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
             auditCmd.Transaction = transaction;
             auditCmd.CommandText = """
                 INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, old_value_json, new_value_json, reason, created_at)
-                VALUES ($id, NULL, 'CUSTOMER_ORDER_CANCELLED', 'customer_orders', $entityId, $oldVal, $newVal, $reason, $now);
+                VALUES ($id, $actor, 'CUSTOMER_ORDER_CANCELLED', 'customer_orders', $entityId, $oldVal, $newVal, $reason, $now);
                 """;
             auditCmd.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("D"));
+            auditCmd.Parameters.AddWithValue("$actor", (object?)actorUserId?.ToString("D") ?? DBNull.Value);
             auditCmd.Parameters.AddWithValue("$entityId", id.ToString("D"));
             auditCmd.Parameters.AddWithValue("$oldVal", $"{{\"status\":\"{currentStatus}\"}}");
             auditCmd.Parameters.AddWithValue("$newVal", "{\"status\":\"Cancelled\"}");
@@ -632,7 +648,7 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
         }
     }
 
-    public async Task<Result<CustomerOrder>> FulfillOrderByReferenceAsync(Guid orderId, string saleReference, CancellationToken cancellationToken = default)
+    public async Task<Result<CustomerOrder>> FulfillOrderByReferenceAsync(Guid orderId, string saleReference, CancellationToken cancellationToken = default, Guid? actorUserId = null)
     {
         if (string.IsNullOrWhiteSpace(saleReference))
         {
@@ -641,7 +657,7 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
 
         if (Guid.TryParse(saleReference.Trim(), out Guid saleId))
         {
-            return await FulfillOrderAsync(orderId, saleId, cancellationToken).ConfigureAwait(false);
+            return await FulfillOrderAsync(orderId, saleId, cancellationToken, actorUserId).ConfigureAwait(false);
         }
 
         try
@@ -657,7 +673,7 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
                 return Result<CustomerOrder>.Fail(Error.NotFound("CustomerOrder.SaleNotFound", $"Referenced receipt '{saleReference}' does not exist."));
             }
 
-            return await FulfillOrderAsync(orderId, resolvedId, cancellationToken).ConfigureAwait(false);
+            return await FulfillOrderAsync(orderId, resolvedId, cancellationToken, actorUserId).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -665,7 +681,7 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
         }
     }
 
-    public async Task<Result<CustomerOrder>> FulfillOrderAsync(Guid orderId, Guid saleId, CancellationToken cancellationToken = default)
+    public async Task<Result<CustomerOrder>> FulfillOrderAsync(Guid orderId, Guid saleId, CancellationToken cancellationToken = default, Guid? actorUserId = null)
     {
         try
         {
@@ -842,9 +858,10 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
             auditCmd.Transaction = transaction;
             auditCmd.CommandText = """
                 INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, new_value_json, reason, created_at)
-                VALUES ($id, NULL, 'CUSTOMER_ORDER_FULFILLED', 'customer_orders', $entityId, $newVal, $reason, $now);
+                VALUES ($id, $actor, 'CUSTOMER_ORDER_FULFILLED', 'customer_orders', $entityId, $newVal, $reason, $now);
                 """;
             auditCmd.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("D"));
+            auditCmd.Parameters.AddWithValue("$actor", (object?)actorUserId?.ToString("D") ?? DBNull.Value);
             auditCmd.Parameters.AddWithValue("$entityId", orderId.ToString("D"));
             auditCmd.Parameters.AddWithValue("$newVal", $"{{\"saleId\":\"{saleId:D}\",\"orderTotalCents\":{orderTotalCents},\"saleTotalCents\":{saleTotalCents}}}");
             auditCmd.Parameters.AddWithValue("$reason", "Customer order fulfilled with matching completed POS sale.");
@@ -859,6 +876,29 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
         {
             return Result<CustomerOrder>.Fail(Error.Unexpected("CustomerOrder.FulfillFailed", ex.Message));
         }
+    }
+
+    private static async Task WriteAuditAsync(SqliteConnection connection, SqliteTransaction transaction,
+        Guid? actorUserId, string action, string entityType, Guid entityId,
+        string? oldJson, string newJson, string? reason, DateTimeOffset at, CancellationToken ct)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.Transaction = transaction;
+        cmd.CommandText = """
+            INSERT INTO audit_logs
+              (id,user_id,action,entity_type,entity_id,old_value_json,new_value_json,reason,created_at)
+            VALUES ($id,$actor,$action,$type,$entity,$old,$new,$reason,$at);
+            """;
+        cmd.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("D"));
+        cmd.Parameters.AddWithValue("$actor", (object?)actorUserId?.ToString("D") ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$action", action);
+        cmd.Parameters.AddWithValue("$type", entityType);
+        cmd.Parameters.AddWithValue("$entity", entityId.ToString("D"));
+        cmd.Parameters.AddWithValue("$old", (object?)oldJson ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$new", newJson);
+        cmd.Parameters.AddWithValue("$reason", (object?)reason ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$at", at.ToString("O"));
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     private static async Task<string> AllocateNextSequenceAsync(
