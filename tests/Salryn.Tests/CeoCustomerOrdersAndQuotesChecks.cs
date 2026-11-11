@@ -386,6 +386,14 @@ public static class CeoCustomerOrdersAndQuotesChecks
                 Assert(!string.IsNullOrEmpty(mgrCookieHeader), "Manager session cookie missing");
                 managerClient.DefaultRequestHeaders.Add("Cookie", mgrCookieHeader!.Split(';')[0]);
 
+                using HttpClient adminClient = new(new HttpClientHandler { UseCookies = false }) { BaseAddress = new Uri(boundUrl) };
+                HttpResponseMessage adminLogin = await adminClient.PostAsJsonAsync("/api/auth/login",
+                    new { username = "admin-co", password = "Admin123!" });
+                Assert(adminLogin.IsSuccessStatusCode, "CO-LINE-05 admin login failed.");
+                Assert(adminLogin.Headers.TryGetValues("Set-Cookie", out var adminCookies),
+                    "CO-LINE-05 admin cookie missing.");
+                adminClient.DefaultRequestHeaders.Add("Cookie", adminCookies!.First().Split(';')[0]);
+
                 // Cashier must not browse, create, or fulfill manager-owned orders.
                 Assert((await client.GetAsync("/api/customer-orders")).StatusCode == HttpStatusCode.Forbidden,
                     "Cashier GET /api/customer-orders must return 403.");
@@ -393,6 +401,25 @@ public static class CeoCustomerOrdersAndQuotesChecks
                 Assert(ordersResp.IsSuccessStatusCode, $"Manager GET /api/customer-orders failed with {ordersResp.StatusCode}");
                 var ordersList = await ordersResp.Content.ReadFromJsonAsync<List<CustomerOrder>>();
                 Assert(ordersList != null && ordersList.Count >= 2, "Failed to retrieve orders list via HTTP");
+                // CO-LINE-01/02: compare real database, list JSON, and detail JSON.
+                foreach (var persistedOrder in new[] { order, multiCreated.Value })
+                {
+                    CustomerOrder fromList = ordersList.Single(o => o.Id == persistedOrder.Id);
+                    var actual = ReadPersistedOrderLines(paths.DatabasePath, persistedOrder.Id);
+                    Assert(actual.Count == fromList.Lines.Count && actual.TotalCents == fromList.TotalCents,
+                        $"CO-LINE-01/02 list API diverges from DB for {persistedOrder.OrderNumber}.");
+                    var detailResponse = await managerClient.GetAsync($"/api/customer-orders/{persistedOrder.Id}");
+                    Assert(detailResponse.StatusCode == HttpStatusCode.OK, "CO-LINE-01/02 manager detail GET failed.");
+                    var fromDetail = await detailResponse.Content.ReadFromJsonAsync<CustomerOrder>();
+                    Assert(fromDetail != null && fromList.Lines.SequenceEqual(fromDetail.Lines),
+                        $"CO-LINE-01/02 list API diverges from detail for {persistedOrder.OrderNumber}.");
+                }
+                Assert((await adminClient.GetAsync("/api/customer-orders")).StatusCode == HttpStatusCode.OK,
+                    "CO-LINE-05 admin list read must succeed.");
+                Assert((await adminClient.GetAsync($"/api/customer-orders/{order.Id}")).StatusCode == HttpStatusCode.OK,
+                    "CO-LINE-05 admin detail read must succeed.");
+                Assert((await client.GetAsync($"/api/customer-orders/{order.Id}")).StatusCode == HttpStatusCode.Forbidden,
+                    "CO-LINE-05 cashier detail read must fail with 403.");
 
                 // POST new order via HTTP
                 var httpOrderPayload = new
@@ -417,6 +444,67 @@ public static class CeoCustomerOrdersAndQuotesChecks
                 Assert(createOrderResp.StatusCode == HttpStatusCode.Created, $"POST /api/customer-orders failed with {createOrderResp.StatusCode}");
                 var createdOrder = await createOrderResp.Content.ReadFromJsonAsync<CustomerOrder>();
                 Assert(createdOrder != null, "Created order payload is null");
+                Assert(ReadPersistedOrderLines(paths.DatabasePath, createdOrder.Id).Count == 1,
+                    "CO-LINE-01 manager API order must persist one child.");
+                var postListResponse = await managerClient.GetAsync("/api/customer-orders");
+                var postList = await postListResponse.Content.ReadFromJsonAsync<List<CustomerOrder>>();
+                Assert(postListResponse.StatusCode == HttpStatusCode.OK &&
+                       postList!.Single(o => o.Id == createdOrder.Id).Lines.SequenceEqual(createdOrder.Lines),
+                    "CO-LINE-01 manager API list must hydrate newly inserted line.");
+
+                // CO-LINE-02 HTTP multi-line payload and filtered list must retain exact children.
+                var httpMultiPayload = new
+                {
+                    customerName = "HTTP Multi-line Buyer",
+                    lines = new object[]
+                    {
+                        new { productId = productId.ToString("D"), productNameSnapshot = "Industrial Tool Set",
+                              unitNameSnapshot = "pcs", quantityX1000 = 1000L, unitPriceCents = 85_000L },
+                        new { productId = otherProductId.ToString("D"), productNameSnapshot = "Safety Goggles",
+                              unitNameSnapshot = "pcs", quantityX1000 = 500L, unitPriceCents = 15_000L }
+                    }
+                };
+                var httpMultiResponse = await managerClient.PostAsJsonAsync("/api/customer-orders", httpMultiPayload);
+                Assert(httpMultiResponse.StatusCode == HttpStatusCode.Created,
+                    $"CO-LINE-02 HTTP multi-line POST failed: {httpMultiResponse.StatusCode}");
+                var httpMulti = await httpMultiResponse.Content.ReadFromJsonAsync<CustomerOrder>();
+                Assert(httpMulti != null && httpMulti.TotalCents == 92_500 && httpMulti.Lines.Count == 2,
+                    "CO-LINE-02 HTTP multi-line total/child count wrong.");
+                var httpMultiDb = ReadPersistedOrderLines(paths.DatabasePath, httpMulti.Id);
+                Assert(httpMultiDb.Count == 2 && httpMultiDb.TotalCents == httpMulti.TotalCents,
+                    "CO-LINE-02 HTTP multi-line persistence mismatch.");
+                var confirmedResponse = await managerClient.GetAsync("/api/customer-orders?status=Confirmed");
+                var confirmedList = await confirmedResponse.Content.ReadFromJsonAsync<List<CustomerOrder>>();
+                Assert(confirmedResponse.StatusCode == HttpStatusCode.OK &&
+                    confirmedList!.Single(o => o.Id == httpMulti.Id).Lines.SequenceEqual(httpMulti.Lines),
+                    "CO-LINE-02 filtered HTTP list must contain exact child lines.");
+
+                // CO-LINE-03/04: API validation failures are atomic (parent, children,
+                // creation audits, sales, payments, stock and drawer all unchanged).
+                var beforeInvalidHttp = ReadOrderMutationCounts(paths.DatabasePath);
+                var emptyResponse = await managerClient.PostAsJsonAsync("/api/customer-orders",
+                    new { customerName = "Empty HTTP Order", lines = Array.Empty<object>() });
+                Assert(emptyResponse.StatusCode == HttpStatusCode.BadRequest, "CO-LINE-03 [] must return 400.");
+                var absentResponse = await managerClient.PostAsJsonAsync("/api/customer-orders",
+                    new { customerName = "Absent HTTP Order" });
+                Assert(absentResponse.StatusCode == HttpStatusCode.BadRequest, "CO-LINE-03 missing lines must return 400.");
+                var invalidQuantityResponse = await managerClient.PostAsJsonAsync("/api/customer-orders",
+                    new { customerName = "Invalid Qty HTTP",
+                          lines = new[] { new { productId, productNameSnapshot = "Tool",
+                            unitNameSnapshot = "pcs", quantityX1000 = 0L, unitPriceCents = 85_000L } } });
+                Assert(invalidQuantityResponse.StatusCode == HttpStatusCode.BadRequest,
+                    "CO-LINE-04 invalid quantity must return 400.");
+                var invalidPriceResponse = await managerClient.PostAsJsonAsync("/api/customer-orders",
+                    new { customerName = "Invalid Price HTTP",
+                          lines = new[] { new { productId, productNameSnapshot = "Tool",
+                            unitNameSnapshot = "pcs", quantityX1000 = 1000L, unitPriceCents = -100L } } });
+                Assert(invalidPriceResponse.StatusCode == HttpStatusCode.BadRequest,
+                    "CO-LINE-04 negative price must return 400.");
+                Assert(beforeInvalidHttp == ReadOrderMutationCounts(paths.DatabasePath),
+                    "CO-LINE-03/04 rejected HTTP create caused a database mutation.");
+                Assert((await client.PostAsJsonAsync($"/api/customer-orders/{createdOrder.Id}/fulfill",
+                    new { saleId = Guid.NewGuid().ToString("D") })).StatusCode == HttpStatusCode.Forbidden,
+                    "CO-LINE-05 cashier fulfillment must return 403.");
 
                 // 1. Negative test via HTTP: cashier cannot create or mutate customer orders
                 Assert((await client.PostAsJsonAsync("/api/customer-orders", httpOrderPayload)).StatusCode == HttpStatusCode.Forbidden,
