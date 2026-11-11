@@ -156,6 +156,8 @@ function renderPage(page: AppPage, session: SessionState, onLogout: () => void, 
       return <ProductionReportsPage />;
     case "procure-to-pay":
       return <ProcureToPayPage initialTab="overview" />;
+    case "purchase-requests":
+      return <ProcureToPayPage initialTab="pr" />;
     case "accounts-payable":
       return <ProcureToPayPage initialTab="ap" />;
     case "price-canvass":
