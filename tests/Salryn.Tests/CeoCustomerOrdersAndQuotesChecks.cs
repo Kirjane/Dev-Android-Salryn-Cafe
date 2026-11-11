@@ -388,6 +388,44 @@ public static class CeoCustomerOrdersAndQuotesChecks
                 Assert(mgrCancelConfirmed.IsSuccessStatusCode, $"Expected 200 OK when cancelling confirmed order, got {mgrCancelConfirmed.StatusCode}");
                 var cancelledOrder = await mgrCancelConfirmed.Content.ReadFromJsonAsync<CustomerOrder>();
                 Assert(cancelledOrder != null && cancelledOrder.Status == "Cancelled", "Order status must be Cancelled");
+
+                // 9. Scenario B: Customer account-linked order fulfilled via AR sale
+                var httpOrderWithAccountPayload = new
+                {
+                    customerId = customerA.ToString("D"),
+                    customerName = "Customer Alpha",
+                    customerPhone = "0917-111-2222",
+                    notes = "AR fulfillment order",
+                    lines = new[]
+                    {
+                        new
+                        {
+                            productId = productId.ToString("D"),
+                            productNameSnapshot = "Industrial Tool Set",
+                            unitNameSnapshot = "pcs",
+                            quantityX1000 = 2000,
+                            unitPriceCents = 85_000
+                        }
+                    }
+                };
+
+                HttpResponseMessage createOrderAccountResp = await client.PostAsJsonAsync("/api/customer-orders", httpOrderWithAccountPayload);
+                Assert(createOrderAccountResp.StatusCode == HttpStatusCode.Created, "Failed to create account-linked order");
+                var orderWithAccount = await createOrderAccountResp.Content.ReadFromJsonAsync<CustomerOrder>();
+                Assert(orderWithAccount != null && orderWithAccount.CustomerId == customerA, "Order customerId mismatch");
+
+                // Scenario C: Negative test - fulfilling customerA's order with customerB's sale fails with 409 Conflict
+                Guid saleForCustBHttp = SeedRealSale(paths.DatabasePath, "SL-AR-CUST-B", cashierId, productId, "Industrial Tool Set", 2000, 85_000, 170_000, customerId: customerB);
+                HttpResponseMessage mismatchCustResp = await client.PostAsJsonAsync($"/api/customer-orders/{orderWithAccount.Id}/fulfill", new { saleReference = "SL-AR-CUST-B" });
+                Assert(mismatchCustResp.StatusCode == HttpStatusCode.Conflict, $"Expected 409 Conflict for customer mismatch, got {mismatchCustResp.StatusCode}");
+
+                // Scenario B: Positive test - fulfilling customerA's order with customerA's AR sale succeeds
+                Guid saleForCustAHttp = SeedRealSale(paths.DatabasePath, "SL-AR-CUST-A", cashierId, productId, "Industrial Tool Set", 2000, 85_000, 170_000, customerId: customerA);
+                HttpResponseMessage matchCustResp = await client.PostAsJsonAsync($"/api/customer-orders/{orderWithAccount.Id}/fulfill", new { saleReference = "SL-AR-CUST-A" });
+                Assert(matchCustResp.IsSuccessStatusCode, $"Fulfill account-linked order failed: {matchCustResp.StatusCode}");
+                var fulfilledAccountOrder = await matchCustResp.Content.ReadFromJsonAsync<CustomerOrder>();
+                Assert(fulfilledAccountOrder != null && fulfilledAccountOrder.Status == "Fulfilled", "Fulfilled account order status check failed");
+                Assert(fulfilledAccountOrder.SaleId == saleForCustAHttp, "SaleId mismatch for fulfilled account order");
             }
             finally
             {

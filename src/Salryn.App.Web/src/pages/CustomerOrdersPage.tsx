@@ -9,6 +9,7 @@ import {
   type CreateCustomerOrderLineRequest,
 } from "../api/customerOrdersAndQuotes";
 import { fetchProducts } from "../api/products";
+import { fetchReceivableCustomers } from "../api/receivables";
 import { fetchStoreSettings } from "../api/storeSettings";
 import { PrintableCustomerOrderModal } from "../components/documents/PrintableCustomerOrderModal";
 import {
@@ -61,6 +62,11 @@ export function CustomerOrdersPage() {
     queryFn: fetchStoreSettings,
   });
 
+  const { data: customerAccounts = [] } = useQuery({
+    queryKey: ["receivables-customers-for-orders"],
+    queryFn: () => fetchReceivableCustomers(),
+  });
+
   const products = productsData?.items ?? [];
 
   // Modals state
@@ -70,6 +76,7 @@ export function CustomerOrdersPage() {
   const [fulfillSaleId, setFulfillSaleId] = useState("");
 
   // New order form state
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [promisedDate, setPromisedDate] = useState("");
@@ -82,6 +89,7 @@ export function CustomerOrdersPage() {
   const [linePrice, setLinePrice] = useState("");
 
   const resetForm = () => {
+    setSelectedCustomerId("");
     setCustomerName("");
     setCustomerPhone("");
     setPromisedDate("");
@@ -158,6 +166,7 @@ export function CustomerOrdersPage() {
       }));
 
       const created = await createCustomerOrder({
+        customerId: selectedCustomerId || undefined,
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim() || undefined,
         promisedDate: promisedDate ? new Date(promisedDate).toISOString() : undefined,
@@ -269,7 +278,14 @@ export function CustomerOrdersPage() {
                       <td className="px-4 py-3 font-mono font-medium text-slate-900">{o.orderNumber}</td>
                       <td className="px-4 py-3 text-xs text-slate-500">{formatDateTime(o.createdAt)}</td>
                       <td className="px-4 py-3">
-                        <div className="font-medium text-slate-900">{o.customerName}</div>
+                        <div className="font-medium text-slate-900 flex items-center gap-1.5">
+                          {o.customerName}
+                          {o.customerId && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800">
+                              Account
+                            </span>
+                          )}
+                        </div>
                         {o.customerPhone && <div className="text-xs text-slate-500">{o.customerPhone}</div>}
                       </td>
                       <td className="px-4 py-3 text-xs text-slate-500">
@@ -340,6 +356,30 @@ export function CustomerOrdersPage() {
         title="Create Customer Order / Reservation"
       >
         <div className="space-y-6 max-h-[80vh] overflow-y-auto pr-1">
+          <FormField label="Customer Account (Optional for Cash, Required for AR Fulfillment)">
+            <Select
+              value={selectedCustomerId}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSelectedCustomerId(val);
+                if (val) {
+                  const acc = customerAccounts.find((c) => c.customer.id === val);
+                  if (acc) {
+                    setCustomerName(acc.customer.fullName);
+                    setCustomerPhone(acc.customer.phone || "");
+                  }
+                }
+              }}
+            >
+              <option value="">-- Walk-in / Guest (No Customer Account) --</option>
+              {customerAccounts.map((c) => (
+                <option key={c.customer.id} value={c.customer.id}>
+                  {c.customer.fullName} {c.customer.phone ? `(${c.customer.phone})` : ""} - Balance: {formatMoney(c.balanceCents / 100)}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FormField label="Customer Name *">
               <TextInput
