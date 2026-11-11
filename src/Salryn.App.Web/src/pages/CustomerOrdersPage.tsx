@@ -47,10 +47,13 @@ export function CustomerOrdersPage() {
   const [statusFilter, setStatusFilter] = useState<string>("All");
 
   // Queries
-  const { data: orders = [], isLoading, error } = useQuery({
-    queryKey: ["customer-orders", statusFilter],
-    queryFn: () => fetchCustomerOrders(statusFilter === "All" ? undefined : statusFilter),
+  const { data: allOrders = [], isLoading, error } = useQuery({
+    queryKey: ["customer-orders"],
+    queryFn: () => fetchCustomerOrders(),
   });
+  const orders = allOrders.filter((order) => statusFilter === "All" || order.status === statusFilter);
+  const activeOrders = allOrders.filter((order) => ["Confirmed", "Preparing", "Ready"].includes(order.status));
+  const dueOrders = activeOrders.filter((order) => order.promisedDate && order.promisedDate.slice(0, 10) < new Date().toISOString().slice(0, 10));
 
   const { data: productsData } = useQuery({
     queryKey: ["products-for-orders"],
@@ -184,6 +187,16 @@ export function CustomerOrdersPage() {
     }
   };
 
+  const handleAdvanceOrder = async (id: string, nextStatus: "Preparing" | "Ready") => {
+    try {
+      await updateCustomerOrderStatus(id, nextStatus);
+      void queryClient.invalidateQueries({ queryKey: ["customer-orders"] });
+      notify.success("Order updated", `Order moved to ${nextStatus}. No sale or stock movement was created.`);
+    } catch (err) {
+      notify.error("Transition Failed", safeNotificationDescription(err, "Could not update order state."));
+    }
+  };
+
   const handleCancelOrder = async (id: string) => {
     if (!confirm("Are you sure you want to cancel this customer order?")) return;
     try {
@@ -218,9 +231,9 @@ export function CustomerOrdersPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 pb-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Customer Orders / Layaways</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Customer Orders</h1>
           <p className="text-sm text-slate-500">
-            Track customer special orders, reservations, and advance bookings with promised fulfillment dates.
+            Manager order queue: Confirmed → Preparing → Ready → Fulfilled by verified POS sale. No layaway balance is implied.
           </p>
         </div>
         <div className="flex gap-2">
@@ -231,6 +244,8 @@ export function CustomerOrdersPage() {
           >
             <option value="All">All Statuses</option>
             <option value="Confirmed">Confirmed</option>
+            <option value="Preparing">Preparing</option>
+            <option value="Ready">Ready</option>
             <option value="Fulfilled">Fulfilled</option>
             <option value="Cancelled">Cancelled</option>
           </Select>
@@ -239,6 +254,13 @@ export function CustomerOrdersPage() {
           </Button>
         </div>
       </div>
+
+      <section aria-label="Order lifecycle summary" className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+        <div className="rounded-lg border bg-white p-4"><div className="text-xs text-slate-500">Active orders</div><div className="text-2xl font-bold">{activeOrders.length}</div></div>
+        <div className="rounded-lg border bg-white p-4"><div className="text-xs text-slate-500">In preparation</div><div className="text-2xl font-bold">{allOrders.filter((o) => o.status === "Preparing").length}</div></div>
+        <div className="rounded-lg border bg-white p-4"><div className="text-xs text-slate-500">Ready to fulfill</div><div className="text-2xl font-bold">{allOrders.filter((o) => o.status === "Ready").length}</div></div>
+        <div className="rounded-lg border bg-white p-4"><div className="text-xs text-slate-500">Past promised date</div><div className="text-2xl font-bold">{dueOrders.length}</div></div>
+      </section>
 
       {/* Orders Table */}
       <Card>
@@ -307,7 +329,7 @@ export function CustomerOrdersPage() {
                               : "primary"
                           }
                         >
-                          {o.status}
+                          {o.status === "Ready" ? "Ready for fulfillment" : o.status}
                         </StatusPill>
                       </td>
                       <td className="px-4 py-3 text-right space-x-2">
@@ -319,25 +341,18 @@ export function CustomerOrdersPage() {
                           🖨️ Slip
                         </Button>
                         {o.status === "Confirmed" && (
-                          <>
-                            <Button
-                              variant="primary"
-                              size="sm"
-                              onClick={() => {
-                                setFulfillOrderTarget(o);
-                                setFulfillSaleId("");
-                              }}
-                            >
-                              ✓ Fulfill
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleCancelOrder(o.id)}
-                            >
-                              Cancel
-                            </Button>
-                          </>
+                          <Button variant="primary" size="sm" onClick={() => void handleAdvanceOrder(o.id, "Preparing")}>Start preparation</Button>
+                        )}
+                        {o.status === "Preparing" && (
+                          <Button variant="primary" size="sm" onClick={() => void handleAdvanceOrder(o.id, "Ready")}>Mark ready</Button>
+                        )}
+                        {o.status === "Ready" && (
+                          <Button variant="primary" size="sm" onClick={() => { setFulfillOrderTarget(o); setFulfillSaleId(""); }}>
+                            Fulfill with POS sale
+                          </Button>
+                        )}
+                        {["Confirmed", "Preparing", "Ready"].includes(o.status) && (
+                          <Button variant="ghost" size="sm" onClick={() => void handleCancelOrder(o.id)}>Cancel order</Button>
                         )}
                       </td>
                     </tr>
@@ -353,7 +368,7 @@ export function CustomerOrdersPage() {
       <Dialog
         open={isNewModalOpen}
         onClose={() => setIsNewModalOpen(false)}
-        title="Create Customer Order / Reservation"
+        title="Create Customer Order"
       >
         <div className="space-y-6 max-h-[80vh] overflow-y-auto pr-1">
           <FormField label="Customer Account (Optional for Cash, Required for AR Fulfillment)">
@@ -538,7 +553,7 @@ export function CustomerOrdersPage() {
       >
         <div className="space-y-4">
           <p className="text-sm text-slate-600">
-            Link this customer order to its completed POS Checkout Sale. Enter the Checkout Sale ID (GUID) or Receipt Number.
+            Only a completed, non-voided POS sale with matching customer, items, quantities and total can close this order. Enter its receipt number or sale ID.
           </p>
           <FormField label="Checkout Sale ID / Receipt # (Required)">
             <TextInput
