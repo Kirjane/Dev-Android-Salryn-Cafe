@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchCustomerOrders,
+  fetchCustomerOrder,
   createCustomerOrder,
   updateCustomerOrderStatus,
   fulfillCustomerOrder,
@@ -29,6 +30,7 @@ import {
 } from "../components/ui";
 import { formatDateTime, formatMoney, formatQuantity } from "../utils/format";
 import { safeNotificationDescription } from "../utils/notificationError";
+import { customerOrderDisplayItemCount, customerOrderIntegrityIssue } from "../utils/customerOrderIntegrity";
 
 type DraftOrderLine = {
   productId: string;
@@ -75,6 +77,7 @@ export function CustomerOrdersPage() {
   // Modals state
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [viewingOrder, setViewingOrder] = useState<CustomerOrder | null>(null);
+  const [loadingSlipId, setLoadingSlipId] = useState<string | null>(null);
   const [fulfillOrderTarget, setFulfillOrderTarget] = useState<CustomerOrder | null>(null);
   const [fulfillSaleId, setFulfillSaleId] = useState("");
 
@@ -148,6 +151,26 @@ export function CustomerOrdersPage() {
 
   const totalCents = draftLines.reduce((acc, l) => acc + Math.round(l.quantity * l.unitPriceCents), 0);
 
+  const handleOpenSlip = async (orderId: string) => {
+    setLoadingSlipId(orderId);
+    try {
+      // An order register row is not an authoritative printable document.
+      // Load the actual persisted detail even after a list refresh or creation.
+      const detail = await fetchCustomerOrder(orderId);
+      if (detail.id !== orderId) throw new Error("Fetched order ID does not match the requested order.");
+      const issue = customerOrderIntegrityIssue(detail);
+      if (issue) {
+        notify.error("Order Lines Require Review", issue);
+        return;
+      }
+      setViewingOrder(detail);
+    } catch (err) {
+      notify.error("Cannot Load Order Slip", safeNotificationDescription(err, "Order detail could not be verified."));
+    } finally {
+      setLoadingSlipId(null);
+    }
+  };
+
   const handleCreateOrder = async () => {
     if (!customerName.trim()) {
       notify.error("Customer Name Required", "Please enter customer or buyer name.");
@@ -181,7 +204,7 @@ export function CustomerOrdersPage() {
       notify.success("Order Created", `Order ${created.orderNumber} placed successfully.`);
       setIsNewModalOpen(false);
       resetForm();
-      setViewingOrder(created);
+      void handleOpenSlip(created.id);
     } catch (err) {
       notify.error("Failed to Create Order", safeNotificationDescription(err, "Could not save customer order."));
     }
@@ -314,7 +337,9 @@ export function CustomerOrdersPage() {
                         {o.promisedDate ? formatDateTime(o.promisedDate) : "—"}
                       </td>
                       <td className="px-4 py-3 text-right text-xs text-slate-600">
-                        {o.lines.length} {o.lines.length === 1 ? "item" : "items"}
+                        {customerOrderDisplayItemCount(o) === null
+                          ? <span className="text-rose-700" title={customerOrderIntegrityIssue(o) ?? undefined}>Verify line data</span>
+                          : <>{customerOrderDisplayItemCount(o)} {customerOrderDisplayItemCount(o) === 1 ? "item" : "items"}</>}
                       </td>
                       <td className="px-4 py-3 text-right font-semibold text-slate-900">
                         {formatMoney(o.totalCents / 100)}
@@ -336,9 +361,10 @@ export function CustomerOrdersPage() {
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={() => setViewingOrder(o)}
+                          onClick={() => void handleOpenSlip(o.id)}
+                          disabled={loadingSlipId !== null}
                         >
-                          🖨️ Slip
+                          {loadingSlipId === o.id ? "Loading detail..." : "🖨️ Slip"}
                         </Button>
                         {o.status === "Confirmed" && (
                           <Button variant="primary" size="sm" onClick={() => void handleAdvanceOrder(o.id, "Preparing")}>Start preparation</Button>
