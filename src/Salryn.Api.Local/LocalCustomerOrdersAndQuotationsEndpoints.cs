@@ -75,6 +75,7 @@ internal static class LocalCustomerOrdersAndQuotationsEndpoints
         {
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProductsManage) is IResult denied)
                 return denied;
+            if (!IsManagerOrAdmin(RequiredSession(context, sessions))) return Results.StatusCode(403);
             return ToResult(await service.GetOrdersAsync(status, ct).ConfigureAwait(false));
         });
 
@@ -87,6 +88,7 @@ internal static class LocalCustomerOrdersAndQuotationsEndpoints
         {
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProductsManage) is IResult denied)
                 return denied;
+            if (!IsManagerOrAdmin(RequiredSession(context, sessions))) return Results.StatusCode(403);
             return ToResult(await service.GetOrderByIdAsync(id, ct).ConfigureAwait(false));
         });
 
@@ -99,6 +101,7 @@ internal static class LocalCustomerOrdersAndQuotationsEndpoints
         {
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProductsManage) is IResult denied)
                 return denied;
+            if (!IsManagerOrAdmin(RequiredSession(context, sessions))) return Results.StatusCode(403);
             LocalApiSession session = RequiredSession(context, sessions);
             return ToResult(await service.CreateOrderAsync(session.UserId, session.DisplayName ?? session.Username, request, ct).ConfigureAwait(false), StatusCodes.Status201Created);
         });
@@ -113,6 +116,7 @@ internal static class LocalCustomerOrdersAndQuotationsEndpoints
         {
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProductsManage) is IResult denied)
                 return denied;
+            if (!IsManagerOrAdmin(RequiredSession(context, sessions))) return Results.StatusCode(403);
             LocalApiSession session = RequiredSession(context, sessions);
             return ToResult(await service.UpdateOrderStatusAsync(id, request.Status, ct, session.UserId).ConfigureAwait(false));
         });
@@ -127,6 +131,7 @@ internal static class LocalCustomerOrdersAndQuotationsEndpoints
         {
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProductsManage) is IResult denied)
                 return denied;
+            if (!IsManagerOrAdmin(RequiredSession(context, sessions))) return Results.StatusCode(403);
 
             LocalApiSession session = RequiredSession(context, sessions);
             string? refText = !string.IsNullOrWhiteSpace(request.SaleId) ? request.SaleId : request.SaleReference;
@@ -145,6 +150,10 @@ internal static class LocalCustomerOrdersAndQuotationsEndpoints
 
         return app;
     }
+
+    private static bool IsManagerOrAdmin(LocalApiSession session) =>
+        session.RoleId == Guid.Parse("00000000-0000-0000-0000-000000000001") ||
+        session.RoleId == Guid.Parse("00000000-0000-0000-0000-000000000002");
 
     private static LocalApiSession RequiredSession(HttpContext context, LocalApiSessionService sessions) =>
         sessions.GetRequiredSession(context.Request.Cookies[LocalApiSessionService.SessionCookieName])!;
