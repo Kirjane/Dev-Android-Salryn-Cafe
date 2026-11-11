@@ -16,6 +16,11 @@ internal static class LocalProcureToPayEndpoints
         LocalApiPermissions.ReportsView
     };
 
+    // Requesters may read only the catalogs and PR records needed to prepare requisitions.
+    // Do not add ProcurementRequest to AnyLpiViewPermissions: PO and finance reads use it.
+    private static readonly string[] RequisitionReadPermissions =
+        AnyLpiViewPermissions.Append(LocalApiPermissions.ProcurementRequest).ToArray();
+
     public static WebApplication MapLocalProcureToPayEndpoints(this WebApplication app)
     {
         // S0: Foundation & Supplier CRUD
@@ -26,7 +31,7 @@ internal static class LocalProcureToPayEndpoints
             IProcureToPayService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, RequisitionReadPermissions) is IResult denied)
                 return denied;
             return ToResult(await service.GetFoundationCatalogAsync(includeInactiveSuppliers ?? true, ct));
         });
@@ -68,7 +73,7 @@ internal static class LocalProcureToPayEndpoints
             IProcureToPayService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, RequisitionReadPermissions) is IResult denied)
                 return denied;
             return ToResult(await service.GetSuppliersAsync(search, includeInactive ?? true, ct));
         });
@@ -134,7 +139,7 @@ internal static class LocalProcureToPayEndpoints
             IProcureToPayService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, RequisitionReadPermissions) is IResult denied)
                 return denied;
             return ToResult(await service.GetPurchaseRequisitionsAsync(status, ct));
         });
@@ -146,7 +151,7 @@ internal static class LocalProcureToPayEndpoints
             IProcureToPayService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, RequisitionReadPermissions) is IResult denied)
                 return denied;
             return ToResult(await service.GetPurchaseRequisitionByIdAsync(id, ct));
         });
