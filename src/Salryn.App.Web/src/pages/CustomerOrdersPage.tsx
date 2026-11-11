@@ -366,18 +366,18 @@ export function CustomerOrdersPage() {
                         >
                           {loadingSlipId === o.id ? "Loading detail..." : "🖨️ Slip"}
                         </Button>
-                        {o.status === "Confirmed" && (
+                        {o.status === "Confirmed" && customerOrderDisplayItemCount(o) !== null && (
                           <Button variant="primary" size="sm" onClick={() => void handleAdvanceOrder(o.id, "Preparing")}>Start preparation</Button>
                         )}
-                        {o.status === "Preparing" && (
+                        {o.status === "Preparing" && customerOrderDisplayItemCount(o) !== null && (
                           <Button variant="primary" size="sm" onClick={() => void handleAdvanceOrder(o.id, "Ready")}>Mark ready</Button>
                         )}
-                        {o.status === "Ready" && (
+                        {o.status === "Ready" && customerOrderDisplayItemCount(o) !== null && (
                           <Button variant="primary" size="sm" onClick={() => { setFulfillOrderTarget(o); setFulfillSaleId(""); }}>
                             Fulfill with POS sale
                           </Button>
                         )}
-                        {["Confirmed", "Preparing", "Ready"].includes(o.status) && (
+                        {["Confirmed", "Preparing", "Ready"].includes(o.status) && customerOrderDisplayItemCount(o) !== null && (
                           <Button variant="ghost" size="sm" onClick={() => void handleCancelOrder(o.id)}>Cancel order</Button>
                         )}
                       </td>
