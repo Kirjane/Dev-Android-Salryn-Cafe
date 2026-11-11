@@ -146,7 +146,8 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
     public async Task<Result<ReceivableCustomer>> UpdateCustomerAsync(
         Guid customerId,
         UpdateReceivableCustomerRequest request,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Guid? actorUserId = null)
     {
         if (customerId == Guid.Empty || string.IsNullOrWhiteSpace(request.FullName) || request.CreditLimitCents < 0)
             return Result<ReceivableCustomer>.Fail(Error.Validation("Receivables.InvalidCustomer", "Valid customer data is required."));
@@ -172,8 +173,11 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         BindCustomer(command, updated);
         command.Parameters.AddWithValue("$active", updated.IsActive ? 1 : 0);
         await command.ExecuteNonQueryAsync(cancellationToken);
-        // The request contract lacks an updater identity. Do not attribute this edit to the creator.
-        // Actor-aware customer updates require a follow-on API/service contract revision.
+        await InsertBusinessAuditAsync(connection, transaction, actorUserId, "AR_CUSTOMER_UPDATED",
+            "customers", customerId,
+            JsonSerializer.Serialize(new { existing.CreditLimitCents, existing.IsActive }),
+            JsonSerializer.Serialize(new { updated.CreditLimitCents, updated.IsActive }),
+            null, updated.UpdatedAt, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return Result<ReceivableCustomer>.Success(updated);
     }
@@ -535,7 +539,7 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         await q.ExecuteNonQueryAsync(ct);
     }
 
-    private static async Task InsertBusinessAuditAsync(SqliteConnection c, SqliteTransaction t, Guid actor,
+    private static async Task InsertBusinessAuditAsync(SqliteConnection c, SqliteTransaction t, Guid? actor,
         string action, string entityType, Guid entityId, string? oldJson, string newJson,
         string? reason, DateTimeOffset at, CancellationToken ct)
     {
@@ -547,7 +551,7 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
             VALUES ($id,$user,$action,$entity,$entityId,$old,$new,$reason,$at);
             """;
         q.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("D"));
-        q.Parameters.AddWithValue("$user", actor.ToString("D"));
+        q.Parameters.AddWithValue("$user", (object?)actor?.ToString("D") ?? DBNull.Value);
         q.Parameters.AddWithValue("$action", action);
         q.Parameters.AddWithValue("$entity", entityType);
         q.Parameters.AddWithValue("$entityId", entityId.ToString("D"));
