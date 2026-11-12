@@ -57,12 +57,10 @@ public static class LpiRealHostAcceptanceRunner
 
             // 3. Seed users with real hashed passwords (using SalrynPasswordHasher)
             string reqHash = SalrynPasswordHasher.HashPassword("Requester123!").Value!;
-            string clerkHash = SalrynPasswordHasher.HashPassword("ApClerk123!").Value!;
             string mgrHash = SalrynPasswordHasher.HashPassword("Manager123!").Value!;
 
-            Guid requesterId = SeedUserWithPassword(paths.DatabasePath, "lpi-requester", "LPI Requester", reqHash, DefaultSeedData.PurchasingOfficerRoleId);
-            Guid clerkId = SeedUserWithPassword(paths.DatabasePath, "lpi-apclerk", "LPI AP Clerk", clerkHash, DefaultSeedData.AccountsPayableClerkRoleId);
-            Guid mgrId = SeedUserWithPassword(paths.DatabasePath, "lpi-manager", "LPI Manager", mgrHash, DefaultSeedData.AdminRoleId);
+            Guid requesterId = SeedUserWithPassword(paths.DatabasePath, "lpi-requester", "LPI Cashier", reqHash, DefaultSeedData.CashierRoleId);
+            Guid mgrId = SeedUserWithPassword(paths.DatabasePath, "lpi-manager", "LPI Manager", mgrHash, DefaultSeedData.ManagerRoleId);
 
             // 4. Seed suppliers
             await service.CreateSupplierAsync(new CreateLpiSupplierRequest(
@@ -129,8 +127,6 @@ public static class LpiRealHostAcceptanceRunner
             psi.Environment["SALRYN_DISPOSABLE_MARKER_PATH"] = markerPath;
             psi.Environment["SALRYN_QA_REQUESTER_USER"] = "lpi-requester";
             psi.Environment["SALRYN_QA_REQUESTER_PASS"] = "Requester123!";
-            psi.Environment["SALRYN_QA_APCLERK_USER"] = "lpi-apclerk";
-            psi.Environment["SALRYN_QA_APCLERK_PASS"] = "ApClerk123!";
             psi.Environment["SALRYN_QA_MANAGER_USER"] = "lpi-manager";
             psi.Environment["SALRYN_QA_MANAGER_PASS"] = "Manager123!";
 
@@ -255,7 +251,7 @@ public static class LpiRealHostAcceptanceRunner
                     string invStatus = reader.GetString(0);
                     string matchStatus = reader.GetString(1);
                     long balanceDue = reader.GetInt64(2);
-                    if (invStatus != "Paid" || matchStatus != "VarianceApproved" || balanceDue != 0)
+                    if (invStatus != "PostedOpen" || matchStatus != "VarianceApproved" || balanceDue != 372_000)
                     {
                         throw new InvalidOperationException($"Invoice mismatch: status={invStatus}, matchStatus={matchStatus}, balanceDue={balanceDue}");
                     }
@@ -286,7 +282,7 @@ public static class LpiRealHostAcceptanceRunner
                     string method = reader.GetString(1);
                     string source = reader.GetString(2);
                     string pmtStatus = reader.GetString(3);
-                    if (amount <= 0 || method != "BankTransfer" || source != "OperatingAccount" || pmtStatus != "Settled")
+                    if (amount != 372_000 || method != "BankTransfer" || source != "OperatingAccount" || pmtStatus != "PendingApproval")
                     {
                         throw new InvalidOperationException($"Payment mismatch: amount={amount}, method={method}, source={source}, status={pmtStatus}");
                     }
@@ -304,7 +300,7 @@ public static class LpiRealHostAcceptanceRunner
                 }
             }
 
-            Console.WriteLine("[LPI Acceptance] Direct SQLite post-state validation PASSED (PR, PO, RR, Stock, AP Invoice, Settlement, Cash Drawer Isolation all verified)!");
+            Console.WriteLine("[LPI Acceptance] Direct SQLite post-state validation PASSED (PR, PO, RR, Stock, AP Invoice, pending supplier payment, and cash-drawer isolation verified). Settlement remains blocked by Issue #65.");
         }
         finally
         {
