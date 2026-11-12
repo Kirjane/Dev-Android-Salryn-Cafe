@@ -18,6 +18,11 @@ export function PrintableChequeDisbursementModal({ open, onClose, payment, store
   const handlePrint = () => {
     window.print();
   };
+  const isSettled = payment.status === "Settled";
+  const actualTransferDate = isSettled ? (payment.actualDisbursementDate || "Unknown / Not recorded") : "Not yet disbursed";
+  const confirmationTime = isSettled
+    ? (payment.approvedAt ? new Date(payment.approvedAt).toLocaleString("en-PH", { timeZone: "Asia/Manila" }) : "Unknown / Not recorded")
+    : "Not yet confirmed";
 
   return (
     <Dialog open={open} onClose={onClose} title={`Payment Voucher: ${payment.paymentNumber}`}>
@@ -65,7 +70,9 @@ export function PrintableChequeDisbursementModal({ open, onClose, payment, store
             <div className="text-right">
               <span className="text-xs uppercase tracking-wider text-slate-400 font-bold">Voucher Number</span>
               <p className="text-lg font-mono font-bold text-slate-900">{payment.paymentNumber}</p>
-              <p className="text-xs text-slate-500">Payment Date: {payment.paymentDate?.slice(0, 10)}</p>
+              <p className="text-xs text-slate-500">Recorded / requested date: {payment.paymentDate?.slice(0, 10) || "Unknown / Not recorded"}</p>
+              <p className="text-xs text-slate-700 font-semibold">Actual funds-transfer date: {actualTransferDate}</p>
+              <p className="text-xs text-slate-500">Settlement confirmed at (Asia/Manila): {confirmationTime}</p>
               {payment.checkNumber && (
                 <p className="text-xs font-mono font-bold text-indigo-700">Check #: {payment.checkNumber}</p>
               )}
@@ -82,7 +89,7 @@ export function PrintableChequeDisbursementModal({ open, onClose, payment, store
             <div>
               <span className="text-slate-500 font-bold uppercase block mb-1">Payment Method & Banking</span>
               <p className="text-sm font-semibold text-slate-900">{payment.paymentMethod}</p>
-              {payment.bankAccount && <p className="text-slate-600">Bank Account: {payment.bankAccount}</p>}
+              {payment.bankName && <p className="text-slate-600">Bank Name: {payment.bankName}</p>}
               {payment.referenceNumber && (
                 <p className="text-slate-600 font-mono">Ref / Trx #: {payment.referenceNumber}</p>
               )}
@@ -126,7 +133,7 @@ export function PrintableChequeDisbursementModal({ open, onClose, payment, store
           {payment.checkNumber && (
             <div className="p-4 border-2 border-dashed border-slate-300 rounded bg-slate-50 text-xs space-y-2">
               <div className="flex justify-between font-mono text-slate-700">
-                <span>BANK: {payment.bankAccount || "Official Partner Bank"}</span>
+                <span>BANK NAME: {payment.bankName || "Not recorded"}</span>
                 <span>CHECK NO: {payment.checkNumber}</span>
               </div>
               <div className="flex justify-between items-baseline pt-2">
@@ -138,6 +145,8 @@ export function PrintableChequeDisbursementModal({ open, onClose, payment, store
               </div>
             </div>
           )}
+
+          <p className="text-[11px] text-slate-600">The actual funds-transfer date is supplied by an authorized operator, not independently verified by a bank or payment provider. Pending vouchers are not proof of disbursement. Historical settled records without this date remain Unknown / Not recorded.</p>
 
           {/* Transaction custody and unsigned recipient acknowledgment */}
           <div className="grid grid-cols-3 gap-4 pt-8 border-t text-xs">
@@ -152,7 +161,7 @@ export function PrintableChequeDisbursementModal({ open, onClose, payment, store
                 {payment.status === "Settled" && payment.approvedByUserId ? payment.approvedByUserId : "Pending Confirmation"}
               </div>
               <span className="text-slate-500 mt-1 block">
-                {payment.status === "Settled" ? `Settlement Confirmed By — User ID${payment.approvedAt ? ` • ${new Date(payment.approvedAt).toLocaleString()}` : ""}` : "Settlement Status"}
+                {payment.status === "Settled" ? `Settlement Confirmed By — User ID • ${confirmationTime} (Asia/Manila)` : "Settlement Status"}
               </span>
             </div>
             <div className="text-center">
