@@ -839,7 +839,7 @@ public static class LpiP1IntegrityReproductionChecks
             new CreateLpiSupplierRequest("P1-I71-SUP", "Issue71 Date Custody Supplier", "Accountant",
                 "0918000171", "issue71@test.local", "Disposable Manila", null, 30, 5, null, actorId)), "Issue71 supplier");
         PurchaseOrderModel po = RequireSuccess(await service.CreatePurchaseOrderAsync(
-            new CreatePurchaseOrderRequest(supplier.Id, null, new DateOnly(2026, 11, 20), null,
+            new CreatePurchaseOrderRequest(supplier.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7)), null,
                 30, 0, "Issue71 terms", "Date custody test", true,
                 new[] { new CreatePurchaseOrderLineInput(null, productId, "P1-I71-ITEM",
                     "Supplier item", PurchaseClassifications.Resale, "pcs",
@@ -887,11 +887,9 @@ public static class LpiP1IntegrityReproductionChecks
         Require(wrongYes.IsFailure && wrongYes.ErrorDetail.Code == "Lpi.Payment.SettlementConfirmationRequired",
             "Issue71 lowercase confirmation must be denied even with a valid actual date.");
 
-        SupplierPaymentModel stillPending = RequireSuccess(
-            (await dayC.GetSupplierPaymentsAsync(supplier.Id, invoice.Id)).First().Id == partial.Id
-                ? Result<SupplierPaymentModel>.Success((await dayC.GetSupplierPaymentsAsync(supplier.Id, invoice.Id)).First())
-                : Result<SupplierPaymentModel>.Fail(Error.NotFound("Issue71.Pending", "Pending row missing")),
-            "Issue71 reload pending");
+        IReadOnlyList<SupplierPaymentModel> pendingReadback = RequireSuccess(
+            await dayC.GetSupplierPaymentsAsync(supplier.Id, invoice.Id), "Issue71 reload pending list");
+        SupplierPaymentModel stillPending = pendingReadback.Single(p => p.Id == partial.Id);
         Require(stillPending.Status == "PendingApproval" && stillPending.ActualDisbursementDate is null &&
                 stillPending.ApprovedAt is null,
             "Issue71 rejected transfer date/YES requests must leave the payment unchanged.");
