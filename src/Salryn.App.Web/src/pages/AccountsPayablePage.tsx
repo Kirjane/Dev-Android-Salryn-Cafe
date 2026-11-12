@@ -167,7 +167,7 @@ export function AccountsPayablePage() {
       await recordSupplierPayment({
         supplierId: paymentTarget.supplierId, invoiceId: paymentTarget.id,
         amountCents: cents, paymentMethod, referenceNumber: paymentReference.trim(),
-        bankAccount: paymentBank.trim() || undefined, checkNumber: paymentCheck.trim() || undefined,
+        bankName: paymentBank.trim() || undefined, checkNumber: paymentCheck.trim() || undefined,
         disbursementSource: paymentMethod === "Cash" ? "TreasuryFund" : "OperatingAccount",
       });
       setPaymentTarget(null);
@@ -312,7 +312,7 @@ export function AccountsPayablePage() {
           <div><label className={labelClass}>Amount (PHP)</label><input type="number" min="0.01" step="0.01" className={inputClass} value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} /></div>
           <div><label className={labelClass}>Method</label><select className={inputClass} value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}><option>BankTransfer</option><option>Check</option><option>Cash</option></select></div>
           <div><label className={labelClass}>Actual payment reference</label><input className={inputClass} value={paymentReference} onChange={(e) => setPaymentReference(e.target.value)} /></div>
-          {paymentMethod !== "Cash" && <div><label className={labelClass}>Bank / Account (if applicable)</label><input className={inputClass} value={paymentBank} onChange={(e) => setPaymentBank(e.target.value)} /></div>}
+          {paymentMethod !== "Cash" && <div><label className={labelClass}>Bank Name (if applicable; not an account number)</label><input className={inputClass} value={paymentBank} onChange={(e) => setPaymentBank(e.target.value)} /></div>}
           {paymentMethod === "Check" && <div><label className={labelClass}>Check number</label><input className={inputClass} value={paymentCheck} onChange={(e) => setPaymentCheck(e.target.value)} /></div>}
           <div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setPaymentTarget(null)}>Cancel</Button><Button disabled={busy} onClick={() => void submitPayment()}>Submit for Approval</Button></div>
         </div>
