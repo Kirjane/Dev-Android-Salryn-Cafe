@@ -20,6 +20,7 @@ import { Button, Card, CardBody, Dialog, useNotifications } from "../components/
 import { useAppSession } from "../hooks/useAppSession";
 import { Permissions, hasPermission } from "../security/permissions";
 import { formatMoney } from "../utils/format";
+import { philippineBusinessToday, isValidActualFundsTransferDate } from "../utils/supplierPaymentBusinessDate";
 
 const money = (cents: number) => Number.isFinite(cents) ? formatMoney(cents / 100) : "Amount unavailable";
 const today = () => new Date().toISOString().slice(0, 10);
@@ -72,6 +73,7 @@ export function AccountsPayablePage() {
   const [paymentCheck, setPaymentCheck] = useState("");
   const [approvalTarget, setApprovalTarget] = useState<SupplierPayment | null>(null);
   const [settlementConfirmation, setSettlementConfirmation] = useState("");
+  const [actualDisbursementDate, setActualDisbursementDate] = useState("");
   const [approvalReason, setApprovalReason] = useState("");
   const [voucher, setVoucher] = useState<SupplierPayment | null>(null);
   const [busy, setBusy] = useState(false);
@@ -257,7 +259,7 @@ export function AccountsPayablePage() {
             <td className="p-2"><div className="flex flex-wrap gap-2">
               <Button variant="secondary" onClick={() => setVoucher(pay)}>Print voucher</Button>
               {pay.status === "PendingApproval" && canApprovePayment &&
-                <Button onClick={() => { setApprovalTarget(pay); setSettlementConfirmation(""); setApprovalReason(""); }}>Confirm actual payment</Button>}
+                <Button onClick={() => { setApprovalTarget(pay); setSettlementConfirmation(""); setActualDisbursementDate(""); setApprovalReason(""); }}>Confirm actual payment</Button>}
             </div></td>
           </tr>)}</tbody>
         </table></div>
@@ -326,13 +328,17 @@ export function AccountsPayablePage() {
             <div><dt className="text-xs text-slate-500">Amount</dt><dd className="font-semibold">{money(approvalTarget.amountCents)}</dd></div>
             <div><dt className="text-xs text-slate-500">Method / source</dt><dd>{approvalTarget.paymentMethod} / {approvalTarget.disbursementSource}</dd></div>
             <div><dt className="text-xs text-slate-500">Reference</dt><dd className="font-mono">{approvalTarget.referenceNumber}</dd></div>
-            <div><dt className="text-xs text-slate-500">Recorded date</dt><dd>{approvalTarget.paymentDate}</dd></div>
+            <div><dt className="text-xs text-slate-500">Recorded / requested date (not transfer proof)</dt><dd>{approvalTarget.paymentDate}</dd></div>
             <div><dt className="text-xs text-slate-500">Current status</dt><dd>{approvalTarget.status}</dd></div>
           </dl>}
+          <div><label htmlFor="ap-actual-transfer-date" className={labelClass}>Actual funds-transfer date (Asia/Manila) — required</label>
+            <input id="ap-actual-transfer-date" aria-label="Actual funds-transfer date" type="date" required max={philippineBusinessToday()} className={inputClass} value={actualDisbursementDate} onChange={(e) => setActualDisbursementDate(e.target.value)} />
+            <p className="text-xs text-slate-500 mt-1">Enter the date funds actually moved. This is your declaration, not bank-clearing verification. Past dates are allowed; future dates are not.</p>
+          </div>
           <div><label className={labelClass}>Type YES to confirm actual payment</label><input autoComplete="off" className={inputClass} value={settlementConfirmation} onChange={(e) => setSettlementConfirmation(e.target.value)} /></div>
           <div><label className={labelClass}>Settlement remarks (optional)</label><textarea rows={2} className={inputClass} value={approvalReason} onChange={(e) => setApprovalReason(e.target.value)} /></div>
           <div className="flex justify-end gap-2"><Button variant="secondary" disabled={busy} onClick={() => setApprovalTarget(null)}>Cancel</Button>
-            <Button disabled={busy || settlementConfirmation.trim() !== "YES"} onClick={async () => { if (!approvalTarget) return; setBusy(true); try { await approveSupplierPayment(approvalTarget.id, settlementConfirmation, approvalReason.trim() || undefined); refresh(); setApprovalTarget(null); notify.success("Actual supplier payment confirmed and Accounts Payable settled."); } catch (error) { notify.error(error instanceof Error ? error.message : "Settlement failed."); } finally { setBusy(false); } }}>{busy ? "Settling..." : "Confirm Actual Payment & Settle"}</Button>
+            <Button disabled={busy || settlementConfirmation.trim() !== "YES" || !isValidActualFundsTransferDate(actualDisbursementDate)} onClick={async () => { if (!approvalTarget || !isValidActualFundsTransferDate(actualDisbursementDate)) return; setBusy(true); try { await approveSupplierPayment(approvalTarget.id, settlementConfirmation, actualDisbursementDate, approvalReason.trim() || undefined); refresh(); setApprovalTarget(null); notify.success("Actual supplier payment confirmed and Accounts Payable settled."); } catch (error) { notify.error(error instanceof Error ? error.message : "Settlement failed."); } finally { setBusy(false); } }}>{busy ? "Settling..." : "Confirm Actual Payment & Settle"}</Button>
           </div>
         </div>
       </Dialog>
