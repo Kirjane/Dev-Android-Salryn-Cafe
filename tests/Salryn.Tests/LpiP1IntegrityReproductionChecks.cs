@@ -76,7 +76,7 @@ public static class LpiP1IntegrityReproductionChecks
             await TestW5R21ReconciliationIntegrityAsync(service, paths, requesterId, supervisorId, apClerkId, resaleProdId);
             await TestW5R21DuplicateProductAmbiguityAndFinancialIntegrityAsync(service, paths, requesterId, supervisorId, apClerkId, resaleProdId);
             await TestP102CrossSupplierPaymentLineageHttpAsync(composition, service, paths, resaleProdId);
-            await TestP102DisbursementDateCustodyAsync(composition, service, paths, apClerkId, resaleProdId);
+            await TestP102DisbursementDateCustodyAsync(composition, paths, apClerkId, resaleProdId);
 
             Console.WriteLine("LPI P1 Integrity: All findings (P1-01 through P1-06 and P1-R3-01/02) verified with full regression closure PASS.");
         }
@@ -822,7 +822,6 @@ public static class LpiP1IntegrityReproductionChecks
     /// </summary>
     private static async Task TestP102DisbursementDateCustodyAsync(
         SalrynLocalComposition composition,
-        SqliteProcureToPayService service,
         DbPaths paths,
         Guid actorId,
         Guid productId)
@@ -835,22 +834,22 @@ public static class LpiP1IntegrityReproductionChecks
         SqliteProcureToPayService dayA = new(composition.ConnectionFactory, new Issue71FixedTimeProvider(recordedInstant));
         SqliteProcureToPayService dayC = new(composition.ConnectionFactory, new Issue71FixedTimeProvider(confirmedInstant));
 
-        LpiSupplier supplier = RequireSuccess(await service.CreateSupplierAsync(
+        LpiSupplier supplier = RequireSuccess(await dayA.CreateSupplierAsync(
             new CreateLpiSupplierRequest("P1-I71-SUP", "Issue71 Date Custody Supplier", "Accountant",
                 "0918000171", "issue71@test.local", "Disposable Manila", null, 30, 5, null, actorId)), "Issue71 supplier");
-        PurchaseOrderModel po = RequireSuccess(await service.CreatePurchaseOrderAsync(
-            new CreatePurchaseOrderRequest(supplier.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7)), null,
+        PurchaseOrderModel po = RequireSuccess(await dayA.CreatePurchaseOrderAsync(
+            new CreatePurchaseOrderRequest(supplier.Id, null, new DateOnly(2026, 11, 20), null,
                 30, 0, "Issue71 terms", "Date custody test", true,
                 new[] { new CreatePurchaseOrderLineInput(null, productId, "P1-I71-ITEM",
                     "Supplier item", PurchaseClassifications.Resale, "pcs",
                     4_000, 93_000, 0, 0, null) }, actorId)), "Issue71 PO");
-        ReceivingReportModel rr = RequireSuccess(await service.CreateReceivingReportAsync(
+        ReceivingReportModel rr = RequireSuccess(await dayA.CreateReceivingReportAsync(
             new CreateReceivingReportRequest(po.Id, null, "I71-DR", null,
                 "Issue71 carrier", new DateOnly(2026, 11, 10), true, null, null,
                 "I71-RR", null,
                 new[] { new CreateReceivingReportLineInput(po.Lines[0].Id, 4_000, 4_000, 0, null, null, null, null) },
                 actorId)), "Issue71 RR");
-        SupplierInvoiceModel invoice = RequireSuccess(await service.CreateSupplierInvoiceAsync(
+        SupplierInvoiceModel invoice = RequireSuccess(await dayA.CreateSupplierInvoiceAsync(
             new CreateSupplierInvoiceRequest(supplier.Id, "I71-INV", po.Id, rr.Id,
                 new DateOnly(2026, 11, 10), new DateOnly(2026, 12, 10),
                 0, 0, true,
