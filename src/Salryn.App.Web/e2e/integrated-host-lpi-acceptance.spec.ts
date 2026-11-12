@@ -442,6 +442,7 @@ test.describe("INTEGRATED_HOST LPI End-to-End Acceptance Suite @integrated", () 
 
     // In payments table, verify payment recorded as Pending Approval
     const pmtTable = page.locator("table").nth(2);
+    const targetPaymentRow = pmtTable.getByRole("row").filter({ hasText: "TRF-REALHOST-8899" });
     await expect(pmtTable).toContainText("TRF-REALHOST-8899", { timeout: 10000 });
     await expect(pmtTable).toContainText("PendingApproval");
 
@@ -491,12 +492,53 @@ test.describe("INTEGRATED_HOST LPI End-to-End Acceptance Suite @integrated", () 
     // The same Manager who recorded the payment may review and settle it.
     await login(page, MANAGER_USER, MANAGER_PASS);
     await page.goto(`${HOST_URL}/?page=accounts-payable`);
-    await page.getByRole("button", { name: "Print voucher" }).first().click();
+    await targetPaymentRow.getByRole("button", { name: "Print voucher", exact: true }).click();
     const pendingVoucher = page.getByRole("dialog", { name: /Payment Voucher:/ });
     await expect(pendingVoucher).toContainText("Actual funds-transfer date: Not yet disbursed");
     await expect(pendingVoucher).toContainText("Recorded / requested date:");
     await expect(pendingVoucher).toContainText("Bank Name:");
-    await pendingVoucher.getByRole("button", { name: "Close" }).click();
+    // Operator-reported clipping at 1440x960: assert full action bounds inside the
+    // dialog's overflow clipping rectangle at desktop and a narrower viewport.
+    const originalViewport = page.viewportSize();
+    for (const viewport of [{ width: 1440, height: 960 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport);
+      const printAction = pendingVoucher.getByRole("button", { name: /Print Voucher/i });
+      await expect(printAction).toBeVisible();
+      await expect(printAction).toBeEnabled();
+      const bounds = await printAction.evaluate((element) => {
+        const button = element.getBoundingClientRect();
+        const dialog = element.closest('[role="dialog"]')?.getBoundingClientRect();
+        if (!dialog) throw new Error("Payment voucher dialog is missing");
+        return {
+          left: button.left, right: button.right, top: button.top, bottom: button.bottom,
+          dialogLeft: dialog.left, dialogRight: dialog.right,
+        };
+      });
+      expect(bounds.left, "Print action is clipped at dialog left").toBeGreaterThanOrEqual(bounds.dialogLeft - 1);
+      expect(bounds.right, "Print action is clipped at dialog right").toBeLessThanOrEqual(bounds.dialogRight + 1);
+      expect(bounds.top, "Print action is outside viewport top").toBeGreaterThanOrEqual(0);
+      expect(bounds.bottom, "Print action is outside viewport bottom").toBeLessThanOrEqual(viewport.height + 1);
+      await testInfo.attach(`issue71-voucher-toolbar-${viewport.width}x${viewport.height}`, {
+        body: await page.screenshot(), contentType: "image/png",
+      });
+    }
+    if (originalViewport) await page.setViewportSize(originalViewport);
+
+    // Exercise the real UI click handler without invoking the host print dialog.
+    // Printing and closing are read-only voucher operations, not settlement.
+    await page.evaluate(() => {
+      const probe = window as Window & { __issue71PrintInvocations?: number };
+      probe.__issue71PrintInvocations = 0;
+      window.print = () => { probe.__issue71PrintInvocations = (probe.__issue71PrintInvocations ?? 0) + 1; };
+    });
+    await pendingVoucher.getByRole("button", { name: /Print Voucher/i }).click();
+    expect(await page.evaluate(() =>
+      (window as Window & { __issue71PrintInvocations?: number }).__issue71PrintInvocations
+    )).toBe(1);
+    expect((await (await page.request.get(`${HOST_URL}/api/lpi/overview`)).json()).totalPaymentsDisbursedCents).toBe(0);
+    await pendingVoucher.getByRole("button", { name: "Close dialog", exact: true }).click();
+    await expect(pendingVoucher).toBeHidden();
+    await expect(targetPaymentRow).toContainText("PendingApproval");
 
     await page.getByRole("button", { name: "Confirm actual payment" }).first().click();
     const settlementDialog = page.getByRole("dialog", { name: "Confirm Actual Supplier Payment" });
@@ -534,13 +576,15 @@ test.describe("INTEGRATED_HOST LPI End-to-End Acceptance Suite @integrated", () 
     expect(stored.paymentDate).toBe(pendingPayment.paymentDate);
     expect(stored.approvedAt).toBeTruthy();
 
-    await page.getByRole("button", { name: "Print voucher" }).first().click();
+    await targetPaymentRow.getByRole("button", { name: "Print voucher", exact: true }).click();
     const settledVoucher = page.getByRole("dialog", { name: /Payment Voucher:/ });
     await expect(settledVoucher).toContainText(`Actual funds-transfer date: ${confirmedTransferDate}`);
     await expect(settledVoucher).toContainText("Settlement confirmed at (Asia/Manila):");
     await expect(settledVoucher).toContainText("Bank Name:");
     await testInfo.attach("issue71-settled-voucher", { body: await settledVoucher.screenshot(), contentType: "image/png" });
-    await settledVoucher.getByRole("button", { name: "Close" }).click();
+    await settledVoucher.getByRole("button", { name: "Close dialog", exact: true }).click();
+    await expect(settledVoucher).toBeHidden();
+    await expect(targetPaymentRow).toContainText("Settled");
 
     // =========================================================================
     // STEP 9: UI Refresh Persistence Verification
@@ -550,9 +594,12 @@ test.describe("INTEGRATED_HOST LPI End-to-End Acceptance Suite @integrated", () 
     await expect(page.locator("table").first()).toContainText("INV-REALHOST-2026-001");
     await expect(page.locator("table").first()).toContainText("Paid");
     await expect(page.locator("table").nth(2)).toContainText("Settled");
-    await page.getByRole("button", { name: "Print voucher" }).first().click();
+    await targetPaymentRow.getByRole("button", { name: "Print voucher", exact: true }).click();
     await expect(page.getByRole("dialog", { name: /Payment Voucher:/ })).toContainText(`Actual funds-transfer date: ${confirmedTransferDate}`);
-    await page.getByRole("dialog", { name: /Payment Voucher:/ }).getByRole("button", { name: "Close" }).click();
+    const reloadedVoucher = page.getByRole("dialog", { name: /Payment Voucher:/ });
+    await reloadedVoucher.getByRole("button", { name: "Close dialog", exact: true }).click();
+    await expect(reloadedVoucher).toBeHidden();
+    await expect(targetPaymentRow).toContainText("Settled");
   });
 
   test("Focused UI & DB Regression: Duplicate-Product Same-PO Line Disambiguation & Line Isolation", async ({ page, request }) => {
