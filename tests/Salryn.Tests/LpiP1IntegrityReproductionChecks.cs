@@ -35,6 +35,10 @@ public static class LpiP1IntegrityReproductionChecks
 {
     private const string SessionCookieName = LocalApiSessionService.SessionCookieName;
 
+    private static string P1TransferDateToday() =>
+        DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(8)).DateTime)
+            .ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+
     public static async Task RunAsync()
     {
         string root = Path.Combine(Path.GetTempPath(), "salryn-lpi-p1-integrity-" + Guid.NewGuid().ToString("N"));
@@ -72,6 +76,7 @@ public static class LpiP1IntegrityReproductionChecks
             await TestW5R21ReconciliationIntegrityAsync(service, paths, requesterId, supervisorId, apClerkId, resaleProdId);
             await TestW5R21DuplicateProductAmbiguityAndFinancialIntegrityAsync(service, paths, requesterId, supervisorId, apClerkId, resaleProdId);
             await TestP102CrossSupplierPaymentLineageHttpAsync(composition, service, paths, resaleProdId);
+            await TestP102DisbursementDateCustodyAsync(composition, service, paths, apClerkId, resaleProdId);
 
             Console.WriteLine("LPI P1 Integrity: All findings (P1-01 through P1-06 and P1-R3-01/02) verified with full regression closure PASS.");
         }
@@ -360,7 +365,7 @@ public static class LpiP1IntegrityReproductionChecks
         foreach (string invalidConfirmation in new[] { "", "yes", "YES PLEASE" })
         {
             Result<SupplierPaymentModel> invalid = await service.ApproveSupplierPaymentAsync(new ApproveSupplierPaymentRequest(
-                pendingPayment.Id, apClerkId, invalidConfirmation, "Invalid confirmation must not settle"));
+                pendingPayment.Id, apClerkId, invalidConfirmation, "Invalid confirmation must not settle", ActualDisbursementDate: P1TransferDateToday()));
             Require(invalid.IsFailure && invalid.ErrorDetail.Code == "Lpi.Payment.SettlementConfirmationRequired",
                 $"Confirmation '{invalidConfirmation}' must be rejected.");
         }
@@ -376,7 +381,7 @@ public static class LpiP1IntegrityReproductionChecks
                 pendingPayment.Id,
                 ApproverUserId: apClerkId,
                 SettlementConfirmation: "YES",
-                Remarks: "Actual bank transfer confirmed")),
+                Remarks: "Actual bank transfer confirmed", ActualDisbursementDate: P1TransferDateToday())),
             "P1-02 self-settle supplier payment");
 
         Require(approvedPayment.Status == SupplierPaymentStatuses.Settled,
@@ -388,7 +393,7 @@ public static class LpiP1IntegrityReproductionChecks
             pendingPayment.Id,
             ApproverUserId: financeMgrId,
             SettlementConfirmation: "YES",
-            Remarks: "Replay must not post twice"));
+            Remarks: "Replay must not post twice", ActualDisbursementDate: P1TransferDateToday()));
         Require(replayResult.IsFailure && replayResult.ErrorDetail.Code == "Lpi.Payment.AlreadyFinalized",
             "Repeated settlement must be rejected without a second AP movement.");
 
@@ -454,9 +459,9 @@ public static class LpiP1IntegrityReproductionChecks
             null, "BDO", "Concurrent settlement B", "REQ-PAY-P102-RACE-B", financeMgrId, null)), "record competing payment B");
 
         Task<Result<SupplierPaymentModel>> settleA = service.ApproveSupplierPaymentAsync(new ApproveSupplierPaymentRequest(
-            competingA.Id, apClerkId, "YES", "Actual transfer A confirmed"));
+            competingA.Id, apClerkId, "YES", "Actual transfer A confirmed", ActualDisbursementDate: P1TransferDateToday()));
         Task<Result<SupplierPaymentModel>> settleB = service.ApproveSupplierPaymentAsync(new ApproveSupplierPaymentRequest(
-            competingB.Id, financeMgrId, "YES", "Actual transfer B confirmed"));
+            competingB.Id, financeMgrId, "YES", "Actual transfer B confirmed", ActualDisbursementDate: P1TransferDateToday()));
         Result<SupplierPaymentModel>[] concurrentResults = await Task.WhenAll(settleA, settleB);
         Require(concurrentResults.Count(result => result.IsSuccess) == 1 && concurrentResults.Count(result => result.IsFailure) == 1,
             "Two simultaneous payments against one remaining liability must produce exactly one settlement.");
@@ -593,7 +598,8 @@ public static class LpiP1IntegrityReproductionChecks
                 command.CommandText = """
                     SELECT p.status, p.supplier_id, p.supplier_invoice_id, p.amount_cents,
                            p.approved_by_user_id, p.approved_at, p.remarks,
-                           i.supplier_id, i.status, i.paid_amount_cents, i.remaining_balance_cents
+                           i.supplier_id, i.status, i.paid_amount_cents, i.remaining_balance_cents,
+                           p.actual_disbursement_date
                     FROM supplier_payments p
                     JOIN supplier_invoices i ON i.id = p.supplier_invoice_id
                     WHERE p.id = $paymentId;
@@ -640,7 +646,7 @@ public static class LpiP1IntegrityReproductionChecks
         static async Task<HttpResponseMessage> SettleThroughHttpAsync(HttpClient client, Guid paymentId)
         {
             return await client.PostAsync($"/api/lpi/payments/{paymentId:D}/approve",
-                new StringContent("{\"settlementConfirmation\":\"YES\",\"remarks\":\"Issue70 actual transfer verified by fixture operator\"}",
+                new StringContent(JsonSerializer.Serialize(new { settlementConfirmation = "YES", actualDisbursementDate = P1TransferDateToday(), remarks = "Issue70 actual transfer verified by fixture operator" }),
                     System.Text.Encoding.UTF8, "application/json"));
         }
 
@@ -682,7 +688,7 @@ public static class LpiP1IntegrityReproductionChecks
                     row[2] == invoice.Id.ToString("D") &&
                     row[3] == "372000" && row[4] == "<NULL>" && row[5] == "<NULL>" &&
                     row[7] == supplierA.Id.ToString("D") && row[8] == "PostedOpen" &&
-                    row[9] == "0" && row[10] == "372000" &&
+                    row[9] == "0" && row[10] == "372000" && row[11] == "<NULL>" &&
                     snapshot.RootElement.GetProperty("paymentAppliedCount").GetInt64() == 0 &&
                     snapshot.RootElement.GetProperty("settlementAuditCount").GetInt64() == 0,
                 "Issue70 precondition must isolate the intentionally mismatched unpaid PHP 3,720 payment.");
@@ -776,6 +782,7 @@ public static class LpiP1IntegrityReproductionChecks
                         row[1] == supplierA.Id.ToString("D") &&
                         row[4] == actorId.ToString("D") && row[5] != "<NULL>" &&
                         row[8] == "Paid" && row[9] == "372000" && row[10] == "0" &&
+                        row[11] == P1TransferDateToday() &&
                         snapshot.RootElement.GetProperty("paymentAppliedCount").GetInt64() == 1 &&
                         snapshot.RootElement.GetProperty("ledgerDebitsCents").GetInt64() == 372_000 &&
                         snapshot.RootElement.GetProperty("settlementAuditCount").GetInt64() == 1 &&
@@ -2241,7 +2248,7 @@ public static class LpiP1IntegrityReproductionChecks
             pmtAlpha.Id,
             supervisorId,
             "YES",
-            "Settlement for invAlpha")), "Settle pmtAlpha");
+            "Settlement for invAlpha", ActualDisbursementDate: P1TransferDateToday())), "Settle pmtAlpha");
 
         SupplierPaymentModel pmtBeta = RequireSuccess(await service.RecordSupplierPaymentAsync(new RecordSupplierPaymentRequest(
             invBeta.Id,
@@ -2260,7 +2267,7 @@ public static class LpiP1IntegrityReproductionChecks
             pmtBeta.Id,
             supervisorId,
             "YES",
-            "Settlement for invBeta")), "Settle pmtBeta");
+            "Settlement for invBeta", ActualDisbursementDate: P1TransferDateToday())), "Settle pmtBeta");
 
         // 2. HTTP Endpoint contract validations (rejections of missing mandatory identities)
         InMemoryLocalApiSessionStore sessionStore = new();
