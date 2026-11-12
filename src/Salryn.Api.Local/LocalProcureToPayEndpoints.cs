@@ -971,7 +971,8 @@ internal static class LocalProcureToPayEndpoints
                 id,
                 session.UserId,
                 request.SettlementConfirmation ?? string.Empty,
-                request.Remarks), ct));
+                request.Remarks,
+                request.ActualDisbursementDate), ct));
         });
 
         app.MapGet("/api/lpi/payables/ledger", async (
@@ -1361,7 +1362,8 @@ internal static class LocalProcureToPayEndpoints
 
     internal sealed record ApproveSupplierPaymentApiRequest(
         string? SettlementConfirmation,
-        string? Remarks);
+        string? Remarks,
+        string? ActualDisbursementDate);
 
     internal sealed record ApproveOverdeliveryApiRequest(
         string ApprovalReason);
