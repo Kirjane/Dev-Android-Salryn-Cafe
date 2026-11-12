@@ -2,7 +2,7 @@ namespace Salryn.Infrastructure.Data;
 
 internal static class SalrynDatabaseMigrationCatalog
 {
-    public const int SupportedMigrationVersion = 31;
+    public const int SupportedMigrationVersion = 32;
     // SupportedMigrationVersion = 26
     // SupportedMigrationVersion = 24
 
