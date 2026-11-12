@@ -78,7 +78,8 @@ public static class DefaultDatabaseInitializationFactory
             new ProcureToPaySchemaMigration(),
             new ProcureToPayR2HardeningMigration(),
             new CustomerOrdersAndQuotationsSchemaMigration(),
-            new CustomerOrdersHardeningSchemaMigration()
+            new CustomerOrdersHardeningSchemaMigration(),
+            new SupplierPaymentActualDisbursementDateMigration()
         };
 
         MigrationRunner migrationRunner = new(connectionFactory, migrations);
