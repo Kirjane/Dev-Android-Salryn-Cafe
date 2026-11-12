@@ -812,6 +812,14 @@ public sealed partial class SqliteProcureToPayService
         {
             return Result<SupplierPaymentModel>.Fail(Error.NotFound("Lpi.Payment.InvoiceNotFound", "Linked supplier invoice was not found."));
         }
+        // Both supplier identities are persisted facts read within this settlement transaction.
+        // Never settle a legacy/corrupted payment against a different supplier's invoice.
+        if (payment.SupplierId != invoice.SupplierId)
+        {
+            return Result<SupplierPaymentModel>.Fail(
+                Error.Conflict("Lpi.Payment.SupplierInvoiceMismatch",
+                    $"Payment '{payment.PaymentNumber}' does not match the supplier on linked invoice '{invoice.ApVoucherNumber}'. Settlement was not posted."));
+        }
         if (invoice.Status is not ("PostedOpen" or "PartiallyPaid"))
         {
             return Result<SupplierPaymentModel>.Fail(
