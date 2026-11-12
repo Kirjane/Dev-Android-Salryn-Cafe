@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { philippineBusinessToday, isValidActualFundsTransferDate } from "../utils/supplierPaymentBusinessDate";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchLpiFoundation,
@@ -144,6 +145,7 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
   const [paymentApproveModalOpen, setPaymentApproveModalOpen] = useState(false);
   const [paymentToApprove, setPaymentToApprove] = useState<SupplierPayment | null>(null);
   const [paymentSettlementConfirmation, setPaymentSettlementConfirmation] = useState("");
+  const [paymentActualDisbursementDate, setPaymentActualDisbursementDate] = useState("");
   const [paymentApprovalRemarks, setPaymentApprovalRemarks] = useState("");
   const [paymentSettlementBusy, setPaymentSettlementBusy] = useState(false);
 
@@ -1330,6 +1332,7 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
                                     onClick={() => {
                                       setPaymentToApprove(pay);
                                       setPaymentSettlementConfirmation("");
+                                      setPaymentActualDisbursementDate("");
                                       setPaymentApprovalRemarks("");
                                       setPaymentApproveModalOpen(true);
                                     }}
@@ -2817,10 +2820,15 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
               <div><strong>Method:</strong> {paymentToApprove.paymentMethod}</div>
               <div><strong>Disbursement source:</strong> {paymentToApprove.disbursementSource}</div>
               <div><strong>Payment reference:</strong> {paymentToApprove.referenceNumber || "—"}</div>
-              <div><strong>Recorded payment date:</strong> {paymentToApprove.paymentDate}</div>
+              <div><strong>Recorded / requested date (not transfer proof):</strong> {paymentToApprove.paymentDate}</div>
               <div><strong>Current status:</strong> {paymentToApprove.status}</div>
             </div>
           )}
+          <div>
+            <label htmlFor="p2p-actual-transfer-date" className="block text-xs font-medium text-slate-700">Actual funds-transfer date (Asia/Manila) — required</label>
+            <input id="p2p-actual-transfer-date" aria-label="Actual funds-transfer date" type="date" required max={philippineBusinessToday()} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm" value={paymentActualDisbursementDate} onChange={(e) => setPaymentActualDisbursementDate(e.target.value)} />
+            <p className="text-xs text-slate-500 mt-1">Enter when funds actually moved; this is operator testimony, not bank-clearing verification. Past dates allowed, future dates rejected.</p>
+          </div>
           <div>
             <label className="block text-xs font-medium text-slate-700">Type YES to confirm actual payment</label>
             <TextInput
@@ -2843,12 +2851,12 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
             </Button>
             <Button
               variant="primary"
-              disabled={paymentSettlementBusy || paymentSettlementConfirmation.trim() !== "YES"}
+              disabled={paymentSettlementBusy || paymentSettlementConfirmation.trim() !== "YES" || !isValidActualFundsTransferDate(paymentActualDisbursementDate)}
               onClick={async () => {
-                if (!paymentToApprove || paymentSettlementBusy) return;
+                if (!paymentToApprove || paymentSettlementBusy || !isValidActualFundsTransferDate(paymentActualDisbursementDate)) return;
                 setPaymentSettlementBusy(true);
                 try {
-                  await approveSupplierPayment(paymentToApprove.id, paymentSettlementConfirmation, paymentApprovalRemarks || undefined);
+                  await approveSupplierPayment(paymentToApprove.id, paymentSettlementConfirmation, paymentActualDisbursementDate, paymentApprovalRemarks || undefined);
                   notify.success("Actual supplier payment confirmed and posted to Accounts Payable.");
                   setPaymentApproveModalOpen(false);
                   refreshAll();
