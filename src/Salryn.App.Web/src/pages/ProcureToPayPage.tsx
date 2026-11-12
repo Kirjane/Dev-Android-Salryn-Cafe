@@ -145,6 +145,7 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
   const [paymentToApprove, setPaymentToApprove] = useState<SupplierPayment | null>(null);
   const [paymentSettlementConfirmation, setPaymentSettlementConfirmation] = useState("");
   const [paymentApprovalRemarks, setPaymentApprovalRemarks] = useState("");
+  const [paymentSettlementBusy, setPaymentSettlementBusy] = useState(false);
 
   const [overdeliveryModalOpen, setOverdeliveryModalOpen] = useState(false);
   const [rrToApprove, setRrToApprove] = useState<ReceivingReport | null>(null);
@@ -1273,7 +1274,7 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
           {/* Supplier Payments & Disbursements Card */}
           <div className="space-y-4">
             <div className="flex justify-between items-center">
-              <h2 className="text-lg font-semibold text-slate-900">Supplier Payments & Disbursements (Separation of Duties)</h2>
+              <h2 className="text-lg font-semibold text-slate-900">Supplier Payments & Disbursements</h2>
             </div>
             <Card>
               <CardBody className="p-0">
@@ -2783,7 +2784,7 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
                     bankAccount: paymentForm.bankAccount,
                     notes: paymentForm.notes,
                   });
-                  notify.success("Supplier payment recorded in Pending Approval status! Awaiting independent manager authorization.");
+                  notify.success("Supplier payment recorded as pending. No actual settlement has been asserted.");
                   setPaymentModalOpen(false);
                   refreshAll();
                 } catch (e) {
@@ -2797,10 +2798,10 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
         </div>
       </Dialog>
 
-      {/* DIALOG: Approve Supplier Payment (Separation of Duties) */}
+      {/* DIALOG: Confirm actual supplier payment */}
       <Dialog
         open={paymentApproveModalOpen}
-        onClose={() => setPaymentApproveModalOpen(false)}
+        onClose={() => { if (!paymentSettlementBusy) setPaymentApproveModalOpen(false); }}
         title="Confirm Actual Supplier Payment"
       >
         <div className="space-y-4">
@@ -2808,12 +2809,16 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
             Confirm only after the money has actually been paid or transferred. Salryn does not verify bank or payment-provider clearing.
           </Alert>
           {paymentToApprove && (
-            <div className="rounded-lg bg-slate-50 p-3 space-y-1 text-sm border">
-              <div><strong>Payment #:</strong> {paymentToApprove.paymentNumber}</div>
+            <div className="grid grid-cols-1 gap-2 rounded-lg border bg-slate-50 p-3 text-sm sm:grid-cols-2">
               <div><strong>Supplier:</strong> {paymentToApprove.supplierName}</div>
+              <div><strong>Supplier invoice:</strong> {paymentToApprove.invoiceNumber}</div>
+              <div><strong>Payment / voucher:</strong> {paymentToApprove.paymentNumber}</div>
               <div><strong>Amount:</strong> {money(paymentToApprove.amountCents)}</div>
               <div><strong>Method:</strong> {paymentToApprove.paymentMethod}</div>
-              <div><strong>Disbursement Date:</strong> {paymentToApprove.paymentDate}</div>
+              <div><strong>Disbursement source:</strong> {paymentToApprove.disbursementSource}</div>
+              <div><strong>Payment reference:</strong> {paymentToApprove.referenceNumber || "—"}</div>
+              <div><strong>Recorded payment date:</strong> {paymentToApprove.paymentDate}</div>
+              <div><strong>Current status:</strong> {paymentToApprove.status}</div>
             </div>
           )}
           <div>
@@ -2833,14 +2838,15 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
             />
           </div>
           <div className="flex justify-end gap-2 pt-4 border-t">
-            <Button variant="secondary" onClick={() => setPaymentApproveModalOpen(false)}>
+            <Button variant="secondary" disabled={paymentSettlementBusy} onClick={() => setPaymentApproveModalOpen(false)}>
               Cancel
             </Button>
             <Button
               variant="primary"
-              disabled={paymentSettlementConfirmation.trim() !== "YES"}
+              disabled={paymentSettlementBusy || paymentSettlementConfirmation.trim() !== "YES"}
               onClick={async () => {
-                if (!paymentToApprove) return;
+                if (!paymentToApprove || paymentSettlementBusy) return;
+                setPaymentSettlementBusy(true);
                 try {
                   await approveSupplierPayment(paymentToApprove.id, paymentSettlementConfirmation, paymentApprovalRemarks || undefined);
                   notify.success("Actual supplier payment confirmed and posted to Accounts Payable.");
@@ -2848,10 +2854,12 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
                   refreshAll();
                 } catch (e) {
                   notify.error((e as Error).message);
+                } finally {
+                  setPaymentSettlementBusy(false);
                 }
               }}
             >
-              Confirm Actual Payment &amp; Settle
+              {paymentSettlementBusy ? "Settling..." : "Confirm Actual Payment & Settle"}
             </Button>
           </div>
         </div>

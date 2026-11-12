@@ -391,6 +391,55 @@ public static class LpiP1IntegrityReproductionChecks
         Require(replayResult.IsFailure && replayResult.ErrorDetail.Code == "Lpi.Payment.AlreadyFinalized",
             "Repeated settlement must be rejected without a second AP movement.");
 
+        using (SqliteConnection auditConnection = new($"Data Source={paths.DatabasePath}"))
+        {
+            auditConnection.Open();
+            using SqliteCommand auditCommand = auditConnection.CreateCommand();
+            auditCommand.CommandText = """
+                SELECT user_id, old_value_json, new_value_json, created_at
+                FROM audit_logs
+                WHERE entity_type='SupplierPayment'
+                  AND entity_id=$paymentId
+                  AND action='AP_PAYMENT_CONFIRMED_AND_SETTLED';
+                """;
+            auditCommand.Parameters.AddWithValue("$paymentId", pendingPayment.Id.ToString("D"));
+            using SqliteDataReader auditReader = auditCommand.ExecuteReader();
+            Require(auditReader.Read(), "Partial settlement must persist a structured settlement audit event.");
+            Require(auditReader.GetString(0) == apClerkId.ToString("D"), "Settlement audit user_id must be the actual settlement actor.");
+            using JsonDocument previousAudit = JsonDocument.Parse(auditReader.GetString(1));
+            using JsonDocument newAudit = JsonDocument.Parse(auditReader.GetString(2));
+            JsonElement previous = previousAudit.RootElement;
+            JsonElement current = newAudit.RootElement;
+            Require(previous.GetProperty("PaymentStatus").GetString() == "PendingApproval" &&
+                    previous.GetProperty("InvoiceStatus").GetString() == "PostedOpen" &&
+                    previous.GetProperty("PaidAmountCents").GetInt64() == 0 &&
+                    previous.GetProperty("OutstandingBalanceCents").GetInt64() == 200_000,
+                "Partial settlement audit must preserve the exact previous payment and invoice accounting state.");
+            Require(current.GetProperty("PaymentId").GetString() == pendingPayment.Id.ToString("D") &&
+                    current.GetProperty("SupplierId").GetString() == supplier.Id.ToString("D") &&
+                    current.GetProperty("SupplierInvoiceId").GetString() == invoice.Id.ToString("D") &&
+                    current.GetProperty("SupplierInvoiceReference").GetString() == "INV-PAY-01" &&
+                    current.GetProperty("AmountCents").GetInt64() == 100_000 &&
+                    current.GetProperty("PaymentMethod").GetString() == "BankTransfer" &&
+                    current.GetProperty("DisbursementSource").GetString() == "OperatingBank" &&
+                    current.GetProperty("PaymentTransactionReference").GetString() == "REF-PAY-01" &&
+                    current.GetProperty("RecordedByUserId").GetString() == apClerkId.ToString("D") &&
+                    current.GetProperty("SettlementActorUserId").GetString() == apClerkId.ToString("D") &&
+                    current.GetProperty("SameUserRecordedAndSettled").GetBoolean() &&
+                    current.GetProperty("OperatorConfirmedActualPayment").GetBoolean() &&
+                    current.GetProperty("PreviousInvoiceStatus").GetString() == "PostedOpen" &&
+                    current.GetProperty("NewInvoiceStatus").GetString() == "PartiallyPaid" &&
+                    current.GetProperty("PreviousPaidAmountCents").GetInt64() == 0 &&
+                    current.GetProperty("NewPaidAmountCents").GetInt64() == 100_000 &&
+                    current.GetProperty("PreviousOutstandingBalanceCents").GetInt64() == 200_000 &&
+                    current.GetProperty("NewOutstandingBalanceCents").GetInt64() == 100_000 &&
+                    current.GetProperty("AppliedApLedgerAmountCents").GetInt64() == 100_000 &&
+                    current.GetProperty("ApLedgerReference").GetString() == pendingPayment.PaymentNumber &&
+                    current.GetProperty("SettlementTimestamp").GetString() == auditReader.GetString(3),
+                "Partial settlement audit must preserve complete transaction identity, custody, and before/after accounting values.");
+            Require(!auditReader.Read(), "Settlement replay must not append a second audit event.");
+        }
+
         // Verify invoice balance is now deducted
         SupplierInvoiceModel invoiceAfterApprove = RequireSuccess(await service.GetSupplierInvoiceByIdAsync(invoice.Id), "reload invoice after approval");
         Require(invoiceAfterApprove.RemainingBalanceCents == 100_000 && invoiceAfterApprove.Status == "PartiallyPaid",

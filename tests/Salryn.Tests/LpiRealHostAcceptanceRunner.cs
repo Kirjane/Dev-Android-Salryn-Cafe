@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Diagnostics;
+using System.Globalization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Data.Sqlite;
 using Salryn.Api.Local;
@@ -58,9 +59,13 @@ public static class LpiRealHostAcceptanceRunner
             // 3. Seed users with real hashed passwords (using SalrynPasswordHasher)
             string reqHash = SalrynPasswordHasher.HashPassword("Requester123!").Value!;
             string mgrHash = SalrynPasswordHasher.HashPassword("Manager123!").Value!;
+            string adminHash = SalrynPasswordHasher.HashPassword("Admin123!").Value!;
+            string legacyHash = SalrynPasswordHasher.HashPassword("Legacy123!").Value!;
 
             Guid requesterId = SeedUserWithPassword(paths.DatabasePath, "lpi-requester", "LPI Cashier", reqHash, DefaultSeedData.CashierRoleId);
             Guid mgrId = SeedUserWithPassword(paths.DatabasePath, "lpi-manager", "LPI Manager", mgrHash, DefaultSeedData.ManagerRoleId);
+            _ = SeedUserWithPassword(paths.DatabasePath, "lpi-admin", "LPI Admin", adminHash, DefaultSeedData.AdminRoleId);
+            _ = SeedUserWithPassword(paths.DatabasePath, "lpi-legacy-finance", "Legacy Finance Negative Fixture", legacyHash, DefaultSeedData.FinanceManagerRoleId);
 
             // 4. Seed suppliers
             await service.CreateSupplierAsync(new CreateLpiSupplierRequest(
@@ -129,6 +134,10 @@ public static class LpiRealHostAcceptanceRunner
             psi.Environment["SALRYN_QA_REQUESTER_PASS"] = "Requester123!";
             psi.Environment["SALRYN_QA_MANAGER_USER"] = "lpi-manager";
             psi.Environment["SALRYN_QA_MANAGER_PASS"] = "Manager123!";
+            psi.Environment["SALRYN_QA_ADMIN_USER"] = "lpi-admin";
+            psi.Environment["SALRYN_QA_ADMIN_PASS"] = "Admin123!";
+            psi.Environment["SALRYN_QA_LEGACY_USER"] = "lpi-legacy-finance";
+            psi.Environment["SALRYN_QA_LEGACY_PASS"] = "Legacy123!";
 
             using Process? proc = Process.Start(psi);
             if (proc is null) throw new InvalidOperationException("Failed to launch Playwright process.");
@@ -199,6 +208,46 @@ public static class LpiRealHostAcceptanceRunner
                     }
                 }
 
+                // Validate the complete structured audit custody for the PHP 3,720 full settlement.
+                using (SqliteCommand cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = """
+                        SELECT a.user_id, a.old_value_json, a.new_value_json, a.created_at
+                        FROM audit_logs a
+                        JOIN supplier_payments p ON p.id = a.entity_id
+                        WHERE a.entity_type='SupplierPayment'
+                          AND a.action='AP_PAYMENT_CONFIRMED_AND_SETTLED'
+                          AND p.reference_no='TRF-REALHOST-8899';
+                        """;
+                    using SqliteDataReader reader = cmd.ExecuteReader();
+                    if (!reader.Read()) throw new InvalidOperationException("Structured settlement audit for TRF-REALHOST-8899 was not found.");
+                    string actorId = reader.GetString(0);
+                    using JsonDocument previousAudit = JsonDocument.Parse(reader.GetString(1));
+                    using JsonDocument newAudit = JsonDocument.Parse(reader.GetString(2));
+                    JsonElement previous = previousAudit.RootElement;
+                    JsonElement current = newAudit.RootElement;
+                    if (actorId != mgrId.ToString("D") ||
+                        previous.GetProperty("OutstandingBalanceCents").GetInt64() != 372_000 ||
+                        previous.GetProperty("InvoiceStatus").GetString() != "PostedOpen" ||
+                        current.GetProperty("AmountCents").GetInt64() != 372_000 ||
+                        current.GetProperty("PreviousOutstandingBalanceCents").GetInt64() != 372_000 ||
+                        current.GetProperty("NewOutstandingBalanceCents").GetInt64() != 0 ||
+                        current.GetProperty("NewInvoiceStatus").GetString() != "Paid" ||
+                        current.GetProperty("AppliedApLedgerAmountCents").GetInt64() != 372_000 ||
+                        current.GetProperty("SettlementActorUserId").GetString() != mgrId.ToString("D") ||
+                        current.GetProperty("RecordedByUserId").GetString() != mgrId.ToString("D") ||
+                        !current.GetProperty("SameUserRecordedAndSettled").GetBoolean() ||
+                        !current.GetProperty("OperatorConfirmedActualPayment").GetBoolean() ||
+                        DateTimeOffset.Parse(current.GetProperty("SettlementTimestamp").GetString()!, CultureInfo.InvariantCulture) !=
+                            DateTimeOffset.Parse(reader.GetString(3), CultureInfo.InvariantCulture))
+                    {
+                        throw new InvalidOperationException(
+                            $"Structured settlement audit did not preserve exact PHP 3,720 custody and before/after accounting values. " +
+                            $"actor={actorId}; expectedActor={mgrId:D}; old={previous.GetRawText()}; new={current.GetRawText()}; createdAt={reader.GetString(3)}");
+                    }
+                    if (reader.Read()) throw new InvalidOperationException("Settlement replay created a duplicate structured audit event.");
+                }
+
                 // Validate Purchase Order
                 using (SqliteCommand cmd = conn.CreateCommand())
                 {
@@ -266,7 +315,7 @@ public static class LpiRealHostAcceptanceRunner
                     string dupStatus = reader.GetString(0);
                     string dupMatch = reader.GetString(1);
                     long dupBalance = reader.GetInt64(2);
-                    if (dupMatch != "Matched" || dupBalance != 1000000L)
+                    if (dupStatus != "PartiallyPaid" || dupMatch != "Matched" || dupBalance != 700000L)
                     {
                         throw new InvalidOperationException($"Duplicate line invoice match mismatch: status={dupStatus}, matchStatus={dupMatch}, balanceDue={dupBalance}");
                     }

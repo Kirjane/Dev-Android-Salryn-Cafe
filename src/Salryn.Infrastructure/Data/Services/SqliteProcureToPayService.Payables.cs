@@ -751,7 +751,7 @@ public sealed partial class SqliteProcureToPayService
                     request.ReferenceNo
                 },
                 null,
-                $"Recorded supplier payment {payNumber} for {invoice.ApVoucherNumber} (Pending Manager Authorization).",
+                $"Recorded supplier payment {payNumber} for {invoice.ApVoucherNumber} (Pending Settlement — Not Yet Disbursed).",
                 now,
                 cancellationToken);
 
@@ -898,8 +898,38 @@ public sealed partial class SqliteProcureToPayService
             "AP_PAYMENT_CONFIRMED_AND_SETTLED",
             "SupplierPayment",
             payment.Id.ToString("D"),
-            new { payment.PaymentNumber, payment.AmountCents, payment.SupplierInvoiceId, SettlementActorUserId = request.ApproverUserId, Confirmation = "YES" },
-            null,
+            new
+            {
+                PaymentId = payment.Id,
+                payment.PaymentNumber,
+                payment.SupplierId,
+                payment.SupplierInvoiceId,
+                SupplierInvoiceReference = invoice.SupplierInvoiceNo,
+                payment.AmountCents,
+                payment.PaymentMethod,
+                payment.DisbursementSource,
+                PaymentTransactionReference = payment.ReferenceNo,
+                payment.RecordedByUserId,
+                SettlementActorUserId = request.ApproverUserId,
+                SameUserRecordedAndSettled = payment.RecordedByUserId == request.ApproverUserId,
+                SettlementTimestamp = now,
+                OperatorConfirmedActualPayment = true,
+                PreviousInvoiceStatus = invoice.Status,
+                NewInvoiceStatus = nextInvStatus,
+                PreviousPaidAmountCents = invoice.PaidAmountCents,
+                NewPaidAmountCents = newPaidCents,
+                PreviousOutstandingBalanceCents = invoice.RemainingBalanceCents,
+                NewOutstandingBalanceCents = newRemainingCents,
+                AppliedApLedgerAmountCents = payment.AmountCents,
+                ApLedgerReference = payment.PaymentNumber
+            },
+            new
+            {
+                PaymentStatus = payment.Status,
+                InvoiceStatus = invoice.Status,
+                PaidAmountCents = invoice.PaidAmountCents,
+                OutstandingBalanceCents = invoice.RemainingBalanceCents
+            },
             $"Confirmed actual disbursement and settled supplier payment {payment.PaymentNumber} for invoice {invoice.ApVoucherNumber}.",
             now,
             cancellationToken);

@@ -123,6 +123,10 @@ const REQUESTER_USER = process.env.SALRYN_QA_REQUESTER_USER ?? "lpi-requester";
 const REQUESTER_PASS = process.env.SALRYN_QA_REQUESTER_PASS ?? "Requester123!";
 const MANAGER_USER = process.env.SALRYN_QA_MANAGER_USER ?? "lpi-manager";
 const MANAGER_PASS = process.env.SALRYN_QA_MANAGER_PASS ?? "Manager123!";
+const ADMIN_USER = process.env.SALRYN_QA_ADMIN_USER ?? "lpi-admin";
+const ADMIN_PASS = process.env.SALRYN_QA_ADMIN_PASS ?? "Admin123!";
+const LEGACY_USER = process.env.SALRYN_QA_LEGACY_USER ?? "lpi-legacy-finance";
+const LEGACY_PASS = process.env.SALRYN_QA_LEGACY_PASS ?? "Legacy123!";
 
 async function login(page: Page, username: string, pass: string) {
   await page.goto(`${HOST_URL}/`);
@@ -702,5 +706,76 @@ test.describe("INTEGRATED_HOST LPI End-to-End Acceptance Suite @integrated", () 
     expect(negMismatchRes.status()).toBe(400);
 
     await logout(page);
+  });
+
+  test("Supplier settlement authorization: legacy denial, Admin cross-user, and Admin self-settlement", async ({ request }) => {
+    test.setTimeout(60000);
+
+    let response = await request.post(`${HOST_URL}/api/auth/login`, {
+      data: { username: MANAGER_USER, password: MANAGER_PASS },
+    });
+    expect(response.ok()).toBeTruthy();
+    response = await request.get(`${HOST_URL}/api/lpi/invoices`);
+    const invoice = (await response.json()).find((item: any) => item.supplierInvoiceNo === "INV-DUP-LINEB-001");
+    expect(invoice?.remainingBalanceCents).toBe(1000000);
+
+    response = await request.post(`${HOST_URL}/api/lpi/payments`, {
+      data: {
+        supplierInvoiceId: invoice.id,
+        amountCents: 100000,
+        paymentMethod: "BankTransfer",
+        disbursementSource: "OperatingAccount",
+        referenceNo: "TRF-MANAGER-ADMIN-CROSS",
+        clientRequestId: "C1-R2-MANAGER-ADMIN-CROSS",
+      },
+    });
+    expect(response.status()).toBe(201);
+    const managerRecorded = await response.json();
+    expect(managerRecorded.status).toBe("PendingApproval");
+
+    await request.post(`${HOST_URL}/api/auth/logout`);
+    response = await request.post(`${HOST_URL}/api/auth/login`, {
+      data: { username: LEGACY_USER, password: LEGACY_PASS },
+    });
+    expect(response.ok()).toBeTruthy();
+    response = await request.post(`${HOST_URL}/api/lpi/payments/${managerRecorded.id}/approve`, {
+      data: { settlementConfirmation: "YES", remarks: "Legacy specialist role must remain denied" },
+    });
+    expect(response.status()).toBe(403);
+
+    await request.post(`${HOST_URL}/api/auth/logout`);
+    response = await request.post(`${HOST_URL}/api/auth/login`, {
+      data: { username: ADMIN_USER, password: ADMIN_PASS },
+    });
+    expect(response.ok()).toBeTruthy();
+    response = await request.post(`${HOST_URL}/api/lpi/payments/${managerRecorded.id}/approve`, {
+      data: { settlementConfirmation: "YES", remarks: "Admin confirmed Manager-recorded transfer" },
+    });
+    expect(response.ok()).toBeTruthy();
+    expect((await response.json()).status).toBe("Settled");
+
+    response = await request.post(`${HOST_URL}/api/lpi/payments`, {
+      data: {
+        supplierInvoiceId: invoice.id,
+        amountCents: 200000,
+        paymentMethod: "BankTransfer",
+        disbursementSource: "OperatingAccount",
+        referenceNo: "TRF-ADMIN-SELF",
+        clientRequestId: "C1-R2-ADMIN-SELF",
+      },
+    });
+    expect(response.status()).toBe(201);
+    const adminRecorded = await response.json();
+    response = await request.post(`${HOST_URL}/api/lpi/payments/${adminRecorded.id}/approve`, {
+      data: { settlementConfirmation: "YES", remarks: "Admin confirmed own actual transfer" },
+    });
+    expect(response.ok()).toBeTruthy();
+    const adminSettled = await response.json();
+    expect(adminSettled.status).toBe("Settled");
+    expect(adminSettled.recordedByUserId).toBe(adminSettled.approvedByUserId);
+
+    response = await request.get(`${HOST_URL}/api/lpi/invoices`);
+    const updatedInvoice = (await response.json()).find((item: any) => item.id === invoice.id);
+    expect(updatedInvoice.remainingBalanceCents).toBe(700000);
   });
 });

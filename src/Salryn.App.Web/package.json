@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "test:customer-order-lines": "node --experimental-strip-types --test tests/customer-order-lines.test.mjs",
     "test:po-print": "node --experimental-strip-types --test tests/purchase-order-print.test.mjs",
+    "test:supplier-settlement-ui": "node --test tests/supplier-settlement-ui.test.mjs",
     "test:e2e": "playwright test --project=mocked-ui",
     "test:visual": "playwright test --project=mocked-ui --grep @visual",
     "test:visual:update": "playwright test --project=mocked-ui --grep @visual --update-snapshots=all",

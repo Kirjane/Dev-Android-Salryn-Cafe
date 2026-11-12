@@ -23,7 +23,7 @@ export function PrintableChequeDisbursementModal({ open, onClose, payment, store
     <Dialog open={open} onClose={onClose} title={`Payment Voucher: ${payment.paymentNumber}`}>
       <div className="space-y-6 text-slate-800">
         <div className="flex justify-between items-center border-b pb-3 print:hidden">
-          <span className="text-xs text-slate-500">Accounts Payable Payment Voucher — {payment.status === "Settled" ? "Settled" : "Pending Settlement"}</span>
+          <span className="text-xs text-slate-500">Accounts Payable Payment Voucher — {payment.status === "Settled" ? "Operator-Confirmed Disbursement" : "Pending Settlement — Not Yet Disbursed"}</span>
           <div className="flex gap-2">
             <Button variant="secondary" onClick={onClose}>
               Close
@@ -59,7 +59,7 @@ export function PrintableChequeDisbursementModal({ open, onClose, payment, store
               <span className="text-xs uppercase tracking-wider text-slate-400 font-bold">Treasury & Accounts Payable</span>
               <h2 className="text-lg font-bold text-slate-900">CHECK / DISBURSEMENT VOUCHER</h2>
               <span className="inline-block mt-1 px-2.5 py-0.5 text-xs font-semibold rounded bg-slate-100 text-slate-800 border">
-                Status: {payment.status}
+                Status: {payment.status === "Settled" ? "Operator-Confirmed Disbursement" : "Pending Settlement — Not Yet Disbursed"}
               </span>
             </div>
             <div className="text-right">
@@ -139,25 +139,25 @@ export function PrintableChequeDisbursementModal({ open, onClose, payment, store
             </div>
           )}
 
-          {/* Signatures & Approvals */}
+          {/* Transaction custody and unsigned recipient acknowledgment */}
           <div className="grid grid-cols-3 gap-4 pt-8 border-t text-xs">
             <div className="text-center">
               <div className="border-b border-slate-400 pb-1 font-semibold text-slate-800">
-                Admin / Manager
+                {payment.recordedByUserId}
               </div>
-              <span className="text-slate-500 mt-1 block">Prepared By</span>
+              <span className="text-slate-500 mt-1 block">Recorded By — User ID</span>
             </div>
             <div className="text-center">
               <div className="border-b border-slate-400 pb-1 font-semibold text-slate-800">
-                {payment.status === "Settled" ? "Actual Settlement Confirmed" : "Pending Confirmation"}
+                {payment.status === "Settled" && payment.approvedByUserId ? payment.approvedByUserId : "Pending Confirmation"}
               </div>
-              <span className="text-slate-500 mt-1 block">Settlement Status</span>
+              <span className="text-slate-500 mt-1 block">
+                {payment.status === "Settled" ? `Settlement Confirmed By — User ID${payment.approvedAt ? ` • ${new Date(payment.approvedAt).toLocaleString()}` : ""}` : "Settlement Status"}
+              </span>
             </div>
             <div className="text-center">
-              <div className="border-b border-slate-400 pb-1 font-semibold text-slate-800">
-                {payment.supplierName}
-              </div>
-              <span className="text-slate-500 mt-1 block">Payee Signature / Received By</span>
+              <div className="min-h-5 border-b border-slate-400 pb-1" aria-label="Unsigned recipient acknowledgment">&nbsp;</div>
+              <span className="text-slate-500 mt-1 block">Recipient Acknowledgment (Unsigned)</span>
             </div>
           </div>
         </div>
