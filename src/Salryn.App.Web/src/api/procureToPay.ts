@@ -1189,7 +1189,8 @@ export async function recordSupplierPayment(data: {
   paymentMethod: string;
   disbursementSource?: string;
   referenceNumber?: string;
-  bankAccount?: string;
+  bankName?: string;
+  bankAccount?: string; // Legacy caller compatibility only; value denotes bank name, not an account identifier
   checkNumber?: string;
   notes?: string;
 }): Promise<SupplierPayment> {
@@ -1202,7 +1203,7 @@ export async function recordSupplierPayment(data: {
     disbursementSource: disbursementSource,
     referenceNo: data.referenceNumber,
     referenceNumber: data.referenceNumber,
-    bankName: data.bankAccount,
+    bankName: data.bankName ?? data.bankAccount,
     checkNo: data.checkNumber,
     remarks: data.notes,
   };
