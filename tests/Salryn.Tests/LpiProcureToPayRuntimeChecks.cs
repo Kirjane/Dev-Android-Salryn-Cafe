@@ -507,7 +507,7 @@ public static class LpiProcureToPayRuntimeChecks
             Require(paymentOne.Id == paymentOneReplay.Id, "S3 duplicate payment client_request_id must return original payment record.");
             paymentOne = RequireSuccess(
                 await service.ApproveSupplierPaymentAsync(new ApproveSupplierPaymentRequest(
-                    paymentOne.Id, financeManagerUserId, "YES", "Actual BPI transfer confirmed")),
+                    paymentOne.Id, financeManagerUserId, "YES", "Actual BPI transfer confirmed", DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(8)).DateTime).ToString("yyyy-MM-dd"))),
                 "S3 settle partial supplier payment");
 
             invoiceAlpha = RequireSuccess(await service.GetSupplierInvoiceByIdAsync(invoiceAlpha.Id), "S3 reload invoice Alpha after partial payment");
@@ -538,7 +538,7 @@ public static class LpiProcureToPayRuntimeChecks
                 "S3 final supplier payment");
             paymentTwo = RequireSuccess(
                 await service.ApproveSupplierPaymentAsync(new ApproveSupplierPaymentRequest(
-                    paymentTwo.Id, financeManagerUserId, "YES", "Actual cheque release confirmed")),
+                    paymentTwo.Id, financeManagerUserId, "YES", "Actual cheque release confirmed", DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(8)).DateTime).ToString("yyyy-MM-dd"))),
                 "S3 settle final supplier payment");
             Require(paymentTwo.AmountCents == 128_240, "S3 final payment must record exact settlement amount.");
 
