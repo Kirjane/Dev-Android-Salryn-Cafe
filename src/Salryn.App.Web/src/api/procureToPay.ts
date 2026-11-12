@@ -260,13 +260,15 @@ export interface SupplierPayment {
   supplierName: string;
   invoiceId: string;
   invoiceNumber: string;
-  paymentDate: string;
+  paymentDate: string; // Original requested/recorded date; never overwritten on settlement
+  actualDisbursementDate: string | null; // Operator-affirmed funds-transfer calendar date, unknown on legacy rows
   amountCents: number;
   paymentMethod: string;
   disbursementSource: string;
   status: string;
   referenceNumber: string | null;
-  bankAccount: string | null;
+  bankName: string | null;
+  bankAccount: string | null; // Deprecated compatibility alias: this is a bank name, not a numbered account
   checkNumber: string | null;
   notes: string | null;
   recordedByUserId: string;
@@ -602,11 +604,13 @@ function normalizeSupplierPayment(raw: JsonRecord): SupplierPayment {
     invoiceId: raw.supplierInvoiceId ?? raw.invoiceId ?? "",
     invoiceNumber: raw.supplierInvoiceNo ?? raw.invoiceNumber ?? raw.apVoucherNumber ?? "",
     paymentDate: raw.paymentDate ?? "",
+    actualDisbursementDate: raw.actualDisbursementDate ?? null,
     amountCents: raw.amountCents ?? 0,
     paymentMethod: raw.paymentMethod ?? "BankTransfer",
     disbursementSource: raw.disbursementSource ?? "OperatingAccount",
     status: raw.status ?? "PendingApproval",
     referenceNumber: raw.referenceNo ?? raw.referenceNumber ?? null,
+    bankName: raw.bankName ?? raw.bankAccount ?? null,
     bankAccount: raw.bankName ?? raw.bankAccount ?? null,
     checkNumber: raw.checkNo ?? raw.checkNumber ?? null,
     notes: raw.remarks ?? raw.notes ?? null,
@@ -1241,11 +1245,11 @@ export async function fetchApAging(): Promise<ApAgingSummary[]> {
   return Array.from(supplierMap.values());
 }
 
-export async function approveSupplierPayment(paymentId: string, settlementConfirmation: string, remarks?: string): Promise<SupplierPayment> {
+export async function approveSupplierPayment(paymentId: string, settlementConfirmation: string, actualDisbursementDate: string, remarks?: string): Promise<SupplierPayment> {
   const response = await fetch(`/api/lpi/payments/${paymentId}/approve`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ settlementConfirmation, remarks }),
+    body: JSON.stringify({ settlementConfirmation, actualDisbursementDate, remarks }),
   });
   return normalizeSupplierPayment(await readJson<JsonRecord>(response));
 }
