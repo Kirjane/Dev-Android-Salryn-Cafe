@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
+import { philippineBusinessToday } from "../src/utils/supplierPaymentBusinessDate";
 
 /**
  * INTEGRATED_HOST Real-Host Acceptance Test Suite:
@@ -185,7 +186,7 @@ test.describe("INTEGRATED_HOST LPI End-to-End Acceptance Suite @integrated", () 
     expect(uncaughtErrors, `Browser reported uncaught errors: ${uncaughtErrors.join("; ")}`).toEqual([]);
   });
 
-  test("Complete End-to-End Real-Host Procure-to-Pay Lifecycle", async ({ page }) => {
+  test("Complete End-to-End Real-Host Procure-to-Pay Lifecycle", async ({ page }, testInfo) => {
     test.setTimeout(90000);
 
     // =========================================================================
@@ -452,6 +453,8 @@ test.describe("INTEGRATED_HOST LPI End-to-End Acceptance Suite @integrated", () 
     expect(paymentsResponse.ok()).toBeTruthy();
     const pendingPayment = (await paymentsResponse.json()).find((payment: any) => payment.referenceNo === "TRF-REALHOST-8899");
     expect(pendingPayment?.status).toBe("PendingApproval");
+    expect(pendingPayment?.actualDisbursementDate).toBeNull();
+    const confirmedTransferDate = philippineBusinessToday();
 
     // Backend confirmation is independent of UI validation.
     for (const settlementConfirmation of [undefined, "", "yes", "YES PLEASE"]) {
@@ -461,11 +464,26 @@ test.describe("INTEGRATED_HOST LPI End-to-End Acceptance Suite @integrated", () 
       expect(denied.status()).toBe(400);
     }
 
+    for (const [actualDisbursementDate, code] of [
+      [undefined, "Lpi.Payment.ActualDisbursementDateRequired"],
+      ["2026-02-30", "Lpi.Payment.ActualDisbursementDateInvalid"],
+      ["2099-01-01", "Lpi.Payment.ActualDisbursementDateFuture"],
+    ] as const) {
+      const denied = await page.request.post(`${HOST_URL}/api/lpi/payments/${pendingPayment.id}/approve`, {
+        data: { settlementConfirmation: "YES", actualDisbursementDate },
+      });
+      expect(denied.status()).toBe(400);
+      expect((await denied.json()).code).toBe(code);
+    }
+    expect((await (await page.request.get(`${HOST_URL}/api/lpi/payments`)).json())
+      .find((payment: any) => payment.id === pendingPayment.id).actualDisbursementDate).toBeNull();
+    expect((await (await page.request.get(`${HOST_URL}/api/lpi/overview`)).json()).totalPaymentsDisbursedCents).toBe(0);
+
     // Cashier cannot settle directly even with the correct confirmation.
     await logout(page);
     await login(page, REQUESTER_USER, REQUESTER_PASS);
     const cashierSettlement = await page.request.post(`${HOST_URL}/api/lpi/payments/${pendingPayment.id}/approve`, {
-      data: { settlementConfirmation: "YES" },
+      data: { settlementConfirmation: "YES", actualDisbursementDate: confirmedTransferDate },
     });
     expect(cashierSettlement.status()).toBe(403);
     await logout(page);
@@ -473,6 +491,13 @@ test.describe("INTEGRATED_HOST LPI End-to-End Acceptance Suite @integrated", () 
     // The same Manager who recorded the payment may review and settle it.
     await login(page, MANAGER_USER, MANAGER_PASS);
     await page.goto(`${HOST_URL}/?page=accounts-payable`);
+    await page.getByRole("button", { name: "Print voucher" }).first().click();
+    const pendingVoucher = page.getByRole("dialog", { name: /Payment Voucher:/ });
+    await expect(pendingVoucher).toContainText("Actual funds-transfer date: Not yet disbursed");
+    await expect(pendingVoucher).toContainText("Recorded / requested date:");
+    await expect(pendingVoucher).toContainText("Bank Name:");
+    await pendingVoucher.getByRole("button", { name: "Close" }).click();
+
     await page.getByRole("button", { name: "Confirm actual payment" }).first().click();
     const settlementDialog = page.getByRole("dialog", { name: "Confirm Actual Supplier Payment" });
     await expect(settlementDialog).toContainText("Apex Roasters & Dairy Supply Inc.");
@@ -480,24 +505,42 @@ test.describe("INTEGRATED_HOST LPI End-to-End Acceptance Suite @integrated", () 
     await expect(settlementDialog).toContainText("TRF-REALHOST-8899");
     const settleButton = settlementDialog.getByRole("button", { name: "Confirm Actual Payment & Settle" });
     await expect(settleButton).toBeDisabled();
-    await settlementDialog.locator("input").fill("NO");
+    await settlementDialog.locator("input:not([type='date'])").fill("NO");
     await expect(settleButton).toBeDisabled();
     await settlementDialog.getByRole("button", { name: "Cancel" }).click();
     await expect(pmtTable).toContainText("PendingApproval");
 
     await page.getByRole("button", { name: "Confirm actual payment" }).first().click();
-    await settlementDialog.locator("input").fill("YES");
+    await settlementDialog.locator("input:not([type='date'])").fill("YES");
+    await expect(settleButton).toBeDisabled(); // YES alone does not affirm a transfer date
+    await settlementDialog.getByLabel("Actual funds-transfer date").fill("2099-01-01");
+    await expect(settleButton).toBeDisabled();
+    await settlementDialog.getByLabel("Actual funds-transfer date").fill(confirmedTransferDate);
+    await expect(settleButton).toBeEnabled();
     await settlementDialog.locator("textarea").fill("Manager confirmed actual bank transfer against the persisted reference");
     await settleButton.click();
     await expect(settlementDialog).toBeHidden();
     await expect(pmtTable).toContainText("Settled", { timeout: 10000 });
 
     const replaySettlement = await page.request.post(`${HOST_URL}/api/lpi/payments/${pendingPayment.id}/approve`, {
-      data: { settlementConfirmation: "YES", remarks: "Replay must not post twice" },
+      data: { settlementConfirmation: "YES", actualDisbursementDate: confirmedTransferDate, remarks: "Replay must not post twice" },
     });
     expect(replaySettlement.status()).toBe(409);
     const overviewAfterSettlement = await page.request.get(`${HOST_URL}/api/lpi/overview`);
     expect((await overviewAfterSettlement.json()).totalPaymentsDisbursedCents).toBe(372000);
+    const stored = (await (await page.request.get(`${HOST_URL}/api/lpi/payments`)).json())
+      .find((payment: any) => payment.id === pendingPayment.id);
+    expect(stored.actualDisbursementDate).toBe(confirmedTransferDate);
+    expect(stored.paymentDate).toBe(pendingPayment.paymentDate);
+    expect(stored.approvedAt).toBeTruthy();
+
+    await page.getByRole("button", { name: "Print voucher" }).first().click();
+    const settledVoucher = page.getByRole("dialog", { name: /Payment Voucher:/ });
+    await expect(settledVoucher).toContainText(`Actual funds-transfer date: ${confirmedTransferDate}`);
+    await expect(settledVoucher).toContainText("Settlement confirmed at (Asia/Manila):");
+    await expect(settledVoucher).toContainText("Bank Name:");
+    await testInfo.attach("issue71-settled-voucher", { body: await settledVoucher.screenshot(), contentType: "image/png" });
+    await settledVoucher.getByRole("button", { name: "Close" }).click();
 
     // =========================================================================
     // STEP 9: UI Refresh Persistence Verification
@@ -507,6 +550,9 @@ test.describe("INTEGRATED_HOST LPI End-to-End Acceptance Suite @integrated", () 
     await expect(page.locator("table").first()).toContainText("INV-REALHOST-2026-001");
     await expect(page.locator("table").first()).toContainText("Paid");
     await expect(page.locator("table").nth(2)).toContainText("Settled");
+    await page.getByRole("button", { name: "Print voucher" }).first().click();
+    await expect(page.getByRole("dialog", { name: /Payment Voucher:/ })).toContainText(`Actual funds-transfer date: ${confirmedTransferDate}`);
+    await page.getByRole("dialog", { name: /Payment Voucher:/ }).getByRole("button", { name: "Close" }).click();
   });
 
   test("Focused UI & DB Regression: Duplicate-Product Same-PO Line Disambiguation & Line Isolation", async ({ page, request }) => {
@@ -739,7 +785,7 @@ test.describe("INTEGRATED_HOST LPI End-to-End Acceptance Suite @integrated", () 
     });
     expect(response.ok()).toBeTruthy();
     response = await request.post(`${HOST_URL}/api/lpi/payments/${managerRecorded.id}/approve`, {
-      data: { settlementConfirmation: "YES", remarks: "Legacy specialist role must remain denied" },
+      data: { settlementConfirmation: "YES", actualDisbursementDate: philippineBusinessToday(), remarks: "Legacy specialist role must remain denied" },
     });
     expect(response.status()).toBe(403);
 
@@ -749,7 +795,7 @@ test.describe("INTEGRATED_HOST LPI End-to-End Acceptance Suite @integrated", () 
     });
     expect(response.ok()).toBeTruthy();
     response = await request.post(`${HOST_URL}/api/lpi/payments/${managerRecorded.id}/approve`, {
-      data: { settlementConfirmation: "YES", remarks: "Admin confirmed Manager-recorded transfer" },
+      data: { settlementConfirmation: "YES", actualDisbursementDate: philippineBusinessToday(), remarks: "Admin confirmed Manager-recorded transfer" },
     });
     expect(response.ok()).toBeTruthy();
     expect((await response.json()).status).toBe("Settled");
@@ -767,7 +813,7 @@ test.describe("INTEGRATED_HOST LPI End-to-End Acceptance Suite @integrated", () 
     expect(response.status()).toBe(201);
     const adminRecorded = await response.json();
     response = await request.post(`${HOST_URL}/api/lpi/payments/${adminRecorded.id}/approve`, {
-      data: { settlementConfirmation: "YES", remarks: "Admin confirmed own actual transfer" },
+      data: { settlementConfirmation: "YES", actualDisbursementDate: philippineBusinessToday(), remarks: "Admin confirmed own actual transfer" },
     });
     expect(response.ok()).toBeTruthy();
     const adminSettled = await response.json();
