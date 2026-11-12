@@ -45,7 +45,6 @@ export function AccountsPayablePage() {
   const canApproveVariance = hasPermission(session.data, Permissions.PayablesApproveVariance);
   const canRecordPayment = hasPermission(session.data, Permissions.PayablesRecordPayment);
   const canApprovePayment = hasPermission(session.data, Permissions.PayablesApprovePayment);
-  const actorId = session.data?.user?.userId;
 
   const invoices = useQuery({ queryKey: ["lpi-invoices"], queryFn: () => fetchSupplierInvoices(), enabled: canView });
   const aging = useQuery({ queryKey: ["lpi-ap-aging"], queryFn: fetchApAging, enabled: canView });
@@ -72,6 +71,7 @@ export function AccountsPayablePage() {
   const [paymentBank, setPaymentBank] = useState("");
   const [paymentCheck, setPaymentCheck] = useState("");
   const [approvalTarget, setApprovalTarget] = useState<SupplierPayment | null>(null);
+  const [settlementConfirmation, setSettlementConfirmation] = useState("");
   const [approvalReason, setApprovalReason] = useState("");
   const [voucher, setVoucher] = useState<SupplierPayment | null>(null);
   const [busy, setBusy] = useState(false);
@@ -85,7 +85,7 @@ export function AccountsPayablePage() {
   const awaitingDocuments = (invoices.data ?? []).filter((inv) => inv.matchStatus === "PendingDocuments").length;
 
   const refresh = () => {
-    for (const key of ["lpi-invoices", "lpi-ap-aging", "lpi-payments"]) {
+    for (const key of ["lpi-invoices", "lpi-ap-aging", "lpi-payments", "lpi-overview"]) {
       void queryClient.invalidateQueries({ queryKey: [key] });
     }
   };
@@ -170,7 +170,7 @@ export function AccountsPayablePage() {
       });
       setPaymentTarget(null);
       refresh();
-      notify.success("Payment submitted for independent approval. No settlement has been asserted.");
+      notify.success("Payment request recorded as pending. No actual settlement has been asserted.");
     } catch (error) { notify.error(error instanceof Error ? error.message : "Payment recording failed."); }
     finally { setBusy(false); }
   };
@@ -256,8 +256,8 @@ export function AccountsPayablePage() {
             <td className="p-2 text-right">{money(pay.amountCents)}</td><td className="p-2">{pay.status}</td>
             <td className="p-2"><div className="flex flex-wrap gap-2">
               <Button variant="secondary" onClick={() => setVoucher(pay)}>Print voucher</Button>
-              {pay.status === "PendingApproval" && canApprovePayment && actorId !== pay.recordedByUserId &&
-                <Button onClick={() => { setApprovalTarget(pay); setApprovalReason(""); }}>Approve settlement</Button>}
+              {pay.status === "PendingApproval" && canApprovePayment &&
+                <Button onClick={() => { setApprovalTarget(pay); setSettlementConfirmation(""); setApprovalReason(""); }}>Confirm actual payment</Button>}
             </div></td>
           </tr>)}</tbody>
         </table></div>
@@ -306,7 +306,7 @@ export function AccountsPayablePage() {
 
       <Dialog open={Boolean(paymentTarget)} onClose={() => setPaymentTarget(null)} title="Prepare Supplier Disbursement">
         <div className="space-y-3">
-          <p className="text-sm">This creates a pending payment request. Settlement requires a different authorized operator.</p>
+          <p className="text-sm">This creates a pending payment request only. It does not reduce Accounts Payable until an authorized Admin or Manager confirms the money was actually paid or transferred.</p>
           <div><label className={labelClass}>Amount (PHP)</label><input type="number" min="0.01" step="0.01" className={inputClass} value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} /></div>
           <div><label className={labelClass}>Method</label><select className={inputClass} value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}><option>BankTransfer</option><option>Check</option><option>Cash</option></select></div>
           <div><label className={labelClass}>Actual payment reference</label><input className={inputClass} value={paymentReference} onChange={(e) => setPaymentReference(e.target.value)} /></div>
@@ -316,12 +316,23 @@ export function AccountsPayablePage() {
         </div>
       </Dialog>
 
-      <Dialog open={Boolean(approvalTarget)} onClose={() => setApprovalTarget(null)} title="Independent Payment Approval">
+      <Dialog open={Boolean(approvalTarget)} onClose={() => { if (!busy) setApprovalTarget(null); }} title="Confirm Actual Supplier Payment">
         <div className="space-y-3">
-          <p className="text-sm">{approvalTarget?.paymentNumber} — {approvalTarget ? money(approvalTarget.amountCents) : ""}</p>
-          <div><label className={labelClass}>Approval remarks</label><textarea rows={2} className={inputClass} value={approvalReason} onChange={(e) => setApprovalReason(e.target.value)} /></div>
-          <div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setApprovalTarget(null)}>Cancel</Button>
-            <Button disabled={busy || !approvalReason.trim() || approvalTarget?.recordedByUserId === actorId} onClick={async () => { if (!approvalTarget) return; setBusy(true); try { await approveSupplierPayment(approvalTarget.id, approvalReason.trim()); refresh(); setApprovalTarget(null); notify.success("Settlement approved by independent operator."); } catch (error) { notify.error(error instanceof Error ? error.message : "Settlement failed."); } finally { setBusy(false); } }}>Authorize settlement</Button>
+          <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">Confirm only after the money has actually been paid or transferred. Salryn records this affirmation; it does not verify bank or payment-provider clearing.</p>
+          {approvalTarget && <dl className="grid grid-cols-1 gap-2 rounded-md border border-slate-200 p-3 text-sm sm:grid-cols-2">
+            <div><dt className="text-xs text-slate-500">Supplier</dt><dd className="font-medium">{approvalTarget.supplierName}</dd></div>
+            <div><dt className="text-xs text-slate-500">Invoice</dt><dd className="font-mono">{approvalTarget.invoiceNumber}</dd></div>
+            <div><dt className="text-xs text-slate-500">Payment / voucher</dt><dd className="font-mono">{approvalTarget.paymentNumber}</dd></div>
+            <div><dt className="text-xs text-slate-500">Amount</dt><dd className="font-semibold">{money(approvalTarget.amountCents)}</dd></div>
+            <div><dt className="text-xs text-slate-500">Method / source</dt><dd>{approvalTarget.paymentMethod} / {approvalTarget.disbursementSource}</dd></div>
+            <div><dt className="text-xs text-slate-500">Reference</dt><dd className="font-mono">{approvalTarget.referenceNumber}</dd></div>
+            <div><dt className="text-xs text-slate-500">Recorded date</dt><dd>{approvalTarget.paymentDate}</dd></div>
+            <div><dt className="text-xs text-slate-500">Current status</dt><dd>{approvalTarget.status}</dd></div>
+          </dl>}
+          <div><label className={labelClass}>Type YES to confirm actual payment</label><input autoComplete="off" className={inputClass} value={settlementConfirmation} onChange={(e) => setSettlementConfirmation(e.target.value)} /></div>
+          <div><label className={labelClass}>Settlement remarks (optional)</label><textarea rows={2} className={inputClass} value={approvalReason} onChange={(e) => setApprovalReason(e.target.value)} /></div>
+          <div className="flex justify-end gap-2"><Button variant="secondary" disabled={busy} onClick={() => setApprovalTarget(null)}>Cancel</Button>
+            <Button disabled={busy || settlementConfirmation.trim() !== "YES"} onClick={async () => { if (!approvalTarget) return; setBusy(true); try { await approveSupplierPayment(approvalTarget.id, settlementConfirmation, approvalReason.trim() || undefined); refresh(); setApprovalTarget(null); notify.success("Actual supplier payment confirmed and Accounts Payable settled."); } catch (error) { notify.error(error instanceof Error ? error.message : "Settlement failed."); } finally { setBusy(false); } }}>{busy ? "Settling..." : "Confirm Actual Payment & Settle"}</Button>
           </div>
         </div>
       </Dialog>

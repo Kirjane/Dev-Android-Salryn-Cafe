@@ -170,7 +170,9 @@ public static class LpiEvidenceCaptureRunner
 
             // Partial AP Payment
             SupplierPaymentModel paymentOne = (await service.RecordSupplierPaymentAsync(new RecordSupplierPaymentRequest(
-                invoiceAlpha.Id, new DateOnly(2026, 11, 12), 100_000, "BankTransfer", "OperatingBank", "BPI-TRF-9001", null, "BPI Corporate", "Partial settlement #1", "lpi-pay-req-1", apClerkUserId, financeManagerUserId))).Value!;
+                invoiceAlpha.Id, new DateOnly(2026, 11, 12), 100_000, "BankTransfer", "OperatingBank", "BPI-TRF-9001", null, "BPI Corporate", "Partial settlement #1", "lpi-pay-req-1", apClerkUserId, null))).Value!;
+            paymentOne = (await service.ApproveSupplierPaymentAsync(new ApproveSupplierPaymentRequest(
+                paymentOne.Id, financeManagerUserId, "YES", "Actual BPI transfer confirmed"))).Value!;
 
             // Manager session for browser UI
             InMemoryLocalApiSessionStore sessionStore = new();

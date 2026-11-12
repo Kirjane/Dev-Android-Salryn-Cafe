@@ -143,6 +143,7 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
 
   const [paymentApproveModalOpen, setPaymentApproveModalOpen] = useState(false);
   const [paymentToApprove, setPaymentToApprove] = useState<SupplierPayment | null>(null);
+  const [paymentSettlementConfirmation, setPaymentSettlementConfirmation] = useState("");
   const [paymentApprovalRemarks, setPaymentApprovalRemarks] = useState("");
 
   const [overdeliveryModalOpen, setOverdeliveryModalOpen] = useState(false);
@@ -1299,7 +1300,6 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
                         </tr>
                       ) : (
                         (payments.data ?? []).map((pay) => {
-                          const isPreparer = currentUserId === pay.recordedByUserId;
                           const canApprovePay = hasPermission(session.data, Permissions.PayablesApprovePayment);
                           return (
                             <tr key={pay.id} className="hover:bg-slate-50">
@@ -1324,11 +1324,12 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
                                 {pay.status === "PendingApproval" && (
                                   <Button
                                     variant="primary"
-                                    disabled={isPreparer || !canApprovePay}
-                                    title={isPreparer ? "Separation of duties: payment preparer cannot approve settlement" : !canApprovePay ? "Requires Payables.ApprovePayment permission" : undefined}
+                                    disabled={!canApprovePay}
+                                    title={!canApprovePay ? "Requires Payables.ApprovePayment permission" : undefined}
                                     onClick={() => {
                                       setPaymentToApprove(pay);
-                                      setPaymentApprovalRemarks("Verified against invoice and disbursement schedule");
+                                      setPaymentSettlementConfirmation("");
+                                      setPaymentApprovalRemarks("");
                                       setPaymentApproveModalOpen(true);
                                     }}
                                   >
@@ -2800,11 +2801,11 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
       <Dialog
         open={paymentApproveModalOpen}
         onClose={() => setPaymentApproveModalOpen(false)}
-        title="Authorize Supplier Payment Settlement"
+        title="Confirm Actual Supplier Payment"
       >
         <div className="space-y-4">
-          <Alert tone="info">
-            <strong>Dual-Control Authorization:</strong> Independent approval posts the payment to the AP ledger and deducts the outstanding invoice balance.
+          <Alert tone="warning">
+            Confirm only after the money has actually been paid or transferred. Salryn does not verify bank or payment-provider clearing.
           </Alert>
           {paymentToApprove && (
             <div className="rounded-lg bg-slate-50 p-3 space-y-1 text-sm border">
@@ -2816,7 +2817,15 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
             </div>
           )}
           <div>
-            <label className="block text-xs font-medium text-slate-700">Approval Remarks / Authorization Audit Notes</label>
+            <label className="block text-xs font-medium text-slate-700">Type YES to confirm actual payment</label>
+            <TextInput
+              value={paymentSettlementConfirmation}
+              onChange={(e) => setPaymentSettlementConfirmation(e.target.value)}
+              placeholder="YES"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-700">Settlement remarks (optional)</label>
             <TextInput
               value={paymentApprovalRemarks}
               onChange={(e) => setPaymentApprovalRemarks(e.target.value)}
@@ -2829,11 +2838,12 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
             </Button>
             <Button
               variant="primary"
+              disabled={paymentSettlementConfirmation.trim() !== "YES"}
               onClick={async () => {
                 if (!paymentToApprove) return;
                 try {
-                  await approveSupplierPayment(paymentToApprove.id, paymentApprovalRemarks);
-                  notify.success("Supplier payment settled and posted to Accounts Payable!");
+                  await approveSupplierPayment(paymentToApprove.id, paymentSettlementConfirmation, paymentApprovalRemarks || undefined);
+                  notify.success("Actual supplier payment confirmed and posted to Accounts Payable.");
                   setPaymentApproveModalOpen(false);
                   refreshAll();
                 } catch (e) {
@@ -2841,7 +2851,7 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
                 }
               }}
             >
-              Authorize Settlement
+              Confirm Actual Payment &amp; Settle
             </Button>
           </div>
         </div>

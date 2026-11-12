@@ -662,11 +662,12 @@ public sealed partial class SqliteProcureToPayService
             }
         }
 
-        // Separation of duties enforcement:
-        if (request.ApprovedByUserId.HasValue && request.ApprovedByUserId.Value == request.RecordedByUserId)
+        // Recording is intentionally non-financial. Settlement must be a separate, explicit
+        // confirmation action so an optional service argument cannot bypass the operator safeguard.
+        if (request.ApprovedByUserId.HasValue)
         {
             return Result<SupplierPaymentModel>.Fail(
-                Error.Validation("Lpi.Payables.SelfApprovalForbidden", "Separation of duties required: payment preparer cannot approve their own payment."));
+                Error.Validation("Lpi.Payment.SeparateSettlementRequired", "Record the payment as pending, then confirm actual settlement through the settlement action."));
         }
 
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
@@ -691,11 +692,6 @@ public sealed partial class SqliteProcureToPayService
         string payNumber = await AllocateSequenceInTransactionAsync(connection, transaction, "PAY", cancellationToken);
         Guid payId = Guid.NewGuid();
         DateOnly payDate = request.PaymentDate ?? today;
-
-        bool isApproved = request.ApprovedByUserId.HasValue && request.ApprovedByUserId.Value != request.RecordedByUserId;
-        string initialStatus = isApproved ? "Settled" : "PendingApproval";
-        DateTimeOffset? approvedAt = isApproved ? now : null;
-        Guid? approverUserId = isApproved ? request.ApprovedByUserId : null;
 
         await using (SqliteCommand ins = connection.CreateCommand())
         {
@@ -726,82 +722,17 @@ public sealed partial class SqliteProcureToPayService
             ins.Parameters.AddWithValue("$checkNo", (object?)Clean(request.CheckNo) ?? DBNull.Value);
             ins.Parameters.AddWithValue("$bank", (object?)Clean(request.BankName) ?? DBNull.Value);
             ins.Parameters.AddWithValue("$remarks", (object?)Clean(request.Remarks) ?? DBNull.Value);
-            ins.Parameters.AddWithValue("$status", initialStatus);
+            ins.Parameters.AddWithValue("$status", "PendingApproval");
             ins.Parameters.AddWithValue("$recBy", request.RecordedByUserId.ToString("D"));
-            ins.Parameters.AddWithValue("$appBy", approverUserId.HasValue ? (object)approverUserId.Value.ToString("D") : DBNull.Value);
-            ins.Parameters.AddWithValue("$appAt", approvedAt.HasValue ? (object)approvedAt.Value.ToString("O") : DBNull.Value);
+            ins.Parameters.AddWithValue("$appBy", DBNull.Value);
+            ins.Parameters.AddWithValue("$appAt", DBNull.Value);
             ins.Parameters.AddWithValue("$clientReqId", (object?)clientReqId ?? DBNull.Value);
             ins.Parameters.AddWithValue("$hash", payloadHash);
             ins.Parameters.AddWithValue("$now", now.ToString("O"));
             await ins.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        if (isApproved)
-        {
-            long newPaidCents = invoice.PaidAmountCents + request.AmountCents;
-            long newRemainingCents = Math.Max(0, invoice.RemainingBalanceCents - request.AmountCents);
-            string nextInvStatus = newRemainingCents == 0 ? "Paid" : "PartiallyPaid";
-
-            await using (SqliteCommand updInv = connection.CreateCommand())
-            {
-                updInv.Transaction = transaction;
-                updInv.CommandText = """
-                    UPDATE supplier_invoices
-                    SET paid_amount_cents = $paid,
-                        remaining_balance_cents = $rem,
-                        status = $status,
-                        updated_at = $now
-                    WHERE id = $id;
-                    """;
-                updInv.Parameters.AddWithValue("$paid", newPaidCents);
-                updInv.Parameters.AddWithValue("$rem", newRemainingCents);
-                updInv.Parameters.AddWithValue("$status", nextInvStatus);
-                updInv.Parameters.AddWithValue("$now", now.ToString("O"));
-                updInv.Parameters.AddWithValue("$id", invoice.Id.ToString("D"));
-                await updInv.ExecuteNonQueryAsync(cancellationToken);
-            }
-
-            await AppendPayableLedgerEntryAsync(
-                connection,
-                transaction,
-                invoice.SupplierId,
-                invoice.Id,
-                "PaymentApplied",
-                payNumber,
-                debitCents: request.AmountCents, // Debit AP reduces liability
-                creditCents: 0,
-                note: $"Payment {payNumber} ({method} / {source}, Ref: {request.ReferenceNo.Trim()})",
-                actorUserId: request.RecordedByUserId,
-                now: now,
-                cancellationToken: cancellationToken);
-
-            await WriteAuditAsync(
-                connection,
-                transaction,
-                request.RecordedByUserId,
-                "AP_PAYMENT_SETTLED",
-                "SupplierPayment",
-                payId.ToString("D"),
-                new
-                {
-                    payNumber,
-                    invoice.ApVoucherNumber,
-                    invoice.SupplierInvoiceNo,
-                    request.AmountCents,
-                    newRemainingCents,
-                    nextInvStatus,
-                    method,
-                    source,
-                    request.ReferenceNo
-                },
-                new { previousRemainingCents = invoice.RemainingBalanceCents, previousStatus = invoice.Status },
-                $"Settled supplier payment {payNumber} for {invoice.ApVoucherNumber}.",
-                now,
-                cancellationToken);
-        }
-        else
-        {
-            await WriteAuditAsync(
+        await WriteAuditAsync(
                 connection,
                 transaction,
                 request.RecordedByUserId,
@@ -823,7 +754,6 @@ public sealed partial class SqliteProcureToPayService
                 $"Recorded supplier payment {payNumber} for {invoice.ApVoucherNumber} (Pending Manager Authorization).",
                 now,
                 cancellationToken);
-        }
 
         await transaction.CommitAsync(cancellationToken);
 
@@ -839,6 +769,11 @@ public sealed partial class SqliteProcureToPayService
         {
             return Result<SupplierPaymentModel>.Fail(
                 Error.Validation("Lpi.Payment.ApproverRequired", "Payment ID and approver user are required."));
+        }
+        if (!string.Equals(request.SettlementConfirmation?.Trim(), "YES", StringComparison.Ordinal))
+        {
+            return Result<SupplierPaymentModel>.Fail(
+                Error.Validation("Lpi.Payment.SettlementConfirmationRequired", "Type the exact uppercase text YES to confirm that money was actually paid or transferred."));
         }
 
         await using SqliteConnection connection = _connections.CreateConnection();
@@ -859,10 +794,16 @@ public sealed partial class SqliteProcureToPayService
                 Error.Conflict("Lpi.Payment.AlreadyFinalized", $"Payment '{payment.PaymentNumber}' is already in status '{payment.Status}'."));
         }
 
-        if (payment.RecordedByUserId == request.ApproverUserId)
+        if (payment.AmountCents <= 0 || string.IsNullOrWhiteSpace(payment.ReferenceNo))
         {
             return Result<SupplierPaymentModel>.Fail(
-                Error.Validation("Lpi.Payables.SelfApprovalForbidden", "Separation of duties required: payment preparer cannot approve their own payment."));
+                Error.Validation("Lpi.Payment.InvalidPendingPayment", "Pending payment amount and reference must be valid before settlement."));
+        }
+        if (payment.DisbursementSource.Contains("Drawer", StringComparison.OrdinalIgnoreCase) ||
+            payment.DisbursementSource.Contains("Cashier", StringComparison.OrdinalIgnoreCase))
+        {
+            return Result<SupplierPaymentModel>.Fail(
+                Error.Validation("Lpi.Payment.ForbiddenDrawerSource", "Supplier AP settlement cannot use the POS cashier shift drawer."));
         }
 
         DateOnly today = DateOnly.FromDateTime(now.UtcDateTime);
@@ -870,6 +811,11 @@ public sealed partial class SqliteProcureToPayService
         if (invoice is null)
         {
             return Result<SupplierPaymentModel>.Fail(Error.NotFound("Lpi.Payment.InvoiceNotFound", "Linked supplier invoice was not found."));
+        }
+        if (invoice.Status is not ("PostedOpen" or "PartiallyPaid"))
+        {
+            return Result<SupplierPaymentModel>.Fail(
+                Error.Conflict("Lpi.Payment.InvoiceNotPayable", $"Supplier invoice '{invoice.ApVoucherNumber}' is in '{invoice.Status}' status and cannot be settled."));
         }
         if (payment.AmountCents > invoice.RemainingBalanceCents)
         {
@@ -886,17 +832,22 @@ public sealed partial class SqliteProcureToPayService
                     approved_by_user_id = $appBy,
                     approved_at = $now,
                     remarks = CASE WHEN $remarks IS NULL OR $remarks = '' THEN remarks ELSE COALESCE(remarks, '') || ' | ' || $remarks END
-                WHERE id = $id;
+                WHERE id = $id AND status = 'PendingApproval';
                 """;
             updPay.Parameters.AddWithValue("$appBy", request.ApproverUserId.ToString("D"));
             updPay.Parameters.AddWithValue("$now", now.ToString("O"));
             updPay.Parameters.AddWithValue("$remarks", (object?)Clean(request.Remarks) ?? DBNull.Value);
             updPay.Parameters.AddWithValue("$id", payment.Id.ToString("D"));
-            await updPay.ExecuteNonQueryAsync(cancellationToken);
+            int changed = await updPay.ExecuteNonQueryAsync(cancellationToken);
+            if (changed != 1)
+            {
+                return Result<SupplierPaymentModel>.Fail(
+                    Error.Conflict("Lpi.Payment.AlreadyFinalized", $"Payment '{payment.PaymentNumber}' was already finalized by another request."));
+            }
         }
 
-        long newPaidCents = invoice.PaidAmountCents + payment.AmountCents;
-        long newRemainingCents = Math.Max(0, invoice.RemainingBalanceCents - payment.AmountCents);
+        long newPaidCents = checked(invoice.PaidAmountCents + payment.AmountCents);
+        long newRemainingCents = invoice.RemainingBalanceCents - payment.AmountCents;
         string nextInvStatus = newRemainingCents == 0 ? "Paid" : "PartiallyPaid";
 
         await using (SqliteCommand updInv = connection.CreateCommand())
@@ -908,14 +859,22 @@ public sealed partial class SqliteProcureToPayService
                     remaining_balance_cents = $rem,
                     status = $status,
                     updated_at = $now
-                WHERE id = $id;
+                    WHERE id = $id
+                      AND remaining_balance_cents = $previousRemaining
+                      AND status IN ('PostedOpen', 'PartiallyPaid');
                 """;
             updInv.Parameters.AddWithValue("$paid", newPaidCents);
             updInv.Parameters.AddWithValue("$rem", newRemainingCents);
             updInv.Parameters.AddWithValue("$status", nextInvStatus);
             updInv.Parameters.AddWithValue("$now", now.ToString("O"));
             updInv.Parameters.AddWithValue("$id", invoice.Id.ToString("D"));
-            await updInv.ExecuteNonQueryAsync(cancellationToken);
+            updInv.Parameters.AddWithValue("$previousRemaining", invoice.RemainingBalanceCents);
+            int invoiceChanged = await updInv.ExecuteNonQueryAsync(cancellationToken);
+            if (invoiceChanged != 1)
+            {
+                return Result<SupplierPaymentModel>.Fail(
+                    Error.Conflict("Lpi.Payment.InvoiceBalanceChanged", "The payable balance changed before settlement. Refresh and review the pending payment."));
+            }
         }
 
         await AppendPayableLedgerEntryAsync(
@@ -927,7 +886,7 @@ public sealed partial class SqliteProcureToPayService
             payment.PaymentNumber,
             debitCents: payment.AmountCents,
             creditCents: 0,
-            note: $"Payment {payment.PaymentNumber} approved by manager ({payment.PaymentMethod} / {payment.DisbursementSource}, Ref: {payment.ReferenceNo})",
+            note: $"Actual payment {payment.PaymentNumber} confirmed ({payment.PaymentMethod} / {payment.DisbursementSource}, Ref: {payment.ReferenceNo})",
             actorUserId: request.ApproverUserId,
             now: now,
             cancellationToken: cancellationToken);
@@ -936,12 +895,12 @@ public sealed partial class SqliteProcureToPayService
             connection,
             transaction,
             request.ApproverUserId,
-            "AP_PAYMENT_APPROVED_AND_SETTLED",
+            "AP_PAYMENT_CONFIRMED_AND_SETTLED",
             "SupplierPayment",
             payment.Id.ToString("D"),
-            new { payment.PaymentNumber, payment.AmountCents, payment.SupplierInvoiceId, ApproverUserId = request.ApproverUserId },
+            new { payment.PaymentNumber, payment.AmountCents, payment.SupplierInvoiceId, SettlementActorUserId = request.ApproverUserId, Confirmation = "YES" },
             null,
-            $"Approved and settled supplier payment {payment.PaymentNumber} for invoice {invoice.ApVoucherNumber}.",
+            $"Confirmed actual disbursement and settled supplier payment {payment.PaymentNumber} for invoice {invoice.ApVoucherNumber}.",
             now,
             cancellationToken);
 
@@ -1176,7 +1135,7 @@ public sealed partial class SqliteProcureToPayService
         int exceptionRrs = await ScalarIntAsync(connection, "SELECT COUNT(*) FROM receiving_reports WHERE status = 'PendingExceptionApproval';", cancellationToken);
         int lowStockProducts = await ScalarIntAsync(connection, "SELECT COUNT(*) FROM products WHERE is_active = 1 AND track_stock = 1 AND stock_on_hand_x1000 <= reorder_level_x1000;", cancellationToken);
         long totalValuationCents = await ScalarLongAsync(connection, "SELECT COALESCE(SUM((MAX(0, stock_on_hand_x1000) * cost_price_cents) / 1000), 0) FROM products WHERE is_active = 1 AND track_stock = 1;", cancellationToken);
-        long totalPaymentsCents = await ScalarLongAsync(connection, "SELECT COALESCE(SUM(amount_cents), 0) FROM supplier_payments;", cancellationToken);
+        long totalPaymentsCents = await ScalarLongAsync(connection, "SELECT COALESCE(SUM(amount_cents), 0) FROM supplier_payments WHERE status = 'Settled';", cancellationToken);
 
         int missingCostProductCount = await ScalarIntAsync(connection, """
             SELECT COUNT(*) FROM products

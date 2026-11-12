@@ -25,7 +25,7 @@ namespace Salryn.Tests;
 /// Authoritative test suite verifying reproduction, isolation, and regression closure
 /// for the six P1 findings:
 ///   P1-01: 3-Way Matching Integrity (source-free unposted, relationship checks, double-billing prevention)
-///   P1-02: Payment Authorization & Separation of Duties (self-approval forbidden, cash drawer & U1 isolation)
+///   P1-02: Payment Authorization & Settlement Integrity (explicit confirmation, exactly-once AP posting, cash drawer & U1 isolation)
 ///   P1-03: Financial Data Authorization (Payables.View HTTP matrix & overview metric redaction)
 ///   P1-04: Transaction Idempotency (exact SHA256 payload binding & conflict rejection)
 ///   P1-05: Inventory Consistency Across POS (v27 bucket backfill, atomic bucket sync with POS checkout/void/stock-in/adjust)
@@ -283,11 +283,12 @@ public static class LpiP1IntegrityReproductionChecks
     }
 
     /// <summary>
-    /// P1-02: Payment authorization and separation of duties.
+    /// P1-02: Payment authorization and settlement integrity.
     /// Invariants:
     /// - Recorded payment enters PendingApproval status.
-    /// - Preparer cannot approve their own payment.
-    /// - Independent manager approval transitions to Settled and posts to AP.
+    /// - Recording cannot immediately settle by supplying an approver identity.
+    /// - Explicit YES confirmation transitions to Settled and posts to AP; same-actor settlement is legitimate.
+    /// - Concurrent settlement cannot overpay or post duplicate AP entries.
     /// - Supplier payments never touch POS cash drawer events or U1 customer receivables.
     /// </summary>
     private static async Task TestP102PaymentAuthorizationSeparationOfDutiesAsync(
@@ -327,6 +328,12 @@ public static class LpiP1IntegrityReproductionChecks
         Require(invoice.Status == "PostedOpen" && invoice.RemainingBalanceCents == 200_000,
             "Invoice must be PostedOpen with 200_000 balance.");
 
+        Result<SupplierPaymentModel> immediateSettlementBypass = await service.RecordSupplierPaymentAsync(new RecordSupplierPaymentRequest(
+            invoice.Id, DateOnly.FromDateTime(DateTime.UtcNow), 100_000, "BankTransfer", "OperatingBank", "REF-PAY-BYPASS",
+            null, "BDO", "Must not settle during recording", "REQ-PAY-P102-BYPASS", apClerkId, financeMgrId));
+        Require(immediateSettlementBypass.IsFailure && immediateSettlementBypass.ErrorDetail.Code == "Lpi.Payment.SeparateSettlementRequired",
+            "Supplying an approver to the recording service must not bypass explicit settlement confirmation.");
+
         // 1. Record payment by apClerkId (non-finalized payment workflow)
         SupplierPaymentModel pendingPayment = RequireSuccess(
             await service.RecordSupplierPaymentAsync(new RecordSupplierPaymentRequest(
@@ -349,37 +356,76 @@ public static class LpiP1IntegrityReproductionChecks
         Require(pendingPayment.ApprovedByUserId == null,
             "ApprovedByUserId must be null for non-finalized payment.");
 
+        foreach (string invalidConfirmation in new[] { "", "yes", "YES PLEASE" })
+        {
+            Result<SupplierPaymentModel> invalid = await service.ApproveSupplierPaymentAsync(new ApproveSupplierPaymentRequest(
+                pendingPayment.Id, apClerkId, invalidConfirmation, "Invalid confirmation must not settle"));
+            Require(invalid.IsFailure && invalid.ErrorDetail.Code == "Lpi.Payment.SettlementConfirmationRequired",
+                $"Confirmation '{invalidConfirmation}' must be rejected.");
+        }
+
         // Verify invoice balance has NOT been deducted yet
         SupplierInvoiceModel invoiceAfterRecord = RequireSuccess(await service.GetSupplierInvoiceByIdAsync(invoice.Id), "reload invoice");
         Require(invoiceAfterRecord.RemainingBalanceCents == 200_000,
             $"Invoice balance must remain 200_000 while payment is pending approval, got {invoiceAfterRecord.RemainingBalanceCents}.");
 
-        // 2. Self-approval attempt: apClerkId attempts to approve their own payment
-        Result<SupplierPaymentModel> selfApproveResult = await service.ApproveSupplierPaymentAsync(new ApproveSupplierPaymentRequest(
-            pendingPayment.Id,
-            ApproverUserId: apClerkId, // Same user!
-            Remarks: "Self approval attempt"));
-
-        Require(selfApproveResult.IsFailure && (selfApproveResult.ErrorDetail.Code == "Lpi.Payables.SelfApprovalForbidden" || selfApproveResult.ErrorDetail.Code == "ProcureToPay.SelfApprovalForbidden"),
-            $"Payment self-approval must be rejected with SelfApprovalForbidden, got '{selfApproveResult.ErrorDetail.Code}'.");
-
-        // 3. Legitimate independent approval by financeMgrId
+        // 2. Contract R3: the same authorized actor may confirm actual settlement.
         SupplierPaymentModel approvedPayment = RequireSuccess(
             await service.ApproveSupplierPaymentAsync(new ApproveSupplierPaymentRequest(
                 pendingPayment.Id,
-                ApproverUserId: financeMgrId,
-                Remarks: "Authorized disbursement by Finance Manager")),
-            "P1-02 approve supplier payment");
+                ApproverUserId: apClerkId,
+                SettlementConfirmation: "YES",
+                Remarks: "Actual bank transfer confirmed")),
+            "P1-02 self-settle supplier payment");
 
         Require(approvedPayment.Status == SupplierPaymentStatuses.Settled,
             $"Approved payment status must be Settled, got '{approvedPayment.Status}'.");
-        Require(approvedPayment.ApprovedByUserId == financeMgrId,
-            "ApprovedByUserId must match the independent manager's ID.");
+        Require(approvedPayment.ApprovedByUserId == apClerkId,
+            "ApprovedByUserId must match the actual settlement actor.");
+
+        Result<SupplierPaymentModel> replayResult = await service.ApproveSupplierPaymentAsync(new ApproveSupplierPaymentRequest(
+            pendingPayment.Id,
+            ApproverUserId: financeMgrId,
+            SettlementConfirmation: "YES",
+            Remarks: "Replay must not post twice"));
+        Require(replayResult.IsFailure && replayResult.ErrorDetail.Code == "Lpi.Payment.AlreadyFinalized",
+            "Repeated settlement must be rejected without a second AP movement.");
 
         // Verify invoice balance is now deducted
         SupplierInvoiceModel invoiceAfterApprove = RequireSuccess(await service.GetSupplierInvoiceByIdAsync(invoice.Id), "reload invoice after approval");
         Require(invoiceAfterApprove.RemainingBalanceCents == 100_000 && invoiceAfterApprove.Status == "PartiallyPaid",
             $"Invoice balance must be deducted to 100_000 and status PartiallyPaid, got balance={invoiceAfterApprove.RemainingBalanceCents}, status={invoiceAfterApprove.Status}.");
+
+        SupplierPaymentModel competingA = RequireSuccess(await service.RecordSupplierPaymentAsync(new RecordSupplierPaymentRequest(
+            invoice.Id, DateOnly.FromDateTime(DateTime.UtcNow), 100_000, "BankTransfer", "OperatingBank", "REF-PAY-RACE-A",
+            null, "BDO", "Concurrent settlement A", "REQ-PAY-P102-RACE-A", apClerkId, null)), "record competing payment A");
+        SupplierPaymentModel competingB = RequireSuccess(await service.RecordSupplierPaymentAsync(new RecordSupplierPaymentRequest(
+            invoice.Id, DateOnly.FromDateTime(DateTime.UtcNow), 100_000, "BankTransfer", "OperatingBank", "REF-PAY-RACE-B",
+            null, "BDO", "Concurrent settlement B", "REQ-PAY-P102-RACE-B", financeMgrId, null)), "record competing payment B");
+
+        Task<Result<SupplierPaymentModel>> settleA = service.ApproveSupplierPaymentAsync(new ApproveSupplierPaymentRequest(
+            competingA.Id, apClerkId, "YES", "Actual transfer A confirmed"));
+        Task<Result<SupplierPaymentModel>> settleB = service.ApproveSupplierPaymentAsync(new ApproveSupplierPaymentRequest(
+            competingB.Id, financeMgrId, "YES", "Actual transfer B confirmed"));
+        Result<SupplierPaymentModel>[] concurrentResults = await Task.WhenAll(settleA, settleB);
+        Require(concurrentResults.Count(result => result.IsSuccess) == 1 && concurrentResults.Count(result => result.IsFailure) == 1,
+            "Two simultaneous payments against one remaining liability must produce exactly one settlement.");
+
+        SupplierInvoiceModel fullyPaid = RequireSuccess(await service.GetSupplierInvoiceByIdAsync(invoice.Id), "reload invoice after concurrent settlement");
+        Require(fullyPaid.RemainingBalanceCents == 0 && fullyPaid.Status == "Paid",
+            "Concurrent settlement must leave the invoice exactly Paid with no negative balance.");
+        using (SqliteConnection conn = new($"Data Source={paths.DatabasePath}"))
+        {
+            conn.Open();
+            using SqliteCommand cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM supplier_payable_entries WHERE supplier_invoice_id=$invoice AND entry_type='PaymentApplied';";
+            cmd.Parameters.AddWithValue("$invoice", invoice.Id.ToString("D"));
+            Require(Convert.ToInt64(cmd.ExecuteScalar()) == 2, "Initial and winning concurrent settlement must create exactly two AP payment entries.");
+            cmd.CommandText = "SELECT COALESCE(SUM(debit_cents),0) FROM supplier_payable_entries WHERE supplier_invoice_id=$invoice AND entry_type='PaymentApplied';";
+            Require(Convert.ToInt64(cmd.ExecuteScalar()) == 200_000, "AP payment debits must total the exact invoice liability once.");
+            cmd.CommandText = "SELECT COUNT(*) FROM audit_logs WHERE entity_type='SupplierPayment' AND action='AP_PAYMENT_CONFIRMED_AND_SETTLED';";
+            Require(Convert.ToInt64(cmd.ExecuteScalar()) >= 2, "Each successful settlement must retain its authenticated audit event.");
+        }
 
         // 4. Verify POS cashier drawer balances and U1 customer receivables are completely untouched
         using (SqliteConnection conn = new($"Data Source={paths.DatabasePath}"))
@@ -1830,7 +1876,12 @@ public static class LpiP1IntegrityReproductionChecks
             "Settlement for invAlpha",
             "pmt-alpha-req",
             apClerkId,
-            supervisorId)), "Seed pmtAlpha");
+            ApprovedByUserId: null)), "Seed pmtAlpha pending");
+        pmtAlpha = RequireSuccess(await service.ApproveSupplierPaymentAsync(new ApproveSupplierPaymentRequest(
+            pmtAlpha.Id,
+            supervisorId,
+            "YES",
+            "Settlement for invAlpha")), "Settle pmtAlpha");
 
         SupplierPaymentModel pmtBeta = RequireSuccess(await service.RecordSupplierPaymentAsync(new RecordSupplierPaymentRequest(
             invBeta.Id,
@@ -1844,7 +1895,12 @@ public static class LpiP1IntegrityReproductionChecks
             "Settlement for invBeta",
             "pmt-beta-req",
             apClerkId,
-            supervisorId)), "Seed pmtBeta");
+            ApprovedByUserId: null)), "Seed pmtBeta pending");
+        pmtBeta = RequireSuccess(await service.ApproveSupplierPaymentAsync(new ApproveSupplierPaymentRequest(
+            pmtBeta.Id,
+            supervisorId,
+            "YES",
+            "Settlement for invBeta")), "Settle pmtBeta");
 
         // 2. HTTP Endpoint contract validations (rejections of missing mandatory identities)
         InMemoryLocalApiSessionStore sessionStore = new();

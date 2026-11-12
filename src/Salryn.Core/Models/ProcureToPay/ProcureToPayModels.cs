@@ -705,6 +705,7 @@ public sealed record RecordSupplierPaymentRequest(
 public sealed record ApproveSupplierPaymentRequest(
     Guid PaymentId,
     Guid ApproverUserId,
+    string SettlementConfirmation,
     string? Remarks = null);
 
 public sealed record ApAgingSummaryModel(

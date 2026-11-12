@@ -485,7 +485,7 @@ public static class LpiProcureToPayRuntimeChecks
                     "Partial settlement #1",
                     "lpi-pay-req-1",
                     apClerkUserId,
-                    financeManagerUserId)),
+                    null)),
                 "S3 partial supplier payment");
 
             // Idempotent replay check
@@ -502,9 +502,13 @@ public static class LpiProcureToPayRuntimeChecks
                     "Partial settlement #1",
                     "lpi-pay-req-1",
                     apClerkUserId,
-                    financeManagerUserId)),
+                    null)),
                 "S3 idempotent replay of partial supplier payment");
             Require(paymentOne.Id == paymentOneReplay.Id, "S3 duplicate payment client_request_id must return original payment record.");
+            paymentOne = RequireSuccess(
+                await service.ApproveSupplierPaymentAsync(new ApproveSupplierPaymentRequest(
+                    paymentOne.Id, financeManagerUserId, "YES", "Actual BPI transfer confirmed")),
+                "S3 settle partial supplier payment");
 
             invoiceAlpha = RequireSuccess(await service.GetSupplierInvoiceByIdAsync(invoiceAlpha.Id), "S3 reload invoice Alpha after partial payment");
             Require(invoiceAlpha.Status == "PartiallyPaid" && invoiceAlpha.RemainingBalanceCents == 128_240,
@@ -513,7 +517,7 @@ public static class LpiProcureToPayRuntimeChecks
             // Overpayment guard check
             Require((await service.RecordSupplierPaymentAsync(new RecordSupplierPaymentRequest(
                 invoiceAlpha.Id, new DateOnly(2026, 11, 13), 200_000, "BankTransfer", "OperatingBank", "OVERPAY-REF",
-                null, "BPI", "Overpayment attempt", "lpi-pay-over", apClerkUserId, financeManagerUserId))).IsFailure,
+                null, "BPI", "Overpayment attempt", "lpi-pay-over", apClerkUserId, null))).IsFailure,
                 "S3 payment exceeding remaining invoice balance must be rejected.");
 
             // Full final payment: remaining 128_240 cents
@@ -530,8 +534,12 @@ public static class LpiProcureToPayRuntimeChecks
                     "Final settlement for SI-APEX-2026-001",
                     "lpi-pay-req-2",
                     apClerkUserId,
-                    financeManagerUserId)),
+                    null)),
                 "S3 final supplier payment");
+            paymentTwo = RequireSuccess(
+                await service.ApproveSupplierPaymentAsync(new ApproveSupplierPaymentRequest(
+                    paymentTwo.Id, financeManagerUserId, "YES", "Actual cheque release confirmed")),
+                "S3 settle final supplier payment");
             Require(paymentTwo.AmountCents == 128_240, "S3 final payment must record exact settlement amount.");
 
             invoiceAlpha = RequireSuccess(await service.GetSupplierInvoiceByIdAsync(invoiceAlpha.Id), "S3 reload invoice Alpha after full payment");

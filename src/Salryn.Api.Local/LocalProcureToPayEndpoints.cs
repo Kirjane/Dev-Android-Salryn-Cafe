@@ -31,6 +31,10 @@ internal static class LocalProcureToPayEndpoints
     private static bool IsCashier(LocalApiSession session) =>
         session.RoleId == Guid.Parse("00000000-0000-0000-0000-000000000003");
 
+    private static bool IsAdminOrManager(LocalApiSession session) =>
+        session.RoleId == Guid.Parse("00000000-0000-0000-0000-000000000001") ||
+        session.RoleId == Guid.Parse("00000000-0000-0000-0000-000000000002");
+
     public static WebApplication MapLocalProcureToPayEndpoints(this WebApplication app)
     {
         // S0: Foundation & Supplier CRUD
@@ -961,9 +965,12 @@ internal static class LocalProcureToPayEndpoints
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.PayablesApprovePayment) is IResult denied)
                 return denied;
             LocalApiSession session = RequiredSession(context, sessions);
+            if (!IsAdminOrManager(session))
+                return Results.Json(new { error = "Only an Admin or Manager may confirm an actual supplier-payment settlement.", code = "Lpi.Payment.AdminOrManagerRequired" }, statusCode: StatusCodes.Status403Forbidden);
             return ToResult(await service.ApproveSupplierPaymentAsync(new ApproveSupplierPaymentRequest(
                 id,
                 session.UserId,
+                request.SettlementConfirmation ?? string.Empty,
                 request.Remarks), ct));
         });
 
@@ -1353,6 +1360,7 @@ internal static class LocalProcureToPayEndpoints
     }
 
     internal sealed record ApproveSupplierPaymentApiRequest(
+        string? SettlementConfirmation,
         string? Remarks);
 
     internal sealed record ApproveOverdeliveryApiRequest(

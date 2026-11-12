@@ -17,7 +17,7 @@ import { expect, test, type Page } from "@playwright/test";
  *   6. Multi-location stock inspection, count adjustment (ADJ), and supplier return (SRET).
  *   7. Manager opens standalone Accounts Payable and records a 3-way invoice (price variance triggered).
  *   8. Manager authorizes the variance and records a pending payment with POS cash drawer protection.
- *   9. Contract-correct self-settlement remains visibly blocked pending Issue #65.
+ *   9. The same authorized Manager explicitly confirms actual settlement with typed YES.
  *   10. UI refresh durability and data persistence.
  * - Fail-closed: zero unhandled JS exceptions, zero console errors, zero 500s.
  */
@@ -440,18 +440,60 @@ test.describe("INTEGRATED_HOST LPI End-to-End Acceptance Suite @integrated", () 
     await expect(pmtTable).toContainText("TRF-REALHOST-8899", { timeout: 10000 });
     await expect(pmtTable).toContainText("PendingApproval");
 
-    // Issue #65: Contract R3 permits Manager self-authorization with typed YES, but the current
-    // UI hides the action and the service rejects the same actor. Preserve the pending liability.
-    test.info().annotations.push({ type: "known-product-gap", description: "Issue #65 blocks contract-valid Manager self-settlement and typed YES confirmation." });
-    await expect(page.getByRole("button", { name: "Approve settlement" })).toHaveCount(0);
+    const overviewWhilePending = await page.request.get(`${HOST_URL}/api/lpi/overview`);
+    expect(overviewWhilePending.ok()).toBeTruthy();
+    expect((await overviewWhilePending.json()).totalPaymentsDisbursedCents).toBe(0);
+
     const paymentsResponse = await page.request.get(`${HOST_URL}/api/lpi/payments`);
     expect(paymentsResponse.ok()).toBeTruthy();
     const pendingPayment = (await paymentsResponse.json()).find((payment: any) => payment.referenceNo === "TRF-REALHOST-8899");
     expect(pendingPayment?.status).toBe("PendingApproval");
-    const blockedSettlement = await page.request.post(`${HOST_URL}/api/lpi/payments/${pendingPayment.id}/approve`, {
-      data: { remarks: "YES" },
+
+    // Backend confirmation is independent of UI validation.
+    for (const settlementConfirmation of [undefined, "", "yes", "YES PLEASE"]) {
+      const denied = await page.request.post(`${HOST_URL}/api/lpi/payments/${pendingPayment.id}/approve`, {
+        data: { settlementConfirmation, remarks: "Invalid confirmation must not settle" },
+      });
+      expect(denied.status()).toBe(400);
+    }
+
+    // Cashier cannot settle directly even with the correct confirmation.
+    await logout(page);
+    await login(page, REQUESTER_USER, REQUESTER_PASS);
+    const cashierSettlement = await page.request.post(`${HOST_URL}/api/lpi/payments/${pendingPayment.id}/approve`, {
+      data: { settlementConfirmation: "YES" },
     });
-    expect(blockedSettlement.status()).toBe(400);
+    expect(cashierSettlement.status()).toBe(403);
+    await logout(page);
+
+    // The same Manager who recorded the payment may review and settle it.
+    await login(page, MANAGER_USER, MANAGER_PASS);
+    await page.goto(`${HOST_URL}/?page=accounts-payable`);
+    await page.getByRole("button", { name: "Confirm actual payment" }).first().click();
+    const settlementDialog = page.getByRole("dialog", { name: "Confirm Actual Supplier Payment" });
+    await expect(settlementDialog).toContainText("Apex Roasters & Dairy Supply Inc.");
+    await expect(settlementDialog).toContainText("INV-REALHOST-2026-001");
+    await expect(settlementDialog).toContainText("TRF-REALHOST-8899");
+    const settleButton = settlementDialog.getByRole("button", { name: "Confirm Actual Payment & Settle" });
+    await expect(settleButton).toBeDisabled();
+    await settlementDialog.locator("input").fill("NO");
+    await expect(settleButton).toBeDisabled();
+    await settlementDialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(pmtTable).toContainText("PendingApproval");
+
+    await page.getByRole("button", { name: "Confirm actual payment" }).first().click();
+    await settlementDialog.locator("input").fill("YES");
+    await settlementDialog.locator("textarea").fill("Manager confirmed actual bank transfer against the persisted reference");
+    await settleButton.click();
+    await expect(settlementDialog).toBeHidden();
+    await expect(pmtTable).toContainText("Settled", { timeout: 10000 });
+
+    const replaySettlement = await page.request.post(`${HOST_URL}/api/lpi/payments/${pendingPayment.id}/approve`, {
+      data: { settlementConfirmation: "YES", remarks: "Replay must not post twice" },
+    });
+    expect(replaySettlement.status()).toBe(409);
+    const overviewAfterSettlement = await page.request.get(`${HOST_URL}/api/lpi/overview`);
+    expect((await overviewAfterSettlement.json()).totalPaymentsDisbursedCents).toBe(372000);
 
     // =========================================================================
     // STEP 9: UI Refresh Persistence Verification
@@ -459,8 +501,8 @@ test.describe("INTEGRATED_HOST LPI End-to-End Acceptance Suite @integrated", () 
     await page.reload();
     await expect(page.getByRole("heading", { name: "Accounts Payable", exact: true })).toBeVisible({ timeout: 15000 });
     await expect(page.locator("table").first()).toContainText("INV-REALHOST-2026-001");
-    await expect(page.locator("table").first()).toContainText("PostedOpen");
-    await expect(page.locator("table").nth(2)).toContainText("PendingApproval");
+    await expect(page.locator("table").first()).toContainText("Paid");
+    await expect(page.locator("table").nth(2)).toContainText("Settled");
   });
 
   test("Focused UI & DB Regression: Duplicate-Product Same-PO Line Disambiguation & Line Isolation", async ({ page, request }) => {

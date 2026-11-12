@@ -251,7 +251,7 @@ public static class LpiRealHostAcceptanceRunner
                     string invStatus = reader.GetString(0);
                     string matchStatus = reader.GetString(1);
                     long balanceDue = reader.GetInt64(2);
-                    if (invStatus != "PostedOpen" || matchStatus != "VarianceApproved" || balanceDue != 372_000)
+                    if (invStatus != "Paid" || matchStatus != "VarianceApproved" || balanceDue != 0)
                     {
                         throw new InvalidOperationException($"Invoice mismatch: status={invStatus}, matchStatus={matchStatus}, balanceDue={balanceDue}");
                     }
@@ -282,7 +282,7 @@ public static class LpiRealHostAcceptanceRunner
                     string method = reader.GetString(1);
                     string source = reader.GetString(2);
                     string pmtStatus = reader.GetString(3);
-                    if (amount != 372_000 || method != "BankTransfer" || source != "OperatingAccount" || pmtStatus != "PendingApproval")
+                    if (amount != 372_000 || method != "BankTransfer" || source != "OperatingAccount" || pmtStatus != "Settled")
                     {
                         throw new InvalidOperationException($"Payment mismatch: amount={amount}, method={method}, source={source}, status={pmtStatus}");
                     }
@@ -300,7 +300,7 @@ public static class LpiRealHostAcceptanceRunner
                 }
             }
 
-            Console.WriteLine("[LPI Acceptance] Direct SQLite post-state validation PASSED (PR, PO, RR, Stock, AP Invoice, pending supplier payment, and cash-drawer isolation verified). Settlement remains blocked by Issue #65.");
+            Console.WriteLine("[LPI Acceptance] Direct SQLite post-state validation PASSED (PR, PO, RR, Stock, settled AP invoice/payment, and cash-drawer isolation verified).");
         }
         finally
         {

@@ -23,7 +23,7 @@ export function PrintableChequeDisbursementModal({ open, onClose, payment, store
     <Dialog open={open} onClose={onClose} title={`Payment Voucher: ${payment.paymentNumber}`}>
       <div className="space-y-6 text-slate-800">
         <div className="flex justify-between items-center border-b pb-3 print:hidden">
-          <span className="text-xs text-slate-500">Official Accounts Payable Disbursement Voucher</span>
+          <span className="text-xs text-slate-500">Accounts Payable Payment Voucher — {payment.status === "Settled" ? "Settled" : "Pending Settlement"}</span>
           <div className="flex gap-2">
             <Button variant="secondary" onClick={onClose}>
               Close
@@ -77,7 +77,7 @@ export function PrintableChequeDisbursementModal({ open, onClose, payment, store
             <div>
               <span className="text-slate-500 font-bold uppercase block mb-1">Payee (Supplier)</span>
               <p className="text-sm font-bold text-slate-900">{payment.supplierName}</p>
-              <p className="text-slate-600">Settled Invoice: {payment.invoiceNumber}</p>
+              <p className="text-slate-600">{payment.status === "Settled" ? "Settled Invoice" : "Intended Invoice"}: {payment.invoiceNumber}</p>
             </div>
             <div>
               <span className="text-slate-500 font-bold uppercase block mb-1">Payment Method & Banking</span>
@@ -103,7 +103,7 @@ export function PrintableChequeDisbursementModal({ open, onClose, payment, store
               <tr>
                 <td className="p-2 border-r text-center font-mono">1</td>
                 <td className="p-2 border-r font-medium text-slate-900">
-                  Accounts Payable Settlement — {payment.supplierName}
+                  Accounts Payable {payment.status === "Settled" ? "Settlement" : "Payment Request"} — {payment.supplierName}
                   {payment.notes && <div className="text-[11px] text-slate-500">{payment.notes}</div>}
                 </td>
                 <td className="p-2 border-r font-mono text-slate-700">{payment.invoiceNumber}</td>
@@ -113,7 +113,7 @@ export function PrintableChequeDisbursementModal({ open, onClose, payment, store
             <tfoot className="bg-slate-50 font-bold border-t">
               <tr>
                 <td colSpan={3} className="p-2 text-right uppercase">
-                  Net Amount Disbursed:
+                  {payment.status === "Settled" ? "Net Amount Disbursed:" : "Pending Amount — Not Yet Disbursed:"}
                 </td>
                 <td className="p-2 text-right font-mono text-sm text-slate-900 font-bold">
                   {money(payment.amountCents)}
@@ -143,15 +143,15 @@ export function PrintableChequeDisbursementModal({ open, onClose, payment, store
           <div className="grid grid-cols-3 gap-4 pt-8 border-t text-xs">
             <div className="text-center">
               <div className="border-b border-slate-400 pb-1 font-semibold text-slate-800">
-                Accounts Payable Clerk
+                Admin / Manager
               </div>
               <span className="text-slate-500 mt-1 block">Prepared By</span>
             </div>
             <div className="text-center">
               <div className="border-b border-slate-400 pb-1 font-semibold text-slate-800">
-                Finance Manager / Approver
+                {payment.status === "Settled" ? "Actual Settlement Confirmed" : "Pending Confirmation"}
               </div>
-              <span className="text-slate-500 mt-1 block">Approved For Release</span>
+              <span className="text-slate-500 mt-1 block">Settlement Status</span>
             </div>
             <div className="text-center">
               <div className="border-b border-slate-400 pb-1 font-semibold text-slate-800">

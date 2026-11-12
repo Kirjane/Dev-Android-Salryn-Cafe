@@ -263,6 +263,7 @@ export interface SupplierPayment {
   paymentDate: string;
   amountCents: number;
   paymentMethod: string;
+  disbursementSource: string;
   status: string;
   referenceNumber: string | null;
   bankAccount: string | null;
@@ -603,6 +604,7 @@ function normalizeSupplierPayment(raw: JsonRecord): SupplierPayment {
     paymentDate: raw.paymentDate ?? "",
     amountCents: raw.amountCents ?? 0,
     paymentMethod: raw.paymentMethod ?? "BankTransfer",
+    disbursementSource: raw.disbursementSource ?? "OperatingAccount",
     status: raw.status ?? "PendingApproval",
     referenceNumber: raw.referenceNo ?? raw.referenceNumber ?? null,
     bankAccount: raw.bankName ?? raw.bankAccount ?? null,
@@ -1239,11 +1241,11 @@ export async function fetchApAging(): Promise<ApAgingSummary[]> {
   return Array.from(supplierMap.values());
 }
 
-export async function approveSupplierPayment(paymentId: string, remarks?: string): Promise<SupplierPayment> {
+export async function approveSupplierPayment(paymentId: string, settlementConfirmation: string, remarks?: string): Promise<SupplierPayment> {
   const response = await fetch(`/api/lpi/payments/${paymentId}/approve`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ remarks }),
+    body: JSON.stringify({ settlementConfirmation, remarks }),
   });
   return normalizeSupplierPayment(await readJson<JsonRecord>(response));
 }
