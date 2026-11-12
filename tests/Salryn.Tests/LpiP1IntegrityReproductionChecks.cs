@@ -809,6 +809,216 @@ public static class LpiP1IntegrityReproductionChecks
         Console.WriteLine("Issue70 cross-supplier persisted-lineage HTTP 409 / SQLite no-write / restart / legitimate 372000-cent settlement and replay: PASS.");
     }
 
+
+    private sealed class Issue71FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+
+    /// <summary>
+    /// Issue #71: one disposable invoice, distinct request/transfer/confirmation dates,
+    /// UTC+08 midnight boundary, backdating, pending future plan, partial/full payments,
+    /// exact negative responses, once-only accounting, and migration's historical NULL.
+    /// </summary>
+    private static async Task TestP102DisbursementDateCustodyAsync(
+        SalrynLocalComposition composition,
+        SqliteProcureToPayService service,
+        DbPaths paths,
+        Guid actorId,
+        Guid productId)
+    {
+        Require(paths.DatabasePath.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase),
+            "Issue71 must use only the GUID-disposable temporary SQLite path.");
+
+        DateTimeOffset recordedInstant = new(2026, 11, 10, 6, 0, 0, TimeSpan.Zero); // Manila Nov 10, 14:00
+        DateTimeOffset confirmedInstant = new(2026, 11, 12, 16, 30, 0, TimeSpan.Zero); // Manila Nov 13, 00:30
+        SqliteProcureToPayService dayA = new(composition.ConnectionFactory, new Issue71FixedTimeProvider(recordedInstant));
+        SqliteProcureToPayService dayC = new(composition.ConnectionFactory, new Issue71FixedTimeProvider(confirmedInstant));
+
+        LpiSupplier supplier = RequireSuccess(await service.CreateSupplierAsync(
+            new CreateLpiSupplierRequest("P1-I71-SUP", "Issue71 Date Custody Supplier", "Accountant",
+                "0918000171", "issue71@test.local", "Disposable Manila", null, 30, 5, null, actorId)), "Issue71 supplier");
+        PurchaseOrderModel po = RequireSuccess(await service.CreatePurchaseOrderAsync(
+            new CreatePurchaseOrderRequest(supplier.Id, null, new DateOnly(2026, 11, 20), null,
+                30, 0, "Issue71 terms", "Date custody test", true,
+                new[] { new CreatePurchaseOrderLineInput(null, productId, "P1-I71-ITEM",
+                    "Supplier item", PurchaseClassifications.Resale, "pcs",
+                    4_000, 93_000, 0, 0, null) }, actorId)), "Issue71 PO");
+        ReceivingReportModel rr = RequireSuccess(await service.CreateReceivingReportAsync(
+            new CreateReceivingReportRequest(po.Id, null, "I71-DR", null,
+                "Issue71 carrier", new DateOnly(2026, 11, 10), true, null, null,
+                "I71-RR", null,
+                new[] { new CreateReceivingReportLineInput(po.Lines[0].Id, 4_000, 4_000, 0, null, null, null, null) },
+                actorId)), "Issue71 RR");
+        SupplierInvoiceModel invoice = RequireSuccess(await service.CreateSupplierInvoiceAsync(
+            new CreateSupplierInvoiceRequest(supplier.Id, "I71-INV", po.Id, rr.Id,
+                new DateOnly(2026, 11, 10), new DateOnly(2026, 12, 10),
+                0, 0, true,
+                new[] { new CreateSupplierInvoiceLineInput(po.Lines[0].Id, rr.Lines[0].Id,
+                    productId, "Supplier item", 4_000, 93_000, 0) }, actorId)), "Issue71 invoice");
+        Require(invoice.Status == "PostedOpen" && invoice.RemainingBalanceCents == 372_000,
+            "Issue71 must create an actual PHP 3,720 unpaid supplier invoice.");
+
+        SupplierPaymentModel partial = RequireSuccess(await dayA.RecordSupplierPaymentAsync(
+            new RecordSupplierPaymentRequest(invoice.Id, new DateOnly(2026, 11, 10),
+                100_000, "BankTransfer", "OperatingBank", "I71-PARTIAL",
+                null, "Test Bank", "Prepared Nov 10", "I71-REQ-A", actorId, null)),
+            "Issue71 pending partial");
+        Require(partial.PaymentDate == new DateOnly(2026, 11, 10) &&
+                partial.CreatedAt == recordedInstant && partial.ActualDisbursementDate is null &&
+                partial.ApprovedAt is null && partial.Status == SupplierPaymentStatuses.PendingApproval,
+            "Issue71 day-A pending record must preserve plan and creation timestamp with no real transfer date.");
+
+        foreach (var (value, code) in new[]
+        {
+            ((string?)null, "Lpi.Payment.ActualDisbursementDateRequired"),
+            ("", "Lpi.Payment.ActualDisbursementDateRequired"),
+            ("2026-02-30", "Lpi.Payment.ActualDisbursementDateInvalid"),
+            ("2026-11-14", "Lpi.Payment.ActualDisbursementDateFuture")
+        })
+        {
+            Result<SupplierPaymentModel> denied = await dayC.ApproveSupplierPaymentAsync(
+                new ApproveSupplierPaymentRequest(partial.Id, actorId, "YES", "Reject-before-write", value));
+            Require(denied.IsFailure && denied.ErrorDetail.Code == code,
+                $"Issue71 invalid transfer date '{value}' must fail with {code}.");
+        }
+        Result<SupplierPaymentModel> wrongYes = await dayC.ApproveSupplierPaymentAsync(
+            new ApproveSupplierPaymentRequest(partial.Id, actorId, "yes", "No lowercase", "2026-11-12"));
+        Require(wrongYes.IsFailure && wrongYes.ErrorDetail.Code == "Lpi.Payment.SettlementConfirmationRequired",
+            "Issue71 lowercase confirmation must be denied even with a valid actual date.");
+
+        SupplierPaymentModel stillPending = RequireSuccess(
+            (await dayC.GetSupplierPaymentsAsync(supplier.Id, invoice.Id)).First().Id == partial.Id
+                ? Result<SupplierPaymentModel>.Success((await dayC.GetSupplierPaymentsAsync(supplier.Id, invoice.Id)).First())
+                : Result<SupplierPaymentModel>.Fail(Error.NotFound("Issue71.Pending", "Pending row missing")),
+            "Issue71 reload pending");
+        Require(stillPending.Status == "PendingApproval" && stillPending.ActualDisbursementDate is null &&
+                stillPending.ApprovedAt is null,
+            "Issue71 rejected transfer date/YES requests must leave the payment unchanged.");
+        SupplierInvoiceModel unchangedInvoice = RequireSuccess(await dayC.GetSupplierInvoiceByIdAsync(invoice.Id), "Issue71 unpaid invoice");
+        Require(unchangedInvoice.PaidAmountCents == 0 && unchangedInvoice.RemainingBalanceCents == 372_000,
+            "Issue71 invalid dates must not mutate invoice financial state.");
+        using (SqliteConnection conn = new($"Data Source={paths.DatabasePath}"))
+        {
+            conn.Open();
+            using SqliteCommand cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM supplier_payable_entries WHERE supplier_invoice_id=$id AND entry_type='PaymentApplied';";
+            cmd.Parameters.AddWithValue("$id", invoice.Id.ToString("D"));
+            Require(Convert.ToInt64(cmd.ExecuteScalar()) == 0, "Issue71 invalid date must not append AP payment ledger entries.");
+            cmd.CommandText = "SELECT COUNT(*) FROM audit_logs WHERE entity_type='SupplierPayment' AND entity_id=$id AND action='AP_PAYMENT_CONFIRMED_AND_SETTLED';";
+            cmd.Parameters.Clear();
+            cmd.Parameters.AddWithValue("$id", partial.Id.ToString("D"));
+            Require(Convert.ToInt64(cmd.ExecuteScalar()) == 0, "Issue71 invalid date must not append settlement audit.");
+        }
+
+        SupplierPaymentModel settledPartial = RequireSuccess(await dayC.ApproveSupplierPaymentAsync(
+            new ApproveSupplierPaymentRequest(partial.Id, actorId, "YES", "Transferred Nov 12", "2026-11-12")),
+            "Issue71 day B partial settlement affirmed on day C");
+        Require(settledPartial.ActualDisbursementDate == new DateOnly(2026, 11, 12) &&
+                settledPartial.PaymentDate == new DateOnly(2026, 11, 10) &&
+                settledPartial.ApprovedAt == confirmedInstant && settledPartial.ApprovedByUserId == actorId,
+            "Issue71 requested, actual funds-transfer and confirmation instants must be three independent facts.");
+        SupplierInvoiceModel partialInvoice = RequireSuccess(await dayC.GetSupplierInvoiceByIdAsync(invoice.Id), "Issue71 partial invoice");
+        Require(partialInvoice.Status == "PartiallyPaid" && partialInvoice.RemainingBalanceCents == 272_000,
+            "Issue71 partial settlement must debit AP exactly 100,000 cents.");
+
+        // Requested FUTURE date is valid for a pending plan. Actual date is separately
+        // affirmed as Nov 13 Manila (still Nov 12 UTC at 16:30Z).
+        SupplierPaymentModel plannedTomorrow = RequireSuccess(await dayC.RecordSupplierPaymentAsync(
+            new RecordSupplierPaymentRequest(invoice.Id, new DateOnly(2026, 11, 14),
+                272_000, "BankTransfer", "OperatingBank", "I71-FINAL",
+                null, "Test Bank", "Future planned date, not evidence of transfer", "I71-REQ-B", actorId, null)),
+            "Issue71 planned future payment");
+        Require(plannedTomorrow.PaymentDate == new DateOnly(2026, 11, 14) &&
+                plannedTomorrow.ActualDisbursementDate is null &&
+                plannedTomorrow.Status == "PendingApproval",
+            "Issue71 future requested payment date may remain pending but cannot imply disbursement.");
+        SupplierPaymentModel settledFinal = RequireSuccess(await dayC.ApproveSupplierPaymentAsync(
+            new ApproveSupplierPaymentRequest(plannedTomorrow.Id, actorId, "YES", "Local midnight transfer", "2026-11-13")),
+            "Issue71 business-local rollover accepts Nov13 while UTC still Nov12");
+        Require(settledFinal.ActualDisbursementDate == new DateOnly(2026, 11, 13) &&
+                settledFinal.PaymentDate == new DateOnly(2026, 11, 14) &&
+                settledFinal.ApprovedAt == confirmedInstant,
+            "Issue71 must distinguish future planned date, local actual date, and UTC confirmation timestamp.");
+
+        Result<SupplierPaymentModel> replay = await dayC.ApproveSupplierPaymentAsync(
+            new ApproveSupplierPaymentRequest(partial.Id, actorId, "YES", "Duplicate", "2026-11-12"));
+        Require(replay.IsFailure && replay.ErrorDetail.Code == "Lpi.Payment.AlreadyFinalized",
+            "Issue71 duplicate settlement must reject without duplicate posting.");
+        SupplierInvoiceModel paidInvoice = RequireSuccess(await dayC.GetSupplierInvoiceByIdAsync(invoice.Id), "Issue71 paid invoice");
+        Require(paidInvoice.Status == "Paid" && paidInvoice.PaidAmountCents == 372_000 &&
+                paidInvoice.RemainingBalanceCents == 0, "Issue71 two settlements must fully reconcile 372,000 cents.");
+        using (SqliteConnection conn = new($"Data Source={paths.DatabasePath}"))
+        {
+            conn.Open();
+            using SqliteCommand cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*), COALESCE(SUM(debit_cents),0) FROM supplier_payable_entries WHERE supplier_invoice_id=$id AND entry_type='PaymentApplied';";
+            cmd.Parameters.AddWithValue("$id", invoice.Id.ToString("D"));
+            using SqliteDataReader reader = cmd.ExecuteReader();
+            Require(reader.Read() && reader.GetInt64(0) == 2 && reader.GetInt64(1) == 372_000,
+                "Issue71 partial/full/replay must produce exactly two AP postings of 372,000 cents combined.");
+            reader.Close();
+            cmd.CommandText = "SELECT new_value_json FROM audit_logs WHERE entity_type='SupplierPayment' AND entity_id=$id AND action='AP_PAYMENT_CONFIRMED_AND_SETTLED';";
+            cmd.Parameters.Clear();
+            cmd.Parameters.AddWithValue("$id", partial.Id.ToString("D"));
+            using SqliteDataReader audit = cmd.ExecuteReader();
+            Require(audit.Read(), "Issue71 must persist authenticated settlement audit.");
+            using JsonDocument doc = JsonDocument.Parse(audit.GetString(0));
+            Require(doc.RootElement.GetProperty("RequestedPaymentDate").GetString() == "2026-11-10" &&
+                    doc.RootElement.GetProperty("ActualDisbursementDate").GetString() == "2026-11-12" &&
+                    doc.RootElement.GetProperty("SettlementTimestamp").GetDateTimeOffset() == confirmedInstant &&
+                    doc.RootElement.GetProperty("SettlementActorUserId").GetString() == actorId.ToString("D"),
+                "Issue71 structured audit must preserve three distinct actual dates and responsible operator.");
+            Require(!audit.Read(), "Issue71 audit must not duplicate the partial settlement event.");
+        }
+
+        // Create fresh composition as restart custody proof; migration runner must be idempotent.
+        SalrynLocalComposition restartedComposition = SalrynLocalComposition.Create(paths);
+        await restartedComposition.InitializeDatabaseAsync().ConfigureAwait(false);
+        SqliteProcureToPayService afterRestart = new(restartedComposition.ConnectionFactory);
+        IReadOnlyList<SupplierPaymentModel> persisted = RequireSuccess(
+            await afterRestart.GetSupplierPaymentsAsync(supplier.Id, invoice.Id), "Issue71 persisted payments");
+        Require(persisted.Count == 2 &&
+                persisted.Single(p => p.Id == partial.Id).ActualDisbursementDate == new DateOnly(2026, 11, 12) &&
+                persisted.Single(p => p.Id == plannedTomorrow.Id).ActualDisbursementDate == new DateOnly(2026, 11, 13) &&
+                persisted.Single(p => p.Id == partial.Id).PaymentDate == new DateOnly(2026, 11, 10) &&
+                persisted.Single(p => p.Id == plannedTomorrow.Id).PaymentDate == new DateOnly(2026, 11, 14),
+            "Issue71 exact recording and actual dates must survive restart with no inferred backfill.");
+
+        // Forward-only migration on an isolated historical miniature: no inferred transfer date,
+        // even if status is Settled and approved_at exists.
+        using (SqliteConnection historical = new("Data Source=:memory:"))
+        {
+            historical.Open();
+            using (SqliteCommand setup = historical.CreateCommand())
+            {
+                setup.CommandText = """
+                    CREATE TABLE supplier_payments (id TEXT PRIMARY KEY, payment_date TEXT NOT NULL,
+                        status TEXT NOT NULL, approved_at TEXT NULL);
+                    INSERT INTO supplier_payments VALUES ('old-settled', '2026-11-10', 'Settled', '2026-11-12T16:30:00Z');
+                    INSERT INTO supplier_payments VALUES ('old-pending', '2026-11-14', 'PendingApproval', NULL);
+                    """;
+                setup.ExecuteNonQuery();
+            }
+            using (SqliteTransaction txn = historical.BeginTransaction())
+            {
+                new SupplierPaymentActualDisbursementDateMigration().Up(historical, txn);
+                txn.Commit();
+            }
+            using (SqliteTransaction txn = historical.BeginTransaction())
+            {
+                new SupplierPaymentActualDisbursementDateMigration().Up(historical, txn);
+                txn.Commit();
+            }
+            using SqliteCommand check = historical.CreateCommand();
+            check.CommandText = "SELECT COUNT(*) FROM supplier_payments WHERE actual_disbursement_date IS NULL;";
+            Require(Convert.ToInt64(check.ExecuteScalar()) == 2,
+                "Issue71 legacy settled and pending records must retain NULL actual date through migration and replay.");
+        }
+
+        Console.WriteLine("[ISSUE71] disposable SQLite dates A=2026-11-10 B=2026-11-12 C=2026-11-13 Manila; UTC rollover, negative dates, partial/full, audit, restart, historical NULL: PASS.");
+    }
+
     /// <summary>
     /// P1-03: Financial data authorization.
     /// Invariants:
