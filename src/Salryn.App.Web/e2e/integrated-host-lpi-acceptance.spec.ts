@@ -435,7 +435,7 @@ test.describe("INTEGRATED_HOST LPI End-to-End Acceptance Suite @integrated", () 
 
     await pmtDialog.locator("select").selectOption("BankTransfer");
     await pmtDialog.locator("input").nth(1).fill("TRF-REALHOST-8899");
-    await pmtDialog.locator("input").nth(2).fill("MSME Operating Account");
+    await pmtDialog.locator("input").nth(2).fill("BPI Corporate");
 
     await pmtDialog.getByRole("button", { name: "Submit for Approval" }).click();
     await expect(pmtDialog).toBeHidden();
