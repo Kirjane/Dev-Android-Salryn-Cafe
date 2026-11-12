@@ -685,7 +685,8 @@ public sealed record SupplierPaymentModel(
     Guid? ApprovedByUserId,
     DateTimeOffset? ApprovedAt,
     string? RequestPayloadHash,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    DateOnly? ActualDisbursementDate = null);
 
 public sealed record RecordSupplierPaymentRequest(
     Guid SupplierInvoiceId,
@@ -706,7 +707,8 @@ public sealed record ApproveSupplierPaymentRequest(
     Guid PaymentId,
     Guid ApproverUserId,
     string SettlementConfirmation,
-    string? Remarks = null);
+    string? Remarks = null,
+    string? ActualDisbursementDate = null);
 
 public sealed record ApAgingSummaryModel(
     long TotalOpenPayablesCents,
