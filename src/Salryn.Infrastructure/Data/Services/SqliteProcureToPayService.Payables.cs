@@ -592,6 +592,11 @@ public sealed partial class SqliteProcureToPayService
         return Result<SupplierInvoiceModel>.Success(posted!);
     }
 
+    // Philippines store-local business calendar: Asia/Manila, fixed UTC+08:00 (no DST).
+    // Independent of the host machine's OS local timezone.
+    private static DateOnly SupplierPaymentBusinessDate(DateTimeOffset instant) =>
+        DateOnly.FromDateTime(instant.ToOffset(TimeSpan.FromHours(8)).DateTime);
+
     public async Task<Result<SupplierPaymentModel>> RecordSupplierPaymentAsync(
         RecordSupplierPaymentRequest request,
         CancellationToken cancellationToken = default)
@@ -672,7 +677,7 @@ public sealed partial class SqliteProcureToPayService
 
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
         DateTimeOffset now = _timeProvider.GetUtcNow();
-        DateOnly today = DateOnly.FromDateTime(now.UtcDateTime);
+        DateOnly today = SupplierPaymentBusinessDate(now);
         SupplierInvoiceModel? invoice = await LoadSupplierInvoiceAsync(connection, transaction, request.SupplierInvoiceId, today, cancellationToken);
         if (invoice is null)
         {
@@ -776,6 +781,28 @@ public sealed partial class SqliteProcureToPayService
                 Error.Validation("Lpi.Payment.SettlementConfirmationRequired", "Type the exact uppercase text YES to confirm that money was actually paid or transferred."));
         }
 
+        if (string.IsNullOrWhiteSpace(request.ActualDisbursementDate))
+        {
+            return Result<SupplierPaymentModel>.Fail(
+                Error.Validation("Lpi.Payment.ActualDisbursementDateRequired", "Explicitly enter the date funds actually moved; a payment request date is not proof of transfer."));
+        }
+        if (!DateOnly.TryParseExact(request.ActualDisbursementDate, "yyyy-MM-dd",
+                System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None,
+                out DateOnly actualDisbursementDate) ||
+            !string.Equals(request.ActualDisbursementDate,
+                actualDisbursementDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                StringComparison.Ordinal))
+        {
+            return Result<SupplierPaymentModel>.Fail(
+                Error.Validation("Lpi.Payment.ActualDisbursementDateInvalid", "Actual funds-transfer date must be an exact, valid yyyy-MM-dd date."));
+        }
+        DateOnly businessToday = SupplierPaymentBusinessDate(_timeProvider.GetUtcNow());
+        if (actualDisbursementDate > businessToday)
+        {
+            return Result<SupplierPaymentModel>.Fail(
+                Error.Validation("Lpi.Payment.ActualDisbursementDateFuture", "Actual funds-transfer date cannot be later than today's Philippine business date."));
+        }
+
         await using SqliteConnection connection = _connections.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         SqlitePragma.Apply(connection);
@@ -806,7 +833,12 @@ public sealed partial class SqliteProcureToPayService
                 Error.Validation("Lpi.Payment.ForbiddenDrawerSource", "Supplier AP settlement cannot use the POS cashier shift drawer."));
         }
 
-        DateOnly today = DateOnly.FromDateTime(now.UtcDateTime);
+        DateOnly today = SupplierPaymentBusinessDate(now);
+        if (actualDisbursementDate > today)
+        {
+            return Result<SupplierPaymentModel>.Fail(
+                Error.Validation("Lpi.Payment.ActualDisbursementDateFuture", "Actual funds-transfer date cannot be later than today's Philippine business date."));
+        }
         SupplierInvoiceModel? invoice = await LoadSupplierInvoiceAsync(connection, transaction, payment.SupplierInvoiceId, today, cancellationToken);
         if (invoice is null)
         {
@@ -839,9 +871,11 @@ public sealed partial class SqliteProcureToPayService
                 SET status = 'Settled',
                     approved_by_user_id = $appBy,
                     approved_at = $now,
+                    actual_disbursement_date = $actualDate,
                     remarks = CASE WHEN $remarks IS NULL OR $remarks = '' THEN remarks ELSE COALESCE(remarks, '') || ' | ' || $remarks END
-                WHERE id = $id AND status = 'PendingApproval';
+                WHERE id = $id AND status = 'PendingApproval' AND actual_disbursement_date IS NULL;
                 """;
+            updPay.Parameters.AddWithValue("$actualDate", actualDisbursementDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
             updPay.Parameters.AddWithValue("$appBy", request.ApproverUserId.ToString("D"));
             updPay.Parameters.AddWithValue("$now", now.ToString("O"));
             updPay.Parameters.AddWithValue("$remarks", (object?)Clean(request.Remarks) ?? DBNull.Value);
@@ -894,7 +928,7 @@ public sealed partial class SqliteProcureToPayService
             payment.PaymentNumber,
             debitCents: payment.AmountCents,
             creditCents: 0,
-            note: $"Actual payment {payment.PaymentNumber} confirmed ({payment.PaymentMethod} / {payment.DisbursementSource}, Ref: {payment.ReferenceNo})",
+            note: $"Operator-affirmed transfer date {actualDisbursementDate:yyyy-MM-dd}; settlement posted at {now:O}; payment {payment.PaymentNumber} ({payment.PaymentMethod} / {payment.DisbursementSource}, Ref: {payment.ReferenceNo})",
             actorUserId: request.ApproverUserId,
             now: now,
             cancellationToken: cancellationToken);
@@ -921,6 +955,8 @@ public sealed partial class SqliteProcureToPayService
                 SettlementActorUserId = request.ApproverUserId,
                 SameUserRecordedAndSettled = payment.RecordedByUserId == request.ApproverUserId,
                 SettlementTimestamp = now,
+                RequestedPaymentDate = payment.PaymentDate,
+                ActualDisbursementDate = actualDisbursementDate,
                 OperatorConfirmedActualPayment = true,
                 PreviousInvoiceStatus = invoice.Status,
                 NewInvoiceStatus = nextInvStatus,
@@ -934,6 +970,8 @@ public sealed partial class SqliteProcureToPayService
             new
             {
                 PaymentStatus = payment.Status,
+                RequestedPaymentDate = payment.PaymentDate,
+                ActualDisbursementDate = payment.ActualDisbursementDate,
                 InvoiceStatus = invoice.Status,
                 PaidAmountCents = invoice.PaidAmountCents,
                 OutstandingBalanceCents = invoice.RemainingBalanceCents
@@ -962,7 +1000,7 @@ public sealed partial class SqliteProcureToPayService
                    p.supplier_id, s.name, p.payment_date, p.amount_cents, p.payment_method,
                    p.disbursement_source, p.reference_no, p.check_no, p.bank_name, p.remarks,
                    p.status, p.recorded_by_user_id, p.approved_by_user_id, p.approved_at,
-                   p.request_payload_hash, p.created_at
+                   p.request_payload_hash, p.created_at, p.actual_disbursement_date
             FROM supplier_payments p
             JOIN supplier_invoices i ON i.id = p.supplier_invoice_id
             JOIN suppliers s ON s.id = p.supplier_id
@@ -998,7 +1036,8 @@ public sealed partial class SqliteProcureToPayService
                 reader.IsDBNull(17) ? null : Guid.Parse(reader.GetString(17)),
                 reader.IsDBNull(18) ? null : DateTimeOffset.Parse(reader.GetString(18)),
                 reader.IsDBNull(19) ? null : reader.GetString(19),
-                DateTimeOffset.Parse(reader.GetString(20))));
+                DateTimeOffset.Parse(reader.GetString(20)),
+                reader.IsDBNull(21) ? null : DateOnly.ParseExact(reader.GetString(21), "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)));
         }
 
         return Result<IReadOnlyList<SupplierPaymentModel>>.Success(list);
@@ -1017,7 +1056,7 @@ public sealed partial class SqliteProcureToPayService
                    p.supplier_id, s.name, p.payment_date, p.amount_cents, p.payment_method,
                    p.disbursement_source, p.reference_no, p.check_no, p.bank_name, p.remarks,
                    p.status, p.recorded_by_user_id, p.approved_by_user_id, p.approved_at,
-                   p.request_payload_hash, p.created_at
+                   p.request_payload_hash, p.created_at, p.actual_disbursement_date
             FROM supplier_payments p
             JOIN supplier_invoices i ON i.id = p.supplier_invoice_id
             JOIN suppliers s ON s.id = p.supplier_id
@@ -1048,7 +1087,8 @@ public sealed partial class SqliteProcureToPayService
             reader.IsDBNull(17) ? null : Guid.Parse(reader.GetString(17)),
             reader.IsDBNull(18) ? null : DateTimeOffset.Parse(reader.GetString(18)),
             reader.IsDBNull(19) ? null : reader.GetString(19),
-            DateTimeOffset.Parse(reader.GetString(20)));
+            DateTimeOffset.Parse(reader.GetString(20)),
+            reader.IsDBNull(21) ? null : DateOnly.ParseExact(reader.GetString(21), "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
     }
 
     private static string ComputePaymentPayloadHash(
