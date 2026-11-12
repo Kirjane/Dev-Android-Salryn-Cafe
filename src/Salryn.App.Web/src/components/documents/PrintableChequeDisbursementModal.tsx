@@ -27,13 +27,13 @@ export function PrintableChequeDisbursementModal({ open, onClose, payment, store
   return (
     <Dialog open={open} onClose={onClose} title={`Payment Voucher: ${payment.paymentNumber}`}>
       <div className="space-y-6 text-slate-800">
-        <div className="flex justify-between items-center border-b pb-3 print:hidden">
-          <span className="text-xs text-slate-500">Accounts Payable Payment Voucher — {payment.status === "Settled" ? "Operator-Confirmed Disbursement" : "Pending Settlement — Not Yet Disbursed"}</span>
-          <div className="flex gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3 print:hidden">
+          <span className="min-w-0 flex-1 basis-52 text-xs text-slate-500">Accounts Payable Payment Voucher — {payment.status === "Settled" ? "Operator-Confirmed Disbursement" : "Pending Settlement — Not Yet Disbursed"}</span>
+          <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
             <Button variant="secondary" onClick={onClose}>
               Close
             </Button>
-            <Button variant="primary" onClick={handlePrint}>
+            <Button variant="primary" className="whitespace-nowrap" onClick={handlePrint}>
               🖨️ Print Voucher
             </Button>
           </div>
