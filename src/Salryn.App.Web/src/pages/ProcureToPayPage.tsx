@@ -276,7 +276,7 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
     amount: "0",
     paymentMethod: "BankTransfer",
     referenceNumber: "",
-    bankAccount: "BDO-0987-6543-21",
+    bankName: "",
     checkNumber: "",
     notes: "Supplier accounts payable settlement",
   });
@@ -1254,7 +1254,7 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
                                     amount: (inv.balanceDueCents / 100).toFixed(2),
                                     paymentMethod: "BankTransfer",
                                     referenceNumber: `TXN-${Date.now().toString().slice(-6)}`,
-                                    bankAccount: "BDO-0987-6543-21",
+                                    bankName: "",
                                     checkNumber: "",
                                     notes: `Settlement for Invoice ${inv.invoiceNumber}`,
                                   });
@@ -1310,7 +1310,7 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
                               <td className="p-3 text-xs">{pay.paymentDate}</td>
                               <td className="p-3 font-medium">{pay.supplierName}</td>
                               <td className="p-3 text-xs">{pay.paymentMethod}</td>
-                              <td className="p-3 font-mono text-xs">{pay.referenceNumber || pay.bankAccount || "—"}</td>
+                              <td className="p-3 font-mono text-xs">{pay.referenceNumber || pay.bankName || "—"}</td>
                               <td className="p-3 text-right font-bold text-slate-900">{money(pay.amountCents)}</td>
                               <td className="p-3">
                                 <StatusPill tone={pay.status === "Settled" ? "success" : "warning"}>
@@ -2754,6 +2754,10 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
               />
             </div>
             <div>
+              <label className="block text-xs font-medium text-slate-700">Bank Name (optional, not an account number)</label>
+              <TextInput value={paymentForm.bankName} onChange={(e) => setPaymentForm({ ...paymentForm, bankName: e.target.value })} placeholder="Actual bank name, if known" />
+            </div>
+            <div>
               <label className="block text-xs font-medium text-slate-700">Disbursement Source</label>
               <TextInput
                 value={paymentForm.paymentMethod === "Cash" ? "TreasuryFund (Corporate Cash - Non-POS)" : "OperatingAccount (Operating Bank Account)"}
@@ -2784,7 +2788,7 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
                     paymentMethod: paymentForm.paymentMethod,
                     disbursementSource: source,
                     referenceNumber: paymentForm.referenceNumber.trim(),
-                    bankAccount: paymentForm.bankAccount,
+                    bankName: paymentForm.bankName,
                     notes: paymentForm.notes,
                   });
                   notify.success("Supplier payment recorded as pending. No actual settlement has been asserted.");
