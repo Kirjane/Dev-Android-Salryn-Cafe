@@ -71,6 +71,7 @@ public static class LpiP1IntegrityReproductionChecks
             await TestW5R2QuotationPreservationAndContractFallbacksAsync(service, paths, requesterId, supervisorId, resaleProdId);
             await TestW5R21ReconciliationIntegrityAsync(service, paths, requesterId, supervisorId, apClerkId, resaleProdId);
             await TestW5R21DuplicateProductAmbiguityAndFinancialIntegrityAsync(service, paths, requesterId, supervisorId, apClerkId, resaleProdId);
+            await TestP102CrossSupplierPaymentLineageHttpAsync(composition, service, paths, apClerkId, resaleProdId);
 
             Console.WriteLine("LPI P1 Integrity: All findings (P1-01 through P1-06 and P1-R3-01/02) verified with full regression closure PASS.");
         }
@@ -489,6 +490,296 @@ public static class LpiP1IntegrityReproductionChecks
             long custAccounts = Convert.ToInt64(cmd.ExecuteScalar());
             Require(custAccounts == 0, "Supplier payments must NOT mutate customer accounts receivable entries.");
         }
+    }
+
+
+    /// <summary>
+    /// Issue #70: an intentionally corrupted, disposable payment supplier must never settle
+    /// a different supplier's invoice. The same 372,000-cent payment succeeds after the
+    /// fixture is restored, proving the fail-closed guard does not block legitimate custody.
+    /// This is a persisted-row corruption test, NOT an ordinary-API privilege exploit.
+    /// </summary>
+    private static async Task TestP102CrossSupplierPaymentLineageHttpAsync(
+        SalrynLocalComposition composition,
+        SqliteProcureToPayService service,
+        DbPaths paths,
+        Guid actorId,
+        Guid productId)
+    {
+        Require(paths.DatabasePath.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase),
+            "Issue #70 may run ONLY against a nonce-disposable temporary SQLite database.");
+
+        LpiSupplier supplierA = RequireSuccess(await service.CreateSupplierAsync(
+            new CreateLpiSupplierRequest("P1-I70-A", "Issue 70 Supplier A", "A", "0918000070", "issue70a@test.local",
+                "Disposable A", null, 30, 5, null, actorId)), "Issue70 supplier A");
+        LpiSupplier supplierB = RequireSuccess(await service.CreateSupplierAsync(
+            new CreateLpiSupplierRequest("P1-I70-B", "Issue 70 Supplier B", "B", "0918000071", "issue70b@test.local",
+                "Disposable B", null, 30, 5, null, actorId)), "Issue70 supplier B");
+
+        // Four units at PHP 930.00 each: PHP 3,720.00 / 372,000 integer cents.
+        PurchaseOrderModel po = RequireSuccess(await service.CreatePurchaseOrderAsync(
+            new CreatePurchaseOrderRequest(
+                supplierA.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7)), null, 30,
+                0, "Terms", "Issue70 disposable lineage regression", true,
+                new[] { new CreatePurchaseOrderLineInput(null, productId, "P1-I70-ITEM",
+                    "Issue70 regression item", PurchaseClassifications.Resale, "pcs",
+                    4_000, 93_000, 0, 0, null) }, actorId)), "Issue70 PO");
+        ReceivingReportModel rr = RequireSuccess(await service.CreateReceivingReportAsync(
+            new CreateReceivingReportRequest(
+                po.Id, null, "DR-I70-01", null, "Issue70 Carrier", DateOnly.FromDateTime(DateTime.UtcNow),
+                true, null, null, "RR-I70-01", null,
+                new[] { new CreateReceivingReportLineInput(po.Lines[0].Id,
+                    4_000, 4_000, 0, null, null, null, null) }, actorId)), "Issue70 RR");
+        SupplierInvoiceModel invoice = RequireSuccess(await service.CreateSupplierInvoiceAsync(
+            new CreateSupplierInvoiceRequest(
+                supplierA.Id, "INV-I70-3720", po.Id, rr.Id, DateOnly.FromDateTime(DateTime.UtcNow),
+                DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)), 0, 0, true,
+                new[] { new CreateSupplierInvoiceLineInput(po.Lines[0].Id, rr.Lines[0].Id,
+                    productId, "Issue70 regression item", 4_000, 93_000, 0) }, actorId)),
+            "Issue70 invoice");
+        Require(invoice.Status == "PostedOpen" && invoice.PaidAmountCents == 0 &&
+                invoice.RemainingBalanceCents == 372_000 && invoice.SupplierId == supplierA.Id,
+            "Issue70 genuine Supplier A invoice must be open for exactly 372,000 cents.");
+
+        SupplierPaymentModel payment = RequireSuccess(await service.RecordSupplierPaymentAsync(
+            new RecordSupplierPaymentRequest(invoice.Id, DateOnly.FromDateTime(DateTime.UtcNow),
+                372_000, "BankTransfer", "OperatingBank", "TXN-I70-3720", null, "Test Bank",
+                "Disposable matching-supplier payment", "REQ-PAY-I70-01", actorId, null)),
+            "Issue70 pending payment");
+        Require(payment.SupplierId == supplierA.Id && payment.Status == "PendingApproval" &&
+                payment.ApprovedByUserId is null && payment.ApprovedAt is null,
+            "Issue70 recording must begin as a valid, unsettled Supplier A payment.");
+
+        // The ONLY intentionally inconsistent write is against this temporary test DB.
+        // No product migration, historical-data repair, or customer account is involved.
+        void ChangeDisposablePaymentSupplier(Guid fromSupplier, Guid toSupplier)
+        {
+            using SqliteConnection connection = new($"Data Source={paths.DatabasePath}");
+            connection.Open();
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE supplier_payments
+                SET supplier_id = $toSupplier
+                WHERE id = $paymentId
+                  AND supplier_id = $fromSupplier
+                  AND supplier_invoice_id = $invoiceId
+                  AND status = 'PendingApproval';
+                """;
+            command.Parameters.AddWithValue("$toSupplier", toSupplier.ToString("D"));
+            command.Parameters.AddWithValue("$fromSupplier", fromSupplier.ToString("D"));
+            command.Parameters.AddWithValue("$paymentId", payment.Id.ToString("D"));
+            command.Parameters.AddWithValue("$invoiceId", invoice.Id.ToString("D"));
+            Require(command.ExecuteNonQuery() == 1, "Issue70 fixture supplier mutation must affect exactly one pending row.");
+        }
+
+        string Snapshot()
+        {
+            using SqliteConnection connection = new($"Data Source={paths.DatabasePath}");
+            connection.Open();
+            string[] row;
+            using (SqliteCommand command = connection.CreateCommand())
+            {
+                command.CommandText = """
+                    SELECT p.status, p.supplier_id, p.supplier_invoice_id, p.amount_cents,
+                           p.approved_by_user_id, p.approved_at, p.remarks,
+                           i.supplier_id, i.status, i.paid_amount_cents, i.remaining_balance_cents
+                    FROM supplier_payments p
+                    JOIN supplier_invoices i ON i.id = p.supplier_invoice_id
+                    WHERE p.id = $paymentId;
+                    """;
+                command.Parameters.AddWithValue("$paymentId", payment.Id.ToString("D"));
+                using SqliteDataReader reader = command.ExecuteReader();
+                Require(reader.Read(), "Issue70 snapshot must find linked payment and invoice.");
+                row = Enumerable.Range(0, reader.FieldCount)
+                    .Select(index => reader.IsDBNull(index) ? "<NULL>" : reader.GetValue(index).ToString() ?? "")
+                    .ToArray();
+                Require(!reader.Read(), "Issue70 snapshot must select exactly one linked row.");
+            }
+
+            long Scalar(string sql, Guid? id = null)
+            {
+                using SqliteCommand command = connection.CreateCommand();
+                command.CommandText = sql;
+                if (id.HasValue) command.Parameters.AddWithValue("$id", id.Value.ToString("D"));
+                return Convert.ToInt64(command.ExecuteScalar());
+            }
+
+            return JsonSerializer.Serialize(new
+            {
+                paymentAndInvoice = row,
+                ledgerEntryCount = Scalar("SELECT COUNT(*) FROM supplier_payable_entries WHERE supplier_invoice_id=$id", invoice.Id),
+                ledgerDebitsCents = Scalar("SELECT COALESCE(SUM(debit_cents),0) FROM supplier_payable_entries WHERE supplier_invoice_id=$id", invoice.Id),
+                ledgerCreditsCents = Scalar("SELECT COALESCE(SUM(credit_cents),0) FROM supplier_payable_entries WHERE supplier_invoice_id=$id", invoice.Id),
+                paymentAppliedCount = Scalar("SELECT COUNT(*) FROM supplier_payable_entries WHERE supplier_invoice_id=$id AND entry_type='PaymentApplied'", invoice.Id),
+                settlementAuditCount = Scalar("SELECT COUNT(*) FROM audit_logs WHERE entity_type='SupplierPayment' AND entity_id=$id AND action='AP_PAYMENT_CONFIRMED_AND_SETTLED'", payment.Id),
+                paymentAuditCount = Scalar("SELECT COUNT(*) FROM audit_logs WHERE entity_type='SupplierPayment' AND entity_id=$id", payment.Id),
+                cashDrawerEventCount = Scalar("SELECT COUNT(*) FROM cash_drawer_events")
+            });
+        }
+
+        static async Task<long> DisbursedFromHttpAsync(HttpClient client)
+        {
+            using HttpResponseMessage result = await client.GetAsync("/api/lpi/overview");
+            Require(result.StatusCode == HttpStatusCode.OK,
+                $"Issue70 finance overview HTTP must be 200; got {(int)result.StatusCode}.");
+            using JsonDocument json = JsonDocument.Parse(await result.Content.ReadAsStringAsync());
+            return json.RootElement.GetProperty("totalPaymentsDisbursedCents").GetInt64();
+        }
+
+        static async Task<HttpResponseMessage> SettleThroughHttpAsync(HttpClient client, Guid paymentId)
+        {
+            return await client.PostAsync($"/api/lpi/payments/{paymentId:D}/approve",
+                new StringContent("{\"settlementConfirmation\":\"YES\",\"remarks\":\"Issue70 actual transfer verified by fixture operator\"}",
+                    System.Text.Encoding.UTF8, "application/json"));
+        }
+
+        // Register a real authenticated Manager session, not a caller-provided approver ID.
+        InMemoryLocalApiSessionStore store = new();
+        LocalApiSession manager = store.Create(new AuthenticatedUserReadModel(
+            actorId, "issue70-manager", "Issue70 Manager", "Manager", UserStatus.Active,
+            new[] { SalrynPermissions.PayablesView, SalrynPermissions.PayablesApprovePayment })
+        {
+            RoleId = Guid.Parse(Salryn.Infrastructure.Data.Seeding.DefaultSeedData.ManagerRoleId)
+        });
+
+        string nonce = "ISSUE70-DISPOSABLE-" + Guid.NewGuid().ToString("N");
+        string markerPath = Path.Combine(Path.GetDirectoryName(paths.DatabasePath)!, "issue70-disposable-host-marker.json");
+        File.WriteAllText(markerPath, JsonSerializer.Serialize(new
+        {
+            token = nonce,
+            processId = Environment.ProcessId,
+            databasePath = paths.DatabasePath,
+            isDisposableTest = true
+        }));
+        using (JsonDocument marker = JsonDocument.Parse(File.ReadAllText(markerPath)))
+        {
+            Require(marker.RootElement.GetProperty("token").GetString() == nonce &&
+                    marker.RootElement.GetProperty("processId").GetInt32() == Environment.ProcessId &&
+                    marker.RootElement.GetProperty("databasePath").GetString() == paths.DatabasePath &&
+                    marker.RootElement.GetProperty("isDisposableTest").GetBoolean(),
+                "Issue70 nonce/PID/SQLite marker custody failed.");
+        }
+
+        ChangeDisposablePaymentSupplier(supplierA.Id, supplierB.Id);
+        string before = Snapshot();
+        using (JsonDocument snapshot = JsonDocument.Parse(before))
+        {
+            string?[] row = snapshot.RootElement.GetProperty("paymentAndInvoice")
+                .EnumerateArray().Select(element => element.GetString()).ToArray();
+            Require(row[0] == "PendingApproval" &&
+                    row[1] == supplierB.Id.ToString("D") &&
+                    row[2] == invoice.Id.ToString("D") &&
+                    row[3] == "372000" && row[4] == "<NULL>" && row[5] == "<NULL>" &&
+                    row[7] == supplierA.Id.ToString("D") && row[8] == "PostedOpen" &&
+                    row[9] == "0" && row[10] == "372000" &&
+                    snapshot.RootElement.GetProperty("paymentAppliedCount").GetInt64() == 0 &&
+                    snapshot.RootElement.GetProperty("settlementAuditCount").GetInt64() == 0,
+                "Issue70 precondition must isolate the intentionally mismatched unpaid PHP 3,720 payment.");
+        }
+
+        await using (WebApplication host = await LocalApiApplicationFactory.CreateAsync(
+            new[] { "--dev" },
+            new LocalApiApplicationOptions
+            {
+                Url = "http://127.0.0.1:0",
+                Composition = composition,
+                SessionStore = store,
+                EnableStaticWebAssets = false,
+                WriteDevelopmentDatabasePath = false,
+                TestHostNonce = nonce
+            }).ConfigureAwait(false))
+        {
+            await host.StartAsync().ConfigureAwait(false);
+            string bound = host.Urls.Single(url => url.StartsWith("http://127.0.0.1:", StringComparison.OrdinalIgnoreCase));
+            Require(!bound.EndsWith(":0", StringComparison.Ordinal),
+                "Issue70 mutating HTTP must target a dynamically allocated loopback port.");
+            using HttpClient client = CreateClient(new Uri(bound), manager);
+            long disbursedBefore = await DisbursedFromHttpAsync(client);
+            using (HttpResponseMessage denied = await SettleThroughHttpAsync(client, payment.Id))
+            {
+                string responseBody = await denied.Content.ReadAsStringAsync();
+                Require(denied.StatusCode == HttpStatusCode.Conflict,
+                    $"Issue70 mismatched supplier must return HTTP 409, got {(int)denied.StatusCode}: {responseBody}");
+                using JsonDocument error = JsonDocument.Parse(responseBody);
+                Require(error.RootElement.GetProperty("code").GetString() == "Lpi.Payment.SupplierInvoiceMismatch" &&
+                        !string.IsNullOrWhiteSpace(error.RootElement.GetProperty("error").GetString()),
+                    $"Issue70 mismatch must return the exact stable domain code and explanation: {responseBody}");
+                Console.WriteLine($"[Issue70 NEGATIVE HTTP] status=409 body={responseBody}");
+            }
+            Require(Snapshot() == before,
+                "Issue70 mismatched settlement must preserve payment, invoice, ledger, audit and cash drawer EXACTLY.");
+            Require(await DisbursedFromHttpAsync(client) == disbursedBefore,
+                "Issue70 mismatched settlement must not increase dashboard disbursements.");
+            Console.WriteLine($"[Issue70 NEGATIVE SQLITE BEFORE/AFTER] {before}; disbursedCents={disbursedBefore}");
+            await host.StopAsync().ConfigureAwait(false);
+        }
+
+        // Host restart uses the SAME disposable database and the same nonce-verified session.
+        SalrynLocalComposition restartedComposition = SalrynLocalComposition.Create(paths);
+        await using (WebApplication restartedHost = await LocalApiApplicationFactory.CreateAsync(
+            new[] { "--dev" },
+            new LocalApiApplicationOptions
+            {
+                Url = "http://127.0.0.1:0",
+                Composition = restartedComposition,
+                SessionStore = store,
+                EnableStaticWebAssets = false,
+                WriteDevelopmentDatabasePath = false,
+                TestHostNonce = nonce
+            }).ConfigureAwait(false))
+        {
+            await restartedHost.StartAsync().ConfigureAwait(false);
+            string restartedUrl = restartedHost.Urls.Single(url => url.StartsWith("http://127.0.0.1:", StringComparison.OrdinalIgnoreCase));
+            using HttpClient client = CreateClient(new Uri(restartedUrl), manager);
+            Require(Snapshot() == before,
+                "Issue70 failed settlement must persist unchanged through a fresh Local API host restart.");
+            long disbursedAfterRestart = await DisbursedFromHttpAsync(client);
+            Console.WriteLine($"[Issue70 RESTART] unchanged={Snapshot() == before}; disbursedCents={disbursedAfterRestart}");
+
+            // Positive control: restore only the intentionally corrupted TEST fixture row,
+            // then settle the original genuine Supplier A PHP 3,720 payment over real HTTP.
+            ChangeDisposablePaymentSupplier(supplierB.Id, supplierA.Id);
+            using (HttpResponseMessage accepted = await SettleThroughHttpAsync(client, payment.Id))
+            {
+                string responseBody = await accepted.Content.ReadAsStringAsync();
+                Require(accepted.StatusCode == HttpStatusCode.OK,
+                    $"Issue70 matching-supplier settlement must succeed with HTTP 200: {responseBody}");
+                using JsonDocument result = JsonDocument.Parse(responseBody);
+                Require(result.RootElement.GetProperty("status").GetString() == "Settled" &&
+                        result.RootElement.GetProperty("approvedByUserId").GetGuid() == actorId,
+                    "Issue70 legitimate settlement must attribute the actual authenticated Manager.");
+                Console.WriteLine($"[Issue70 POSITIVE HTTP] status=200 body={responseBody}");
+            }
+
+            string settledSnapshot = Snapshot();
+            using (JsonDocument snapshot = JsonDocument.Parse(settledSnapshot))
+            {
+                string?[] row = snapshot.RootElement.GetProperty("paymentAndInvoice")
+                    .EnumerateArray().Select(element => element.GetString()).ToArray();
+                Require(row[0] == "Settled" &&
+                        row[1] == supplierA.Id.ToString("D") &&
+                        row[4] == actorId.ToString("D") && row[5] != "<NULL>" &&
+                        row[8] == "Paid" && row[9] == "372000" && row[10] == "0" &&
+                        snapshot.RootElement.GetProperty("paymentAppliedCount").GetInt64() == 1 &&
+                        snapshot.RootElement.GetProperty("ledgerDebitsCents").GetInt64() == 372_000 &&
+                        snapshot.RootElement.GetProperty("settlementAuditCount").GetInt64() == 1,
+                    "Issue70 legitimate PHP 3,720 settlement must post once with true Manager custody.");
+            }
+            using (HttpResponseMessage replay = await SettleThroughHttpAsync(client, payment.Id))
+            {
+                Require(replay.StatusCode == HttpStatusCode.Conflict,
+                    $"Issue70 settled-payment replay must be HTTP 409, got {(int)replay.StatusCode}.");
+                using JsonDocument error = JsonDocument.Parse(await replay.Content.ReadAsStringAsync());
+                Require(error.RootElement.GetProperty("code").GetString() == "Lpi.Payment.AlreadyFinalized",
+                    "Issue70 settled-payment replay must return AlreadyFinalized.");
+            }
+            Require(Snapshot() == settledSnapshot,
+                "Issue70 replay must not create a second ledger or audit entry.");
+            Console.WriteLine($"[Issue70 POSITIVE SQLITE] {settledSnapshot}");
+            await restartedHost.StopAsync().ConfigureAwait(false);
+        }
+
+        Console.WriteLine("Issue70 cross-supplier persisted-lineage HTTP 409 / SQLite no-write / restart / legitimate 372000-cent settlement and replay: PASS.");
     }
 
     /// <summary>
