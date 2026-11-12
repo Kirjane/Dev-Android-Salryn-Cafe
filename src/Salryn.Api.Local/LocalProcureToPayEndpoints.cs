@@ -322,6 +322,8 @@ internal static class LocalProcureToPayEndpoints
         {
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementManagePurchaseOrder) is IResult denied)
                 return denied;
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementApprovePurchaseOrder) is IResult approvalDenied)
+                return approvalDenied;
             if (request is null || request.SupplierId == Guid.Empty)
             {
                 return Results.Json(new { error = "A valid supplier must be selected to generate a Purchase Order.", code = "Lpi.PurchaseOrder.SupplierRequired" }, statusCode: StatusCodes.Status400BadRequest);
@@ -433,6 +435,9 @@ internal static class LocalProcureToPayEndpoints
         {
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementManagePurchaseOrder) is IResult denied)
                 return denied;
+            if ((request.SubmitAndApproveImmediately ?? false) &&
+                LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementApprovePurchaseOrder) is IResult approvalDenied)
+                return approvalDenied;
             LocalApiSession session = RequiredSession(context, sessions);
             DateOnly expDate = request.ExpectedDeliveryDate ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(5));
             return ToResult(

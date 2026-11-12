@@ -17,6 +17,7 @@ import {
   createQuotation,
   selectWinningQuotation,
   fetchPurchaseOrders,
+  createPurchaseOrder,
   approvePurchaseOrder,
   markPurchaseOrderSent,
   cancelPurchaseOrder,
@@ -191,6 +192,15 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
   const [splitPr, setSplitPr] = useState<PurchaseRequisition | null>(null);
   const [splitAllocations, setSplitAllocations] = useState<Array<{ supplierId: string; prItemIds: string[] }>>([]);
   const [isConvertingPo, setIsConvertingPo] = useState(false);
+  const [directPoModalOpen, setDirectPoModalOpen] = useState(false);
+  const [isCreatingDirectPo, setIsCreatingDirectPo] = useState(false);
+  const [directPoForm, setDirectPoForm] = useState({
+    supplierId: "",
+    expectedDeliveryDate: new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10),
+    reason: "",
+    approveImmediately: false,
+    items: [{ productId: "", quantity: "1", unitCost: "0", notes: "" }],
+  });
   const [selectedPrForPrint, setSelectedPrForPrint] = useState<PurchaseRequisition | null>(null);
   const [selectedPoForPrint, setSelectedPoForPrint] = useState<PurchaseOrder | null>(null);
   const [selectedRrForPrint, setSelectedRrForPrint] = useState<ReceivingReport | null>(null);
@@ -740,6 +750,11 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <h2 className="text-lg font-semibold text-slate-900">Purchase Orders (PO)</h2>
+            {canManagePo && (
+              <Button variant="primary" onClick={() => setDirectPoModalOpen(true)}>
+                + Direct Purchase Order
+              </Button>
+            )}
           </div>
 
           <Card>
@@ -1621,6 +1636,172 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
               }}
             >
               Confirm Rejection
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* DIALOG: Direct PO without a source requisition */}
+      <Dialog
+        open={directPoModalOpen}
+        onClose={() => !isCreatingDirectPo && setDirectPoModalOpen(false)}
+        title="Create Direct Purchase Order"
+      >
+        <div className="space-y-4">
+          <Alert tone="info">
+            Use this for an urgent purchase that has no Purchase Requisition. A truthful business reason is required and creating the PO does not receive stock or record payment.
+          </Alert>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="block text-xs font-medium text-slate-700">Supplier *</label>
+              <Select
+                value={directPoForm.supplierId}
+                onChange={(e) => setDirectPoForm({ ...directPoForm, supplierId: e.target.value })}
+              >
+                <option value="">-- Select supplier --</option>
+                {(suppliers.data ?? []).filter((s) => s.isActive).map((supplier) => (
+                  <option key={supplier.id} value={supplier.id}>{supplier.name}</option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700">Expected delivery *</label>
+              <TextInput
+                type="date"
+                value={directPoForm.expectedDeliveryDate}
+                onChange={(e) => setDirectPoForm({ ...directPoForm, expectedDeliveryDate: e.target.value })}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-700">Direct purchase business reason *</label>
+            <textarea
+              className="mt-1 w-full rounded border border-slate-300 p-2 text-sm"
+              rows={3}
+              value={directPoForm.reason}
+              onChange={(e) => setDirectPoForm({ ...directPoForm, reason: e.target.value })}
+              placeholder="Example: Urgent notebook replenishment before school opening"
+            />
+          </div>
+          <div className="space-y-3">
+            {directPoForm.items.map((item, index) => {
+              const selectedProduct = foundation.data?.products.find((product) => product.id === item.productId);
+              return (
+                <div key={index} className="rounded border border-slate-200 bg-slate-50 p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-700">Item {index + 1}</span>
+                    {directPoForm.items.length > 1 && (
+                      <button
+                        type="button"
+                        className="text-xs font-medium text-red-600"
+                        onClick={() => setDirectPoForm({ ...directPoForm, items: directPoForm.items.filter((_, i) => i !== index) })}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700">Product *</label>
+                      <Select
+                        value={item.productId}
+                        onChange={(e) => {
+                          const product = foundation.data?.products.find((candidate) => candidate.id === e.target.value);
+                          const items = directPoForm.items.map((current, i) => i === index
+                            ? { ...current, productId: e.target.value, unitCost: product ? (product.costPriceCents / 100).toFixed(2) : current.unitCost }
+                            : current);
+                          setDirectPoForm({ ...directPoForm, items });
+                        }}
+                      >
+                        <option value="">-- Select product --</option>
+                        {(foundation.data?.products ?? []).map((product) => (
+                          <option key={product.id} value={product.id}>{product.name}</option>
+                        ))}
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700">Quantity ({selectedProduct?.unitName ?? "unit"}) *</label>
+                      <TextInput
+                        type="number"
+                        min="0.001"
+                        step="0.001"
+                        value={item.quantity}
+                        onChange={(e) => setDirectPoForm({ ...directPoForm, items: directPoForm.items.map((current, i) => i === index ? { ...current, quantity: e.target.value } : current) })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700">Unit cost (PHP) *</label>
+                      <TextInput
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={item.unitCost}
+                        onChange={(e) => setDirectPoForm({ ...directPoForm, items: directPoForm.items.map((current, i) => i === index ? { ...current, unitCost: e.target.value } : current) })}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            <Button
+              variant="secondary"
+              onClick={() => setDirectPoForm({ ...directPoForm, items: [...directPoForm.items, { productId: "", quantity: "1", unitCost: "0", notes: "" }] })}
+            >
+              + Add item
+            </Button>
+          </div>
+          {canApprovePo && (
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={directPoForm.approveImmediately}
+                onChange={(e) => setDirectPoForm({ ...directPoForm, approveImmediately: e.target.checked })}
+              />
+              Approve immediately using my purchase-order approval authority
+            </label>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" disabled={isCreatingDirectPo} onClick={() => setDirectPoModalOpen(false)}>Cancel</Button>
+            <Button
+              disabled={isCreatingDirectPo || !directPoForm.supplierId || !directPoForm.expectedDeliveryDate || !directPoForm.reason.trim() || directPoForm.items.some((item) => !item.productId || Number(item.quantity) <= 0 || Number(item.unitCost) < 0)}
+              onClick={async () => {
+                setIsCreatingDirectPo(true);
+                try {
+                  await createPurchaseOrder({
+                    supplierId: directPoForm.supplierId,
+                    expectedDeliveryDate: directPoForm.expectedDeliveryDate,
+                    notes: directPoForm.reason.trim(),
+                    submitAndApproveImmediately: directPoForm.approveImmediately,
+                    items: directPoForm.items.map((item) => {
+                      const product = foundation.data!.products.find((candidate) => candidate.id === item.productId)!;
+                      return {
+                        productId: product.id,
+                        productName: product.name,
+                        unitName: product.unitName,
+                        orderedQuantityX1000: Math.round(Number(item.quantity) * 1000),
+                        unitCostCents: Math.round(Number(item.unitCost) * 100),
+                        notes: item.notes,
+                      };
+                    }),
+                  });
+                  notify.success("Direct purchase order created.");
+                  setDirectPoModalOpen(false);
+                  setDirectPoForm({
+                    supplierId: "",
+                    expectedDeliveryDate: new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10),
+                    reason: "",
+                    approveImmediately: false,
+                    items: [{ productId: "", quantity: "1", unitCost: "0", notes: "" }],
+                  });
+                  refreshAll();
+                } catch (e) {
+                  notify.error((e as Error).message);
+                } finally {
+                  setIsCreatingDirectPo(false);
+                }
+              }}
+            >
+              {isCreatingDirectPo ? "Creating..." : "Create Direct PO"}
             </Button>
           </div>
         </div>

@@ -172,7 +172,7 @@ public static class LpiP1IntegrityReproductionChecks
                 PaymentTermsDays: 30,
                 ShippingCents: 0,
                 TermsAndConditions: "Standard",
-                Notes: null,
+                Notes: "P1 three-way matching direct purchase fixture",
                 SubmitAndApproveImmediately: true,
                 Lines: new[]
                 {
@@ -193,7 +193,7 @@ public static class LpiP1IntegrityReproductionChecks
                 OverdeliveryApproverUserId: null,
                 OverdeliveryApprovalReason: null,
                 ClientRequestId: "RR-P1-01-REQ",
-                Notes: null,
+                Notes: "P1 duplicate-product direct purchase fixture",
                 Lines: new[]
                 {
                     new CreateReceivingReportLineInput(po.Lines[0].Id, 10_000, 10_000, 0, null, null, null, null)
@@ -223,7 +223,7 @@ public static class LpiP1IntegrityReproductionChecks
 
         PurchaseOrderModel poOther = RequireSuccess(
             await service.CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest(
-                supplierA.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7)), null, 30, 0, "Terms", null, true,
+                supplierA.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7)), null, 30, 0, "Terms", "P1 PO/RR mismatch fixture", true,
                 new[] { new CreatePurchaseOrderLineInput(null, productId, "P1-PROD-RESALE", "P1 Commercial Resale Item", PurchaseClassifications.Resale, "pcs", 5_000, 50_000, 0, 0, null) },
                 apClerkId)), "create other PO");
 
@@ -304,7 +304,7 @@ public static class LpiP1IntegrityReproductionChecks
 
         PurchaseOrderModel po = RequireSuccess(
             await service.CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest(
-                supplier.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7)), null, 30, 0, "Terms", null, true,
+                supplier.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7)), null, 30, 0, "Terms", "P1 payment integrity fixture", true,
                 new[] { new CreatePurchaseOrderLineInput(null, productId, "P1-PROD-RESALE", "Resale Item", PurchaseClassifications.Resale, "pcs", 4_000, 50_000, 0, 0, null) },
                 apClerkId)),
             "P1-02 create PO");
@@ -505,7 +505,7 @@ public static class LpiP1IntegrityReproductionChecks
 
         PurchaseOrderModel po = RequireSuccess(
             await service.CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest(
-                supplier.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7)), null, 30, 0, "Terms", null, true,
+                supplier.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7)), null, 30, 0, "Terms", "P1 idempotency fixture", true,
                 new[] { new CreatePurchaseOrderLineInput(null, productId, "P1-PROD-RESALE", "Resale Item", PurchaseClassifications.Resale, "pcs", 10_000, 50_000, 0, 0, null) },
                 apClerkId)),
             "P1-04 create PO");
@@ -595,7 +595,7 @@ public static class LpiP1IntegrityReproductionChecks
 
         PurchaseOrderModel nonResalePo = RequireSuccess(
             await service.CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest(
-                nonResaleSup.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7)), null, 30, 0, "Terms", null, true,
+                nonResaleSup.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7)), null, 30, 0, "Terms", "P1 non-resale receiving fixture", true,
                 new[] { new CreatePurchaseOrderLineInput(null, nonResaleProdId, "P1-PROD-SUPPLY", "Consumable Fluid", PurchaseClassifications.Consumable, "bottles", 5_000, 20_000, 0, 0, null) },
                 receiverId)),
             "create non-resale PO");
@@ -726,7 +726,7 @@ public static class LpiP1IntegrityReproductionChecks
 
         PurchaseOrderModel whPo = RequireSuccess(
             await service.CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest(
-                nonResaleSup.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7)), warehouse1LocId, 30, 0, "Standard", null, true,
+                nonResaleSup.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7)), warehouse1LocId, 30, 0, "Standard", "P1 multi-location fixture", true,
                 new[] { new CreatePurchaseOrderLineInput(null, multiLocProdId, "P1-05-MULTILOC", "Multi-Location Test Item", PurchaseClassifications.Resale, "pcs", 10_000, 30_000, 0, 0, null) },
                 receiverId)),
             "seed multi-loc PO");
@@ -864,7 +864,7 @@ public static class LpiP1IntegrityReproductionChecks
 
         PurchaseOrderModel po = RequireSuccess(
             await service.CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest(
-                supplier.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7)), null, 30, 0, "Terms", null, true,
+                supplier.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7)), null, 30, 0, "Terms", "P1 overdelivery fixture", true,
                 new[] { new CreatePurchaseOrderLineInput(null, productId, "P1-PROD-RESALE", "Resale Item", PurchaseClassifications.Resale, "pcs", 10_000, 50_000, 0, 0, null) },
                 receiverId)),
             "P1-06 create PO (10 ordered)");
@@ -2045,7 +2045,7 @@ public static class LpiP1IntegrityReproductionChecks
                 PaymentTermsDays: 30,
                 ShippingCents: 0,
                 TermsAndConditions: "Standard",
-                Notes: null,
+                Notes: "P1 duplicate-product direct purchase fixture",
                 SubmitAndApproveImmediately: true,
                 Lines: new[]
                 {

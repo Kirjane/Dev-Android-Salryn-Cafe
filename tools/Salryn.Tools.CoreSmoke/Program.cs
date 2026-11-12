@@ -110,6 +110,7 @@ public static class Program
         W4CashDrawerReconciliationChecks.Run();
         LpiProcureToPayRuntimeChecks.RunAsync().GetAwaiter().GetResult();
         LpiP1IntegrityReproductionChecks.RunAsync().GetAwaiter().GetResult();
+        R3A1APrPoAuthorityChecks.RunAsync().GetAwaiter().GetResult();
         V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();
         V2HostOperatorCheckoutApiChecks.RunAsync().GetAwaiter().GetResult();
         V2ReactCheckoutSourceChecks.Run();
@@ -647,6 +648,10 @@ public static class Program
             case "ceo-repro":
             case "ceo-pr-po-repro":
                 CeoPrToPoReproductionChecks.RunAsync().GetAwaiter().GetResult();
+                return;
+            case "r3-a1a":
+            case "r3-a1a-pr-po-authority":
+                R3A1APrPoAuthorityChecks.RunAsync().GetAwaiter().GetResult();
                 return;
             case "ceo-orders-quotes":
                 CeoCustomerOrdersAndQuotesChecks.RunAsync().GetAwaiter().GetResult();

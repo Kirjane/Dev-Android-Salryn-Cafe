@@ -923,10 +923,12 @@ export async function createPurchaseOrder(data: {
   deliveryAddress?: string;
   paymentTermsDays?: number;
   notes?: string;
+  submitAndApproveImmediately?: boolean;
   items: Array<{
     prItemId?: string;
     productId: string;
-    uomId: string;
+    productName: string;
+    unitName: string;
     orderedQuantityX1000: number;
     unitCostCents: number;
     notes?: string;
@@ -935,9 +937,25 @@ export async function createPurchaseOrder(data: {
   const response = await fetch("/api/lpi/purchase-orders", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: JSON.stringify({
+      supplierId: data.supplierId,
+      sourceRequisitionId: data.requisitionId,
+      expectedDeliveryDate: data.expectedDeliveryDate,
+      paymentTermsDays: data.paymentTermsDays,
+      notes: data.notes,
+      submitAndApproveImmediately: data.submitAndApproveImmediately ?? false,
+      lines: data.items.map((item) => ({
+        requisitionLineId: item.prItemId,
+        productId: item.productId,
+        itemDescription: item.productName,
+        unitName: item.unitName,
+        orderedQtyX1000: item.orderedQuantityX1000,
+        unitCostCents: item.unitCostCents,
+        notes: item.notes,
+      })),
+    }),
   });
-  return readJson<PurchaseOrder>(response);
+  return normalizePurchaseOrder(await readJson<JsonRecord>(response));
 }
 
 export async function approvePurchaseOrder(id: string, notes?: string): Promise<PurchaseOrder> {

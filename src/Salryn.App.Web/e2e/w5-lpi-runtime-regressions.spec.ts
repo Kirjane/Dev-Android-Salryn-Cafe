@@ -297,7 +297,7 @@ const MOCK_PAYMENTS = [
   },
 ];
 
-function registerLpiRoutes(page: any) {
+function registerLpiRoutes(page: any, onDirectPo?: (body: any) => void) {
   return page.route("**/api/lpi/**", async (route: any) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
@@ -308,7 +308,25 @@ function registerLpiRoutes(page: any) {
     if (path === "/api/lpi/suppliers") return route.fulfill({ json: MOCK_FOUNDATION.suppliers });
     if (path === "/api/lpi/requisitions") return route.fulfill({ json: MOCK_REQUISITIONS });
     if (path.includes("/quotations")) return route.fulfill({ json: MOCK_QUOTATIONS });
-    if (path === "/api/lpi/purchase-orders") return route.fulfill({ json: MOCK_PURCHASE_ORDERS });
+    if (path === "/api/lpi/purchase-orders") {
+      if (route.request().method() === "POST") {
+        const body = route.request().postDataJSON();
+        onDirectPo?.(body);
+        return route.fulfill({
+          status: 201,
+          json: {
+            ...MOCK_PURCHASE_ORDERS[0],
+            id: "po-direct-1",
+            poNumber: "PO-202611-0002",
+            sourceRequisitionId: null,
+            status: body.submitAndApproveImmediately ? "Approved" : "Draft",
+            notes: body.notes,
+            lines: body.lines,
+          },
+        });
+      }
+      return route.fulfill({ json: MOCK_PURCHASE_ORDERS });
+    }
     if (path === "/api/lpi/receiving-reports") return route.fulfill({ json: MOCK_RECEIVING_REPORTS });
     if (path === "/api/lpi/supplier-returns") return route.fulfill({ json: [] });
     if (path === "/api/lpi/invoices") return route.fulfill({ json: MOCK_INVOICES });
@@ -319,6 +337,39 @@ function registerLpiRoutes(page: any) {
 }
 
 test.describe("W5 LPI runtime contract regressions", () => {
+  test("R3 A1A direct PO requires a reason and sends authoritative approval intent", async ({ page }) => {
+    let directPoRequest: any = null;
+    await installMockSalrynApi(page, { persona: "admin", u1Entitled: true });
+    await registerLpiRoutes(page, (body) => { directPoRequest = body; });
+
+    await page.goto("/?page=procure-to-pay&tab=po");
+    await page.getByRole("button", { name: "+ Direct Purchase Order" }).click();
+    const directPoDialog = page.getByRole("dialog", { name: "Create Direct Purchase Order" });
+    await expect(directPoDialog).toBeVisible();
+    await expect(directPoDialog.getByRole("button", { name: "Create Direct PO" })).toBeDisabled();
+    await directPoDialog.locator("select").nth(0).selectOption("sup-1");
+    await directPoDialog.locator("textarea").fill("Urgent notebook replenishment before school opening");
+    await directPoDialog.locator("select").nth(1).selectOption("prod-1");
+    await directPoDialog.getByText("Approve immediately using my purchase-order approval authority").click();
+    await directPoDialog.getByRole("button", { name: "Create Direct PO" }).click();
+    await expect(directPoDialog).toBeHidden();
+
+    expect(directPoRequest).toMatchObject({
+      supplierId: "sup-1",
+      notes: "Urgent notebook replenishment before school opening",
+      submitAndApproveImmediately: true,
+    });
+    expect(directPoRequest).not.toHaveProperty("sourceRequisitionId");
+    expect(directPoRequest.lines).toHaveLength(1);
+    expect(directPoRequest.lines[0]).toMatchObject({
+      productId: "prod-1",
+      itemDescription: "QA Premium Coffee Beans",
+      unitName: "Piece",
+      orderedQtyX1000: 1000,
+      unitCostCents: 4200,
+    });
+  });
+
   test("All eight procurement tabs render cleanly with zero errors, non-zero amounts, and modal stability", async ({ page }) => {
     test.setTimeout(60_000);
     const pageErrors: string[] = [];

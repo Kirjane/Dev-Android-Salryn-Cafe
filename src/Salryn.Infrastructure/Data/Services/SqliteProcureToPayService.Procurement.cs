@@ -218,6 +218,11 @@ public sealed partial class SqliteProcureToPayService
         {
             return Result<PurchaseRequisitionModel>.Fail(Error.NotFound("Lpi.Requisition.NotFound", "Purchase requisition was not found."));
         }
+        if (existing.RequestedByUserId != actorUserId)
+        {
+            return Result<PurchaseRequisitionModel>.Fail(
+                Error.Forbidden("Lpi.Requisition.SubmitOwnerRequired", "Only the requisition requester may submit this draft."));
+        }
         if (existing.Status is not ("Draft" or "RevisionRequested"))
         {
             return Result<PurchaseRequisitionModel>.Fail(
@@ -232,11 +237,19 @@ public sealed partial class SqliteProcureToPayService
                 UPDATE purchase_requisitions
                 SET status = 'Submitted',
                     updated_at = $now
-                WHERE id = $id;
+                WHERE id = $id
+                  AND requested_by_user_id = $actorUserId
+                  AND status IN ('Draft', 'RevisionRequested');
                 """;
             cmd.Parameters.AddWithValue("$id", requisitionId.ToString("D"));
+            cmd.Parameters.AddWithValue("$actorUserId", actorUserId.ToString("D"));
             cmd.Parameters.AddWithValue("$now", now.ToString("O"));
-            await cmd.ExecuteNonQueryAsync(cancellationToken);
+            int affected = await cmd.ExecuteNonQueryAsync(cancellationToken);
+            if (affected != 1)
+            {
+                return Result<PurchaseRequisitionModel>.Fail(
+                    Error.Conflict("Lpi.Requisition.SubmitConflict", "The requisition changed before it could be submitted. Reload and try again."));
+            }
         }
 
         await RecordRequisitionActionAsync(
@@ -903,6 +916,11 @@ public sealed partial class SqliteProcureToPayService
         {
             return Result<PurchaseOrderModel>.Fail(
                 Error.Validation("Lpi.PurchaseOrder.InvalidShipping", "Shipping charges cannot be negative."));
+        }
+        if (!request.SourceRequisitionId.HasValue && string.IsNullOrWhiteSpace(request.Notes))
+        {
+            return Result<PurchaseOrderModel>.Fail(
+                Error.Validation("Lpi.PurchaseOrder.DirectReasonRequired", "A business reason is required for a direct purchase order."));
         }
 
         await using SqliteConnection connection = _connections.CreateConnection();
