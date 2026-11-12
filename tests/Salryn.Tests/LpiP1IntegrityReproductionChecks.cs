@@ -71,7 +71,7 @@ public static class LpiP1IntegrityReproductionChecks
             await TestW5R2QuotationPreservationAndContractFallbacksAsync(service, paths, requesterId, supervisorId, resaleProdId);
             await TestW5R21ReconciliationIntegrityAsync(service, paths, requesterId, supervisorId, apClerkId, resaleProdId);
             await TestW5R21DuplicateProductAmbiguityAndFinancialIntegrityAsync(service, paths, requesterId, supervisorId, apClerkId, resaleProdId);
-            await TestP102CrossSupplierPaymentLineageHttpAsync(composition, service, paths, apClerkId, resaleProdId);
+            await TestP102CrossSupplierPaymentLineageHttpAsync(composition, service, paths, resaleProdId);
 
             Console.WriteLine("LPI P1 Integrity: All findings (P1-01 through P1-06 and P1-R3-01/02) verified with full regression closure PASS.");
         }
@@ -503,11 +503,22 @@ public static class LpiP1IntegrityReproductionChecks
         SalrynLocalComposition composition,
         SqliteProcureToPayService service,
         DbPaths paths,
-        Guid actorId,
         Guid productId)
     {
         Require(paths.DatabasePath.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase),
             "Issue #70 may run ONLY against a nonce-disposable temporary SQLite database.");
+
+        Guid actorId = SeedUser(paths.DatabasePath, "p1-issue70-manager", "Issue70 Manager");
+        using (SqliteConnection identityConnection = new($"Data Source={paths.DatabasePath}"))
+        {
+            identityConnection.Open();
+            using SqliteCommand roleUpdate = identityConnection.CreateCommand();
+            roleUpdate.CommandText = "UPDATE users SET role_id = $roleId WHERE id = $actorId;";
+            roleUpdate.Parameters.AddWithValue("$roleId", Salryn.Infrastructure.Data.Seeding.DefaultSeedData.ManagerRoleId);
+            roleUpdate.Parameters.AddWithValue("$actorId", actorId.ToString("D"));
+            Require(roleUpdate.ExecuteNonQuery() == 1,
+                "Issue70 authenticated Manager identity must have a persisted Manager role.");
+        }
 
         LpiSupplier supplierA = RequireSuccess(await service.CreateSupplierAsync(
             new CreateLpiSupplierRequest("P1-I70-A", "Issue 70 Supplier A", "A", "0918000070", "issue70a@test.local",
@@ -677,6 +688,7 @@ public static class LpiP1IntegrityReproductionChecks
                 "Issue70 precondition must isolate the intentionally mismatched unpaid PHP 3,720 payment.");
         }
 
+        long disbursedBeforeRejection = -1;
         await using (WebApplication host = await LocalApiApplicationFactory.CreateAsync(
             new[] { "--dev" },
             new LocalApiApplicationOptions
@@ -695,6 +707,7 @@ public static class LpiP1IntegrityReproductionChecks
                 "Issue70 mutating HTTP must target a dynamically allocated loopback port.");
             using HttpClient client = CreateClient(new Uri(bound), manager);
             long disbursedBefore = await DisbursedFromHttpAsync(client);
+            disbursedBeforeRejection = disbursedBefore;
             using (HttpResponseMessage denied = await SettleThroughHttpAsync(client, payment.Id))
             {
                 string responseBody = await denied.Content.ReadAsStringAsync();
@@ -734,6 +747,8 @@ public static class LpiP1IntegrityReproductionChecks
             Require(Snapshot() == before,
                 "Issue70 failed settlement must persist unchanged through a fresh Local API host restart.");
             long disbursedAfterRestart = await DisbursedFromHttpAsync(client);
+            Require(disbursedAfterRestart == disbursedBeforeRejection,
+                "Issue70 rejected settlement must keep dashboard disbursement unchanged after restart.");
             Console.WriteLine($"[Issue70 RESTART] unchanged={Snapshot() == before}; disbursedCents={disbursedAfterRestart}");
 
             // Positive control: restore only the intentionally corrupted TEST fixture row,
@@ -756,13 +771,16 @@ public static class LpiP1IntegrityReproductionChecks
             {
                 string?[] row = snapshot.RootElement.GetProperty("paymentAndInvoice")
                     .EnumerateArray().Select(element => element.GetString()).ToArray();
+                using JsonDocument originalSnapshot = JsonDocument.Parse(before);
                 Require(row[0] == "Settled" &&
                         row[1] == supplierA.Id.ToString("D") &&
                         row[4] == actorId.ToString("D") && row[5] != "<NULL>" &&
                         row[8] == "Paid" && row[9] == "372000" && row[10] == "0" &&
                         snapshot.RootElement.GetProperty("paymentAppliedCount").GetInt64() == 1 &&
                         snapshot.RootElement.GetProperty("ledgerDebitsCents").GetInt64() == 372_000 &&
-                        snapshot.RootElement.GetProperty("settlementAuditCount").GetInt64() == 1,
+                        snapshot.RootElement.GetProperty("settlementAuditCount").GetInt64() == 1 &&
+                        snapshot.RootElement.GetProperty("cashDrawerEventCount").GetInt64() ==
+                            originalSnapshot.RootElement.GetProperty("cashDrawerEventCount").GetInt64(),
                     "Issue70 legitimate PHP 3,720 settlement must post once with true Manager custody.");
             }
             using (HttpResponseMessage replay = await SettleThroughHttpAsync(client, payment.Id))
@@ -775,6 +793,8 @@ public static class LpiP1IntegrityReproductionChecks
             }
             Require(Snapshot() == settledSnapshot,
                 "Issue70 replay must not create a second ledger or audit entry.");
+            Require(await DisbursedFromHttpAsync(client) == checked(disbursedBeforeRejection + 372_000),
+                "Issue70 valid full settlement must increase disbursed total exactly once by 372,000 cents.");
             Console.WriteLine($"[Issue70 POSITIVE SQLITE] {settledSnapshot}");
             await restartedHost.StopAsync().ConfigureAwait(false);
         }
