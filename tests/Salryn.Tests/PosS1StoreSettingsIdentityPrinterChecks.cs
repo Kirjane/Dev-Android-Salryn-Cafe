@@ -214,6 +214,82 @@ public static class PosS1StoreSettingsIdentityPrinterChecks
             long afterRemaining = ReadLong(composition, "SELECT remaining_balance_cents FROM supplier_invoices WHERE id = $id;", inv.Id);
             Require(beforeRemaining == afterRemaining, "PDF generation must never alter invoice balance.");
             Require(beforeRemaining == inv.TotalInvoiceCents - 15_000, "Pending AP payment must remain undeducted from invoice balance.");
+
+            // C4-1: collect -> PDF (200) -> void -> PDF (409 Conflict, zero PDF bytes, unchanged DB counts)
+            Result voidRes = await ar.VoidCollectionAsync(collection.Id, adminUserId, "Customer check bounced").ConfigureAwait(false);
+            Require(voidRes.IsSuccess, $"VoidCollectionAsync must succeed: {voidRes.Error}");
+            Dictionary<string, long> countsBeforeVoidPdf = CaptureCounts(composition);
+            using (HttpResponseMessage voidedPdfResp = await manager.GetAsync($"/api/receivables/collections/{collection.Id}/pdf").ConfigureAwait(false))
+            {
+                byte[] bodyBytes = await voidedPdfResp.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+                string bodyText = System.Text.Encoding.UTF8.GetString(bodyBytes);
+                Require(voidedPdfResp.StatusCode == HttpStatusCode.Conflict,
+                    $"Voided AR collection PDF must return 409 Conflict, got {(int)voidedPdfResp.StatusCode}: {bodyText}");
+                Require(!bodyText.StartsWith("%PDF", StringComparison.Ordinal) &&
+                        bodyText.Contains("Receivables.CollectionVoided", StringComparison.Ordinal),
+                    $"Voided AR collection PDF must return deterministic conflict JSON with zero PDF bytes: {bodyText}");
+            }
+            Dictionary<string, long> countsAfterVoidPdf = CaptureCounts(composition);
+            foreach (var kvp in countsBeforeVoidPdf)
+            {
+                Require(countsAfterVoidPdf[kvp.Key] == kvp.Value, $"Voided collection PDF check mutated table {kvp.Key}.");
+            }
+
+            // C4-2: Quotation PDF server-side integrity validation (corrupted line math, corrupted header total, missing/zero lines)
+            async Task AssertQuotationPdfRejectedAsync(Guid qId, string scenario)
+            {
+                Dictionary<string, long> qBefore = CaptureCounts(composition);
+                using HttpResponseMessage resp = await cashier.GetAsync($"/api/customer-quotations/{qId}/pdf").ConfigureAwait(false);
+                byte[] bytes = await resp.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+                string text = System.Text.Encoding.UTF8.GetString(bytes);
+                Require(resp.StatusCode == HttpStatusCode.Conflict,
+                    $"Quotation PDF [{scenario}] must fail with 409 Conflict, got {(int)resp.StatusCode}: {text}");
+                Require(!text.StartsWith("%PDF", StringComparison.Ordinal) &&
+                        text.Contains("Quotation.IntegrityViolation", StringComparison.Ordinal),
+                    $"Quotation PDF [{scenario}] must return zero PDF bytes and Quotation.IntegrityViolation: {text}");
+                Dictionary<string, long> qAfter = CaptureCounts(composition);
+                foreach (var kvp in qBefore)
+                {
+                    Require(qAfter[kvp.Key] == kvp.Value, $"Quotation PDF [{scenario}] mutated table {kvp.Key}.");
+                }
+            }
+
+            // Corrupted line total
+            await using (var conn = composition.ConnectionFactory.CreateConnection())
+            {
+                await conn.OpenAsync().ConfigureAwait(false);
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText = "UPDATE customer_quotation_lines SET line_total_cents = line_total_cents + 123 WHERE quotation_id = $id;";
+                cmd.Parameters.AddWithValue("$id", quotation.Id.ToString("D"));
+                Require(await cmd.ExecuteNonQueryAsync().ConfigureAwait(false) >= 1, "Corrupt quotation line fixture must update row.");
+            }
+            await AssertQuotationPdfRejectedAsync(quotation.Id, "corrupted-line-total");
+
+            // Restore line total, then corrupt header total
+            await using (var conn = composition.ConnectionFactory.CreateConnection())
+            {
+                await conn.OpenAsync().ConfigureAwait(false);
+                await using var cmd1 = conn.CreateCommand();
+                cmd1.CommandText = "UPDATE customer_quotation_lines SET line_total_cents = line_total_cents - 123 WHERE quotation_id = $id;";
+                cmd1.Parameters.AddWithValue("$id", quotation.Id.ToString("D"));
+                await cmd1.ExecuteNonQueryAsync().ConfigureAwait(false);
+                await using var cmd2 = conn.CreateCommand();
+                cmd2.CommandText = "UPDATE customer_quotations SET total_cents = total_cents + 500 WHERE id = $id;";
+                cmd2.Parameters.AddWithValue("$id", quotation.Id.ToString("D"));
+                Require(await cmd2.ExecuteNonQueryAsync().ConfigureAwait(false) == 1, "Corrupt quotation header fixture must update row.");
+            }
+            await AssertQuotationPdfRejectedAsync(quotation.Id, "corrupted-header-total");
+
+            // Delete child lines -> zero-line persisted quotation must fail closed
+            await using (var conn = composition.ConnectionFactory.CreateConnection())
+            {
+                await conn.OpenAsync().ConfigureAwait(false);
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText = "DELETE FROM customer_quotation_lines WHERE quotation_id = $id;";
+                cmd.Parameters.AddWithValue("$id", quotation.Id.ToString("D"));
+                Require(await cmd.ExecuteNonQueryAsync().ConfigureAwait(false) >= 1, "Delete quotation lines fixture must remove rows.");
+            }
+            await AssertQuotationPdfRejectedAsync(quotation.Id, "missing-zero-lines");
         }
         finally
         {

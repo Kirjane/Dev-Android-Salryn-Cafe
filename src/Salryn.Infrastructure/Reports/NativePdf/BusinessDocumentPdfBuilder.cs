@@ -229,9 +229,79 @@ public static class BusinessDocumentPdfBuilder
         return RenderPdfBytes(document, $"RR-{rr.RrNumber}");
     }
 
+    public static bool TryValidateCustomerQuotation(CustomerQuotation quotation, out string failureReason)
+    {
+        if (quotation is null)
+        {
+            failureReason = "Quotation is required.";
+            return false;
+        }
+
+        if (quotation.Lines is null || quotation.Lines.Count == 0)
+        {
+            failureReason = "Quotation must contain at least one persisted line item before generating a PDF.";
+            return false;
+        }
+
+        if (quotation.DiscountCents < 0 || quotation.SubtotalCents < 0 || quotation.TotalCents < 0)
+        {
+            failureReason = "Quotation totals and discount cannot be negative.";
+            return false;
+        }
+
+        try
+        {
+            long computedSubtotal = 0;
+            foreach (var line in quotation.Lines)
+            {
+                if (line.QuantityX1000 <= 0 || line.UnitPriceCents < 0 || line.DiscountCents < 0 || line.LineTotalCents < 0)
+                {
+                    failureReason = $"Quotation line '{line.ProductNameSnapshot}' has invalid non-positive quantity or negative pricing.";
+                    return false;
+                }
+
+                long grossLineCents = checked(line.QuantityX1000 * line.UnitPriceCents + 500) / 1000L;
+                long expectedLineTotal = Math.Max(0L, checked(grossLineCents - line.DiscountCents));
+                if (line.LineTotalCents != expectedLineTotal)
+                {
+                    failureReason = $"Quotation line '{line.ProductNameSnapshot}' total ({line.LineTotalCents}) does not match expected net amount ({expectedLineTotal}).";
+                    return false;
+                }
+
+                computedSubtotal = checked(computedSubtotal + line.LineTotalCents);
+            }
+
+            if (quotation.SubtotalCents != computedSubtotal)
+            {
+                failureReason = $"Quotation subtotal ({quotation.SubtotalCents}) does not match sum of line totals ({computedSubtotal}).";
+                return false;
+            }
+
+            long expectedTotal = Math.Max(0L, checked(computedSubtotal - quotation.DiscountCents));
+            if (quotation.TotalCents != expectedTotal)
+            {
+                failureReason = $"Quotation total ({quotation.TotalCents}) does not match net total ({expectedTotal}).";
+                return false;
+            }
+        }
+        catch (OverflowException)
+        {
+            failureReason = "Quotation monetary calculations overflow 64-bit bounds.";
+            return false;
+        }
+
+        failureReason = string.Empty;
+        return true;
+    }
+
     public static byte[] BuildCustomerQuotationPdf(CustomerQuotation quotation, StoreSettings? store)
     {
         ArgumentNullException.ThrowIfNull(quotation);
+        if (!TryValidateCustomerQuotation(quotation, out string failureReason))
+        {
+            throw new InvalidOperationException(failureReason);
+        }
+
         (Document document, Section section) = CreateA4Document($"Customer Quotation {quotation.QuoteNumber}", store);
         AddDocumentHeader(section, store, "PRICE QUOTATION / CANVASS", quotation.QuoteNumber, new[]
         {

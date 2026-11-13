@@ -162,6 +162,12 @@ internal static class LocalCustomerOrdersAndQuotationsEndpoints
                 return denied;
             Result<CustomerQuotation> result = await service.GetQuotationByIdAsync(id, ct).ConfigureAwait(false);
             if (!result.IsSuccess) return ToResult(result);
+            if (!BusinessDocumentPdfBuilder.TryValidateCustomerQuotation(result.Value, out string integrityError))
+            {
+                return Results.Json(
+                    new { code = "Quotation.IntegrityViolation", error = integrityError },
+                    statusCode: StatusCodes.Status409Conflict);
+            }
             StoreSettings? store = await LocalApiDocumentPdfSupport.TryLoadStoreSettingsAsync(composition, ct).ConfigureAwait(false);
             byte[] pdf = BusinessDocumentPdfBuilder.BuildCustomerQuotationPdf(result.Value, store);
             return LocalApiDocumentPdfSupport.PdfFile(pdf, $"{result.Value.QuoteNumber}.pdf");
