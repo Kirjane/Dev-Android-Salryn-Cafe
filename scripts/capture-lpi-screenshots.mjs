@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
+import { inflateSync } from "node:zlib";
 
 const baseUrl = process.argv[2] || "http://127.0.0.1:5299";
 const sessionId = process.argv[3] || "";
@@ -60,61 +62,150 @@ async function waitForCdp(retries = 30) {
   throw new Error("Failed to connect to browser CDP within timeout.");
 }
 
-const tabs = [
+// The first seven captures are conditional tabs; AP is a separate protected route.
+// Each marker below is rendered in the current UI at the pinned baseline SHA.
+const procurementHeading = "Logistics, Procurement & Inventory";
+const targets = [
   {
-    tab: "overview",
-    file: "01_lpi_overview_dashboard.png",
-    label: "Overview & P2P Metrics",
-    expectedTexts: ["Procurement & Payables", "Accounts Payable Aging"]
+    page: "procure-to-pay", tab: "overview",
+    file: "01_lpi_overview_dashboard.png", label: "Overview & P2P Metrics",
+    headings: [procurementHeading, "Accounts Payable Aging Schedule"],
+    text: "Total Accounts Payable"
   },
   {
-    tab: "suppliers",
-    file: "02_lpi_supplier_directory.png",
-    label: "Supplier Directory & Scorecards",
-    expectedTexts: ["Supplier Directory", "Terms"]
+    page: "procure-to-pay", tab: "suppliers",
+    file: "02_lpi_supplier_directory.png", label: "Supplier Directory & Scorecards",
+    headings: [procurementHeading, "Supplier Directory", "Terms"]
   },
   {
-    tab: "pr",
-    file: "03_lpi_purchase_requisitions.png",
-    label: "Purchase Requisitions & Approvals",
-    expectedTexts: ["Purchase Requisitions", "PR #"]
+    page: "procure-to-pay", tab: "pr",
+    file: "03_lpi_purchase_requisitions.png", label: "Purchase Requisitions & Approvals",
+    headings: [procurementHeading, "Purchase Requisitions (PR)", "PR #"]
   },
   {
-    tab: "quotations",
-    file: "04_lpi_quotations_comparison.png",
-    label: "RFQ Quotations & Price Comparison",
-    expectedTexts: ["Supplier Quotations", "Unit Price"]
+    page: "procure-to-pay", tab: "quotations",
+    file: "04_lpi_quotations_comparison.png", label: "RFQ Quotations & Price Comparison",
+    headings: [procurementHeading, "Supplier Quotations & Quote Comparison"],
+    text: "Please select a Purchase Requisition above to view or compare supplier quotations."
   },
   {
-    tab: "po",
-    file: "05_lpi_purchase_orders.png",
-    label: "Purchase Orders Lifecycle",
-    expectedTexts: ["Purchase Orders (PO)", "PO #"]
+    page: "procure-to-pay", tab: "po",
+    file: "05_lpi_purchase_orders.png", label: "Purchase Orders Lifecycle",
+    headings: [procurementHeading, "Purchase Orders (PO)", "PO #"]
   },
   {
-    tab: "rr",
-    file: "06_lpi_goods_receiving.png",
-    label: "Goods Receiving & Inspection",
-    expectedTexts: ["Goods Receiving Reports (RR)", "RR #"]
+    page: "procure-to-pay", tab: "rr",
+    file: "06_lpi_goods_receiving.png", label: "Goods Receiving & Inspection",
+    headings: [procurementHeading, "Goods Receiving Reports (RR)", "RR #"]
   },
   {
-    tab: "inventory",
-    file: "07_lpi_inventory_stock_cards.png",
-    label: "Inventory Stock Cards & Quarantine",
-    expectedTexts: ["Multi-Location Stock Cards & Valuation", "Total Stock"]
+    page: "procure-to-pay", tab: "inventory",
+    file: "07_lpi_inventory_stock_cards.png", label: "Inventory Stock Cards & Quarantine",
+    headings: [procurementHeading, "Multi-Location Stock Cards & Valuation", "Per-Product Stock Cards & Location Buckets"]
   },
   {
-    tab: "ap",
-    file: "08_lpi_ap_3way_matching.png",
-    label: "Accounts Payable 3-Way Match & Payments",
-    expectedTexts: ["Supplier Invoices & 3-Way Match", "APV #"]
+    page: "accounts-payable", tab: null,
+    file: "08_lpi_ap_3way_matching.png", label: "Accounts Payable 3-Way Match & Payments",
+    headings: ["Accounts Payable", "Supplier Invoice Register", "Supplier Payments & Disbursements"],
+    text: "APV / Invoice"
   }
 ];
+
+const targetKeys = targets.map((t) => t.page + ":" + (t.tab ?? ""));
+if (targets.length !== 8 ||
+    new Set(targetKeys).size !== 8 ||
+    new Set(targets.map((t) => t.file)).size !== 8) {
+  throw new Error("FAIL-CLOSED: LPI evidence targets must identify exactly eight unique page/tab and filename pairs.");
+}
+
+const normalize = (value) => String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+
+function targetUrl(target) {
+  const url = new URL("/", baseUrl);
+  url.searchParams.set("page", target.page);
+  if (target.tab) url.searchParams.set("tab", target.tab);
+  return url;
+}
+
+function inspectPage(snapshot, target, expectedUrl) {
+  const faults = [];
+  if (!snapshot || snapshot.readyState !== "complete") faults.push("document not completely loaded");
+  if (!snapshot?.hasMain || !snapshot.mainVisible || !snapshot.mainText?.trim()) {
+    faults.push("main content missing, hidden, or blank");
+  }
+  if (/This workspace could not be displayed|Something went wrong|Salryn POS unavailable|Access denied/i.test(snapshot?.bodyText ?? "")) {
+    faults.push("error boundary, unavailable app, or access-denied page");
+  }
+
+  try {
+    const actual = new URL(snapshot?.url ?? "");
+    if (actual.origin !== expectedUrl.origin || actual.pathname !== expectedUrl.pathname ||
+        actual.searchParams.getAll("page").length !== 1 ||
+        actual.searchParams.get("page") !== target.page ||
+        actual.searchParams.getAll("tab").length !== (target.tab ? 1 : 0) ||
+        (target.tab && actual.searchParams.get("tab") !== target.tab)) {
+      faults.push("wrong location: " + actual.href + " (expected " + expectedUrl.href + ")");
+    }
+  } catch {
+    faults.push("invalid browser location");
+  }
+
+  // Only visible headings and table headers inside <main> count: never sidebar/menu labels.
+  const renderedHeadings = new Set((snapshot?.headings ?? []).map(normalize));
+  for (const heading of target.headings) {
+    if (!renderedHeadings.has(normalize(heading))) faults.push("missing main heading/header: " + heading);
+  }
+  if (target.text && !normalize(snapshot?.mainText).includes(normalize(target.text))) {
+    faults.push("missing page-specific content: " + target.text);
+  }
+  return faults;
+}
+
+function inspectPng(base64, label) {
+  if (typeof base64 !== "string" || !base64.length) throw new Error("FAIL-CLOSED: " + label + " did not return screenshot data.");
+  const png = Buffer.from(base64, "base64");
+  if (png.length < 4096 || !png.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) {
+    throw new Error("FAIL-CLOSED: " + label + " screenshot is empty or not a valid PNG signature.");
+  }
+  let offset = 8, width = 0, height = 0, complete = false;
+  const idat = [];
+  while (offset + 12 <= png.length) {
+    const length = png.readUInt32BE(offset);
+    const type = png.toString("ascii", offset + 4, offset + 8);
+    if (length > png.length - offset - 12) throw new Error("FAIL-CLOSED: " + label + " PNG chunk is truncated.");
+    if (type === "IHDR") {
+      if (length !== 13) throw new Error("FAIL-CLOSED: " + label + " PNG IHDR invalid.");
+      width = png.readUInt32BE(offset + 8);
+      height = png.readUInt32BE(offset + 12);
+    }
+    if (type === "IDAT") idat.push(png.subarray(offset + 8, offset + 8 + length));
+    offset += length + 12;
+    if (type === "IEND") { complete = true; break; }
+  }
+  if (!complete || offset !== png.length || width < 1000 || height < 650 || idat.length === 0) {
+    throw new Error("FAIL-CLOSED: " + label + " PNG dimensions/chunks are invalid.");
+  }
+  try {
+    if (inflateSync(Buffer.concat(idat)).length < 100000) throw new Error("insufficient decoded raster data");
+  } catch (err) {
+    throw new Error("FAIL-CLOSED: " + label + " PNG raster cannot be inflated: " + err);
+  }
+  return { png, width, height, sha256: createHash("sha256").update(png).digest("hex") };
+}
 
 async function run() {
   const unhandledExceptions = [];
   const consoleErrors = [];
   const networkFailures = [];
+  const pendingApiRequests = new Set();
+  let lastApiActivityAt = Date.now();
+  let currentTab = "init";
+  const stagedDir = path.join(outputDir, ".staging-lpi-" + process.pid + "-" + Date.now());
+  let completed = false;
+  const hashes = new Set();
+  // Stale evidence must not survive a failed capture attempt.
+  for (const t of targets) fs.rmSync(path.join(outputDir, t.file), { force: true });
+  fs.mkdirSync(stagedDir, { recursive: true });
 
   try {
     const wsUrl = await waitForCdp();
@@ -150,7 +241,7 @@ async function run() {
       });
     }
 
-    // Passive listener for CDP runtime events
+    // Passive listeners preserve global fail-closed JavaScript, console and HTTP gates.
     ws.addEventListener("message", (event) => {
       try {
         const data = JSON.parse(event.data);
@@ -158,26 +249,41 @@ async function run() {
           const exc = data.params?.exceptionDetails;
           const msg = exc?.exception?.description || exc?.text || "Unknown JS exception";
           unhandledExceptions.push({ tab: currentTab, error: msg });
-          console.error(`[CDP UNHANDLED EXCEPTION] [${currentTab}]:`, msg);
+          console.error("[CDP UNHANDLED EXCEPTION] [" + currentTab + "]:", msg);
         } else if (data.method === "Log.entryAdded") {
           const entry = data.params?.entry;
-          if (entry?.level === "error") {
-            // Documented exclusions: ignore benign favicon.ico 404 requests triggered by browser UI
-            if (entry.text && entry.text.includes("favicon.ico")) {
-              return;
-            }
-            console.error(`[CDP CONSOLE ERROR] [${currentTab}]:`, entry.text);
+          if (entry?.level === "error" && !entry.text?.includes("favicon.ico")) {
             consoleErrors.push({ tab: currentTab, text: entry.text });
+            console.error("[CDP CONSOLE ERROR] [" + currentTab + "]:", entry.text);
+          }
+        } else if (data.method === "Network.requestWillBeSent") {
+          const requestUrl = data.params?.request?.url ?? "";
+          if (requestUrl.startsWith(new URL(baseUrl).origin + "/api/")) {
+            pendingApiRequests.add(data.params.requestId);
+            lastApiActivityAt = Date.now();
           }
         } else if (data.method === "Network.responseReceived") {
           const res = data.params?.response;
-          if (res && res.status >= 500) {
-            console.error(`[CDP HTTP 5xx] [${currentTab}]: ${res.url} -> ${res.status}`);
-            networkFailures.push({ tab: currentTab, url: res.url, status: res.status });
+          if (res) {
+            const url = new URL(res.url);
+            if (res.status >= 500 ||
+                (res.status >= 400 && url.origin === new URL(baseUrl).origin &&
+                 !url.pathname.endsWith("/favicon.ico"))) {
+              networkFailures.push({ tab: currentTab, url: res.url, status: res.status });
+              console.error("[CDP HTTP FAILURE] [" + currentTab + "]: " + res.url + " -> " + res.status);
+            }
+            if (pendingApiRequests.has(data.params?.requestId)) lastApiActivityAt = Date.now();
+          }
+        } else if (data.method === "Network.loadingFinished" || data.method === "Network.loadingFailed") {
+          if (pendingApiRequests.delete(data.params?.requestId)) {
+            lastApiActivityAt = Date.now();
+            if (data.method === "Network.loadingFailed") {
+              networkFailures.push({ tab: currentTab, error: data.params?.errorText ?? "API request failed" });
+            }
           }
         }
       } catch {
-        // ignore
+        // Ignore malformed CDP event envelopes only; captured faults remain fatal.
       }
     });
 
@@ -198,63 +304,75 @@ async function run() {
       });
     }
 
-    let currentTab = "init";
+    const pageStateExpression = '(() => { const main = document.querySelector("main"); return { readyState: document.readyState, url: location.href, hasMain: !!main, mainVisible: !!main && main.getClientRects().length > 0, mainText: main?.innerText ?? "", bodyText: document.body?.innerText ?? "", headings: main ? Array.from(main.querySelectorAll("h1,h2,h3,h4,th")).filter((el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden").map((el) => el.innerText || el.textContent || "") : [] }; })()';
 
-    for (const t of tabs) {
-      currentTab = t.tab;
-      const url = `${baseUrl}/?page=procure-to-pay&tab=${t.tab}`;
-      console.log(`[LPI Screenshot Runner] Navigating to ${t.label} -> ${url}`);
-      await send("Page.navigate", { url });
-      
-      // Allow React rendering and data fetching to settle
-      await sleep(2500);
+    for (const t of targets) {
+      currentTab = t.tab ?? t.page;
+      const url = targetUrl(t);
+      console.log("[LPI Screenshot Runner] Navigating to " + t.label + " -> " + url.href);
+      const navigation = await send("Page.navigate", { url: url.href });
+      if (navigation?.errorText) throw new Error("FAIL-CLOSED: " + currentTab + " navigation failed: " + navigation.errorText);
 
-      const pageTextRes = await send("Runtime.evaluate", { expression: "document.body.innerText" });
-      const rawText = pageTextRes?.result?.value || "";
-
-      console.log(`[LPI Screenshot Runner] rawText for ${t.tab} (length ${rawText.length}):\n${rawText}\n--- END ---`);
-
-      // 1. Assert non-blank screen (fail closed on white screen)
-      if (!rawText.trim()) {
-        throw new Error(`FAIL-CLOSED: Tab '${t.tab}' rendered an empty / white screen!`);
-      }
-
-      // 2. Assert no React error boundary or fatal app crash text
-      if (rawText.includes("This workspace could not be displayed") || rawText.includes("Something went wrong")) {
-        throw new Error(`FAIL-CLOSED: Tab '${t.tab}' caught an unhandled React error boundary crash!`);
-      }
-
-      // 3. Assert tab-specific expected headings and content (case-insensitive to support CSS text-transform: uppercase)
-      for (const expected of t.expectedTexts) {
-        if (!rawText.toLowerCase().includes(expected.toLowerCase())) {
-          throw new Error(`FAIL-CLOSED: Tab '${t.tab}' is missing expected content: '${expected}'! Content preview: ${rawText.slice(0, 200)}`);
+      // Wait for the requested route, visible content and API network settling.
+      // A fixed sleep alone is not evidence of a rendered page.
+      const startedAt = Date.now();
+      let verified = false;
+      let stableSamples = 0;
+      let lastFaults = [];
+      while (Date.now() - startedAt < 25000) {
+        if (unhandledExceptions.length || consoleErrors.length || networkFailures.length) {
+          throw new Error("FAIL-CLOSED: browser/runtime/network errors: " +
+            JSON.stringify({ unhandledExceptions, consoleErrors, networkFailures }));
         }
+        const evaluated = await send("Runtime.evaluate", {
+          expression: pageStateExpression, returnByValue: true
+        });
+        if (evaluated?.exceptionDetails) {
+          throw new Error("FAIL-CLOSED: page inspection threw: " + JSON.stringify(evaluated.exceptionDetails));
+        }
+        const snapshot = evaluated?.result?.value;
+        lastFaults = inspectPage(snapshot, t, url);
+        const idle = pendingApiRequests.size === 0 && Date.now() - lastApiActivityAt >= 600;
+        if (lastFaults.length === 0 && idle) {
+          if (++stableSamples >= 2) { verified = true; break; }
+        } else {
+          stableSamples = 0;
+        }
+        await sleep(250);
       }
-
-      // 4. Assert no uncaught JS exceptions thrown during tab operation
-      const tabExceptions = unhandledExceptions.filter((e) => e.tab === t.tab);
-      if (tabExceptions.length > 0) {
-        throw new Error(`FAIL-CLOSED: Tab '${t.tab}' threw ${tabExceptions.length} uncaught JS exception(s): ${JSON.stringify(tabExceptions)}`);
+      if (!verified) {
+        throw new Error("FAIL-CLOSED: " + currentTab + " did not render its unique page within 25s; " +
+          JSON.stringify({ faults: lastFaults, pendingApiRequests: pendingApiRequests.size }));
       }
-
-      // 5. Assert no console errors logged during tab operation (GATE-03)
-      const tabConsoleErrors = consoleErrors.filter((e) => e.tab === t.tab);
-      if (tabConsoleErrors.length > 0) {
-        throw new Error(`FAIL-CLOSED: Tab '${t.tab}' logged ${tabConsoleErrors.length} console error(s): ${JSON.stringify(tabConsoleErrors)}`);
+      if (unhandledExceptions.length || consoleErrors.length || networkFailures.length) {
+        throw new Error("FAIL-CLOSED: " + currentTab + " logged runtime/network errors before capture.");
       }
-
-      console.log(`[LPI Screenshot Runner] Tab '${t.tab}' verified healthy. Capturing screenshot...`);
 
       const shot = await send("Page.captureScreenshot", {
-        format: "png",
-        captureBeyondViewport: false
+        format: "png", captureBeyondViewport: false
       });
-
-      const dest = path.join(outputDir, t.file);
-      fs.writeFileSync(dest, Buffer.from(shot.data, "base64"));
-      const sizeKb = (fs.statSync(dest).size / 1024).toFixed(1);
-      console.log(`[LPI Screenshot Runner] WROTE: ${dest} (${sizeKb} KB)`);
+      const { png, width, height, sha256 } = inspectPng(shot?.data, currentTab);
+      if (hashes.has(sha256)) {
+        throw new Error("FAIL-CLOSED: " + currentTab + " duplicated another screenshot (" + sha256 + ").");
+      }
+      hashes.add(sha256);
+      const dest = path.join(stagedDir, t.file);
+      fs.writeFileSync(dest, png);
+      console.log("[LPI Screenshot Runner] STAGED " + currentTab + " " + width + "x" + height +
+        " " + png.length + " bytes SHA256=" + sha256 + " URL=" + url.href);
     }
+
+    if (hashes.size !== 8) throw new Error("FAIL-CLOSED: expected eight distinct, validated PNGs.");
+    if (unhandledExceptions.length || consoleErrors.length || networkFailures.length) {
+      throw new Error("FAIL-CLOSED: capture completed with browser errors: " +
+        JSON.stringify({ unhandledExceptions, consoleErrors, networkFailures }));
+    }
+    for (const t of targets) {
+      const dest = path.join(outputDir, t.file);
+      fs.renameSync(path.join(stagedDir, t.file), dest);
+      console.log("[LPI Screenshot Runner] WROTE: " + dest + " (" + (fs.statSync(dest).size / 1024).toFixed(1) + " KB)");
+    }
+    completed = true;
 
     if (unhandledExceptions.length > 0) {
       throw new Error(`FAIL-CLOSED: Run completed with ${unhandledExceptions.length} uncaught exceptions: ${JSON.stringify(unhandledExceptions)}`);
@@ -268,9 +386,11 @@ async function run() {
       throw new Error(`FAIL-CLOSED: Run completed with ${networkFailures.length} HTTP 5xx responses: ${JSON.stringify(networkFailures)}`);
     }
 
-    console.log("[LPI Screenshot Runner] All 8 tabs verified fail-closed and screenshots captured successfully.");
+    console.log("[LPI Screenshot Runner] All 8 unique page targets verified fail-closed and PNGs captured successfully.");
     ws.close();
   } finally {
+    if (!completed) for (const t of targets) fs.rmSync(path.join(outputDir, t.file), { force: true });
+    fs.rmSync(stagedDir, { recursive: true, force: true });
     browserProc.kill();
     try {
       fs.rmSync(profileDir, { recursive: true, force: true });
