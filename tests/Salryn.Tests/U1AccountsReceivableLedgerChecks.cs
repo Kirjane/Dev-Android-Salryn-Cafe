@@ -1,7 +1,8 @@
 using Microsoft.Data.Sqlite;
+using Salryn.Api.Local.Services;
+using Salryn.Composition.Local;
 using Salryn.Core.Services;
 using Salryn.Infrastructure.Data;
-using Salryn.Infrastructure.Data.Initialization;
 using Salryn.Infrastructure.Data.Services;
 using Salryn.Infrastructure.Paths;
 
@@ -16,11 +17,11 @@ public static class U1AccountsReceivableLedgerChecks
         {
             DbPaths paths = DbPaths.CreateDevelopment(root);
             paths.EnsureDirectories();
-            var initialization = DefaultDatabaseInitializationFactory.Create(paths);
-            var initialized = initialization.InitializeDatabase();
+            SalrynLocalComposition composition = SalrynLocalComposition.Create(paths);
+            var initialized = composition.DatabaseInitialization.InitializeDatabase();
             Require(initialized.IsSuccess, "Isolated U1 database initialization must succeed.");
             Guid userId = SeedUser(paths.DatabasePath);
-            SqliteAccountsReceivableService service = new(new SqliteConnectionFactory(paths));
+            SqliteAccountsReceivableService service = new(composition.ConnectionFactory);
 
             var customerResult = await service.CreateCustomerAsync(new(
                 "Maria Santos", "09171234567", null, "Sari-sari account", null, userId));
@@ -31,6 +32,20 @@ public static class U1AccountsReceivableLedgerChecks
             var secondDebit = await service.AdjustAsync(new(customerId, 7_500, true, "Utang sale B", userId));
             Require(firstDebit.IsSuccess && secondDebit.IsSuccess, "Recurring Utang debits must succeed.");
             Require(secondDebit.Value.BalanceAfterCents == 20_000, "Recurring Utang must accumulate.");
+
+            var deniedNoShift = await service.CollectAsync(new(
+                customerId, 5_000, "Cash", "Denied without shift", userId, Guid.NewGuid().ToString("N")));
+            Require(deniedNoShift.IsFailure &&
+                    string.Equals(deniedNoShift.ErrorDetail.Code, "Receivables.CashCollectionRequiresOpenShift", StringComparison.Ordinal),
+                "Cash collection without an open accountable shift must fail closed.");
+            Require(Count(paths.DatabasePath, "accounts_receivable_collections") == 0,
+                "Denied Cash collection must not write a collection row.");
+            Require(Count(paths.DatabasePath, "cash_drawer_events") == 0,
+                "Denied Cash collection must not write a drawer event.");
+
+            HostOperatorApiServices host = HostOperatorApiServices.Create(composition);
+            Require((await host.ShiftService.OpenShiftAsync(userId, 0)).Ok,
+                "Accountable cash shift must open before Cash AR collection.");
 
             string collectionRequestId = Guid.NewGuid().ToString("N");
             var collection = await service.CollectAsync(new(
@@ -47,6 +62,8 @@ public static class U1AccountsReceivableLedgerChecks
             Require(Count(paths.DatabasePath, "sales") == 0, "Collection must not create a second sale.");
             Require(Count(paths.DatabasePath, "accounts_receivable_collections") == 1,
                 "Duplicate collection must create one collection row.");
+            Require(Count(paths.DatabasePath, "cash_drawer_events") == 1,
+                "Cash collection must create one accountable cash-drawer event.");
 
             string saleRepository = ReadRepo("src", "Salryn.Infrastructure", "Data", "Repositories", "Sales", "SqliteSaleWriteRepository.cs");
             Require(saleRepository.Contains("InsertReceivableDebit(connection, transaction, sale)", StringComparison.Ordinal),
@@ -60,6 +77,7 @@ public static class U1AccountsReceivableLedgerChecks
 
             Console.WriteLine("U1 AR: recurring ledger, collection/no-second-sale, atomic source boundary, and terminal denial PASS.");
             await U1AccountsReceivableRuntimeChecks.RunAsync();
+            await Issue52CashArSessionChecks.RunAsync();
         }
         finally
         {

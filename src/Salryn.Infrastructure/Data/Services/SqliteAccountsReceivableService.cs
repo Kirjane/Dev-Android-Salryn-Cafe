@@ -323,18 +323,26 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         if (request.AmountCents > balance)
             return Result<AccountsReceivableCollection>.Fail(Error.Validation("Receivables.CollectionExceedsBalance", "Collection cannot exceed the outstanding balance."));
         DateTimeOffset now = _timeProvider.GetUtcNow();
+        string method = string.IsNullOrWhiteSpace(request.Method) ? "Cash" : request.Method.Trim();
+        bool isCash = string.Equals(method, "Cash", StringComparison.OrdinalIgnoreCase);
+        Guid? drawerSession = isCash
+            ? await FindAccountableOpenSessionAsync(connection, transaction, request.CollectedByUserId, cancellationToken)
+            : await FindOpenSessionAsync(connection, transaction, request.CollectedByUserId, cancellationToken);
+        if (isCash && drawerSession is null)
+            return Result<AccountsReceivableCollection>.Fail(Error.Conflict(
+                "Receivables.CashCollectionRequiresOpenShift",
+                "A cash AR collection requires an open, accountable cash shift for the collecting operator."));
         AccountsReceivableCollection collection = new(Guid.NewGuid(), request.CustomerId, request.AmountCents,
-            string.IsNullOrWhiteSpace(request.Method) ? "Cash" : request.Method.Trim(), Clean(request.Note),
+            method, Clean(request.Note),
             request.CollectedByUserId, now, null, null, null);
-        Guid? drawerSession=await FindOpenSessionAsync(connection,transaction,request.CollectedByUserId,cancellationToken);
         await InsertCollectionAsync(
             connection, transaction, collection, request.ClientRequestId, requestHash, drawerSession, cancellationToken);
         await InsertEntryAsync(connection, transaction, new AccountsReceivableEntry(
             Guid.NewGuid(), request.CustomerId, null, collection.Id, AccountsReceivableEntryType.Collection,
             0, request.AmountCents, balance - request.AmountCents, null, collection.Note,
             request.CollectedByUserId, now), cancellationToken);
-        if(drawerSession is Guid session && string.Equals(collection.Method,"Cash",StringComparison.OrdinalIgnoreCase))
-            await InsertDrawerEventAsync(connection,transaction,session,collection.Id,request.CollectedByUserId,request.AmountCents,request.ClientRequestId,now,cancellationToken);
+        if (drawerSession is Guid session && isCash)
+            await InsertDrawerEventAsync(connection, transaction, session, collection.Id, request.CollectedByUserId, request.AmountCents, request.ClientRequestId, now, cancellationToken);
         await InsertBusinessAuditAsync(connection, transaction, request.CollectedByUserId, "AR_COLLECTION_RECORDED",
             "accounts_receivable_collections", collection.Id,
             JsonSerializer.Serialize(new { balanceCents = balance }),
@@ -515,6 +523,29 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
     }
 
     private static async Task<Guid?> FindOpenSessionAsync(SqliteConnection c,SqliteTransaction t,Guid user,CancellationToken ct){await using SqliteCommand q=c.CreateCommand();q.Transaction=t;q.CommandText="SELECT id FROM cashier_sessions WHERE user_id=$user AND status=1 ORDER BY opened_at DESC LIMIT 1";q.Parameters.AddWithValue("$user",user.ToString("D"));object? v=await q.ExecuteScalarAsync(ct);return v is string s?Guid.Parse(s):null;}
+
+    private static async Task<Guid?> FindAccountableOpenSessionAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        await using SqliteCommand query = connection.CreateCommand();
+        query.Transaction = transaction;
+        query.CommandText =
+            """
+            SELECT id
+            FROM cashier_sessions
+            WHERE user_id = $user
+              AND status = 1
+              AND cash_coverage_started_at IS NOT NULL
+            ORDER BY opened_at DESC
+            LIMIT 1;
+            """;
+        query.Parameters.AddWithValue("$user", userId.ToString("D"));
+        object? value = await query.ExecuteScalarAsync(cancellationToken);
+        return value is string sessionId ? Guid.Parse(sessionId) : null;
+    }
     private static async Task InsertDrawerEventAsync(SqliteConnection c,SqliteTransaction t,Guid session,Guid collection,Guid actor,long amount,string request,DateTimeOffset at,CancellationToken ct){await using SqliteCommand q=c.CreateCommand();q.Transaction=t;q.CommandText="INSERT INTO cash_drawer_events(id,cashier_session_id,event_type,direction,amount_cents,source_type,source_id,actor_user_id,method,occurred_at,request_id,note) VALUES($id,$session,'ArCashCollection',1,$amount,'ArCollection',$source,$actor,'Cash',$at,$request,'Cash AR collection')";q.Parameters.AddWithValue("$id",Guid.NewGuid().ToString("D"));q.Parameters.AddWithValue("$session",session.ToString("D"));q.Parameters.AddWithValue("$amount",amount);q.Parameters.AddWithValue("$source",collection.ToString("D"));q.Parameters.AddWithValue("$actor",actor.ToString("D"));q.Parameters.AddWithValue("$at",at.ToString("O"));q.Parameters.AddWithValue("$request","ar:"+request);await q.ExecuteNonQueryAsync(ct);}
 
     // Compensating cash movement is append-only, unique per original AR collection.
@@ -601,8 +632,9 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
 
     private static string BuildCollectionRequestHash(RecordReceivableCollectionRequest request)
     {
+        string method = (request.Method ?? string.Empty).Trim().ToUpperInvariant();
         string canonical =
-            $"{request.CustomerId:N}|{request.AmountCents}|{request.Method.Trim().ToUpperInvariant()}|{request.Note?.Trim() ?? string.Empty}";
+            $"{request.CustomerId:N}|{request.AmountCents}|{method}|{request.Note?.Trim() ?? string.Empty}";
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 
