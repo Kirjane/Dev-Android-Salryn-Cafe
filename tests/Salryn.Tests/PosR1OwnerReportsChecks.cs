@@ -313,6 +313,10 @@ public static class PosR1OwnerReportsChecks
         Require(page.Contains("session.data?.user?.userId", StringComparison.Ordinal), "Reports page must scope AP query cache key to authenticated user session.");
         Require(page.Contains("fetchApAgingReport", StringComparison.Ordinal), "Reports page must load AP aging from the AP aging endpoint.");
         Require(page.Contains("Accounts Payable aging", StringComparison.Ordinal), "Reports page must display Accounts Payable aging card.");
+        Require(page.Contains("CURRENT outstanding AP — aging today", StringComparison.Ordinal), "Reports page must explicitly label AP aging as CURRENT outstanding AP — aging today.");
+        Require(page.Contains("fetchApAgingReport()", StringComparison.Ordinal) && !page.Contains("fetchApAgingReport(to)", StringComparison.Ordinal),
+            "Reports page must decouple AP aging query from historical report end date 'to'.");
+        Require(!page.Contains("as of {to}", StringComparison.Ordinal), "Reports page must never label current AP balances as historical 'as of {to}'.");
         Require(page.Contains("AP analytics unavailable", StringComparison.Ordinal), "Reports page must render explicit AP unavailable notice when unauthorized or failed.");
         Require(page.Contains("!canViewPayables || ap.isError", StringComparison.Ordinal), "Reports page must fail closed when Payables.View is absent.");
 
@@ -360,7 +364,7 @@ public static class PosR1OwnerReportsChecks
         Require(openInvoice.Status == "PostedOpen" && openInvoice.TotalInvoiceCents == 92_500, "Posted open invoice expected.");
 
         // Pending payment request (40_000 cents) MUST NOT reduce AP aging total
-        _ = RequireValue(await p2p.RecordSupplierPaymentAsync(
+        SupplierPaymentModel pendingPayment = RequireValue(await p2p.RecordSupplierPaymentAsync(
             new RecordSupplierPaymentRequest(openInvoice.Id, new DateOnly(2026, 11, 18), 40_000, "BankTransfer", "OperatingBank", "PEND-RPT-1", null, "BPI", "Unsettled", "rpt-pay-1", adminUserId, null)),
             "AP aging pending payment");
 
@@ -435,6 +439,43 @@ public static class PosR1OwnerReportsChecks
 
             Require(total == 92_500 && b1To30 == 92_500 && bucketSum == total && varianceCount == 1 && sqlNetLedger == total,
                 $"Manager AP aging JSON must reconcile to SQL net ledger 92_500 (total={total}, 1-30={b1To30}, variance={varianceCount}, sql={sqlNetLedger}).");
+
+            // Now confirm a later settlement of the pending 40_000 payment and verify AP aging reflects current remaining balance (52_500),
+            // even when an earlier asOfDate is passed (proving Option B current-AP semantics).
+            Guid approverUserId = Guid.NewGuid();
+            await using (SqliteConnection conn = composition.ConnectionFactory.CreateConnection())
+            {
+                await conn.OpenAsync();
+                await using SqliteCommand ins = conn.CreateCommand();
+                ins.CommandText = """
+                    INSERT INTO users (id, username, display_name, password_hash, role_id, status, created_at, updated_at)
+                    VALUES ($id, $username, 'AP Approver', 'hash', $roleId, 'Active', $now, $now);
+                    """;
+                ins.Parameters.AddWithValue("$id", approverUserId.ToString("D"));
+                ins.Parameters.AddWithValue("$username", $"ap-approver-{approverUserId:N}");
+                ins.Parameters.AddWithValue("$roleId", DefaultSeedData.ManagerRoleId);
+                ins.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
+                await ins.ExecuteNonQueryAsync();
+            }
+
+            string manilaToday = DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(8)).DateTime).ToString("yyyy-MM-dd");
+            _ = RequireValue(await p2p.ApproveSupplierPaymentAsync(
+                new ApproveSupplierPaymentRequest(pendingPayment.Id, approverUserId, "YES", "Confirmed later settlement", manilaToday)),
+                "approve later AP settlement");
+
+            using HttpResponseMessage afterCurrentResp = await manager.GetAsync("/api/lpi/ap-aging");
+            Require(afterCurrentResp.StatusCode == HttpStatusCode.OK, "Manager /api/lpi/ap-aging after settlement must return 200.");
+            using JsonDocument afterCurrentDoc = JsonDocument.Parse(await afterCurrentResp.Content.ReadAsStringAsync());
+            long afterCurrentTotal = afterCurrentDoc.RootElement.GetProperty("totalOpenPayablesCents").GetInt64();
+            Require(afterCurrentTotal == 52_500,
+                $"After settling 40_000, current AP aging total must drop from 92_500 to 52_500 (got {afterCurrentTotal}).");
+
+            using HttpResponseMessage earlierDateResp = await manager.GetAsync("/api/lpi/ap-aging?asOfDate=2026-11-10");
+            Require(earlierDateResp.StatusCode == HttpStatusCode.OK, "Manager /api/lpi/ap-aging with earlier date must return 200.");
+            using JsonDocument earlierDoc = JsonDocument.Parse(await earlierDateResp.Content.ReadAsStringAsync());
+            long earlierTotal = earlierDoc.RootElement.GetProperty("totalOpenPayablesCents").GetInt64();
+            Require(earlierTotal == 52_500,
+                $"AP aging endpoint reflects CURRENT remaining AP (52_500) rather than historical balance reconstruction (got {earlierTotal}).");
         }
         finally
         {

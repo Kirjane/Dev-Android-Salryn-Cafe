@@ -267,12 +267,24 @@ export function OwnerReportsPage({
     queryFn: () => fetchArAging(from, to),
     retry: false,
   });
+  const manilaToday = iso(new Date());
   const ap = useQuery({
-    queryKey: ["owner-analytics-ap", session.data?.user?.userId ?? "anon", canViewPayables, to],
-    queryFn: () => fetchApAgingReport(to),
+    queryKey: ["owner-analytics-ap", session.data?.user?.userId ?? "anon", canViewPayables, manilaToday],
+    queryFn: () => fetchApAgingReport(),
     enabled: canViewPayables,
     retry: false,
   });
+  const apSnapshotTimestamp = ap.dataUpdatedAt
+    ? new Date(ap.dataUpdatedAt).toLocaleString("en-PH", {
+        timeZone: "Asia/Manila",
+        year: "numeric",
+        month: "short",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      })
+    : `${manilaToday} (Asia/Manila)`;
   const busy =
     overview.isLoading || trend.isLoading || mix.isLoading || top.isLoading;
   const firstError = [
@@ -575,7 +587,12 @@ export function OwnerReportsPage({
       ) : ap.data ? (
         <Card>
           <CardHeader>
-            <CardTitle>Accounts Payable aging</CardTitle>
+            <div>
+              <CardTitle>CURRENT outstanding AP — aging today</CardTitle>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Accounts Payable aging snapshot ({manilaToday} Asia/Manila · captured {apSnapshotTimestamp})
+              </p>
+            </div>
           </CardHeader>
           <CardBody>
             <ArAgingDistributionChart
@@ -590,7 +607,7 @@ export function OwnerReportsPage({
             />
             {ap.data.supplierSummaries.length === 0 ? (
               <p className="mt-3 text-xs text-slate-500">
-                No open posted supplier payables found as of {to}.
+                No open posted supplier payables remaining as of today ({manilaToday}, Asia/Manila).
               </p>
             ) : (
               <div className="mt-4 overflow-x-auto">
@@ -623,14 +640,15 @@ export function OwnerReportsPage({
               </div>
             )}
             <p className="mt-3 text-xs text-slate-500">
-              Open AP {peso(ap.data.totalOpenPayablesCents)} across{" "}
+              CURRENT outstanding AP {peso(ap.data.totalOpenPayablesCents)} across{" "}
               {ap.data.openInvoiceCount} posted open invoice(s) (
               {ap.data.overdueInvoiceCount} overdue;{" "}
               {ap.data.varianceFlaggedInvoiceCount} unposted variance-flagged
-              excluded) is current posted liability aged by due date as of {to}{" "}
-              (Asia/Manila). Balances reflect posted invoices less applied
-              supplier-return credits and confirmed settlements; pending
-              payment requests are not deducted.
+              excluded) is current remaining posted liability aged by due date
+              as of today ({manilaToday} Asia/Manila, snapshot {apSnapshotTimestamp}),
+              independent of the historical report date range above. Balances
+              reflect posted invoices less applied supplier-return credits and
+              confirmed settlements; pending payment requests are not deducted.
             </p>
           </CardBody>
         </Card>
