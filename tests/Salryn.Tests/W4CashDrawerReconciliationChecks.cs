@@ -32,6 +32,7 @@ public static class W4CashDrawerReconciliationChecks
             Guid legacy=Guid.NewGuid();Exec(c,"INSERT INTO cashier_sessions(id,user_id,opened_at,opening_cash_cents,expected_cash_cents,variance_cents,status,notes,cash_coverage_started_at) VALUES($id,$user,$at,0,0,0,1,'legacy',NULL)",( "$id",legacy.ToString("D")),("$user",user.ToString("D")),("$at",DateTimeOffset.UtcNow.ToString("O")));Require(drawer.Close(user,new(0,true,"legacy-close",null)).IsFailure,"legacy unverified coverage must fail closed");
             RunSourceEqualityChecks(c,drawer,host,session);
             RunR2HistoricalArCoverageChecks(c,drawer,host);
+            RunR3ManualActorCustodyChecks(c,drawer,host);
             var history=drawer.ReadClosedHistory(10,0);Require(history.IsSuccess&&history.Value.Items.Count>=3&&history.Value.Items.Any(x=>x.SessionId==session),"authorized history service must return bounded closed-shift detail");Require(drawer.ReadClosedHistory(101,0).IsFailure,"history page must be bounded");
             string remote=File.ReadAllText(Path.Combine(Root(),"src","Salryn.Api.Local","RemotePos","RemotePosCheckoutService.cs"));Require(remote.Contains("PhysicalCountRequired",StringComparison.Ordinal)&&!remote.Contains("open.ExpectedCash, \"Remote POS shift close\"",StringComparison.Ordinal),"remote auto-balance bypass must be removed");
             Require(Scalar(c,"SELECT counted_cash_cents FROM cashier_sessions WHERE id=$id",("$id",session))==11_100,"physical count must persist exactly");RunV25ToV26MigrationCheck();Console.WriteLine("W4 cash drawer PASS: canonical close replay, source-by-source sale/AR equality, history authority, physical count, discrepancy review, legacy fail-closed, and v25-to-v26 migration.");
@@ -67,6 +68,43 @@ public static class W4CashDrawerReconciliationChecks
         InsertSourceEvent(c,revSession,"ArCashCollectionReversal",-1,250,"ArCollection",ar.ToString("D"),userRev,"Cash","ar-r2-legacy-rev");
         var revClose=drawer.Close(userRev,new(0,true,"r2-rev-close","Synthetic count"));
         Require(revClose.IsFailure&&revClose.ErrorDetail.Code=="CashDrawer.CoverageUnverified","ambiguous historical ArCashCollectionReversal must remain fail-closed");
+    }
+    private static void RunR3ManualActorCustodyChecks(SalrynLocalComposition c,CashDrawerReconciliationService drawer,HostOperatorApiServices host)
+    {
+        Guid opA=SeedUser(c,"w4-r3-op-a");
+        Guid opB=SeedUser(c,"w4-r3-op-b");
+        var opened=host.ShiftService.OpenShiftAsync(opA,5_000).GetAwaiter().GetResult();
+        Require(opened.Ok,"R3 operator A shift must open");
+        string sessionA=opened.Shift!.ShiftId!;
+
+        var refund=drawer.RecordMovement(opA,new("CashRefund",1_200,"w4-r3-refund-1","Operator-attested cash refund"));
+        Require(refund.IsSuccess&&refund.Value.ExpectedCashCents==3_800,"R3 CashRefund must reduce expected cash to 3,800");
+        Require(Scalar(c,"SELECT COUNT(*) FROM cash_drawer_events WHERE cashier_session_id=$s AND actor_user_id=$a AND source_type='ManualMovement' AND source_id='w4-r3-refund-1' AND request_id='w4-r3-refund-1' AND event_type='CashRefund' AND direction=-1 AND amount_cents=1200 AND method='Cash' AND note='Operator-attested cash refund';",("$s",sessionA),("$a",opA.ToString("D")))==1,"R3 CashRefund persisted fields must match operator A");
+
+        Exec(c,"UPDATE cash_drawer_events SET actor_user_id=$b WHERE request_id='w4-r3-refund-1';",("$b",opB.ToString("D")));
+        var tamperedClose=drawer.Close(opA,new(3_800,true,"w4-r3-tamper-close","Synthetic count 3800"));
+        Require(tamperedClose.IsFailure&&tamperedClose.ErrorDetail.Code=="CashDrawer.CoverageUnverified","R3 foreign-actor CashRefund must fail with CashDrawer.CoverageUnverified");
+        Require(Scalar(c,"SELECT COUNT(*) FROM cashier_sessions WHERE id=$s AND status=1 AND closed_at IS NULL;",("$s",sessionA))==1,"R3 blocked close must leave shift open");
+        Require(Scalar(c,"SELECT COUNT(*) FROM cash_drawer_reconciliations WHERE cashier_session_id=$s;",("$s",sessionA))==0,"R3 blocked close must commit zero reconciliation rows");
+        Exec(c,"UPDATE cash_drawer_events SET actor_user_id=$a WHERE request_id='w4-r3-refund-1';",("$a",opA.ToString("D")));
+
+        Require(drawer.RecordMovement(opA,new("CashIn",500,"w4-r3-in-1","Float top-up")).IsSuccess,"R3 CashIn must record");
+        Exec(c,"UPDATE cash_drawer_events SET actor_user_id=$b WHERE request_id='w4-r3-in-1';",("$b",opB.ToString("D")));
+        var tamperedInClose=drawer.Close(opA,new(4_300,true,"w4-r3-in-tamper","Synthetic count"));
+        Require(tamperedInClose.IsFailure&&tamperedInClose.ErrorDetail.Code=="CashDrawer.CoverageUnverified","R3 foreign-actor CashIn must block close");
+        Require(Scalar(c,"SELECT COUNT(*) FROM cash_drawer_reconciliations WHERE cashier_session_id=$s;",("$s",sessionA))==0,"R3 blocked CashIn close must commit zero reconciliation rows");
+        Exec(c,"UPDATE cash_drawer_events SET actor_user_id=$a WHERE request_id='w4-r3-in-1';",("$a",opA.ToString("D")));
+
+        Require(drawer.RecordMovement(opA,new("CashOut",200,"w4-r3-out-1","Petty cash payout")).IsSuccess,"R3 CashOut must record");
+        Exec(c,"UPDATE cash_drawer_events SET actor_user_id=$b WHERE request_id='w4-r3-out-1';",("$b",opB.ToString("D")));
+        var tamperedOutClose=drawer.Close(opA,new(4_100,true,"w4-r3-out-tamper","Synthetic count"));
+        Require(tamperedOutClose.IsFailure&&tamperedOutClose.ErrorDetail.Code=="CashDrawer.CoverageUnverified","R3 foreign-actor CashOut must block close");
+        Require(Scalar(c,"SELECT COUNT(*) FROM cash_drawer_reconciliations WHERE cashier_session_id=$s;",("$s",sessionA))==0,"R3 blocked CashOut close must commit zero reconciliation rows");
+        Exec(c,"UPDATE cash_drawer_events SET actor_user_id=$a WHERE request_id='w4-r3-out-1';",("$a",opA.ToString("D")));
+
+        var validClose=drawer.Close(opA,new(4_100,true,"w4-r3-valid-close","Synthetic count 4100"));
+        Require(validClose.IsSuccess&&validClose.Value.CoverageStatus=="Verified"&&validClose.Value.ReviewStatus=="Reconciled"&&validClose.Value.ExpectedCashCents==4_100&&validClose.Value.CountedCashCents==4_100&&validClose.Value.VarianceCents==0,"R3 restored valid actor close must succeed Verified/Reconciled with zero variance");
+        Console.WriteLine("W4 R3 manual-actor custody PASS: foreign-actor CashRefund/CashIn/CashOut fail closed, restored actor closes Verified/Reconciled.");
     }
     private static void InsertSourceEvent(SalrynLocalComposition c,string session,string type,int direction,long amount,string sourceType,string sourceId,Guid actor,string method,string request)=>Exec(c,"INSERT INTO cash_drawer_events(id,cashier_session_id,event_type,direction,amount_cents,source_type,source_id,actor_user_id,method,occurred_at,request_id,note) VALUES($id,$session,$type,$direction,$amount,$sourceType,$source,$actor,$method,$at,$request,'fixture')",("$id",Guid.NewGuid().ToString("D")),("$session",session),("$type",type),("$direction",direction),("$amount",amount),("$sourceType",sourceType),("$source",sourceId),("$actor",actor.ToString("D")),("$method",method),("$at",DateTimeOffset.UtcNow.ToString("O")),("$request",request));
     private static void RunV25ToV26MigrationCheck(){string root=Path.Combine(Path.GetTempPath(),"salryn-w4-v25-"+Guid.NewGuid().ToString("N"));try{var c=SalrynLocalComposition.Create(DbPaths.CreateDevelopment(root));Require(c.DatabaseInitialization.InitializeDatabase().IsSuccess,"migration fixture initialization must pass");Guid user=SeedUser(c,"w4-migration");Guid session=Guid.NewGuid();string at=DateTimeOffset.UtcNow.ToString("O");Exec(c,"INSERT INTO cashier_sessions(id,user_id,opened_at,closed_at,opening_cash_cents,expected_cash_cents,counted_cash_cents,variance_cents,status,notes,cash_coverage_started_at) VALUES($id,$user,$at,$at,0,0,0,0,2,'Restored note',$at)",("$id",session.ToString("D")),("$user",user.ToString("D")),("$at",at));Exec(c,"INSERT INTO cash_drawer_reconciliations(cashier_session_id,expected_cash_cents,counted_cash_cents,variance_cents,coverage_status,review_status,close_request_id,submitted_by_user_id,submitted_at,confirmation_text) VALUES($session,0,0,0,'Verified','Reconciled','v25-close',$user,$at,'Operator confirmed physical cash count')",("$session",session.ToString("D")),("$user",user.ToString("D")),("$at",at));Exec(c,"ALTER TABLE cash_drawer_reconciliations DROP COLUMN close_note; DELETE FROM schema_migrations WHERE version=26;");Require(c.DatabaseInitialization.InitializeDatabase().IsSuccess,"v25-to-v26 migration must pass");using var x=c.ConnectionFactory.CreateConnection();x.Open();using var q=x.CreateCommand();q.CommandText="SELECT close_note FROM cash_drawer_reconciliations WHERE cashier_session_id=$session";q.Parameters.AddWithValue("$session",session.ToString("D"));Require((string?)q.ExecuteScalar()=="Restored note","v26 migration must backfill canonical close note");}finally{SqliteConnectionFactory.ClearAllPools();if(Directory.Exists(root))Directory.Delete(root,true);}}
