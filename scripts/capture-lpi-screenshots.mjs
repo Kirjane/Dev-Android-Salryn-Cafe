@@ -70,44 +70,49 @@ const targets = [
     page: "procure-to-pay", tab: "overview",
     file: "01_lpi_overview_dashboard.png", label: "Overview & P2P Metrics",
     headings: [procurementHeading, "Accounts Payable Aging Schedule"],
-    text: "Total Accounts Payable"
+    text: "Apex Roasters & Dairy Supply Inc."
   },
   {
     page: "procure-to-pay", tab: "suppliers",
     file: "02_lpi_supplier_directory.png", label: "Supplier Directory & Scorecards",
-    headings: [procurementHeading, "Supplier Directory", "Terms"]
+    headings: [procurementHeading, "Supplier Directory", "Terms"],
+    text: "SUP-APEX-01"
   },
   {
     page: "procure-to-pay", tab: "pr",
     file: "03_lpi_purchase_requisitions.png", label: "Purchase Requisitions & Approvals",
-    headings: [procurementHeading, "Purchase Requisitions (PR)", "PR #"]
+    headings: [procurementHeading, "Purchase Requisitions (PR)", "PR #"],
+    text: "Store Operations"
   },
   {
     page: "procure-to-pay", tab: "quotations",
     file: "04_lpi_quotations_comparison.png", label: "RFQ Quotations & Price Comparison",
-    headings: [procurementHeading, "Supplier Quotations & Quote Comparison"],
-    text: "Please select a Purchase Requisition above to view or compare supplier quotations."
+    headings: [procurementHeading, "Supplier Quotations & Quote Comparison", "Received Supplier Quotations", "Unit Price"],
+    text: "Apex Roasters & Dairy Supply Inc."
   },
   {
     page: "procure-to-pay", tab: "po",
     file: "05_lpi_purchase_orders.png", label: "Purchase Orders Lifecycle",
-    headings: [procurementHeading, "Purchase Orders (PO)", "PO #"]
+    headings: [procurementHeading, "Purchase Orders (PO)", "PO #"],
+    text: "Apex Roasters & Dairy Supply Inc."
   },
   {
     page: "procure-to-pay", tab: "rr",
     file: "06_lpi_goods_receiving.png", label: "Goods Receiving & Inspection",
-    headings: [procurementHeading, "Goods Receiving Reports (RR)", "RR #"]
+    headings: [procurementHeading, "Goods Receiving Reports (RR)", "RR #"],
+    text: "Metro Packaging Solutions Corp."
   },
   {
     page: "procure-to-pay", tab: "inventory",
     file: "07_lpi_inventory_stock_cards.png", label: "Inventory Stock Cards & Quarantine",
-    headings: [procurementHeading, "Multi-Location Stock Cards & Valuation", "Per-Product Stock Cards & Location Buckets"]
+    headings: [procurementHeading, "Multi-Location Stock Cards & Valuation", "Per-Product Stock Cards & Location Buckets"],
+    text: "Alpha Coffee Beans 1kg"
   },
   {
     page: "accounts-payable", tab: null,
     file: "08_lpi_ap_3way_matching.png", label: "Accounts Payable 3-Way Match & Payments",
     headings: ["Accounts Payable", "Supplier Invoice Register", "Supplier Payments & Disbursements"],
-    text: "APV / Invoice"
+    text: "SI-APEX-2026-001"
   }
 ];
 
@@ -304,6 +309,10 @@ async function run() {
       });
     }
 
+    // In the seeded fixture, a quote belongs to the seeded requisition. Select it
+    // through the real React <select> before requiring quotation-row evidence.
+    const chooseQuoteExpression = '(() => { const main = document.querySelector("main"); if (!main) return { selected: false, reason: "main not mounted" }; const title = Array.from(main.querySelectorAll("h2")).find((el) => el.textContent?.trim() === "Supplier Quotations & Quote Comparison"); const select = title?.parentElement?.querySelector("select"); if (!select) return { selected: false, reason: "quotation selection unavailable" }; const option = Array.from(select.options).find((el) => el.value && el.textContent?.includes("Store Operations")); if (!option) return { selected: false, reason: "synthetic requisition not loaded" }; const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set; if (!setter) return { selected: false, reason: "native select setter unavailable" }; setter.call(select, option.value); select.dispatchEvent(new Event("change", { bubbles: true })); return { selected: true, requisition: option.textContent }; })()';
+
     const pageStateExpression = '(() => { const main = document.querySelector("main"); return { readyState: document.readyState, url: location.href, hasMain: !!main, mainVisible: !!main && main.getClientRects().length > 0, mainText: main?.innerText ?? "", bodyText: document.body?.innerText ?? "", headings: main ? Array.from(main.querySelectorAll("h1,h2,h3,h4,th")).filter((el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden").map((el) => el.innerText || el.textContent || "") : [] }; })()';
 
     for (const t of targets) {
@@ -319,10 +328,27 @@ async function run() {
       let verified = false;
       let stableSamples = 0;
       let lastFaults = [];
+      let quoteSelected = t.tab !== "quotations";
       while (Date.now() - startedAt < 25000) {
         if (unhandledExceptions.length || consoleErrors.length || networkFailures.length) {
           throw new Error("FAIL-CLOSED: browser/runtime/network errors: " +
             JSON.stringify({ unhandledExceptions, consoleErrors, networkFailures }));
+        }
+        if (!quoteSelected) {
+          const choice = await send("Runtime.evaluate", {
+            expression: chooseQuoteExpression, returnByValue: true
+          });
+          if (choice?.exceptionDetails) {
+            throw new Error("FAIL-CLOSED: synthetic quote selection threw: " + JSON.stringify(choice.exceptionDetails));
+          }
+          const result = choice?.result?.value;
+          if (!result?.selected) {
+            lastFaults = ["cannot select fixture requisition: " + (result?.reason ?? "unknown")];
+            await sleep(250);
+            continue;
+          }
+          quoteSelected = true;
+          console.log("[LPI Screenshot Runner] Selected fixture requisition: " + result.requisition);
         }
         const evaluated = await send("Runtime.evaluate", {
           expression: pageStateExpression, returnByValue: true
@@ -383,7 +409,7 @@ async function run() {
     }
 
     if (networkFailures.length > 0) {
-      throw new Error(`FAIL-CLOSED: Run completed with ${networkFailures.length} HTTP 5xx responses: ${JSON.stringify(networkFailures)}`);
+      throw new Error(`FAIL-CLOSED: Run completed with ${networkFailures.length} HTTP failures: ${JSON.stringify(networkFailures)}`);
     }
 
     console.log("[LPI Screenshot Runner] All 8 unique page targets verified fail-closed and PNGs captured successfully.");
