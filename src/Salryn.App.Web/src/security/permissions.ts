@@ -165,6 +165,9 @@ export function canAccessPage(session: SessionState | null | undefined, page: Ap
   }
 
   const roleId = session.user.roleId.toLowerCase();
+  if (roleId !== RoleIds.Admin && roleId !== RoleIds.Manager && roleId !== RoleIds.Cashier) {
+    return false;
+  }
   // CEO QA: financial AP and customer order management are Admin/Manager workspaces.
   if ((page === "accounts-payable" || page === "customer-orders") &&
       roleId !== RoleIds.Admin && roleId !== RoleIds.Manager) return false;

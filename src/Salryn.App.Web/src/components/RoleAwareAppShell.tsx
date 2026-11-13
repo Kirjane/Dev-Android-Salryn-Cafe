@@ -190,7 +190,7 @@ export function RoleAwareAppShell({
           </div>
           <nav className="flex-1 space-y-1 overflow-y-auto overflow-x-hidden px-2 py-2">
             {navItems.map((item, index) => {
-              const firstInGroup = navItems.findIndex((candidate) => candidate.group === item.group) === index;
+              const firstInGroup = index === 0 || navItems[index - 1].group !== item.group;
               const active = item.id === activeNav;
               return (
                 <div key={item.id}>

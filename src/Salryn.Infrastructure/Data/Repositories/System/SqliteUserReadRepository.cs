@@ -3,6 +3,7 @@ using Salryn.Core.Common;
 using Salryn.Core.Models;
 using Salryn.Core.ReadModels;
 using Salryn.Core.Repositories;
+using Salryn.Infrastructure.Data.Seeding;
 
 namespace Salryn.Infrastructure.Data.Repositories.System;
 
@@ -96,10 +97,11 @@ public sealed class SqliteUserReadRepository :
             while (reader.Read())
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                string roleIdText = reader.GetString(0);
                 roles.Add(new UserRoleReadModel(
-                    Guid.Parse(reader.GetString(0)),
+                    Guid.Parse(roleIdText),
                     reader.GetString(1),
-                    reader.GetBoolean(2)));
+                    reader.GetBoolean(2) && DefaultSeedData.IsSupportedProductRoleId(roleIdText)));
             }
 
             IReadOnlyList<UserRoleReadModel> result = roles;

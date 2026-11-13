@@ -3,6 +3,7 @@ using Salryn.Core.Common;
 using Salryn.Core.Models;
 using Salryn.Core.ReadModels;
 using Salryn.Core.Repositories;
+using Salryn.Infrastructure.Data.Seeding;
 
 namespace Salryn.Infrastructure.Data.Repositories.System;
 
@@ -92,6 +93,13 @@ public sealed class SqliteUserPermissionReadRepository :
                 return Task.FromResult(Result<UserPermissionReadModel?>.Success(null));
             }
 
+            IReadOnlyList<string> effectivePermissions = DefaultSeedData.IsSupportedProductRoleId(roleId.ToString("D"))
+                ? permissions
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(item => item)
+                    .ToArray()
+                : Array.Empty<string>();
+
             UserPermissionReadModel profile = new(
                 readUserId,
                 roleId,
@@ -99,10 +107,7 @@ public sealed class SqliteUserPermissionReadRepository :
                 displayName,
                 roleName,
                 status,
-                permissions
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .OrderBy(item => item)
-                    .ToArray());
+                effectivePermissions);
 
             return Task.FromResult(Result<UserPermissionReadModel?>.Success(profile));
         }

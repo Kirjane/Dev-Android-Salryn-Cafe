@@ -1,10 +1,17 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.Http.Json;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Data.Sqlite;
 using Salryn.Api.Local;
 using Salryn.Api.Local.Auth;
+using Salryn.Composition.Local;
+using Salryn.Core.Common;
 using Salryn.Core.Models;
+using Salryn.Core.ReadModels;
+using Salryn.Core.Repositories;
 using Salryn.Core.Security;
+using Salryn.Infrastructure.Data.Repositories;
 using Salryn.Infrastructure.Data.Seeding;
 
 namespace Salryn.Tests;
@@ -18,6 +25,7 @@ public static class RoleM4PermissionBoundaryRegressionMatrixChecks
         string projectRoot = FindProjectRoot(Directory.GetCurrentDirectory());
         RunSourceGuards(projectRoot);
         await RunRuntimeRoleMatrixAsync().ConfigureAwait(false);
+        await RunThreeRoleAndLegacyBoundaryChecksAsync(projectRoot).ConfigureAwait(false);
     }
 
     private static async Task RunRuntimeRoleMatrixAsync()
@@ -225,7 +233,177 @@ public static class RoleM4PermissionBoundaryRegressionMatrixChecks
         AssertContains(roleM3Harness, "LocalApiApplicationFactory", "ROLE-M4 must reuse the ROLE-M3 runtime seam.");
         AssertContains(roleM3Harness, "AssertMutationRouteNotIntroducedAsync", "ROLE-M3 mutation-negative harness must remain present.");
         AssertContains(coreSmokeProgram, "RoleM4PermissionBoundaryRegressionMatrixChecks.RunAsync()", "ROLE-M4 must be explicitly wired into CoreSmoke.");
+
+        string navigationSource = ReadRequiredFile(Path.Combine(projectRoot, "src", "Salryn.App.Web", "src", "navigation.ts"));
+        string shellSource = ReadRequiredFile(Path.Combine(projectRoot, "src", "Salryn.App.Web", "src", "components", "RoleAwareAppShell.tsx"));
+        int salesNavIdx = navigationSource.IndexOf("id: \"sales\"", StringComparison.Ordinal);
+        int ordersNavIdx = navigationSource.IndexOf("id: \"customer-orders\"", StringComparison.Ordinal);
+        if (salesNavIdx < 0 || ordersNavIdx < 0 || salesNavIdx >= ordersNavIdx)
+        {
+            throw new InvalidOperationException("Issue #49 regression: Sales & Receipts (Cashier group) must precede Customer Orders (Manager group) so Cashier items do not render beneath Manager.");
+        }
+        AssertContains(shellSource, "index === 0 || navItems[index - 1].group !== item.group", "RoleAwareAppShell must compute firstInGroup from adjacent item transitions.");
+
         AssertChangedFilesStayInRoleM4Scope(projectRoot);
+    }
+
+    private static async Task RunThreeRoleAndLegacyBoundaryChecksAsync(string projectRoot)
+    {
+        // 1. Fresh seed data must only contain the three product roles: Admin, Manager, Cashier.
+        if (DefaultSeedData.Roles.Count != 3 ||
+            !DefaultSeedData.Roles.Select(r => r.Name).OrderBy(n => n, StringComparer.Ordinal)
+                .SequenceEqual(new[] { "Admin", "Cashier", "Manager" }, StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException("Issue #64: DefaultSeedData.Roles must define strictly Admin, Manager, and Cashier.");
+        }
+
+        if (DefaultSeedData.RolePermissions.Any(rp => !DefaultSeedData.IsSupportedProductRoleId(rp.RoleId)))
+        {
+            throw new InvalidOperationException("Issue #64: DefaultSeedData.RolePermissions must not grant permissions to legacy specialist roles.");
+        }
+
+        string isolatedRoot = Path.Combine(Path.GetTempPath(), "salryn-w2-roles-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(isolatedRoot);
+        try
+        {
+            SalrynLocalComposition composition = SalrynLocalComposition.CreateDevelopment(isolatedRoot);
+            await composition.InitializeDatabaseAsync().ConfigureAwait(false);
+
+            // 2. Freshly initialized DB has strictly 3 seeded roles.
+            Result<IReadOnlyList<UserRoleReadModel>> cleanRoles =
+                await composition.UserReadRepository.GetRolesAsync().ConfigureAwait(false);
+            if (cleanRoles.IsFailure || cleanRoles.Value.Count != 3 || cleanRoles.Value.Any(r => !r.IsActive))
+            {
+                throw new InvalidOperationException("Issue #64: Fresh DB must seed exactly 3 active roles (Admin, Manager, Cashier).");
+            }
+
+            // 3. Simulate an upgraded DB containing a historical legacy role, legacy role_permissions rows,
+            //    an Admin account, and a historical Purchasing Officer user (non-destructive preservation).
+            Guid legacyUserId = Guid.NewGuid();
+            Guid adminUserId = Guid.NewGuid();
+            string legacyPasswordHash = SalrynPasswordHasher.HashPassword("LegacyUser123!").Value!;
+            string adminPasswordHash = SalrynPasswordHasher.HashPassword("AdminUser123!").Value!;
+
+            using (SqliteConnection conn = new($"Data Source={composition.DbPaths.DatabasePath}"))
+            {
+                conn.Open();
+                using SqliteCommand cmd = conn.CreateCommand();
+                cmd.CommandText = """
+                    INSERT INTO roles (id, name, is_system_role, created_at)
+                    VALUES ($legacyRoleId, 'Purchasing Officer', 1, $now);
+
+                    INSERT INTO role_permissions (id, role_id, permission, created_at)
+                    VALUES
+                        ($perm1, $legacyRoleId, 'Products.View', $now),
+                        ($perm2, $legacyRoleId, 'Procurement.ManagePurchaseOrder', $now);
+
+                    INSERT INTO users (id, username, display_name, password_hash, role_id, status, created_at)
+                    VALUES
+                        ($adminUserId, 'w2-admin', 'W2 Admin', $adminHash, $adminRoleId, 1, $now),
+                        ($legacyUserId, 'w2-legacy-po', 'Legacy Purchasing Officer', $legacyHash, $legacyRoleId, 1, $now);
+                    """;
+                cmd.Parameters.AddWithValue("$legacyRoleId", DefaultSeedData.PurchasingOfficerRoleId);
+                cmd.Parameters.AddWithValue("$adminRoleId", DefaultSeedData.AdminRoleId);
+                cmd.Parameters.AddWithValue("$perm1", Guid.NewGuid().ToString("D"));
+                cmd.Parameters.AddWithValue("$perm2", Guid.NewGuid().ToString("D"));
+                cmd.Parameters.AddWithValue("$adminUserId", adminUserId.ToString("D"));
+                cmd.Parameters.AddWithValue("$legacyUserId", legacyUserId.ToString("D"));
+                cmd.Parameters.AddWithValue("$adminHash", adminPasswordHash);
+                cmd.Parameters.AddWithValue("$legacyHash", legacyPasswordHash);
+                cmd.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
+                cmd.ExecuteNonQuery();
+            }
+
+            // Historical role row remains preserved in DB, marked inactive (IsActive == false).
+            Result<IReadOnlyList<UserRoleReadModel>> upgradedRoles =
+                await composition.UserReadRepository.GetRolesAsync().ConfigureAwait(false);
+            if (upgradedRoles.IsFailure)
+            {
+                throw new InvalidOperationException("Failed reading roles from upgraded DB simulation.");
+            }
+            UserRoleReadModel? preservedLegacy = upgradedRoles.Value.FirstOrDefault(
+                r => r.RoleId == Guid.Parse(DefaultSeedData.PurchasingOfficerRoleId));
+            if (preservedLegacy is null || preservedLegacy.IsActive)
+            {
+                throw new InvalidOperationException("Issue #64: Historical legacy role in upgraded DB must be preserved non-destructively with IsActive == false.");
+            }
+
+            // Assigning a legacy role via write repository must fail closed.
+            IUserWriteRepository userWrites = new SqliteRepositoryFactory(composition.ConnectionFactory).CreateUserWriteRepository();
+            Result createWithLegacy = await userWrites.CreateAsync(new UserAdminCreateRequest(
+                "blocked-legacy-user",
+                "Blocked Legacy",
+                Guid.Parse(DefaultSeedData.PurchasingOfficerRoleId),
+                legacyPasswordHash,
+                adminUserId)).ConfigureAwait(false);
+            if (createWithLegacy.IsSuccess || createWithLegacy.ErrorDetail.Code != "Users.RoleRequired")
+            {
+                throw new InvalidOperationException($"Issue #64: Assigning legacy role must fail with Users.RoleRequired, got {createWithLegacy.ErrorDetail?.Code}.");
+            }
+
+            // Reading permissions for a historical legacy user must strip/ignore legacy role_permissions rows.
+            Result<UserPermissionReadModel?> legacyPermProfile =
+                await composition.UserPermissionReadRepository.FindByUserIdAsync(legacyUserId).ConfigureAwait(false);
+            if (legacyPermProfile.IsFailure || legacyPermProfile.Value is null || legacyPermProfile.Value.Permissions.Count != 0)
+            {
+                throw new InvalidOperationException("Issue #64: Legacy role user must receive zero active permissions even when upgraded DB has historical role_permissions.");
+            }
+
+            // Verify HTTP runtime fail-closed behavior for legacy login via LocalApiApplicationFactory.
+            await using WebApplication app = await LocalApiApplicationFactory
+                .CreateAsync(
+                    new[] { "--dev" },
+                    new LocalApiApplicationOptions
+                    {
+                        Url = "http://127.0.0.1:0",
+                        Composition = composition,
+                        InitializeDatabase = false,
+                        EnableStaticWebAssets = false,
+                        WriteDevelopmentDatabasePath = false
+                    })
+                .ConfigureAwait(false);
+
+            await app.StartAsync().ConfigureAwait(false);
+            try
+            {
+                Uri baseAddress = ResolveStartedBaseAddress(app);
+                using HttpClient legacyClient = new(new HttpClientHandler { UseCookies = false }) { BaseAddress = baseAddress };
+                using HttpResponseMessage loginResp = await legacyClient.PostAsJsonAsync(
+                    "/api/auth/login",
+                    new { username = "w2-legacy-po", password = "LegacyUser123!" }).ConfigureAwait(false);
+                if (loginResp.StatusCode != HttpStatusCode.OK)
+                {
+                    throw new InvalidOperationException($"Issue #64: Expected non-destructive legacy user login 200 OK with empty permissions, got {(int)loginResp.StatusCode}.");
+                }
+                string cookie = loginResp.Headers.GetValues("Set-Cookie").First().Split(';')[0];
+
+                using HttpRequestMessage prodReq = new(HttpMethod.Get, "/api/products");
+                prodReq.Headers.Add("Cookie", cookie);
+                using HttpResponseMessage prodResp = await legacyClient.SendAsync(prodReq).ConfigureAwait(false);
+                if (prodResp.StatusCode != HttpStatusCode.Forbidden)
+                {
+                    throw new InvalidOperationException($"Issue #64: Expected legacy user /api/products to fail closed with 403 Forbidden, got {(int)prodResp.StatusCode}.");
+                }
+            }
+            finally
+            {
+                await app.StopAsync().ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            try
+            {
+                SqliteConnection.ClearAllPools();
+                if (Directory.Exists(isolatedRoot))
+                {
+                    Directory.Delete(isolatedRoot, recursive: true);
+                }
+            }
+            catch
+            {
+            }
+        }
     }
 
     private static void AssertSeedRoleBoundaries(string seedFile)

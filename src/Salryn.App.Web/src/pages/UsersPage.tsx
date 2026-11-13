@@ -159,7 +159,7 @@ export function UsersPage() {
       />
 
       <Alert tone="info" title="Role access guide">
-        Admin manages store configuration and users. Manager handles catalog, inventory, sales, voids, and owner reports. Cashier is limited to Checkout and Sales & Receipts. An Auditor role is not available in this build.
+        Admin manages store configuration and users. Manager handles catalog, inventory, procurement, accounts payable, sales, voids, and reports. Cashier handles POS Checkout, Price Canvass / Quote, own Purchase Requests (PR), and Sales & Receipts. An Auditor role is not available in this build.
       </Alert>
 
       <div className="grid gap-6 xl:grid-cols-[1.25fr_1fr]">

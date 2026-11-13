@@ -333,6 +333,11 @@ public sealed class SqliteAuthenticationRepository :
         SqliteTransaction transaction,
         string roleId)
     {
+        if (!DefaultSeedData.IsSupportedProductRoleId(roleId))
+        {
+            return Array.Empty<string>();
+        }
+
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """

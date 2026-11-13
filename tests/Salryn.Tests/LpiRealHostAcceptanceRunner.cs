@@ -367,6 +367,19 @@ public static class LpiRealHostAcceptanceRunner
         Guid id = Guid.NewGuid();
         using SqliteConnection connection = new($"Data Source={dbPath}");
         connection.Open();
+        if (!DefaultSeedData.IsSupportedProductRoleId(roleId))
+        {
+            using SqliteCommand ensureRole = connection.CreateCommand();
+            ensureRole.CommandText =
+                """
+                INSERT OR IGNORE INTO roles (id, name, is_system_role, created_at)
+                VALUES ($roleId, $roleName, 1, $at);
+                """;
+            ensureRole.Parameters.AddWithValue("$roleId", roleId);
+            ensureRole.Parameters.AddWithValue("$roleName", "Legacy Negative Fixture Role");
+            ensureRole.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O"));
+            ensureRole.ExecuteNonQuery();
+        }
         using SqliteCommand command = connection.CreateCommand();
         command.CommandText =
             """

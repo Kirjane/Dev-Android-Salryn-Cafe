@@ -5,12 +5,23 @@ public static class DefaultSeedData
     public const string AdminRoleId = "00000000-0000-0000-0000-000000000001";
     public const string ManagerRoleId = "00000000-0000-0000-0000-000000000002";
     public const string CashierRoleId = "00000000-0000-0000-0000-000000000003";
+    // Legacy non-product role IDs retained only as historical/negative boundary constants (Issue #64 / D01).
     public const string PurchasingOfficerRoleId = "00000000-0000-0000-0000-000000000004";
     public const string ReceivingClerkRoleId = "00000000-0000-0000-0000-000000000005";
     public const string InventoryOfficerRoleId = "00000000-0000-0000-0000-000000000006";
     public const string AccountsPayableClerkRoleId = "00000000-0000-0000-0000-000000000007";
     public const string FinanceManagerRoleId = "00000000-0000-0000-0000-000000000008";
     public const string DepartmentHeadRoleId = "00000000-0000-0000-0000-000000000009";
+
+    public static IReadOnlySet<string> SupportedProductRoleIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        AdminRoleId,
+        ManagerRoleId,
+        CashierRoleId
+    };
+
+    public static bool IsSupportedProductRoleId(string? roleId)
+        => !string.IsNullOrWhiteSpace(roleId) && SupportedProductRoleIds.Contains(roleId.Trim());
 
     public static class Permissions
     {
@@ -68,13 +79,7 @@ public static class DefaultSeedData
     {
         new(AdminRoleId, "Admin", true),
         new(ManagerRoleId, "Manager", true),
-        new(CashierRoleId, "Cashier", true),
-        new(PurchasingOfficerRoleId, "Purchasing Officer", true),
-        new(ReceivingClerkRoleId, "Receiving Clerk", true),
-        new(InventoryOfficerRoleId, "Inventory Officer", true),
-        new(AccountsPayableClerkRoleId, "Accounts Payable Clerk", true),
-        new(FinanceManagerRoleId, "Finance Manager", true),
-        new(DepartmentHeadRoleId, "Department Head", true)
+        new(CashierRoleId, "Cashier", true)
     };
 
     public static IReadOnlyList<string> AdminPermissions { get; } = new string[]
@@ -178,76 +183,18 @@ public static class DefaultSeedData
     private static IReadOnlyList<SeedPermission>? _rolePermissions;
     public static IReadOnlyList<SeedPermission> RolePermissions => _rolePermissions ??= BuildRolePermissions();
 
-    public static IReadOnlyList<string> PurchasingOfficerPermissions { get; } = new string[]
-    {
-        Permissions.ProductsView,
-        Permissions.InventoryView,
-        Permissions.ProcurementView,
-        Permissions.ProcurementRequest,
-        Permissions.ProcurementManagePurchaseOrder,
-        Permissions.ReceivingView,
-        Permissions.ReportsView
-    };
+    // Legacy non-product permission lists are empty so fresh installs never grant historical specialist permissions (Issue #64 / D01).
+    public static IReadOnlyList<string> PurchasingOfficerPermissions { get; } = Array.Empty<string>();
 
-    public static IReadOnlyList<string> ReceivingClerkPermissions { get; } = new string[]
-    {
-        Permissions.ProductsView,
-        Permissions.InventoryView,
-        Permissions.ProcurementView,
-        Permissions.ReceivingView,
-        Permissions.ReceivingManage
-    };
+    public static IReadOnlyList<string> ReceivingClerkPermissions { get; } = Array.Empty<string>();
 
-    public static IReadOnlyList<string> InventoryOfficerPermissions { get; } = new string[]
-    {
-        Permissions.ProductsView,
-        Permissions.InventoryView,
-        Permissions.InventoryAdjust,
-        Permissions.InventoryManageReturns,
-        Permissions.ProcurementView,
-        Permissions.ProcurementRequest,
-        Permissions.ReceivingView,
-        Permissions.ReportsView
-    };
+    public static IReadOnlyList<string> InventoryOfficerPermissions { get; } = Array.Empty<string>();
 
-    public static IReadOnlyList<string> AccountsPayableClerkPermissions { get; } = new string[]
-    {
-        Permissions.ProductsView,
-        Permissions.ProcurementView,
-        Permissions.ReceivingView,
-        Permissions.PayablesView,
-        Permissions.PayablesManageInvoices,
-        Permissions.PayablesRecordPayment,
-        Permissions.ReportsView
-    };
+    public static IReadOnlyList<string> AccountsPayableClerkPermissions { get; } = Array.Empty<string>();
 
-    public static IReadOnlyList<string> FinanceManagerPermissions { get; } = new string[]
-    {
-        Permissions.ProductsView,
-        Permissions.InventoryView,
-        Permissions.ProcurementView,
-        Permissions.ProcurementApproveRequisition,
-        Permissions.ProcurementApprovePurchaseOrder,
-        Permissions.ReceivingView,
-        Permissions.ReceivingApproveException,
-        Permissions.PayablesView,
-        Permissions.PayablesManageInvoices,
-        Permissions.PayablesApproveVariance,
-        Permissions.PayablesRecordPayment,
-        Permissions.PayablesApprovePayment,
-        Permissions.ReportsView,
-        Permissions.AuditView
-    };
+    public static IReadOnlyList<string> FinanceManagerPermissions { get; } = Array.Empty<string>();
 
-    public static IReadOnlyList<string> DepartmentHeadPermissions { get; } = new string[]
-    {
-        Permissions.ProductsView,
-        Permissions.InventoryView,
-        Permissions.ProcurementView,
-        Permissions.ProcurementRequest,
-        Permissions.ProcurementApproveRequisition,
-        Permissions.ReportsView
-    };
+    public static IReadOnlyList<string> DepartmentHeadPermissions { get; } = Array.Empty<string>();
 
     public static IReadOnlyList<SeedUnit> Units { get; } = new SeedUnit[]
     {
@@ -299,12 +246,6 @@ public static class DefaultSeedData
         AddPermissions(permissions, AdminRoleId, AdminPermissions);
         AddPermissions(permissions, ManagerRoleId, ManagerPermissions);
         AddPermissions(permissions, CashierRoleId, CashierPermissions);
-        AddPermissions(permissions, PurchasingOfficerRoleId, PurchasingOfficerPermissions);
-        AddPermissions(permissions, ReceivingClerkRoleId, ReceivingClerkPermissions);
-        AddPermissions(permissions, InventoryOfficerRoleId, InventoryOfficerPermissions);
-        AddPermissions(permissions, AccountsPayableClerkRoleId, AccountsPayableClerkPermissions);
-        AddPermissions(permissions, FinanceManagerRoleId, FinanceManagerPermissions);
-        AddPermissions(permissions, DepartmentHeadRoleId, DepartmentHeadPermissions);
 
         return permissions;
     }

@@ -616,6 +616,9 @@ public static class Program
             case "manual-m1-bootstrap-auth-repair":
                 ManualM1BootstrapAuthRepairChecks.Run();
                 return;
+            case "role-m4":
+                RoleM4PermissionBoundaryRegressionMatrixChecks.RunAsync().GetAwaiter().GetResult();
+                return;
             case "role-authorization-blocker-fix":
                 RoleAuthorizationBlockerFixChecks.RunAsync().GetAwaiter().GetResult();
                 return;
