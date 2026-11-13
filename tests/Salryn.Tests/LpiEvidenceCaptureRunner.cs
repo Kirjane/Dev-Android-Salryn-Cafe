@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Globalization;
+using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Data.Sqlite;
 using Salryn.Api.Local;
@@ -168,11 +170,137 @@ public static class LpiEvidenceCaptureRunner
                 receiverUserId,
                 approverUserId))).Value!;
 
-            // Partial AP Payment
-            SupplierPaymentModel paymentOne = (await service.RecordSupplierPaymentAsync(new RecordSupplierPaymentRequest(
-                invoiceAlpha.Id, new DateOnly(2026, 11, 12), 100_000, "BankTransfer", "OperatingBank", "BPI-TRF-9001", null, "BPI Corporate", "Partial settlement #1", "lpi-pay-req-1", apClerkUserId, null))).Value!;
-            paymentOne = (await service.ApproveSupplierPaymentAsync(new ApproveSupplierPaymentRequest(
-                paymentOne.Id, financeManagerUserId, "YES", "Actual BPI transfer confirmed"))).Value!;
+            // Partial AP payment: the declared transfer date is a synthetic fixture fact, never a service default.
+            DateOnly requestedPaymentDate = new(2026, 11, 12);
+            DateOnly manilaBusinessToday = DateOnly.FromDateTime(
+                TimeProvider.System.GetUtcNow().ToOffset(TimeSpan.FromHours(8)).DateTime);
+            if (requestedPaymentDate > manilaBusinessToday)
+            {
+                throw new InvalidOperationException(
+                    $"LPI evidence fixture cannot confirm a future transfer dated {requestedPaymentDate:yyyy-MM-dd}; Manila today is {manilaBusinessToday:yyyy-MM-dd}.");
+            }
+
+            DateOnly actualTransferDate = requestedPaymentDate;
+            string actualTransferDateText = actualTransferDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            SupplierInvoiceModel invoiceBeforePayment = RequireSuccess(
+                await service.GetSupplierInvoiceByIdAsync(invoiceAlpha.Id),
+                "Load invoice before synthetic payment");
+            Require(invoiceBeforePayment.RemainingBalanceCents > 100_000,
+                "LPI evidence fixture must have more than 100,000 cents outstanding for a partial payment.");
+
+            SupplierPaymentModel paymentOne = RequireSuccess(
+                await service.RecordSupplierPaymentAsync(new RecordSupplierPaymentRequest(
+                    invoiceAlpha.Id, requestedPaymentDate, 100_000, "BankTransfer", "OperatingBank",
+                    "BPI-TRF-9001", null, "BPI Corporate", "Partial settlement #1",
+                    "lpi-pay-req-1", apClerkUserId, null)),
+                "Record synthetic pending supplier payment");
+            Require(paymentOne.Status == SupplierPaymentStatuses.PendingApproval &&
+                    paymentOne.PaymentDate == requestedPaymentDate &&
+                    paymentOne.ActualDisbursementDate is null &&
+                    paymentOne.ApprovedByUserId is null && paymentOne.ApprovedAt is null,
+                "Synthetic payment must remain pending with only its original requested date.");
+
+            Result<SupplierPaymentModel> settlementResult = await service.ApproveSupplierPaymentAsync(
+                new ApproveSupplierPaymentRequest(
+                    paymentOne.Id, financeManagerUserId, "YES", "Actual BPI transfer confirmed",
+                    ActualDisbursementDate: actualTransferDateText));
+            paymentOne = RequireSuccess(settlementResult, "Confirm synthetic supplier transfer");
+            Require(paymentOne.Status == SupplierPaymentStatuses.Settled &&
+                    paymentOne.PaymentDate == requestedPaymentDate &&
+                    paymentOne.ActualDisbursementDate == actualTransferDate &&
+                    paymentOne.ApprovedByUserId == financeManagerUserId &&
+                    paymentOne.ApprovedAt.HasValue,
+                "Settlement must retain requested date, exact actual transfer date and authenticated confirmation actor/time.");
+
+            SupplierInvoiceModel invoiceAfterPayment = RequireSuccess(
+                await service.GetSupplierInvoiceByIdAsync(invoiceAlpha.Id),
+                "Reload supplier invoice after settlement");
+            Require(invoiceAfterPayment.PaidAmountCents == invoiceBeforePayment.PaidAmountCents + paymentOne.AmountCents &&
+                    invoiceAfterPayment.RemainingBalanceCents == invoiceBeforePayment.RemainingBalanceCents - paymentOne.AmountCents &&
+                    invoiceAfterPayment.Status == "PartiallyPaid",
+                "Partial settlement must post exactly 100,000 cents and preserve the remaining AP liability.");
+
+            // Independently verify disposable SQLite before attempting any browser capture.
+            using (SqliteConnection verification = new($"Data Source={paths.DatabasePath}"))
+            {
+                verification.Open();
+                using SqliteCommand check = verification.CreateCommand();
+
+                check.CommandText = """
+                    SELECT payment_date, actual_disbursement_date, approved_at, approved_by_user_id, status
+                    FROM supplier_payments WHERE id=$id;
+                    """;
+                check.Parameters.AddWithValue("$id", paymentOne.Id.ToString("D"));
+                using (SqliteDataReader persistedPayment = check.ExecuteReader())
+                {
+                    Require(persistedPayment.Read(), "Settled supplier payment must persist.");
+                    Require(persistedPayment.GetString(0) == requestedPaymentDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) &&
+                            persistedPayment.GetString(1) == actualTransferDateText &&
+                            !persistedPayment.IsDBNull(2) &&
+                            persistedPayment.GetString(3) == financeManagerUserId.ToString("D") &&
+                            persistedPayment.GetString(4) == SupplierPaymentStatuses.Settled,
+                        "SQLite payment must persist three-date custody, actual approver and Settled status.");
+                    Require(!persistedPayment.Read(), "Settlement must persist as one payment record.");
+                }
+
+                check.Parameters.Clear();
+                check.CommandText = """
+                    SELECT paid_amount_cents, remaining_balance_cents, status
+                    FROM supplier_invoices WHERE id=$id;
+                    """;
+                check.Parameters.AddWithValue("$id", invoiceAlpha.Id.ToString("D"));
+                using (SqliteDataReader persistedInvoice = check.ExecuteReader())
+                {
+                    Require(persistedInvoice.Read() &&
+                            persistedInvoice.GetInt64(0) == invoiceAfterPayment.PaidAmountCents &&
+                            persistedInvoice.GetInt64(1) == invoiceAfterPayment.RemainingBalanceCents &&
+                            persistedInvoice.GetString(2) == "PartiallyPaid",
+                        "SQLite supplier invoice accounting must agree with the service readback.");
+                    Require(!persistedInvoice.Read(), "Invoice accounting must persist in one row.");
+                }
+
+                check.Parameters.Clear();
+                check.CommandText = """
+                    SELECT COUNT(*), COALESCE(SUM(debit_cents), 0), COALESCE(SUM(credit_cents), 0)
+                    FROM supplier_payable_entries
+                    WHERE supplier_invoice_id=$invoice AND entry_type='PaymentApplied';
+                    """;
+                check.Parameters.AddWithValue("$invoice", invoiceAlpha.Id.ToString("D"));
+                using (SqliteDataReader ap = check.ExecuteReader())
+                {
+                    Require(ap.Read() && ap.GetInt64(0) == 1 &&
+                            ap.GetInt64(1) == paymentOne.AmountCents && ap.GetInt64(2) == 0,
+                        "Exactly one AP PaymentApplied debit must be posted for the settled partial payment.");
+                }
+
+                check.Parameters.Clear();
+                check.CommandText = """
+                    SELECT user_id, new_value_json FROM audit_logs
+                    WHERE entity_type='SupplierPayment' AND entity_id=$id
+                      AND action='AP_PAYMENT_CONFIRMED_AND_SETTLED';
+                    """;
+                check.Parameters.AddWithValue("$id", paymentOne.Id.ToString("D"));
+                using (SqliteDataReader audit = check.ExecuteReader())
+                {
+                    Require(audit.Read() && audit.GetString(0) == financeManagerUserId.ToString("D"),
+                        "Settlement audit must identify the actual authenticated finance manager.");
+                    using JsonDocument data = JsonDocument.Parse(audit.GetString(1));
+                    JsonElement facts = data.RootElement;
+                    Require(facts.GetProperty("RequestedPaymentDate").GetString() == requestedPaymentDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) &&
+                            facts.GetProperty("ActualDisbursementDate").GetString() == actualTransferDateText &&
+                            facts.GetProperty("SettlementTimestamp").GetDateTimeOffset() == paymentOne.ApprovedAt!.Value &&
+                            facts.GetProperty("SettlementActorUserId").GetString() == financeManagerUserId.ToString("D") &&
+                            facts.GetProperty("AppliedApLedgerAmountCents").GetInt64() == paymentOne.AmountCents,
+                        "Structured audit must preserve requested, actual and confirmation dates, actor and AP debit.");
+                    Require(!audit.Read(), "Exactly one successful settlement audit event is expected.");
+                }
+
+                check.Parameters.Clear();
+                check.CommandText = "SELECT COUNT(*) FROM cash_drawer_events;";
+                Require(Convert.ToInt64(check.ExecuteScalar()) == 0,
+                    "Supplier AP payment must not create any POS cashier drawer events.");
+            }
+            Console.WriteLine($"[LPI Evidence] Synthetic settlement verified: requested={requestedPaymentDate:yyyy-MM-dd}, actual={actualTransferDateText}, confirmed={paymentOne.ApprovedAt:O}, AP debit={paymentOne.AmountCents} cents.");
 
             // Manager session for browser UI
             InMemoryLocalApiSessionStore sessionStore = new();
@@ -213,13 +341,19 @@ public static class LpiEvidenceCaptureRunner
             // Execute capture script
             string repoRoot = FindRepoRoot() ?? Directory.GetCurrentDirectory();
             string scriptPath = Path.Combine(repoRoot, "scripts", "capture-lpi-screenshots.mjs");
-            ProcessStartInfo psi = new("node", $"\"{scriptPath}\" {boundUrl} {session.SessionId}")
+            string screenshotRoot = Path.Combine(Path.GetTempPath(), "salryn-lpi-evidence-screenshots-" + Guid.NewGuid().ToString("N"));
+            ProcessStartInfo psi = new("node")
             {
                 WorkingDirectory = repoRoot,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false
             };
+            psi.ArgumentList.Add(scriptPath);
+            psi.ArgumentList.Add(boundUrl);
+            psi.ArgumentList.Add(session.SessionId);
+            psi.ArgumentList.Add(screenshotRoot);
+            Console.WriteLine($"[LPI Evidence] Screenshot custody root: {screenshotRoot}");
 
             using Process? proc = Process.Start(psi);
             if (proc is null) throw new InvalidOperationException("Failed to launch node screenshot process.");
@@ -236,8 +370,20 @@ public static class LpiEvidenceCaptureRunner
 
             if (proc.ExitCode != 0)
             {
-                throw new InvalidOperationException($"Screenshot capture failed with exit code {proc.ExitCode}");
+                throw new InvalidOperationException($"Screenshot capture failed with exit code {proc.ExitCode}; output root: {screenshotRoot}");
             }
+
+            string[] screenshots = Directory.GetFiles(screenshotRoot, "*.png", SearchOption.TopDirectoryOnly);
+            Require(screenshots.Length == 8, $"Expected 8 screenshots, found {screenshots.Length} in {screenshotRoot}.");
+            foreach (string screenshotPath in screenshots)
+            {
+                using FileStream screenshot = File.OpenRead(screenshotPath);
+                byte[] pngSignature = new byte[8];
+                Require(screenshot.Length > 24 && screenshot.Read(pngSignature, 0, pngSignature.Length) == pngSignature.Length &&
+                        pngSignature.SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }),
+                    $"Screenshot must contain a nonempty PNG header: {screenshotPath}");
+            }
+            Console.WriteLine($"[LPI Evidence] Screenshot custody: {screenshots.Length} PNG files in {screenshotRoot}; rendered-content inspection remains an independent QA gate.");
 
             await app.StopAsync().ConfigureAwait(false);
             Console.WriteLine("[LPI Evidence] Screenshots successfully captured!");
@@ -250,6 +396,24 @@ public static class LpiEvidenceCaptureRunner
                 if (Directory.Exists(root)) Directory.Delete(root, true);
             }
             catch { }
+        }
+    }
+
+    private static T RequireSuccess<T>(Result<T> result, string operation)
+    {
+        if (result.IsFailure)
+        {
+            throw new InvalidOperationException(
+                $"{operation} failed: {result.ErrorDetail.Code}: {result.ErrorDetail.Message}");
+        }
+        return result.Value;
+    }
+
+    private static void Require(bool condition, string message)
+    {
+        if (!condition)
+        {
+            throw new InvalidOperationException($"LPI evidence assertion failed: {message}");
         }
     }
 
