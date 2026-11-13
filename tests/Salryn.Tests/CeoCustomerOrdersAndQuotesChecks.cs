@@ -661,11 +661,178 @@ public static class CeoCustomerOrdersAndQuotesChecks
                 var fulfilledAccountOrder = await matchCustResp.Content.ReadFromJsonAsync<CustomerOrder>();
                 Assert(fulfilledAccountOrder != null && fulfilledAccountOrder.Status == "Fulfilled", "Fulfilled account order status check failed");
                 Assert(fulfilledAccountOrder.SaleId == saleForCustAHttp, "SaleId mismatch for fulfilled account order");
+
+                // 5.1 Issues #46, #47 & #51: Quotation list hydration, validation/zero-write invariants, and same-SKU distinct terms.
+                var distinctTermsPayload = new
+                {
+                    customerName = "Distinct Pricing Client",
+                    customerContact = "0917-888-9999",
+                    notes = "Retail tier + wholesale tier same SKU (#51)",
+                    discountCents = 2_500L,
+                    validUntil = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7)),
+                    lines = new[]
+                    {
+                        new
+                        {
+                            productId = productId.ToString("D"),
+                            productNameSnapshot = "Industrial Tool Set",
+                            unitNameSnapshot = "pcs",
+                            quantityX1000 = 2000L,
+                            unitPriceCents = 85_000L,
+                            discountCents = 0L
+                        },
+                        new
+                        {
+                            productId = productId.ToString("D"),
+                            productNameSnapshot = "Industrial Tool Set",
+                            unitNameSnapshot = "pcs",
+                            quantityX1000 = 1000L,
+                            unitPriceCents = 79_000L,
+                            discountCents = 1_500L
+                        }
+                    }
+                };
+                HttpResponseMessage distinctQuoteResp = await client.PostAsJsonAsync("/api/customer-quotations", distinctTermsPayload);
+                Assert(distinctQuoteResp.StatusCode == HttpStatusCode.Created,
+                    $"QUOTE-51 same-SKU distinct terms creation failed with {distinctQuoteResp.StatusCode}");
+                CustomerQuotation? distinctQuote = await distinctQuoteResp.Content.ReadFromJsonAsync<CustomerQuotation>();
+                Assert(distinctQuote != null, "QUOTE-51 response body missing.");
+                Assert(distinctQuote!.Lines.Count == 2,
+                    $"QUOTE-51 expected 2 distinct lines for same SKU with different pricing/discount, got {distinctQuote.Lines.Count}");
+                Assert(distinctQuote.SubtotalCents == 247_500 && distinctQuote.DiscountCents == 2_500 && distinctQuote.TotalCents == 245_000,
+                    $"QUOTE-51 expected subtotal 247500, discount 2500, total 245000; got {distinctQuote.SubtotalCents}/{distinctQuote.DiscountCents}/{distinctQuote.TotalCents}");
+                Assert(distinctQuote.Lines[0].UnitPriceCents == 85_000 && distinctQuote.Lines[0].DiscountCents == 0 && distinctQuote.Lines[0].LineTotalCents == 170_000,
+                    "QUOTE-51 first distinct line mismatch.");
+                Assert(distinctQuote.Lines[1].UnitPriceCents == 79_000 && distinctQuote.Lines[1].DiscountCents == 1_500 && distinctQuote.Lines[1].LineTotalCents == 77_500,
+                    "QUOTE-51 second distinct line mismatch.");
+
+                HttpResponseMessage hydratedQuotesListResp = await client.GetAsync("/api/customer-quotations");
+                Assert(hydratedQuotesListResp.IsSuccessStatusCode, $"QUOTE-46 GET /api/customer-quotations failed with {hydratedQuotesListResp.StatusCode}");
+                var hydratedQuotesList = await hydratedQuotesListResp.Content.ReadFromJsonAsync<List<CustomerQuotation>>();
+                Assert(hydratedQuotesList != null && hydratedQuotesList.Count >= 3, "QUOTE-46 expected at least 3 quotations in list.");
+                foreach (CustomerQuotation listed in hydratedQuotesList!)
+                {
+                    var actualQuoteLines = ReadPersistedQuotationLines(paths.DatabasePath, listed.Id);
+                    Assert(actualQuoteLines.Count > 0 && actualQuoteLines.Count == listed.Lines.Count,
+                        $"QUOTE-46 list endpoint failed to hydrate persisted lines for {listed.QuoteNumber} (listed={listed.Lines.Count}, db={actualQuoteLines.Count}).");
+                    Assert(actualQuoteLines.SubtotalCents == listed.SubtotalCents,
+                        $"QUOTE-46 subtotal mismatch for {listed.QuoteNumber}.");
+                    HttpResponseMessage quoteDetailResp = await client.GetAsync($"/api/customer-quotations/{listed.Id}");
+                    Assert(quoteDetailResp.StatusCode == HttpStatusCode.OK, $"QUOTE-46 GET detail failed for {listed.QuoteNumber}");
+                    CustomerQuotation? quoteDetail = await quoteDetailResp.Content.ReadFromJsonAsync<CustomerQuotation>();
+                    Assert(quoteDetail != null && listed.Lines.SequenceEqual(quoteDetail.Lines),
+                        $"QUOTE-46 list lines diverged from detail lines for {listed.QuoteNumber}.");
+                }
+
+                // QUOTE-47 negative HTTP + service inputs: must return 400 and make zero DB / sequence / ledger writes.
+                var quoteCountsBeforeInvalid = ReadQuotationMutationCounts(paths.DatabasePath);
+                object[] invalidHttpQuotationPayloads =
+                [
+                    new
+                    {
+                        customerName = "Empty Lines Client",
+                        discountCents = 0L,
+                        lines = Array.Empty<object>()
+                    },
+                    new
+                    {
+                        customerName = "Zero Qty Client",
+                        discountCents = 0L,
+                        lines = new[] { new { productId = productId.ToString("D"), productNameSnapshot = "Industrial Tool Set", unitNameSnapshot = "pcs", quantityX1000 = 0L, unitPriceCents = 85_000L, discountCents = 0L } }
+                    },
+                    new
+                    {
+                        customerName = "Negative Price Client",
+                        discountCents = 0L,
+                        lines = new[] { new { productId = productId.ToString("D"), productNameSnapshot = "Industrial Tool Set", unitNameSnapshot = "pcs", quantityX1000 = 1000L, unitPriceCents = -1L, discountCents = 0L } }
+                    },
+                    new
+                    {
+                        customerName = "Negative Line Discount Client",
+                        discountCents = 0L,
+                        lines = new[] { new { productId = productId.ToString("D"), productNameSnapshot = "Industrial Tool Set", unitNameSnapshot = "pcs", quantityX1000 = 1000L, unitPriceCents = 85_000L, discountCents = -100L } }
+                    },
+                    new
+                    {
+                        customerName = "Excessive Line Discount Client",
+                        discountCents = 0L,
+                        lines = new[] { new { productId = productId.ToString("D"), productNameSnapshot = "Industrial Tool Set", unitNameSnapshot = "pcs", quantityX1000 = 1000L, unitPriceCents = 85_000L, discountCents = 90_000L } }
+                    },
+                    new
+                    {
+                        customerName = "Negative Doc Discount Client",
+                        discountCents = -500L,
+                        lines = new[] { new { productId = productId.ToString("D"), productNameSnapshot = "Industrial Tool Set", unitNameSnapshot = "pcs", quantityX1000 = 1000L, unitPriceCents = 85_000L, discountCents = 0L } }
+                    },
+                    new
+                    {
+                        customerName = "Excessive Doc Discount Client",
+                        discountCents = 90_000L,
+                        lines = new[] { new { productId = productId.ToString("D"), productNameSnapshot = "Industrial Tool Set", unitNameSnapshot = "pcs", quantityX1000 = 1000L, unitPriceCents = 85_000L, discountCents = 0L } }
+                    },
+                    new
+                    {
+                        customerName = "Blank Unit Client",
+                        discountCents = 0L,
+                        lines = new[] { new { productId = productId.ToString("D"), productNameSnapshot = "Industrial Tool Set", unitNameSnapshot = "   ", quantityX1000 = 1000L, unitPriceCents = 85_000L, discountCents = 0L } }
+                    },
+                    new
+                    {
+                        customerName = "Unknown Product Client",
+                        discountCents = 0L,
+                        lines = new[] { new { productId = Guid.NewGuid().ToString("D"), productNameSnapshot = "Missing Item", unitNameSnapshot = "pcs", quantityX1000 = 1000L, unitPriceCents = 85_000L, discountCents = 0L } }
+                    },
+                    new
+                    {
+                        customerName = "Overflow Quotation Client",
+                        discountCents = 0L,
+                        lines = new[] { new { productId = productId.ToString("D"), productNameSnapshot = "Industrial Tool Set", unitNameSnapshot = "pcs", quantityX1000 = long.MaxValue / 2L, unitPriceCents = 1000L, discountCents = 0L } }
+                    }
+                ];
+
+                for (int i = 0; i < invalidHttpQuotationPayloads.Length; i++)
+                {
+                    HttpResponseMessage badQuoteResp = await client.PostAsJsonAsync("/api/customer-quotations", invalidHttpQuotationPayloads[i]);
+                    Assert(badQuoteResp.StatusCode == HttpStatusCode.BadRequest,
+                        $"QUOTE-47 invalid payload #{i} must return 400 BadRequest, got {badQuoteResp.StatusCode}");
+                }
+
+                var overflowServiceRes = await service.CreateQuotationAsync(
+                    cashierId,
+                    "Cashier Jane",
+                    new CreateCustomerQuotationRequest(
+                        "Overflow Service Client",
+                        null,
+                        null,
+                        0L,
+                        null,
+                        new[] { new CreateCustomerQuotationLineRequest(productId, "Industrial Tool Set", null, "pcs", long.MaxValue / 2L, 1000L, 0L) }),
+                    CancellationToken.None);
+                Assert(overflowServiceRes.IsFailure && overflowServiceRes.ErrorDetail.Code == "Quotation.AmountOverflow",
+                    $"QUOTE-47 service overflow expected Quotation.AmountOverflow, got {overflowServiceRes.Error}");
+
+                var quoteCountsAfterInvalid = ReadQuotationMutationCounts(paths.DatabasePath);
+                Assert(quoteCountsAfterInvalid == quoteCountsBeforeInvalid,
+                    $"QUOTE-47 invalid quotation attempts mutated DB/sequence/ledger counts: before={quoteCountsBeforeInvalid}, after={quoteCountsAfterInvalid}");
             }
             finally
             {
                 await app.StopAsync().ConfigureAwait(false);
                 await app.DisposeAsync().ConfigureAwait(false);
+            }
+
+            // 5.2 Restart custody check for quotations (#46 / #51)
+            SalrynLocalComposition restartedComposition = SalrynLocalComposition.Create(paths);
+            await restartedComposition.InitializeDatabaseAsync().ConfigureAwait(false);
+            SqliteCustomerOrdersAndQuotesService restartedQuotesService = new(restartedComposition.ConnectionFactory);
+            var postRestartQuotes = await restartedQuotesService.GetQuotationsAsync(CancellationToken.None);
+            Assert(postRestartQuotes.IsSuccess && postRestartQuotes.Value.Count >= 3,
+                "Post-restart quotation list retrieval failed.");
+            foreach (CustomerQuotation rq in postRestartQuotes.Value)
+            {
+                var detailAfterRestart = await restartedQuotesService.GetQuotationByIdAsync(rq.Id, CancellationToken.None);
+                Assert(detailAfterRestart.IsSuccess && rq.Lines.Count > 0 && rq.Lines.SequenceEqual(detailAfterRestart.Value.Lines),
+                    $"Post-restart quotation list/detail mismatch for {rq.QuoteNumber}.");
             }
 
             // 6. Test genuine upgrade path from migration v30 to v31
@@ -721,6 +888,43 @@ public static class CeoCustomerOrdersAndQuotesChecks
         if (!reader.Read()) throw new InvalidOperationException("Unable to inspect order mutation counts.");
         return (reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2), reader.GetInt64(3),
             reader.GetInt64(4), reader.GetInt64(5), reader.GetInt64(6));
+    }
+
+    private static (long Count, long SubtotalCents) ReadPersistedQuotationLines(string databasePath, Guid quoteId)
+    {
+        using SqliteConnection connection = new($"Data Source={databasePath};Mode=ReadOnly");
+        connection.Open();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*), COALESCE(SUM(line_total_cents), 0)
+            FROM customer_quotation_lines WHERE quotation_id = $id;
+            """;
+        command.Parameters.AddWithValue("$id", quoteId.ToString("D"));
+        using SqliteDataReader reader = command.ExecuteReader();
+        if (!reader.Read()) throw new InvalidOperationException("Unable to inspect persisted quotation lines.");
+        return (reader.GetInt64(0), reader.GetInt64(1));
+    }
+
+    private static (long Quotes, long Lines, long Audit, long Sales, long Payments, long Stock, long Cash, long PqSequenceSum)
+        ReadQuotationMutationCounts(string databasePath)
+    {
+        using SqliteConnection connection = new($"Data Source={databasePath};Mode=ReadOnly");
+        connection.Open();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT (SELECT COUNT(*) FROM customer_quotations),
+                   (SELECT COUNT(*) FROM customer_quotation_lines),
+                   (SELECT COUNT(*) FROM audit_logs WHERE action = 'CUSTOMER_QUOTATION_CREATED'),
+                   (SELECT COUNT(*) FROM sales),
+                   (SELECT COUNT(*) FROM payments),
+                   (SELECT COUNT(*) FROM stock_movements),
+                   (SELECT COUNT(*) FROM cash_drawer_events),
+                   COALESCE((SELECT SUM(current_number) FROM lpi_document_sequences WHERE prefix LIKE 'PQ-%'), 0);
+            """;
+        using SqliteDataReader reader = command.ExecuteReader();
+        if (!reader.Read()) throw new InvalidOperationException("Unable to inspect quotation mutation counts.");
+        return (reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2), reader.GetInt64(3),
+            reader.GetInt64(4), reader.GetInt64(5), reader.GetInt64(6), reader.GetInt64(7));
     }
 
     private static Guid SeedRealSale(
@@ -878,7 +1082,11 @@ public static class CeoCustomerOrdersAndQuotesChecks
                 using SqliteCommand cmd = conn.CreateCommand();
                 cmd.CommandText = "SELECT MAX(version) FROM schema_migrations;";
                 long maxV = Convert.ToInt64(cmd.ExecuteScalar());
-                Assert(maxV == 31, $"Expected max migration version 31 after upgrade, got {maxV}");
+                Assert(maxV >= 31, $"Expected max migration version >= 31 after upgrade, got {maxV}");
+
+                cmd.CommandText = "SELECT COUNT(*) FROM schema_migrations WHERE version = 31;";
+                long v31Count = Convert.ToInt64(cmd.ExecuteScalar());
+                Assert(v31Count == 1, $"Expected migration version 31 to be applied during upgrade, got count {v31Count}");
 
                 cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='uq_customer_orders_sale_id';";
                 long idxCount = Convert.ToInt64(cmd.ExecuteScalar());
