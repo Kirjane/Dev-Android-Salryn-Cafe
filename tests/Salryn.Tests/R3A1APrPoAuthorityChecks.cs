@@ -184,6 +184,124 @@ public static class R3A1APrPoAuthorityChecks
                 Require(suggestedLine.GetProperty("preferredSupplierId").ValueKind == JsonValueKind.Null &&
                         suggestedLine.GetProperty("preferredSupplierName").GetString() == "Suggested Local Wholesaler",
                     "Issue #58 D08: Cashier suggestion must persist as non-authoritative supplier name without linking/creating a supplier ID.");
+                Require(ReadString(paths.DatabasePath, "SELECT COUNT(*) FROM purchase_requisition_lines WHERE requisition_id=$id AND preferred_supplier_id IS NULL", revisedPrId) == "1",
+                    "Issue #58 D08: Cashier suggestion SQLite row must keep preferred_supplier_id NULL.");
+
+                string prCountBeforeCashierSupplierReject = ReadString(paths.DatabasePath, "SELECT COUNT(*) FROM purchase_requisitions WHERE id <> $id", Guid.Empty);
+                string prLineCountBeforeCashierSupplierReject = ReadString(paths.DatabasePath, "SELECT COUNT(*) FROM purchase_requisition_lines WHERE id <> $id", Guid.Empty);
+
+                using (HttpResponseMessage cashierItemsSupplierResp = await cashierAClient.PostAsJsonAsync("/api/lpi/requisitions", new
+                {
+                    department = "Store Operations",
+                    purpose = "D08 negative items preferredSupplierId",
+                    requiredDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(6)),
+                    submitImmediately = false,
+                    items = new[]
+                    {
+                        new
+                        {
+                            productId,
+                            itemDescription = "A1A Notebook",
+                            requestedQuantityX1000 = 2_000L,
+                            estimatedCostCents = 5_000L,
+                            preferredSupplierId = supplier.Id,
+                            suggestedSupplierName = "Should Not Link"
+                        }
+                    }
+                }).ConfigureAwait(false))
+                {
+                    string body = await cashierItemsSupplierResp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    Require(cashierItemsSupplierResp.StatusCode == HttpStatusCode.Forbidden &&
+                            body.Contains("Lpi.Requisition.SupplierSelectionForbidden", StringComparison.Ordinal),
+                        $"Issue #58 D08: Cashier items payload with preferredSupplierId must be rejected 403, got {(int)cashierItemsSupplierResp.StatusCode}: {body}");
+                }
+
+                using (HttpResponseMessage cashierLinesSupplierResp = await cashierAClient.PostAsJsonAsync("/api/lpi/requisitions", new
+                {
+                    departmentName = "Store Operations",
+                    purpose = "D08 negative lines preferredSupplierId",
+                    dateNeeded = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(6)),
+                    submitImmediately = false,
+                    lines = new[]
+                    {
+                        new
+                        {
+                            productId,
+                            itemDescription = "A1A Notebook",
+                            purchaseClassification = "Merchandise",
+                            unitName = "pc",
+                            requestedQtyX1000 = 2_000L,
+                            estimatedUnitCostCents = 5_000L,
+                            preferredSupplierId = supplier.Id
+                        }
+                    }
+                }).ConfigureAwait(false))
+                {
+                    string body = await cashierLinesSupplierResp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    Require(cashierLinesSupplierResp.StatusCode == HttpStatusCode.Forbidden &&
+                            body.Contains("Lpi.Requisition.SupplierSelectionForbidden", StringComparison.Ordinal),
+                        $"Issue #58 D08: Cashier lines payload with preferredSupplierId must be rejected 403, got {(int)cashierLinesSupplierResp.StatusCode}: {body}");
+                }
+
+                Require(ReadString(paths.DatabasePath, "SELECT COUNT(*) FROM purchase_requisitions WHERE id <> $id", Guid.Empty) == prCountBeforeCashierSupplierReject &&
+                        ReadString(paths.DatabasePath, "SELECT COUNT(*) FROM purchase_requisition_lines WHERE id <> $id", Guid.Empty) == prLineCountBeforeCashierSupplierReject,
+                    "Issue #58 D08: Rejected Cashier preferredSupplierId requests must cause zero DB writes.");
+
+                using (HttpResponseMessage managerLinesSupplierResp = await managerClient.PostAsJsonAsync("/api/lpi/requisitions", new
+                {
+                    departmentName = "Procurement",
+                    purpose = "Manager explicit preferredSupplierId via lines",
+                    dateNeeded = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(6)),
+                    submitImmediately = false,
+                    lines = new[]
+                    {
+                        new
+                        {
+                            productId,
+                            itemDescription = "A1A Notebook",
+                            purchaseClassification = "Merchandise",
+                            unitName = "pc",
+                            requestedQtyX1000 = 2_000L,
+                            estimatedUnitCostCents = 5_000L,
+                            preferredSupplierId = supplier.Id
+                        }
+                    }
+                }).ConfigureAwait(false))
+                {
+                    Require(managerLinesSupplierResp.StatusCode == HttpStatusCode.Created,
+                        $"Manager explicit preferredSupplierId via lines must succeed, got {(int)managerLinesSupplierResp.StatusCode}");
+                    using JsonDocument mgrDoc = JsonDocument.Parse(await managerLinesSupplierResp.Content.ReadAsStringAsync().ConfigureAwait(false));
+                    Guid mgrSupPrId = Guid.Parse(mgrDoc.RootElement.GetProperty("id").GetString()!);
+                    Require(ReadString(paths.DatabasePath, "SELECT preferred_supplier_id FROM purchase_requisition_lines WHERE requisition_id=$id", mgrSupPrId) == supplier.Id.ToString("D"),
+                        "Manager lines preferredSupplierId must persist in SQLite.");
+                }
+
+                using (HttpResponseMessage adminItemsSupplierResp = await adminClient.PostAsJsonAsync("/api/lpi/requisitions", new
+                {
+                    department = "Executive",
+                    purpose = "Admin explicit preferredSupplierId via items",
+                    requiredDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(6)),
+                    submitImmediately = false,
+                    items = new[]
+                    {
+                        new
+                        {
+                            productId,
+                            itemDescription = "A1A Notebook",
+                            requestedQuantityX1000 = 2_000L,
+                            estimatedCostCents = 5_000L,
+                            preferredSupplierId = supplier.Id
+                        }
+                    }
+                }).ConfigureAwait(false))
+                {
+                    Require(adminItemsSupplierResp.StatusCode == HttpStatusCode.Created,
+                        $"Admin explicit preferredSupplierId via items must succeed, got {(int)adminItemsSupplierResp.StatusCode}");
+                    using JsonDocument admDoc = JsonDocument.Parse(await adminItemsSupplierResp.Content.ReadAsStringAsync().ConfigureAwait(false));
+                    Guid admSupPrId = Guid.Parse(admDoc.RootElement.GetProperty("id").GetString()!);
+                    Require(ReadString(paths.DatabasePath, "SELECT preferred_supplier_id FROM purchase_requisition_lines WHERE requisition_id=$id", admSupPrId) == supplier.Id.ToString("D"),
+                        "Admin items preferredSupplierId must persist in SQLite.");
+                }
 
                 using HttpResponseMessage cashierCatalogResp = await cashierAClient.GetAsync("/api/lpi/requisition-catalog").ConfigureAwait(false);
                 string cashierCatalogRaw = await cashierCatalogResp.Content.ReadAsStringAsync().ConfigureAwait(false);

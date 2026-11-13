@@ -213,6 +213,18 @@ internal static class LocalProcureToPayEndpoints
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementRequest) is IResult denied)
                 return denied;
             LocalApiSession session = RequiredSession(context, sessions);
+            if (IsCashier(session) &&
+                ((request.Lines?.Any(l => l.PreferredSupplierId.HasValue) ?? false) ||
+                 (request.Items?.Any(i => i.PreferredSupplierId.HasValue) ?? false)))
+            {
+                return Results.Json(
+                    new
+                    {
+                        code = "Lpi.Requisition.SupplierSelectionForbidden",
+                        error = "Cashier role cannot assign an authoritative preferred supplier ID on a purchase requisition; use suggestedSupplierName instead."
+                    },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
             DateOnly needed = request.ResolvedDateNeeded ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7));
             return ToResult(
                 await service.CreatePurchaseRequisitionAsync(new CreatePurchaseRequisitionRequest(
