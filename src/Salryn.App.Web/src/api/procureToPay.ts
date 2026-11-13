@@ -784,6 +784,7 @@ export async function createRequisition(data: {
     requestedQuantityX1000: number;
     estimatedCostCents: number;
     preferredSupplierId?: string;
+    suggestedSupplierName?: string;
     notes?: string;
   }>;
 }): Promise<PurchaseRequisition> {

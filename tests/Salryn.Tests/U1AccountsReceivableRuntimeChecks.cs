@@ -195,8 +195,10 @@ public static class U1AccountsReceivableRuntimeChecks
                     SqliteAccountsReceivableService.LedgerQueryLimit,
                 "Customer ledger must enforce its backend result cap.");
 
+            await AssertCollectionMethodAndNonCashConfirmationContractAsync(paths.DatabasePath, clock).ConfigureAwait(false);
+
             Console.WriteLine(
-                "U1 runtime: full/partial Utang, idempotency, receipt identity, aging, net-cash reports, and backup/restore PASS.");
+                "U1 runtime: full/partial Utang, idempotency, receipt identity, aging, net-cash reports, digital ref/confirmation, and backup/restore PASS.");
         }
         finally
         {
@@ -731,6 +733,163 @@ public static class U1AccountsReceivableRuntimeChecks
         command.CommandText = sql;
         command.Parameters.AddWithValue("$value", value);
         return Convert.ToString(command.ExecuteScalar()) ?? string.Empty;
+    }
+
+    private static async Task AssertCollectionMethodAndNonCashConfirmationContractAsync(
+        string databasePath,
+        TimeProvider clock)
+    {
+        string isolatedRoot = Path.Combine(Path.GetTempPath(), "salryn-u1-d06-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            DbPaths isolatedPaths = DbPaths.CreateDevelopment(isolatedRoot);
+            SalrynLocalComposition isolatedComposition = SalrynLocalComposition.Create(isolatedPaths);
+            await isolatedComposition.InitializeDatabaseAsync().ConfigureAwait(false);
+            Guid operatorId = SeedUser(isolatedPaths.DatabasePath);
+            SqliteAccountsReceivableService isolatedReceivables = new(isolatedComposition.ConnectionFactory, clock);
+            ReceivableCustomer digitalCustomer = await CreateCustomerAsync(isolatedReceivables, operatorId, "D06 Digital Customer", "09178889999");
+            RequireSuccess(await isolatedReceivables.AdjustAsync(new(digitalCustomer.Id, 10_000, true, "D06 Utang debit", operatorId)), "D06 debit");
+
+            ToggleU1LicenseService licenseService = new() { U1Enabled = true };
+            InMemoryLocalApiSessionStore sessions = new();
+            await using WebApplication app = await LocalApiApplicationFactory.CreateAsync(
+                new[] { "--dev" },
+                new LocalApiApplicationOptions
+                {
+                    Url = "http://127.0.0.1:0",
+                    Composition = isolatedComposition,
+                    InitializeDatabase = false,
+                    SessionStore = sessions,
+                    LicenseService = licenseService,
+                    EnableStaticWebAssets = false,
+                    WriteDevelopmentDatabasePath = false
+                });
+            await app.StartAsync();
+            try
+            {
+                Uri address = new(app.Urls.Single(url => url.StartsWith("http://127.0.0.1:", StringComparison.OrdinalIgnoreCase)));
+                LocalApiSession managerSession = sessions.Create(new AuthenticatedUserReadModel(
+                    operatorId, "d06-manager", "D06 Manager", "Manager", UserStatus.Active,
+                    new[] { DefaultSeedData.Permissions.ReceivablesView, DefaultSeedData.Permissions.ReceivablesCollect }));
+                using HttpClient manager = Client(address, managerSession);
+
+                foreach (string badMethod in new[] { "CashOther", "Unknown", "", "   " })
+                {
+                    using HttpResponseMessage badMethodResp = await manager.PostAsJsonAsync("/api/receivables/collections", new
+                    {
+                        customerId = digitalCustomer.Id,
+                        amountCents = 1_000,
+                        method = badMethod,
+                        note = "Invalid tender probe",
+                        clientRequestId = Guid.NewGuid().ToString("N")
+                    });
+                    string body = await badMethodResp.Content.ReadAsStringAsync();
+                    Require(badMethodResp.StatusCode == HttpStatusCode.BadRequest && body.Contains("Receivables.InvalidPaymentMethod", StringComparison.Ordinal),
+                        $"Issue #57 N03: method '{badMethod}' must fail with 400 Receivables.InvalidPaymentMethod, got {badMethodResp.StatusCode} {body}");
+                }
+
+                using HttpResponseMessage missingRefResp = await manager.PostAsJsonAsync("/api/receivables/collections", new
+                {
+                    customerId = digitalCustomer.Id,
+                    amountCents = 1_000,
+                    method = "GCash",
+                    note = "Missing reference",
+                    clientRequestId = Guid.NewGuid().ToString("N"),
+                    nonCashConfirmed = true
+                });
+                Require(missingRefResp.StatusCode == HttpStatusCode.BadRequest &&
+                        (await missingRefResp.Content.ReadAsStringAsync()).Contains("Receivables.ReferenceNumberRequired", StringComparison.Ordinal),
+                    "Issue #57 D06: GCash without referenceNumber must return 400 Receivables.ReferenceNumberRequired.");
+
+                foreach (string unconfirmedMethod in new[] { "GCash", "Maya", "Debit" })
+                {
+                    using HttpResponseMessage missingConfirmResp = await manager.PostAsJsonAsync("/api/receivables/collections", new
+                    {
+                        customerId = digitalCustomer.Id,
+                        amountCents = 1_000,
+                        method = unconfirmedMethod,
+                        referenceNumber = $"{unconfirmedMethod.ToUpperInvariant()}-REF-001",
+                        nonCashConfirmed = false,
+                        clientRequestId = Guid.NewGuid().ToString("N")
+                    });
+                    Require(missingConfirmResp.StatusCode == HttpStatusCode.BadRequest &&
+                            (await missingConfirmResp.Content.ReadAsStringAsync()).Contains("Receivables.NonCashConfirmationRequired", StringComparison.Ordinal),
+                        $"Issue #57 D06: {unconfirmedMethod} without explicit operator confirmation must return 400 Receivables.NonCashConfirmationRequired.");
+                }
+
+                Require(ReadLong(isolatedPaths.DatabasePath, "SELECT COUNT(*) FROM accounts_receivable_collections WHERE $value IS NOT NULL", "1") == 0 &&
+                        ReadLong(isolatedPaths.DatabasePath, "SELECT COUNT(*) FROM cash_drawer_events WHERE $value IS NOT NULL", "1") == 0,
+                    "Issue #57 N03/D06: Rejected collection attempts must create zero collection or drawer rows.");
+
+                string gcashRequestId = Guid.NewGuid().ToString("N");
+                using HttpResponseMessage validGcash = await manager.PostAsJsonAsync("/api/receivables/collections", new
+                {
+                    customerId = digitalCustomer.Id,
+                    amountCents = 4_000,
+                    method = " gcash ",
+                    note = "Digital verification ok",
+                    referenceNumber = "GCASH-REF-9001",
+                    nonCashConfirmed = true,
+                    clientRequestId = gcashRequestId
+                });
+                string validGcashBody = await validGcash.Content.ReadAsStringAsync();
+                Require(validGcash.StatusCode == HttpStatusCode.Created &&
+                        validGcashBody.Contains("\"method\":\"GCash\"", StringComparison.Ordinal) &&
+                        validGcashBody.Contains("GCASH-REF-9001", StringComparison.Ordinal) &&
+                        validGcashBody.Contains("Operator-confirmed", StringComparison.Ordinal),
+                    $"Issue #57 D06: Valid confirmed GCash collection must succeed cleanly, got {validGcash.StatusCode} {validGcashBody}");
+
+                using HttpResponseMessage conflictingReplay = await manager.PostAsJsonAsync("/api/receivables/collections", new
+                {
+                    customerId = digitalCustomer.Id,
+                    amountCents = 4_000,
+                    method = "GCash",
+                    note = "Digital verification ok",
+                    referenceNumber = "GCASH-REF-TAMPERED",
+                    nonCashConfirmed = true,
+                    clientRequestId = gcashRequestId
+                });
+                Require(conflictingReplay.StatusCode == HttpStatusCode.Conflict,
+                    "Issue #57 D06: Reused clientRequestId with altered referenceNumber must return 409 Conflict.");
+
+                using HttpResponseMessage validMaya = await manager.PostAsJsonAsync("/api/receivables/collections", new
+                {
+                    customerId = digitalCustomer.Id,
+                    amountCents = 3_000,
+                    method = "Maya",
+                    referenceNumber = "MAYA-REF-9002",
+                    nonCashConfirmed = true,
+                    clientRequestId = Guid.NewGuid().ToString("N")
+                });
+                Require(validMaya.StatusCode == HttpStatusCode.Created, "Issue #57 D06: Confirmed Maya collection must succeed.");
+
+                using HttpResponseMessage validDebit = await manager.PostAsJsonAsync("/api/receivables/collections", new
+                {
+                    customerId = digitalCustomer.Id,
+                    amountCents = 2_000,
+                    method = "Debit",
+                    referenceNumber = "DEBIT-REF-9003",
+                    nonCashConfirmed = true,
+                    clientRequestId = Guid.NewGuid().ToString("N")
+                });
+                Require(validDebit.StatusCode == HttpStatusCode.Created, "Issue #57 D06: Confirmed Debit collection must succeed.");
+
+                Require(Balance(RequireSuccess(await isolatedReceivables.SearchCustomersAsync(null), "D06 balances"), digitalCustomer.Id).BalanceCents == 1_000,
+                    "Issue #57 D06: Digital/Debit collections totaling 9,000 must leave 1,000 balance.");
+                Require(ReadLong(isolatedPaths.DatabasePath, "SELECT COUNT(*) FROM cash_drawer_events WHERE $value IS NOT NULL", "1") == 0 &&
+                        ReadLong(isolatedPaths.DatabasePath, "SELECT COUNT(*) FROM accounts_receivable_collections WHERE cashier_session_id IS NOT NULL AND $value IS NOT NULL", "1") == 0,
+                    "Issue #57 D06: Non-cash collections must create zero cash_drawer_events and leave cashier_session_id null.");
+            }
+            finally
+            {
+                await app.StopAsync();
+            }
+        }
+        finally
+        {
+            SqliteConnectionFactory.ClearAllPools();
+            if (Directory.Exists(isolatedRoot)) Directory.Delete(isolatedRoot, recursive: true);
+        }
     }
 
     private static T RequireSuccess<T>(Result<T> result, string area)

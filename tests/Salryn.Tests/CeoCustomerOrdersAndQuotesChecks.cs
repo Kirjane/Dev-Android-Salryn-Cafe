@@ -5,9 +5,11 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Data.Sqlite;
 using Salryn.Api.Local;
+using Salryn.Api.Local.Auth;
 using Salryn.Composition.Local;
 using Salryn.Core.Common;
 using Salryn.Core.Models;
+using Salryn.Core.ReadModels;
 using Salryn.Core.Security;
 using Salryn.Core.Services.Licensing;
 using Salryn.Infrastructure.Data;
@@ -346,14 +348,43 @@ public static class CeoCustomerOrdersAndQuotesChecks
             Assert(validCustFulfillRes.Value.Status == "Fulfilled", "Status must be Fulfilled");
             Assert(validCustFulfillRes.Value.SaleId == validCustSale, "SaleId must match");
 
+            // 10d. Issue #57 N02: repeated-SKU order lines must aggregate total required quantity before checking sale items.
+            var repeatedSkuOrderRes = await service.CreateOrderAsync(cashierId, "Cashier Jane", new CreateCustomerOrderRequest(
+                null,
+                "Repeated SKU Buyer",
+                "0917-444-5555",
+                DateOnly.FromDateTime(DateTime.UtcNow.AddDays(3)),
+                "Duplicate SKU aggregation regression test",
+                new List<CreateCustomerOrderLineRequest>
+                {
+                    new(productId, "Industrial Tool Set", null, "pcs", 1000, 85_000),
+                    new(productId, "Industrial Tool Set", null, "pcs", 1000, 85_000)
+                }), CancellationToken.None);
+            Assert(repeatedSkuOrderRes.IsSuccess, "Repeated-SKU order creation failed: " + repeatedSkuOrderRes.Error);
+
+            Guid singleQtySufficientTotalSale = SeedRealSale(paths.DatabasePath, "SL-DUP-SKU-1", cashierId, productId, "Industrial Tool Set", 1000, 170_000, 170_000);
+            var dupSkuUnderQtyRes = await service.FulfillOrderAsync(repeatedSkuOrderRes.Value.Id, singleQtySufficientTotalSale, CancellationToken.None);
+            Assert(!dupSkuUnderQtyRes.IsSuccess && dupSkuUnderQtyRes.ErrorDetail.Code == "CustomerOrder.SaleLineMismatch",
+                $"Issue #57 N02: expected CustomerOrder.SaleLineMismatch when two 1-unit order lines face 1-unit sale, got {dupSkuUnderQtyRes.ErrorDetail.Code}");
+            var repeatedSkuStillOpen = await service.GetOrderByIdAsync(repeatedSkuOrderRes.Value.Id);
+            Assert(repeatedSkuStillOpen.IsSuccess && repeatedSkuStillOpen.Value.Status == "Confirmed" && !repeatedSkuStillOpen.Value.SaleId.HasValue,
+                "Issue #57 N02: rejected fulfillment must leave order Confirmed and unlinked.");
+
+            Guid fullQtyDupSale = SeedRealSale(paths.DatabasePath, "SL-DUP-SKU-2", cashierId, productId, "Industrial Tool Set", 2000, 85_000, 170_000);
+            var dupSkuPassRes = await service.FulfillOrderAsync(repeatedSkuOrderRes.Value.Id, fullQtyDupSale, CancellationToken.None);
+            Assert(dupSkuPassRes.IsSuccess && dupSkuPassRes.Value.Status == "Fulfilled",
+                "Issue #57 N02 positive control: aggregate 2-unit sale must fulfill two 1-unit order lines.");
+
             // 5. Test Local HTTP API Endpoints
             string testToken = $"DISPOSABLE-TEST-{Guid.NewGuid():N}";
+            InMemoryLocalApiSessionStore sessionStore = new();
             await using WebApplication app = await LocalApiApplicationFactory.CreateAsync(
                 new[] { "--dev" },
                 new LocalApiApplicationOptions
                 {
                     Url = "http://127.0.0.1:0",
                     Composition = composition,
+                    SessionStore = sessionStore,
                     LicenseService = new FakeReproLicenseService(),
                     EnableStaticWebAssets = false,
                     WriteDevelopmentDatabasePath = false,
@@ -418,6 +449,32 @@ public static class CeoCustomerOrdersAndQuotesChecks
 
                 HttpResponseMessage createQuoteResp = await client.PostAsJsonAsync("/api/customer-quotations", httpQuotePayload);
                 Assert(createQuoteResp.StatusCode == HttpStatusCode.Created, $"POST /api/customer-quotations failed with {createQuoteResp.StatusCode}");
+                var createdHttpQuote = await createQuoteResp.Content.ReadFromJsonAsync<CustomerQuotation>();
+                Assert(createdHttpQuote != null, "Created quotation response body missing.");
+                HttpResponseMessage expireQuoteResp = await client.PostAsJsonAsync($"/api/customer-quotations/{createdHttpQuote!.Id}/status", new { status = "Expired" });
+                Assert(expireQuoteResp.StatusCode == HttpStatusCode.OK, $"Sales.Create user must update quotation status, got {expireQuoteResp.StatusCode}");
+
+                // Issue #57 N01: Products.View alone may read quotations, never create or mutate quotation status.
+                LocalApiSession productsViewOnlySession = sessionStore.Create(new AuthenticatedUserReadModel(
+                    cashierId, "products-view-only", "Catalog Reader", "Custom", UserStatus.Active,
+                    new[] { LocalApiPermissions.ProductsView }));
+                using HttpClient productsViewClient = new(new HttpClientHandler { UseCookies = false }) { BaseAddress = new Uri(boundUrl) };
+                productsViewClient.DefaultRequestHeaders.Add("Cookie", $"{LocalApiSessionService.SessionCookieName}={productsViewOnlySession.SessionId}");
+                Assert((await productsViewClient.GetAsync("/api/customer-quotations")).StatusCode == HttpStatusCode.OK,
+                    "Issue #57 N01: Products.View GET /api/customer-quotations must remain allowed.");
+                Assert((await productsViewClient.GetAsync($"/api/customer-quotations/{createdHttpQuote.Id}")).StatusCode == HttpStatusCode.OK,
+                    "Issue #57 N01: Products.View GET /api/customer-quotations/{id} must remain allowed.");
+
+                long quoteCountBeforeN01 = CountTableRows(paths.DatabasePath, "customer_quotations");
+                Assert((await productsViewClient.PostAsJsonAsync("/api/customer-quotations", httpQuotePayload)).StatusCode == HttpStatusCode.Forbidden,
+                    "Issue #57 N01: Products.View without Sales.Create must be denied POST /api/customer-quotations (403).");
+                Assert((await productsViewClient.PostAsJsonAsync($"/api/customer-quotations/{createdHttpQuote.Id}/status", new { status = "Issued" })).StatusCode == HttpStatusCode.Forbidden,
+                    "Issue #57 N01: Products.View without Sales.Create must be denied quotation status update (403).");
+                Assert(CountTableRows(paths.DatabasePath, "customer_quotations") == quoteCountBeforeN01,
+                    "Issue #57 N01: Denied quotation POST must not insert rows.");
+                var reloadedHttpQuote = await service.GetQuotationByIdAsync(createdHttpQuote.Id);
+                Assert(reloadedHttpQuote.IsSuccess && reloadedHttpQuote.Value.Status == "Expired",
+                    "Issue #57 N01: Denied status POST must not mutate quotation status.");
 
                 // Manager owns Customer Orders; Cashier retains quotation access only.
                 using HttpClient managerClient = new(new HttpClientHandler { UseCookies = false })
@@ -878,7 +935,11 @@ public static class CeoCustomerOrdersAndQuotesChecks
                 using SqliteCommand cmd = conn.CreateCommand();
                 cmd.CommandText = "SELECT MAX(version) FROM schema_migrations;";
                 long maxV = Convert.ToInt64(cmd.ExecuteScalar());
-                Assert(maxV == 31, $"Expected max migration version 31 after upgrade, got {maxV}");
+                Assert(maxV >= 31, $"Expected max migration version >= 31 after upgrade, got {maxV}");
+
+                cmd.CommandText = "SELECT COUNT(*) FROM schema_migrations WHERE version = 31;";
+                long v31Applied = Convert.ToInt64(cmd.ExecuteScalar());
+                Assert(v31Applied == 1, $"Expected migration version 31 to be applied during upgrade, got {v31Applied}");
 
                 cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='uq_customer_orders_sale_id';";
                 long idxCount = Convert.ToInt64(cmd.ExecuteScalar());
@@ -903,6 +964,15 @@ public static class CeoCustomerOrdersAndQuotesChecks
             }
             catch { }
         }
+    }
+
+    private static long CountTableRows(string databasePath, string tableName)
+    {
+        using SqliteConnection connection = new($"Data Source={databasePath};Mode=ReadOnly");
+        connection.Open();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = $"SELECT COUNT(*) FROM {tableName};";
+        return Convert.ToInt64(command.ExecuteScalar());
     }
 
     private static Guid SeedUserWithPassword(string dbPath, string username, string displayName, string passwordHash, Guid roleId)

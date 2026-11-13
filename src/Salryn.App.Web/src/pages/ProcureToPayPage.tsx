@@ -176,7 +176,7 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
     purpose: "Restock store inventory",
     requiredDate: "",
     notes: "",
-    items: [{ productId: "", uomId: "", quantity: "1", estimatedCost: "0", preferredSupplierId: "" }],
+    items: [{ productId: "", uomId: "", quantity: "1", estimatedCost: "0", preferredSupplierId: "", suggestedSupplierName: "" }],
   });
 
   const [selectedPrForQuote, setSelectedPrForQuote] = useState<string>(() => {
@@ -578,6 +578,7 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
                           ? (prod.costPriceCents / 100).toFixed(2)
                           : "0",
                         preferredSupplierId: "",
+                        suggestedSupplierName: "",
                       },
                     ],
                   });
@@ -638,7 +639,7 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
                           >
                             🖨️ Print PR
                           </Button>
-                          {canRequestPr && pr.status === "Draft" && (
+                          {canRequestPr && (pr.status === "Draft" || pr.status === "RevisionRequested") && pr.requestedByUserId === currentUserId && (
                             <Button
                               variant="secondary"
                               onClick={async () => {
@@ -1570,6 +1571,18 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
                     }}
                   />
                 </div>
+                <div className="col-span-4">
+                  <label className="block text-xs font-medium text-slate-700">Suggested Supplier (Optional, non-binding)</label>
+                  <TextInput
+                    value={item.suggestedSupplierName}
+                    placeholder="Optional supplier name for reviewer consideration"
+                    onChange={(e) => {
+                      const updated = [...prForm.items];
+                      updated[idx].suggestedSupplierName = e.target.value;
+                      setPrForm({ ...prForm, items: updated });
+                    }}
+                  />
+                </div>
               </div>
             ))}
           </div>
@@ -1593,6 +1606,7 @@ export function ProcureToPayPage({ initialTab }: { initialTab?: "overview" | "su
                       requestedQuantityX1000: Math.round(parseFloat(it.quantity) * 1000),
                       estimatedCostCents: Math.round(parseFloat(it.estimatedCost) * 100),
                       preferredSupplierId: it.preferredSupplierId || undefined,
+                      suggestedSupplierName: it.suggestedSupplierName?.trim() || undefined,
                     })),
                   });
                   notify.success("Purchase Requisition created.");

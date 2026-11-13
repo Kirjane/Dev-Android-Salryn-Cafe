@@ -1081,21 +1081,33 @@ internal static class LocalProcureToPayEndpoints
         long? EstimatedUnitCostCents,
         long? EstimatedCostCents,
         Guid? PreferredSupplierId,
+        string? SuggestedSupplierName,
         string? Specifications,
         string? Notes)
     {
-        public CreatePurchaseRequisitionLineInput ToLineInput() => new(
-            ProductId: ProductId,
-            ItemCode: ItemCode,
-            ItemDescription: ItemDescription ?? "Requested Item",
-            CategoryName: CategoryName,
-            PurchaseClassification: PurchaseClassification ?? "Merchandise",
-            UnitName: UnitName ?? "pc",
-            RequestedQtyX1000: RequestedQtyX1000 ?? RequestedQuantityX1000 ?? 1000L,
-            EstimatedUnitCostCents: EstimatedUnitCostCents ?? EstimatedCostCents ?? 0L,
-            PreferredSupplierId: PreferredSupplierId,
-            Specifications: Specifications,
-            Notes: Notes);
+        public CreatePurchaseRequisitionLineInput ToLineInput()
+        {
+            string? suggested = string.IsNullOrWhiteSpace(SuggestedSupplierName) ? null : SuggestedSupplierName.Trim();
+            string? cleanedNotes = string.IsNullOrWhiteSpace(Notes) ? null : Notes.Trim();
+            string? mergedNotes = suggested is null
+                ? cleanedNotes
+                : cleanedNotes is null
+                    ? $"Suggested supplier: {suggested}"
+                    : $"Suggested supplier: {suggested} | {cleanedNotes}";
+
+            return new CreatePurchaseRequisitionLineInput(
+                ProductId: ProductId,
+                ItemCode: ItemCode,
+                ItemDescription: ItemDescription ?? "Requested Item",
+                CategoryName: CategoryName,
+                PurchaseClassification: PurchaseClassification ?? "Merchandise",
+                UnitName: UnitName ?? "pc",
+                RequestedQtyX1000: RequestedQtyX1000 ?? RequestedQuantityX1000 ?? 1000L,
+                EstimatedUnitCostCents: EstimatedUnitCostCents ?? EstimatedCostCents ?? 0L,
+                PreferredSupplierId: PreferredSupplierId,
+                Specifications: Specifications,
+                Notes: mergedNotes);
+        }
     }
 
     internal sealed record CreateRequisitionApiRequest(

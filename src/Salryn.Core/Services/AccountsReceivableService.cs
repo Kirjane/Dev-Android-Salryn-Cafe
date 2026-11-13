@@ -25,7 +25,9 @@ public sealed record RecordReceivableCollectionRequest(
     string Method,
     string? Note,
     Guid CollectedByUserId,
-    string ClientRequestId);
+    string ClientRequestId,
+    string? ReferenceNumber = null,
+    bool NonCashConfirmed = false);
 
 public sealed record RecordReceivableAdjustmentRequest(
     Guid CustomerId,
