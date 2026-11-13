@@ -532,8 +532,6 @@ export async function run(options = {}) {
       fs.renameSync(path.join(stagedDir, t.file), dest);
       console.log("[LPI Screenshot Runner] WROTE: " + dest + " (" + (fs.statSync(dest).size / 1024).toFixed(1) + " KB)");
     }
-    completed = true;
-
     if (unhandledExceptions.length > 0) {
       throw new Error(`FAIL-CLOSED: Run completed with ${unhandledExceptions.length} uncaught exceptions: ${JSON.stringify(unhandledExceptions)}`);
     }
@@ -546,6 +544,7 @@ export async function run(options = {}) {
       throw new Error(`FAIL-CLOSED: Run completed with ${networkFailures.length} HTTP failures: ${JSON.stringify(networkFailures)}`);
     }
 
+    completed = true;
     console.log("[LPI Screenshot Runner] All 8 unique page targets verified fail-closed and PNGs captured successfully.");
     ws.close();
   } finally {
