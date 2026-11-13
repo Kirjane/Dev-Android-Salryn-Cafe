@@ -25,7 +25,7 @@ public static class Issue52CashArSessionChecks
     private const string CashShiftRequiredCode = "Receivables.CashCollectionRequiresOpenShift";
     private const string RequestReusedCode = "Receivables.CollectionRequestIdReused";
     private const string ExceedsBalanceCode = "Receivables.CollectionExceedsBalance";
-    private const string ReversalShiftRequiredCode = "Receivables.CashReversalRequiresOpenShift";
+    private const string AlreadyVoidedCode = "Receivables.CollectionAlreadyVoided";
 
     private sealed record SqlSnapshot(
         long CollectionsCount,
@@ -185,18 +185,25 @@ public static class Issue52CashArSessionChecks
             Require(restartedBalances.Single(b => b.Customer.Id == customer.Id).BalanceCents == expectedPersistedBalance,
                 "AR52-14 restarted service balance must match persisted ledger.");
 
-            // AR52-15: Reversal/void boundary (denied without open shift, succeeds with open shift, no fabricated refund)
-            Result voidNoShift = await restartedService.VoidCollectionAsync(cashCollection.Id, managerId, "AR52-15 no shift void");
-            Require(voidNoShift.IsFailure && string.Equals(voidNoShift.ErrorDetail.Code, ReversalShiftRequiredCode, StringComparison.Ordinal),
-                "AR52-15 void without open shift must fail with Receivables.CashReversalRequiresOpenShift.");
-            Require((await HostOperatorApiServices.Create(restarted).ShiftService.OpenShiftAsync(managerId, 10_000)).Ok,
-                "AR52-15 shift for void must open.");
-            Require((await restartedService.VoidCollectionAsync(cashCollection.Id, managerId, "AR52-15 valid void")).IsSuccess,
-                "AR52-15 void with open shift must succeed.");
+            // AR52-15 / BM2-R2-B01: Ledger-only Cash collection void (no open shift required, zero negative drawer event)
+            long drawerEventsBeforeVoid = ScalarLong(paths.DatabasePath, "SELECT COUNT(*) FROM cash_drawer_events;");
+            long closedShiftExpectedBeforeVoid = ScalarLong(paths.DatabasePath,
+                "SELECT expected_cash_cents FROM cashier_sessions WHERE id=$s;", ("$s", openShiftId.ToString("D")));
+            Result voidResult = await restartedService.VoidCollectionAsync(cashCollection.Id, managerId, "BM2-R2-B01 ledger-only void");
+            Require(voidResult.IsSuccess, "AR52-15 / B01 ledger-only void must succeed without an open shift.");
+            Require(ScalarLong(paths.DatabasePath, "SELECT COUNT(*) FROM cash_drawer_events;") == drawerEventsBeforeVoid,
+                "AR52-15 / B01 ledger-only void must not generate any negative or positive cash_drawer_events.");
             Require(ScalarLong(paths.DatabasePath,
-                "SELECT COUNT(*) FROM cash_drawer_events WHERE source_id=$c AND event_type='ArCashCollectionReversal';",
-                ("$c", cashCollection.Id.ToString("D"))) == 1,
-                "AR52-15 void must append one ArCashCollectionReversal.");
+                "SELECT COUNT(*) FROM accounts_receivable_collections WHERE id=$c AND voided_at IS NOT NULL AND voided_by_user_id=$u;",
+                ("$c", cashCollection.Id.ToString("D")), ("$u", managerId.ToString("D"))) == 1,
+                "AR52-15 / B01 void must mark collection voided with actor.");
+            Require(ScalarLong(paths.DatabasePath,
+                "SELECT debit_cents FROM accounts_receivable_entries WHERE collection_id=$c AND entry_type='CollectionReversal';",
+                ("$c", cashCollection.Id.ToString("D"))) == 5_000,
+                "AR52-15 / B01 void must append 5,000-cent CollectionReversal debit.");
+            Require(ScalarLong(paths.DatabasePath,
+                "SELECT expected_cash_cents FROM cashier_sessions WHERE id=$s;", ("$s", openShiftId.ToString("D"))) == closedShiftExpectedBeforeVoid,
+                "AR52-15 / B01 void must never mutate the original closed shift.");
 
             // AR52-16: Owner reports & AR summary reconciliation
             AccountsReceivableSummary arSummary = RequireSuccess(await restartedService.GetSummaryAsync(), "AR52-16 summary");
@@ -207,11 +214,14 @@ public static class Issue52CashArSessionChecks
                     ownerReports.Receivables.CollectionsCents == arSummary.CollectedTodayCents,
                 "AR52-16 owner reports and AR summary must reconcile.");
 
+            // BM2-R2-A01..A03 & B02..B06: Canonical Cash close, historical lowercase Cash, explicit CashRefund, legacy reversal fail-closed
+            await AssertR2CaseCanonicalAndExplicitRefundMatrixAsync(paths, restarted, restartedService, customer.Id, managerId);
+
             // AR52-08, AR52-09 & HTTP boundary (/api/receivables/collections) using a fresh manager with no open shift
             Guid httpManagerId = SeedUser(paths.DatabasePath, "ar52-http-mgr", "AR52 HTTP Manager", "Manager");
             await AssertHttpBoundaryAsync(restarted, paths.DatabasePath, httpManagerId, cashierId, customer.Id);
 
-            Console.WriteLine("Issue #52 BM2 Cash AR open-session checks (AR52-01..AR52-16) PASS.");
+            Console.WriteLine("Issue #52 BM2 Cash AR open-session & W4 reconciliation checks (AR52-01..AR52-16, BM2-R2-A01..B06) PASS.");
         }
         finally
         {
@@ -269,6 +279,120 @@ public static class Issue52CashArSessionChecks
             Require(drawer.Close(managerId, new(1_500, true, "ar52-13-post-race-close", "Post race close")).IsSuccess,
                 "AR52-13 post-race close must succeed.");
         }
+    }
+
+    private static async Task AssertR2CaseCanonicalAndExplicitRefundMatrixAsync(
+        DbPaths paths,
+        SalrynLocalComposition composition,
+        SqliteAccountsReceivableService service,
+        Guid customerId,
+        Guid managerId)
+    {
+        HostOperatorApiServices host = HostOperatorApiServices.Create(composition);
+        CashDrawerReconciliationService drawer = new(composition);
+
+        // BM2-R2-A01 & A02: Lowercase/uppercase/trimmed/blank Cash in accountable shift -> canonical 'Cash' + Verified/Reconciled close
+        Require((await host.ShiftService.OpenShiftAsync(managerId, 1_000)).Ok, "R2-A01/A02 shift must open.");
+        foreach (string variant in new[] { "cash", "CASH", " cash ", "" })
+        {
+            string reqId = Guid.NewGuid().ToString("N");
+            AccountsReceivableCollection col = RequireSuccess(
+                await service.CollectAsync(new(customerId, 500, variant, $"R2 variant '{variant}'", managerId, reqId)),
+                $"R2 variant '{variant}'");
+            Require(string.Equals(col.Method, "Cash", StringComparison.Ordinal),
+                $"R2 variant '{variant}' must return canonical 'Cash'.");
+            Require(ScalarLong(paths.DatabasePath,
+                "SELECT COUNT(*) FROM accounts_receivable_collections WHERE id=$id AND method='Cash';",
+                ("$id", col.Id.ToString("D"))) == 1,
+                $"R2 variant '{variant}' must persist canonical 'Cash' in SQLite.");
+            Require(ScalarLong(paths.DatabasePath,
+                "SELECT COUNT(*) FROM cash_drawer_events WHERE source_id=$id AND event_type='ArCashCollection' AND method='Cash' AND amount_cents=500;",
+                ("$id", col.Id.ToString("D"))) == 1,
+                $"R2 variant '{variant}' must persist one canonical ArCashCollection drawer event.");
+        }
+        // Synthetic operator-entered physical count: 1,000 float + 4 * 500 = 3,000 cents
+        Result<CashDrawerSnapshot> a01Close = drawer.Close(managerId, new(3_000, true, "r2-a01-close", "Synthetic operator count 3000"));
+        Require(a01Close.IsSuccess && a01Close.Value.CoverageStatus == "Verified" &&
+                a01Close.Value.ReviewStatus == "Reconciled" && a01Close.Value.ExpectedCashCents == 3_000,
+            "BM2-R2-A01/A02 shift with canonicalized Cash variants must close Verified/Reconciled.");
+
+        // BM2-R2-A03: Historical lowercase 'cash' collection with valid canonical event -> W4 read-compatible close; missing/tampered blocks
+        Guid histUser = SeedUser(paths.DatabasePath, "ar52-r2-hist", "R2 Historical", "Manager");
+        var histOpen = await host.ShiftService.OpenShiftAsync(histUser, 0);
+        Require(histOpen.Ok && histOpen.Shift?.ShiftId is not null, "R2-A03 historical shift must open.");
+        Guid histColId = Guid.NewGuid();
+        string nowIso = DateTimeOffset.UtcNow.ToString("O");
+        Exec(paths.DatabasePath,
+            "INSERT INTO accounts_receivable_collections(id,customer_id,amount_cents,method,collected_by_user_id,collected_at,cashier_session_id) " +
+            "VALUES($id,$c,700,'cash',$u,$at,$s);",
+            ("$id", histColId.ToString("D")), ("$c", customerId.ToString("D")), ("$u", histUser.ToString("D")),
+            ("$at", nowIso), ("$s", histOpen.Shift!.ShiftId!));
+        // Missing event blocks close
+        Result<CashDrawerSnapshot> missingHistClose = drawer.Close(histUser, new(700, true, "r2-a03-missing", "Synthetic count"));
+        Require(missingHistClose.IsFailure && missingHistClose.ErrorDetail.Code == "CashDrawer.CoverageUnverified",
+            "BM2-R2-A03 historical lowercase 'cash' without drawer event must block close.");
+        // Add legitimate linked canonical drawer event -> close succeeds
+        Exec(paths.DatabasePath,
+            "INSERT INTO cash_drawer_events(id,cashier_session_id,event_type,direction,amount_cents,source_type,source_id,actor_user_id,method,occurred_at,request_id,note) " +
+            "VALUES($id,$s,'ArCashCollection',1,700,'ArCollection',$src,$u,'Cash',$at,$req,'Historical lowercase AR cash');",
+            ("$id", Guid.NewGuid().ToString("D")), ("$s", histOpen.Shift!.ShiftId!), ("$src", histColId.ToString("D")),
+            ("$u", histUser.ToString("D")), ("$at", nowIso), ("$req", "ar-hist:" + histColId.ToString("N")));
+        Result<CashDrawerSnapshot> histClose = drawer.Close(histUser, new(700, true, "r2-a03-ok", "Synthetic operator count 700"));
+        Require(histClose.IsSuccess && histClose.Value.CoverageStatus == "Verified" && histClose.Value.ReviewStatus == "Reconciled",
+            "BM2-R2-A03 historical lowercase 'cash' with legitimate linked event must close Verified/Reconciled.");
+
+        // BM2-R2-B02 & B03 & B04: Unrelated shift after ledger-only void + explicit operator-attested CashRefund + duplicate/tamper fail-closed
+        Require((await host.ShiftService.OpenShiftAsync(managerId, 5_000)).Ok, "R2-B02/B03 shift must open.");
+        string refundReqId = Guid.NewGuid().ToString("N");
+        long arEntriesBeforeRefund = ScalarLong(paths.DatabasePath, "SELECT COUNT(*) FROM accounts_receivable_entries;");
+        Result<CashDrawerSnapshot> refundResult = drawer.RecordMovement(managerId, new("CashRefund", 1_200, refundReqId, "Customer cash refund"));
+        Require(refundResult.IsSuccess && refundResult.Value.ExpectedCashCents == 3_800,
+            "BM2-R2-B03 explicit CashRefund must reduce expected cash from 5,000 to 3,800.");
+        // Replay identical CashRefund -> once-only
+        Result<CashDrawerSnapshot> refundReplay = drawer.RecordMovement(managerId, new("CashRefund", 1_200, refundReqId, "Customer cash refund"));
+        Require(refundReplay.IsSuccess && ScalarLong(paths.DatabasePath, "SELECT COUNT(*) FROM cash_drawer_events WHERE request_id=$r;", ("$r", refundReqId)) == 1,
+            "BM2-R2-B03 CashRefund replay must be once-only.");
+        // Tampered CashRefund replay -> Conflict
+        Result<CashDrawerSnapshot> refundTamper = drawer.RecordMovement(managerId, new("CashRefund", 1_300, refundReqId, "Tampered"));
+        Require(refundTamper.IsFailure && refundTamper.ErrorDetail.Code == "CashDrawer.RequestConflict",
+            "BM2-R2-B04 tampered CashRefund replay must fail closed.");
+        Require(ScalarLong(paths.DatabasePath, "SELECT COUNT(*) FROM accounts_receivable_entries;") == arEntriesBeforeRefund,
+            "BM2-R2-B03 explicit CashRefund must not mutate AR ledger.");
+        // Duplicate void -> Conflict
+        Guid anyVoidedId = Guid.Parse((string)ScalarObject(paths.DatabasePath,
+            "SELECT id FROM accounts_receivable_collections WHERE voided_at IS NOT NULL LIMIT 1;")!);
+        Result dupVoid = await service.VoidCollectionAsync(anyVoidedId, managerId, "BM2-R2-B04 duplicate void");
+        Require(dupVoid.IsFailure && dupVoid.ErrorDetail.Code == AlreadyVoidedCode,
+            "BM2-R2-B04 duplicate void must fail closed.");
+        // Synthetic operator-entered physical count 3,800 -> Verified/Reconciled close
+        Result<CashDrawerSnapshot> b03Close = drawer.Close(managerId, new(3_800, true, "r2-b03-close", "Synthetic operator count 3800"));
+        Require(b03Close.IsSuccess && b03Close.Value.CoverageStatus == "Verified" &&
+                b03Close.Value.ReviewStatus == "Reconciled" && b03Close.Value.ExpectedCashCents == 3_800,
+            "BM2-R2-B02/B03 shift after ledger void and explicit CashRefund must close Verified/Reconciled.");
+
+        // BM2-R2-B05: Safely seeded legacy ArCashCollectionReversal in a live shift -> fail closed (CoverageUnverified)
+        Guid legacyRevUser = SeedUser(paths.DatabasePath, "ar52-r2-legrev", "R2 Legacy Rev", "Manager");
+        var legacyRevOpen = await host.ShiftService.OpenShiftAsync(legacyRevUser, 0);
+        Require(legacyRevOpen.Ok && legacyRevOpen.Shift?.ShiftId is not null, "R2-B05 shift must open.");
+        Exec(paths.DatabasePath,
+            "INSERT INTO cash_drawer_events(id,cashier_session_id,event_type,direction,amount_cents,source_type,source_id,actor_user_id,method,occurred_at,request_id,note) " +
+            "VALUES($id,$s,'ArCashCollectionReversal',-1,500,'ArCollection',$src,$u,'Cash',$at,$req,'Legacy ambiguous reversal');",
+            ("$id", Guid.NewGuid().ToString("D")), ("$s", legacyRevOpen.Shift!.ShiftId!), ("$src", anyVoidedId.ToString("D")),
+            ("$u", legacyRevUser.ToString("D")), ("$at", DateTimeOffset.UtcNow.ToString("O")), ("$req", "ar-legrev:" + Guid.NewGuid().ToString("N")));
+        Result<CashDrawerSnapshot> b05Close = drawer.Close(legacyRevUser, new(0, true, "r2-b05-close", "Synthetic count"));
+        Require(b05Close.IsFailure && b05Close.ErrorDetail.Code == "CashDrawer.CoverageUnverified",
+            "BM2-R2-B05 ambiguous legacy ArCashCollectionReversal must remain fail-closed.");
+
+        // BM2-R2-B06: Restart/reopen SQL reconciliation
+        SqliteConnectionFactory.ClearAllPools();
+        SalrynLocalComposition reopened = SalrynLocalComposition.Create(paths);
+        SqliteAccountsReceivableService reopenedService = new(reopened.ConnectionFactory);
+        long persistedBal = ScalarLong(paths.DatabasePath,
+            "SELECT balance_after_cents FROM accounts_receivable_entries WHERE customer_id=$c ORDER BY created_at DESC, id DESC LIMIT 1;",
+            ("$c", customerId.ToString("D")));
+        IReadOnlyList<ReceivableCustomerBalance> reopenedList = RequireSuccess(await reopenedService.SearchCustomersAsync(null), "R2-B06 search");
+        Require(reopenedList.Single(b => b.Customer.Id == customerId).BalanceCents == persistedBal,
+            "BM2-R2-B06 restarted service balance must reconcile with persisted ledger.");
     }
 
     private static async Task AssertHttpBoundaryAsync(
@@ -330,12 +454,21 @@ public static class Issue52CashArSessionChecks
                 $"HTTP Cash without shift must return 409 with {CashShiftRequiredCode}. Actual: {noShiftHttp.StatusCode} {noShiftBody}");
             AssertSnapshotUnchanged(before409, CaptureSnapshot(databasePath, customerId), "HTTP 409");
 
-            // HTTP 201 when Manager opens shift
+            // HTTP 201 when Manager opens shift + persisted SQLite row/event/audit verification
             HostOperatorApiServices host = HostOperatorApiServices.Create(composition);
             Require((await host.ShiftService.OpenShiftAsync(managerId, 0)).Ok, "HTTP shift must open.");
+            string httpReqId = Guid.NewGuid().ToString("N");
             using HttpResponseMessage okHttp = await managerClient.PostAsJsonAsync("/api/receivables/collections",
-                new { customerId, amountCents = 500, method = "Cash", note = "http with shift", clientRequestId = Guid.NewGuid().ToString("N") });
+                new { customerId, amountCents = 500, method = "cash", note = "http lowercase cash", clientRequestId = httpReqId });
             Require(okHttp.StatusCode == HttpStatusCode.Created, "HTTP Cash with open shift must return 201.");
+            Require(ScalarLong(databasePath,
+                "SELECT COUNT(*) FROM accounts_receivable_collections WHERE client_request_id=$r AND method='Cash' AND amount_cents=500;",
+                ("$r", httpReqId)) == 1,
+                "HTTP 201 lowercase 'cash' must persist canonical 'Cash' row.");
+            Require(ScalarLong(databasePath,
+                "SELECT COUNT(*) FROM cash_drawer_events WHERE request_id=$r AND event_type='ArCashCollection' AND method='Cash' AND amount_cents=500;",
+                ("$r", "ar:" + httpReqId)) == 1,
+                "HTTP 201 must persist one canonical ArCashCollection drawer event.");
         }
         finally
         {
@@ -412,13 +545,18 @@ public static class Issue52CashArSessionChecks
 
     private static long ScalarLong(string databasePath, string sql, params (string Key, object Value)[] parameters)
     {
+        object? result = ScalarObject(databasePath, sql, parameters);
+        return result is null or DBNull ? 0 : Convert.ToInt64(result);
+    }
+
+    private static object? ScalarObject(string databasePath, string sql, params (string Key, object Value)[] parameters)
+    {
         using SqliteConnection connection = new($"Data Source={databasePath}");
         connection.Open();
         using SqliteCommand command = connection.CreateCommand();
         command.CommandText = sql;
         foreach ((string key, object paramValue) in parameters) command.Parameters.AddWithValue(key, paramValue);
-        object? result = command.ExecuteScalar();
-        return result is null or DBNull ? 0 : Convert.ToInt64(result);
+        return command.ExecuteScalar();
     }
 
     private static T RequireSuccess<T>(Result<T> result, string label)
