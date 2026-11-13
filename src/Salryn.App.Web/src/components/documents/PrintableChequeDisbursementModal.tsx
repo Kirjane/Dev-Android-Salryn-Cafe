@@ -1,4 +1,5 @@
 import { Dialog, Button } from "../ui";
+import { PdfDownloadButton } from "./PdfDownloadButton";
 import type { SupplierPayment } from "../../api/procureToPay";
 import type { StoreSettings } from "../../api/storeSettings";
 import { formatMoney } from "../../utils/format";
@@ -33,6 +34,7 @@ export function PrintableChequeDisbursementModal({ open, onClose, payment, store
             <Button variant="secondary" onClick={onClose}>
               Close
             </Button>
+            <PdfDownloadButton url={`/api/lpi/payments/${payment.id}/pdf`} fileName={`${payment.paymentNumber}.pdf`} />
             <Button variant="primary" className="whitespace-nowrap" onClick={handlePrint}>
               🖨️ Print Voucher
             </Button>

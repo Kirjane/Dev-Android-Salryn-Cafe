@@ -1,7 +1,10 @@
 using Salryn.Api.Local.Auth;
+using Salryn.Composition.Local;
 using Salryn.Core.Common;
+using Salryn.Core.Models;
 using Salryn.Core.Models.ProcureToPay;
 using Salryn.Core.Services;
+using Salryn.Infrastructure.Reports.NativePdf;
 
 namespace Salryn.Api.Local;
 
@@ -1009,6 +1012,93 @@ internal static class LocalProcureToPayEndpoints
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.PayablesView) is IResult denied)
                 return denied;
             return ToResult(await service.GetApAgingSummaryAsync(asOfDate, ct));
+        });
+
+        app.MapGet("/api/lpi/requisitions/{id:guid}/pdf", async (
+            Guid id,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            SalrynLocalComposition composition,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, RequisitionReadPermissions) is IResult denied)
+                return denied;
+            var result = await service.GetPurchaseRequisitionByIdAsync(id, ct);
+            if (!result.IsSuccess) return ToResult(result);
+            LocalApiSession session = RequiredSession(context, sessions);
+            if (IsCashier(session) && result.Value.RequestedByUserId != session.UserId) return Results.StatusCode(403);
+            StoreSettings? store = await LocalApiDocumentPdfSupport.TryLoadStoreSettingsAsync(composition, ct);
+            byte[] pdf = BusinessDocumentPdfBuilder.BuildPurchaseRequisitionPdf(result.Value, store);
+            return LocalApiDocumentPdfSupport.PdfFile(pdf, $"{result.Value.PrNumber}.pdf");
+        });
+
+        app.MapGet("/api/lpi/purchase-orders/{id:guid}/pdf", async (
+            Guid id,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            SalrynLocalComposition composition,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, new[] { LocalApiPermissions.ProcurementManagePurchaseOrder, LocalApiPermissions.ProcurementApprovePurchaseOrder }) is IResult denied)
+                return denied;
+            var result = await service.GetPurchaseOrderByIdAsync(id, ct);
+            if (!result.IsSuccess) return ToResult(result);
+            try
+            {
+                StoreSettings? store = await LocalApiDocumentPdfSupport.TryLoadStoreSettingsAsync(composition, ct);
+                byte[] pdf = BusinessDocumentPdfBuilder.BuildPurchaseOrderPdf(result.Value, store);
+                return LocalApiDocumentPdfSupport.PdfFile(pdf, $"{result.Value.PoNumber}.pdf");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message, code = "PurchaseOrder.InvalidPdfData" });
+            }
+        });
+
+        app.MapGet("/api/lpi/receiving-reports/{id:guid}/pdf", async (
+            Guid id,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            SalrynLocalComposition composition,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, AnyLpiViewPermissions) is IResult denied)
+                return denied;
+            if (IsCashier(RequiredSession(context, sessions))) return Results.StatusCode(403);
+            var result = await service.GetReceivingReportByIdAsync(id, ct);
+            if (!result.IsSuccess) return ToResult(result);
+            StoreSettings? store = await LocalApiDocumentPdfSupport.TryLoadStoreSettingsAsync(composition, ct);
+            byte[] pdf = BusinessDocumentPdfBuilder.BuildReceivingReportPdf(result.Value, store);
+            return LocalApiDocumentPdfSupport.PdfFile(pdf, $"{result.Value.RrNumber}.pdf");
+        });
+
+        app.MapGet("/api/lpi/payments/{id:guid}/pdf", async (
+            Guid id,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IProcureToPayService service,
+            SalrynLocalComposition composition,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.PayablesView) is IResult denied)
+                return denied;
+            var payments = await service.GetSupplierPaymentsAsync(null, null, ct);
+            if (!payments.IsSuccess) return ToResult(payments);
+            SupplierPaymentModel? payment = payments.Value.FirstOrDefault(p => p.Id == id);
+            if (payment is null)
+            {
+                return Results.NotFound(new { error = "Supplier payment voucher not found.", code = "SupplierPayment.NotFound" });
+            }
+            var invoiceResult = await service.GetSupplierInvoiceByIdAsync(payment.SupplierInvoiceId, ct);
+            StoreSettings? store = await LocalApiDocumentPdfSupport.TryLoadStoreSettingsAsync(composition, ct);
+            byte[] pdf = BusinessDocumentPdfBuilder.BuildSupplierPaymentVoucherPdf(
+                payment,
+                invoiceResult.IsSuccess ? invoiceResult.Value : null,
+                store);
+            return LocalApiDocumentPdfSupport.PdfFile(pdf, $"{payment.PaymentNumber}.pdf");
         });
 
         return app;

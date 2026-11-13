@@ -1,4 +1,5 @@
 import { Dialog, Button } from "../ui";
+import { PdfDownloadButton } from "./PdfDownloadButton";
 import type { PurchaseOrder } from "../../api/procureToPay";
 import type { StoreSettings } from "../../api/storeSettings";
 import { formatMoney } from "../../utils/format";
@@ -33,8 +34,13 @@ export function PrintablePurchaseOrderModal({ open, onClose, po, storeSettings }
             <Button variant="secondary" onClick={onClose}>
               Close
             </Button>
+            <PdfDownloadButton
+              url={`/api/lpi/purchase-orders/${po.id}/pdf`}
+              fileName={`${po.poNumber}.pdf`}
+              disabled={!hasValidAmounts}
+            />
             <Button variant="primary" onClick={handlePrint} disabled={!hasValidAmounts}>
-              🖨️ Print Purchase Order
+              Print Purchase Order
             </Button>
           </div>
         </div>

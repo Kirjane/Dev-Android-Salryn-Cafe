@@ -230,6 +230,7 @@ export function Dialog({
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
     >
       <div
+        data-dialog-backdrop="true"
         className="absolute inset-0 bg-slate-900/55"
         onClick={handleBackdropClick}
         aria-hidden="true"
@@ -243,7 +244,7 @@ export function Dialog({
         tabIndex={-1}
         className={`relative z-10 max-h-[calc(100vh-2rem)] max-sm:max-h-[calc(100vh-6rem)] w-full min-w-0 ${sizeClasses[size]} overflow-x-hidden overflow-y-auto rounded-lg border border-slate-300 bg-white shadow-xl focus:outline-none`}
       >
-        <div className="flex min-h-13 items-start justify-between gap-4 bg-navy-900 px-5 py-3 text-white">
+        <div data-dialog-header="true" className="flex min-h-13 items-start justify-between gap-4 bg-navy-900 px-5 py-3 text-white">
           <div className="min-w-0">
             <h3 className="text-base font-semibold leading-snug">{title}</h3>
             {subtitle ? <p className="mt-0.5 text-xs text-slate-300">{subtitle}</p> : null}
@@ -266,7 +267,7 @@ export function Dialog({
             {children}
           </div>
         ) : null}
-        <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3.5 sm:px-5">
+        <div data-dialog-footer="true" className="flex flex-wrap justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3.5 sm:px-5">
           {footer ?? (
             <Button variant="secondary" disabled={busy} onClick={onClose}>
               Close

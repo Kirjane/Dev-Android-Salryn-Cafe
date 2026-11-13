@@ -2,9 +2,11 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Salryn.Api.Local.Auth;
+using Salryn.Composition.Local;
 using Salryn.Core.Common;
 using Salryn.Core.Models;
 using Salryn.Core.Services;
+using Salryn.Infrastructure.Reports.NativePdf;
 
 namespace Salryn.Api.Local;
 
@@ -146,6 +148,48 @@ internal static class LocalCustomerOrdersAndQuotationsEndpoints
             }
 
             return ToResult(await service.FulfillOrderByReferenceAsync(id, refText.Trim(), ct, session.UserId).ConfigureAwait(false));
+        });
+
+        app.MapGet("/api/customer-quotations/{id:guid}/pdf", async (
+            Guid id,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            ICustomerOrdersAndQuotesService service,
+            SalrynLocalComposition composition,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, new[] { LocalApiPermissions.ProductsView, LocalApiPermissions.SalesCreate }) is IResult denied)
+                return denied;
+            Result<CustomerQuotation> result = await service.GetQuotationByIdAsync(id, ct).ConfigureAwait(false);
+            if (!result.IsSuccess) return ToResult(result);
+            StoreSettings? store = await LocalApiDocumentPdfSupport.TryLoadStoreSettingsAsync(composition, ct).ConfigureAwait(false);
+            byte[] pdf = BusinessDocumentPdfBuilder.BuildCustomerQuotationPdf(result.Value, store);
+            return LocalApiDocumentPdfSupport.PdfFile(pdf, $"{result.Value.QuoteNumber}.pdf");
+        });
+
+        app.MapGet("/api/customer-orders/{id:guid}/pdf", async (
+            Guid id,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            ICustomerOrdersAndQuotesService service,
+            SalrynLocalComposition composition,
+            CancellationToken ct) =>
+        {
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProductsManage) is IResult denied)
+                return denied;
+            if (!IsManagerOrAdmin(RequiredSession(context, sessions))) return Results.StatusCode(403);
+            Result<CustomerOrder> result = await service.GetOrderByIdAsync(id, ct).ConfigureAwait(false);
+            if (!result.IsSuccess) return ToResult(result);
+            try
+            {
+                StoreSettings? store = await LocalApiDocumentPdfSupport.TryLoadStoreSettingsAsync(composition, ct).ConfigureAwait(false);
+                byte[] pdf = BusinessDocumentPdfBuilder.BuildCustomerOrderPdf(result.Value, store);
+                return LocalApiDocumentPdfSupport.PdfFile(pdf, $"{result.Value.OrderNumber}.pdf");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message, code = "CustomerOrder.InvalidPdfData" });
+            }
         });
 
         return app;

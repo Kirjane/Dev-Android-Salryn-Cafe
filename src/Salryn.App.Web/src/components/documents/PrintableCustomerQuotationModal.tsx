@@ -1,4 +1,5 @@
 import { Dialog, Button } from "../ui";
+import { PdfDownloadButton } from "./PdfDownloadButton";
 import type { CustomerQuotation } from "../../api/customerOrdersAndQuotes";
 import type { StoreSettings } from "../../api/storeSettings";
 import { formatMoney } from "../../utils/format";
@@ -28,6 +29,7 @@ export function PrintableCustomerQuotationModal({ open, onClose, quotation, stor
             <Button variant="secondary" onClick={onClose}>
               Close
             </Button>
+            <PdfDownloadButton url={`/api/customer-quotations/${quotation.id}/pdf`} fileName={`${quotation.quoteNumber}.pdf`} />
             <Button variant="primary" onClick={handlePrint}>
               🖨️ Print Quotation
             </Button>

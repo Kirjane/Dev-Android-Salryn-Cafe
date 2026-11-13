@@ -1,8 +1,10 @@
 using Salryn.Api.Local.Auth;
+using Salryn.Composition.Local;
 using Salryn.Core.Common;
 using Salryn.Core.Models;
 using Salryn.Core.Services;
 using Salryn.Core.Services.Licensing;
+using Salryn.Infrastructure.Reports.NativePdf;
 
 namespace Salryn.Api.Local;
 
@@ -127,6 +129,23 @@ internal static class LocalAccountsReceivableEndpoints
             LocalApiSession session = RequiredSession(context, sessions);
             Result result = await service.VoidCollectionAsync(id, session.UserId, request.Reason, ct);
             return result.IsSuccess ? Results.Ok(new { status = "Voided" }) : ToError(result.ErrorDetail);
+        });
+
+        app.MapGet("/api/receivables/collections/{id:guid}/pdf", async (
+            Guid id,
+            HttpContext context,
+            LocalApiSessionService sessions,
+            IAccountsReceivableService service,
+            SalrynLocalComposition composition,
+            CancellationToken ct) =>
+        {
+            ILocalLicenseEnforcementService licensing = context.RequestServices.GetRequiredService<ILocalLicenseEnforcementService>();
+            if (await Guard(context, sessions, licensing, LocalApiPermissions.ReceivablesView, ct) is IResult denied) return denied;
+            Result<CollectionPaymentAcknowledgment> ack = await service.GetCollectionAcknowledgmentAsync(id, ct);
+            if (ack.IsFailure) return ToError(ack.ErrorDetail);
+            StoreSettings? store = await LocalApiDocumentPdfSupport.TryLoadStoreSettingsAsync(composition, ct);
+            byte[] pdf = BusinessDocumentPdfBuilder.BuildCollectionAcknowledgmentPdf(ack.Value, store);
+            return LocalApiDocumentPdfSupport.PdfFile(pdf, $"AR-ACK-{id.ToString("D")[..8].ToUpperInvariant()}.pdf");
         });
 
         return app;

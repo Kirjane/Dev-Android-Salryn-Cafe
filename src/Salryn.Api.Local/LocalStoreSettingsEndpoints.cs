@@ -18,7 +18,7 @@ internal static class LocalStoreSettingsEndpoints
 
         app.MapGet("/api/settings/store", async (HttpContext context, LocalApiSessionService sessions, CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.SettingsManage) is IResult denied) return denied;
+            if (LocalApiPermissionGuards.RequireAuthenticatedSession(context, sessions) is IResult denied) return denied;
             var result = await reader.GetCurrentAsync(ct);
             if (result.IsFailure) return Results.BadRequest(new { code = result.ErrorDetail.Code, error = result.ErrorDetail.Message });
             var s = result.Value;
