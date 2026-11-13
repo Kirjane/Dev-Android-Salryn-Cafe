@@ -77,7 +77,7 @@ public static class LpiP1IntegrityReproductionChecks
             await TestW5R21DuplicateProductAmbiguityAndFinancialIntegrityAsync(service, paths, requesterId, supervisorId, apClerkId, resaleProdId);
             await TestP102CrossSupplierPaymentLineageHttpAsync(composition, service, paths, resaleProdId);
             await TestP102DisbursementDateCustodyAsync(composition, paths, apClerkId, resaleProdId);
-            await TestIssue44SupplierReturnInvoiceLineageGuardsAsync(service, paths, apClerkId, receiverId, supervisorId, resaleProdId);
+            await TestIssue44SupplierReturnInvoiceLineageGuardsAsync(composition, service, paths, apClerkId, receiverId, supervisorId, resaleProdId, nonResaleProdId);
 
             Console.WriteLine("LPI P1 Integrity: All findings (P1-01 through P1-06 and P1-R3-01/02) verified with full regression closure PASS.");
         }
@@ -2844,12 +2844,14 @@ public static class LpiP1IntegrityReproductionChecks
     }
 
     private static async Task TestIssue44SupplierReturnInvoiceLineageGuardsAsync(
+        SalrynLocalComposition composition,
         SqliteProcureToPayService service,
         DbPaths paths,
         Guid apClerkId,
         Guid receiverId,
         Guid supervisorId,
-        Guid resaleProdId)
+        Guid resaleProdId,
+        Guid nonResaleProdId)
     {
         LpiSupplier supA = RequireSuccess(
             await service.CreateSupplierAsync(new CreateLpiSupplierRequest(
@@ -3016,7 +3018,172 @@ public static class LpiP1IntegrityReproductionChecks
             $"Valid return credit must reduce invA1a balance from 200,000 to 150,000 (status PartiallyPaid), got bal={invA1aAfterPos.RemainingBalanceCents}, credit={invA1aAfterPos.CreditMemoAppliedCents}, status={invA1aAfterPos.Status}.");
         Require(ReadStockOnHand(paths.DatabasePath, resaleProdId) == stockBefore - 1_000, "Valid supplier return must deduct stock by 1_000.");
 
-        Console.WriteLine("ISSUE-44: Cross-supplier, wrong-PO, wrong-RR, Paid-status, and over-balance supplier return guards + atomic matched credit verified PASS.");
+        // 7. Contradictory header-vs-child RR: header explicitly binds invContradictory to rrA1b while child line binds to rrA1a -> MUST FAIL closed.
+        SupplierInvoiceModel invContradictory = RequireSuccess(
+            await service.CreateSupplierInvoiceAsync(new CreateSupplierInvoiceRequest(
+                supA.Id, "SI-44-CONTRA", poA1.Id, rrA1b.Id, invDate, invDate.AddDays(30), 0, 0, true,
+                new[] { new CreateSupplierInvoiceLineInput(poA1.Lines[0].Id, rrA1b.Lines[0].Id, resaleProdId, "P1 Commercial Resale Item", 1_000, 50_000, 0) },
+                apClerkId)),
+            "create invContradictory");
+        using (SqliteConnection conn = new($"Data Source={paths.DatabasePath}"))
+        {
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "UPDATE supplier_invoice_lines SET receiving_report_line_id = $rrLineA1a WHERE supplier_invoice_id = $invId;";
+            cmd.Parameters.AddWithValue("$rrLineA1a", rrA1a.Lines[0].Id.ToString("D"));
+            cmd.Parameters.AddWithValue("$invId", invContradictory.Id.ToString("D"));
+            Require(cmd.ExecuteNonQuery() == 1, "Contradictory RR line fixture update must affect 1 row.");
+        }
+        var beforeContra = ReadStateCounters();
+        long stockBeforeContra = ReadStockOnHand(paths.DatabasePath, resaleProdId);
+        await AssertReturnRejectedAsync(rrA1a.Id, rrA1a.Lines[0].Id, 1_000, invContradictory.Id, "Lpi.SupplierReturn.InvoiceLineageMismatch", "contradictory-header-vs-child-RR");
+        Require(ReadStateCounters() == beforeContra && ReadStockOnHand(paths.DatabasePath, resaleProdId) == stockBeforeContra,
+            "Contradictory header-vs-child RR rejection must not mutate SRET, stock, ledger, or audit.");
+
+        // 8. RR-less PO-only invoice coverage: same PO, different product MUST FAIL closed; matching PO line/product MUST SUCCEED.
+        PurchaseOrderModel poMulti = RequireSuccess(
+            await service.CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest(
+                supA.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(5)), null, 30, 0, "Std", "Issue 44 Multi-Line PO", true,
+                new[]
+                {
+                    new CreatePurchaseOrderLineInput(null, resaleProdId, "P1-PROD-RESALE", "P1 Commercial Resale Item", PurchaseClassifications.Resale, "pcs", 2_000, 50_000, 0, 0, null),
+                    new CreatePurchaseOrderLineInput(null, nonResaleProdId, "P1-PROD-SUPPLY", "P1 Store Consumable Cleaning Fluid", PurchaseClassifications.Resale, "pcs", 2_000, 20_000, 0, 0, null)
+                },
+                supervisorId)),
+            "create poMulti");
+        ReceivingReportModel rrMulti = RequireSuccess(
+            await service.CreateReceivingReportAsync(new CreateReceivingReportRequest(
+                poMulti.Id, null, "DR-44-MULTI", null, "Truck-M", DateOnly.FromDateTime(DateTime.UtcNow), true, null, null, "rr-44-multi", null,
+                new[]
+                {
+                    new CreateReceivingReportLineInput(poMulti.Lines[0].Id, 2_000, 2_000, 0, null, null, null, null),
+                    new CreateReceivingReportLineInput(poMulti.Lines[1].Id, 2_000, 2_000, 0, null, null, null, null)
+                },
+                receiverId)),
+            "create rrMulti");
+        SupplierInvoiceModel invPoOnlyProd1 = RequireSuccess(
+            await service.CreateSupplierInvoiceAsync(new CreateSupplierInvoiceRequest(
+                supA.Id, "SI-44-POONLY", poMulti.Id, null, invDate, invDate.AddDays(30), 0, 0, true,
+                new[] { new CreateSupplierInvoiceLineInput(poMulti.Lines[0].Id, null, resaleProdId, "P1 Commercial Resale Item", 2_000, 50_000, 0) },
+                apClerkId)),
+            "create invPoOnlyProd1");
+        using (SqliteConnection postPoOnlyConn = new($"Data Source={paths.DatabasePath}"))
+        {
+            postPoOnlyConn.Open();
+            using var postCmd = postPoOnlyConn.CreateCommand();
+            postCmd.CommandText = "UPDATE supplier_invoices SET status = 'PostedOpen' WHERE id = $id;";
+            postCmd.Parameters.AddWithValue("$id", invPoOnlyProd1.Id.ToString("D"));
+            Require(postCmd.ExecuteNonQuery() == 1, "PO-only posted invoice fixture update must affect 1 row.");
+        }
+
+        var beforePoOnlyNeg = ReadStateCounters();
+        long stockSupplyBefore = ReadStockOnHand(paths.DatabasePath, nonResaleProdId);
+        await AssertReturnRejectedAsync(rrMulti.Id, rrMulti.Lines[1].Id, 1_000, invPoOnlyProd1.Id, "Lpi.SupplierReturn.InvoiceLineageMismatch", "po-only-different-product");
+        Require(ReadStateCounters() == beforePoOnlyNeg && ReadStockOnHand(paths.DatabasePath, nonResaleProdId) == stockSupplyBefore,
+            "Same-PO different-product RR-less invoice rejection must not mutate SRET, stock, ledger, or audit.");
+
+        SupplierReturnModel poOnlyValid = RequireSuccess(
+            await service.CreateSupplierReturnAsync(new CreateSupplierReturnRequest(
+                rrMulti.Id,
+                invPoOnlyProd1.Id,
+                "Legitimate RR-less PO-only matched product return",
+                new[] { new CreateSupplierReturnLineInput(rrMulti.Lines[0].Id, 1_000, "Damaged resale item") },
+                receiverId,
+                supervisorId)),
+            "create valid RR-less PO-only return");
+        SupplierInvoiceModel invPoOnlyAfter = RequireSuccess(await service.GetSupplierInvoiceByIdAsync(invPoOnlyProd1.Id), "reload invPoOnlyProd1");
+        Require(poOnlyValid.TotalReturnAmountCents == 50_000 && invPoOnlyAfter.CreditMemoAppliedCents == 50_000 && invPoOnlyAfter.RemainingBalanceCents == 50_000,
+            $"Legitimate PO-only return must reduce balance from 100,000 to 50,000, got bal={invPoOnlyAfter.RemainingBalanceCents}, credit={invPoOnlyAfter.CreditMemoAppliedCents}.");
+
+        // 9. Arithmetic overflow in receiving return path -> deterministic HTTP 400 validation denial before any writes or SRET sequence burn.
+        using (SqliteConnection roleConn = new($"Data Source={paths.DatabasePath}"))
+        {
+            roleConn.Open();
+            using var roleCmd = roleConn.CreateCommand();
+            roleCmd.CommandText = "UPDATE users SET role_id = $roleId WHERE id = $supId;";
+            roleCmd.Parameters.AddWithValue("$roleId", Salryn.Infrastructure.Data.Seeding.DefaultSeedData.ManagerRoleId);
+            roleCmd.Parameters.AddWithValue("$supId", supervisorId.ToString("D"));
+            Require(roleCmd.ExecuteNonQuery() == 1, "Issue44 HTTP supervisor must have persisted Manager role.");
+        }
+
+        string overflowNonce = Guid.NewGuid().ToString("N");
+        InMemoryLocalApiSessionStore overflowStore = new();
+        LocalApiSession managerSession = overflowStore.Create(new AuthenticatedUserReadModel(
+            supervisorId, "p1-supervisor", "Warehouse Supervisor", "Manager", UserStatus.Active,
+            new[] { SalrynPermissions.InventoryManageReturns })
+        {
+            RoleId = Guid.Parse(Salryn.Infrastructure.Data.Seeding.DefaultSeedData.ManagerRoleId)
+        });
+        var beforeOverflow = ReadStateCounters();
+        long stockBeforeOverflow = ReadStockOnHand(paths.DatabasePath, resaleProdId);
+
+        await using (WebApplication host = await LocalApiApplicationFactory.CreateAsync(
+            new[] { "--dev" },
+            new LocalApiApplicationOptions
+            {
+                Url = "http://127.0.0.1:0",
+                Composition = composition,
+                SessionStore = overflowStore,
+                EnableStaticWebAssets = false,
+                WriteDevelopmentDatabasePath = false,
+                TestHostNonce = overflowNonce
+            }).ConfigureAwait(false))
+        {
+            await host.StartAsync().ConfigureAwait(false);
+            string bound = host.Urls.Single(url => url.StartsWith("http://127.0.0.1:", StringComparison.OrdinalIgnoreCase));
+            using HttpClient client = CreateClient(new Uri(bound), managerSession);
+
+            // Duplicate lines whose sum overflows Int64
+            using HttpResponseMessage qtyOverflowResp = await client.PostAsync(
+                "/api/lpi/supplier-returns",
+                new StringContent(JsonSerializer.Serialize(new
+                {
+                    receivingReportId = rrA1a.Id,
+                    supplierInvoiceId = invA1a.Id,
+                    reason = "Overflow qty sum check",
+                    lines = new[]
+                    {
+                        new { receivingReportLineId = rrA1a.Lines[0].Id, returnQtyX1000 = long.MaxValue - 1_000L, reason = "Part 1" },
+                        new { receivingReportLineId = rrA1a.Lines[0].Id, returnQtyX1000 = 5_000L, reason = "Part 2" }
+                    }
+                }), System.Text.Encoding.UTF8, "application/json")).ConfigureAwait(false);
+            Require(qtyOverflowResp.StatusCode == HttpStatusCode.BadRequest,
+                $"Issue #44 qty overflow must return HTTP 400, got {(int)qtyOverflowResp.StatusCode}.");
+
+            // Single line huge qty -> deterministic HTTP 400
+            using HttpResponseMessage singleHugeQtyResp = await client.PostAsync(
+                "/api/lpi/supplier-returns",
+                new StringContent(JsonSerializer.Serialize(new
+                {
+                    receivingReportId = rrA1a.Id,
+                    supplierInvoiceId = invA1a.Id,
+                    reason = "Single huge qty check",
+                    lines = new[]
+                    {
+                        new { receivingReportLineId = rrA1a.Lines[0].Id, returnQtyX1000 = long.MaxValue, reason = "Huge qty" }
+                    }
+                }), System.Text.Encoding.UTF8, "application/json")).ConfigureAwait(false);
+            Require(singleHugeQtyResp.StatusCode == HttpStatusCode.BadRequest,
+                $"Issue #44 single huge qty must return HTTP 400, got {(int)singleHugeQtyResp.StatusCode}.");
+        }
+
+        // Also force a genuine qty * unitCost multiplication overflow by setting rr_line accepted_qty_x1000 & unit_cost_cents in temp DB
+        using (SqliteConnection ovConn = new($"Data Source={paths.DatabasePath}"))
+        {
+            ovConn.Open();
+            using var ovCmd = ovConn.CreateCommand();
+            ovCmd.CommandText = "UPDATE receiving_report_lines SET accepted_qty_x1000 = $qty, unit_cost_cents = $cost WHERE id = $lineId;";
+            ovCmd.Parameters.AddWithValue("$qty", 1_000_000_000_000L);
+            ovCmd.Parameters.AddWithValue("$cost", 10_000_000L);
+            ovCmd.Parameters.AddWithValue("$lineId", rrA1b.Lines[0].Id.ToString("D"));
+            Require(ovCmd.ExecuteNonQuery() == 1, "Overflow cost fixture update must affect 1 row.");
+        }
+        await AssertReturnRejectedAsync(rrA1b.Id, rrA1b.Lines[0].Id, 1_000_000_000_000L, null, "Lpi.SupplierReturn.AmountOverflow", "qty-times-cost-overflow");
+
+        Require(ReadStateCounters() == beforeOverflow && ReadStockOnHand(paths.DatabasePath, resaleProdId) == stockBeforeOverflow,
+            "Issue #44 overflow rejections must not burn SRET sequence or mutate stock/AP/audit.");
+
+        Console.WriteLine("ISSUE-44: Cross-supplier, wrong-PO, wrong-RR, contradictory header-vs-child RR, PO-only line/product coverage, overflow denial, Paid-status, and over-balance guards verified PASS.");
     }
 
     #region Helpers

@@ -1308,6 +1308,7 @@ public sealed partial class SqliteProcureToPayService
         SqliteTransaction transaction,
         ReceivingReportModel rr,
         IReadOnlyDictionary<Guid, ReceivingReportLineModel> rrLines,
+        IReadOnlyCollection<Guid> returnedRrLineIds,
         Guid invoiceId,
         long returnCreditCents,
         DateOnly evaluationDate,
@@ -1328,17 +1329,53 @@ public sealed partial class SqliteProcureToPayService
                 $"Supplier return credit from supplier '{rr.SupplierName}' cannot be applied to invoice '{inv.ApVoucherNumber}' belonging to supplier '{inv.SupplierName}'."));
         }
 
-        bool invoiceLineMatchesRr = inv.Lines.Any(line =>
-            line.ReceivingReportLineId.HasValue && rrLines.ContainsKey(line.ReceivingReportLineId.Value));
-        bool matchesPoWithoutSeparateRr = inv.ReceivingReportId is null
-            && inv.PurchaseOrderId == rr.PurchaseOrderId
-            && !inv.Lines.Any(line => line.ReceivingReportLineId.HasValue);
-
-        if (inv.ReceivingReportId != rr.Id && !invoiceLineMatchesRr && !matchesPoWithoutSeparateRr)
+        if (inv.ReceivingReportId.HasValue && inv.ReceivingReportId.Value != rr.Id)
         {
             return Result.Fail(Error.Conflict(
                 "Lpi.SupplierReturn.InvoiceLineageMismatch",
-                $"Supplier invoice '{inv.ApVoucherNumber}' does not match Receiving Report '{rr.RrNumber}' or Purchase Order '{rr.PoNumber}' lineage."));
+                $"Supplier invoice '{inv.ApVoucherNumber}' is linked to a different Receiving Report than '{rr.RrNumber}'."));
+        }
+
+        List<ReceivingReportLineModel> returnedLines = returnedRrLineIds
+            .Select(id => rrLines.TryGetValue(id, out ReceivingReportLineModel? line) ? line : null)
+            .Where(line => line is not null)
+            .Cast<ReceivingReportLineModel>()
+            .ToList();
+
+        bool hasExplicitRrHeaderMatch = inv.ReceivingReportId == rr.Id;
+        bool hasExplicitRrLineBinding = inv.Lines.Any(line => line.ReceivingReportLineId.HasValue);
+        bool lineageMatched;
+
+        if (hasExplicitRrHeaderMatch)
+        {
+            lineageMatched = !hasExplicitRrLineBinding ||
+                (returnedLines.Count > 0 && returnedLines.All(rl =>
+                    inv.Lines.Any(il => il.ReceivingReportLineId == rl.Id && il.InvoicedQtyX1000 > 0)));
+        }
+        else if (hasExplicitRrLineBinding)
+        {
+            lineageMatched = returnedLines.Count > 0 && returnedLines.All(rl =>
+                inv.Lines.Any(il => il.ReceivingReportLineId == rl.Id && il.InvoicedQtyX1000 > 0));
+        }
+        else
+        {
+            // RR-less PO-only invoice must still prove PO-level and per-line PO line / product coverage.
+            lineageMatched = inv.PurchaseOrderId == rr.PurchaseOrderId
+                && inv.Lines.Count > 0
+                && returnedLines.Count > 0
+                && returnedLines.All(rl => inv.Lines.Any(il =>
+                    il.InvoicedQtyX1000 > 0 &&
+                    ((il.PurchaseOrderLineId.HasValue && il.PurchaseOrderLineId.Value == rl.PurchaseOrderLineId &&
+                      (!il.ProductId.HasValue || !rl.ProductId.HasValue || il.ProductId.Value == rl.ProductId.Value)) ||
+                     (!il.PurchaseOrderLineId.HasValue && il.ProductId.HasValue && rl.ProductId.HasValue &&
+                      il.ProductId.Value == rl.ProductId.Value))));
+        }
+
+        if (!lineageMatched)
+        {
+            return Result.Fail(Error.Conflict(
+                "Lpi.SupplierReturn.InvoiceLineageMismatch",
+                $"Supplier invoice '{inv.ApVoucherNumber}' does not match Receiving Report '{rr.RrNumber}' or Purchase Order '{rr.PoNumber}' line coverage."));
         }
 
         if (inv.Status is not ("PostedOpen" or "PartiallyPaid"))
@@ -1363,6 +1400,7 @@ public sealed partial class SqliteProcureToPayService
         SqliteTransaction transaction,
         ReceivingReportModel rr,
         IReadOnlyDictionary<Guid, ReceivingReportLineModel> rrLines,
+        IReadOnlyCollection<Guid> returnedRrLineIds,
         Guid invoiceId,
         string sretNumber,
         long returnCreditCents,
@@ -1376,6 +1414,7 @@ public sealed partial class SqliteProcureToPayService
             transaction,
             rr,
             rrLines,
+            returnedRrLineIds,
             invoiceId,
             returnCreditCents,
             today,

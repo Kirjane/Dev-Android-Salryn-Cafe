@@ -1032,7 +1032,18 @@ public sealed partial class SqliteProcureToPayService
             }
 
             long remainingAcceptedX1000 = Math.Max(0L, rrLine.AcceptedQtyX1000 - previouslyReturnedX1000);
-            long nextCumulativeForLine = checked(requestedQtyByRrLine.GetValueOrDefault(line.ReceivingReportLineId) + line.ReturnQtyX1000);
+            long nextCumulativeForLine;
+            long lineTotalCents;
+            try
+            {
+                nextCumulativeForLine = checked(requestedQtyByRrLine.GetValueOrDefault(line.ReceivingReportLineId) + line.ReturnQtyX1000);
+            }
+            catch (OverflowException)
+            {
+                return Result<SupplierReturnModel>.Fail(
+                    Error.Validation("Lpi.SupplierReturn.InvalidQty",
+                        $"Return quantity for '{rrLine.ItemDescription}' exceeds allowable numeric range."));
+            }
 
             if (line.ReturnQtyX1000 <= 0 || nextCumulativeForLine > remainingAcceptedX1000)
             {
@@ -1043,9 +1054,18 @@ public sealed partial class SqliteProcureToPayService
 
             requestedQtyByRrLine[line.ReceivingReportLineId] = nextCumulativeForLine;
             Guid productId = rrLine.ProductId.Value;
-            requestedStockByProduct[productId] = checked(requestedStockByProduct.GetValueOrDefault(productId) + line.ReturnQtyX1000);
-            long lineTotalCents = checked(line.ReturnQtyX1000 * rrLine.UnitCostCents) / 1000L;
-            totalReturnCents = checked(totalReturnCents + lineTotalCents);
+            try
+            {
+                requestedStockByProduct[productId] = checked(requestedStockByProduct.GetValueOrDefault(productId) + line.ReturnQtyX1000);
+                lineTotalCents = checked(line.ReturnQtyX1000 * rrLine.UnitCostCents) / 1000L;
+                totalReturnCents = checked(totalReturnCents + lineTotalCents);
+            }
+            catch (OverflowException)
+            {
+                return Result<SupplierReturnModel>.Fail(
+                    Error.Validation("Lpi.SupplierReturn.AmountOverflow",
+                        $"Return quantity or monetary total for '{rrLine.ItemDescription}' exceeds allowable numeric range."));
+            }
         }
 
         foreach (var stockNeed in requestedStockByProduct)
@@ -1068,6 +1088,7 @@ public sealed partial class SqliteProcureToPayService
                 transaction,
                 rr,
                 rrLines,
+                requestedQtyByRrLine.Keys.ToArray(),
                 request.SupplierInvoiceId.Value,
                 totalReturnCents,
                 returnDate,
@@ -1229,6 +1250,7 @@ public sealed partial class SqliteProcureToPayService
                 transaction,
                 rr,
                 rrLines,
+                requestedQtyByRrLine.Keys.ToArray(),
                 request.SupplierInvoiceId.Value,
                 sretNumber,
                 totalReturnCents,
