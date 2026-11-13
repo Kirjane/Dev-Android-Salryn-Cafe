@@ -70,7 +70,7 @@ export function readOwnedDevToolsPort(profileDir) {
     throw new Error("FAIL-CLOSED: owned DevToolsActivePort is not a regular bounded file.");
   }
   const contents = fs.readFileSync(portFile, "utf8");
-  const match = /^(\\d{1,5})\r?\n(\/devtools\/browser\/[A-Za-z0-9-]{16,128})\r?\n?$/.exec(contents);
+  const match = /^(\d{1,5})\r?\n(\/devtools\/browser\/[A-Za-z0-9-]{16,128})\r?\n?$/.exec(contents);
   if (!match) throw new Error("FAIL-CLOSED: malformed owned DevToolsActivePort file.");
   const port = Number(match[1]);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -428,9 +428,8 @@ export async function run(options = {}) {
     await send("Network.enable");
 
     if (sessionId) {
-      console.log("[LPI Screenshot Runner] Setting authentication cookie salryn.sid...");
       requireLiveOwnedChild(owner);
-    await send("Network.setCookie", {
+      const cookieResult = await send("Network.setCookie", {
         name: "salryn.sid",
         value: sessionId,
         domain: "127.0.0.1",
@@ -438,6 +437,10 @@ export async function run(options = {}) {
         httpOnly: true,
         sameSite: "Lax"
       });
+      if (cookieResult?.success !== true) {
+        throw new Error("FAIL-CLOSED: owned browser refused synthetic auth cookie.");
+      }
+      console.log("[LPI Screenshot Runner] SYNTHETIC_COOKIE_SET_OWNED_BROWSER");
     }
 
     // In the seeded fixture, a quote belongs to the seeded requisition. Select it
