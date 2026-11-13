@@ -137,6 +137,11 @@ function renderPage(page: AppPage, session: SessionState, onLogout: () => void, 
             window.history.pushState({ page: "receivables" }, "", "/?page=receivables");
             setCurrentPageFromExternal(onNavigate, "receivables");
           }}
+          onOpenPayables={() => {
+            window.history.replaceState({ page: "owner-reports" }, "", "/?page=owner-reports");
+            window.history.pushState({ page: "accounts-payable" }, "", "/?page=accounts-payable");
+            setCurrentPageFromExternal(onNavigate, "accounts-payable");
+          }}
         />
       );
     case "settings":

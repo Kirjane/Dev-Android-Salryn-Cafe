@@ -8,6 +8,9 @@ import {
   fetchSalesTrend,
   fetchTopProducts,
 } from "../api/ownerAnalytics";
+import { fetchApAgingReport } from "../api/procureToPay";
+import { useAppSession } from "../hooks/useAppSession";
+import { Permissions, hasPermission } from "../security/permissions";
 import {
   Alert,
   Card,
@@ -219,10 +222,14 @@ function Bars({
 export function OwnerReportsPage({
   onOpenSales,
   onOpenReceivables,
+  onOpenPayables,
 }: {
   onOpenSales?: (from: string, to: string) => void;
   onOpenReceivables?: () => void;
+  onOpenPayables?: () => void;
 }) {
+  const session = useAppSession();
+  const canViewPayables = hasPermission(session.data, Permissions.PayablesView);
   const initial = presetRange("7");
   const [preset, setPreset] = useState<Preset>("7");
   const [from, setFrom] = useState(initial[0]);
@@ -258,6 +265,12 @@ export function OwnerReportsPage({
   const ar = useQuery({
     queryKey: ["owner-analytics-ar", from, to],
     queryFn: () => fetchArAging(from, to),
+    retry: false,
+  });
+  const ap = useQuery({
+    queryKey: ["owner-analytics-ap", session.data?.user?.userId ?? "anon", canViewPayables, to],
+    queryFn: () => fetchApAgingReport(to),
+    enabled: canViewPayables,
     retry: false,
   });
   const busy =
@@ -550,6 +563,74 @@ export function OwnerReportsPage({
               report boundary. Collections{" "}
               {peso(ar.data.collectionsInPeriodCents)} are period flow.{" "}
               {ar.data.allocationDisclosure}
+            </p>
+          </CardBody>
+        </Card>
+      ) : null}
+      {!canViewPayables || ap.isError ? (
+        <Alert tone="warning" title="AP analytics unavailable">
+          Accounts Payable aging requires Payables.View. No zero value is
+          inferred.
+        </Alert>
+      ) : ap.data ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Accounts Payable aging</CardTitle>
+          </CardHeader>
+          <CardBody>
+            <ArAgingDistributionChart
+              buckets={[
+                { key: "current", label: "Current", outstandingCents: ap.data.currentBucketCents },
+                { key: "days30", label: "1–30 days", outstandingCents: ap.data.days1To30Cents },
+                { key: "days60", label: "31–60 days", outstandingCents: ap.data.days31To60Cents },
+                { key: "days90", label: "61–90 days", outstandingCents: ap.data.days61To90Cents },
+                { key: "older", label: "Over 90 days", outstandingCents: ap.data.daysOver90Cents },
+              ]}
+              onSelectBucket={() => onOpenPayables?.()}
+            />
+            {ap.data.supplierSummaries.length === 0 ? (
+              <p className="mt-3 text-xs text-slate-500">
+                No open posted supplier payables found as of {to}.
+              </p>
+            ) : (
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="border-b border-slate-200 text-slate-500">
+                    <tr>
+                      <th className="py-1.5">Supplier</th>
+                      <th className="py-1.5 text-right">Current</th>
+                      <th className="py-1.5 text-right">1–30</th>
+                      <th className="py-1.5 text-right">31–60</th>
+                      <th className="py-1.5 text-right">61–90</th>
+                      <th className="py-1.5 text-right">90+</th>
+                      <th className="py-1.5 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 tabular-nums">
+                    {ap.data.supplierSummaries.map((row) => (
+                      <tr key={row.supplierId}>
+                        <td className="py-1.5 font-medium text-slate-900">{row.supplierName}</td>
+                        <td className="py-1.5 text-right">{peso(row.currentCents)}</td>
+                        <td className="py-1.5 text-right">{peso(row.days1To30Cents)}</td>
+                        <td className="py-1.5 text-right">{peso(row.days31To60Cents)}</td>
+                        <td className="py-1.5 text-right">{peso(row.days61To90Cents)}</td>
+                        <td className="py-1.5 text-right">{peso(row.over90DaysCents)}</td>
+                        <td className="py-1.5 text-right font-semibold">{peso(row.totalOutstandingCents)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p className="mt-3 text-xs text-slate-500">
+              Open AP {peso(ap.data.totalOpenPayablesCents)} across{" "}
+              {ap.data.openInvoiceCount} posted open invoice(s) (
+              {ap.data.overdueInvoiceCount} overdue;{" "}
+              {ap.data.varianceFlaggedInvoiceCount} unposted variance-flagged
+              excluded) is current posted liability aged by due date as of {to}{" "}
+              (Asia/Manila). Balances reflect posted invoices less applied
+              supplier-return credits and confirmed settlements; pending
+              payment requests are not deducted.
             </p>
           </CardBody>
         </Card>
