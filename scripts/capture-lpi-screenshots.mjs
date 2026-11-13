@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
+import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { inflateSync } from "node:zlib";
 
@@ -8,62 +10,182 @@ const baseUrl = process.argv[2] || "http://127.0.0.1:5299";
 const sessionId = process.argv[3] || "";
 const outputDir = process.argv[4] || path.resolve("00-HANDOFF/evidence/lpi");
 
-if (!fs.existsSync(outputDir)) {
-  fs.mkdirSync(outputDir, { recursive: true });
-}
-
 const edgePath = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
 const chromePath = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
-const browserExe = fs.existsSync(edgePath) ? edgePath : chromePath;
+const linuxBrowserPaths = ["/usr/bin/chromium", "/usr/bin/google-chrome", "/usr/bin/chromium-browser"];
+export function resolveBrowserExecutable() {
+  return [edgePath, chromePath, ...(process.platform === "win32" ? [] : linuxBrowserPaths)]
+    .find((candidate) => fs.existsSync(candidate)) ?? chromePath;
+}
 
-const cdpPort = 9444;
-const profileDir = path.join(process.env.TEMP || "C:\\Temp", `salryn-cdp-profile-${Date.now()}`);
-
-console.log(`[LPI Screenshot Runner] Spawning browser: ${browserExe}`);
-console.log(`[LPI Screenshot Runner] Target Base URL: ${baseUrl}`);
-console.log(`[LPI Screenshot Runner] Session ID: ${sessionId ? "PRESENT" : "NONE"}`);
-console.log(`[LPI Screenshot Runner] Output dir: ${outputDir}`);
-
-const browserProc = spawn(browserExe, [
+const browserFlags = [
   "--headless=new",
-  `--remote-debugging-port=${cdpPort}`,
-  `--user-data-dir=${profileDir}`,
+  "--remote-debugging-port=0",
   "--window-size=1440,900",
   "--hide-scrollbars",
   "--disable-gpu",
   "--no-first-run",
   "--no-default-browser-check"
-]);
+];
 
-browserProc.on("error", (err) => {
-  console.error("[LPI Screenshot Runner] Browser process error:", err);
-});
-
-async function sleep(ms) {
-  return new Promise((res) => setTimeout(res, ms));
+// The profile is created by this process, unpredictable and private (0700 on POSIX).
+// No default profile or global fixed debugging port is ever discovered or touched.
+export function launchOwnedBrowser(executable = resolveBrowserExecutable(), extraFlags = []) {
+  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), "salryn-lpi-cdp-"));
+  try {
+    fs.chmodSync(profileDir, 0o700);
+    const child = spawn(executable, [
+      ...extraFlags, ...browserFlags, "--user-data-dir=" + profileDir
+    ], { windowsHide: true, stdio: "ignore" });
+    child.ownedLaunchError = null;
+    child.ownedExit = null;
+    child.on("error", (error) => { child.ownedLaunchError = error; });
+    child.on("exit", (code, signal) => { child.ownedExit = { code, signal }; });
+    return { child, profileDir };
+  } catch (error) {
+    fs.rmSync(profileDir, { recursive: true, force: true });
+    throw error;
+  }
 }
 
-async function waitForCdp(retries = 30) {
-  for (let i = 0; i < retries; i++) {
-    try {
-      const res = await fetch(`http://127.0.0.1:${cdpPort}/json/list`);
-      if (res.ok) {
-        const list = await res.json();
-        const page = list.find((item) => item.type === "page");
-        if (page && page.webSocketDebuggerUrl) {
-          return page.webSocketDebuggerUrl;
-        }
-      }
-    } catch {
-      // retry
-    }
-    await sleep(300);
+function requireLiveOwnedChild(owner) {
+  const child = owner?.child;
+  if (!child || child.ownedLaunchError) {
+    throw new Error("FAIL-CLOSED: owned browser failed to spawn: " +
+      (child?.ownedLaunchError?.code ?? "no child"));
   }
-  throw new Error("Failed to connect to browser CDP within timeout.");
+  if (!Number.isInteger(child.pid) || child.pid <= 0 ||
+      child.exitCode !== null || child.signalCode !== null || child.ownedExit) {
+    throw new Error("FAIL-CLOSED: owned browser did not remain alive.");
+  }
+  try { process.kill(child.pid, 0); }
+  catch { throw new Error("FAIL-CLOSED: owned browser PID is no longer running."); }
+}
+
+export function readOwnedDevToolsPort(profileDir) {
+  const portFile = path.join(profileDir, "DevToolsActivePort");
+  if (!fs.existsSync(portFile)) return null;
+  const stat = fs.lstatSync(portFile);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 512 || stat.size < 30) {
+    throw new Error("FAIL-CLOSED: owned DevToolsActivePort is not a regular bounded file.");
+  }
+  const contents = fs.readFileSync(portFile, "utf8");
+  const match = /^(\\d{1,5})\r?\n(\/devtools\/browser\/[A-Za-z0-9-]{16,128})\r?\n?$/.exec(contents);
+  if (!match) throw new Error("FAIL-CLOSED: malformed owned DevToolsActivePort file.");
+  const port = Number(match[1]);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error("FAIL-CLOSED: invalid owned CDP port.");
+  }
+  return { port, browserPath: match[2],
+    browserWebSocket: "ws://127.0.0.1:" + port + match[2] };
+}
+
+export async function waitForOwnedCdp(owner, timeoutMs = 12000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    requireLiveOwnedChild(owner);
+    const portInfo = readOwnedDevToolsPort(owner.profileDir);
+    if (portInfo) {
+      try {
+        const response = await fetch("http://127.0.0.1:" + portInfo.port + "/json/version", {
+          signal: AbortSignal.timeout(1200),
+        });
+        if (!response.ok) throw new Error("CDP version returned HTTP " + response.status);
+        const version = await response.json();
+        requireLiveOwnedChild(owner);
+        if (!/^(?:Chrome|Chromium|HeadlessChrome|Edg)\//.test(version?.Browser ?? "") ||
+            version?.webSocketDebuggerUrl !== portInfo.browserWebSocket) {
+          throw new Error("FAIL-CLOSED: browser-owned CDP endpoint or identity mismatch.");
+        }
+        console.log("[LPI Screenshot Runner] CDP_OWNERSHIP_VERIFIED pid=" + owner.child.pid +
+          " profile=" + owner.profileDir + " port=" + portInfo.port +
+          " browserIdSha256=" + createHash("sha256").update(portInfo.browserPath).digest("hex").slice(0, 16));
+        return portInfo;
+      } catch (error) {
+        if (/FAIL-CLOSED: browser-owned CDP endpoint or identity mismatch|owned browser/i.test(String(error))) {
+          throw error;
+        }
+        // A newly spawned browser can write the file before its private listener is ready.
+      }
+    }
+    await sleep(100);
+  }
+  requireLiveOwnedChild(owner);
+  throw new Error("FAIL-CLOSED: timed out waiting for the spawned browser's owned CDP endpoint.");
+}
+
+async function connectOwnedWebSocket(url, owner, timeoutMs = 5000) {
+  requireLiveOwnedChild(owner);
+  const socket = new WebSocket(url);
+  try {
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("FAIL-CLOSED: owned CDP socket timeout.")), timeoutMs);
+      socket.addEventListener("open", () => { clearTimeout(timeout); resolve(); }, { once: true });
+      socket.addEventListener("error", () => { clearTimeout(timeout); reject(new Error("FAIL-CLOSED: owned CDP socket failed.")); }, { once: true });
+      socket.addEventListener("close", () => { clearTimeout(timeout); reject(new Error("FAIL-CLOSED: owned CDP socket closed during startup.")); }, { once: true });
+    });
+    requireLiveOwnedChild(owner);
+    return socket;
+  } catch (error) {
+    socket.close();
+    throw error;
+  }
+}
+
+// Create a page from the verified *browser* CDP socket. No /json/list first-page trust.
+export async function createOwnedPageEndpoint(owner, portInfo) {
+  requireLiveOwnedChild(owner);
+  const browserSocket = await connectOwnedWebSocket(portInfo.browserWebSocket, owner);
+  try {
+    const targetId = await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("FAIL-CLOSED: owned CDP Target.createTarget timeout.")), 5000);
+      const listener = (event) => {
+        let reply;
+        try { reply = JSON.parse(event.data); } catch { return; }
+        if (reply.id !== 1) return;
+        clearTimeout(timeout);
+        browserSocket.removeEventListener("message", listener);
+        if (reply.error || !/^[A-Fa-f0-9]{16,64}$/.test(reply.result?.targetId ?? "")) {
+          reject(new Error("FAIL-CLOSED: owned browser returned invalid target ID."));
+        } else {
+          resolve(reply.result.targetId);
+        }
+      };
+      browserSocket.addEventListener("message", listener);
+      browserSocket.send(JSON.stringify({
+        id: 1, method: "Target.createTarget", params: { url: "about:blank" }
+      }));
+    });
+    requireLiveOwnedChild(owner);
+    return "ws://127.0.0.1:" + portInfo.port + "/devtools/page/" + targetId;
+  } finally {
+    browserSocket.close();
+  }
+}
+
+export async function disposeOwnedBrowser(owner) {
+  if (!owner) return;
+  const child = owner.child;
+  if (child?.pid && child.exitCode === null && child.signalCode === null) {
+    try { child.kill(); } catch { /* already exited */ }
+    await Promise.race([
+      new Promise((resolve) => child.once("close", resolve)),
+      sleep(2500)
+    ]);
+  }
+  // Never delete, signal or enumerate any browser/profile not created by this run.
+  fs.rmSync(owner.profileDir, {
+    recursive: true, force: true, maxRetries: 10, retryDelay: 200
+  });
+}
+
+async function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // The first seven captures are conditional tabs; AP is a separate protected route.
 // Each marker below is rendered in the current UI at the pinned baseline SHA.
+// The first seven captures are conditional tabs; AP is a separate protected route.
 const procurementHeading = "Logistics, Procurement & Inventory";
 const targets = [
   {
@@ -198,7 +320,16 @@ function inspectPng(base64, label) {
   return { png, width, height, sha256: createHash("sha256").update(png).digest("hex") };
 }
 
-async function run() {
+export async function run(options = {}) {
+  const browserExecutable = options.browserExecutable ?? resolveBrowserExecutable();
+  const additionalBrowserFlags = options.additionalBrowserFlags ?? [];
+  let owner = null;
+  let pageSocket = null;
+  if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+  console.log("[LPI Screenshot Runner] Browser executable: " + browserExecutable);
+  console.log("[LPI Screenshot Runner] Target base: " + baseUrl);
+  console.log("[LPI Screenshot Runner] Synthetic session: " + (sessionId ? "PRESENT" : "NONE"));
+  console.log("[LPI Screenshot Runner] Output: " + outputDir);
   const unhandledExceptions = [];
   const consoleErrors = [];
   const networkFailures = [];
@@ -213,14 +344,13 @@ async function run() {
   fs.mkdirSync(stagedDir, { recursive: true });
 
   try {
-    const wsUrl = await waitForCdp();
-    console.log(`[LPI Screenshot Runner] Connected to CDP page: ${wsUrl}`);
-
-    const ws = new WebSocket(wsUrl);
-    await new Promise((resolve, reject) => {
-      ws.onopen = resolve;
-      ws.onerror = reject;
-    });
+    owner = launchOwnedBrowser(browserExecutable, additionalBrowserFlags);
+    const portInfo = await waitForOwnedCdp(owner);
+    const wsUrl = await createOwnedPageEndpoint(owner, portInfo);
+    // This gate must precede Network.setCookie and every navigation.
+    requireLiveOwnedChild(owner);
+    const ws = await connectOwnedWebSocket(wsUrl, owner);
+    pageSocket = ws;
 
     let msgId = 1;
     function send(method, params = {}) {
@@ -299,7 +429,8 @@ async function run() {
 
     if (sessionId) {
       console.log("[LPI Screenshot Runner] Setting authentication cookie salryn.sid...");
-      await send("Network.setCookie", {
+      requireLiveOwnedChild(owner);
+    await send("Network.setCookie", {
         name: "salryn.sid",
         value: sessionId,
         domain: "127.0.0.1",
@@ -417,18 +548,14 @@ async function run() {
   } finally {
     if (!completed) for (const t of targets) fs.rmSync(path.join(outputDir, t.file), { force: true });
     fs.rmSync(stagedDir, { recursive: true, force: true });
-    browserProc.kill();
-    try {
-      fs.rmSync(profileDir, { recursive: true, force: true });
-    } catch {
-      // ignore
-    }
+    try { pageSocket?.close(); } catch { /* already closed */ }
+    await disposeOwnedBrowser(owner);
   }
 }
 
-run()
-  .then(() => process.exit(0))
-  .catch((err) => {
-    console.error("[LPI Screenshot Runner] FATAL:", err);
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  run().then(() => process.exit(0)).catch((error) => {
+    console.error("[LPI Screenshot Runner] FATAL:", error);
     process.exit(1);
   });
+}
