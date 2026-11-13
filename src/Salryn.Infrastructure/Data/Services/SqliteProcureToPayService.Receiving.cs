@@ -983,6 +983,12 @@ public sealed partial class SqliteProcureToPayService
                 Error.Validation("Lpi.SupplierReturn.Invalid", "Receiving report, reason, and at least one return line are required."));
         }
 
+        if (request.SupplierInvoiceId == Guid.Empty)
+        {
+            return Result<SupplierReturnModel>.Fail(
+                Error.Validation("Lpi.SupplierReturn.InvalidInvoiceId", "Target supplier invoice ID cannot be empty."));
+        }
+
         await using SqliteConnection connection = _connections.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         SqlitePragma.Apply(connection);
@@ -996,11 +1002,11 @@ public sealed partial class SqliteProcureToPayService
         }
 
         Dictionary<Guid, ReceivingReportLineModel> rrLines = rr.Lines.ToDictionary(x => x.Id);
-        string sretNumber = await AllocateSequenceInTransactionAsync(connection, transaction, "SRET", cancellationToken);
-        Guid sretId = Guid.NewGuid();
         DateTimeOffset now = _timeProvider.GetUtcNow();
         DateOnly returnDate = DateOnly.FromDateTime(now.UtcDateTime);
         long totalReturnCents = 0;
+        Dictionary<Guid, long> requestedQtyByRrLine = new();
+        Dictionary<Guid, long> requestedStockByProduct = new();
 
         foreach (var line in request.Lines)
         {
@@ -1009,6 +1015,7 @@ public sealed partial class SqliteProcureToPayService
                 return Result<SupplierReturnModel>.Fail(
                     Error.Validation("Lpi.SupplierReturn.InvalidLine", "Return line must reference an accepted product line on the Receiving Report."));
             }
+
             long previouslyReturnedX1000 = 0;
             await using (SqliteCommand priorRetCmd = connection.CreateCommand())
             {
@@ -1025,15 +1032,54 @@ public sealed partial class SqliteProcureToPayService
             }
 
             long remainingAcceptedX1000 = Math.Max(0L, rrLine.AcceptedQtyX1000 - previouslyReturnedX1000);
+            long nextCumulativeForLine = checked(requestedQtyByRrLine.GetValueOrDefault(line.ReceivingReportLineId) + line.ReturnQtyX1000);
 
-            if (line.ReturnQtyX1000 <= 0 || line.ReturnQtyX1000 > remainingAcceptedX1000)
+            if (line.ReturnQtyX1000 <= 0 || nextCumulativeForLine > remainingAcceptedX1000)
             {
                 return Result<SupplierReturnModel>.Fail(
                     Error.Validation("Lpi.SupplierReturn.InvalidQty",
-                        $"Return quantity for '{rrLine.ItemDescription}' ({line.ReturnQtyX1000}) exceeds remaining accepted quantity ({remainingAcceptedX1000}). Previously returned: {previouslyReturnedX1000}."));
+                        $"Return quantity for '{rrLine.ItemDescription}' ({nextCumulativeForLine}) exceeds remaining accepted quantity ({remainingAcceptedX1000}). Previously returned: {previouslyReturnedX1000}."));
             }
-            totalReturnCents += (line.ReturnQtyX1000 * rrLine.UnitCostCents) / 1000L;
+
+            requestedQtyByRrLine[line.ReceivingReportLineId] = nextCumulativeForLine;
+            Guid productId = rrLine.ProductId.Value;
+            requestedStockByProduct[productId] = checked(requestedStockByProduct.GetValueOrDefault(productId) + line.ReturnQtyX1000);
+            long lineTotalCents = checked(line.ReturnQtyX1000 * rrLine.UnitCostCents) / 1000L;
+            totalReturnCents = checked(totalReturnCents + lineTotalCents);
         }
+
+        foreach (var stockNeed in requestedStockByProduct)
+        {
+            (bool exists, bool trackStock, long currentStockX1000, _) =
+                await ReadProductStockStateAsync(connection, transaction, stockNeed.Key, cancellationToken);
+            if (!exists || (trackStock && currentStockX1000 < stockNeed.Value))
+            {
+                string itemName = rr.Lines.FirstOrDefault(l => l.ProductId == stockNeed.Key)?.ItemDescription ?? stockNeed.Key.ToString("D");
+                return Result<SupplierReturnModel>.Fail(
+                    Error.Conflict("Lpi.SupplierReturn.InsufficientStock",
+                        $"Insufficient stock on hand ({currentStockX1000}) to return {stockNeed.Value} of '{itemName}'."));
+            }
+        }
+
+        if (request.SupplierInvoiceId.HasValue)
+        {
+            Result invoiceValidation = await ValidateSupplierReturnTargetInvoiceAsync(
+                connection,
+                transaction,
+                rr,
+                rrLines,
+                request.SupplierInvoiceId.Value,
+                totalReturnCents,
+                returnDate,
+                cancellationToken);
+            if (invoiceValidation.IsFailure)
+            {
+                return Result<SupplierReturnModel>.Fail(invoiceValidation.ErrorDetail);
+            }
+        }
+
+        string sretNumber = await AllocateSequenceInTransactionAsync(connection, transaction, "SRET", cancellationToken);
+        Guid sretId = Guid.NewGuid();
 
         await using (SqliteCommand ins = connection.CreateCommand())
         {
@@ -1181,6 +1227,8 @@ public sealed partial class SqliteProcureToPayService
             await ApplySupplierReturnCreditToInvoiceAsync(
                 connection,
                 transaction,
+                rr,
+                rrLines,
                 request.SupplierInvoiceId.Value,
                 sretNumber,
                 totalReturnCents,

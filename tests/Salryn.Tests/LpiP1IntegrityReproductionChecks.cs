@@ -77,6 +77,7 @@ public static class LpiP1IntegrityReproductionChecks
             await TestW5R21DuplicateProductAmbiguityAndFinancialIntegrityAsync(service, paths, requesterId, supervisorId, apClerkId, resaleProdId);
             await TestP102CrossSupplierPaymentLineageHttpAsync(composition, service, paths, resaleProdId);
             await TestP102DisbursementDateCustodyAsync(composition, paths, apClerkId, resaleProdId);
+            await TestIssue44SupplierReturnInvoiceLineageGuardsAsync(service, paths, apClerkId, receiverId, supervisorId, resaleProdId);
 
             Console.WriteLine("LPI P1 Integrity: All findings (P1-01 through P1-06 and P1-R3-01/02) verified with full regression closure PASS.");
         }
@@ -2840,6 +2841,182 @@ public static class LpiP1IntegrityReproductionChecks
             $"Expected VarianceFlagged status for overbilled invoice, got {invBetaDuplicate.Status}");
 
         Console.WriteLine("P1-R21-02: Duplicate-product same-PO line ambiguity rejection, line isolation, variance segregation, and cumulative overbilling protection verified PASS.");
+    }
+
+    private static async Task TestIssue44SupplierReturnInvoiceLineageGuardsAsync(
+        SqliteProcureToPayService service,
+        DbPaths paths,
+        Guid apClerkId,
+        Guid receiverId,
+        Guid supervisorId,
+        Guid resaleProdId)
+    {
+        LpiSupplier supA = RequireSuccess(
+            await service.CreateSupplierAsync(new CreateLpiSupplierRequest(
+                "SUP-ISS44-A", "Issue 44 Vendor Alpha", "Ana Alpha", "09171110001", "a@iss44.ph",
+                "Makati", "111-111-111-000", 30, 5, "Primary supplier", supervisorId)),
+            "create supA");
+        LpiSupplier supB = RequireSuccess(
+            await service.CreateSupplierAsync(new CreateLpiSupplierRequest(
+                "SUP-ISS44-B", "Issue 44 Vendor Beta", "Ben Beta", "09171110002", "b@iss44.ph",
+                "Pasig", "222-222-222-000", 30, 5, "Cross-supplier negative fixture", supervisorId)),
+            "create supB");
+
+        PurchaseOrderModel poA1 = RequireSuccess(
+            await service.CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest(
+                supA.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(5)), null, 30, 0, "Std", "Issue 44 PO A1", true,
+                new[] { new CreatePurchaseOrderLineInput(null, resaleProdId, "P1-PROD-RESALE", "P1 Commercial Resale Item", PurchaseClassifications.Resale, "pcs", 8_000, 50_000, 0, 0, null) },
+                supervisorId)),
+            "create poA1");
+        PurchaseOrderModel poA2 = RequireSuccess(
+            await service.CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest(
+                supA.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(5)), null, 30, 0, "Std", "Issue 44 PO A2", true,
+                new[] { new CreatePurchaseOrderLineInput(null, resaleProdId, "P1-PROD-RESALE", "P1 Commercial Resale Item", PurchaseClassifications.Resale, "pcs", 2_000, 50_000, 0, 0, null) },
+                supervisorId)),
+            "create poA2");
+        PurchaseOrderModel poB1 = RequireSuccess(
+            await service.CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest(
+                supB.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(5)), null, 30, 0, "Std", "Issue 44 PO B1", true,
+                new[] { new CreatePurchaseOrderLineInput(null, resaleProdId, "P1-PROD-RESALE", "P1 Commercial Resale Item", PurchaseClassifications.Resale, "pcs", 4_000, 50_000, 0, 0, null) },
+                supervisorId)),
+            "create poB1");
+
+        ReceivingReportModel rrA1a = RequireSuccess(
+            await service.CreateReceivingReportAsync(new CreateReceivingReportRequest(
+                poA1.Id, null, "DR-44-A1A", null, "Truck-1", DateOnly.FromDateTime(DateTime.UtcNow), true, null, null, "rr-44-a1a", null,
+                new[] { new CreateReceivingReportLineInput(poA1.Lines[0].Id, 6_000, 6_000, 0, null, null, null, null) },
+                receiverId)),
+            "create rrA1a");
+        ReceivingReportModel rrA1b = RequireSuccess(
+            await service.CreateReceivingReportAsync(new CreateReceivingReportRequest(
+                poA1.Id, null, "DR-44-A1B", null, "Truck-2", DateOnly.FromDateTime(DateTime.UtcNow), true, null, null, "rr-44-a1b", null,
+                new[] { new CreateReceivingReportLineInput(poA1.Lines[0].Id, 2_000, 2_000, 0, null, null, null, null) },
+                receiverId)),
+            "create rrA1b");
+        ReceivingReportModel rrA2 = RequireSuccess(
+            await service.CreateReceivingReportAsync(new CreateReceivingReportRequest(
+                poA2.Id, null, "DR-44-A2", null, "Truck-3", DateOnly.FromDateTime(DateTime.UtcNow), true, null, null, "rr-44-a2", null,
+                new[] { new CreateReceivingReportLineInput(poA2.Lines[0].Id, 2_000, 2_000, 0, null, null, null, null) },
+                receiverId)),
+            "create rrA2");
+        ReceivingReportModel rrB1 = RequireSuccess(
+            await service.CreateReceivingReportAsync(new CreateReceivingReportRequest(
+                poB1.Id, null, "DR-44-B1", null, "Truck-4", DateOnly.FromDateTime(DateTime.UtcNow), true, null, null, "rr-44-b1", null,
+                new[] { new CreateReceivingReportLineInput(poB1.Lines[0].Id, 4_000, 4_000, 0, null, null, null, null) },
+                receiverId)),
+            "create rrB1");
+
+        DateOnly invDate = DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(8)).DateTime);
+        SupplierInvoiceModel invA1a = RequireSuccess(
+            await service.CreateSupplierInvoiceAsync(new CreateSupplierInvoiceRequest(
+                supA.Id, "SI-44-A1A", poA1.Id, rrA1a.Id, invDate, invDate.AddDays(30), 0, 0, true,
+                new[] { new CreateSupplierInvoiceLineInput(poA1.Lines[0].Id, rrA1a.Lines[0].Id, resaleProdId, "P1 Commercial Resale Item", 4_000, 50_000, 0) },
+                apClerkId)),
+            "create invA1a");
+        SupplierInvoiceModel invA1bPaid = RequireSuccess(
+            await service.CreateSupplierInvoiceAsync(new CreateSupplierInvoiceRequest(
+                supA.Id, "SI-44-A1B", poA1.Id, rrA1b.Id, invDate, invDate.AddDays(30), 0, 0, true,
+                new[] { new CreateSupplierInvoiceLineInput(poA1.Lines[0].Id, rrA1b.Lines[0].Id, resaleProdId, "P1 Commercial Resale Item", 2_000, 50_000, 0) },
+                apClerkId)),
+            "create invA1bPaid");
+        SupplierInvoiceModel invA2 = RequireSuccess(
+            await service.CreateSupplierInvoiceAsync(new CreateSupplierInvoiceRequest(
+                supA.Id, "SI-44-A2", poA2.Id, rrA2.Id, invDate, invDate.AddDays(30), 0, 0, true,
+                new[] { new CreateSupplierInvoiceLineInput(poA2.Lines[0].Id, rrA2.Lines[0].Id, resaleProdId, "P1 Commercial Resale Item", 2_000, 50_000, 0) },
+                apClerkId)),
+            "create invA2");
+        SupplierInvoiceModel invB1 = RequireSuccess(
+            await service.CreateSupplierInvoiceAsync(new CreateSupplierInvoiceRequest(
+                supB.Id, "SI-44-B1", poB1.Id, rrB1.Id, invDate, invDate.AddDays(30), 0, 0, true,
+                new[] { new CreateSupplierInvoiceLineInput(poB1.Lines[0].Id, rrB1.Lines[0].Id, resaleProdId, "P1 Commercial Resale Item", 4_000, 50_000, 0) },
+                apClerkId)),
+            "create invB1");
+
+        // Pay invA1bPaid in full so we can also assert non-open / Paid rejection.
+        SupplierPaymentModel fullPay = RequireSuccess(
+            await service.RecordSupplierPaymentAsync(new RecordSupplierPaymentRequest(
+                invA1bPaid.Id, invDate, invA1bPaid.RemainingBalanceCents, "Cash", "CashBox", "REF-44-PAID",
+                null, "Main", "Settle invA1b", "pay-44-a1b", apClerkId, null)),
+            "record pay invA1b");
+        _ = RequireSuccess(
+            await service.ApproveSupplierPaymentAsync(new ApproveSupplierPaymentRequest(
+                fullPay.Id, supervisorId, "YES", "Approved", invDate.ToString("yyyy-MM-dd"))),
+            "approve pay invA1b");
+
+        (long SretNext, long RetCount, long LedgerCount, long AuditCount) ReadStateCounters()
+        {
+            using SqliteConnection c = new($"Data Source={paths.DatabasePath}");
+            c.Open();
+            static long Scalar(SqliteConnection conn, string sql)
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = sql;
+                return Convert.ToInt64(cmd.ExecuteScalar() ?? 0L);
+            }
+            return (
+                Scalar(c, "SELECT COALESCE((SELECT current_number FROM lpi_document_sequences WHERE prefix = 'SRET'), 0);"),
+                Scalar(c, "SELECT COUNT(*) FROM supplier_returns;"),
+                Scalar(c, "SELECT COUNT(*) FROM supplier_payable_entries;"),
+                Scalar(c, "SELECT COUNT(*) FROM audit_logs WHERE action = 'SUPPLIER_RETURN_POSTED';"));
+        }
+
+        long stockBefore = ReadStockOnHand(paths.DatabasePath, resaleProdId);
+        var before = ReadStateCounters();
+
+        async Task AssertReturnRejectedAsync(Guid rrId, Guid rrLineId, long qtyX1000, Guid? targetInvId, string expectedCode, string scenario)
+        {
+            Result<SupplierReturnModel> res = await service.CreateSupplierReturnAsync(new CreateSupplierReturnRequest(
+                rrId,
+                targetInvId,
+                $"Negative check: {scenario}",
+                new[] { new CreateSupplierReturnLineInput(rrLineId, qtyX1000, scenario) },
+                receiverId,
+                supervisorId));
+            Require(res.IsFailure, $"Issue #44 [{scenario}] MUST FAIL closed.");
+            Require(res.ErrorDetail?.Code == expectedCode,
+                $"Issue #44 [{scenario}] expected '{expectedCode}', got '{res.ErrorDetail?.Code}' ({res.ErrorDetail?.Message}).");
+        }
+
+        // 1. Cross-supplier invoice (supB invoice for supA RR) -> denied
+        await AssertReturnRejectedAsync(rrA1a.Id, rrA1a.Lines[0].Id, 1_000, invB1.Id, "Lpi.SupplierReturn.InvoiceSupplierMismatch", "cross-supplier");
+        // 2. Same supplier, wrong PO -> denied
+        await AssertReturnRejectedAsync(rrA1a.Id, rrA1a.Lines[0].Id, 1_000, invA2.Id, "Lpi.SupplierReturn.InvoiceLineageMismatch", "wrong-PO");
+        // 3. Same supplier, same PO, different RR -> denied
+        await AssertReturnRejectedAsync(rrA1a.Id, rrA1a.Lines[0].Id, 1_000, invA1bPaid.Id, "Lpi.SupplierReturn.InvoiceLineageMismatch", "wrong-RR-same-PO");
+        // 4. Matched lineage but return credit exceeds invoice remaining balance (250k > 200k) -> denied
+        await AssertReturnRejectedAsync(rrA1a.Id, rrA1a.Lines[0].Id, 5_000, invA1a.Id, "Lpi.SupplierReturn.CreditExceedsInvoiceBalance", "over-balance");
+        // 5. Matched RR/PO/Supplier but invoice is already Paid -> denied
+        await AssertReturnRejectedAsync(rrA1b.Id, rrA1b.Lines[0].Id, 1_000, invA1bPaid.Id, "Lpi.SupplierReturn.InvoiceNotOpen", "paid-invoice");
+
+        var afterNegative = ReadStateCounters();
+        Require(stockBefore == ReadStockOnHand(paths.DatabasePath, resaleProdId), "Issue #44 negative rejections must not alter product stock.");
+        Require(afterNegative == before, "Issue #44 negative rejections must not burn SRET sequence or mutate return/ledger/audit rows.");
+
+        SupplierInvoiceModel invB1After = RequireSuccess(await service.GetSupplierInvoiceByIdAsync(invB1.Id), "reload invB1");
+        SupplierInvoiceModel invA1aAfterNeg = RequireSuccess(await service.GetSupplierInvoiceByIdAsync(invA1a.Id), "reload invA1a after negative");
+        Require(invB1After.RemainingBalanceCents == invB1.RemainingBalanceCents && invB1After.CreditMemoAppliedCents == 0,
+            "Cross-supplier invoice invB1 must remain completely untouched.");
+        Require(invA1aAfterNeg.RemainingBalanceCents == invA1a.RemainingBalanceCents && invA1aAfterNeg.CreditMemoAppliedCents == 0,
+            "Matched invoice invA1a must remain untouched after over-balance rejection.");
+
+        // 6. Positive case: valid matched return against rrA1a + invA1a (1 unit = 50,000 cents <= 200,000 cents)
+        SupplierReturnModel okReturn = RequireSuccess(
+            await service.CreateSupplierReturnAsync(new CreateSupplierReturnRequest(
+                rrA1a.Id,
+                invA1a.Id,
+                "Defective lot unit from RR A1a",
+                new[] { new CreateSupplierReturnLineInput(rrA1a.Lines[0].Id, 1_000, "Damaged packaging") },
+                receiverId,
+                supervisorId)),
+            "create valid matched supplier return");
+
+        SupplierInvoiceModel invA1aAfterPos = RequireSuccess(await service.GetSupplierInvoiceByIdAsync(invA1a.Id), "reload invA1a after valid return");
+        Require(okReturn.TotalReturnAmountCents == 50_000, $"Expected 50,000 cents return total, got {okReturn.TotalReturnAmountCents}.");
+        Require(invA1aAfterPos.CreditMemoAppliedCents == 50_000 && invA1aAfterPos.RemainingBalanceCents == 150_000 && invA1aAfterPos.Status == "PartiallyPaid",
+            $"Valid return credit must reduce invA1a balance from 200,000 to 150,000 (status PartiallyPaid), got bal={invA1aAfterPos.RemainingBalanceCents}, credit={invA1aAfterPos.CreditMemoAppliedCents}, status={invA1aAfterPos.Status}.");
+        Require(ReadStockOnHand(paths.DatabasePath, resaleProdId) == stockBefore - 1_000, "Valid supplier return must deduct stock by 1_000.");
+
+        Console.WriteLine("ISSUE-44: Cross-supplier, wrong-PO, wrong-RR, Paid-status, and over-balance supplier return guards + atomic matched credit verified PASS.");
     }
 
     #region Helpers

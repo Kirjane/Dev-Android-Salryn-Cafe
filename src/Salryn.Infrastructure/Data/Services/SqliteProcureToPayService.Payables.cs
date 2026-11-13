@@ -1303,9 +1303,66 @@ public sealed partial class SqliteProcureToPayService
             cancellationToken);
     }
 
+    private async Task<Result> ValidateSupplierReturnTargetInvoiceAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        ReceivingReportModel rr,
+        IReadOnlyDictionary<Guid, ReceivingReportLineModel> rrLines,
+        Guid invoiceId,
+        long returnCreditCents,
+        DateOnly evaluationDate,
+        CancellationToken cancellationToken)
+    {
+        SupplierInvoiceModel? inv = await LoadSupplierInvoiceAsync(connection, transaction, invoiceId, evaluationDate, cancellationToken);
+        if (inv is null)
+        {
+            return Result.Fail(Error.NotFound(
+                "Lpi.SupplierReturn.InvoiceNotFound",
+                "Target supplier invoice was not found."));
+        }
+
+        if (inv.SupplierId != rr.SupplierId)
+        {
+            return Result.Fail(Error.Conflict(
+                "Lpi.SupplierReturn.InvoiceSupplierMismatch",
+                $"Supplier return credit from supplier '{rr.SupplierName}' cannot be applied to invoice '{inv.ApVoucherNumber}' belonging to supplier '{inv.SupplierName}'."));
+        }
+
+        bool invoiceLineMatchesRr = inv.Lines.Any(line =>
+            line.ReceivingReportLineId.HasValue && rrLines.ContainsKey(line.ReceivingReportLineId.Value));
+        bool matchesPoWithoutSeparateRr = inv.ReceivingReportId is null
+            && inv.PurchaseOrderId == rr.PurchaseOrderId
+            && !inv.Lines.Any(line => line.ReceivingReportLineId.HasValue);
+
+        if (inv.ReceivingReportId != rr.Id && !invoiceLineMatchesRr && !matchesPoWithoutSeparateRr)
+        {
+            return Result.Fail(Error.Conflict(
+                "Lpi.SupplierReturn.InvoiceLineageMismatch",
+                $"Supplier invoice '{inv.ApVoucherNumber}' does not match Receiving Report '{rr.RrNumber}' or Purchase Order '{rr.PoNumber}' lineage."));
+        }
+
+        if (inv.Status is not ("PostedOpen" or "PartiallyPaid"))
+        {
+            return Result.Fail(Error.Conflict(
+                "Lpi.SupplierReturn.InvoiceNotOpen",
+                $"Supplier return credit cannot be applied to invoice '{inv.ApVoucherNumber}' in status '{inv.Status}'. Only open or partially paid invoices can receive return credit."));
+        }
+
+        if (inv.RemainingBalanceCents <= 0 || returnCreditCents > inv.RemainingBalanceCents)
+        {
+            return Result.Fail(Error.Conflict(
+                "Lpi.SupplierReturn.CreditExceedsInvoiceBalance",
+                $"Supplier return credit ({returnCreditCents} cents) exceeds remaining balance ({inv.RemainingBalanceCents} cents) on invoice '{inv.ApVoucherNumber}'."));
+        }
+
+        return Result.Success();
+    }
+
     private async Task ApplySupplierReturnCreditToInvoiceAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
+        ReceivingReportModel rr,
+        IReadOnlyDictionary<Guid, ReceivingReportLineModel> rrLines,
         Guid invoiceId,
         string sretNumber,
         long returnCreditCents,
@@ -1314,14 +1371,24 @@ public sealed partial class SqliteProcureToPayService
         CancellationToken cancellationToken)
     {
         DateOnly today = DateOnly.FromDateTime(now.UtcDateTime);
-        SupplierInvoiceModel? inv = await LoadSupplierInvoiceAsync(connection, transaction, invoiceId, today, cancellationToken);
-        if (inv is null || inv.RemainingBalanceCents <= 0) return;
+        Result validation = await ValidateSupplierReturnTargetInvoiceAsync(
+            connection,
+            transaction,
+            rr,
+            rrLines,
+            invoiceId,
+            returnCreditCents,
+            today,
+            cancellationToken);
+        if (validation.IsFailure)
+        {
+            throw new InvalidOperationException($"{validation.ErrorDetail.Code}: {validation.ErrorDetail.Message}");
+        }
 
-        long appliedCredit = Math.Min(inv.RemainingBalanceCents, returnCreditCents);
-        long nextRemaining = Math.Max(0, inv.RemainingBalanceCents - appliedCredit);
-        string nextStatus = inv.Status is "PostedOpen" or "PartiallyPaid"
-            ? (nextRemaining == 0 ? "Paid" : "PartiallyPaid")
-            : inv.Status;
+        SupplierInvoiceModel inv = (await LoadSupplierInvoiceAsync(connection, transaction, invoiceId, today, cancellationToken))!;
+        long appliedCredit = returnCreditCents;
+        long nextRemaining = inv.RemainingBalanceCents - appliedCredit;
+        string nextStatus = nextRemaining == 0 ? "Paid" : "PartiallyPaid";
 
         await using (SqliteCommand upd = connection.CreateCommand())
         {
@@ -1342,22 +1409,19 @@ public sealed partial class SqliteProcureToPayService
             await upd.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        if (inv.Status is "PostedOpen" or "PartiallyPaid")
-        {
-            await AppendPayableLedgerEntryAsync(
-                connection,
-                transaction,
-                inv.SupplierId,
-                inv.Id,
-                "SupplierReturnCredit",
-                sretNumber,
-                debitCents: appliedCredit, // Debit AP reduces liability
-                creditCents: 0,
-                note: $"Supplier Return credit {sretNumber} applied to {inv.ApVoucherNumber}",
-                actorUserId: actorUserId,
-                now: now,
-                cancellationToken: cancellationToken);
-        }
+        await AppendPayableLedgerEntryAsync(
+            connection,
+            transaction,
+            inv.SupplierId,
+            inv.Id,
+            "SupplierReturnCredit",
+            sretNumber,
+            debitCents: appliedCredit, // Debit AP reduces liability
+            creditCents: 0,
+            note: $"Supplier Return credit {sretNumber} applied to {inv.ApVoucherNumber}",
+            actorUserId: actorUserId,
+            now: now,
+            cancellationToken: cancellationToken);
     }
 
     private static async Task AppendPayableLedgerEntryAsync(
