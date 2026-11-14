@@ -56,6 +56,44 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
                     subtotal, discount, total, status, userId, userName, createdAt, validUntil,
                     Array.Empty<CustomerQuotationLine>()));
             }
+            await reader.CloseAsync().ConfigureAwait(false);
+
+            // Hydrate all quotation lines in one batch query matching GetQuotationByIdAsync.
+            // Missing child rows stay unhydrated so UI/audit checks flag partial data rather than synthesizing lines.
+            var linesByQuotation = list.ToDictionary(q => q.Id, _ => new List<CustomerQuotationLine>());
+            if (list.Count > 0)
+            {
+                await using var lineCmd = connection.CreateCommand();
+                lineCmd.CommandText = """
+                    SELECT l.id, l.quotation_id, l.product_id, l.product_name_snapshot,
+                           l.barcode_snapshot, l.unit_name_snapshot, l.quantity_x1000,
+                           l.unit_price_cents, l.discount_cents, l.line_total_cents
+                    FROM customer_quotation_lines l
+                    INNER JOIN customer_quotations q ON q.id = l.quotation_id
+                    ORDER BY l.quotation_id, l.rowid;
+                    """;
+                await using var lineReader = await lineCmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                while (await lineReader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    Guid quoteId = Guid.Parse(lineReader.GetString(1));
+                    if (!linesByQuotation.TryGetValue(quoteId, out List<CustomerQuotationLine>? quoteLines))
+                        continue;
+                    quoteLines.Add(new CustomerQuotationLine(
+                        Guid.Parse(lineReader.GetString(0)),
+                        quoteId,
+                        Guid.Parse(lineReader.GetString(2)),
+                        lineReader.GetString(3),
+                        lineReader.IsDBNull(4) ? null : lineReader.GetString(4),
+                        lineReader.GetString(5),
+                        lineReader.GetInt64(6),
+                        lineReader.GetInt64(7),
+                        lineReader.GetInt64(8),
+                        lineReader.GetInt64(9)));
+                }
+            }
+
+            for (int i = 0; i < list.Count; i++)
+                list[i] = list[i] with { Lines = linesByQuotation[list[i].Id] };
 
             return Result<IReadOnlyList<CustomerQuotation>>.Success(list);
         }
@@ -155,6 +193,10 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
         {
             return Result<CustomerQuotation>.Fail(Error.Validation("Quotation.LinesRequired", "At least one item is required for quotation."));
         }
+        if (request.DiscountCents < 0)
+        {
+            return Result<CustomerQuotation>.Fail(Error.Validation("Quotation.InvalidDiscount", "Document discount cannot be negative."));
+        }
 
         try
         {
@@ -164,22 +206,64 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
 
             Guid quoteId = Guid.NewGuid();
             DateTimeOffset now = DateTimeOffset.UtcNow;
-            string prefix = $"PQ-{now:yyyyMM}-";
-            string quoteNumber = await AllocateNextSequenceAsync(connection, transaction, prefix, cancellationToken).ConfigureAwait(false);
-
             long subtotalCents = 0;
             List<CustomerQuotationLine> lines = new();
+            HashSet<Guid> verifiedProducts = new();
 
             foreach (var line in request.Lines)
             {
+                if (line is null || line.ProductId == Guid.Empty ||
+                    string.IsNullOrWhiteSpace(line.ProductNameSnapshot) ||
+                    string.IsNullOrWhiteSpace(line.UnitNameSnapshot) ||
+                    line.UnitPriceCents < 0 || line.DiscountCents < 0)
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return Result<CustomerQuotation>.Fail(Error.Validation(
+                        "Quotation.InvalidLine",
+                        "Each quotation item needs a product, description, unit, non-negative unit price, and non-negative discount."));
+                }
                 if (line.QuantityX1000 <= 0)
                 {
                     await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                     return Result<CustomerQuotation>.Fail(Error.Validation("Quotation.InvalidQuantity", "Item quantity must be greater than zero."));
                 }
-                long grossLineCents = (line.QuantityX1000 * line.UnitPriceCents + 500) / 1000;
-                long netLineCents = Math.Max(0L, grossLineCents - line.DiscountCents);
-                subtotalCents += netLineCents;
+
+                if (verifiedProducts.Add(line.ProductId))
+                {
+                    await using var prodCmd = connection.CreateCommand();
+                    prodCmd.Transaction = transaction;
+                    prodCmd.CommandText = "SELECT 1 FROM products WHERE id = $productId LIMIT 1;";
+                    prodCmd.Parameters.AddWithValue("$productId", line.ProductId.ToString("D"));
+                    if (await prodCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is null)
+                    {
+                        await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return Result<CustomerQuotation>.Fail(Error.Validation(
+                            "Quotation.ProductNotFound",
+                            $"Referenced product '{line.ProductId:D}' does not exist."));
+                    }
+                }
+
+                long netLineCents;
+                try
+                {
+                    long grossLineCents = checked((checked(line.QuantityX1000 * line.UnitPriceCents) + 500L) / 1000L);
+                    if (line.DiscountCents > grossLineCents)
+                    {
+                        await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return Result<CustomerQuotation>.Fail(Error.Validation(
+                            "Quotation.LineDiscountExceedsGross",
+                            "Line discount cannot exceed the line gross amount."));
+                    }
+                    netLineCents = checked(grossLineCents - line.DiscountCents);
+                    subtotalCents = checked(subtotalCents + netLineCents);
+                }
+                catch (OverflowException)
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return Result<CustomerQuotation>.Fail(Error.Validation(
+                        "Quotation.AmountOverflow",
+                        "Quotation quantity and price exceed the supported amount range."));
+                }
 
                 Guid lineId = Guid.NewGuid();
                 CustomerQuotationLine quotationLine = new(
@@ -189,7 +273,17 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
                 lines.Add(quotationLine);
             }
 
-            long totalCents = Math.Max(0L, subtotalCents - request.DiscountCents);
+            if (request.DiscountCents > subtotalCents)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return Result<CustomerQuotation>.Fail(Error.Validation(
+                    "Quotation.DiscountExceedsSubtotal",
+                    "Document discount cannot exceed the quotation subtotal."));
+            }
+
+            long totalCents = checked(subtotalCents - request.DiscountCents);
+            string prefix = $"PQ-{now:yyyyMM}-";
+            string quoteNumber = await AllocateNextSequenceAsync(connection, transaction, prefix, cancellationToken).ConfigureAwait(false);
 
             // 1. Insert parent quotation first to satisfy foreign key constraints
             await using var insertQuote = connection.CreateCommand();
@@ -244,6 +338,28 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
                 insertLine.Parameters.AddWithValue("$discount", qLine.DiscountCents);
                 insertLine.Parameters.AddWithValue("$lineTotal", qLine.LineTotalCents);
                 await insertLine.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            // Do not commit an Issued parent quotation unless persisted child rows match
+            // the expected line count and net subtotal inside the same transaction.
+            await using (var verify = connection.CreateCommand())
+            {
+                verify.Transaction = transaction;
+                verify.CommandText = """
+                    SELECT COUNT(*), COALESCE(SUM(line_total_cents), 0)
+                    FROM customer_quotation_lines WHERE quotation_id = $quoteId;
+                    """;
+                verify.Parameters.AddWithValue("$quoteId", quoteId.ToString("D"));
+                await using var verifiedRows = await verify.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                if (!await verifiedRows.ReadAsync(cancellationToken).ConfigureAwait(false) ||
+                    verifiedRows.GetInt64(0) != lines.Count || verifiedRows.GetInt64(1) != subtotalCents)
+                {
+                    await verifiedRows.CloseAsync().ConfigureAwait(false);
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return Result<CustomerQuotation>.Fail(Error.Conflict(
+                        "Quotation.PersistedLinesMismatch",
+                        "Issued quotation lines did not persist with the expected count and subtotal."));
+                }
             }
 
             await WriteAuditAsync(connection, transaction, userId, "CUSTOMER_QUOTATION_CREATED",

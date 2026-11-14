@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchCustomerQuotations,
+  fetchCustomerQuotation,
   createCustomerQuotation,
   updateCustomerQuotationStatus,
   type CustomerQuotation,
@@ -23,8 +24,13 @@ import {
 } from "../components/ui";
 import { formatDateTime, formatMoney, formatQuantity } from "../utils/format";
 import { safeNotificationDescription } from "../utils/notificationError";
+import {
+  customerQuotationDisplayItemCount,
+  customerQuotationIntegrityIssue,
+} from "../utils/customerQuotationIntegrity";
 
 type DraftLine = {
+  lineKey: string;
   productId: string;
   productName: string;
   barcode: string | null;
@@ -32,6 +38,11 @@ type DraftLine = {
   quantity: number;
   unitPriceCents: number;
   discountCents: number;
+};
+
+const computeGrossLineCents = (quantity: number, unitPriceCents: number): number => {
+  if (!Number.isFinite(quantity) || !Number.isFinite(unitPriceCents)) return 0;
+  return Math.floor((Math.round(quantity * 1000) * unitPriceCents + 500) / 1000);
 };
 
 export function PriceCanvassPage() {
@@ -64,6 +75,7 @@ export function PriceCanvassPage() {
 
   // Modals state
   const [viewingQuote, setViewingQuote] = useState<CustomerQuotation | null>(null);
+  const [loadingQuoteId, setLoadingQuoteId] = useState<string | null>(null);
 
   // New quote form state
   const [customerName, setCustomerName] = useState("");
@@ -103,24 +115,45 @@ export function PriceCanvassPage() {
     if (!prod) return;
 
     const qty = Number(lineQty);
+    const qtyX1000 = Math.round(qty * 1000);
     const priceCents = Math.round(Number(linePrice) * 100);
     const discountCents = Math.round(Number(lineDiscount) * 100);
-    if (!Number.isFinite(qty) || qty <= 0 || !Number.isSafeInteger(Math.round(qty * 1000)) ||
-        !Number.isSafeInteger(priceCents) || priceCents < 0 || !Number.isSafeInteger(discountCents) ||
-        discountCents < 0 || discountCents > qty * priceCents) {
+    const grossCents = computeGrossLineCents(qty, priceCents);
+    if (
+      !Number.isFinite(qty) ||
+      qty <= 0 ||
+      !Number.isSafeInteger(qtyX1000) ||
+      qtyX1000 <= 0 ||
+      !Number.isSafeInteger(priceCents) ||
+      priceCents < 0 ||
+      !Number.isSafeInteger(discountCents) ||
+      discountCents < 0 ||
+      discountCents > grossCents
+    ) {
       notify.error("Enter a positive quantity and valid price/discount values.");
       return;
     }
 
-    const existingIndex = draftLines.findIndex((l) => l.productId === prod.id);
+    // Keep same-SKU rows separate when unit price or per-line discount terms differ (#51).
+    const existingIndex = draftLines.findIndex(
+      (l) => l.productId === prod.id && l.unitPriceCents === priceCents && l.discountCents === 0 && discountCents === 0,
+    );
     if (existingIndex >= 0) {
       const updated = [...draftLines];
-      updated[existingIndex].quantity += qty;
+      updated[existingIndex] = {
+        ...updated[existingIndex],
+        quantity: updated[existingIndex].quantity + qty,
+      };
       setDraftLines(updated);
     } else {
+      const lineKey =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `${prod.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       setDraftLines([
         ...draftLines,
         {
+          lineKey,
           productId: prod.id,
           productName: prod.name,
           barcode: prod.barcode ?? null,
@@ -144,9 +177,32 @@ export function PriceCanvassPage() {
   };
 
   const subtotalCents = draftLines.reduce((acc, line) => {
-    const lineTotal = Math.max(0, Math.round(line.quantity * line.unitPriceCents) - line.discountCents);
+    const lineTotal = Math.max(0, computeGrossLineCents(line.quantity, line.unitPriceCents) - line.discountCents);
     return acc + lineTotal;
   }, 0);
+
+  const handleOpenQuotationPrint = async (quoteId: string) => {
+    setLoadingQuoteId(quoteId);
+    try {
+      const detail = await fetchCustomerQuotation(quoteId);
+      if (detail.id !== quoteId) {
+        throw new Error("Fetched quotation ID does not match the requested quotation.");
+      }
+      const issue = customerQuotationIntegrityIssue(detail);
+      if (issue) {
+        notify.error("Quotation Lines Require Review", issue);
+        return;
+      }
+      setViewingQuote(detail);
+    } catch (err) {
+      notify.error(
+        "Cannot Load Quotation",
+        safeNotificationDescription(err, "Quotation detail could not be verified."),
+      );
+    } finally {
+      setLoadingQuoteId(null);
+    }
+  };
 
   const handleCreateQuotation = async () => {
     if (!customerName.trim()) {
@@ -156,9 +212,10 @@ export function PriceCanvassPage() {
     if (draftLines.length === 0 || draftLines.some((line) =>
       !Number.isFinite(line.quantity) || line.quantity <= 0 ||
       !Number.isSafeInteger(Math.round(line.quantity * 1000)) ||
+      Math.round(line.quantity * 1000) <= 0 ||
       !Number.isSafeInteger(line.unitPriceCents) || line.unitPriceCents < 0 ||
       !Number.isSafeInteger(line.discountCents) || line.discountCents < 0 ||
-      line.discountCents > line.quantity * line.unitPriceCents
+      line.discountCents > computeGrossLineCents(line.quantity, line.unitPriceCents)
     )) {
       notify.error("Valid Lines Required", "Each quote line needs a positive quantity and valid price/discount.");
       return;
@@ -192,7 +249,7 @@ export function PriceCanvassPage() {
       notify.success("Quotation Created", `Quotation ${created.quoteNumber} recorded successfully.`);
       setIsNewModalOpen(false);
       resetForm();
-      setViewingQuote(created);
+      void handleOpenQuotationPrint(created.id);
     } catch (err) {
       notify.error("Failed to Create Quotation", safeNotificationDescription(err, "Could not save quotation."));
     } finally { setSavingQuote(false); }
@@ -256,7 +313,9 @@ export function PriceCanvassPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {quotations.map((q) => (
+                  {quotations.map((q) => {
+                    const displayCount = customerQuotationDisplayItemCount(q);
+                    return (
                     <tr key={q.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="px-4 py-3 font-mono font-medium text-slate-900">{q.quoteNumber}</td>
                       <td className="px-4 py-3 text-xs text-slate-500">{formatDateTime(q.createdAt)}</td>
@@ -268,7 +327,11 @@ export function PriceCanvassPage() {
                         {q.validUntil ? formatDateTime(q.validUntil) : "—"}
                       </td>
                       <td className="px-4 py-3 text-right text-xs text-slate-600">
-                        {q.lines.length} {q.lines.length === 1 ? "item" : "items"}
+                        {displayCount !== null ? (
+                          `${displayCount} ${displayCount === 1 ? "item" : "items"}`
+                        ) : (
+                          <span className="font-semibold text-amber-700">Verify line data</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right font-semibold text-slate-900">
                         {formatMoney(q.totalCents / 100)}
@@ -290,9 +353,10 @@ export function PriceCanvassPage() {
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={() => setViewingQuote(q)}
+                          disabled={loadingQuoteId === q.id}
+                          onClick={() => handleOpenQuotationPrint(q.id)}
                         >
-                          🖨️ View & Print
+                          {loadingQuoteId === q.id ? "Loading..." : "🖨️ View & Print"}
                         </Button>
                         {q.status === "Issued" && (
                           <>
@@ -307,7 +371,8 @@ export function PriceCanvassPage() {
                         )}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -382,14 +447,14 @@ export function PriceCanvassPage() {
                   <div className="max-h-[40vh] space-y-3 overflow-y-auto">
                     {draftLines.length === 0 && <p className="rounded-md border border-dashed p-6 text-center text-sm text-slate-500">Select products to build a quotation.</p>}
                     {draftLines.map((line, index) => (
-                      <div key={line.productId} className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                      <div key={line.lineKey} className="rounded-md border border-slate-200 bg-slate-50 p-3">
                         <div className="flex items-start justify-between gap-2"><p className="text-sm font-semibold">{line.productName}</p><button type="button" className="text-xs font-semibold text-rose-600" onClick={() => handleRemoveLine(index)}>Remove</button></div>
                         <div className="mt-2 grid grid-cols-3 gap-2">
                           <label className="text-xs text-slate-600">Qty<input type="number" min="0.001" step="0.001" className="mt-1 w-full rounded border p-2 text-sm" value={line.quantity} onChange={(e) => setDraftLines((prev) => prev.map((item, i) => i === index ? { ...item, quantity: Number(e.target.value) } : item))} /></label>
                           <label className="text-xs text-slate-600">Unit (PHP)<input type="number" min="0" step="0.01" className="mt-1 w-full rounded border p-2 text-sm" value={line.unitPriceCents / 100} onChange={(e) => setDraftLines((prev) => prev.map((item, i) => i === index ? { ...item, unitPriceCents: Math.round(Number(e.target.value) * 100) } : item))} /></label>
                           <label className="text-xs text-slate-600">Discount (PHP)<input type="number" min="0" step="0.01" className="mt-1 w-full rounded border p-2 text-sm" value={line.discountCents / 100} onChange={(e) => setDraftLines((prev) => prev.map((item, i) => i === index ? { ...item, discountCents: Math.round(Number(e.target.value) * 100) } : item))} /></label>
                         </div>
-                        <p className="mt-2 text-right text-sm font-semibold">{formatMoney(Math.max(0, Math.round(line.quantity * line.unitPriceCents) - line.discountCents) / 100)}</p>
+                        <p className="mt-2 text-right text-sm font-semibold">{formatMoney(Math.max(0, computeGrossLineCents(line.quantity, line.unitPriceCents) - line.discountCents) / 100)}</p>
                       </div>
                     ))}
                   </div>
