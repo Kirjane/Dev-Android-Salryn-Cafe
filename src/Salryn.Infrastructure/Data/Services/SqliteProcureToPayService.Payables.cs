@@ -32,7 +32,7 @@ public sealed partial class SqliteProcureToPayService
             }
         }
 
-        DateOnly today = DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime);
+        DateOnly today = SupplierPaymentBusinessDate(_timeProvider.GetUtcNow());
         List<SupplierInvoiceModel> list = new();
         foreach (Guid id in ids)
         {
@@ -50,7 +50,7 @@ public sealed partial class SqliteProcureToPayService
         await using SqliteConnection connection = _connections.CreateConnection();
         await connection.OpenAsync(cancellationToken);
 
-        DateOnly today = DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime);
+        DateOnly today = SupplierPaymentBusinessDate(_timeProvider.GetUtcNow());
         SupplierInvoiceModel? inv = await LoadSupplierInvoiceAsync(connection, null, supplierInvoiceId, today, cancellationToken);
         return inv is not null
             ? Result<SupplierInvoiceModel>.Success(inv)
@@ -1176,12 +1176,12 @@ public sealed partial class SqliteProcureToPayService
 
         await using SqliteCommand cmd = connection.CreateCommand();
         cmd.CommandText = """
-            SELECT e.id, e.supplier_id, s.name, e.supplier_invoice_id, i.ap_voucher_number,
+            SELECT e.id, e.supplier_id, COALESCE(s.name, 'Unknown Supplier'), e.supplier_invoice_id, COALESCE(i.ap_voucher_number, ''),
                    e.entry_type, e.reference_number, e.debit_cents, e.credit_cents,
                    e.balance_after_cents, e.note, e.actor_user_id, e.created_at
             FROM supplier_payable_entries e
-            JOIN suppliers s ON s.id = e.supplier_id
-            JOIN supplier_invoices i ON i.id = e.supplier_invoice_id
+            LEFT JOIN suppliers s ON s.id = e.supplier_id
+            LEFT JOIN supplier_invoices i ON i.id = e.supplier_invoice_id
             WHERE ($supId IS NULL OR e.supplier_id = $supId)
             ORDER BY e.created_at DESC, e.id DESC;
             """;
@@ -1214,7 +1214,7 @@ public sealed partial class SqliteProcureToPayService
         DateOnly? asOfDate = null,
         CancellationToken cancellationToken = default)
     {
-        DateOnly effectiveAsOf = asOfDate ?? DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime);
+        DateOnly effectiveAsOf = asOfDate ?? SupplierPaymentBusinessDate(_timeProvider.GetUtcNow());
         Result<IReadOnlyList<SupplierInvoiceModel>> allInvoicesResult = await GetSupplierInvoicesAsync(null, null, cancellationToken);
         if (allInvoicesResult.IsFailure) return Result<ApAgingSummaryModel>.Fail(allInvoicesResult.ErrorDetail);
 

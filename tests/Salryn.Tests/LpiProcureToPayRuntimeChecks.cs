@@ -388,6 +388,15 @@ public static class LpiProcureToPayRuntimeChecks
             Require(invoiceWithVariance.MatchStatus == "PriceVariance" && invoiceWithVariance.Status == "VarianceFlagged",
                 $"S3 3-way match must flag PriceVariance and hold invoice in DiscrepancyReview (actual match={invoiceWithVariance.MatchStatus}, status={invoiceWithVariance.Status}).");
 
+            var preApprovalLedger = RequireSuccess(
+                await service.GetSupplierPayableLedgerAsync(supplierTwo.Id), "W3-AP pre-approval ledger check");
+            Require(preApprovalLedger.Count == 0,
+                "W3-AP: Unposted VarianceFlagged invoice must have zero supplier payable subledger entries.");
+            var preApprovalAging = RequireSuccess(
+                await service.GetApAgingSummaryAsync(new DateOnly(2026, 12, 1)), "W3-AP pre-approval aging check");
+            Require(preApprovalAging.TotalOpenPayablesCents == 0 && preApprovalAging.VarianceFlaggedInvoiceCount == 1,
+                "W3-AP: Unposted VarianceFlagged invoice must report 0 open AP exposure while incrementing VarianceFlaggedInvoiceCount.");
+
             // Approve variance and post to AP
             invoiceWithVariance = RequireSuccess(
                 await service.ApproveInvoiceVarianceAsync(new ApproveInvoiceVarianceRequest(
@@ -563,6 +572,79 @@ public static class LpiProcureToPayRuntimeChecks
                     overview.TotalOpenPayablesCents == 170_000 && // invoiceWithVariance for PO Gamma (20 * 8_500 = 170_000) remains open
                     overview.VarianceFlaggedInvoiceCount == 0,
                 $"S3/S4 dashboard overview must report accurate KPIs and remaining AP exposure (actual TotalOpenPayablesCents={overview.TotalOpenPayablesCents}).");
+
+            // W3-AP (#50/#61): Subledger roll-forward, PendingApproval non-deduction, aging date boundaries, and SQL control totals
+            SupplierPaymentModel pendingGammaPayment = RequireSuccess(
+                await service.RecordSupplierPaymentAsync(new RecordSupplierPaymentRequest(
+                    invoiceWithVariance.Id,
+                    new DateOnly(2026, 11, 20),
+                    50_000,
+                    "BankTransfer",
+                    "OperatingBank",
+                    "PENDING-REF-W3AP",
+                    null,
+                    "BPI Corporate",
+                    "Unsettled request should not reduce AP",
+                    "w3ap-gamma-pending-1",
+                    apClerkUserId,
+                    null)),
+                "W3-AP record pending payment request");
+            Require(pendingGammaPayment.Status == "PendingApproval",
+                "W3-AP newly recorded supplier payment must start in PendingApproval.");
+
+            SupplierInvoiceModel reloadedGamma = RequireSuccess(
+                await service.GetSupplierInvoiceByIdAsync(invoiceWithVariance.Id), "W3-AP reload open invoice after pending payment");
+            Require(reloadedGamma.Status == "PostedOpen" && reloadedGamma.RemainingBalanceCents == 170_000,
+                "W3-AP PendingApproval payment must not reduce invoice RemainingBalanceCents or change PostedOpen status.");
+
+            IReadOnlyList<SupplierPayableEntryModel> alphaLedger = RequireSuccess(
+                await service.GetSupplierPayableLedgerAsync(supplierOne.Id), "W3-AP supplierOne subledger");
+            Require(alphaLedger.Count == 4, $"W3-AP expected 4 subledger entries for supplierOne (got {alphaLedger.Count}).");
+            var alphaChronological = alphaLedger.OrderBy(e => e.CreatedAt).ThenBy(e => e.Id).ToList();
+            Require(alphaChronological[0].EntryType == "InvoicePosted" && alphaChronological[0].CreditCents == 273_240 && alphaChronological[0].BalanceAfterCents == 273_240 &&
+                    alphaChronological[1].EntryType == "SupplierReturnCredit" && alphaChronological[1].DebitCents == 45_000 && alphaChronological[1].BalanceAfterCents == 228_240 &&
+                    alphaChronological[2].EntryType == "PaymentApplied" && alphaChronological[2].DebitCents == 100_000 && alphaChronological[2].BalanceAfterCents == 128_240 &&
+                    alphaChronological[3].EntryType == "PaymentApplied" && alphaChronological[3].DebitCents == 128_240 && alphaChronological[3].BalanceAfterCents == 0 &&
+                    alphaChronological.All(e => !string.IsNullOrWhiteSpace(e.ReferenceNumber) && e.ActorUserId != Guid.Empty),
+                "W3-AP subledger must trace InvoicePosted, SupplierReturnCredit, and settled PaymentApplied roll-forward cleanly.");
+
+            IReadOnlyList<SupplierPayableEntryModel> gammaLedger = RequireSuccess(
+                await service.GetSupplierPayableLedgerAsync(supplierTwo.Id), "W3-AP supplierTwo subledger");
+            Require(gammaLedger.Count == 1 && gammaLedger[0].EntryType == "InvoicePosted" &&
+                    gammaLedger[0].CreditCents == 170_000 && gammaLedger[0].BalanceAfterCents == 170_000 &&
+                    gammaLedger[0].ActorUserId == financeManagerUserId,
+                "W3-AP PendingApproval payment must not create a PaymentApplied subledger debit.");
+
+            var agingBoundaries = new[]
+            {
+                (AsOf: new DateOnly(2026, 11, 25), ExpCur: 170_000L, Exp30: 0L, Exp60: 0L, Exp90: 0L, ExpOver: 0L, ExpOverdue: 0),
+                (AsOf: new DateOnly(2026, 12, 10), ExpCur: 0L, Exp30: 170_000L, Exp60: 0L, Exp90: 0L, ExpOver: 0L, ExpOverdue: 1),
+                (AsOf: new DateOnly(2027, 1, 10),  ExpCur: 0L, Exp30: 0L, Exp60: 170_000L, Exp90: 0L, ExpOver: 0L, ExpOverdue: 1),
+                (AsOf: new DateOnly(2027, 2, 10),  ExpCur: 0L, Exp30: 0L, Exp60: 0L, Exp90: 170_000L, ExpOver: 0L, ExpOverdue: 1),
+                (AsOf: new DateOnly(2027, 3, 10),  ExpCur: 0L, Exp30: 0L, Exp60: 0L, Exp90: 0L, ExpOver: 170_000L, ExpOverdue: 1),
+            };
+            foreach (var b in agingBoundaries)
+            {
+                ApAgingSummaryModel aged = RequireSuccess(await service.GetApAgingSummaryAsync(b.AsOf), $"W3-AP aging as of {b.AsOf}");
+                long bucketSum = aged.CurrentBucketCents + aged.Days1To30Cents + aged.Days31To60Cents + aged.Days61To90Cents + aged.DaysOver90Cents;
+                Require(aged.TotalOpenPayablesCents == 170_000 && bucketSum == aged.TotalOpenPayablesCents &&
+                        aged.CurrentBucketCents == b.ExpCur && aged.Days1To30Cents == b.Exp30 &&
+                        aged.Days31To60Cents == b.Exp60 && aged.Days61To90Cents == b.Exp90 &&
+                        aged.DaysOver90Cents == b.ExpOver && aged.OverdueInvoiceCount == b.ExpOverdue,
+                    $"W3-AP aging buckets failed reconciliation at asOfDate={b.AsOf:yyyy-MM-dd}.");
+            }
+
+            using (SqliteConnection verifyConn = new($"Data Source={paths.DatabasePath}"))
+            {
+                verifyConn.Open();
+                using var sqlCmd = verifyConn.CreateCommand();
+                sqlCmd.CommandText = "SELECT COALESCE(SUM(credit_cents - debit_cents), 0) FROM supplier_payable_entries;";
+                long netLedgerCents = Convert.ToInt64(sqlCmd.ExecuteScalar());
+                sqlCmd.CommandText = "SELECT COALESCE(SUM(remaining_balance_cents), 0) FROM supplier_invoices WHERE status IN ('PostedOpen', 'PartiallyPaid');";
+                long openInvoiceCents = Convert.ToInt64(sqlCmd.ExecuteScalar());
+                Require(netLedgerCents == 170_000 && openInvoiceCents == netLedgerCents,
+                    $"W3-AP SQL control total mismatch: netLedger={netLedgerCents}, openInvoices={openInvoiceCents}.");
+            }
 
             // Verify Backup & Restore preserves all v27 LPI tables
             SqliteBackupRecoveryService backupService = new(paths);

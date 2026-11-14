@@ -216,8 +216,10 @@ export interface SupplierInvoiceItem {
   rrItemId: string | null;
   productId: string;
   productName: string;
+  poOrderedQuantityX1000: number;
   invoicedQuantityX1000: number;
   unitCostCents: number;
+  taxCents: number;
   totalCents: number;
   poUnitCostCents: number;
   rrDeliveredQuantityX1000: number;
@@ -239,18 +241,43 @@ export interface SupplierInvoice {
   receivingReportId: string | null;
   rrNumber: string | null;
   subtotalCents: number;
+  discountCents: number;
   taxCents: number;
+  withholdingTaxCents: number;
   totalCents: number;
+  creditMemoAppliedCents: number;
   amountPaidCents: number;
   balanceDueCents: number;
+  daysPastDue: number;
+  agingBucket: string;
   matchStatus: string;
   status: string;
   notes: string | null;
   varianceApprovedByUserId: string | null;
+  varianceApprovalReason: string | null;
   varianceApprovedAt: string | null;
   varianceNotes: string | null;
+  recordedByUserId: string | null;
+  postedByUserId: string | null;
+  postedAt: string | null;
   createdAt: string;
   items: SupplierInvoiceItem[];
+}
+
+export interface SupplierPayableEntry {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  supplierInvoiceId: string;
+  apVoucherNumber: string;
+  entryType: string;
+  referenceNumber: string;
+  debitCents: number;
+  creditCents: number;
+  balanceAfterCents: number;
+  note: string | null;
+  actorUserId: string;
+  createdAt: string;
 }
 
 export interface SupplierPayment {
@@ -305,6 +332,20 @@ export interface ApAgingSummary {
   days61To90Cents: number;
   over90DaysCents: number;
   totalOutstandingCents: number;
+}
+
+export interface ApAgingReport {
+  totalOpenPayablesCents: number;
+  currentBucketCents: number;
+  days1To30Cents: number;
+  days31To60Cents: number;
+  days61To90Cents: number;
+  daysOver90Cents: number;
+  openInvoiceCount: number;
+  overdueInvoiceCount: number;
+  varianceFlaggedInvoiceCount: number;
+  openInvoices: SupplierInvoice[];
+  supplierSummaries: ApAgingSummary[];
 }
 
 export interface LpiDashboardOverview {
@@ -571,28 +612,100 @@ function normalizeSupplierInvoice(raw: JsonRecord): SupplierInvoice {
     supplierName: raw.supplierName ?? "Supplier",
     invoiceNumber: raw.supplierInvoiceNo ?? raw.invoiceNumber ?? ("INV-" + (raw.id?.slice(0, 8) ?? "0000")),
     purchaseOrderId: raw.purchaseOrderId ?? null,
+    poNumber: raw.poNumber ?? null,
     receivingReportId: raw.receivingReportId ?? null,
+    rrNumber: raw.rrNumber ?? null,
     invoiceDate: raw.invoiceDate ?? "",
     dueDate: raw.dueDate ?? "",
     subtotalCents: raw.subtotalCents ?? 0,
+    discountCents: raw.discountCents ?? 0,
     taxCents: raw.taxCents ?? 0,
+    withholdingTaxCents: raw.withholdingTaxCents ?? 0,
     totalCents: raw.totalInvoiceCents ?? raw.totalCents ?? 0,
+    creditMemoAppliedCents: raw.creditMemoAppliedCents ?? 0,
+    amountPaidCents: raw.paidAmountCents ?? raw.amountPaidCents ?? 0,
     balanceDueCents: raw.remainingBalanceCents ?? raw.balanceDueCents ?? 0,
+    daysPastDue: raw.daysPastDue ?? 0,
+    agingBucket: raw.agingBucket ?? "Current",
     matchStatus: raw.matchStatus ?? "PendingDocuments",
     status: raw.status ?? "Draft",
     notes: raw.notes ?? raw.varianceNotes ?? null,
-    items: lines.map((line: JsonRecord) => ({
-      id: line.id,
-      invoiceId: raw.id,
-      poItemId: line.purchaseOrderLineId ?? line.poItemId ?? null,
-      rrItemId: line.receivingReportLineId ?? line.rrItemId ?? null,
-      productId: line.productId ?? "",
-      productName: line.itemDescription ?? line.productName ?? "Item",
-      invoicedQuantityX1000: line.invoicedQtyX1000 ?? line.invoicedQuantityX1000 ?? 0,
-      unitCostCents: line.invoicedUnitCostCents ?? line.unitCostCents ?? 0,
-      totalCostCents: line.lineTotalCents ?? line.totalCostCents ?? 0,
-    })),
-  } as unknown as SupplierInvoice;
+    varianceApprovedByUserId: raw.varianceApprovedByUserId ?? null,
+    varianceApprovalReason: raw.varianceApprovalReason ?? null,
+    varianceApprovedAt: raw.varianceApprovedAt ?? null,
+    varianceNotes: raw.varianceNotes ?? null,
+    recordedByUserId: raw.recordedByUserId ?? null,
+    postedByUserId: raw.postedByUserId ?? null,
+    postedAt: raw.postedAt ?? null,
+    createdAt: raw.createdAt ?? "",
+    items: lines.map((line: JsonRecord) => {
+      const lineTotal = line.lineTotalCents ?? line.totalCostCents ?? line.totalCents ?? 0;
+      return {
+        id: line.id,
+        invoiceId: raw.id,
+        poItemId: line.purchaseOrderLineId ?? line.poItemId ?? null,
+        rrItemId: line.receivingReportLineId ?? line.rrItemId ?? null,
+        productId: line.productId ?? "",
+        productName: line.itemDescription ?? line.productName ?? "Item",
+        poOrderedQuantityX1000: line.poOrderedQtyX1000 ?? line.poOrderedQuantityX1000 ?? 0,
+        invoicedQuantityX1000: line.invoicedQtyX1000 ?? line.invoicedQuantityX1000 ?? 0,
+        unitCostCents: line.invoicedUnitCostCents ?? line.unitCostCents ?? 0,
+        taxCents: line.taxCents ?? 0,
+        totalCents: lineTotal,
+        poUnitCostCents: line.poUnitCostCents ?? 0,
+        rrDeliveredQuantityX1000: line.rrAcceptedQtyX1000 ?? line.rrDeliveredQuantityX1000 ?? 0,
+        quantityVarianceX1000: line.qtyVarianceX1000 ?? line.quantityVarianceX1000 ?? 0,
+        priceVarianceCents: line.unitCostVarianceCents ?? line.priceVarianceCents ?? 0,
+        matchStatus: line.lineMatchStatus ?? line.matchStatus ?? "Matched",
+      };
+    }),
+  };
+}
+
+function normalizeSupplierPayableEntry(raw: JsonRecord): SupplierPayableEntry {
+  return {
+    id: raw.id ?? "",
+    supplierId: raw.supplierId ?? "",
+    supplierName: raw.supplierName ?? "Unknown Supplier",
+    supplierInvoiceId: raw.supplierInvoiceId ?? "",
+    apVoucherNumber: raw.apVoucherNumber ?? "",
+    entryType: raw.entryType ?? "",
+    referenceNumber: raw.referenceNumber ?? "",
+    debitCents: raw.debitCents ?? 0,
+    creditCents: raw.creditCents ?? 0,
+    balanceAfterCents: raw.balanceAfterCents ?? 0,
+    note: raw.note ?? null,
+    actorUserId: raw.actorUserId ?? "",
+    createdAt: raw.createdAt ?? "",
+  };
+}
+
+function aggregateApAgingBySupplier(openInvoices: JsonRecord[]): ApAgingSummary[] {
+  const supplierMap = new Map<string, ApAgingSummary>();
+  for (const inv of openInvoices) {
+    const sId = inv.supplierId || "unknown";
+    const sName = inv.supplierName || "Supplier";
+    const cur = supplierMap.get(sId) ?? {
+      supplierId: sId,
+      supplierName: sName,
+      currentCents: 0,
+      days1To30Cents: 0,
+      days31To60Cents: 0,
+      days61To90Cents: 0,
+      over90DaysCents: 0,
+      totalOutstandingCents: 0,
+    };
+    const rem = inv.remainingBalanceCents ?? inv.balanceDueCents ?? 0;
+    const pastDue = inv.daysPastDue ?? 0;
+    cur.totalOutstandingCents += rem;
+    if (pastDue <= 0) cur.currentCents += rem;
+    else if (pastDue <= 30) cur.days1To30Cents += rem;
+    else if (pastDue <= 60) cur.days31To60Cents += rem;
+    else if (pastDue <= 90) cur.days61To90Cents += rem;
+    else cur.over90DaysCents += rem;
+    supplierMap.set(sId, cur);
+  }
+  return Array.from(supplierMap.values());
 }
 
 function normalizeSupplierPayment(raw: JsonRecord): SupplierPayment {
@@ -660,32 +773,7 @@ export async function fetchLpiOverview(): Promise<LpiDashboardOverview> {
   const aging = raw.apAging ?? {};
   const openInvoices: JsonRecord[] = aging.openInvoices ?? [];
 
-  const supplierMap = new Map<string, ApAgingSummary>();
-  for (const inv of openInvoices) {
-    const sId = inv.supplierId || "unknown";
-    const sName = inv.supplierName || "Supplier";
-    const cur = supplierMap.get(sId) ?? {
-      supplierId: sId,
-      supplierName: sName,
-      currentCents: 0,
-      days1To30Cents: 0,
-      days31To60Cents: 0,
-      days61To90Cents: 0,
-      over90DaysCents: 0,
-      totalOutstandingCents: 0,
-    };
-    const rem = inv.remainingBalanceCents ?? 0;
-    const pastDue = inv.daysPastDue ?? 0;
-    cur.totalOutstandingCents += rem;
-    if (pastDue <= 0) cur.currentCents += rem;
-    else if (pastDue <= 30) cur.days1To30Cents += rem;
-    else if (pastDue <= 60) cur.days31To60Cents += rem;
-    else if (pastDue <= 90) cur.days61To90Cents += rem;
-    else cur.over90DaysCents += rem;
-    supplierMap.set(sId, cur);
-  }
-
-  const computedAging = Array.from(supplierMap.values());
+  const computedAging = aggregateApAgingBySupplier(openInvoices);
   const fallbackAging = (aging.totalOpenPayablesCents ?? raw.totalOpenPayablesCents ?? 0) > 0 ? [{
     supplierId: "all-open-payables",
     supplierName: "All Open Accounts Payable",
@@ -1215,35 +1303,39 @@ export async function recordSupplierPayment(data: {
   return normalizeSupplierPayment(await readJson<JsonRecord>(response));
 }
 
-export async function fetchApAging(): Promise<ApAgingSummary[]> {
-  const response = await fetch("/api/lpi/ap-aging");
+export async function fetchSupplierPayableLedger(supplierId?: string): Promise<SupplierPayableEntry[]> {
+  const params = new URLSearchParams();
+  if (supplierId) params.set("supplierId", supplierId);
+  const query = params.toString();
+  const response = await fetch(`/api/lpi/payables/ledger${query ? `?${query}` : ""}`);
+  return (await readJson<JsonRecord[]>(response)).map(normalizeSupplierPayableEntry);
+}
+
+export async function fetchApAgingReport(asOfDate?: string): Promise<ApAgingReport> {
+  const params = new URLSearchParams();
+  if (asOfDate) params.set("asOfDate", asOfDate);
+  const query = params.toString();
+  const response = await fetch(`/api/lpi/ap-aging${query ? `?${query}` : ""}`);
   const raw = await readJson<JsonRecord>(response);
-  const openInvoices: JsonRecord[] = raw.openInvoices ?? [];
-  const supplierMap = new Map<string, ApAgingSummary>();
-  for (const inv of openInvoices) {
-    const sId = inv.supplierId || "unknown";
-    const sName = inv.supplierName || "Supplier";
-    const cur = supplierMap.get(sId) ?? {
-      supplierId: sId,
-      supplierName: sName,
-      currentCents: 0,
-      days1To30Cents: 0,
-      days31To60Cents: 0,
-      days61To90Cents: 0,
-      over90DaysCents: 0,
-      totalOutstandingCents: 0,
-    };
-    const rem = inv.remainingBalanceCents ?? 0;
-    const pastDue = inv.daysPastDue ?? 0;
-    cur.totalOutstandingCents += rem;
-    if (pastDue <= 0) cur.currentCents += rem;
-    else if (pastDue <= 30) cur.days1To30Cents += rem;
-    else if (pastDue <= 60) cur.days31To60Cents += rem;
-    else if (pastDue <= 90) cur.days61To90Cents += rem;
-    else cur.over90DaysCents += rem;
-    supplierMap.set(sId, cur);
-  }
-  return Array.from(supplierMap.values());
+  const rawOpenInvoices: JsonRecord[] = raw.openInvoices ?? [];
+  return {
+    totalOpenPayablesCents: raw.totalOpenPayablesCents ?? 0,
+    currentBucketCents: raw.currentBucketCents ?? 0,
+    days1To30Cents: raw.days1To30Cents ?? 0,
+    days31To60Cents: raw.days31To60Cents ?? 0,
+    days61To90Cents: raw.days61To90Cents ?? 0,
+    daysOver90Cents: raw.daysOver90Cents ?? 0,
+    openInvoiceCount: raw.openInvoiceCount ?? rawOpenInvoices.length,
+    overdueInvoiceCount: raw.overdueInvoiceCount ?? 0,
+    varianceFlaggedInvoiceCount: raw.varianceFlaggedInvoiceCount ?? 0,
+    openInvoices: rawOpenInvoices.map(normalizeSupplierInvoice),
+    supplierSummaries: aggregateApAgingBySupplier(rawOpenInvoices),
+  };
+}
+
+export async function fetchApAging(asOfDate?: string): Promise<ApAgingSummary[]> {
+  const report = await fetchApAgingReport(asOfDate);
+  return report.supplierSummaries;
 }
 
 export async function approveSupplierPayment(paymentId: string, settlementConfirmation: string, actualDisbursementDate: string, remarks?: string): Promise<SupplierPayment> {
