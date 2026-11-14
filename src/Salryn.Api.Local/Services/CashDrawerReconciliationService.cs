@@ -73,17 +73,17 @@ public sealed class CashDrawerReconciliationService
               SELECT e.id FROM cash_drawer_events e LEFT JOIN sale_expected x ON x.id=e.source_id
               WHERE e.cashier_session_id=$session AND e.source_type='Sale' AND (x.id IS NULL OR x.amount<=0 OR e.event_type<>'CashSaleNet' OR e.direction<>1 OR e.amount_cents<>x.amount OR e.actor_user_id<>x.cashier_user_id OR e.method<>'Cash')
             ), ar_expected AS (
-              SELECT a.id,a.cashier_session_id,a.collected_by_user_id,a.amount_cents FROM accounts_receivable_collections a WHERE a.cashier_session_id=$session AND a.method='Cash'
+              SELECT a.id,a.cashier_session_id,a.collected_by_user_id,a.amount_cents FROM accounts_receivable_collections a WHERE a.cashier_session_id=$session AND LOWER(TRIM(a.method))='cash'
             ), ar_bad AS (
               SELECT id FROM ar_expected x WHERE (SELECT COUNT(*) FROM cash_drawer_events e WHERE e.source_type='ArCollection' AND e.source_id=x.id AND e.cashier_session_id=x.cashier_session_id AND e.event_type='ArCashCollection' AND e.direction=1 AND e.amount_cents=x.amount_cents AND e.actor_user_id=x.collected_by_user_id AND e.method='Cash')<>1
             ), ar_orphan AS (
               SELECT e.id FROM cash_drawer_events e LEFT JOIN ar_expected x ON x.id=e.source_id
               WHERE e.cashier_session_id=$session AND e.source_type='ArCollection' AND (x.id IS NULL OR e.event_type<>'ArCashCollection' OR e.direction<>1 OR e.amount_cents<>x.amount_cents OR e.actor_user_id<>x.collected_by_user_id OR e.method<>'Cash')
             ), manual_bad AS (
-              SELECT id FROM cash_drawer_events WHERE cashier_session_id=$session AND (source_type NOT IN('Sale','ArCollection','ManualMovement') OR (source_type='ManualMovement' AND (method<>'Cash' OR source_id<>request_id OR (event_type='CashIn' AND direction<>1) OR (event_type IN('CashOut','CashRefund') AND direction<>-1) OR event_type NOT IN('CashIn','CashOut','CashRefund'))))
+              SELECT id FROM cash_drawer_events WHERE cashier_session_id=$session AND (source_type NOT IN('Sale','ArCollection','ManualMovement') OR (source_type='ManualMovement' AND (actor_user_id IS NULL OR actor_user_id<>$user OR actor_user_id<>(SELECT cs.user_id FROM cashier_sessions cs WHERE cs.id=cashier_session_id) OR amount_cents<=0 OR method<>'Cash' OR source_id<>request_id OR (event_type='CashIn' AND direction<>1) OR (event_type IN('CashOut','CashRefund') AND direction<>-1) OR event_type NOT IN('CashIn','CashOut','CashRefund'))))
             )
             SELECT (SELECT COUNT(*) FROM sale_bad)+(SELECT COUNT(*) FROM sale_orphan)+(SELECT COUNT(*) FROM ar_bad)+(SELECT COUNT(*) FROM ar_orphan)+(SELECT COUNT(*) FROM manual_bad)+
-              (SELECT COUNT(*) FROM accounts_receivable_collections a WHERE a.collected_by_user_id=$user AND a.method='Cash' AND a.cashier_session_id IS NULL AND a.collected_at>=(SELECT opened_at FROM cashier_sessions WHERE id=$session));
+              (SELECT COUNT(*) FROM accounts_receivable_collections a WHERE a.collected_by_user_id=$user AND LOWER(TRIM(a.method))='cash' AND a.cashier_session_id IS NULL AND a.collected_at>=(SELECT opened_at FROM cashier_sessions WHERE id=$session));
             """;
         return ScalarLong(c,sql,t,("$session",session),("$user",userId.ToString("D")));
     }
