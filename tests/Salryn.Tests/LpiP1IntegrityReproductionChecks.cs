@@ -3095,7 +3095,98 @@ public static class LpiP1IntegrityReproductionChecks
         Require(poOnlyValid.TotalReturnAmountCents == 50_000 && invPoOnlyAfter.CreditMemoAppliedCents == 50_000 && invPoOnlyAfter.RemainingBalanceCents == 50_000,
             $"Legitimate PO-only return must reduce balance from 100,000 to 50,000, got bal={invPoOnlyAfter.RemainingBalanceCents}, credit={invPoOnlyAfter.CreditMemoAppliedCents}.");
 
-        // 9. Arithmetic overflow in receiving return path -> deterministic HTTP 400 validation denial before any writes or SRET sequence burn.
+        // 8b. Matching RR header with NULL child receiving_report_line_id:
+        // Multi-product RR (resaleProdId + nonResaleProdId) and real posted A-only invoice with explicit RR header + NULL child RR-line ID.
+        PurchaseOrderModel poMultiHdr = RequireSuccess(
+            await service.CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest(
+                supA.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(5)), null, 30, 0, "Std", "Issue 44 RR-Header No-Child PO", true,
+                new[]
+                {
+                    new CreatePurchaseOrderLineInput(null, resaleProdId, "P1-PROD-RESALE", "P1 Commercial Resale Item", PurchaseClassifications.Resale, "pcs", 2_000, 50_000, 0, 0, null),
+                    new CreatePurchaseOrderLineInput(null, nonResaleProdId, "P1-PROD-SUPPLY", "P1 Store Consumable Cleaning Fluid", PurchaseClassifications.Resale, "pcs", 2_000, 20_000, 0, 0, null)
+                },
+                supervisorId)),
+            "create poMultiHdr");
+        ReceivingReportModel rrMultiHdr = RequireSuccess(
+            await service.CreateReceivingReportAsync(new CreateReceivingReportRequest(
+                poMultiHdr.Id, null, "DR-44-HDR-NULLCHILD", null, "Truck-H", DateOnly.FromDateTime(DateTime.UtcNow), true, null, null, "rr-44-hdr-nullchild", null,
+                new[]
+                {
+                    new CreateReceivingReportLineInput(poMultiHdr.Lines[0].Id, 2_000, 2_000, 0, null, null, null, null),
+                    new CreateReceivingReportLineInput(poMultiHdr.Lines[1].Id, 2_000, 2_000, 0, null, null, null, null)
+                },
+                receiverId)),
+            "create rrMultiHdr");
+        SupplierInvoiceModel invRrHeaderOnlyProdA = RequireSuccess(
+            await service.CreateSupplierInvoiceAsync(new CreateSupplierInvoiceRequest(
+                supA.Id, "SI-44-HDR-AONLY", poMultiHdr.Id, rrMultiHdr.Id, invDate, invDate.AddDays(30), 0, 0, true,
+                new[] { new CreateSupplierInvoiceLineInput(poMultiHdr.Lines[0].Id, null, resaleProdId, "P1 Commercial Resale Item", 1_000, 50_000, 0) },
+                apClerkId)),
+            "create invRrHeaderOnlyProdA");
+        Require(invRrHeaderOnlyProdA.Status == "PostedOpen" &&
+                invRrHeaderOnlyProdA.ReceivingReportId == rrMultiHdr.Id &&
+                invRrHeaderOnlyProdA.Lines.Count == 1 &&
+                !invRrHeaderOnlyProdA.Lines[0].ReceivingReportLineId.HasValue,
+            "Issue #44 Case 8b precondition failed: real posted A-only invoice must have matching header RR and NULL child receiving_report_line_id.");
+
+        var beforeHdrNullChild = ReadStateCounters();
+        long stockResaleBefore8b = ReadStockOnHand(paths.DatabasePath, resaleProdId);
+        long stockSupplyBefore8b = ReadStockOnHand(paths.DatabasePath, nonResaleProdId);
+        await AssertReturnRejectedAsync(rrMultiHdr.Id, rrMultiHdr.Lines[1].Id, 1_000, invRrHeaderOnlyProdA.Id, "Lpi.SupplierReturn.InvoiceLineageMismatch", "rr-header-null-child-uninvoiced-B");
+        SupplierInvoiceModel inv8bAfterNegB = RequireSuccess(await service.GetSupplierInvoiceByIdAsync(invRrHeaderOnlyProdA.Id), "reload inv8b after uninvoiced B rejection");
+        Require(ReadStateCounters() == beforeHdrNullChild &&
+                ReadStockOnHand(paths.DatabasePath, resaleProdId) == stockResaleBefore8b &&
+                ReadStockOnHand(paths.DatabasePath, nonResaleProdId) == stockSupplyBefore8b &&
+                inv8bAfterNegB.RemainingBalanceCents == 50_000 &&
+                inv8bAfterNegB.CreditMemoAppliedCents == 0,
+            "Uninvoiced Product B return against RR-header-matched A-only invoice (NULL child RR-line ID) must fail closed with zero mutations.");
+
+        // Contradictory child PO-line vs ProductId must also fail closed for both lines
+        using (SqliteConnection mixConn = new($"Data Source={paths.DatabasePath}"))
+        {
+            mixConn.Open();
+            using var mixCmd = mixConn.CreateCommand();
+            mixCmd.CommandText = "UPDATE supplier_invoice_lines SET product_id = $otherProd WHERE supplier_invoice_id = $invId;";
+            mixCmd.Parameters.AddWithValue("$otherProd", nonResaleProdId.ToString("D"));
+            mixCmd.Parameters.AddWithValue("$invId", invRrHeaderOnlyProdA.Id.ToString("D"));
+            Require(mixCmd.ExecuteNonQuery() == 1, "Contradictory child PO-line/ProductId fixture update must affect 1 row.");
+        }
+        var beforeContradictoryLine = ReadStateCounters();
+        await AssertReturnRejectedAsync(rrMultiHdr.Id, rrMultiHdr.Lines[0].Id, 1_000, invRrHeaderOnlyProdA.Id, "Lpi.SupplierReturn.InvoiceLineageMismatch", "contradictory-child-poline-vs-product-A");
+        await AssertReturnRejectedAsync(rrMultiHdr.Id, rrMultiHdr.Lines[1].Id, 1_000, invRrHeaderOnlyProdA.Id, "Lpi.SupplierReturn.InvoiceLineageMismatch", "contradictory-child-poline-vs-product-B");
+        Require(ReadStateCounters() == beforeContradictoryLine &&
+                ReadStockOnHand(paths.DatabasePath, resaleProdId) == stockResaleBefore8b &&
+                ReadStockOnHand(paths.DatabasePath, nonResaleProdId) == stockSupplyBefore8b,
+            "Contradictory child PO-line vs ProductId must fail closed with zero mutations.");
+
+        using (SqliteConnection restoreConn = new($"Data Source={paths.DatabasePath}"))
+        {
+            restoreConn.Open();
+            using var restoreCmd = restoreConn.CreateCommand();
+            restoreCmd.CommandText = "UPDATE supplier_invoice_lines SET product_id = $resaleProd WHERE supplier_invoice_id = $invId;";
+            restoreCmd.Parameters.AddWithValue("$resaleProd", resaleProdId.ToString("D"));
+            restoreCmd.Parameters.AddWithValue("$invId", invRrHeaderOnlyProdA.Id.ToString("D"));
+            Require(restoreCmd.ExecuteNonQuery() == 1, "Restore Case 8b product_id must affect 1 row.");
+        }
+
+        SupplierReturnModel hdrNullChildValidA = RequireSuccess(
+            await service.CreateSupplierReturnAsync(new CreateSupplierReturnRequest(
+                rrMultiHdr.Id,
+                invRrHeaderOnlyProdA.Id,
+                "Valid return of invoiced Product A against RR-header A-only invoice",
+                new[] { new CreateSupplierReturnLineInput(rrMultiHdr.Lines[0].Id, 1_000, "Defective unit A") },
+                receiverId,
+                supervisorId)),
+            "create valid Product A return against RR-header A-only invoice");
+        SupplierInvoiceModel inv8bAfterPosA = RequireSuccess(await service.GetSupplierInvoiceByIdAsync(invRrHeaderOnlyProdA.Id), "reload inv8b after valid A return");
+        Require(hdrNullChildValidA.TotalReturnAmountCents == 50_000 &&
+                inv8bAfterPosA.CreditMemoAppliedCents == 50_000 &&
+                inv8bAfterPosA.RemainingBalanceCents == 0 &&
+                inv8bAfterPosA.Status == "Paid" &&
+                ReadStockOnHand(paths.DatabasePath, resaleProdId) == stockResaleBefore8b - 1_000,
+            $"Valid return of invoiced Product A must settle invRrHeaderOnlyProdA (credit={inv8bAfterPosA.CreditMemoAppliedCents}, bal={inv8bAfterPosA.RemainingBalanceCents}, status={inv8bAfterPosA.Status}).");
+
+        // 9. Huge-qty validation and arithmetic overflow in receiving return path -> deterministic HTTP 400 / validation denial before any writes or SRET sequence burn.
         using (SqliteConnection roleConn = new($"Data Source={paths.DatabasePath}"))
         {
             roleConn.Open();
@@ -3133,22 +3224,22 @@ public static class LpiP1IntegrityReproductionChecks
             string bound = host.Urls.Single(url => url.StartsWith("http://127.0.0.1:", StringComparison.OrdinalIgnoreCase));
             using HttpClient client = CreateClient(new Uri(bound), managerSession);
 
-            // Duplicate lines whose sum overflows Int64
-            using HttpResponseMessage qtyOverflowResp = await client.PostAsync(
+            // Multi-line huge-qty submission exceeding remainingAccepted -> deterministic HTTP 400
+            using HttpResponseMessage hugeMultiLineResp = await client.PostAsync(
                 "/api/lpi/supplier-returns",
                 new StringContent(JsonSerializer.Serialize(new
                 {
                     receivingReportId = rrA1a.Id,
                     supplierInvoiceId = invA1a.Id,
-                    reason = "Overflow qty sum check",
+                    reason = "Multi-line huge qty check",
                     lines = new[]
                     {
                         new { receivingReportLineId = rrA1a.Lines[0].Id, returnQtyX1000 = long.MaxValue - 1_000L, reason = "Part 1" },
                         new { receivingReportLineId = rrA1a.Lines[0].Id, returnQtyX1000 = 5_000L, reason = "Part 2" }
                     }
                 }), System.Text.Encoding.UTF8, "application/json")).ConfigureAwait(false);
-            Require(qtyOverflowResp.StatusCode == HttpStatusCode.BadRequest,
-                $"Issue #44 qty overflow must return HTTP 400, got {(int)qtyOverflowResp.StatusCode}.");
+            Require(hugeMultiLineResp.StatusCode == HttpStatusCode.BadRequest,
+                $"Issue #44 multi-line huge qty must return HTTP 400, got {(int)hugeMultiLineResp.StatusCode}.");
 
             // Single line huge qty -> deterministic HTTP 400
             using HttpResponseMessage singleHugeQtyResp = await client.PostAsync(
@@ -3166,6 +3257,31 @@ public static class LpiP1IntegrityReproductionChecks
             Require(singleHugeQtyResp.StatusCode == HttpStatusCode.BadRequest,
                 $"Issue #44 single huge qty must return HTTP 400, got {(int)singleHugeQtyResp.StatusCode}.");
         }
+
+        // Genuine cumulative-addition overflow (checked(requestedQty + line.ReturnQtyX1000)) when first line fits remainingAccepted
+        using (SqliteConnection ovSumConn = new($"Data Source={paths.DatabasePath}"))
+        {
+            ovSumConn.Open();
+            using var ovSumCmd = ovSumConn.CreateCommand();
+            ovSumCmd.CommandText = "UPDATE receiving_report_lines SET accepted_qty_x1000 = $qty, unit_cost_cents = $cost WHERE id = $lineId;";
+            ovSumCmd.Parameters.AddWithValue("$qty", long.MaxValue);
+            ovSumCmd.Parameters.AddWithValue("$cost", 0L);
+            ovSumCmd.Parameters.AddWithValue("$lineId", rrA1b.Lines[0].Id.ToString("D"));
+            Require(ovSumCmd.ExecuteNonQuery() == 1, "Cumulative-sum overflow fixture update must affect 1 row.");
+        }
+        Result<SupplierReturnModel> cumOverflowRes = await service.CreateSupplierReturnAsync(new CreateSupplierReturnRequest(
+            rrA1b.Id,
+            null,
+            "Negative check: cumulative-qty-sum-overflow",
+            new[]
+            {
+                new CreateSupplierReturnLineInput(rrA1b.Lines[0].Id, long.MaxValue - 1_000L, "Part 1"),
+                new CreateSupplierReturnLineInput(rrA1b.Lines[0].Id, 5_000L, "Part 2")
+            },
+            receiverId,
+            supervisorId));
+        Require(cumOverflowRes.IsFailure && cumOverflowRes.ErrorDetail?.Code == "Lpi.SupplierReturn.InvalidQty",
+            $"Genuine cumulative-addition overflow must fail with Lpi.SupplierReturn.InvalidQty, got '{cumOverflowRes.ErrorDetail?.Code}'.");
 
         // Also force a genuine qty * unitCost multiplication overflow by setting rr_line accepted_qty_x1000 & unit_cost_cents in temp DB
         using (SqliteConnection ovConn = new($"Data Source={paths.DatabasePath}"))

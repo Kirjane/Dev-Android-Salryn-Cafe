@@ -1336,40 +1336,54 @@ public sealed partial class SqliteProcureToPayService
                 $"Supplier invoice '{inv.ApVoucherNumber}' is linked to a different Receiving Report than '{rr.RrNumber}'."));
         }
 
+        if (inv.PurchaseOrderId.HasValue && inv.PurchaseOrderId.Value != rr.PurchaseOrderId)
+        {
+            return Result.Fail(Error.Conflict(
+                "Lpi.SupplierReturn.InvoiceLineageMismatch",
+                $"Supplier invoice '{inv.ApVoucherNumber}' is linked to a different Purchase Order than '{rr.PoNumber}'."));
+        }
+
         List<ReceivingReportLineModel> returnedLines = returnedRrLineIds
             .Select(id => rrLines.TryGetValue(id, out ReceivingReportLineModel? line) ? line : null)
             .Where(line => line is not null)
             .Cast<ReceivingReportLineModel>()
             .ToList();
 
-        bool hasExplicitRrHeaderMatch = inv.ReceivingReportId == rr.Id;
-        bool hasExplicitRrLineBinding = inv.Lines.Any(line => line.ReceivingReportLineId.HasValue);
-        bool lineageMatched;
+        bool hasHeaderLineage = inv.ReceivingReportId == rr.Id || inv.PurchaseOrderId == rr.PurchaseOrderId;
 
-        if (hasExplicitRrHeaderMatch)
+        bool CoversReturnedLine(SupplierInvoiceLineModel il, ReceivingReportLineModel rl)
         {
-            lineageMatched = !hasExplicitRrLineBinding ||
-                (returnedLines.Count > 0 && returnedLines.All(rl =>
-                    inv.Lines.Any(il => il.ReceivingReportLineId == rl.Id && il.InvoicedQtyX1000 > 0)));
+            if (il.InvoicedQtyX1000 <= 0)
+            {
+                return false;
+            }
+
+            bool noPoLineContradiction = !il.PurchaseOrderLineId.HasValue || il.PurchaseOrderLineId.Value == rl.PurchaseOrderLineId;
+            bool noProductContradiction = !il.ProductId.HasValue || !rl.ProductId.HasValue || il.ProductId.Value == rl.ProductId.Value;
+            if (!noPoLineContradiction || !noProductContradiction)
+            {
+                return false;
+            }
+
+            if (il.ReceivingReportLineId.HasValue)
+            {
+                return il.ReceivingReportLineId.Value == rl.Id;
+            }
+
+            if (!hasHeaderLineage)
+            {
+                return false;
+            }
+
+            bool poLineMatches = il.PurchaseOrderLineId.HasValue && il.PurchaseOrderLineId.Value == rl.PurchaseOrderLineId;
+            bool productMatches = il.ProductId.HasValue && rl.ProductId.HasValue && il.ProductId.Value == rl.ProductId.Value;
+            return poLineMatches || productMatches;
         }
-        else if (hasExplicitRrLineBinding)
-        {
-            lineageMatched = returnedLines.Count > 0 && returnedLines.All(rl =>
-                inv.Lines.Any(il => il.ReceivingReportLineId == rl.Id && il.InvoicedQtyX1000 > 0));
-        }
-        else
-        {
-            // RR-less PO-only invoice must still prove PO-level and per-line PO line / product coverage.
-            lineageMatched = inv.PurchaseOrderId == rr.PurchaseOrderId
-                && inv.Lines.Count > 0
-                && returnedLines.Count > 0
-                && returnedLines.All(rl => inv.Lines.Any(il =>
-                    il.InvoicedQtyX1000 > 0 &&
-                    ((il.PurchaseOrderLineId.HasValue && il.PurchaseOrderLineId.Value == rl.PurchaseOrderLineId &&
-                      (!il.ProductId.HasValue || !rl.ProductId.HasValue || il.ProductId.Value == rl.ProductId.Value)) ||
-                     (!il.PurchaseOrderLineId.HasValue && il.ProductId.HasValue && rl.ProductId.HasValue &&
-                      il.ProductId.Value == rl.ProductId.Value))));
-        }
+
+        // Enforce returned-line to invoiced-line coverage regardless of whether header RR matches.
+        bool lineageMatched = inv.Lines.Count > 0
+            && returnedLines.Count > 0
+            && returnedLines.All(rl => inv.Lines.Any(il => CoversReturnedLine(il, rl)));
 
         if (!lineageMatched)
         {
