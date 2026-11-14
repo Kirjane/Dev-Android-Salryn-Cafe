@@ -1364,9 +1364,118 @@ public sealed partial class SqliteProcureToPayService
             cancellationToken);
     }
 
+    private async Task<Result> ValidateSupplierReturnTargetInvoiceAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        ReceivingReportModel rr,
+        IReadOnlyDictionary<Guid, ReceivingReportLineModel> rrLines,
+        IReadOnlyCollection<Guid> returnedRrLineIds,
+        Guid invoiceId,
+        long returnCreditCents,
+        DateOnly evaluationDate,
+        CancellationToken cancellationToken)
+    {
+        SupplierInvoiceModel? inv = await LoadSupplierInvoiceAsync(connection, transaction, invoiceId, evaluationDate, cancellationToken);
+        if (inv is null)
+        {
+            return Result.Fail(Error.NotFound(
+                "Lpi.SupplierReturn.InvoiceNotFound",
+                "Target supplier invoice was not found."));
+        }
+
+        if (inv.SupplierId != rr.SupplierId)
+        {
+            return Result.Fail(Error.Conflict(
+                "Lpi.SupplierReturn.InvoiceSupplierMismatch",
+                $"Supplier return credit from supplier '{rr.SupplierName}' cannot be applied to invoice '{inv.ApVoucherNumber}' belonging to supplier '{inv.SupplierName}'."));
+        }
+
+        if (inv.ReceivingReportId.HasValue && inv.ReceivingReportId.Value != rr.Id)
+        {
+            return Result.Fail(Error.Conflict(
+                "Lpi.SupplierReturn.InvoiceLineageMismatch",
+                $"Supplier invoice '{inv.ApVoucherNumber}' is linked to a different Receiving Report than '{rr.RrNumber}'."));
+        }
+
+        if (inv.PurchaseOrderId.HasValue && inv.PurchaseOrderId.Value != rr.PurchaseOrderId)
+        {
+            return Result.Fail(Error.Conflict(
+                "Lpi.SupplierReturn.InvoiceLineageMismatch",
+                $"Supplier invoice '{inv.ApVoucherNumber}' is linked to a different Purchase Order than '{rr.PoNumber}'."));
+        }
+
+        List<ReceivingReportLineModel> returnedLines = returnedRrLineIds
+            .Select(id => rrLines.TryGetValue(id, out ReceivingReportLineModel? line) ? line : null)
+            .Where(line => line is not null)
+            .Cast<ReceivingReportLineModel>()
+            .ToList();
+
+        bool hasHeaderLineage = inv.ReceivingReportId == rr.Id || inv.PurchaseOrderId == rr.PurchaseOrderId;
+
+        bool CoversReturnedLine(SupplierInvoiceLineModel il, ReceivingReportLineModel rl)
+        {
+            if (il.InvoicedQtyX1000 <= 0)
+            {
+                return false;
+            }
+
+            bool noPoLineContradiction = !il.PurchaseOrderLineId.HasValue || il.PurchaseOrderLineId.Value == rl.PurchaseOrderLineId;
+            bool noProductContradiction = !il.ProductId.HasValue || !rl.ProductId.HasValue || il.ProductId.Value == rl.ProductId.Value;
+            if (!noPoLineContradiction || !noProductContradiction)
+            {
+                return false;
+            }
+
+            if (il.ReceivingReportLineId.HasValue)
+            {
+                return il.ReceivingReportLineId.Value == rl.Id;
+            }
+
+            if (!hasHeaderLineage)
+            {
+                return false;
+            }
+
+            bool poLineMatches = il.PurchaseOrderLineId.HasValue && il.PurchaseOrderLineId.Value == rl.PurchaseOrderLineId;
+            bool productMatches = il.ProductId.HasValue && rl.ProductId.HasValue && il.ProductId.Value == rl.ProductId.Value;
+            return poLineMatches || productMatches;
+        }
+
+        // Enforce returned-line to invoiced-line coverage regardless of whether header RR matches.
+        bool lineageMatched = inv.Lines.Count > 0
+            && returnedLines.Count > 0
+            && returnedLines.All(rl => inv.Lines.Any(il => CoversReturnedLine(il, rl)));
+
+        if (!lineageMatched)
+        {
+            return Result.Fail(Error.Conflict(
+                "Lpi.SupplierReturn.InvoiceLineageMismatch",
+                $"Supplier invoice '{inv.ApVoucherNumber}' does not match Receiving Report '{rr.RrNumber}' or Purchase Order '{rr.PoNumber}' line coverage."));
+        }
+
+        if (inv.Status is not ("PostedOpen" or "PartiallyPaid"))
+        {
+            return Result.Fail(Error.Conflict(
+                "Lpi.SupplierReturn.InvoiceNotOpen",
+                $"Supplier return credit cannot be applied to invoice '{inv.ApVoucherNumber}' in status '{inv.Status}'. Only open or partially paid invoices can receive return credit."));
+        }
+
+        if (inv.RemainingBalanceCents <= 0 || returnCreditCents > inv.RemainingBalanceCents)
+        {
+            return Result.Fail(Error.Conflict(
+                "Lpi.SupplierReturn.CreditExceedsInvoiceBalance",
+                $"Supplier return credit ({returnCreditCents} cents) exceeds remaining balance ({inv.RemainingBalanceCents} cents) on invoice '{inv.ApVoucherNumber}'."));
+        }
+
+        return Result.Success();
+    }
+
     private async Task ApplySupplierReturnCreditToInvoiceAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
+        ReceivingReportModel rr,
+        IReadOnlyDictionary<Guid, ReceivingReportLineModel> rrLines,
+        IReadOnlyCollection<Guid> returnedRrLineIds,
         Guid invoiceId,
         string sretNumber,
         long returnCreditCents,
@@ -1375,14 +1484,25 @@ public sealed partial class SqliteProcureToPayService
         CancellationToken cancellationToken)
     {
         DateOnly today = DateOnly.FromDateTime(now.UtcDateTime);
-        SupplierInvoiceModel? inv = await LoadSupplierInvoiceAsync(connection, transaction, invoiceId, today, cancellationToken);
-        if (inv is null || inv.RemainingBalanceCents <= 0) return;
+        Result validation = await ValidateSupplierReturnTargetInvoiceAsync(
+            connection,
+            transaction,
+            rr,
+            rrLines,
+            returnedRrLineIds,
+            invoiceId,
+            returnCreditCents,
+            today,
+            cancellationToken);
+        if (validation.IsFailure)
+        {
+            throw new InvalidOperationException($"{validation.ErrorDetail.Code}: {validation.ErrorDetail.Message}");
+        }
 
-        long appliedCredit = Math.Min(inv.RemainingBalanceCents, returnCreditCents);
-        long nextRemaining = Math.Max(0, inv.RemainingBalanceCents - appliedCredit);
-        string nextStatus = inv.Status is "PostedOpen" or "PartiallyPaid"
-            ? (nextRemaining == 0 ? "Paid" : "PartiallyPaid")
-            : inv.Status;
+        SupplierInvoiceModel inv = (await LoadSupplierInvoiceAsync(connection, transaction, invoiceId, today, cancellationToken))!;
+        long appliedCredit = returnCreditCents;
+        long nextRemaining = inv.RemainingBalanceCents - appliedCredit;
+        string nextStatus = nextRemaining == 0 ? "Paid" : "PartiallyPaid";
 
         await using (SqliteCommand upd = connection.CreateCommand())
         {
@@ -1403,22 +1523,19 @@ public sealed partial class SqliteProcureToPayService
             await upd.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        if (inv.Status is "PostedOpen" or "PartiallyPaid")
-        {
-            await AppendPayableLedgerEntryAsync(
-                connection,
-                transaction,
-                inv.SupplierId,
-                inv.Id,
-                "SupplierReturnCredit",
-                sretNumber,
-                debitCents: appliedCredit, // Debit AP reduces liability
-                creditCents: 0,
-                note: $"Supplier Return credit {sretNumber} applied to {inv.ApVoucherNumber}",
-                actorUserId: actorUserId,
-                now: now,
-                cancellationToken: cancellationToken);
-        }
+        await AppendPayableLedgerEntryAsync(
+            connection,
+            transaction,
+            inv.SupplierId,
+            inv.Id,
+            "SupplierReturnCredit",
+            sretNumber,
+            debitCents: appliedCredit, // Debit AP reduces liability
+            creditCents: 0,
+            note: $"Supplier Return credit {sretNumber} applied to {inv.ApVoucherNumber}",
+            actorUserId: actorUserId,
+            now: now,
+            cancellationToken: cancellationToken);
     }
 
     private static async Task AppendPayableLedgerEntryAsync(
