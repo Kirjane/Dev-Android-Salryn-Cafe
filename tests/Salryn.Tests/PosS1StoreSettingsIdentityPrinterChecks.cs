@@ -136,6 +136,13 @@ public static class PosS1StoreSettingsIdentityPrinterChecks
         var quotation = RequireOk(await quotesOrders.CreateQuotationAsync(managerUserId, "Manager Print",
             new CreateCustomerQuotationRequest("Client Alpha", "09170001122", "Estimate note", 0, new DateOnly(2026, 12, 15),
                 new[] { new CreateCustomerQuotationLineRequest(productId, "Document Test Apple", "880001", "pc", 4_000, 15_000, 0) })), "customer quotation");
+        var discountedQuotation = RequireOk(await quotesOrders.CreateQuotationAsync(managerUserId, "Manager Print",
+            new CreateCustomerQuotationRequest("Client Beta Discounted", "09170001133", "Same-SKU discounted quote", 2_500, new DateOnly(2026, 12, 15),
+                new[]
+                {
+                    new CreateCustomerQuotationLineRequest(productId, "Document Test Apple", "880001", "pc", 2_000, 15_000, 1_000),
+                    new CreateCustomerQuotationLineRequest(productId, "Document Test Apple", "880001", "box", 1_000, 12_000, 500)
+                })), "discounted same-SKU customer quotation");
         var order = RequireOk(await quotesOrders.CreateOrderAsync(managerUserId, "Manager Print",
             new CreateCustomerOrderRequest(null, "Client Alpha", "09170001122", new DateOnly(2026, 11, 20), "Order booking",
                 new[] { new CreateCustomerOrderLineRequest(productId, "Document Test Apple", "880001", "pc", 4_000, 15_000) })), "customer order");
@@ -198,6 +205,7 @@ public static class PosS1StoreSettingsIdentityPrinterChecks
             await AssertPdfEndpointAsync(manager, $"/api/lpi/receiving-reports/{rr.Id}/pdf", minPages: 1, "RR PDF");
             Require((await cashier.GetAsync($"/api/lpi/receiving-reports/{rr.Id}/pdf")).StatusCode == HttpStatusCode.Forbidden, "Cashier RR PDF must remain 403.");
             await AssertPdfEndpointAsync(cashier, $"/api/customer-quotations/{quotation.Id}/pdf", minPages: 1, "Customer Quotation PDF");
+            await AssertPdfEndpointAsync(cashier, $"/api/customer-quotations/{discountedQuotation.Id}/pdf", minPages: 1, "Valid Discounted Same-SKU Customer Quotation PDF");
             await AssertPdfEndpointAsync(manager, $"/api/customer-orders/{order.Id}/pdf", minPages: 1, "Customer Order PDF");
             Require((await cashier.GetAsync($"/api/customer-orders/{order.Id}/pdf")).StatusCode == HttpStatusCode.Forbidden, "Cashier Customer Order PDF must remain 403.");
             await AssertPdfEndpointAsync(admin, $"/api/lpi/payments/{pendingPay.Id}/pdf", minPages: 1, "Pending AP Voucher PDF");
@@ -279,6 +287,36 @@ public static class PosS1StoreSettingsIdentityPrinterChecks
                 Require(await cmd2.ExecuteNonQueryAsync().ConfigureAwait(false) == 1, "Corrupt quotation header fixture must update row.");
             }
             await AssertQuotationPdfRejectedAsync(quotation.Id, "corrupted-header-total");
+
+            // Line discount exceeding gross line value with internally zero-clamped totals (qty 1000, unitPrice 100, discount 200 -> 0 net)
+            await using (var conn = composition.ConnectionFactory.CreateConnection())
+            {
+                await conn.OpenAsync().ConfigureAwait(false);
+                await using var cmd1 = conn.CreateCommand();
+                cmd1.CommandText = "UPDATE customer_quotation_lines SET quantity_x1000 = 1000, unit_price_cents = 100, discount_cents = 200, line_total_cents = 0 WHERE quotation_id = $id;";
+                cmd1.Parameters.AddWithValue("$id", quotation.Id.ToString("D"));
+                Require(await cmd1.ExecuteNonQueryAsync().ConfigureAwait(false) == 1, "Over-discount line fixture must update 1 row.");
+                await using var cmd2 = conn.CreateCommand();
+                cmd2.CommandText = "UPDATE customer_quotations SET subtotal_cents = 0, discount_cents = 0, total_cents = 0 WHERE id = $id;";
+                cmd2.Parameters.AddWithValue("$id", quotation.Id.ToString("D"));
+                Require(await cmd2.ExecuteNonQueryAsync().ConfigureAwait(false) == 1, "Over-discount line header fixture must update 1 row.");
+            }
+            await AssertQuotationPdfRejectedAsync(quotation.Id, "line-discount-exceeds-gross-zero-clamped");
+
+            // Header discount exceeding subtotal with internally zero-clamped total (subtotal 1000, header discount 2000 -> 0 total)
+            await using (var conn = composition.ConnectionFactory.CreateConnection())
+            {
+                await conn.OpenAsync().ConfigureAwait(false);
+                await using var cmd1 = conn.CreateCommand();
+                cmd1.CommandText = "UPDATE customer_quotation_lines SET quantity_x1000 = 1000, unit_price_cents = 1000, discount_cents = 0, line_total_cents = 1000 WHERE quotation_id = $id;";
+                cmd1.Parameters.AddWithValue("$id", quotation.Id.ToString("D"));
+                Require(await cmd1.ExecuteNonQueryAsync().ConfigureAwait(false) == 1, "Over-discount header line fixture must update 1 row.");
+                await using var cmd2 = conn.CreateCommand();
+                cmd2.CommandText = "UPDATE customer_quotations SET subtotal_cents = 1000, discount_cents = 2000, total_cents = 0 WHERE id = $id;";
+                cmd2.Parameters.AddWithValue("$id", quotation.Id.ToString("D"));
+                Require(await cmd2.ExecuteNonQueryAsync().ConfigureAwait(false) == 1, "Over-discount header fixture must update 1 row.");
+            }
+            await AssertQuotationPdfRejectedAsync(quotation.Id, "header-discount-exceeds-subtotal-zero-clamped");
 
             // Delete child lines -> zero-line persisted quotation must fail closed
             await using (var conn = composition.ConnectionFactory.CreateConnection())

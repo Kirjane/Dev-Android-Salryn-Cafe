@@ -261,7 +261,13 @@ public static class BusinessDocumentPdfBuilder
                 }
 
                 long grossLineCents = checked(line.QuantityX1000 * line.UnitPriceCents + 500) / 1000L;
-                long expectedLineTotal = Math.Max(0L, checked(grossLineCents - line.DiscountCents));
+                if (line.DiscountCents > grossLineCents)
+                {
+                    failureReason = $"Quotation line '{line.ProductNameSnapshot}' discount ({line.DiscountCents}) exceeds gross line amount ({grossLineCents}).";
+                    return false;
+                }
+
+                long expectedLineTotal = checked(grossLineCents - line.DiscountCents);
                 if (line.LineTotalCents != expectedLineTotal)
                 {
                     failureReason = $"Quotation line '{line.ProductNameSnapshot}' total ({line.LineTotalCents}) does not match expected net amount ({expectedLineTotal}).";
@@ -277,7 +283,13 @@ public static class BusinessDocumentPdfBuilder
                 return false;
             }
 
-            long expectedTotal = Math.Max(0L, checked(computedSubtotal - quotation.DiscountCents));
+            if (quotation.DiscountCents > computedSubtotal)
+            {
+                failureReason = $"Quotation discount ({quotation.DiscountCents}) exceeds quotation subtotal ({computedSubtotal}).";
+                return false;
+            }
+
+            long expectedTotal = checked(computedSubtotal - quotation.DiscountCents);
             if (quotation.TotalCents != expectedTotal)
             {
                 failureReason = $"Quotation total ({quotation.TotalCents}) does not match net total ({expectedTotal}).";
