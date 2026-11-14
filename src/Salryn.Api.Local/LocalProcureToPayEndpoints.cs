@@ -213,6 +213,18 @@ internal static class LocalProcureToPayEndpoints
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.ProcurementRequest) is IResult denied)
                 return denied;
             LocalApiSession session = RequiredSession(context, sessions);
+            if (IsCashier(session) &&
+                ((request.Lines?.Any(l => l.PreferredSupplierId.HasValue) ?? false) ||
+                 (request.Items?.Any(i => i.PreferredSupplierId.HasValue) ?? false)))
+            {
+                return Results.Json(
+                    new
+                    {
+                        code = "Lpi.Requisition.SupplierSelectionForbidden",
+                        error = "Cashier role cannot assign an authoritative preferred supplier ID on a purchase requisition; use suggestedSupplierName instead."
+                    },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
             DateOnly needed = request.ResolvedDateNeeded ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7));
             return ToResult(
                 await service.CreatePurchaseRequisitionAsync(new CreatePurchaseRequisitionRequest(
@@ -1081,21 +1093,33 @@ internal static class LocalProcureToPayEndpoints
         long? EstimatedUnitCostCents,
         long? EstimatedCostCents,
         Guid? PreferredSupplierId,
+        string? SuggestedSupplierName,
         string? Specifications,
         string? Notes)
     {
-        public CreatePurchaseRequisitionLineInput ToLineInput() => new(
-            ProductId: ProductId,
-            ItemCode: ItemCode,
-            ItemDescription: ItemDescription ?? "Requested Item",
-            CategoryName: CategoryName,
-            PurchaseClassification: PurchaseClassification ?? "Merchandise",
-            UnitName: UnitName ?? "pc",
-            RequestedQtyX1000: RequestedQtyX1000 ?? RequestedQuantityX1000 ?? 1000L,
-            EstimatedUnitCostCents: EstimatedUnitCostCents ?? EstimatedCostCents ?? 0L,
-            PreferredSupplierId: PreferredSupplierId,
-            Specifications: Specifications,
-            Notes: Notes);
+        public CreatePurchaseRequisitionLineInput ToLineInput()
+        {
+            string? suggested = string.IsNullOrWhiteSpace(SuggestedSupplierName) ? null : SuggestedSupplierName.Trim();
+            string? cleanedNotes = string.IsNullOrWhiteSpace(Notes) ? null : Notes.Trim();
+            string? mergedNotes = suggested is null
+                ? cleanedNotes
+                : cleanedNotes is null
+                    ? $"Suggested supplier: {suggested}"
+                    : $"Suggested supplier: {suggested} | {cleanedNotes}";
+
+            return new CreatePurchaseRequisitionLineInput(
+                ProductId: ProductId,
+                ItemCode: ItemCode,
+                ItemDescription: ItemDescription ?? "Requested Item",
+                CategoryName: CategoryName,
+                PurchaseClassification: PurchaseClassification ?? "Merchandise",
+                UnitName: UnitName ?? "pc",
+                RequestedQtyX1000: RequestedQtyX1000 ?? RequestedQuantityX1000 ?? 1000L,
+                EstimatedUnitCostCents: EstimatedUnitCostCents ?? EstimatedCostCents ?? 0L,
+                PreferredSupplierId: PreferredSupplierId,
+                Specifications: Specifications,
+                Notes: mergedNotes);
+        }
     }
 
     internal sealed record CreateRequisitionApiRequest(

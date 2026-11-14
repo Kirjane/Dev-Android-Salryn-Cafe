@@ -91,7 +91,7 @@ internal static class LocalAccountsReceivableEndpoints
             LocalApiSession session = RequiredSession(context, sessions);
             Result<AccountsReceivableCollection> collection = await service.CollectAsync(new(
                 request.CustomerId, request.AmountCents, request.Method, request.Note, session.UserId,
-                request.ClientRequestId), ct);
+                request.ClientRequestId, request.ReferenceNumber, request.NonCashConfirmed ?? false), ct);
             if (collection.IsFailure) return ToError(collection.ErrorDetail);
             Result<CollectionPaymentAcknowledgment> acknowledgment =
                 await service.GetCollectionAcknowledgmentAsync(collection.Value.Id, ct);
@@ -198,7 +198,9 @@ internal static class LocalAccountsReceivableEndpoints
         long AmountCents,
         string Method,
         string? Note,
-        string ClientRequestId);
+        string ClientRequestId,
+        string? ReferenceNumber = null,
+        bool? NonCashConfirmed = null);
     private sealed record CollectionApiResponse(
         AccountsReceivableCollection Collection,
         CollectionPaymentAcknowledgment Acknowledgment,

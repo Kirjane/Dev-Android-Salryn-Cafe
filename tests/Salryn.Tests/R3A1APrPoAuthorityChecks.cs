@@ -158,6 +158,236 @@ public static class R3A1APrPoAuthorityChecks
                 using HttpResponseMessage adminSelfApproval = await adminClient.PostAsJsonAsync($"/api/lpi/requisitions/{adminPrId:D}/approve", new { notes = "Admin executive self-confirmation" }).ConfigureAwait(false);
                 Require(adminSelfApproval.StatusCode == HttpStatusCode.OK, "Admin self-confirmation must remain available.");
 
+                // Issue #58 D01 (RevisionRequested ownership) & D08 (non-authoritative supplier suggestion)
+                using HttpResponseMessage suggestedPrResp = await cashierAClient.PostAsJsonAsync("/api/lpi/requisitions", new
+                {
+                    department = "Store Operations",
+                    purpose = "D08 suggestion & revision ownership check",
+                    requiredDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(6)),
+                    submitImmediately = true,
+                    items = new[]
+                    {
+                        new
+                        {
+                            productId,
+                            itemDescription = "A1A Notebook",
+                            requestedQuantityX1000 = 2_000L,
+                            estimatedCostCents = 5_000L,
+                            suggestedSupplierName = "Suggested Local Wholesaler"
+                        }
+                    }
+                }).ConfigureAwait(false);
+                Require(suggestedPrResp.StatusCode == HttpStatusCode.Created, "Issue #58 D08: Cashier PR with optional supplier suggestion must succeed.");
+                using JsonDocument suggestedPrJson = JsonDocument.Parse(await suggestedPrResp.Content.ReadAsStringAsync().ConfigureAwait(false));
+                Guid revisedPrId = Guid.Parse(suggestedPrJson.RootElement.GetProperty("id").GetString()!);
+                JsonElement suggestedLine = suggestedPrJson.RootElement.GetProperty("lines")[0];
+                Require(suggestedLine.GetProperty("preferredSupplierId").ValueKind == JsonValueKind.Null &&
+                        suggestedLine.GetProperty("preferredSupplierName").GetString() == "Suggested Local Wholesaler",
+                    "Issue #58 D08: Cashier suggestion must persist as non-authoritative supplier name without linking/creating a supplier ID.");
+                Require(ReadString(paths.DatabasePath, "SELECT COUNT(*) FROM purchase_requisition_lines WHERE requisition_id=$id AND preferred_supplier_id IS NULL", revisedPrId) == "1",
+                    "Issue #58 D08: Cashier suggestion SQLite row must keep preferred_supplier_id NULL.");
+
+                string prCountBeforeCashierSupplierReject = ReadString(paths.DatabasePath, "SELECT COUNT(*) FROM purchase_requisitions WHERE id <> $id", Guid.Empty);
+                string prLineCountBeforeCashierSupplierReject = ReadString(paths.DatabasePath, "SELECT COUNT(*) FROM purchase_requisition_lines WHERE id <> $id", Guid.Empty);
+
+                using (HttpResponseMessage cashierItemsSupplierResp = await cashierAClient.PostAsJsonAsync("/api/lpi/requisitions", new
+                {
+                    department = "Store Operations",
+                    purpose = "D08 negative items preferredSupplierId",
+                    requiredDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(6)),
+                    submitImmediately = false,
+                    items = new[]
+                    {
+                        new
+                        {
+                            productId,
+                            itemDescription = "A1A Notebook",
+                            requestedQuantityX1000 = 2_000L,
+                            estimatedCostCents = 5_000L,
+                            preferredSupplierId = supplier.Id,
+                            suggestedSupplierName = "Should Not Link"
+                        }
+                    }
+                }).ConfigureAwait(false))
+                {
+                    string body = await cashierItemsSupplierResp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    Require(cashierItemsSupplierResp.StatusCode == HttpStatusCode.Forbidden &&
+                            body.Contains("Lpi.Requisition.SupplierSelectionForbidden", StringComparison.Ordinal),
+                        $"Issue #58 D08: Cashier items payload with preferredSupplierId must be rejected 403, got {(int)cashierItemsSupplierResp.StatusCode}: {body}");
+                }
+
+                using (HttpResponseMessage cashierLinesSupplierResp = await cashierAClient.PostAsJsonAsync("/api/lpi/requisitions", new
+                {
+                    departmentName = "Store Operations",
+                    purpose = "D08 negative lines preferredSupplierId",
+                    dateNeeded = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(6)),
+                    submitImmediately = false,
+                    lines = new[]
+                    {
+                        new
+                        {
+                            productId,
+                            itemDescription = "A1A Notebook",
+                            purchaseClassification = "Merchandise",
+                            unitName = "pc",
+                            requestedQtyX1000 = 2_000L,
+                            estimatedUnitCostCents = 5_000L,
+                            preferredSupplierId = supplier.Id
+                        }
+                    }
+                }).ConfigureAwait(false))
+                {
+                    string body = await cashierLinesSupplierResp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    Require(cashierLinesSupplierResp.StatusCode == HttpStatusCode.Forbidden &&
+                            body.Contains("Lpi.Requisition.SupplierSelectionForbidden", StringComparison.Ordinal),
+                        $"Issue #58 D08: Cashier lines payload with preferredSupplierId must be rejected 403, got {(int)cashierLinesSupplierResp.StatusCode}: {body}");
+                }
+
+                Require(ReadString(paths.DatabasePath, "SELECT COUNT(*) FROM purchase_requisitions WHERE id <> $id", Guid.Empty) == prCountBeforeCashierSupplierReject &&
+                        ReadString(paths.DatabasePath, "SELECT COUNT(*) FROM purchase_requisition_lines WHERE id <> $id", Guid.Empty) == prLineCountBeforeCashierSupplierReject,
+                    "Issue #58 D08: Rejected Cashier preferredSupplierId requests must cause zero DB writes.");
+
+                using (HttpResponseMessage managerLinesSupplierResp = await managerClient.PostAsJsonAsync("/api/lpi/requisitions", new
+                {
+                    departmentName = "Procurement",
+                    purpose = "Manager explicit preferredSupplierId via lines",
+                    dateNeeded = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(6)),
+                    submitImmediately = false,
+                    lines = new[]
+                    {
+                        new
+                        {
+                            productId,
+                            itemDescription = "A1A Notebook",
+                            purchaseClassification = "Merchandise",
+                            unitName = "pc",
+                            requestedQtyX1000 = 2_000L,
+                            estimatedUnitCostCents = 5_000L,
+                            preferredSupplierId = supplier.Id
+                        }
+                    }
+                }).ConfigureAwait(false))
+                {
+                    Require(managerLinesSupplierResp.StatusCode == HttpStatusCode.Created,
+                        $"Manager explicit preferredSupplierId via lines must succeed, got {(int)managerLinesSupplierResp.StatusCode}");
+                    using JsonDocument mgrDoc = JsonDocument.Parse(await managerLinesSupplierResp.Content.ReadAsStringAsync().ConfigureAwait(false));
+                    Guid mgrSupPrId = Guid.Parse(mgrDoc.RootElement.GetProperty("id").GetString()!);
+                    Require(ReadString(paths.DatabasePath, "SELECT preferred_supplier_id FROM purchase_requisition_lines WHERE requisition_id=$id", mgrSupPrId) == supplier.Id.ToString("D"),
+                        "Manager lines preferredSupplierId must persist in SQLite.");
+                }
+
+                using (HttpResponseMessage adminItemsSupplierResp = await adminClient.PostAsJsonAsync("/api/lpi/requisitions", new
+                {
+                    department = "Executive",
+                    purpose = "Admin explicit preferredSupplierId via items",
+                    requiredDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(6)),
+                    submitImmediately = false,
+                    items = new[]
+                    {
+                        new
+                        {
+                            productId,
+                            itemDescription = "A1A Notebook",
+                            requestedQuantityX1000 = 2_000L,
+                            estimatedCostCents = 5_000L,
+                            preferredSupplierId = supplier.Id
+                        }
+                    }
+                }).ConfigureAwait(false))
+                {
+                    Require(adminItemsSupplierResp.StatusCode == HttpStatusCode.Created,
+                        $"Admin explicit preferredSupplierId via items must succeed, got {(int)adminItemsSupplierResp.StatusCode}");
+                    using JsonDocument admDoc = JsonDocument.Parse(await adminItemsSupplierResp.Content.ReadAsStringAsync().ConfigureAwait(false));
+                    Guid admSupPrId = Guid.Parse(admDoc.RootElement.GetProperty("id").GetString()!);
+                    Require(ReadString(paths.DatabasePath, "SELECT preferred_supplier_id FROM purchase_requisition_lines WHERE requisition_id=$id", admSupPrId) == supplier.Id.ToString("D"),
+                        "Admin items preferredSupplierId must persist in SQLite.");
+                }
+
+                using HttpResponseMessage cashierCatalogResp = await cashierAClient.GetAsync("/api/lpi/requisition-catalog").ConfigureAwait(false);
+                string cashierCatalogRaw = await cashierCatalogResp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                Require(cashierCatalogResp.StatusCode == HttpStatusCode.OK &&
+                        !cashierCatalogRaw.Contains("\"suppliers\"", StringComparison.OrdinalIgnoreCase) &&
+                        !cashierCatalogRaw.Contains("\"costPriceCents\"", StringComparison.OrdinalIgnoreCase) &&
+                        !cashierCatalogRaw.Contains("\"openPayableBalanceCents\"", StringComparison.OrdinalIgnoreCase),
+                    "Issue #58 D08: Cashier requester catalog must never leak private supplier directory, cost, or AP data.");
+
+                using HttpResponseMessage requestRevisionResp = await managerClient.PostAsJsonAsync($"/api/lpi/requisitions/{revisedPrId:D}/revise", new { revisionNotes = "Clarify pack size" }).ConfigureAwait(false);
+                Require(requestRevisionResp.StatusCode == HttpStatusCode.OK, "Manager requesting PR revision must succeed.");
+                DbSnapshot beforeRevisionHijack = Snapshot(paths.DatabasePath, revisedPrId, productId);
+                foreach (HttpClient otherClient in new[] { cashierBClient, managerClient, adminClient })
+                {
+                    using HttpResponseMessage deniedRevSubmit = await otherClient.PostAsync($"/api/lpi/requisitions/{revisedPrId:D}/submit", null).ConfigureAwait(false);
+                    Require(deniedRevSubmit.StatusCode == HttpStatusCode.Forbidden, "Issue #58 D01: Non-owner submitting RevisionRequested PR must return 403.");
+                }
+                Require(Snapshot(paths.DatabasePath, revisedPrId, productId) == beforeRevisionHijack,
+                    "Issue #58 D01: Denied RevisionRequested submission must make zero DB writes.");
+                using HttpResponseMessage ownerResubmit = await cashierAClient.PostAsync($"/api/lpi/requisitions/{revisedPrId:D}/submit", null).ConfigureAwait(false);
+                Require(ownerResubmit.StatusCode == HttpStatusCode.OK &&
+                        ReadString(paths.DatabasePath, "SELECT status FROM purchase_requisitions WHERE id=$id", revisedPrId) == "Submitted",
+                    "Issue #58 D01: Original requester must be able to re-submit their RevisionRequested PR.");
+
+                // Issue #57 N04: PO arithmetic bounds, discount ceiling, tax rate bounds, and multi-line checked total equality
+                long poCountBeforeN04 = Scalar(paths.DatabasePath, "SELECT COUNT(*) FROM purchase_orders");
+                long poSeqBeforeN04 = Scalar(paths.DatabasePath, "SELECT COALESCE(current_number, 0) FROM lpi_document_sequences WHERE prefix='PO'");
+
+                using HttpResponseMessage discountExceedsResp = await adminClient.PostAsJsonAsync("/api/lpi/purchase-orders", new
+                {
+                    supplierId = supplier.Id,
+                    expectedDeliveryDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(5)),
+                    notes = "Discount exceeds gross probe",
+                    lines = new[] { new { productId, itemDescription = "A1A Notebook", unitName = "pc", orderedQtyX1000 = 1_000L, unitCostCents = 5_000L, discountCents = 5_001L, taxRateBp = 0 } }
+                }).ConfigureAwait(false);
+                Require(discountExceedsResp.StatusCode == HttpStatusCode.BadRequest &&
+                        (await discountExceedsResp.Content.ReadAsStringAsync().ConfigureAwait(false)).Contains("Lpi.PurchaseOrder.DiscountExceedsGross", StringComparison.Ordinal),
+                    "Issue #57 N04: Line discount exceeding gross must return 400 Lpi.PurchaseOrder.DiscountExceedsGross.");
+
+                using HttpResponseMessage invalidTaxResp = await adminClient.PostAsJsonAsync("/api/lpi/purchase-orders", new
+                {
+                    supplierId = supplier.Id,
+                    expectedDeliveryDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(5)),
+                    notes = "Negative tax rate probe",
+                    lines = new[] { new { productId, itemDescription = "A1A Notebook", unitName = "pc", orderedQtyX1000 = 1_000L, unitCostCents = 5_000L, discountCents = 0L, taxRateBp = -1 } }
+                }).ConfigureAwait(false);
+                Require(invalidTaxResp.StatusCode == HttpStatusCode.BadRequest &&
+                        (await invalidTaxResp.Content.ReadAsStringAsync().ConfigureAwait(false)).Contains("Lpi.PurchaseOrder.InvalidTaxRate", StringComparison.Ordinal),
+                    "Issue #57 N04: Negative tax rate must return 400 Lpi.PurchaseOrder.InvalidTaxRate.");
+
+                using HttpResponseMessage overflowPoResp = await adminClient.PostAsJsonAsync("/api/lpi/purchase-orders", new
+                {
+                    supplierId = supplier.Id,
+                    expectedDeliveryDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(5)),
+                    notes = "Checked arithmetic overflow probe",
+                    lines = new[] { new { productId, itemDescription = "A1A Notebook", unitName = "pc", orderedQtyX1000 = long.MaxValue, unitCostCents = 10_000L, discountCents = 0L, taxRateBp = 1200 } }
+                }).ConfigureAwait(false);
+                Require(overflowPoResp.StatusCode == HttpStatusCode.BadRequest &&
+                        (await overflowPoResp.Content.ReadAsStringAsync().ConfigureAwait(false)).Contains("Lpi.PurchaseOrder.AmountOverflow", StringComparison.Ordinal),
+                    "Issue #57 N04: Arithmetic overflow in PO calculation must return 400 Lpi.PurchaseOrder.AmountOverflow.");
+
+                Require(Scalar(paths.DatabasePath, "SELECT COUNT(*) FROM purchase_orders") == poCountBeforeN04 &&
+                        Scalar(paths.DatabasePath, "SELECT COALESCE(current_number, 0) FROM lpi_document_sequences WHERE prefix='PO'") == poSeqBeforeN04,
+                    "Issue #57 N04: Invalid PO payloads must not allocate PO rows or sequence numbers.");
+
+                using HttpResponseMessage validMultiLinePoResp = await adminClient.PostAsJsonAsync("/api/lpi/purchase-orders", new
+                {
+                    supplierId = supplier.Id,
+                    expectedDeliveryDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(5)),
+                    shippingCents = 2_500L,
+                    notes = "Multi-line checked accounting check",
+                    submitAndApproveImmediately = false,
+                    lines = new[]
+                    {
+                        new { productId, itemDescription = "A1A Notebook", unitName = "pc", orderedQtyX1000 = 2_000L, unitCostCents = 5_000L, discountCents = 1_000L, taxRateBp = 1200 },
+                        new { productId, itemDescription = "A1A Notebook Bulk", unitName = "pc", orderedQtyX1000 = 3_000L, unitCostCents = 4_000L, discountCents = 500L, taxRateBp = 0 }
+                    }
+                }).ConfigureAwait(false);
+                Require(validMultiLinePoResp.StatusCode == HttpStatusCode.Created, "Issue #57 N04: Valid multi-line PO must be created.");
+                using JsonDocument multiLinePoJson = JsonDocument.Parse(await validMultiLinePoResp.Content.ReadAsStringAsync().ConfigureAwait(false));
+                long poLinesSum = multiLinePoJson.RootElement.GetProperty("lines").EnumerateArray().Sum(l => l.GetProperty("lineTotalCents").GetInt64());
+                long poShipping = multiLinePoJson.RootElement.GetProperty("shippingCents").GetInt64();
+                long poHeaderTotal = multiLinePoJson.RootElement.GetProperty("totalAmountCents").GetInt64();
+                Require(poLinesSum + poShipping == poHeaderTotal && poHeaderTotal == 24_080L,
+                    $"Issue #57 N04: PO line totals + shipping ({poLinesSum} + {poShipping}) must equal header total ({poHeaderTotal}) == 24080.");
+
                 object directPoWithoutReason = DirectPoPayload(supplier.Id, productId, reason: null, approveImmediately: true);
                 DbSnapshot beforeInvalidDirect = Snapshot(paths.DatabasePath, cashierPrId, productId);
                 long poCountBeforeInvalid = Scalar(paths.DatabasePath, "SELECT COUNT(*) FROM purchase_orders");

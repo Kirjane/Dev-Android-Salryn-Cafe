@@ -299,10 +299,31 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
             return Result<AccountsReceivableCollection>.Fail(Error.Validation(
                 "Receivables.InvalidCollection",
                 "Customer, collector, positive amount, and a valid request id are required."));
+        if (!TryNormalizeCollectionMethod(request.Method, out string canonicalMethod))
+            return Result<AccountsReceivableCollection>.Fail(Error.Validation(
+                "Receivables.InvalidPaymentMethod",
+                "Collection payment method must be Cash, GCash, Maya, or Debit."));
+        bool isCash = string.Equals(canonicalMethod, "Cash", StringComparison.Ordinal);
+        string? referenceNumber = Clean(request.ReferenceNumber);
+        if (!isCash)
+        {
+            if (string.IsNullOrWhiteSpace(referenceNumber))
+                return Result<AccountsReceivableCollection>.Fail(Error.Validation(
+                    "Receivables.ReferenceNumberRequired",
+                    $"A transaction reference number is required for {canonicalMethod} collections."));
+            if (referenceNumber.Length > 128)
+                return Result<AccountsReceivableCollection>.Fail(Error.Validation(
+                    "Receivables.InvalidReferenceNumber",
+                    "Transaction reference number cannot exceed 128 characters."));
+            if (!request.NonCashConfirmed)
+                return Result<AccountsReceivableCollection>.Fail(Error.Validation(
+                    "Receivables.NonCashConfirmationRequired",
+                    $"Explicit operator confirmation is required for {canonicalMethod} collections."));
+        }
         await using SqliteConnection connection = _connections.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
-        string requestHash = BuildCollectionRequestHash(request);
+        string requestHash = BuildCollectionRequestHash(request, canonicalMethod, referenceNumber);
         (AccountsReceivableCollection Collection, string RequestHash)? existing =
             await FindCollectionByRequestAsync(
                     connection,
@@ -323,18 +344,21 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         if (request.AmountCents > balance)
             return Result<AccountsReceivableCollection>.Fail(Error.Validation("Receivables.CollectionExceedsBalance", "Collection cannot exceed the outstanding balance."));
         DateTimeOffset now = _timeProvider.GetUtcNow();
-        string trimmedMethod = string.IsNullOrWhiteSpace(request.Method) ? "Cash" : request.Method.Trim();
-        bool isCash = string.Equals(trimmedMethod, "Cash", StringComparison.OrdinalIgnoreCase);
-        string method = isCash ? "Cash" : trimmedMethod;
         Guid? drawerSession = isCash
             ? await FindAccountableOpenSessionAsync(connection, transaction, request.CollectedByUserId, cancellationToken)
-            : await FindOpenSessionAsync(connection, transaction, request.CollectedByUserId, cancellationToken);
+            : null;
         if (isCash && drawerSession is null)
             return Result<AccountsReceivableCollection>.Fail(Error.Conflict(
                 "Receivables.CashCollectionRequiresOpenShift",
                 "A cash AR collection requires an open, accountable cash shift for the collecting operator."));
+        string? cleanedNote = Clean(request.Note);
+        string? effectiveNote = isCash
+            ? cleanedNote
+            : string.IsNullOrWhiteSpace(cleanedNote)
+                ? $"Ref: {referenceNumber} (Operator-confirmed)"
+                : $"Ref: {referenceNumber} (Operator-confirmed) - {cleanedNote}";
         AccountsReceivableCollection collection = new(Guid.NewGuid(), request.CustomerId, request.AmountCents,
-            method, Clean(request.Note),
+            canonicalMethod, effectiveNote,
             request.CollectedByUserId, now, null, null, null);
         await InsertCollectionAsync(
             connection, transaction, collection, request.ClientRequestId, requestHash, drawerSession, cancellationToken);
@@ -347,7 +371,16 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         await InsertBusinessAuditAsync(connection, transaction, request.CollectedByUserId, "AR_COLLECTION_RECORDED",
             "accounts_receivable_collections", collection.Id,
             JsonSerializer.Serialize(new { balanceCents = balance }),
-            JsonSerializer.Serialize(new { collection.CustomerId, collection.AmountCents, collection.Method, balanceCents = balance - request.AmountCents, drawerSessionId = drawerSession }),
+            JsonSerializer.Serialize(new
+            {
+                collection.CustomerId,
+                collection.AmountCents,
+                collection.Method,
+                referenceNumber = isCash ? null : referenceNumber,
+                operatorConfirmed = !isCash && request.NonCashConfirmed,
+                balanceCents = balance - request.AmountCents,
+                drawerSessionId = drawerSession
+            }),
             null, now, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return Result<AccountsReceivableCollection>.Success(collection);
@@ -593,11 +626,40 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         return (collection, reader.GetString(10));
     }
 
-    private static string BuildCollectionRequestHash(RecordReceivableCollectionRequest request)
+    private static bool TryNormalizeCollectionMethod(string? method, out string canonicalMethod)
     {
-        string method = (request.Method ?? string.Empty).Trim().ToUpperInvariant();
-        string canonical =
-            $"{request.CustomerId:N}|{request.AmountCents}|{method}|{request.Note?.Trim() ?? string.Empty}";
+        canonicalMethod = string.Empty;
+        if (string.IsNullOrWhiteSpace(method))
+            return false;
+        switch (method.Trim().ToUpperInvariant())
+        {
+            case "CASH":
+                canonicalMethod = "Cash";
+                return true;
+            case "GCASH":
+                canonicalMethod = "GCash";
+                return true;
+            case "MAYA":
+                canonicalMethod = "Maya";
+                return true;
+            case "DEBIT":
+                canonicalMethod = "Debit";
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static string BuildCollectionRequestHash(
+        RecordReceivableCollectionRequest request,
+        string canonicalMethod,
+        string? referenceNumber)
+    {
+        string baseCanonical =
+            $"{request.CustomerId:N}|{request.AmountCents}|{canonicalMethod.ToUpperInvariant()}|{request.Note?.Trim() ?? string.Empty}";
+        string canonical = string.Equals(canonicalMethod, "Cash", StringComparison.Ordinal)
+            ? baseCanonical
+            : $"{baseCanonical}|{referenceNumber ?? string.Empty}|{(request.NonCashConfirmed ? "1" : "0")}";
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 

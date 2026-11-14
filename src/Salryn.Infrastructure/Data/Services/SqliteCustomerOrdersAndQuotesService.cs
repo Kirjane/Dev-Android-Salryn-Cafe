@@ -1065,9 +1065,17 @@ public sealed class SqliteCustomerOrdersAndQuotesService : ICustomerOrdersAndQuo
                 }
             }
 
+            Dictionary<Guid, long> requiredByProduct = new();
             foreach (var (pid, reqQty) in requiredLines)
             {
-                if (!saleItems.TryGetValue(pid, out long actualQty) || actualQty < reqQty)
+                requiredByProduct[pid] = requiredByProduct.TryGetValue(pid, out long existingReqQty)
+                    ? checked(existingReqQty + reqQty)
+                    : reqQty;
+            }
+
+            foreach (var (pid, totalReqQty) in requiredByProduct)
+            {
+                if (!saleItems.TryGetValue(pid, out long actualQty) || actualQty < totalReqQty)
                 {
                     return Result<CustomerOrder>.Fail(Error.Conflict(
                         "CustomerOrder.SaleLineMismatch",

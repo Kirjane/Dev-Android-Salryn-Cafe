@@ -44,7 +44,7 @@ internal static class LocalCustomerOrdersAndQuotationsEndpoints
             ICustomerOrdersAndQuotesService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, new[] { LocalApiPermissions.ProductsView, LocalApiPermissions.SalesCreate }) is IResult denied)
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.SalesCreate) is IResult denied)
                 return denied;
             LocalApiSession session = RequiredSession(context, sessions);
             return ToResult(await service.CreateQuotationAsync(session.UserId, session.DisplayName ?? session.Username, request, ct).ConfigureAwait(false), StatusCodes.Status201Created);
@@ -58,7 +58,7 @@ internal static class LocalCustomerOrdersAndQuotationsEndpoints
             ICustomerOrdersAndQuotesService service,
             CancellationToken ct) =>
         {
-            if (LocalApiPermissionGuards.RequireAnyPermission(context, sessions, new[] { LocalApiPermissions.ProductsView, LocalApiPermissions.SalesCreate }) is IResult denied)
+            if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.SalesCreate) is IResult denied)
                 return denied;
             LocalApiSession session = RequiredSession(context, sessions);
             return ToResult(await service.UpdateQuotationStatusAsync(id, request.Status, ct, session.UserId).ConfigureAwait(false));

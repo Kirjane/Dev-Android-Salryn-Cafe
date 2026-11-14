@@ -67,14 +67,22 @@ public static class Issue52CashArSessionChecks
             AssertDeniedWithCode(noSessionResult, CashShiftRequiredCode, ErrorType.Conflict, "AR52-02 no session");
             AssertSnapshotUnchanged(beforeNoSession, CaptureSnapshot(paths.DatabasePath, customer.Id), "AR52-02");
 
-            // AR52-06: Whitespace / case-variant Cash and blank method normalized to Cash -> denied, zero writes
-            foreach (string variant in new[] { " cash ", "CASH", "", "   " })
+            // AR52-06: Whitespace / case-variant Cash denied for no-shift, blank method denied by D06 payment method guard, zero writes
+            foreach (string variant in new[] { " cash ", "CASH", "cash" })
             {
                 SqlSnapshot beforeVariant = CaptureSnapshot(paths.DatabasePath, customer.Id);
                 Result<AccountsReceivableCollection> variantResult = await service.CollectAsync(new(
                     customer.Id, 5_000, variant, $"AR52-06 variant '{variant}'", managerId, Guid.NewGuid().ToString("N")));
                 AssertDeniedWithCode(variantResult, CashShiftRequiredCode, ErrorType.Conflict, $"AR52-06 variant '{variant}'");
                 AssertSnapshotUnchanged(beforeVariant, CaptureSnapshot(paths.DatabasePath, customer.Id), $"AR52-06 '{variant}'");
+            }
+            foreach (string blankMethod in new[] { "", "   " })
+            {
+                SqlSnapshot beforeBlank = CaptureSnapshot(paths.DatabasePath, customer.Id);
+                Result<AccountsReceivableCollection> blankResult = await service.CollectAsync(new(
+                    customer.Id, 5_000, blankMethod, $"AR52-06 blank '{blankMethod}'", managerId, Guid.NewGuid().ToString("N")));
+                AssertDeniedWithCode(blankResult, "Receivables.InvalidPaymentMethod", ErrorType.Validation, $"AR52-06 blank '{blankMethod}'");
+                AssertSnapshotUnchanged(beforeBlank, CaptureSnapshot(paths.DatabasePath, customer.Id), $"AR52-06 blank '{blankMethod}'");
             }
 
             // AR52-04: Cash, only another user's open session exists -> denied, no foreign attribution
@@ -114,10 +122,10 @@ public static class Issue52CashArSessionChecks
             Require(ScalarLong(paths.DatabasePath, "SELECT COUNT(*) FROM cashier_sessions WHERE user_id=$u AND status=1;",
                 ("$u", managerId.ToString("D"))) == 0, "AR52-03 must never reopen closed shift.");
 
-            // AR52-07: Valid noncash/digital collection with reference in Note, no open cash shift -> succeeds with 0 drawer events
+            // AR52-07: Valid noncash/digital collection with external reference and operator confirmation, no open cash shift -> succeeds with 0 drawer events
             string digitalReqId = Guid.NewGuid().ToString("N");
             Result<AccountsReceivableCollection> digitalResult = await service.CollectAsync(new(
-                customer.Id, 2_500, "GCash", "GCash Ref #GC-2026-001", managerId, digitalReqId));
+                customer.Id, 2_500, "GCash", "GCash Ref #GC-2026-001", managerId, digitalReqId, "GC-2026-001", true));
             Require(digitalResult.IsSuccess, "AR52-07 noncash collection without open shift must succeed.");
             Require(ScalarLong(paths.DatabasePath, "SELECT COUNT(*) FROM cash_drawer_events;") == 0,
                 "AR52-07 noncash collection must create zero drawer events.");
@@ -327,9 +335,9 @@ public static class Issue52CashArSessionChecks
         HostOperatorApiServices host = HostOperatorApiServices.Create(composition);
         CashDrawerReconciliationService drawer = new(composition);
 
-        // BM2-R2-A01 & A02: Lowercase/uppercase/trimmed/blank Cash in accountable shift -> canonical 'Cash' + Verified/Reconciled close
+        // BM2-R2-A01 & A02: Lowercase/uppercase/whitespace-trimmed Cash in accountable shift -> canonical 'Cash' + Verified/Reconciled close
         Require((await host.ShiftService.OpenShiftAsync(managerId, 1_000)).Ok, "R2-A01/A02 shift must open.");
-        foreach (string variant in new[] { "cash", "CASH", " cash ", "" })
+        foreach (string variant in new[] { "cash", "CASH", " cash ", "\tcash\n" })
         {
             string reqId = Guid.NewGuid().ToString("N");
             AccountsReceivableCollection col = RequireSuccess(

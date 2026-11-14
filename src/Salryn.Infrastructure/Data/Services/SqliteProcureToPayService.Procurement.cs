@@ -923,6 +923,54 @@ public sealed partial class SqliteProcureToPayService
                 Error.Validation("Lpi.PurchaseOrder.DirectReasonRequired", "A business reason is required for a direct purchase order."));
         }
 
+        List<(CreatePurchaseOrderLineInput Line, long TaxCents, long LineTotalCents)> computedLines = new(request.Lines.Count);
+        long subtotalCents = 0;
+        long totalDiscountCents = 0;
+        long totalTaxCents = 0;
+        long totalAmountCents;
+
+        try
+        {
+            foreach (var line in request.Lines)
+            {
+                if (string.IsNullOrWhiteSpace(line.ItemDescription) || line.OrderedQtyX1000 <= 0 || line.UnitCostCents < 0 || line.DiscountCents < 0)
+                {
+                    return Result<PurchaseOrderModel>.Fail(
+                        Error.Validation("Lpi.PurchaseOrder.InvalidLine", "Each PO line requires a description, positive ordered quantity, non-negative unit cost, and non-negative discount."));
+                }
+                if (line.TaxRateBp < 0 || line.TaxRateBp > 10_000)
+                {
+                    return Result<PurchaseOrderModel>.Fail(
+                        Error.Validation("Lpi.PurchaseOrder.InvalidTaxRate", "Tax rate basis points must be between 0 and 10000."));
+                }
+                checked
+                {
+                    long gross = (line.OrderedQtyX1000 * line.UnitCostCents) / 1000L;
+                    if (line.DiscountCents > gross)
+                    {
+                        return Result<PurchaseOrderModel>.Fail(
+                            Error.Validation("Lpi.PurchaseOrder.DiscountExceedsGross", $"Line discount ({line.DiscountCents}) cannot exceed line gross amount ({gross})."));
+                    }
+                    long netBeforeTax = gross - line.DiscountCents;
+                    long tax = line.TaxRateBp > 0 ? (netBeforeTax * line.TaxRateBp) / 10000L : 0L;
+                    long lineTotal = netBeforeTax + tax;
+                    subtotalCents += gross;
+                    totalDiscountCents += line.DiscountCents;
+                    totalTaxCents += tax;
+                    computedLines.Add((line, tax, lineTotal));
+                }
+            }
+            checked
+            {
+                totalAmountCents = subtotalCents - totalDiscountCents + totalTaxCents + request.ShippingCents;
+            }
+        }
+        catch (OverflowException)
+        {
+            return Result<PurchaseOrderModel>.Fail(
+                Error.Validation("Lpi.PurchaseOrder.AmountOverflow", "Purchase order amount calculation overflowed supported bounds."));
+        }
+
         await using SqliteConnection connection = _connections.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         SqlitePragma.Apply(connection);
@@ -958,27 +1006,6 @@ public sealed partial class SqliteProcureToPayService
         DateTimeOffset now = _timeProvider.GetUtcNow();
         DateOnly orderDate = DateOnly.FromDateTime(now.UtcDateTime);
         string status = request.SubmitAndApproveImmediately ? "Approved" : "Draft";
-
-        long subtotalCents = 0;
-        long totalDiscountCents = 0;
-        long totalTaxCents = 0;
-
-        foreach (var line in request.Lines)
-        {
-            if (string.IsNullOrWhiteSpace(line.ItemDescription) || line.OrderedQtyX1000 <= 0 || line.UnitCostCents < 0 || line.DiscountCents < 0)
-            {
-                return Result<PurchaseOrderModel>.Fail(
-                    Error.Validation("Lpi.PurchaseOrder.InvalidLine", "Each PO line requires a description, positive ordered quantity, and non-negative unit cost."));
-            }
-            long gross = (line.OrderedQtyX1000 * line.UnitCostCents) / 1000L;
-            long netBeforeTax = Math.Max(0, gross - line.DiscountCents);
-            long tax = line.TaxRateBp > 0 ? (netBeforeTax * line.TaxRateBp) / 10000L : 0L;
-            subtotalCents += gross;
-            totalDiscountCents += line.DiscountCents;
-            totalTaxCents += tax;
-        }
-
-        long totalAmountCents = Math.Max(0, subtotalCents - totalDiscountCents + totalTaxCents + request.ShippingCents);
 
         await using (SqliteCommand cmd = connection.CreateCommand())
         {
@@ -1020,13 +1047,9 @@ public sealed partial class SqliteProcureToPayService
             await cmd.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        for (int i = 0; i < request.Lines.Count; i++)
+        for (int i = 0; i < computedLines.Count; i++)
         {
-            var line = request.Lines[i];
-            long gross = (line.OrderedQtyX1000 * line.UnitCostCents) / 1000L;
-            long netBeforeTax = Math.Max(0, gross - line.DiscountCents);
-            long tax = line.TaxRateBp > 0 ? (netBeforeTax * line.TaxRateBp) / 10000L : 0L;
-            long lineTotal = netBeforeTax + tax;
+            var (line, tax, lineTotal) = computedLines[i];
 
             await using SqliteCommand lineCmd = connection.CreateCommand();
             lineCmd.Transaction = transaction;
@@ -1357,6 +1380,17 @@ public sealed partial class SqliteProcureToPayService
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private static string? ExtractSuggestedSupplierName(string? notes)
+    {
+        if (string.IsNullOrWhiteSpace(notes)) return null;
+        const string prefix = "Suggested supplier:";
+        if (!notes.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return null;
+        string remainder = notes[prefix.Length..].Trim();
+        int pipeIndex = remainder.IndexOf('|');
+        string extracted = pipeIndex >= 0 ? remainder[..pipeIndex].Trim() : remainder;
+        return string.IsNullOrWhiteSpace(extracted) ? null : extracted;
+    }
+
     private static async Task<PurchaseRequisitionModel?> LoadPurchaseRequisitionAsync(
         SqliteConnection connection,
         SqliteTransaction? transaction,
@@ -1435,6 +1469,9 @@ public sealed partial class SqliteProcureToPayService
                 long appQty = reader.GetInt64(10);
                 long convQty = reader.GetInt64(11);
                 long basisQty = appQty > 0 ? appQty : reqQty;
+                string? supplierName = reader.IsDBNull(15) ? null : reader.GetString(15);
+                string? lineNotes = reader.IsDBNull(17) ? null : reader.GetString(17);
+                supplierName ??= ExtractSuggestedSupplierName(lineNotes);
                 lines.Add(new PurchaseRequisitionLineModel(
                     Guid.Parse(reader.GetString(0)),
                     Guid.Parse(reader.GetString(1)),
@@ -1452,9 +1489,9 @@ public sealed partial class SqliteProcureToPayService
                     reader.GetInt64(12),
                     reader.GetInt64(13),
                     reader.IsDBNull(14) ? null : Guid.Parse(reader.GetString(14)),
-                    reader.IsDBNull(15) ? null : reader.GetString(15),
+                    supplierName,
                     reader.IsDBNull(16) ? null : reader.GetString(16),
-                    reader.IsDBNull(17) ? null : reader.GetString(17)));
+                    lineNotes));
             }
         }
 
