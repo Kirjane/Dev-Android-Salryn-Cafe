@@ -1,4 +1,5 @@
 import { Dialog, Button } from "../ui";
+import { PdfDownloadButton } from "./PdfDownloadButton";
 import type { ReceivingReport } from "../../api/procureToPay";
 import type { StoreSettings } from "../../api/storeSettings";
 import { formatMoney } from "../../utils/format";
@@ -28,8 +29,9 @@ export function PrintableReceivingReportModal({ open, onClose, rr, storeSettings
             <Button variant="secondary" onClick={onClose}>
               Close
             </Button>
+            <PdfDownloadButton url={`/api/lpi/receiving-reports/${rr.id}/pdf`} fileName={`${rr.rrNumber}.pdf`} />
             <Button variant="primary" onClick={handlePrint}>
-              🖨️ Print Receiving Report
+              Print Receiving Report
             </Button>
           </div>
         </div>

@@ -10,6 +10,7 @@ import {
   voidReceivableCollection,
 } from "../api/receivables";
 import { Alert, Button, Card, CardBody, CardHeader, CardTitle, CommandBar, Dialog as UiDialog, LoadingState, StatusPill, TextInput, useNotifications } from "../components/ui";
+import { PdfDownloadButton } from "../components/documents/PdfDownloadButton";
 import { useAppSession } from "../hooks/useAppSession";
 import { Permissions, hasPermission } from "../security/permissions";
 import { formatDateTime, formatMoney } from "../utils/format";
@@ -45,6 +46,7 @@ export function ReceivablesPage() {
   const [message, setMessage] = useState("");
   const [isCollecting, setIsCollecting] = useState(false);
   const [collectionAcknowledgment, setCollectionAcknowledgment] = useState("");
+  const [collectionAcknowledgmentId, setCollectionAcknowledgmentId] = useState<string | null>(null);
   const [voidCollectionId, setVoidCollectionId] = useState("");
   const [voidReason, setVoidReason] = useState("");
   const [voidConfirmed, setVoidConfirmed] = useState(false);
@@ -105,6 +107,7 @@ export function ReceivablesPage() {
       });
       collectionRequestIdRef.current = null;
       setCollectionAcknowledgment(result.plainTextAcknowledgment);
+      setCollectionAcknowledgmentId(result.collection.id);
       setCollectionAmount("");
       setCollectionReference("");
       setNonCashConfirmed(false);
@@ -351,9 +354,18 @@ export function ReceivablesPage() {
                   <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-sm font-semibold text-emerald-950">Collection Receipt</p>
-                      <Button size="sm" variant="secondary" onClick={printCollectionAcknowledgment}>
-                        Print acknowledgment
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        {collectionAcknowledgmentId ? (
+                          <PdfDownloadButton
+                            size="sm"
+                            url={`/api/receivables/collections/${collectionAcknowledgmentId}/pdf`}
+                            fileName={`AR-ACK-${collectionAcknowledgmentId.slice(0, 8).toUpperCase()}.pdf`}
+                          />
+                        ) : null}
+                        <Button size="sm" variant="secondary" onClick={printCollectionAcknowledgment}>
+                          Print acknowledgment
+                        </Button>
+                      </div>
                     </div>
                     <pre className="mt-3 whitespace-pre-wrap rounded-md border border-emerald-100 bg-white p-3 font-mono text-xs text-slate-800">
                       {collectionAcknowledgment}
@@ -372,7 +384,7 @@ export function ReceivablesPage() {
                         <th className="p-2.5 text-right">Credit</th>
                         <th className="p-2.5 text-right">Balance</th>
                         <th className="p-2.5">Note</th>
-                        {canAdjust ? <th className="p-2.5 text-right">Action</th> : null}
+                        <th className="p-2.5 text-right">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -396,24 +408,32 @@ export function ReceivablesPage() {
                               {money(entry.balanceAfterCents)}
                             </td>
                             <td className="p-2.5 text-slate-600">{entry.note || "—"}</td>
-                            {canAdjust ? (
-                              <td className="p-2.5 text-right">
-                                {entry.entryType === ReceivableEntryType.Collection && entry.collectionId ? (
-                                  <Button
+                            <td className="p-2.5 text-right">
+                              {entry.entryType === ReceivableEntryType.Collection && entry.collectionId ? (
+                                <div className="flex justify-end gap-1.5">
+                                  <PdfDownloadButton
                                     size="sm"
-                                    variant="danger"
-                                    onClick={() => {
-                                      setVoidCollectionId(entry.collectionId!);
-                                      setVoidReason("");
-                                      setVoidConfirmed(false);
-                                    }}
-                                    disabled={isVoiding || alreadyReversed}
-                                  >
-                                    {alreadyReversed ? "Reversed" : "Reverse"}
-                                  </Button>
-                                ) : null}
-                              </td>
-                            ) : null}
+                                    label="A4 PDF"
+                                    url={`/api/receivables/collections/${entry.collectionId}/pdf`}
+                                    fileName={`AR-ACK-${entry.collectionId.slice(0, 8).toUpperCase()}.pdf`}
+                                  />
+                                  {canAdjust ? (
+                                    <Button
+                                      size="sm"
+                                      variant="danger"
+                                      onClick={() => {
+                                        setVoidCollectionId(entry.collectionId!);
+                                        setVoidReason("");
+                                        setVoidConfirmed(false);
+                                      }}
+                                      disabled={isVoiding || alreadyReversed}
+                                    >
+                                      {alreadyReversed ? "Reversed" : "Reverse"}
+                                    </Button>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </td>
                           </tr>
                         );
                       })}

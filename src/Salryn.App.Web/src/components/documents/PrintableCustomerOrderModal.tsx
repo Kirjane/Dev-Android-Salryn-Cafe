@@ -1,4 +1,5 @@
 import { Dialog, Button } from "../ui";
+import { PdfDownloadButton } from "./PdfDownloadButton";
 import type { CustomerOrder } from "../../api/customerOrdersAndQuotes";
 import type { StoreSettings } from "../../api/storeSettings";
 import { formatMoney } from "../../utils/format";
@@ -31,6 +32,11 @@ export function PrintableCustomerOrderModal({ open, onClose, order, storeSetting
             <Button variant="secondary" onClick={onClose}>
               Close
             </Button>
+            <PdfDownloadButton
+              url={`/api/customer-orders/${order.id}/pdf`}
+              fileName={`${order.orderNumber}.pdf`}
+              disabled={Boolean(printIssue)}
+            />
             <Button variant="primary" onClick={handlePrint} disabled={Boolean(printIssue)}>
               🖨️ Print Order Slip
             </Button>

@@ -402,7 +402,14 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
             SELECT c.id, customer.full_name, c.amount_cents,
                    entry.balance_after_cents + c.amount_cents,
                    entry.balance_after_cents,
-                   user.display_name, c.collected_at, c.note, c.method
+                   user.display_name, c.collected_at, c.note, c.method,
+                   c.voided_at,
+                   EXISTS(
+                       SELECT 1
+                       FROM accounts_receivable_entries rev
+                       WHERE rev.collection_id = c.id
+                         AND rev.entry_type = 'CollectionReversal'
+                   ) AS has_reversal
             FROM accounts_receivable_collections c
             JOIN customers customer ON customer.id = c.customer_id
             JOIN accounts_receivable_entries entry
@@ -415,6 +422,10 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         if (!await reader.ReadAsync(cancellationToken))
             return Result<CollectionPaymentAcknowledgment>.Fail(
                 Error.NotFound("Receivables.CollectionNotFound", "Collection was not found."));
+        if (!reader.IsDBNull(9) || reader.GetInt64(10) != 0)
+            return Result<CollectionPaymentAcknowledgment>.Fail(
+                Error.Conflict("Receivables.CollectionVoided",
+                    "Cannot generate a payment acknowledgment PDF for a voided or reversed collection."));
 
         return Result<CollectionPaymentAcknowledgment>.Success(new(
             Guid.Parse(reader.GetString(0)),
