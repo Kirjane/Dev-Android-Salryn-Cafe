@@ -143,9 +143,13 @@ public sealed partial class SqliteProcureToPayService
         bool hasQtyVariance = false;
         bool hasPriceVariance = false;
         List<string> varianceMessages = new();
+        HashSet<Guid> seenRrLineIds = new();
+        HashSet<Guid> seenPoLineIdsWithoutRr = new();
 
         var preparedLines = new List<(
             CreateSupplierInvoiceLineInput Input,
+            Guid? ResolvedPoLineId,
+            Guid? ResolvedRrLineId,
             long PoOrdQtyX1000,
             long RrAccQtyX1000,
             long PoUnitCostCents,
@@ -156,10 +160,17 @@ public sealed partial class SqliteProcureToPayService
 
         foreach (var line in request.Lines)
         {
-            if (string.IsNullOrWhiteSpace(line.ItemDescription) || line.InvoicedQtyX1000 <= 0 || line.InvoicedUnitCostCents <= 0 || line.TaxCents < 0)
+            if (line is null || string.IsNullOrWhiteSpace(line.ItemDescription) || line.InvoicedQtyX1000 <= 0 || line.InvoicedUnitCostCents <= 0 || line.TaxCents < 0)
             {
                 return Result<SupplierInvoiceModel>.Fail(
                     Error.Validation("Lpi.Payables.InvalidLine", "Each invoice line requires description, positive invoiced quantity, and positive unit cost."));
+            }
+
+            if (line.ReceivingReportLineId.HasValue && !seenRrLineIds.Add(line.ReceivingReportLineId.Value))
+            {
+                return Result<SupplierInvoiceModel>.Fail(
+                    Error.Validation("Lpi.Payables.DuplicateReceivingLine",
+                        $"Duplicate receiving report line '{line.ReceivingReportLineId.Value:D}' in the same supplier invoice request is not allowed."));
             }
 
             PurchaseOrderLineModel? poLine = line.PurchaseOrderLineId.HasValue && poLineMap.TryGetValue(line.PurchaseOrderLineId.Value, out var pl) ? pl : null;
@@ -216,6 +227,20 @@ public sealed partial class SqliteProcureToPayService
             {
                 return Result<SupplierInvoiceModel>.Fail(
                     Error.Validation("Lpi.Payables.InvalidRrLine", $"Invoice line '{line.ItemDescription}' does not match any line on Receiving Report '{rr.RrNumber}'."));
+            }
+
+            if (rrLine is not null && !line.ReceivingReportLineId.HasValue && !seenRrLineIds.Add(rrLine.Id))
+            {
+                return Result<SupplierInvoiceModel>.Fail(
+                    Error.Validation("Lpi.Payables.DuplicateReceivingLine",
+                        $"Duplicate receiving report line '{rrLine.Id:D}' in the same supplier invoice request is not allowed."));
+            }
+
+            if (rr is null && poLine is not null && !seenPoLineIdsWithoutRr.Add(poLine.Id))
+            {
+                return Result<SupplierInvoiceModel>.Fail(
+                    Error.Validation("Lpi.Payables.DuplicatePurchaseOrderLine",
+                        $"Duplicate purchase order line '{poLine.Id:D}' in the same supplier invoice request is not allowed."));
             }
 
             if (poLine is not null && rrLine is not null && rrLine.PurchaseOrderLineId != poLine.Id)
@@ -286,15 +311,51 @@ public sealed partial class SqliteProcureToPayService
                 }
             }
 
-            long grossLine = (line.InvoicedQtyX1000 * line.InvoicedUnitCostCents) / 1000L;
-            long lineTotal = grossLine + line.TaxCents;
-            subtotalCents += grossLine;
-            totalTaxCents += line.TaxCents;
+            long grossLine;
+            long lineTotal;
+            try
+            {
+                checked
+                {
+                    grossLine = (line.InvoicedQtyX1000 * line.InvoicedUnitCostCents) / 1000L;
+                    lineTotal = grossLine + line.TaxCents;
+                    subtotalCents += grossLine;
+                    totalTaxCents += line.TaxCents;
+                }
+            }
+            catch (OverflowException)
+            {
+                return Result<SupplierInvoiceModel>.Fail(
+                    Error.Validation("Lpi.Payables.AmountOverflow", "Supplier invoice line amount exceeds maximum supported value."));
+            }
 
-            preparedLines.Add((line, poOrdQty, rrAccQty, poUnitCost, lineTotal, qtyVar, costVar, lineStatus));
+            preparedLines.Add((
+                line,
+                poLine?.Id ?? line.PurchaseOrderLineId,
+                rrLine?.Id ?? line.ReceivingReportLineId,
+                poOrdQty,
+                rrAccQty,
+                poUnitCost,
+                lineTotal,
+                qtyVar,
+                costVar,
+                lineStatus));
         }
 
-        long totalInvoiceCents = Math.Max(0, subtotalCents - request.DiscountCents + totalTaxCents - request.WithholdingTaxCents);
+        long totalInvoiceCents;
+        try
+        {
+            checked
+            {
+                totalInvoiceCents = subtotalCents - request.DiscountCents + totalTaxCents - request.WithholdingTaxCents;
+            }
+        }
+        catch (OverflowException)
+        {
+            return Result<SupplierInvoiceModel>.Fail(
+                Error.Validation("Lpi.Payables.AmountOverflow", "Supplier invoice total exceeds maximum supported value."));
+        }
+
         if (totalInvoiceCents <= 0)
             return Result<SupplierInvoiceModel>.Fail(Error.Validation(
                 "Lpi.Payables.ZeroValueInvoice", "Zero-value invoices cannot be posted or recorded as payable liabilities."));
@@ -401,8 +462,8 @@ public sealed partial class SqliteProcureToPayService
                 """;
             lineCmd.Parameters.AddWithValue("$id", Guid.NewGuid().ToString("D"));
             lineCmd.Parameters.AddWithValue("$invId", invId.ToString("D"));
-            lineCmd.Parameters.AddWithValue("$poLineId", pLine.Input.PurchaseOrderLineId?.ToString("D") ?? (object)DBNull.Value);
-            lineCmd.Parameters.AddWithValue("$rrLineId", pLine.Input.ReceivingReportLineId?.ToString("D") ?? (object)DBNull.Value);
+            lineCmd.Parameters.AddWithValue("$poLineId", pLine.ResolvedPoLineId?.ToString("D") ?? (object)DBNull.Value);
+            lineCmd.Parameters.AddWithValue("$rrLineId", pLine.ResolvedRrLineId?.ToString("D") ?? (object)DBNull.Value);
             lineCmd.Parameters.AddWithValue("$prodId", pLine.Input.ProductId?.ToString("D") ?? (object)DBNull.Value);
             lineCmd.Parameters.AddWithValue("$desc", pLine.Input.ItemDescription.Trim());
             lineCmd.Parameters.AddWithValue("$poQty", pLine.PoOrdQtyX1000);

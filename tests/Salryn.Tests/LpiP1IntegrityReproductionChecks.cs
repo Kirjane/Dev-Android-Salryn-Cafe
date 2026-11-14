@@ -77,8 +77,9 @@ public static class LpiP1IntegrityReproductionChecks
             await TestW5R21DuplicateProductAmbiguityAndFinancialIntegrityAsync(service, paths, requesterId, supervisorId, apClerkId, resaleProdId);
             await TestP102CrossSupplierPaymentLineageHttpAsync(composition, service, paths, resaleProdId);
             await TestP102DisbursementDateCustodyAsync(composition, paths, apClerkId, resaleProdId);
+            await TestIssue45And59DuplicateReceivingLineIntegrityAsync();
 
-            Console.WriteLine("LPI P1 Integrity: All findings (P1-01 through P1-06 and P1-R3-01/02) verified with full regression closure PASS.");
+            Console.WriteLine("LPI P1 Integrity: All findings (P1-01 through P1-06 and P1-R3-01/02, Issues #45 & #59) verified with full regression closure PASS.");
         }
         finally
         {
@@ -2840,6 +2841,371 @@ public static class LpiP1IntegrityReproductionChecks
             $"Expected VarianceFlagged status for overbilled invoice, got {invBetaDuplicate.Status}");
 
         Console.WriteLine("P1-R21-02: Duplicate-product same-PO line ambiguity rejection, line isolation, variance segregation, and cumulative overbilling protection verified PASS.");
+    }
+
+    /// <summary>
+    /// Issue #76 (Issues #45 and #59): Receiving-report duplicate-line quantity bypass prevention.
+    /// Invariants verified over Service, real Local API HTTP, SQLite snapshots, and Host Restart:
+    /// - Issue #45: CreateSupplierReturnAsync rejects duplicate ReceivingReportLineId in a single request
+    ///   with zero DB writes, zero stock/bucket deductions, zero PO accepted reversals, zero SRET sequence
+    ///   advancement, and zero audit entries.
+    /// - Issue #59: CreateSupplierInvoiceAsync rejects duplicate ReceivingReportLineId (explicit or resolved)
+    ///   in a single request with zero DB writes, zero AP ledger entries, and zero APV sequence advancement.
+    /// - Positive control: Legitimate same-SKU rows on distinct ReceivingReportLineId rows succeed in a single
+    ///   supplier return and a single supplier invoice with sequential stock/bucket/AP reconciliation.
+    /// - Historical cumulative limits remain enforced across sequential returns and invoices.
+    /// </summary>
+    private static async Task TestIssue45And59DuplicateReceivingLineIntegrityAsync()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "salryn-issue45-59-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            DbPaths paths = DbPaths.CreateDevelopment(root);
+            SalrynLocalComposition composition = SalrynLocalComposition.Create(paths);
+            await composition.InitializeDatabaseAsync().ConfigureAwait(false);
+
+            _ = RequireValue(composition.DatabaseInitialization.CreateFirstAdmin(new AdminBootstrapRequest(
+                "Issue45/59 Test Store", null, null, null, null, 80, "admin", "Integrity Admin", "StrongI76Admin123!")), "Issue76 bootstrap admin");
+
+            SqliteProcureToPayService service = new(composition.ConnectionFactory, TimeProvider.System);
+            Guid actorId = SeedUser(paths.DatabasePath, "i76-operator", "Issue76 Operator");
+            Guid prodSingleId = SeedProduct(paths.DatabasePath, "I76-SKU-SINGLE", "9900007600001", "Issue76 Single-Line Rice 25kg", 10_000, 15_000, 0, 1_000);
+            Guid prodMultiId = SeedProduct(paths.DatabasePath, "I76-SKU-MULTI", "9900007600002", "Issue76 Multi-Lot Flour 25kg", 20_000, 30_000, 0, 1_000);
+
+            LpiSupplier supplier = RequireSuccess(await service.CreateSupplierAsync(new CreateLpiSupplierRequest(
+                "I76-SUP-01", "Issue76 Supply Corp", "Manager", "0917000076", "i76@test.local", "Manila", null, 30, 3, null, actorId)),
+                "Issue76 supplier");
+
+            // PO #1: 1 line of prodSingle (1000 milliunits @ 10000 cents = 100.00 PHP)
+            PurchaseOrderModel poSingle = RequireSuccess(await service.CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest(
+                supplier.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(3)), null,
+                30, 0, "Standard", "Issue45/59 single RR line fixture", true,
+                new[]
+                {
+                    new CreatePurchaseOrderLineInput(null, prodSingleId, "I76-SKU-SINGLE", "Issue76 Single-Line Rice 25kg",
+                        PurchaseClassifications.Resale, "sack", 1_000, 10_000, 0, 0, null)
+                }, actorId)), "Issue76 single PO");
+
+            ReceivingReportModel rrSingle = RequireSuccess(await service.CreateReceivingReportAsync(new CreateReceivingReportRequest(
+                poSingle.Id, null, "DR-I76-SINGLE", null, "Driver-76", DateOnly.FromDateTime(DateTime.UtcNow),
+                true, null, null, "RR-I76-SINGLE", "Single line RR",
+                new[]
+                {
+                    new CreateReceivingReportLineInput(poSingle.Lines[0].Id, 1_000, 1_000, 0, null, null, null, null)
+                }, actorId)), "Issue76 single RR");
+            Guid rrSingleLineId = rrSingle.Lines.Single().Id;
+
+            // PO #2: 2 distinct PO/RR lines sharing the SAME SKU prodMulti (1000 milliunits each)
+            PurchaseOrderModel poMulti = RequireSuccess(await service.CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest(
+                supplier.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(3)), null,
+                30, 0, "Standard", "Issue45/59 same-SKU multi distinct RR lines", true,
+                new[]
+                {
+                    new CreatePurchaseOrderLineInput(null, prodMultiId, "I76-SKU-MULTI", "Issue76 Multi-Lot Flour Lot A",
+                        PurchaseClassifications.Resale, "sack", 1_000, 20_000, 0, 0, null),
+                    new CreatePurchaseOrderLineInput(null, prodMultiId, "I76-SKU-MULTI", "Issue76 Multi-Lot Flour Lot B",
+                        PurchaseClassifications.Resale, "sack", 1_000, 22_000, 0, 0, null)
+                }, actorId)), "Issue76 multi PO");
+
+            ReceivingReportModel rrMulti = RequireSuccess(await service.CreateReceivingReportAsync(new CreateReceivingReportRequest(
+                poMulti.Id, null, "DR-I76-MULTI", null, "Driver-76", DateOnly.FromDateTime(DateTime.UtcNow),
+                true, null, null, "RR-I76-MULTI", "Multi line RR",
+                new[]
+                {
+                    new CreateReceivingReportLineInput(poMulti.Lines[0].Id, 1_000, 1_000, 0, null, null, null, null),
+                    new CreateReceivingReportLineInput(poMulti.Lines[1].Id, 1_000, 1_000, 0, null, null, null, null)
+                }, actorId)), "Issue76 multi RR");
+            Guid rrMultiLineA = rrMulti.Lines.Single(l => l.PurchaseOrderLineId == poMulti.Lines[0].Id).Id;
+            Guid rrMultiLineB = rrMulti.Lines.Single(l => l.PurchaseOrderLineId == poMulti.Lines[1].Id).Id;
+
+            string SnapshotDb()
+            {
+                using SqliteConnection conn = new($"Data Source={paths.DatabasePath}");
+                conn.Open();
+                long Scalar(string sql)
+                {
+                    using SqliteCommand cmd = conn.CreateCommand();
+                    cmd.CommandText = sql;
+                    object? val = cmd.ExecuteScalar();
+                    return val is null or DBNull ? 0L : Convert.ToInt64(val);
+                }
+
+                return JsonSerializer.Serialize(new
+                {
+                    returnCount = Scalar("SELECT COUNT(*) FROM supplier_returns"),
+                    returnLineCount = Scalar("SELECT COUNT(*) FROM supplier_return_lines"),
+                    invoiceCount = Scalar("SELECT COUNT(*) FROM supplier_invoices"),
+                    invoiceLineCount = Scalar("SELECT COUNT(*) FROM supplier_invoice_lines"),
+                    payableEntryCount = Scalar("SELECT COUNT(*) FROM supplier_payable_entries"),
+                    stockMovementCount = Scalar("SELECT COUNT(*) FROM stock_movements"),
+                    singleStockX1000 = Scalar($"SELECT stock_on_hand_x1000 FROM products WHERE id = '{prodSingleId:D}'"),
+                    multiStockX1000 = Scalar($"SELECT stock_on_hand_x1000 FROM products WHERE id = '{prodMultiId:D}'"),
+                    singlePoAcceptedX1000 = Scalar($"SELECT received_accepted_qty_x1000 FROM purchase_order_lines WHERE id = '{poSingle.Lines[0].Id:D}'"),
+                    sretSeq = Scalar("SELECT COALESCE((SELECT current_number FROM lpi_document_sequences WHERE prefix='SRET'), 0)"),
+                    apvSeq = Scalar("SELECT COALESCE((SELECT current_number FROM lpi_document_sequences WHERE prefix='APV'), 0)"),
+                    auditCount = Scalar("SELECT COUNT(*) FROM audit_logs")
+                });
+            }
+
+            InMemoryLocalApiSessionStore store = new();
+            LocalApiSession operatorSession = store.Create(new AuthenticatedUserReadModel(
+                actorId, "i76-op", "Issue76 Operator", "Manager", UserStatus.Active,
+                new[]
+                {
+                    SalrynPermissions.InventoryManageReturns,
+                    SalrynPermissions.InventoryView,
+                    SalrynPermissions.PayablesManageInvoices,
+                    SalrynPermissions.PayablesView,
+                    SalrynPermissions.ReceivingView
+                })
+            {
+                RoleId = Guid.Parse(Salryn.Infrastructure.Data.Seeding.DefaultSeedData.ManagerRoleId)
+            });
+
+            string nonce = "ISSUE76-DISPOSABLE-" + Guid.NewGuid().ToString("N");
+            string beforeNegative = SnapshotDb();
+            long singleBucketBefore = ReadLocationBucketQty(paths.DatabasePath, prodSingleId, "MAIN-STORE", "Available");
+            Require(singleBucketBefore == 1_000, $"Expected initial Available bucket 1000 for single SKU, got {singleBucketBefore}.");
+
+            await using (WebApplication host = await LocalApiApplicationFactory.CreateAsync(
+                new[] { "--dev" },
+                new LocalApiApplicationOptions
+                {
+                    Url = "http://127.0.0.1:0",
+                    Composition = composition,
+                    SessionStore = store,
+                    EnableStaticWebAssets = false,
+                    WriteDevelopmentDatabasePath = false,
+                    TestHostNonce = nonce
+                }).ConfigureAwait(false))
+            {
+                await host.StartAsync().ConfigureAwait(false);
+                string bound = host.Urls.Single(url => url.StartsWith("http://127.0.0.1:", StringComparison.OrdinalIgnoreCase));
+                using HttpClient client = CreateClient(new Uri(bound), operatorSession);
+
+                // 1. Issue #45 NEGATIVE HTTP: duplicate ReceivingReportLineId (600 + 600 > 1000)
+                using (HttpResponseMessage resp = await client.PostAsync("/api/lpi/supplier-returns",
+                    new StringContent(JsonSerializer.Serialize(new
+                    {
+                        receivingReportId = rrSingle.Id,
+                        reason = "Duplicate RR line over-return exploit test",
+                        lines = new[]
+                        {
+                            new { receivingReportLineId = rrSingleLineId, returnQtyX1000 = 600L, reason = "Part A" },
+                            new { receivingReportLineId = rrSingleLineId, returnQtyX1000 = 600L, reason = "Part B" }
+                        }
+                    }), System.Text.Encoding.UTF8, "application/json")))
+                {
+                    string body = await resp.Content.ReadAsStringAsync();
+                    Require(resp.StatusCode == HttpStatusCode.BadRequest,
+                        $"Issue45 duplicate RR line must return HTTP 400, got {(int)resp.StatusCode}: {body}");
+                    using JsonDocument err = JsonDocument.Parse(body);
+                    Require(err.RootElement.GetProperty("code").GetString() == "Lpi.SupplierReturn.DuplicateReceivingLine",
+                        $"Expected Lpi.SupplierReturn.DuplicateReceivingLine, got: {body}");
+                }
+                Require(SnapshotDb() == beforeNegative &&
+                        ReadLocationBucketQty(paths.DatabasePath, prodSingleId, "MAIN-STORE", "Available") == singleBucketBefore,
+                    "Issue45 duplicate RR line rejection (600+600) must perform zero writes across all tables/buckets/sequences.");
+
+                // 2. Issue #45 NEGATIVE HTTP even when duplicate sum <= accepted (300 + 300 <= 1000)
+                using (HttpResponseMessage respSmallDupe = await client.PostAsync("/api/lpi/supplier-returns",
+                    new StringContent(JsonSerializer.Serialize(new
+                    {
+                        receivingReportId = rrSingle.Id,
+                        reason = "Duplicate RR line contract check",
+                        lines = new[]
+                        {
+                            new { receivingReportLineId = rrSingleLineId, returnQtyX1000 = 300L, reason = "Split 1" },
+                            new { receivingReportLineId = rrSingleLineId, returnQtyX1000 = 300L, reason = "Split 2" }
+                        }
+                    }), System.Text.Encoding.UTF8, "application/json")))
+                {
+                    string body = await respSmallDupe.Content.ReadAsStringAsync();
+                    Require(respSmallDupe.StatusCode == HttpStatusCode.BadRequest,
+                        $"Issue45 duplicate RR line (300+300) must still return HTTP 400, got {(int)respSmallDupe.StatusCode}: {body}");
+                    using JsonDocument err = JsonDocument.Parse(body);
+                    Require(err.RootElement.GetProperty("code").GetString() == "Lpi.SupplierReturn.DuplicateReceivingLine",
+                        $"Expected Lpi.SupplierReturn.DuplicateReceivingLine for 300+300 duplicate, got: {body}");
+                }
+                Require(SnapshotDb() == beforeNegative,
+                    "Issue45 duplicate RR line (300+300) must leave DB untouched.");
+
+                // 3. Issue #59 NEGATIVE HTTP: duplicate explicit ReceivingReportLineId with PostToApIfMatched=true (700 + 700 > 1000)
+                using (HttpResponseMessage respInvDupe = await client.PostAsync("/api/lpi/invoices",
+                    new StringContent(JsonSerializer.Serialize(new
+                    {
+                        supplierId = supplier.Id,
+                        supplierInvoiceNo = "INV-I76-DUPE-EXPLICIT",
+                        purchaseOrderId = poSingle.Id,
+                        receivingReportId = rrSingle.Id,
+                        postToApIfMatched = true,
+                        lines = new[]
+                        {
+                            new { purchaseOrderLineId = poSingle.Lines[0].Id, receivingReportLineId = rrSingleLineId, productId = prodSingleId, itemDescription = "Rice Line 1", invoicedQtyX1000 = 700L, invoicedUnitCostCents = 10_000L, taxCents = 0L },
+                            new { purchaseOrderLineId = poSingle.Lines[0].Id, receivingReportLineId = rrSingleLineId, productId = prodSingleId, itemDescription = "Rice Line 2", invoicedQtyX1000 = 700L, invoicedUnitCostCents = 10_000L, taxCents = 0L }
+                        }
+                    }), System.Text.Encoding.UTF8, "application/json")))
+                {
+                    string body = await respInvDupe.Content.ReadAsStringAsync();
+                    Require(respInvDupe.StatusCode == HttpStatusCode.BadRequest,
+                        $"Issue59 duplicate explicit RR line must return HTTP 400, got {(int)respInvDupe.StatusCode}: {body}");
+                    using JsonDocument err = JsonDocument.Parse(body);
+                    Require(err.RootElement.GetProperty("code").GetString() == "Lpi.Payables.DuplicateReceivingLine",
+                        $"Expected Lpi.Payables.DuplicateReceivingLine, got: {body}");
+                }
+                Require(SnapshotDb() == beforeNegative,
+                    "Issue59 duplicate explicit RR line rejection must perform zero writes and zero AP postings.");
+
+                // 4. Issue #59 NEGATIVE HTTP: duplicate resolved ReceivingReportLineId when ReceivingReportLineId is omitted
+                using (HttpResponseMessage respInvResolvedDupe = await client.PostAsync("/api/lpi/invoices",
+                    new StringContent(JsonSerializer.Serialize(new
+                    {
+                        supplierId = supplier.Id,
+                        supplierInvoiceNo = "INV-I76-DUPE-RESOLVED",
+                        purchaseOrderId = poSingle.Id,
+                        receivingReportId = rrSingle.Id,
+                        postToApIfMatched = true,
+                        lines = new[]
+                        {
+                            new { productId = prodSingleId, itemDescription = "Rice Implicit 1", invoicedQtyX1000 = 600L, invoicedUnitCostCents = 10_000L, taxCents = 0L },
+                            new { productId = prodSingleId, itemDescription = "Rice Implicit 2", invoicedQtyX1000 = 600L, invoicedUnitCostCents = 10_000L, taxCents = 0L }
+                        }
+                    }), System.Text.Encoding.UTF8, "application/json")))
+                {
+                    string body = await respInvResolvedDupe.Content.ReadAsStringAsync();
+                    Require(respInvResolvedDupe.StatusCode == HttpStatusCode.BadRequest,
+                        $"Issue59 duplicate resolved RR line must return HTTP 400, got {(int)respInvResolvedDupe.StatusCode}: {body}");
+                    using JsonDocument err = JsonDocument.Parse(body);
+                    Require(err.RootElement.GetProperty("code").GetString() == "Lpi.Payables.DuplicateReceivingLine",
+                        $"Expected Lpi.Payables.DuplicateReceivingLine on omitted RR line ID, got: {body}");
+                }
+                Require(SnapshotDb() == beforeNegative,
+                    "Issue59 duplicate resolved RR line rejection must leave DB untouched.");
+
+                await host.StopAsync().ConfigureAwait(false);
+            }
+
+            // Host Restart Custody Proof: reload same disposable DB and verify zero negative mutations survived
+            SalrynLocalComposition restartedComposition = SalrynLocalComposition.Create(paths);
+            Require(SnapshotDb() == beforeNegative,
+                "Rejected duplicate return/invoice requests must persist unchanged across host restart.");
+
+            await using (WebApplication restartedHost = await LocalApiApplicationFactory.CreateAsync(
+                new[] { "--dev" },
+                new LocalApiApplicationOptions
+                {
+                    Url = "http://127.0.0.1:0",
+                    Composition = restartedComposition,
+                    SessionStore = store,
+                    EnableStaticWebAssets = false,
+                    WriteDevelopmentDatabasePath = false,
+                    TestHostNonce = nonce
+                }).ConfigureAwait(false))
+            {
+                await restartedHost.StartAsync().ConfigureAwait(false);
+                string restartedUrl = restartedHost.Urls.Single(url => url.StartsWith("http://127.0.0.1:", StringComparison.OrdinalIgnoreCase));
+                using HttpClient client = CreateClient(new Uri(restartedUrl), operatorSession);
+
+                // 5. Issue #45 POSITIVE + CUMULATIVE LIMIT across sequential returns on rrSingleLineId
+                using (HttpResponseMessage okRet1 = await client.PostAsync("/api/lpi/supplier-returns",
+                    new StringContent(JsonSerializer.Serialize(new
+                    {
+                        receivingReportId = rrSingle.Id,
+                        reason = "Partial return 400",
+                        lines = new[] { new { receivingReportLineId = rrSingleLineId, returnQtyX1000 = 400L, reason = "Damaged 0.4" } }
+                    }), System.Text.Encoding.UTF8, "application/json")))
+                {
+                    string body = await okRet1.Content.ReadAsStringAsync();
+                    Require(okRet1.StatusCode == HttpStatusCode.Created,
+                        $"Issue45 valid partial return 400 must return HTTP 201, got {(int)okRet1.StatusCode}: {body}");
+                }
+                Require(ReadStockOnHand(paths.DatabasePath, prodSingleId) == 600 &&
+                        ReadLocationBucketQty(paths.DatabasePath, prodSingleId, "MAIN-STORE", "Available") == 600,
+                    "Issue45 partial return 400 must leave 600 milliunits on hand and in Available bucket.");
+
+                string afterPartialReturnSnapshot = SnapshotDb();
+                using (HttpResponseMessage overRet2 = await client.PostAsync("/api/lpi/supplier-returns",
+                    new StringContent(JsonSerializer.Serialize(new
+                    {
+                        receivingReportId = rrSingle.Id,
+                        reason = "Exceed cumulative remaining (601 > 600)",
+                        lines = new[] { new { receivingReportLineId = rrSingleLineId, returnQtyX1000 = 601L, reason = "Over remaining" } }
+                    }), System.Text.Encoding.UTF8, "application/json")))
+                {
+                    string body = await overRet2.Content.ReadAsStringAsync();
+                    Require(overRet2.StatusCode == HttpStatusCode.BadRequest,
+                        $"Issue45 cumulative over-return (601 > 600) must return HTTP 400, got {(int)overRet2.StatusCode}: {body}");
+                    using JsonDocument err = JsonDocument.Parse(body);
+                    Require(err.RootElement.GetProperty("code").GetString() == "Lpi.SupplierReturn.InvalidQty",
+                        $"Expected Lpi.SupplierReturn.InvalidQty, got: {body}");
+                }
+                Require(SnapshotDb() == afterPartialReturnSnapshot,
+                    "Issue45 cumulative over-return rejection must leave DB untouched.");
+
+                // 6. POSITIVE CONTROL: Same SKU (prodMultiId) across TWO distinct ReceivingReportLineId rows in ONE return and ONE invoice
+                using (HttpResponseMessage multiReturnResp = await client.PostAsync("/api/lpi/supplier-returns",
+                    new StringContent(JsonSerializer.Serialize(new
+                    {
+                        receivingReportId = rrMulti.Id,
+                        reason = "Legitimate same-SKU return across distinct RR lots",
+                        lines = new[]
+                        {
+                            new { receivingReportLineId = rrMultiLineA, returnQtyX1000 = 300L, reason = "Lot A tear" },
+                            new { receivingReportLineId = rrMultiLineB, returnQtyX1000 = 400L, reason = "Lot B tear" }
+                        }
+                    }), System.Text.Encoding.UTF8, "application/json")))
+                {
+                    string body = await multiReturnResp.Content.ReadAsStringAsync();
+                    Require(multiReturnResp.StatusCode == HttpStatusCode.Created,
+                        $"Issue45 positive same-SKU multi-RR-line return must succeed with HTTP 201, got {(int)multiReturnResp.StatusCode}: {body}");
+                    using JsonDocument doc = JsonDocument.Parse(body);
+                    // 300 * 20_000 / 1000 + 400 * 22_000 / 1000 = 6_000 + 8_800 = 14_800 cents
+                    Require(doc.RootElement.GetProperty("totalReturnAmountCents").GetInt64() == 14_800,
+                        $"Expected multi-lot return total 14800 cents, got: {body}");
+                }
+                Require(ReadStockOnHand(paths.DatabasePath, prodMultiId) == 1_300 &&
+                        ReadLocationBucketQty(paths.DatabasePath, prodMultiId, "MAIN-STORE", "Available") == 1_300,
+                    $"Same-SKU multi-RR-line return (300+400 from 2000) must sequentially deduct to 1300 in both product stock and Available bucket; actual stock={ReadStockOnHand(paths.DatabasePath, prodMultiId)}, bucket={ReadLocationBucketQty(paths.DatabasePath, prodMultiId, "MAIN-STORE", "Available")}.");
+
+                using (HttpResponseMessage multiInvResp = await client.PostAsync("/api/lpi/invoices",
+                    new StringContent(JsonSerializer.Serialize(new
+                    {
+                        supplierId = supplier.Id,
+                        supplierInvoiceNo = "INV-I76-MULTI-DISTINCT",
+                        purchaseOrderId = poMulti.Id,
+                        receivingReportId = rrMulti.Id,
+                        postToApIfMatched = true,
+                        lines = new[]
+                        {
+                            new { purchaseOrderLineId = poMulti.Lines[0].Id, receivingReportLineId = rrMultiLineA, productId = prodMultiId, itemDescription = "Flour Lot A", invoicedQtyX1000 = 700L, invoicedUnitCostCents = 20_000L, taxCents = 0L },
+                            new { purchaseOrderLineId = poMulti.Lines[1].Id, receivingReportLineId = rrMultiLineB, productId = prodMultiId, itemDescription = "Flour Lot B", invoicedQtyX1000 = 600L, invoicedUnitCostCents = 22_000L, taxCents = 0L }
+                        }
+                    }), System.Text.Encoding.UTF8, "application/json")))
+                {
+                    string body = await multiInvResp.Content.ReadAsStringAsync();
+                    Require(multiInvResp.StatusCode == HttpStatusCode.Created,
+                        $"Issue59 positive same-SKU multi-RR-line invoice must succeed with HTTP 201, got {(int)multiInvResp.StatusCode}: {body}");
+                    using JsonDocument doc = JsonDocument.Parse(body);
+                    // 700 * 20_000 / 1000 + 600 * 22_000 / 1000 = 14_000 + 13_200 = 27_200 cents
+                    Require(doc.RootElement.GetProperty("matchStatus").GetString() == SupplierInvoiceMatchStatuses.Matched &&
+                            doc.RootElement.GetProperty("status").GetString() == "PostedOpen" &&
+                            doc.RootElement.GetProperty("totalInvoiceCents").GetInt64() == 27_200,
+                        $"Expected Matched + PostedOpen + 27200 cents for distinct RR-line same-SKU invoice, got: {body}");
+                }
+
+                await restartedHost.StopAsync().ConfigureAwait(false);
+            }
+
+            Console.WriteLine("Issue #76 (#45 & #59): Duplicate RR-line rejection (zero writes/sequences) + host restart + same-SKU distinct RR-line positive controls verified PASS.");
+        }
+        finally
+        {
+            SqliteConnectionFactory.ClearAllPools();
+            if (Directory.Exists(root))
+            {
+                try { Directory.Delete(root, recursive: true); } catch { }
+            }
+        }
     }
 
     #region Helpers

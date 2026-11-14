@@ -996,19 +996,32 @@ public sealed partial class SqliteProcureToPayService
         }
 
         Dictionary<Guid, ReceivingReportLineModel> rrLines = rr.Lines.ToDictionary(x => x.Id);
-        string sretNumber = await AllocateSequenceInTransactionAsync(connection, transaction, "SRET", cancellationToken);
-        Guid sretId = Guid.NewGuid();
-        DateTimeOffset now = _timeProvider.GetUtcNow();
-        DateOnly returnDate = DateOnly.FromDateTime(now.UtcDateTime);
+        HashSet<Guid> seenReceivingLineIds = new();
+        Dictionary<Guid, long> plannedQtyByProduct = new();
+        var validatedLines = new List<(CreateSupplierReturnLineInput Input, ReceivingReportLineModel RrLine, long LineTotalCents, string LineReason)>(request.Lines.Count);
         long totalReturnCents = 0;
 
         foreach (var line in request.Lines)
         {
+            if (line is null || line.ReceivingReportLineId == Guid.Empty)
+            {
+                return Result<SupplierReturnModel>.Fail(
+                    Error.Validation("Lpi.SupplierReturn.InvalidLine", "Return line must reference an accepted product line on the Receiving Report."));
+            }
+
+            if (!seenReceivingLineIds.Add(line.ReceivingReportLineId))
+            {
+                return Result<SupplierReturnModel>.Fail(
+                    Error.Validation("Lpi.SupplierReturn.DuplicateReceivingLine",
+                        $"Duplicate receiving report line '{line.ReceivingReportLineId:D}' in the same supplier return request is not allowed."));
+            }
+
             if (!rrLines.TryGetValue(line.ReceivingReportLineId, out ReceivingReportLineModel? rrLine) || !rrLine.ProductId.HasValue)
             {
                 return Result<SupplierReturnModel>.Fail(
                     Error.Validation("Lpi.SupplierReturn.InvalidLine", "Return line must reference an accepted product line on the Receiving Report."));
             }
+
             long previouslyReturnedX1000 = 0;
             await using (SqliteCommand priorRetCmd = connection.CreateCommand())
             {
@@ -1032,8 +1045,71 @@ public sealed partial class SqliteProcureToPayService
                     Error.Validation("Lpi.SupplierReturn.InvalidQty",
                         $"Return quantity for '{rrLine.ItemDescription}' ({line.ReturnQtyX1000}) exceeds remaining accepted quantity ({remainingAcceptedX1000}). Previously returned: {previouslyReturnedX1000}."));
             }
-            totalReturnCents += (line.ReturnQtyX1000 * rrLine.UnitCostCents) / 1000L;
+
+            long lineTotalCents;
+            try
+            {
+                checked
+                {
+                    lineTotalCents = (line.ReturnQtyX1000 * rrLine.UnitCostCents) / 1000L;
+                    totalReturnCents += lineTotalCents;
+                    Guid productId = rrLine.ProductId.Value;
+                    plannedQtyByProduct[productId] = plannedQtyByProduct.TryGetValue(productId, out long priorPlanned)
+                        ? priorPlanned + line.ReturnQtyX1000
+                        : line.ReturnQtyX1000;
+                }
+            }
+            catch (OverflowException)
+            {
+                return Result<SupplierReturnModel>.Fail(
+                    Error.Validation("Lpi.SupplierReturn.AmountOverflow", "Supplier return amount exceeds maximum supported value."));
+            }
+
+            string lineReason = string.IsNullOrWhiteSpace(line.Reason) ? request.Reason.Trim() : line.Reason.Trim();
+            validatedLines.Add((line, rrLine, lineTotalCents, lineReason));
         }
+
+        // Pre-validate aggregate stock and available location bucket before allocating sequence or writing rows.
+        foreach ((Guid productId, long aggregateQtyX1000) in plannedQtyByProduct)
+        {
+            (bool exists, bool trackStock, long currentStockX1000, _) =
+                await ReadProductStockStateAsync(connection, transaction, productId, cancellationToken);
+            if (!exists || (trackStock && currentStockX1000 < aggregateQtyX1000))
+            {
+                return Result<SupplierReturnModel>.Fail(
+                    Error.Conflict("Lpi.SupplierReturn.InsufficientStock",
+                        $"Insufficient stock on hand ({currentStockX1000}) to return {aggregateQtyX1000} of product '{productId:D}'."));
+            }
+
+            if (trackStock)
+            {
+                await using SqliteCommand bucketCmd = connection.CreateCommand();
+                bucketCmd.Transaction = transaction;
+                bucketCmd.CommandText = """
+                    SELECT COALESCE((
+                        SELECT quantity_x1000
+                        FROM product_stock_buckets
+                        WHERE product_id = $prodId AND location_id = $locId AND bucket_status = $status
+                        LIMIT 1
+                    ), 0);
+                    """;
+                bucketCmd.Parameters.AddWithValue("$prodId", productId.ToString("D"));
+                bucketCmd.Parameters.AddWithValue("$locId", rr.LocationId.ToString("D"));
+                bucketCmd.Parameters.AddWithValue("$status", StockBucketStatuses.Available);
+                long bucketQtyX1000 = Convert.ToInt64(await bucketCmd.ExecuteScalarAsync(cancellationToken) ?? 0L);
+                if (bucketQtyX1000 < aggregateQtyX1000)
+                {
+                    return Result<SupplierReturnModel>.Fail(
+                        Error.Conflict("Lpi.SupplierReturn.InsufficientStock",
+                            $"Insufficient Available stock bucket ({bucketQtyX1000}) at location '{rr.LocationName}' to return {aggregateQtyX1000}."));
+                }
+            }
+        }
+
+        string sretNumber = await AllocateSequenceInTransactionAsync(connection, transaction, "SRET", cancellationToken);
+        Guid sretId = Guid.NewGuid();
+        DateTimeOffset now = _timeProvider.GetUtcNow();
+        DateOnly returnDate = DateOnly.FromDateTime(now.UtcDateTime);
 
         await using (SqliteCommand ins = connection.CreateCommand())
         {
@@ -1065,11 +1141,9 @@ public sealed partial class SqliteProcureToPayService
             await ins.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        foreach (var line in request.Lines)
+        foreach (var (line, rrLine, lineTotalCents, lineReason) in validatedLines)
         {
-            ReceivingReportLineModel rrLine = rrLines[line.ReceivingReportLineId];
             Guid productId = rrLine.ProductId!.Value;
-            long lineTotalCents = (line.ReturnQtyX1000 * rrLine.UnitCostCents) / 1000L;
 
             (bool exists, bool trackStock, long currentStockX1000, _) =
                 await ReadProductStockStateAsync(connection, transaction, productId, cancellationToken);
@@ -1130,7 +1204,7 @@ public sealed partial class SqliteProcureToPayService
                     movCmd.Parameters.AddWithValue("$delta", -line.ReturnQtyX1000);
                     movCmd.Parameters.AddWithValue("$unitCost", rrLine.UnitCostCents);
                     movCmd.Parameters.AddWithValue("$refId", sretId.ToString("D"));
-                    movCmd.Parameters.AddWithValue("$reason", $"Supplier Return {sretNumber} (RR {rr.RrNumber}): {line.Reason.Trim()}");
+                    movCmd.Parameters.AddWithValue("$reason", $"Supplier Return {sretNumber} (RR {rr.RrNumber}): {lineReason}");
                     movCmd.Parameters.AddWithValue("$actor", request.ApprovedByUserId.ToString("D"));
                     movCmd.Parameters.AddWithValue("$now", now.ToString("O"));
                     await movCmd.ExecuteNonQueryAsync(cancellationToken);
@@ -1170,7 +1244,7 @@ public sealed partial class SqliteProcureToPayService
                 insLine.Parameters.AddWithValue("$retQty", line.ReturnQtyX1000);
                 insLine.Parameters.AddWithValue("$unitCost", rrLine.UnitCostCents);
                 insLine.Parameters.AddWithValue("$lineTotal", lineTotalCents);
-                insLine.Parameters.AddWithValue("$reason", line.Reason.Trim());
+                insLine.Parameters.AddWithValue("$reason", lineReason);
                 insLine.Parameters.AddWithValue("$movId", movementId?.ToString("D") ?? (object)DBNull.Value);
                 await insLine.ExecuteNonQueryAsync(cancellationToken);
             }
