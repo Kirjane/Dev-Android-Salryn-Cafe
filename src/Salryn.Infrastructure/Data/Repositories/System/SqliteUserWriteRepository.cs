@@ -2,6 +2,7 @@
 using Salryn.Core.Common;
 using Salryn.Core.Models;
 using Salryn.Core.Repositories;
+using Salryn.Infrastructure.Data.Seeding;
 
 namespace Salryn.Infrastructure.Data.Repositories.System;
 
@@ -32,7 +33,8 @@ public sealed class SqliteUserWriteRepository :
             using var connection = CreateOpenConnection();
             using var transaction = connection.BeginTransaction();
 
-            if (!RoleExists(connection, transaction, request.RoleId))
+            if (!DefaultSeedData.IsSupportedProductRoleId(request.RoleId.ToString("D")) ||
+                !RoleExists(connection, transaction, request.RoleId))
             {
                 transaction.Rollback();
                 return Task.FromResult(Result.Fail(Error.Validation(
@@ -108,7 +110,8 @@ public sealed class SqliteUserWriteRepository :
             using var connection = CreateOpenConnection();
             using var transaction = connection.BeginTransaction();
 
-            if (!RoleExists(connection, transaction, request.RoleId))
+            if (!DefaultSeedData.IsSupportedProductRoleId(request.RoleId.ToString("D")) ||
+                !RoleExists(connection, transaction, request.RoleId))
             {
                 transaction.Rollback();
                 return Task.FromResult(Result.Fail(Error.Validation(

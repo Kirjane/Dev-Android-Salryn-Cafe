@@ -61,7 +61,7 @@ public static class CeoPrToPoReproductionChecks
             string approverHash = SalrynPasswordHasher.HashPassword("Approver123!").Value!;
             string procurementManagerHash = SalrynPasswordHasher.HashPassword("ManagerProc123!").Value!;
 
-            Guid mgrId = SeedUserWithPassword(paths.DatabasePath, "ceo-mgr", "CEO Manager", mgrHash, Guid.Parse(DefaultSeedData.PurchasingOfficerRoleId));
+            Guid mgrId = SeedUserWithPassword(paths.DatabasePath, "ceo-mgr", "CEO Standard Requester", mgrHash, Guid.Parse(DefaultSeedData.CashierRoleId));
             Guid cashierId = SeedUserWithPassword(paths.DatabasePath, "ceo-cashier", "CEO Cashier", cashierHash, Guid.Parse(DefaultSeedData.CashierRoleId));
             Guid approverId = SeedUserWithPassword(paths.DatabasePath, "ceo-approver", "CEO Approver", approverHash, Guid.Parse(DefaultSeedData.AdminRoleId));
             _ = SeedUserWithPassword(paths.DatabasePath, "ceo-proc-manager", "CEO Procurement Manager", procurementManagerHash, Guid.Parse(DefaultSeedData.ManagerRoleId));

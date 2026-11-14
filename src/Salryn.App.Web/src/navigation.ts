@@ -23,9 +23,9 @@ export type NavItemConfig = EnabledNavItem;
 export const navItems: NavItemConfig[] = [
   { id: "checkout", label: "POS Checkout", enabled: true, group: "Cashier", domain: "Counter & Sales" },
   { id: "price-canvass", label: "Price Canvass / Quote", enabled: true, group: "Cashier", domain: "Counter & Sales" },
+  { id: "sales", label: "Sales & Receipts", enabled: true, group: "Cashier", domain: "Counter & Sales" },
   { id: "purchase-requests", label: "Purchase Requests (PR)", enabled: true, group: "Cashier", domain: "Catalog & Stock" },
   { id: "customer-orders", label: "Customer Orders", enabled: true, group: "Manager", domain: "Counter & Sales" },
-  { id: "sales", label: "Sales & Receipts", enabled: true, group: "Cashier", domain: "Counter & Sales" },
   { id: "receivables", label: "Accounts Receivable", enabled: true, group: "Manager", domain: "Finance & Analytics" },
   { id: "accounts-payable", label: "Accounts Payable", enabled: true, group: "Manager", domain: "Finance & Analytics" },
   { id: "dashboard", label: "Dashboard", enabled: true, group: "Manager", domain: "Finance & Analytics" },
