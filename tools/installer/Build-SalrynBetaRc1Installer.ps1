@@ -30,6 +30,8 @@ param(
     [string]$OutputDir = "",
     [string]$InnoSetupCompilerPath = "",
     [string]$ExpectedSourceSha = "",
+    [string]$ExpectedStageManifestSha256 = "",
+    [string[]]$AdditionalProtectedRoots = @(),
     [switch]$SkipWebBuild,
     [switch]$BuildInstaller,
     [switch]$CompileExistingStageOnly,
@@ -74,16 +76,18 @@ Build-SalrynBetaRc1Installer.ps1
   and compiles installer\SalrynSetup.iss via Inno Setup 6 when -BuildInstaller is set.
 
 Parameters:
-  -Version <semver>              Product version (default 0.1.0-rc1)
-  -Configuration <name>          dotnet publish configuration (default Release)
-  -OutputDir <path>              Artifact root (default artifacts\installer)
-  -InnoSetupCompilerPath <path>  Explicit path to ISCC.exe (overrides auto-discovery)
-  -ExpectedSourceSha <40-hex>    Require HEAD to exactly match this 40-char Git SHA
-  -SkipWebBuild                  Reuse src\Salryn.App.Web\dist ONLY if its .salryn-web-build-provenance.json
-                                 stamp matches HEAD, source inputs, and every byte in dist
-  -BuildInstaller                Verify stage custody and compile installer\SalrynSetup.iss via Inno Setup 6
-  -CompileExistingStageOnly      Re-verify an already-staged OutputDir against HEAD & manifest before ISCC
-  -Help                          Show this help
+  -Version <semver>                    Product version (default 0.1.0-rc1)
+  -Configuration <name>                dotnet publish configuration (default Release)
+  -OutputDir <path>                    Artifact root (default artifacts\installer)
+  -InnoSetupCompilerPath <path>        Explicit path to ISCC.exe (overrides auto-discovery)
+  -ExpectedSourceSha <40-hex>          Require HEAD to exactly match this 40-char Git SHA
+  -ExpectedStageManifestSha256 <hex>   Required 64-hex manifest SHA256 when -CompileExistingStageOnly is set
+  -AdditionalProtectedRoots <paths>    Extra directory roots treated as protected output boundaries
+  -SkipWebBuild                        Reuse src\Salryn.App.Web\dist ONLY if its .salryn-web-build-provenance.json
+                                       stamp matches HEAD, source inputs, and every byte in dist
+  -BuildInstaller                      Verify stage custody and compile installer\SalrynSetup.iss via Inno Setup 6
+  -CompileExistingStageOnly            Requires -ExpectedSourceSha AND external -ExpectedStageManifestSha256
+  -Help                                Show this help
 "@
     exit 0
 }
@@ -100,10 +104,248 @@ function Find-RepoRoot {
     }
 }
 
+if (-not ("SalrynNativePathResolver" -as [type])) {
+    Add-Type -TypeDefinition @"
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
+
+public static class SalrynNativePathResolver
+{
+    private const uint FILE_SHARE_READ = 0x00000001;
+    private const uint FILE_SHARE_WRITE = 0x00000002;
+    private const uint FILE_SHARE_DELETE = 0x00000004;
+    private const uint OPEN_EXISTING = 3;
+    private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
+    private const uint VOLUME_NAME_DOS = 0x0;
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern SafeFileHandle CreateFileW(
+        string lpFileName,
+        uint dwDesiredAccess,
+        uint dwShareMode,
+        IntPtr lpSecurityAttributes,
+        uint dwCreationDisposition,
+        uint dwFlagsAndAttributes,
+        IntPtr hTemplateFile);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint GetFinalPathNameByHandleW(
+        SafeFileHandle hFile,
+        StringBuilder lpszFilePath,
+        uint cchFilePath,
+        uint dwFlags);
+
+    public static string GetFinalPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            throw new ArgumentException("Path cannot be empty.");
+
+        using (SafeFileHandle handle = CreateFileW(
+            path,
+            0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            IntPtr.Zero,
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS,
+            IntPtr.Zero))
+        {
+            if (handle.IsInvalid)
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "Unable to open path for canonical resolution: " + path);
+
+            StringBuilder sb = new StringBuilder(512);
+            uint len = GetFinalPathNameByHandleW(handle, sb, (uint)sb.Capacity, VOLUME_NAME_DOS);
+            if (len == 0)
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "GetFinalPathNameByHandleW failed: " + path);
+
+            if (len >= sb.Capacity)
+            {
+                sb = new StringBuilder((int)len + 2);
+                len = GetFinalPathNameByHandleW(handle, sb, (uint)sb.Capacity, VOLUME_NAME_DOS);
+                if (len == 0 || len >= sb.Capacity)
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "GetFinalPathNameByHandleW buffer resize failed: " + path);
+            }
+
+            string raw = sb.ToString();
+            if (raw.StartsWith("\\\\?\\UNC\\", StringComparison.OrdinalIgnoreCase))
+                return "\\\\" + raw.Substring(8);
+            if (raw.StartsWith("\\\\?\\", StringComparison.OrdinalIgnoreCase))
+                return raw.Substring(4);
+            return raw;
+        }
+    }
+}
+"@ -ErrorAction Stop
+}
+
 function Normalize-PathWithSeparator {
     param([Parameter(Mandatory = $true)][string]$Path)
     $full = [System.IO.Path]::GetFullPath($Path).TrimEnd('\', '/')
+    if ($full -match '^[A-Za-z]:$') {
+        return "$full\"
+    }
     return "$full\"
+}
+
+function Get-ProtectedRootsList {
+    param([string[]]$ExtraProtectedRoots = @())
+    $candidates = New-Object System.Collections.Generic.List[string]
+    if (-not [string]::IsNullOrWhiteSpace($env:ProgramData)) {
+        $candidates.Add((Join-Path $env:ProgramData "Salryn"))
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+        $candidates.Add((Join-Path $env:LOCALAPPDATA "Salryn"))
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:ProgramFiles)) {
+        $candidates.Add((Join-Path $env:ProgramFiles "Kirjane Information Technology Services"))
+    }
+    $pf86 = ${env:ProgramFiles(x86)}
+    if (-not [string]::IsNullOrWhiteSpace($pf86)) {
+        $candidates.Add((Join-Path $pf86 "Kirjane Information Technology Services"))
+    }
+    foreach ($extra in @($ExtraProtectedRoots)) {
+        if (-not [string]::IsNullOrWhiteSpace($extra)) {
+            $candidates.Add($extra)
+        }
+    }
+    $fromEnv = [System.Environment]::GetEnvironmentVariable("SALRYN_EXTRA_PROTECTED_ROOTS")
+    if (-not [string]::IsNullOrWhiteSpace($fromEnv)) {
+        foreach ($seg in ($fromEnv -split ';')) {
+            if (-not [string]::IsNullOrWhiteSpace($seg)) {
+                $candidates.Add($seg.Trim())
+            }
+        }
+    }
+
+    $expanded = New-Object System.Collections.Generic.List[string]
+    foreach ($c in $candidates) {
+        $lex = [System.IO.Path]::GetFullPath($c).TrimEnd('\', '/')
+        $expanded.Add($lex)
+        if (Test-Path -LiteralPath $lex) {
+            try {
+                $resolved = ([SalrynNativePathResolver]::GetFinalPath($lex)).TrimEnd('\', '/')
+                if (-not [string]::IsNullOrWhiteSpace($resolved) -and -not $resolved.Equals($lex, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    $expanded.Add($resolved)
+                }
+            } catch {
+                # Keep lexical root even if handle query fails
+            }
+        }
+    }
+    return ,@($expanded | Select-Object -Unique)
+}
+
+function Assert-SupportedLocalDrivePath {
+    param(
+        [Parameter(Mandatory = $true)][string]$RawPath,
+        [Parameter(Mandatory = $true)][string]$HeadSha,
+        [Parameter(Mandatory = $true)][string]$ContextLabel
+    )
+    if ([string]::IsNullOrWhiteSpace($RawPath)) {
+        Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "${ContextLabel} cannot be empty."
+    }
+    if ($RawPath.StartsWith("\\", [System.StringComparison]::OrdinalIgnoreCase)) {
+        Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "UNC/device path not supported for ${ContextLabel}: $RawPath"
+    }
+    $full = [System.IO.Path]::GetFullPath($RawPath)
+    if ($full -notmatch '^[A-Za-z]:\\') {
+        Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "${ContextLabel} must resolve to a local drive-letter path: $full"
+    }
+    $driveRoot = $full.Substring(0, 3)
+    try {
+        $driveInfo = New-Object System.IO.DriveInfo($driveRoot)
+        if ($driveInfo.DriveType -eq [System.IO.DriveType]::Network -or
+            $driveInfo.DriveType -eq [System.IO.DriveType]::Unknown) {
+            Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "Unsupported drive type '$($driveInfo.DriveType)' for ${ContextLabel}: $full"
+        }
+    } catch {
+        Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "Failed to validate drive for ${ContextLabel}: $_"
+    }
+    return $full
+}
+
+function Resolve-CanonicalPathThroughAncestors {
+    param(
+        [Parameter(Mandatory = $true)][string]$TargetPath,
+        [Parameter(Mandatory = $true)][string]$HeadSha,
+        [Parameter(Mandatory = $true)][string]$ContextLabel
+    )
+    $full = Assert-SupportedLocalDrivePath -RawPath $TargetPath -HeadSha $HeadSha -ContextLabel $ContextLabel
+    $trimmed = $full.TrimEnd('\')
+    if ($trimmed -match '^[A-Za-z]:$') {
+        $trimmed = "$trimmed\"
+    }
+
+    # Walk top-down through every component from drive root to target leaf (including non-existent children)
+    $root = [System.IO.Path]::GetPathRoot($full)
+    $remainder = $trimmed.Substring($root.Length)
+    $segments = if ([string]::IsNullOrEmpty($remainder)) { @() } else { $remainder.Split('\') }
+
+    $current = $root.TrimEnd('\') + "\"
+    $deepestExisting = $current
+    $nonExistentParts = New-Object System.Collections.Generic.List[string]
+    $sawNonExistent = $false
+
+    $rootItem = Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue
+    if ($null -eq $rootItem) {
+        Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "Drive root unavailable for ${ContextLabel}: $current"
+    }
+    if (($rootItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        Write-ProvenanceFailure -Code "OUTPUT_DIR_REPARSE_POINT_FORBIDDEN" -HeadSha $HeadSha -Detail "Reparse point/junction/symlink forbidden in ${ContextLabel} ancestry: $current"
+    }
+
+    foreach ($seg in $segments) {
+        $current = Join-Path $current $seg
+        $item = Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue
+        if ($null -ne $item) {
+            if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                Write-ProvenanceFailure -Code "OUTPUT_DIR_REPARSE_POINT_FORBIDDEN" -HeadSha $HeadSha -Detail "Reparse point/junction/symlink forbidden in ${ContextLabel} ancestry: $($item.FullName)"
+            }
+            if ($sawNonExistent) {
+                Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "Inconsistent filesystem state along ${ContextLabel} ancestry: $current"
+            }
+            $deepestExisting = $current
+        } else {
+            $sawNonExistent = $true
+            $nonExistentParts.Add($seg)
+        }
+    }
+
+    try {
+        $kernelResolved = [SalrynNativePathResolver]::GetFinalPath($deepestExisting)
+    } catch {
+        Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "Failed canonical path resolution for ${ContextLabel} ($deepestExisting): $_"
+    }
+
+    if ($kernelResolved.StartsWith("\\", [System.StringComparison]::OrdinalIgnoreCase) -or
+        $kernelResolved -notmatch '^[A-Za-z]:\\') {
+        Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "Canonical resolution left supported local drive namespace for ${ContextLabel}: $kernelResolved"
+    }
+
+    # Verify kernel-resolved deepest existing ancestor itself has no reparse attribute
+    $resolvedWalk = $kernelResolved
+    while (-not [string]::IsNullOrWhiteSpace($resolvedWalk)) {
+        $rItem = Get-Item -LiteralPath $resolvedWalk -Force -ErrorAction SilentlyContinue
+        if ($null -ne $rItem -and (($rItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)) {
+            Write-ProvenanceFailure -Code "OUTPUT_DIR_REPARSE_POINT_FORBIDDEN" -HeadSha $HeadSha -Detail "Canonical target ancestry contains reparse point for ${ContextLabel}: $resolvedWalk"
+        }
+        $parentWalk = Split-Path -Parent $resolvedWalk
+        if ([string]::IsNullOrWhiteSpace($parentWalk) -or $parentWalk -eq $resolvedWalk) { break }
+        $resolvedWalk = $parentWalk
+    }
+
+    $canonicalFull = $kernelResolved
+    foreach ($part in $nonExistentParts) {
+        $canonicalFull = Join-Path $canonicalFull $part
+    }
+
+    return [ordered]@{
+        LexicalFull     = $full
+        CanonicalFull   = [System.IO.Path]::GetFullPath($canonicalFull)
+        DeepestExisting = $deepestExisting
+    }
 }
 
 function Assert-NotReparsePoint {
@@ -344,32 +586,97 @@ function Assert-OutputDirSafe {
     param(
         [Parameter(Mandatory = $true)][string]$ArtifactRoot,
         [Parameter(Mandatory = $true)][string]$RepoRoot,
-        [Parameter(Mandatory = $true)][string]$HeadSha
+        [Parameter(Mandatory = $true)][string]$HeadSha,
+        [string[]]$ExtraProtectedRoots = @()
     )
-    $fullArtifact = [System.IO.Path]::GetFullPath($ArtifactRoot).TrimEnd('\', '/')
-    $fullRepo = [System.IO.Path]::GetFullPath($RepoRoot).TrimEnd('\', '/')
-    if ($fullArtifact.Equals($fullRepo, [System.StringComparison]::OrdinalIgnoreCase) -or
-        (Normalize-PathWithSeparator -Path $fullRepo).StartsWith((Normalize-PathWithSeparator -Path $fullArtifact), [System.StringComparison]::OrdinalIgnoreCase)) {
-        Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "OutputDir cannot be the repository root or an ancestor of it."
+    $resolvedArtifact = Resolve-CanonicalPathThroughAncestors -TargetPath $ArtifactRoot -HeadSha $HeadSha -ContextLabel "OutputDir"
+    $resolvedRepo = Resolve-CanonicalPathThroughAncestors -TargetPath $RepoRoot -HeadSha $HeadSha -ContextLabel "RepoRoot"
+
+    $candidateArtifactPaths = @(
+        ($resolvedArtifact.LexicalFull),
+        ($resolvedArtifact.CanonicalFull)
+    ) | Select-Object -Unique
+
+    # Check child lifecycle subpaths if they already exist on disk
+    foreach ($subName in @("staging", "staging\Salryn", "setup", "shell-publish")) {
+        foreach ($base in $candidateArtifactPaths) {
+            $subFull = Join-Path $base $subName
+            $subItem = Get-Item -LiteralPath $subFull -Force -ErrorAction SilentlyContinue
+            if ($null -ne $subItem -and (($subItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)) {
+                Write-ProvenanceFailure -Code "OUTPUT_DIR_REPARSE_POINT_FORBIDDEN" -HeadSha $HeadSha -Detail "Reparse point/junction/symlink forbidden in OutputDir child: $subFull"
+            }
+        }
     }
 
-    $protectedRoots = @()
-    if (-not [string]::IsNullOrWhiteSpace($env:ProgramData)) {
-        $protectedRoots += (Join-Path $env:ProgramData "Salryn")
-    }
-    if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
-        $protectedRoots += (Join-Path $env:LOCALAPPDATA "Salryn")
-    }
-    if (-not [string]::IsNullOrWhiteSpace($env:ProgramFiles)) {
-        $protectedRoots += (Join-Path $env:ProgramFiles "Kirjane Information Technology Services")
+    $repoCandidates = @(
+        (Normalize-PathWithSeparator -Path $resolvedRepo.LexicalFull),
+        (Normalize-PathWithSeparator -Path $resolvedRepo.CanonicalFull)
+    ) | Select-Object -Unique
+    $allowedRepoArtifactsNorms = @(
+        (Normalize-PathWithSeparator -Path (Join-Path $resolvedRepo.LexicalFull "artifacts")),
+        (Normalize-PathWithSeparator -Path (Join-Path $resolvedRepo.CanonicalFull "artifacts"))
+    ) | Select-Object -Unique
+
+    foreach ($candPath in $candidateArtifactPaths) {
+        $candNorm = Normalize-PathWithSeparator -Path $candPath
+        foreach ($repoNorm in $repoCandidates) {
+            if ($candNorm.Equals($repoNorm, [System.StringComparison]::OrdinalIgnoreCase) -or
+                $repoNorm.StartsWith($candNorm, [System.StringComparison]::OrdinalIgnoreCase)) {
+                Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "OutputDir cannot be the repository root or an ancestor of it: $candPath"
+            }
+            if ($candNorm.StartsWith($repoNorm, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $underArtifacts = $false
+                foreach ($artNorm in $allowedRepoArtifactsNorms) {
+                    if ($candNorm.StartsWith($artNorm, [System.StringComparison]::OrdinalIgnoreCase) -and
+                        -not $candNorm.Equals($artNorm, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $underArtifacts = $true
+                    }
+                }
+                if (-not $underArtifacts) {
+                    Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "OutputDir inside repository must reside strictly beneath artifacts\: $candPath"
+                }
+            }
+        }
     }
 
-    $artifactNorm = Normalize-PathWithSeparator -Path $fullArtifact
-    foreach ($prot in $protectedRoots) {
-        $protNorm = Normalize-PathWithSeparator -Path $prot
-        if ($artifactNorm.StartsWith($protNorm, [System.StringComparison]::OrdinalIgnoreCase) -or
-            $protNorm.StartsWith($artifactNorm, [System.StringComparison]::OrdinalIgnoreCase)) {
-            Write-ProvenanceFailure -Code "PROTECTED_OUTPUT_DIR_FORBIDDEN" -HeadSha $HeadSha -Detail "OutputDir overlaps protected Salryn runtime/install/license directory: $prot"
+    $protectedRoots = Get-ProtectedRootsList -ExtraProtectedRoots $ExtraProtectedRoots
+    foreach ($candPath in $candidateArtifactPaths) {
+        $artifactNorm = Normalize-PathWithSeparator -Path $candPath
+        foreach ($prot in $protectedRoots) {
+            $protNorm = Normalize-PathWithSeparator -Path $prot
+            if ($artifactNorm.StartsWith($protNorm, [System.StringComparison]::OrdinalIgnoreCase) -or
+                $protNorm.StartsWith($artifactNorm, [System.StringComparison]::OrdinalIgnoreCase)) {
+                Write-ProvenanceFailure -Code "PROTECTED_OUTPUT_DIR_FORBIDDEN" -HeadSha $HeadSha -Detail "OutputDir overlaps or resolves to protected Salryn/stand-in directory '$prot' (resolved='$candPath')"
+            }
+        }
+    }
+
+    return $resolvedArtifact
+}
+
+function Remove-StaleSetupArtifacts {
+    param(
+        [Parameter(Mandatory = $true)][string]$SetupDir,
+        [Parameter(Mandatory = $true)][string]$ArtifactRoot,
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string]$HeadSha,
+        [string[]]$ExtraProtectedRoots = @()
+    )
+    [void](Assert-OutputDirSafe -ArtifactRoot $ArtifactRoot -RepoRoot $RepoRoot -HeadSha $HeadSha -ExtraProtectedRoots $ExtraProtectedRoots)
+    $setupDirItem = Get-Item -LiteralPath $SetupDir -Force -ErrorAction SilentlyContinue
+    if ($null -eq $setupDirItem) { return }
+    if (($setupDirItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        Write-ProvenanceFailure -Code "OUTPUT_DIR_REPARSE_POINT_FORBIDDEN" -HeadSha $HeadSha -Detail "Setup directory cannot be a reparse point: $SetupDir"
+    }
+    Assert-NoReparsePointsOrTraversal -RootDir $SetupDir -HeadSha $HeadSha -ContextLabel "setup-dir"
+    $setupExePath = Join-Path $SetupDir "Salryn-POS-BetaRC1-Setup.exe"
+    foreach ($staleTarget in @($setupExePath, "$setupExePath.sha256.txt", "$setupExePath.provenance.json")) {
+        $staleItem = Get-Item -LiteralPath $staleTarget -Force -ErrorAction SilentlyContinue
+        if ($null -ne $staleItem) {
+            if (($staleItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                Write-ProvenanceFailure -Code "OUTPUT_DIR_REPARSE_POINT_FORBIDDEN" -HeadSha $HeadSha -Detail "Setup artifact target cannot be a reparse point: $staleTarget"
+            }
+            Remove-Item -Force -LiteralPath $staleTarget
         }
     }
 }
@@ -468,7 +775,13 @@ function Assert-StageManifestMatchesDisk {
         [Parameter(Mandatory = $true)][string]$PublishDir,
         [Parameter(Mandatory = $true)][string]$HeadSha,
         [Parameter(Mandatory = $true)][string]$ExpectedVersion,
-        [Parameter(Mandatory = $true)][string]$ExpectedConfiguration
+        [Parameter(Mandatory = $true)][string]$ExpectedConfiguration,
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string]$WebRoot,
+        [Parameter(Mandatory = $true)][string]$WebDistDir,
+        [Parameter(Mandatory = $true)][string]$WebProvenanceStampPath,
+        [string]$ExpectedManifestSha256 = "",
+        [switch]$RequireSourceTreeAssetParity
     )
 
     Assert-NoReparsePointsOrTraversal -RootDir $PublishDir -HeadSha $HeadSha -ContextLabel "staging"
@@ -488,6 +801,17 @@ function Assert-StageManifestMatchesDisk {
     $recordedManifestSha = $Matches[1].ToLowerInvariant()
     if ($actualManifestSha -ne $recordedManifestSha) {
         Write-ProvenanceFailure -Code "STAGE_MANIFEST_HASH_MISMATCH" -HeadSha $HeadSha -Detail "Manifest SHA256 mismatch: expected $recordedManifestSha, actual $actualManifestSha."
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedManifestSha256)) {
+        $trimmedManifestExpected = $ExpectedManifestSha256.Trim()
+        if ($trimmedManifestExpected -notmatch '^[0-9a-fA-F]{64}$') {
+            Write-ProvenanceFailure -Code "EXPECTED_STAGE_MANIFEST_SHA_INVALID" -HeadSha $HeadSha -Detail "-ExpectedStageManifestSha256 must be a valid 64-char hex SHA-256."
+        }
+        $normalizedExpectedManifestSha = $trimmedManifestExpected.ToLowerInvariant()
+        if ($actualManifestSha -ne $normalizedExpectedManifestSha) {
+            Write-ProvenanceFailure -Code "EXPECTED_STAGE_MANIFEST_SHA_MISMATCH" -HeadSha $HeadSha -Detail "Staged manifest SHA-256 '$actualManifestSha' does not match external pinned digest '$normalizedExpectedManifestSha'."
+        }
     }
 
     try {
@@ -520,6 +844,11 @@ function Assert-StageManifestMatchesDisk {
         Write-ProvenanceFailure -Code "STAGE_MANIFEST_INVENTORY_MISMATCH" -HeadSha $HeadSha -Detail "Staged files on disk ($($liveInventory.Count) files, $liveInventorySha) differ from manifest ($($manifest.payloadFileCount) files, $($manifest.payloadInventorySha256))."
     }
 
+    $expectedManifestId = "salryn-pos-$ExpectedVersion-$($HeadSha.Substring(0,12))-$($liveInventorySha.Substring(0,12))"
+    if ($manifest.manifestId -ne $expectedManifestId) {
+        Write-ProvenanceFailure -Code "STAGE_MANIFEST_ID_MISMATCH" -HeadSha $HeadSha -Detail "Manifest ID '$($manifest.manifestId)' does not match recomputed ID '$expectedManifestId'."
+    }
+
     for ($i = 0; $i -lt $liveInventory.Count; $i++) {
         $expectedEntry = $manifestFiles[$i]
         $actualEntry = $liveInventory[$i]
@@ -530,10 +859,44 @@ function Assert-StageManifestMatchesDisk {
         }
     }
 
+    # Verify tracked branding assets in staging match clean Git worktree bytes
+    foreach ($asset in @("salryn-icon.ico", "salryn-icon.png", "salryn-banner-clear.png", "salryn-banner-filled.png")) {
+        $repoAssetSha = Get-FileSha256Lower -FilePath (Join-Path $RepoRoot "assets\branding\$asset")
+        $stageAssetSha = Get-FileSha256Lower -FilePath (Join-Path $PublishDir "assets\branding\$asset")
+        if ($repoAssetSha -ne $stageAssetSha) {
+            Write-ProvenanceFailure -Code "STAGE_BRANDING_ASSET_MISMATCH" -HeadSha $HeadSha -Detail "Staged branding asset '$asset' hash ($stageAssetSha) does not match source tree ($repoAssetSha)."
+        }
+    }
+
+    # Verify web source input digest against live clean source tree
+    $liveWebSourceInputSha256 = Get-WebSourceInputDigest -WebRoot $WebRoot -HeadSha $HeadSha
+    if ($manifest.buildOptions.webSourceInputSha256 -ne $liveWebSourceInputSha256) {
+        Write-ProvenanceFailure -Code "STAGE_WEB_SOURCE_DIGEST_MISMATCH" -HeadSha $HeadSha -Detail "Manifest webSourceInputSha256 ($($manifest.buildOptions.webSourceInputSha256)) does not match clean source tree ($liveWebSourceInputSha256)."
+    }
+
+    # Verify staged dist matches manifest webDistInventorySha256
+    $stagedDistPath = Join-Path $PublishDir "dist"
+    $stagedDistInv = Get-DirectoryFileHashInventory -RootDir $stagedDistPath
+    $stagedDistInvSha = Get-CanonicalInventorySha256 -InventoryEntries $stagedDistInv
+    if ($stagedDistInvSha -ne [string]$manifest.buildOptions.webDistInventorySha256) {
+        Write-ProvenanceFailure -Code "STAGE_WEB_DIST_PROVENANCE_MISMATCH" -HeadSha $HeadSha -Detail "Staged dist inventory ($stagedDistInvSha) does not match manifest webDistInventorySha256 ($($manifest.buildOptions.webDistInventorySha256))."
+    }
+
+    if ($RequireSourceTreeAssetParity) {
+        $verifiedWorktreeDist = Assert-VerifiedSkipWebDist `
+            -WebDistDir $WebDistDir `
+            -StampPath $WebProvenanceStampPath `
+            -ExpectedHeadSha $HeadSha `
+            -ExpectedWebSourceInputSha256 $liveWebSourceInputSha256
+        if ($stagedDistInvSha -ne $verifiedWorktreeDist.InventorySha256) {
+            Write-ProvenanceFailure -Code "STAGE_WEB_DIST_PROVENANCE_MISMATCH" -HeadSha $HeadSha -Detail "Staged dist inventory ($stagedDistInvSha) does not match verified source-tree web dist ($($verifiedWorktreeDist.InventorySha256))."
+        }
+    }
+
     return [ordered]@{
-        Manifest              = $manifest
-        ManifestSha256        = $actualManifestSha
-        LiveInventory         = $liveInventory
+        Manifest               = $manifest
+        ManifestSha256         = $actualManifestSha
+        LiveInventory          = $liveInventory
         PayloadInventorySha256 = $liveInventorySha
     }
 }
@@ -553,12 +916,15 @@ $headSha = $provenance.HeadSha
 Write-Info "[PROVENANCE_PREFLIGHT] PASS head=$headSha branch=$($provenance.GitBranch) worktreeClean=true"
 
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
-    $artifactRoot = Join-Path $repoRoot "artifacts\installer"
+    $rawArtifactRoot = Join-Path $repoRoot "artifacts\installer"
 } else {
-    $artifactRoot = if ([System.IO.Path]::IsPathRooted($OutputDir)) { $OutputDir } else { Join-Path $repoRoot $OutputDir }
+    if ($OutputDir.StartsWith("\\", [System.StringComparison]::OrdinalIgnoreCase)) {
+        Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $headSha -Detail "UNC/device OutputDir path is not allowed: $OutputDir"
+    }
+    $rawArtifactRoot = if ([System.IO.Path]::IsPathRooted($OutputDir)) { $OutputDir } else { Join-Path $repoRoot $OutputDir }
 }
-$artifactRoot = [System.IO.Path]::GetFullPath($artifactRoot)
-Assert-OutputDirSafe -ArtifactRoot $artifactRoot -RepoRoot $repoRoot -HeadSha $headSha
+$resolvedOutputInfo = Assert-OutputDirSafe -ArtifactRoot $rawArtifactRoot -RepoRoot $repoRoot -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots
+$artifactRoot = $resolvedOutputInfo.LexicalFull
 
 $stagingRoot          = Join-Path $artifactRoot "staging"
 $publishDir           = Join-Path $stagingRoot "Salryn"
@@ -636,23 +1002,45 @@ function Assert-VerifiedSkipWebDist {
     }
 }
 
-if (-not $CompileExistingStageOnly -and $SkipWebBuild) {
-    Write-Info "SkipWebBuild set; verifying existing dist provenance stamp before mutating output..."
-    $preWebSourceInputSha256 = Get-WebSourceInputDigest -WebRoot $webRoot -HeadSha $headSha
-    $verifiedSkipWeb = Assert-VerifiedSkipWebDist `
-        -WebDistDir $webDistSrc `
-        -StampPath $webProvenanceStamp `
-        -ExpectedHeadSha $headSha `
-        -ExpectedWebSourceInputSha256 $preWebSourceInputSha256
-} elseif ($CompileExistingStageOnly) {
-    Write-Info "CompileExistingStageOnly set; re-verifying staged output before mutating setup dir..."
-    if (-not (Test-Path -LiteralPath $publishDir)) {
-        Write-ProvenanceFailure -Code "MISSING_STAGE_DIRECTORY" -HeadSha $headSha -Detail "Existing stage directory not found: $publishDir"
-    }
-    $preVerifiedStage = Assert-StageManifestMatchesDisk -PublishDir $publishDir -HeadSha $headSha -ExpectedVersion $Version -ExpectedConfiguration $Configuration
-}
+# Purge any prior setup artifact inside the verified-safe output dir BEFORE any fallible
+# verification or build path (F3), so failed web/stage/publish/ISCC runs never leave a stale EXE.
+Remove-StaleSetupArtifacts -SetupDir $setupDir -ArtifactRoot $artifactRoot -RepoRoot $repoRoot -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots
 
-New-Item -ItemType Directory -Force -Path $stagingRoot, $setupDir, $webview2RedistDir | Out-Null
+try {
+    if ($CompileExistingStageOnly) {
+        if ([string]::IsNullOrWhiteSpace($ExpectedSourceSha) -or
+            [string]::IsNullOrWhiteSpace($ExpectedStageManifestSha256) -or
+            ($ExpectedStageManifestSha256.Trim() -notmatch '^[0-9a-fA-F]{64}$')) {
+            Write-ProvenanceFailure -Code "UNATTESTED_EXISTING_STAGE_FORBIDDEN" -HeadSha $headSha -Detail "-CompileExistingStageOnly requires explicit -ExpectedSourceSha (<40-hex>) and external -ExpectedStageManifestSha256 (<64-hex>); stage self-attestation is forbidden."
+        }
+        Write-Info "CompileExistingStageOnly set; validating staged output against external digest & clean source tree before mutating setup dir..."
+        if (-not (Test-Path -LiteralPath $publishDir)) {
+            Write-ProvenanceFailure -Code "MISSING_STAGE_DIRECTORY" -HeadSha $headSha -Detail "Existing stage directory not found: $publishDir"
+        }
+        $preVerifiedStage = Assert-StageManifestMatchesDisk `
+            -PublishDir $publishDir `
+            -HeadSha $headSha `
+            -ExpectedVersion $Version `
+            -ExpectedConfiguration $Configuration `
+            -RepoRoot $repoRoot `
+            -WebRoot $webRoot `
+            -WebDistDir $webDistSrc `
+            -WebProvenanceStampPath $webProvenanceStamp `
+            -ExpectedManifestSha256 $ExpectedStageManifestSha256 `
+            -RequireSourceTreeAssetParity
+    } elseif ($SkipWebBuild) {
+        Write-Info "SkipWebBuild set; verifying existing dist provenance stamp before mutating output..."
+        $preWebSourceInputSha256 = Get-WebSourceInputDigest -WebRoot $webRoot -HeadSha $headSha
+        $verifiedSkipWeb = Assert-VerifiedSkipWebDist `
+            -WebDistDir $webDistSrc `
+            -StampPath $webProvenanceStamp `
+            -ExpectedHeadSha $headSha `
+            -ExpectedWebSourceInputSha256 $preWebSourceInputSha256
+    }
+
+    # Re-validate OutputDir before creating directories (TOCTOU protection)
+    [void](Assert-OutputDirSafe -ArtifactRoot $artifactRoot -RepoRoot $repoRoot -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots)
+    New-Item -ItemType Directory -Force -Path $stagingRoot, $setupDir, $webview2RedistDir | Out-Null
 
 function Ensure-WebView2Bootstrapper {
     if (Test-Path -LiteralPath $webview2Bootstrapper) {
@@ -732,6 +1120,9 @@ if (-not $CompileExistingStageOnly) {
         Write-Info "Verified cached web dist against commit $headSha ($($webDistInventory.Count) files)."
     }
 
+    # TOCTOU re-check output root immediately before wiping/writing staging directories
+    [void](Assert-OutputDirSafe -ArtifactRoot $artifactRoot -RepoRoot $repoRoot -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots)
+
     # Wipe staging directories cleanly
     if (Test-Path -LiteralPath $publishDir) {
         Assert-NotReparsePoint -Path $publishDir -HeadSha $headSha -ContextLabel "publish-dir"
@@ -744,16 +1135,6 @@ if (-not $CompileExistingStageOnly) {
         Remove-Item -Recurse -Force -LiteralPath $shellTemp
     }
     New-Item -ItemType Directory -Force -Path $shellTemp | Out-Null
-
-    if ($BuildInstaller) {
-        foreach ($staleTarget in @(
-            (Join-Path $setupDir "Salryn-POS-BetaRC1-Setup.exe"),
-            (Join-Path $setupDir "Salryn-POS-BetaRC1-Setup.exe.sha256.txt"),
-            (Join-Path $setupDir "Salryn-POS-BetaRC1-Setup.exe.provenance.json")
-        )) {
-            if (Test-Path -LiteralPath $staleTarget) { Remove-Item -Force -LiteralPath $staleTarget }
-        }
-    }
 
     $apiProj = Join-Path $repoRoot "src\Salryn.Api.Local\Salryn.Api.Local.csproj"
     $shellProj = Join-Path $repoRoot "src\Salryn.Desktop.WebView\Salryn.Desktop.WebView.csproj"
@@ -934,8 +1315,23 @@ if (-not $CompileExistingStageOnly) {
     }
 }
 
+$stageVerifyParams = @{
+    PublishDir             = $publishDir
+    HeadSha                = $headSha
+    ExpectedVersion        = $Version
+    ExpectedConfiguration  = $Configuration
+    RepoRoot               = $repoRoot
+    WebRoot                = $webRoot
+    WebDistDir             = $webDistSrc
+    WebProvenanceStampPath = $webProvenanceStamp
+}
+if ($CompileExistingStageOnly) {
+    $stageVerifyParams.ExpectedManifestSha256 = $ExpectedStageManifestSha256
+    $stageVerifyParams.RequireSourceTreeAssetParity = $true
+}
+
 # Always verify on-disk stage matches manifest and HEAD cleanly
-$verifiedStage = Assert-StageManifestMatchesDisk -PublishDir $publishDir -HeadSha $headSha -ExpectedVersion $Version -ExpectedConfiguration $Configuration
+$verifiedStage = Assert-StageManifestMatchesDisk @stageVerifyParams
 Write-Info "Verified stage custody: manifestId=$($verifiedStage.Manifest.manifestId) manifestSha256=$($verifiedStage.ManifestSha256)"
 
 Write-Host ""
@@ -969,20 +1365,16 @@ if ($redistSha256 -ne $expectedRedistSha) {
     Write-ProvenanceFailure -Code "REDIST_HASH_MISMATCH" -HeadSha $headSha -Detail "WebView2 bootstrapper SHA256 '$redistSha256' does not match manifest '$expectedRedistSha'."
 }
 
-Assert-NoReparsePointsOrTraversal -RootDir $setupDir -HeadSha $headSha -ContextLabel "setup-dir"
+[void](Assert-OutputDirSafe -ArtifactRoot $artifactRoot -RepoRoot $repoRoot -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots)
 $setupExePath = Join-Path $setupDir "Salryn-POS-BetaRC1-Setup.exe"
 $shaFile = "$setupExePath.sha256.txt"
 $provenanceFile = "$setupExePath.provenance.json"
 
 # Purge pre-existing installer output and custody files BEFORE compiling so stale EXEs can never be picked or left valid
-foreach ($staleTarget in @($setupExePath, $shaFile, $provenanceFile)) {
-    if (Test-Path -LiteralPath $staleTarget) {
-        Remove-Item -Force -LiteralPath $staleTarget
-    }
-}
+Remove-StaleSetupArtifacts -SetupDir $setupDir -ArtifactRoot $artifactRoot -RepoRoot $repoRoot -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots
 
 # Re-verify stage immediately before ISCC invocation
-$verifiedBeforeCompile = Assert-StageManifestMatchesDisk -PublishDir $publishDir -HeadSha $headSha -ExpectedVersion $Version -ExpectedConfiguration $Configuration
+$verifiedBeforeCompile = Assert-StageManifestMatchesDisk @stageVerifyParams
 
 Write-Info "Found ISCC: $iscc"
 Write-Info "Compiling $issScript into isolated output $setupDir..."
@@ -1001,15 +1393,14 @@ $compileStartUtc = (Get-Date).ToUniversalTime()
     "/DSetupOutputDir=$setupDir" `
     $issScript
 if ($LASTEXITCODE -ne 0) {
-    foreach ($staleTarget in @($setupExePath, $shaFile, $provenanceFile)) {
-        if (Test-Path -LiteralPath $staleTarget) { Remove-Item -Force -LiteralPath $staleTarget }
-    }
+    Remove-StaleSetupArtifacts -SetupDir $setupDir -ArtifactRoot $artifactRoot -RepoRoot $repoRoot -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots
     Write-ProvenanceFailure -Code "ISCC_COMPILE_FAILED" -HeadSha $headSha -Detail "ISCC failed with exit code $LASTEXITCODE."
 }
 
 if (-not (Test-Path -LiteralPath $setupExePath)) {
     Write-ProvenanceFailure -Code "SETUP_EXE_NOT_PRODUCED" -HeadSha $headSha -Detail "ISCC exited 0 but expected setup EXE was not created at $setupExePath."
 }
+[void](Assert-OutputDirSafe -ArtifactRoot $artifactRoot -RepoRoot $repoRoot -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots)
 Assert-NotReparsePoint -Path $setupExePath -HeadSha $headSha -ContextLabel "setup-exe"
 
 $setupItem = Get-Item -LiteralPath $setupExePath -Force
@@ -1023,7 +1414,7 @@ if ($setupItem.LastWriteTimeUtc -lt $compileStartUtc.AddSeconds(-2)) {
 }
 
 # Re-verify stage after ISCC completes to confirm staging did not drift mid-compile
-$verifiedAfterCompile = Assert-StageManifestMatchesDisk -PublishDir $publishDir -HeadSha $headSha -ExpectedVersion $Version -ExpectedConfiguration $Configuration
+$verifiedAfterCompile = Assert-StageManifestMatchesDisk @stageVerifyParams
 if ($verifiedAfterCompile.ManifestSha256 -ne $verifiedBeforeCompile.ManifestSha256) {
     Write-ProvenanceFailure -Code "STAGE_CHANGED_DURING_COMPILE" -HeadSha $headSha -Detail "Stage manifest changed during ISCC execution."
 }
@@ -1086,7 +1477,15 @@ Write-Host "Setup EXE   : $($setupItem.FullName)"
 Write-Host "SHA-256     : $setupSha256"
 Write-Host "SHA file    : $shaFile"
 Write-Host "Provenance  : $provenanceFile"
-Write-Host "App stage   : $publishDir"
-Write-Host "Packed check: $packedStatus"
+    Write-Host "App stage   : $publishDir"
+    Write-Host "Packed check: $packedStatus"
 
-exit 0
+    exit 0
+} catch {
+    try {
+        Remove-StaleSetupArtifacts -SetupDir $setupDir -ArtifactRoot $artifactRoot -RepoRoot $repoRoot -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots
+    } catch {
+        Write-Warning "Cleanup of stale setup artifacts on failure aborted: $_"
+    }
+    throw
+}
