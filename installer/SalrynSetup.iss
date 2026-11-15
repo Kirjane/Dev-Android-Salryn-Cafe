@@ -28,6 +28,15 @@
 #ifndef MyAppVersion
   #define MyAppVersion "0.1.0-rc1"
 #endif
+#ifndef StagingDir
+  #define StagingDir "..\artifacts\installer\staging\Salryn"
+#endif
+#ifndef SetupOutputDir
+  #define SetupOutputDir "..\artifacts\installer\setup"
+#endif
+#ifndef MySourceRevision
+  #define MySourceRevision ""
+#endif
 ; Stable AppId — must not change between Salryn POS installer builds.
 ; Inno Setup uses this to recognize upgrades of the same installed product.
 #define MyAppGuid      "A4E2B8C1-7D3F-4A91-9C2E-5F6A8B1C0D3E"
@@ -49,7 +58,7 @@ DefaultGroupName={#MyAppPublisher}\{#MyAppName}
 DisableProgramGroupPage=no
 UsePreviousAppDir=yes
 
-OutputDir=..\artifacts\installer\setup
+OutputDir={#SetupOutputDir}
 OutputBaseFilename=Salryn-POS-BetaRC1-Setup
 SetupIconFile={#MyAppIcon}
 UninstallDisplayIcon={app}\{#MyAppExeName}
@@ -84,7 +93,7 @@ Name: "{commonappdata}\Salryn\receipts"; Permissions: users-modify
 [Files]
 ; Harvest everything from the staging folder (exe, DLLs, dist\, assets\, config).
 ; ignoreversion replaces existing app files on upgrade without touching ProgramData.
-Source: "..\artifacts\installer\staging\Salryn\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#StagingDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; WebView2 Evergreen Bootstrapper — extracted to {tmp}, deleted after install.
 ; Official Microsoft redistributable; not left in {app}.
 Source: "redist\MicrosoftEdgeWebview2Setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
