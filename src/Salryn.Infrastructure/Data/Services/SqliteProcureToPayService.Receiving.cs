@@ -74,6 +74,21 @@ public sealed partial class SqliteProcureToPayService
                 Error.Validation("Lpi.Receiving.LinesRequired", "At least one receiving line item is required."));
         }
 
+        HashSet<Guid> seenPoLineIds = new(request.Lines.Count);
+        foreach (var line in request.Lines)
+        {
+            if (line.PurchaseOrderLineId == Guid.Empty)
+            {
+                return Result<ReceivingReportModel>.Fail(
+                    Error.Validation("Lpi.Receiving.InvalidPoLine", "Every receiving line must reference a valid purchase order line."));
+            }
+            if (!seenPoLineIds.Add(line.PurchaseOrderLineId))
+            {
+                return Result<ReceivingReportModel>.Fail(
+                    Error.Validation("Lpi.Receiving.DuplicatePoLine", $"Receiving report contains duplicate entries for purchase order line '{line.PurchaseOrderLineId}'. Combine quantities onto a single line."));
+            }
+        }
+
         await using SqliteConnection connection = _connections.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         SqlitePragma.Apply(connection);
@@ -110,7 +125,7 @@ public sealed partial class SqliteProcureToPayService
             }
         }
 
-        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        await using var transaction = connection.BeginTransaction(deferred: false);
         PurchaseOrderModel? po = await LoadPurchaseOrderAsync(connection, transaction, request.PurchaseOrderId, cancellationToken);
         if (po is null)
         {
@@ -137,7 +152,20 @@ public sealed partial class SqliteProcureToPayService
                 return Result<ReceivingReportModel>.Fail(
                     Error.Validation("Lpi.Receiving.NegativeQty", "Delivered, accepted, and rejected quantities cannot be negative."));
             }
-            if (line.AcceptedQtyX1000 + line.RejectedQtyX1000 != line.ActualDeliveredQtyX1000)
+            long deliveredSum;
+            long remainingOrdered;
+            try
+            {
+                deliveredSum = checked(line.AcceptedQtyX1000 + line.RejectedQtyX1000);
+                remainingOrdered = Math.Max(0L, checked(poLine.OrderedQtyX1000 - poLine.ReceivedAcceptedQtyX1000 - poLine.CancelledQtyX1000));
+                _ = checked((line.AcceptedQtyX1000 * poLine.UnitCostCents) / 1000L);
+            }
+            catch (OverflowException)
+            {
+                return Result<ReceivingReportModel>.Fail(
+                    Error.Validation("Lpi.Receiving.QuantityOverflow", $"Receiving quantities or line total for '{poLine.ItemDescription}' overflowed supported bounds."));
+            }
+            if (deliveredSum != line.ActualDeliveredQtyX1000)
             {
                 return Result<ReceivingReportModel>.Fail(
                     Error.Validation("Lpi.Receiving.QtyMismatch", $"For '{poLine.ItemDescription}', Accepted ({line.AcceptedQtyX1000}) + Rejected ({line.RejectedQtyX1000}) must equal Actual Delivered ({line.ActualDeliveredQtyX1000})."));
@@ -148,7 +176,6 @@ public sealed partial class SqliteProcureToPayService
                     Error.Validation("Lpi.Receiving.RejectionReasonRequired", $"A rejection reason is required when rejecting quantity on '{poLine.ItemDescription}'."));
             }
 
-            long remainingOrdered = Math.Max(0, poLine.OrderedQtyX1000 - poLine.ReceivedAcceptedQtyX1000 - poLine.CancelledQtyX1000);
             if (line.AcceptedQtyX1000 > remainingOrdered)
             {
                 hasOverdelivery = true;
@@ -320,7 +347,7 @@ public sealed partial class SqliteProcureToPayService
         await connection.OpenAsync(cancellationToken);
         SqlitePragma.Apply(connection);
 
-        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        await using var transaction = connection.BeginTransaction(deferred: false);
         ReceivingReportModel? existing = await LoadReceivingReportAsync(connection, transaction, request.ReceivingReportId, cancellationToken);
         if (existing is null)
         {
@@ -374,6 +401,17 @@ public sealed partial class SqliteProcureToPayService
         if (rr.Status == "Cancelled")
         {
             return Result.Fail(Error.Conflict("Lpi.Receiving.Cancelled", "Cannot post a cancelled receiving report."));
+        }
+
+        HashSet<Guid> seenPostedPoLines = new(rr.Lines.Count);
+        foreach (ReceivingReportLineModel line in rr.Lines)
+        {
+            if (!seenPostedPoLines.Add(line.PurchaseOrderLineId))
+            {
+                return Result.Fail(Error.Conflict(
+                    "Lpi.Receiving.DuplicatePoLine",
+                    $"Receiving report '{rr.RrNumber}' contains duplicate lines for purchase order line '{line.PurchaseOrderLineId}' and cannot be posted."));
+            }
         }
 
         Guid? effectiveApprover = null;
