@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Data.Sqlite;
@@ -79,8 +80,10 @@ public static class LpiP1IntegrityReproductionChecks
             await TestP102DisbursementDateCustodyAsync(composition, paths, apClerkId, resaleProdId);
             await TestIssue45And59DuplicateReceivingLineIntegrityAsync();
             await TestIssue44SupplierReturnInvoiceLineageGuardsAsync(composition, service, paths, apClerkId, receiverId, supervisorId, resaleProdId, nonResaleProdId);
+            await TestIssue87PrToPoQuantityIntegrityHttpAsync();
+            await TestIssue88ReceivingOverdeliveryDuplicatePoLineHttpAsync();
 
-            Console.WriteLine("LPI P1 Integrity: All findings (P1-01 through P1-06 and P1-R3-01/02, Issues #44, #45 & #59) verified with full regression closure PASS.");
+            Console.WriteLine("LPI P1 Integrity: All findings (P1-01 through P1-06 and P1-R3-01/02, Issues #44, #45, #59, #87 & #88) verified with full regression closure PASS.");
         }
         finally
         {
@@ -3874,6 +3877,577 @@ public static class LpiP1IntegrityReproductionChecks
         command.Parameters.AddWithValue("$bucket", bucketType);
         object? val = command.ExecuteScalar();
         return val is null or DBNull ? 0L : Convert.ToInt64(val);
+    }
+
+    private static async Task TestIssue87PrToPoQuantityIntegrityHttpAsync()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "salryn-issue87-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            DbPaths paths = DbPaths.CreateDevelopment(root);
+            SalrynLocalComposition composition = SalrynLocalComposition.Create(paths);
+            await composition.InitializeDatabaseAsync().ConfigureAwait(false);
+
+            _ = RequireValue(composition.DatabaseInitialization.CreateFirstAdmin(new AdminBootstrapRequest(
+                "Issue87 Test Store", null, null, null, null, 80, "admin", "Integrity Admin", "StrongI87Admin123!")), "Issue87 bootstrap admin");
+
+            SqliteProcureToPayService service = new(composition.ConnectionFactory, TimeProvider.System);
+            Guid requesterId = SeedUser(paths.DatabasePath, "i87-cashier", "Issue87 Cashier");
+            Guid managerId = SeedUser(paths.DatabasePath, "i87-manager", "Issue87 Manager");
+            using (SqliteConnection roleConn = new($"Data Source={paths.DatabasePath}"))
+            {
+                roleConn.Open();
+                using SqliteCommand roleCmd = roleConn.CreateCommand();
+                roleCmd.CommandText = """
+                    UPDATE users SET role_id = $cashierRole WHERE id = $cashierId;
+                    UPDATE users SET role_id = $managerRole WHERE id = $managerId;
+                    """;
+                roleCmd.Parameters.AddWithValue("$cashierRole", Salryn.Infrastructure.Data.Seeding.DefaultSeedData.CashierRoleId);
+                roleCmd.Parameters.AddWithValue("$cashierId", requesterId.ToString("D"));
+                roleCmd.Parameters.AddWithValue("$managerRole", Salryn.Infrastructure.Data.Seeding.DefaultSeedData.ManagerRoleId);
+                roleCmd.Parameters.AddWithValue("$managerId", managerId.ToString("D"));
+                Require(roleCmd.ExecuteNonQuery() == 2, "Issue87 role assignment must affect 2 users.");
+            }
+
+            Guid prodA = SeedProduct(paths.DatabasePath, "I87-PROD-A", "9900008700001", "Issue87 Cement 40kg", 20_000, 26_000, 0, 1_000);
+            Guid prodB = SeedProduct(paths.DatabasePath, "I87-PROD-B", "9900008700002", "Issue87 Rebar 10mm", 15_000, 21_000, 0, 1_000);
+            LpiSupplier supplier1 = RequireSuccess(await service.CreateSupplierAsync(new CreateLpiSupplierRequest(
+                "I87-SUP-1", "Issue87 Hardware Supply", "Manager", "0917000087", "i87-1@test.local", "Cebu", null, 30, 3, null, managerId)), "Issue87 supplier 1");
+
+            // PR #1: Approved 2.000 units (2000) of Product A
+            PurchaseRequisitionModel pr1 = RequireSuccess(await service.CreatePurchaseRequisitionAsync(new CreatePurchaseRequisitionRequest(
+                "Hardware", DateOnly.FromDateTime(DateTime.UtcNow.AddDays(5)), "Normal", "Issue87 PR #1 (2 units)", null, true,
+                new[]
+                {
+                    new CreatePurchaseRequisitionLineInput(prodA, "I87-PROD-A", "Issue87 Cement 40kg", null, PurchaseClassifications.Resale, "bag", 2_000, 20_000, null, null, "Need 2 bags")
+                }, requesterId)), "Issue87 create PR1");
+            pr1 = RequireSuccess(await service.ReviewPurchaseRequisitionAsync(new ReviewPurchaseRequisitionRequest(pr1.Id, "Approve", "Approved 2 units", null, managerId)), "Issue87 approve PR1");
+            Guid pr1LineId = pr1.Lines.Single().Id;
+
+            // PR #2: Approved 5.000 units (5000) of Product B (for foreign-line and concurrency tests)
+            PurchaseRequisitionModel pr2 = RequireSuccess(await service.CreatePurchaseRequisitionAsync(new CreatePurchaseRequisitionRequest(
+                "Hardware", DateOnly.FromDateTime(DateTime.UtcNow.AddDays(5)), "Normal", "Issue87 PR #2 (5 units)", null, true,
+                new[]
+                {
+                    new CreatePurchaseRequisitionLineInput(prodB, "I87-PROD-B", "Issue87 Rebar 10mm", null, PurchaseClassifications.Resale, "pc", 5_000, 15_000, null, null, "Need 5 pcs")
+                }, requesterId)), "Issue87 create PR2");
+            pr2 = RequireSuccess(await service.ReviewPurchaseRequisitionAsync(new ReviewPurchaseRequisitionRequest(pr2.Id, "Approve", "Approved 5 units", null, managerId)), "Issue87 approve PR2");
+            Guid pr2LineId = pr2.Lines.Single().Id;
+
+            // PR #3: Draft (unapproved)
+            PurchaseRequisitionModel pr3Draft = RequireSuccess(await service.CreatePurchaseRequisitionAsync(new CreatePurchaseRequisitionRequest(
+                "Hardware", DateOnly.FromDateTime(DateTime.UtcNow.AddDays(5)), "Normal", "Issue87 Draft PR", null, false,
+                new[]
+                {
+                    new CreatePurchaseRequisitionLineInput(prodA, "I87-PROD-A", "Issue87 Cement 40kg", null, PurchaseClassifications.Resale, "bag", 2_000, 20_000, null, null, null)
+                }, requesterId)), "Issue87 create PR3 draft");
+            Guid pr3LineId = pr3Draft.Lines.Single().Id;
+
+            string SnapshotDb()
+            {
+                using SqliteConnection conn = new($"Data Source={paths.DatabasePath}");
+                conn.Open();
+                long Scalar(string sql)
+                {
+                    using SqliteCommand cmd = conn.CreateCommand();
+                    cmd.CommandText = sql;
+                    object? val = cmd.ExecuteScalar();
+                    return val is null or DBNull ? 0L : Convert.ToInt64(val);
+                }
+                string StringScalar(string sql)
+                {
+                    using SqliteCommand cmd = conn.CreateCommand();
+                    cmd.CommandText = sql;
+                    return Convert.ToString(cmd.ExecuteScalar()) ?? "";
+                }
+                return JsonSerializer.Serialize(new
+                {
+                    poCount = Scalar("SELECT COUNT(*) FROM purchase_orders;"),
+                    poLineCount = Scalar("SELECT COUNT(*) FROM purchase_order_lines;"),
+                    poSeq = Scalar("SELECT COALESCE((SELECT current_number FROM lpi_document_sequences WHERE prefix = 'PO'), 0);"),
+                    pr1Status = StringScalar($"SELECT status FROM purchase_requisitions WHERE id = '{pr1.Id:D}';"),
+                    pr1Converted = Scalar($"SELECT converted_po_qty_x1000 FROM purchase_requisition_lines WHERE id = '{pr1LineId:D}';"),
+                    pr2Converted = Scalar($"SELECT converted_po_qty_x1000 FROM purchase_requisition_lines WHERE id = '{pr2LineId:D}';"),
+                    auditCount = Scalar("SELECT COUNT(*) FROM audit_logs;"),
+                    stockA = ReadStockOnHand(paths.DatabasePath, prodA),
+                    apLedgerCount = Scalar("SELECT COUNT(*) FROM supplier_payable_entries;")
+                });
+            }
+
+            InMemoryLocalApiSessionStore store = new();
+            LocalApiSession managerSession = store.Create(new AuthenticatedUserReadModel(
+                managerId, "i87-manager", "Issue87 Manager", "Manager", UserStatus.Active,
+                new[]
+                {
+                    SalrynPermissions.ProcurementView,
+                    SalrynPermissions.ProcurementManagePurchaseOrder,
+                    SalrynPermissions.ProcurementApprovePurchaseOrder
+                })
+            {
+                RoleId = Guid.Parse(Salryn.Infrastructure.Data.Seeding.DefaultSeedData.ManagerRoleId)
+            });
+            LocalApiSession cashierSession = store.Create(new AuthenticatedUserReadModel(
+                requesterId, "i87-cashier", "Issue87 Cashier", "Cashier", UserStatus.Active,
+                new[]
+                {
+                    SalrynPermissions.ProcurementView,
+                    SalrynPermissions.ProcurementRequest
+                })
+            {
+                RoleId = Guid.Parse(Salryn.Infrastructure.Data.Seeding.DefaultSeedData.CashierRoleId)
+            });
+
+            string nonce = "ISSUE87-DISPOSABLE-" + Guid.NewGuid().ToString("N");
+            await using WebApplication host = await LocalApiApplicationFactory.CreateAsync(
+                new[] { "--dev" },
+                new LocalApiApplicationOptions
+                {
+                    Url = "http://127.0.0.1:0",
+                    Composition = composition,
+                    SessionStore = store,
+                    EnableStaticWebAssets = false,
+                    WriteDevelopmentDatabasePath = false,
+                    TestHostNonce = nonce
+                }).ConfigureAwait(false);
+            await host.StartAsync().ConfigureAwait(false);
+            string bound = host.Urls.Single(u => u.StartsWith("http://127.0.0.1:", StringComparison.OrdinalIgnoreCase));
+            using HttpClient mgrClient = CreateClient(new Uri(bound), managerSession);
+            using HttpClient cashierClient = CreateClient(new Uri(bound), cashierSession);
+
+            async Task AssertCreatePoRejectedNoWriteAsync(HttpClient client, object payload, HttpStatusCode[] allowedCodes, string scenario)
+            {
+                string before = SnapshotDb();
+                using StringContent content = new(JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json");
+                using HttpResponseMessage resp = await client.PostAsync("/api/lpi/purchase-orders", content);
+                string body = await resp.Content.ReadAsStringAsync();
+                Require(allowedCodes.Contains(resp.StatusCode), $"[Issue87 {scenario}] Expected {string.Join("/", allowedCodes)} but got {(int)resp.StatusCode}: {body}");
+                string after = SnapshotDb();
+                Require(before == after, $"[Issue87 {scenario}] DB mutated on rejected PO! Before={before} After={after}");
+            }
+
+            // 1. Original QA2 repro: PR approved 2.000 (2000), PO requests 25.000 (25000) -> MUST reject + zero writes
+            await AssertCreatePoRejectedNoWriteAsync(mgrClient, new
+            {
+                supplierId = supplier1.Id,
+                sourceRequisitionId = pr1.Id,
+                expectedDeliveryDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(3)).ToString("yyyy-MM-dd"),
+                notes = "QA2 repro 2 vs 25",
+                submitAndApproveImmediately = true,
+                lines = new[]
+                {
+                    new { requisitionLineId = pr1LineId, productId = prodA, itemCode = "I87-PROD-A", itemDescription = "Issue87 Cement 40kg", purchaseClassification = "Resale", unitName = "bag", orderedQtyX1000 = 25_000L, unitCostCents = 20_000L, discountCents = 0L, taxRateBp = 0 }
+                }
+            }, new[] { HttpStatusCode.Conflict, HttpStatusCode.BadRequest }, "QA2 2-vs-25");
+
+            // 2. Foreign PR child ID (PR2 line under PR1 header) -> MUST reject + zero writes
+            await AssertCreatePoRejectedNoWriteAsync(mgrClient, new
+            {
+                supplierId = supplier1.Id,
+                sourceRequisitionId = pr1.Id,
+                notes = "Foreign PR line",
+                submitAndApproveImmediately = true,
+                lines = new[]
+                {
+                    new { requisitionLineId = pr2LineId, productId = prodB, itemCode = "I87-PROD-B", itemDescription = "Issue87 Rebar 10mm", purchaseClassification = "Resale", unitName = "pc", orderedQtyX1000 = 1_000L, unitCostCents = 15_000L, discountCents = 0L, taxRateBp = 0 }
+                }
+            }, new[] { HttpStatusCode.BadRequest }, "Foreign RequisitionLineId");
+
+            // 3. Mixed/missing RequisitionLineId when SourceRequisitionId is set -> MUST reject + zero writes
+            await AssertCreatePoRejectedNoWriteAsync(mgrClient, new
+            {
+                supplierId = supplier1.Id,
+                sourceRequisitionId = pr1.Id,
+                notes = "Missing line id",
+                submitAndApproveImmediately = true,
+                lines = new[]
+                {
+                    new { requisitionLineId = (Guid?)null, productId = prodA, itemCode = "I87-PROD-A", itemDescription = "Issue87 Cement 40kg", purchaseClassification = "Resale", unitName = "bag", orderedQtyX1000 = 1_000L, unitCostCents = 20_000L, discountCents = 0L, taxRateBp = 0 }
+                }
+            }, new[] { HttpStatusCode.BadRequest }, "Missing RequisitionLineId");
+
+            // 4. Unexpected RequisitionLineId on Direct PO (SourceRequisitionId = null) -> MUST reject + zero writes
+            await AssertCreatePoRejectedNoWriteAsync(mgrClient, new
+            {
+                supplierId = supplier1.Id,
+                sourceRequisitionId = (Guid?)null,
+                notes = "Direct PO smuggled PR line",
+                submitAndApproveImmediately = true,
+                lines = new[]
+                {
+                    new { requisitionLineId = pr1LineId, productId = prodA, itemCode = "I87-PROD-A", itemDescription = "Issue87 Cement 40kg", purchaseClassification = "Resale", unitName = "bag", orderedQtyX1000 = 1_000L, unitCostCents = 20_000L, discountCents = 0L, taxRateBp = 0 }
+                }
+            }, new[] { HttpStatusCode.BadRequest }, "Direct PO with RequisitionLineId");
+
+            // 5. Repeated same-line entries in one PO collectively exceeding cap (1500 + 1000 = 2500 > 2000) -> MUST reject + zero writes
+            await AssertCreatePoRejectedNoWriteAsync(mgrClient, new
+            {
+                supplierId = supplier1.Id,
+                sourceRequisitionId = pr1.Id,
+                notes = "Repeated same PR line over cap",
+                submitAndApproveImmediately = true,
+                lines = new[]
+                {
+                    new { requisitionLineId = pr1LineId, productId = prodA, itemCode = "I87-PROD-A", itemDescription = "Issue87 Cement 40kg", purchaseClassification = "Resale", unitName = "bag", orderedQtyX1000 = 1_500L, unitCostCents = 20_000L, discountCents = 0L, taxRateBp = 0 },
+                    new { requisitionLineId = pr1LineId, productId = prodA, itemCode = "I87-PROD-A", itemDescription = "Issue87 Cement 40kg", purchaseClassification = "Resale", unitName = "bag", orderedQtyX1000 = 1_000L, unitCostCents = 20_000L, discountCents = 0L, taxRateBp = 0 }
+                }
+            }, new[] { HttpStatusCode.Conflict, HttpStatusCode.BadRequest }, "Repeated PR line aggregate over cap");
+
+            // 6. Draft (unapproved) PR conversion -> MUST reject + zero writes
+            await AssertCreatePoRejectedNoWriteAsync(mgrClient, new
+            {
+                supplierId = supplier1.Id,
+                sourceRequisitionId = pr3Draft.Id,
+                notes = "Unapproved PR",
+                submitAndApproveImmediately = true,
+                lines = new[]
+                {
+                    new { requisitionLineId = pr3LineId, productId = prodA, itemCode = "I87-PROD-A", itemDescription = "Issue87 Cement 40kg", purchaseClassification = "Resale", unitName = "bag", orderedQtyX1000 = 1_000L, unitCostCents = 20_000L, discountCents = 0L, taxRateBp = 0 }
+                }
+            }, new[] { HttpStatusCode.Conflict }, "Unapproved Draft PR");
+
+            // 7. Wrong role (Cashier) -> MUST return 403 + zero writes
+            await AssertCreatePoRejectedNoWriteAsync(cashierClient, new
+            {
+                supplierId = supplier1.Id,
+                sourceRequisitionId = pr1.Id,
+                notes = "Cashier unauthorized PO",
+                submitAndApproveImmediately = false,
+                lines = new[]
+                {
+                    new { requisitionLineId = pr1LineId, productId = prodA, itemCode = "I87-PROD-A", itemDescription = "Issue87 Cement 40kg", purchaseClassification = "Resale", unitName = "bag", orderedQtyX1000 = 1_000L, unitCostCents = 20_000L, discountCents = 0L, taxRateBp = 0 }
+                }
+            }, new[] { HttpStatusCode.Forbidden }, "Cashier wrong role");
+
+            // 8. Positive split conversion #1: 1200 of 2000
+            using (HttpResponseMessage ok1 = await mgrClient.PostAsJsonAsync("/api/lpi/purchase-orders", new
+            {
+                supplierId = supplier1.Id,
+                sourceRequisitionId = pr1.Id,
+                notes = "Split PO #1 (1.2)",
+                submitAndApproveImmediately = true,
+                lines = new[]
+                {
+                    new { requisitionLineId = pr1LineId, productId = prodA, itemCode = "I87-PROD-A", itemDescription = "Issue87 Cement 40kg", purchaseClassification = "Resale", unitName = "bag", orderedQtyX1000 = 1_200L, unitCostCents = 20_000L, discountCents = 0L, taxRateBp = 0 }
+                }
+            }))
+            {
+                Require(ok1.StatusCode == HttpStatusCode.Created, $"Split PO #1 expected 201, got {(int)ok1.StatusCode}: {await ok1.Content.ReadAsStringAsync()}");
+            }
+
+            // 9. Split PO crossing remaining cap (900 > 800 remaining) -> MUST reject + zero writes
+            await AssertCreatePoRejectedNoWriteAsync(mgrClient, new
+            {
+                supplierId = supplier1.Id,
+                sourceRequisitionId = pr1.Id,
+                notes = "Split PO over remaining",
+                submitAndApproveImmediately = true,
+                lines = new[]
+                {
+                    new { requisitionLineId = pr1LineId, productId = prodA, itemCode = "I87-PROD-A", itemDescription = "Issue87 Cement 40kg", purchaseClassification = "Resale", unitName = "bag", orderedQtyX1000 = 900L, unitCostCents = 20_000L, discountCents = 0L, taxRateBp = 0 }
+                }
+            }, new[] { HttpStatusCode.Conflict, HttpStatusCode.BadRequest }, "Split PO over remaining cap");
+
+            // 10. Positive split conversion #2: exact remaining 800
+            using (HttpResponseMessage ok2 = await mgrClient.PostAsJsonAsync("/api/lpi/purchase-orders", new
+            {
+                supplierId = supplier1.Id,
+                sourceRequisitionId = pr1.Id,
+                notes = "Split PO #2 (exact remaining 0.8)",
+                submitAndApproveImmediately = true,
+                lines = new[]
+                {
+                    new { requisitionLineId = pr1LineId, productId = prodA, itemCode = "I87-PROD-A", itemDescription = "Issue87 Cement 40kg", purchaseClassification = "Resale", unitName = "bag", orderedQtyX1000 = 800L, unitCostCents = 20_000L, discountCents = 0L, taxRateBp = 0 }
+                }
+            }))
+            {
+                Require(ok2.StatusCode == HttpStatusCode.Created, $"Split PO #2 expected 201, got {(int)ok2.StatusCode}: {await ok2.Content.ReadAsStringAsync()}");
+            }
+
+            // 11. Post-full-conversion replay -> MUST reject + zero writes
+            await AssertCreatePoRejectedNoWriteAsync(mgrClient, new
+            {
+                supplierId = supplier1.Id,
+                sourceRequisitionId = pr1.Id,
+                notes = "Post-conversion replay",
+                submitAndApproveImmediately = true,
+                lines = new[]
+                {
+                    new { requisitionLineId = pr1LineId, productId = prodA, itemCode = "I87-PROD-A", itemDescription = "Issue87 Cement 40kg", purchaseClassification = "Resale", unitName = "bag", orderedQtyX1000 = 100L, unitCostCents = 20_000L, discountCents = 0L, taxRateBp = 0 }
+                }
+            }, new[] { HttpStatusCode.Conflict, HttpStatusCode.BadRequest }, "Post-conversion replay");
+
+            // 12. Concurrent conversion race on PR #2 (5000 approved, 2 parallel requests of 3000 each -> exactly 1 wins, 1 loses, converted=3000)
+            var concurrentPayload = new
+            {
+                supplierId = supplier1.Id,
+                sourceRequisitionId = pr2.Id,
+                notes = "Concurrent PR2 PO",
+                submitAndApproveImmediately = true,
+                lines = new[]
+                {
+                    new { requisitionLineId = pr2LineId, productId = prodB, itemCode = "I87-PROD-B", itemDescription = "Issue87 Rebar 10mm", purchaseClassification = "Resale", unitName = "pc", orderedQtyX1000 = 3_000L, unitCostCents = 15_000L, discountCents = 0L, taxRateBp = 0 }
+                }
+            };
+            Task<HttpResponseMessage> race1 = mgrClient.PostAsJsonAsync("/api/lpi/purchase-orders", concurrentPayload);
+            Task<HttpResponseMessage> race2 = mgrClient.PostAsJsonAsync("/api/lpi/purchase-orders", concurrentPayload);
+            HttpResponseMessage[] raceResults = await Task.WhenAll(race1, race2);
+            try
+            {
+                int createdCount = raceResults.Count(r => r.StatusCode == HttpStatusCode.Created);
+                int rejectedCount = raceResults.Count(r => r.StatusCode is HttpStatusCode.Conflict or HttpStatusCode.BadRequest);
+                Require(createdCount == 1 && rejectedCount == 1, $"Concurrent PR2 conversion must yield 1x201 and 1x409/400, got statuses: {string.Join(",", raceResults.Select(r => (int)r.StatusCode))}");
+                using JsonDocument snap = JsonDocument.Parse(SnapshotDb());
+                Require(snap.RootElement.GetProperty("pr2Converted").GetInt64() == 3_000L, "PR2 converted quantity after race must equal 3000.");
+            }
+            finally
+            {
+                foreach (HttpResponseMessage r in raceResults) r.Dispose();
+            }
+
+            // 13. Positive #63 D02 Direct PO without PR
+            using (HttpResponseMessage directOk = await mgrClient.PostAsJsonAsync("/api/lpi/purchase-orders", new
+            {
+                supplierId = supplier1.Id,
+                sourceRequisitionId = (Guid?)null,
+                notes = "Authorized #63 D02 direct PO without PR",
+                submitAndApproveImmediately = true,
+                lines = new[]
+                {
+                    new { requisitionLineId = (Guid?)null, productId = prodA, itemCode = "I87-PROD-A", itemDescription = "Issue87 Cement 40kg", purchaseClassification = "Resale", unitName = "bag", orderedQtyX1000 = 10_000L, unitCostCents = 20_000L, discountCents = 0L, taxRateBp = 0 }
+                }
+            }))
+            {
+                Require(directOk.StatusCode == HttpStatusCode.Created, $"Direct PO without PR must remain allowed (201), got {(int)directOk.StatusCode}: {await directOk.Content.ReadAsStringAsync()}");
+            }
+
+            Console.WriteLine("Issue #87 (C03 PR-to-PO quantity & line membership integrity) HTTP/SQLite regression PASS.");
+        }
+        finally
+        {
+            SqliteConnectionFactory.ClearAllPools();
+            if (Directory.Exists(root)) { try { Directory.Delete(root, recursive: true); } catch { } }
+        }
+    }
+
+    private static async Task TestIssue88ReceivingOverdeliveryDuplicatePoLineHttpAsync()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "salryn-issue88-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            DbPaths paths = DbPaths.CreateDevelopment(root);
+            SalrynLocalComposition composition = SalrynLocalComposition.Create(paths);
+            await composition.InitializeDatabaseAsync().ConfigureAwait(false);
+
+            _ = RequireValue(composition.DatabaseInitialization.CreateFirstAdmin(new AdminBootstrapRequest(
+                "Issue88 Test Store", null, null, null, null, 80, "admin", "Integrity Admin", "StrongI88Admin123!")), "Issue88 bootstrap admin");
+
+            SqliteProcureToPayService service = new(composition.ConnectionFactory, TimeProvider.System);
+            Guid clerkId = SeedUser(paths.DatabasePath, "i88-clerk", "Issue88 Clerk");
+            Guid supervisorId = SeedUser(paths.DatabasePath, "i88-supervisor", "Issue88 Supervisor");
+            Guid prodC = SeedProduct(paths.DatabasePath, "I88-PROD-C", "9900008800001", "Issue88 Paint Gallon", 50_000, 75_000, 0, 1_000);
+
+            LpiSupplier supplier = RequireSuccess(await service.CreateSupplierAsync(new CreateLpiSupplierRequest(
+                "I88-SUP-1", "Issue88 Coatings Corp", "Manager", "0917000088", "i88@test.local", "Cebu", null, 30, 3, null, supervisorId)), "Issue88 supplier");
+
+            // PO #1: Single line ordered 4.000 units (4000)
+            PurchaseOrderModel po1 = RequireSuccess(await service.CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest(
+                supplier.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(3)), null, 30, 0, "Standard", "Issue88 PO #1 (4 units)", true,
+                new[]
+                {
+                    new CreatePurchaseOrderLineInput(null, prodC, "I88-PROD-C", "Issue88 Paint Gallon", PurchaseClassifications.Resale, "gal", 4_000, 50_000, 0, 0, null)
+                }, supervisorId)), "Issue88 PO #1");
+            _ = RequireSuccess(await service.TransitionPurchaseOrderStatusAsync(new PurchaseOrderStatusActionRequest(po1.Id, "MarkSent", "Sent", supervisorId)), "Issue88 send PO #1");
+            Guid po1LineId = po1.Lines.Single().Id;
+
+            // PO #2: Two DISTINCT PO lines sharing the SAME SKU prodC (1000 each)
+            PurchaseOrderModel po2 = RequireSuccess(await service.CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest(
+                supplier.Id, null, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(3)), null, 30, 0, "Standard", "Issue88 PO #2 same SKU distinct lines", true,
+                new[]
+                {
+                    new CreatePurchaseOrderLineInput(null, prodC, "I88-PROD-C", "Issue88 Paint Gallon Lot A", PurchaseClassifications.Resale, "gal", 1_000, 50_000, 0, 0, null),
+                    new CreatePurchaseOrderLineInput(null, prodC, "I88-PROD-C", "Issue88 Paint Gallon Lot B", PurchaseClassifications.Resale, "gal", 1_000, 52_000, 0, 0, null)
+                }, supervisorId)), "Issue88 PO #2");
+            _ = RequireSuccess(await service.TransitionPurchaseOrderStatusAsync(new PurchaseOrderStatusActionRequest(po2.Id, "MarkSent", "Sent", supervisorId)), "Issue88 send PO #2");
+
+            string SnapshotDb()
+            {
+                using SqliteConnection conn = new($"Data Source={paths.DatabasePath}");
+                conn.Open();
+                long Scalar(string sql)
+                {
+                    using SqliteCommand cmd = conn.CreateCommand();
+                    cmd.CommandText = sql;
+                    object? val = cmd.ExecuteScalar();
+                    return val is null or DBNull ? 0L : Convert.ToInt64(val);
+                }
+                return JsonSerializer.Serialize(new
+                {
+                    rrCount = Scalar("SELECT COUNT(*) FROM receiving_reports;"),
+                    rrLineCount = Scalar("SELECT COUNT(*) FROM receiving_report_lines;"),
+                    rrSeq = Scalar("SELECT COALESCE((SELECT current_number FROM lpi_document_sequences WHERE prefix = 'RR'), 0);"),
+                    po1Received = Scalar($"SELECT received_accepted_qty_x1000 FROM purchase_order_lines WHERE id = '{po1LineId:D}';"),
+                    stockC = ReadStockOnHand(paths.DatabasePath, prodC),
+                    bucketAvailC = ReadLocationBucketQty(paths.DatabasePath, prodC, "MAIN-STORE", "Available"),
+                    movementCount = Scalar("SELECT COUNT(*) FROM stock_movements;"),
+                    apLedgerCount = Scalar("SELECT COUNT(*) FROM supplier_payable_entries;"),
+                    auditCount = Scalar("SELECT COUNT(*) FROM audit_logs;")
+                });
+            }
+
+            InMemoryLocalApiSessionStore store = new();
+            LocalApiSession clerkSession = store.Create(new AuthenticatedUserReadModel(
+                clerkId, "i88-clerk", "Issue88 Clerk", "Manager", UserStatus.Active,
+                new[] { SalrynPermissions.ReceivingView, SalrynPermissions.ReceivingManage })
+            {
+                RoleId = Guid.Parse(Salryn.Infrastructure.Data.Seeding.DefaultSeedData.ManagerRoleId)
+            });
+            LocalApiSession supervisorSession = store.Create(new AuthenticatedUserReadModel(
+                supervisorId, "i88-supervisor", "Issue88 Supervisor", "Manager", UserStatus.Active,
+                new[] { SalrynPermissions.ReceivingView, SalrynPermissions.ReceivingManage, SalrynPermissions.ReceivingApproveException })
+            {
+                RoleId = Guid.Parse(Salryn.Infrastructure.Data.Seeding.DefaultSeedData.ManagerRoleId)
+            });
+
+            string nonce = "ISSUE88-DISPOSABLE-" + Guid.NewGuid().ToString("N");
+            await using WebApplication host = await LocalApiApplicationFactory.CreateAsync(
+                new[] { "--dev" },
+                new LocalApiApplicationOptions
+                {
+                    Url = "http://127.0.0.1:0",
+                    Composition = composition,
+                    SessionStore = store,
+                    EnableStaticWebAssets = false,
+                    WriteDevelopmentDatabasePath = false,
+                    TestHostNonce = nonce
+                }).ConfigureAwait(false);
+            await host.StartAsync().ConfigureAwait(false);
+            string bound = host.Urls.Single(u => u.StartsWith("http://127.0.0.1:", StringComparison.OrdinalIgnoreCase));
+            using HttpClient clerkClient = CreateClient(new Uri(bound), clerkSession);
+            using HttpClient supervisorClient = CreateClient(new Uri(bound), supervisorSession);
+
+            async Task AssertRrRejectedNoWriteAsync(object payload, string scenario)
+            {
+                string before = SnapshotDb();
+                using HttpResponseMessage resp = await clerkClient.PostAsJsonAsync("/api/lpi/receiving-reports", payload);
+                string body = await resp.Content.ReadAsStringAsync();
+                Require(resp.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Conflict, $"[Issue88 {scenario}] Expected 400/409, got {(int)resp.StatusCode}: {body}");
+                string after = SnapshotDb();
+                Require(before == after, $"[Issue88 {scenario}] DB mutated on rejected RR! Before={before} After={after}");
+            }
+
+            // 1. Original QA2 repro: 4000 ordered vs 2500 + 2500 on same PurchaseOrderLineId -> MUST reject + zero writes
+            await AssertRrRejectedNoWriteAsync(new
+            {
+                purchaseOrderId = po1.Id,
+                deliveryReceiptNo = "DR-I88-DUP-OVER",
+                postImmediately = true,
+                lines = new[]
+                {
+                    new { purchaseOrderLineId = po1LineId, actualDeliveredQtyX1000 = 2_500L, acceptedQtyX1000 = 2_500L, rejectedQtyX1000 = 0L },
+                    new { purchaseOrderLineId = po1LineId, actualDeliveredQtyX1000 = 2_500L, acceptedQtyX1000 = 2_500L, rejectedQtyX1000 = 0L }
+                }
+            }, "QA2 4-vs-(2.5+2.5) duplicate PO line");
+
+            // 2. Duplicate PurchaseOrderLineId even under ordered cap (1000 + 1000, draft) -> MUST reject + zero writes
+            await AssertRrRejectedNoWriteAsync(new
+            {
+                purchaseOrderId = po1.Id,
+                deliveryReceiptNo = "DR-I88-DUP-UNDER",
+                postImmediately = false,
+                lines = new[]
+                {
+                    new { purchaseOrderLineId = po1LineId, actualDeliveredQtyX1000 = 1_000L, acceptedQtyX1000 = 1_000L, rejectedQtyX1000 = 0L },
+                    new { purchaseOrderLineId = po1LineId, actualDeliveredQtyX1000 = 1_000L, acceptedQtyX1000 = 1_000L, rejectedQtyX1000 = 0L }
+                }
+            }, "Duplicate PO line under cap");
+
+            // 3. Positive: Two DIFFERENT PurchaseOrderLineId rows sharing the SAME SKU (PO #2) -> MUST succeed (201)
+            using (HttpResponseMessage okSameSku = await clerkClient.PostAsJsonAsync("/api/lpi/receiving-reports", new
+            {
+                purchaseOrderId = po2.Id,
+                deliveryReceiptNo = "DR-I88-SAME-SKU-DISTINCT",
+                postImmediately = true,
+                lines = new[]
+                {
+                    new { purchaseOrderLineId = po2.Lines[0].Id, actualDeliveredQtyX1000 = 1_000L, acceptedQtyX1000 = 1_000L, rejectedQtyX1000 = 0L },
+                    new { purchaseOrderLineId = po2.Lines[1].Id, actualDeliveredQtyX1000 = 1_000L, acceptedQtyX1000 = 1_000L, rejectedQtyX1000 = 0L }
+                }
+            }))
+            {
+                Require(okSameSku.StatusCode == HttpStatusCode.Created, $"Same-SKU distinct PO lines must succeed (201), got {(int)okSameSku.StatusCode}: {await okSameSku.Content.ReadAsStringAsync()}");
+            }
+            Require(ReadStockOnHand(paths.DatabasePath, prodC) == 2_000L, "Stock C after PO #2 must be 2000.");
+
+            // 4. Positive: Partial receipt on PO #1 (2500 of 4000) -> stock becomes 4500
+            using (HttpResponseMessage okPartial = await clerkClient.PostAsJsonAsync("/api/lpi/receiving-reports", new
+            {
+                purchaseOrderId = po1.Id,
+                deliveryReceiptNo = "DR-I88-PARTIAL",
+                postImmediately = true,
+                lines = new[]
+                {
+                    new { purchaseOrderLineId = po1LineId, actualDeliveredQtyX1000 = 2_500L, acceptedQtyX1000 = 2_500L, rejectedQtyX1000 = 0L }
+                }
+            }))
+            {
+                Require(okPartial.StatusCode == HttpStatusCode.Created, $"Partial receipt expected 201, got {(int)okPartial.StatusCode}: {await okPartial.Content.ReadAsStringAsync()}");
+            }
+            Require(ReadStockOnHand(paths.DatabasePath, prodC) == 4_500L, "Stock C after partial PO #1 must be 4500.");
+
+            // 5. Positive: Legitimate overdelivery (2000 against remaining 1500) -> PendingExceptionApproval, then supervisor approve + clerk post -> 6500
+            Guid overRrId;
+            using (HttpResponseMessage pendingResp = await clerkClient.PostAsJsonAsync("/api/lpi/receiving-reports", new
+            {
+                purchaseOrderId = po1.Id,
+                deliveryReceiptNo = "DR-I88-OVER-AUTH",
+                postImmediately = true,
+                lines = new[]
+                {
+                    new { purchaseOrderLineId = po1LineId, actualDeliveredQtyX1000 = 2_000L, acceptedQtyX1000 = 2_000L, rejectedQtyX1000 = 0L }
+                }
+            }))
+            {
+                string body = await pendingResp.Content.ReadAsStringAsync();
+                Require(pendingResp.StatusCode == HttpStatusCode.Conflict, $"Unapproved overdelivery postImmediately must halt with 409, got {(int)pendingResp.StatusCode}: {body}");
+                // Note: Create draft then approve-overdelivery + post
+            }
+            Require(ReadStockOnHand(paths.DatabasePath, prodC) == 4_500L, "Stock C must remain 4500 before overdelivery approval.");
+
+            using (HttpResponseMessage draftOver = await clerkClient.PostAsJsonAsync("/api/lpi/receiving-reports", new
+            {
+                purchaseOrderId = po1.Id,
+                deliveryReceiptNo = "DR-I88-OVER-DRAFT",
+                postImmediately = false,
+                lines = new[]
+                {
+                    new { purchaseOrderLineId = po1LineId, actualDeliveredQtyX1000 = 2_000L, acceptedQtyX1000 = 2_000L, rejectedQtyX1000 = 0L }
+                }
+            }))
+            {
+                string body = await draftOver.Content.ReadAsStringAsync();
+                Require(draftOver.StatusCode == HttpStatusCode.Created, $"Draft overdelivery expected 201, got {(int)draftOver.StatusCode}: {body}");
+                using JsonDocument doc = JsonDocument.Parse(body);
+                overRrId = doc.RootElement.GetProperty("id").GetGuid();
+                Require(doc.RootElement.GetProperty("status").GetString() == "PendingExceptionApproval", "Overdelivery draft must be PendingExceptionApproval.");
+            }
+
+            using (HttpResponseMessage appResp = await supervisorClient.PostAsJsonAsync($"/api/lpi/receiving-reports/{overRrId}/approve-overdelivery", new { approvalReason = "Authorized vendor extra unit" }))
+            {
+                Require(appResp.StatusCode == HttpStatusCode.OK, $"Supervisor approve-overdelivery expected 200, got {(int)appResp.StatusCode}: {await appResp.Content.ReadAsStringAsync()}");
+            }
+            using (HttpResponseMessage postResp = await clerkClient.PostAsJsonAsync($"/api/lpi/receiving-reports/{overRrId}/post", new { }))
+            {
+                Require(postResp.StatusCode == HttpStatusCode.OK, $"Clerk post after overdelivery approval expected 200, got {(int)postResp.StatusCode}: {await postResp.Content.ReadAsStringAsync()}");
+            }
+            Require(ReadStockOnHand(paths.DatabasePath, prodC) == 6_500L, "Stock C after approved overdelivery post must be 6500.");
+
+            Console.WriteLine("Issue #88 (C04 duplicate PO-line overdelivery guard) HTTP/SQLite regression PASS.");
+        }
+        finally
+        {
+            SqliteConnectionFactory.ClearAllPools();
+            if (Directory.Exists(root)) { try { Directory.Delete(root, recursive: true); } catch { } }
+        }
     }
 
     private static T RequireSuccess<T>(Result<T> result, string area)

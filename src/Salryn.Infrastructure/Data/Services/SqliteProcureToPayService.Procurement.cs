@@ -922,6 +922,11 @@ public sealed partial class SqliteProcureToPayService
             return Result<PurchaseOrderModel>.Fail(
                 Error.Validation("Lpi.PurchaseOrder.DirectReasonRequired", "A business reason is required for a direct purchase order."));
         }
+        if (!request.SourceRequisitionId.HasValue && request.Lines.Any(l => l.RequisitionLineId.HasValue && l.RequisitionLineId.Value != Guid.Empty))
+        {
+            return Result<PurchaseOrderModel>.Fail(
+                Error.Validation("Lpi.PurchaseOrder.UnexpectedRequisitionLine", "Purchase order lines cannot reference a requisition line when SourceRequisitionId is omitted."));
+        }
 
         List<(CreatePurchaseOrderLineInput Line, long TaxCents, long LineTotalCents)> computedLines = new(request.Lines.Count);
         long subtotalCents = 0;
@@ -975,7 +980,7 @@ public sealed partial class SqliteProcureToPayService
         await connection.OpenAsync(cancellationToken);
         SqlitePragma.Apply(connection);
 
-        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        await using var transaction = connection.BeginTransaction(deferred: false);
         LpiSupplier? supplier = await FindSupplierByIdAsync(connection, transaction, request.SupplierId, cancellationToken);
         if (supplier is null || !supplier.IsActive)
         {
@@ -996,6 +1001,51 @@ public sealed partial class SqliteProcureToPayService
             {
                 return Result<PurchaseOrderModel>.Fail(
                     Error.Conflict("Lpi.PurchaseOrder.SourcePrNotApproved", $"Source requisition '{sourcePr.PrNumber}' must be Approved before converting to a PO (current: '{sourcePr.Status}')."));
+            }
+
+            Dictionary<Guid, PurchaseRequisitionLineModel> prLineMap = sourcePr.Lines.ToDictionary(x => x.Id);
+            Dictionary<Guid, long> requestedByPrLine = new();
+            foreach (var line in request.Lines)
+            {
+                if (!line.RequisitionLineId.HasValue || line.RequisitionLineId.Value == Guid.Empty)
+                {
+                    return Result<PurchaseOrderModel>.Fail(
+                        Error.Validation("Lpi.PurchaseOrder.RequisitionLineRequired", "Every line in a requisition-linked purchase order must reference a requisition line."));
+                }
+                if (!prLineMap.TryGetValue(line.RequisitionLineId.Value, out PurchaseRequisitionLineModel? prLine))
+                {
+                    return Result<PurchaseOrderModel>.Fail(
+                        Error.Validation("Lpi.PurchaseOrder.InvalidRequisitionLine", $"Requisition line '{line.RequisitionLineId.Value}' does not belong to source requisition '{sourcePr.PrNumber}'."));
+                }
+                if (prLine.ProductId != line.ProductId)
+                {
+                    return Result<PurchaseOrderModel>.Fail(
+                        Error.Validation("Lpi.PurchaseOrder.RequisitionLineProductMismatch", $"Purchase order line product does not match source requisition line '{prLine.ItemDescription}'."));
+                }
+
+                try
+                {
+                    long existingSum = requestedByPrLine.TryGetValue(prLine.Id, out long prev) ? prev : 0L;
+                    requestedByPrLine[prLine.Id] = checked(existingSum + line.OrderedQtyX1000);
+                }
+                catch (OverflowException)
+                {
+                    return Result<PurchaseOrderModel>.Fail(
+                        Error.Validation("Lpi.PurchaseOrder.AmountOverflow", "Purchase order line quantity aggregation overflowed supported bounds."));
+                }
+            }
+
+            foreach (var (prLineId, requestedQty) in requestedByPrLine)
+            {
+                PurchaseRequisitionLineModel prLine = prLineMap[prLineId];
+                long remainingApproved = Math.Max(0L, prLine.ApprovedQtyX1000 - prLine.ConvertedPoQtyX1000);
+                if (requestedQty > remainingApproved)
+                {
+                    return Result<PurchaseOrderModel>.Fail(
+                        Error.Conflict(
+                            "Lpi.PurchaseOrder.ExceedsRequisitionQuantity",
+                            $"Ordered quantity ({requestedQty / 1000m:N3}) for '{prLine.ItemDescription}' exceeds remaining approved PR quantity ({remainingApproved / 1000m:N3})."));
+                }
             }
         }
 
@@ -1087,18 +1137,26 @@ public sealed partial class SqliteProcureToPayService
             lineCmd.Parameters.AddWithValue("$notes", (object?)Clean(line.Notes) ?? DBNull.Value);
             await lineCmd.ExecuteNonQueryAsync(cancellationToken);
 
-            if (line.RequisitionLineId.HasValue)
+            if (line.RequisitionLineId.HasValue && sourcePr is not null)
             {
                 await using SqliteCommand updPrLine = connection.CreateCommand();
                 updPrLine.Transaction = transaction;
                 updPrLine.CommandText = """
                     UPDATE purchase_requisition_lines
                     SET converted_po_qty_x1000 = converted_po_qty_x1000 + $qty
-                    WHERE id = $reqLineId;
+                    WHERE id = $reqLineId
+                      AND requisition_id = $srcPrId
+                      AND (approved_qty_x1000 - converted_po_qty_x1000) >= $qty;
                     """;
                 updPrLine.Parameters.AddWithValue("$qty", line.OrderedQtyX1000);
                 updPrLine.Parameters.AddWithValue("$reqLineId", line.RequisitionLineId.Value.ToString("D"));
-                await updPrLine.ExecuteNonQueryAsync(cancellationToken);
+                updPrLine.Parameters.AddWithValue("$srcPrId", sourcePr.Id.ToString("D"));
+                int updatedPrLines = await updPrLine.ExecuteNonQueryAsync(cancellationToken);
+                if (updatedPrLines != 1)
+                {
+                    return Result<PurchaseOrderModel>.Fail(
+                        Error.Conflict("Lpi.PurchaseOrder.ExceedsRequisitionQuantity", "Purchase order quantity exceeded remaining approved requisition line quantity."));
+                }
             }
         }
 
