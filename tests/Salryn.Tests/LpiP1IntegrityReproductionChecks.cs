@@ -3492,8 +3492,24 @@ public static class LpiP1IntegrityReproductionChecks
         Require(invRrHeaderOnlyProdA.Status == "PostedOpen" &&
                 invRrHeaderOnlyProdA.ReceivingReportId == rrMultiHdr.Id &&
                 invRrHeaderOnlyProdA.Lines.Count == 1 &&
+                invRrHeaderOnlyProdA.Lines[0].ReceivingReportLineId == rrMultiHdr.Lines[0].Id,
+            "PR #79 auto-resolution precondition failed: newly created invoice with RR header must bind child receiving_report_line_id.");
+        using (SqliteConnection legacyNullChildConn = new($"Data Source={paths.DatabasePath}"))
+        {
+            legacyNullChildConn.Open();
+            using var nullCmd = legacyNullChildConn.CreateCommand();
+            nullCmd.CommandText = "UPDATE supplier_invoice_lines SET receiving_report_line_id = NULL WHERE supplier_invoice_id = $invId;";
+            nullCmd.Parameters.AddWithValue("$invId", invRrHeaderOnlyProdA.Id.ToString("D"));
+            Require(nullCmd.ExecuteNonQuery() == 1, "Legacy NULL child receiving_report_line_id fixture update must affect 1 row.");
+        }
+        invRrHeaderOnlyProdA = RequireSuccess(
+            await service.GetSupplierInvoiceByIdAsync(invRrHeaderOnlyProdA.Id),
+            "reload invRrHeaderOnlyProdA with NULL child RR line");
+        Require(invRrHeaderOnlyProdA.Status == "PostedOpen" &&
+                invRrHeaderOnlyProdA.ReceivingReportId == rrMultiHdr.Id &&
+                invRrHeaderOnlyProdA.Lines.Count == 1 &&
                 !invRrHeaderOnlyProdA.Lines[0].ReceivingReportLineId.HasValue,
-            "Issue #44 Case 8b precondition failed: real posted A-only invoice must have matching header RR and NULL child receiving_report_line_id.");
+            "Issue #44 Case 8b precondition failed: legacy A-only invoice fixture must have matching header RR and NULL child receiving_report_line_id.");
 
         var beforeHdrNullChild = ReadStateCounters();
         long stockResaleBefore8b = ReadStockOnHand(paths.DatabasePath, resaleProdId);

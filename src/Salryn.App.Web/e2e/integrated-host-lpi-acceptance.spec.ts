@@ -441,7 +441,7 @@ test.describe("INTEGRATED_HOST LPI End-to-End Acceptance Suite @integrated", () 
     await expect(pmtDialog).toBeHidden();
 
     // In payments table, verify payment recorded as Pending Approval
-    const pmtTable = page.locator("table").nth(2);
+    const pmtTable = page.locator("table").filter({ has: page.getByRole("columnheader", { name: "Method / Reference" }) });
     const targetPaymentRow = pmtTable.getByRole("row").filter({ hasText: "TRF-REALHOST-8899" });
     await expect(pmtTable).toContainText("TRF-REALHOST-8899", { timeout: 10000 });
     await expect(pmtTable).toContainText("PendingApproval");
@@ -593,7 +593,7 @@ test.describe("INTEGRATED_HOST LPI End-to-End Acceptance Suite @integrated", () 
     await expect(page.getByRole("heading", { name: "Accounts Payable", exact: true })).toBeVisible({ timeout: 15000 });
     await expect(page.locator("table").first()).toContainText("INV-REALHOST-2026-001");
     await expect(page.locator("table").first()).toContainText("Paid");
-    await expect(page.locator("table").nth(2)).toContainText("Settled");
+    await expect(page.locator("table").filter({ has: page.getByRole("columnheader", { name: "Method / Reference" }) })).toContainText("Settled");
     await targetPaymentRow.getByRole("button", { name: "Print voucher", exact: true }).click();
     await expect(page.getByRole("dialog", { name: /Payment Voucher:/ })).toContainText(`Actual funds-transfer date: ${confirmedTransferDate}`);
     const reloadedVoucher = page.getByRole("dialog", { name: /Payment Voucher:/ });
