@@ -35,6 +35,8 @@ param(
     [switch]$SkipWebBuild,
     [switch]$BuildInstaller,
     [switch]$CompileExistingStageOnly,
+    [switch]$VerifyStageOnly,
+    [switch]$ForceNpmCi,
     [switch]$Help
 )
 
@@ -80,13 +82,14 @@ Parameters:
   -Configuration <name>                dotnet publish configuration (default Release)
   -OutputDir <path>                    Artifact root (default artifacts\installer)
   -InnoSetupCompilerPath <path>        Explicit path to ISCC.exe (overrides auto-discovery)
-  -ExpectedSourceSha <40-hex>          Require HEAD to exactly match this 40-char Git SHA
-  -ExpectedStageManifestSha256 <hex>   Required 64-hex manifest SHA256 when -CompileExistingStageOnly is set
+  -ExpectedSourceSha <40-hex>          Require HEAD to match this 40-char Git SHA (required for -BuildInstaller)
+  -ExpectedStageManifestSha256 <hex>   Disabled reuse parameter (kept as fail-closed guard)
   -AdditionalProtectedRoots <paths>    Extra directory roots treated as protected output boundaries
-  -SkipWebBuild                        Reuse src\Salryn.App.Web\dist ONLY if its .salryn-web-build-provenance.json
-                                       stamp matches HEAD, source inputs, and every byte in dist
-  -BuildInstaller                      Verify stage custody and compile installer\SalrynSetup.iss via Inno Setup 6
-  -CompileExistingStageOnly            Requires -ExpectedSourceSha AND external -ExpectedStageManifestSha256
+  -SkipWebBuild                        NON-RELEASE/NOT-ATTESTED dev staging only; forbidden with -BuildInstaller
+  -BuildInstaller                      Enforces fresh Option A build (-ExpectedSourceSha required; no reuse) + ISCC
+  -CompileExistingStageOnly            Disabled in Option A (always fails closed with COMPILE_EXISTING_STAGE_FORBIDDEN)
+  -VerifyStageOnly                     Read-only stage manifest verification; forbidden with -BuildInstaller
+  -ForceNpmCi                          Force fresh lockfile npm ci even when node_modules matches package-lock.json
   -Help                                Show this help
 "@
     exit 0
@@ -190,7 +193,10 @@ function Normalize-PathWithSeparator {
 }
 
 function Get-ProtectedRootsList {
-    param([string[]]$ExtraProtectedRoots = @())
+    param(
+        [string]$HeadSha = "UNKNOWN",
+        [string[]]$ExtraProtectedRoots = @()
+    )
     $candidates = New-Object System.Collections.Generic.List[string]
     if (-not [string]::IsNullOrWhiteSpace($env:ProgramData)) {
         $candidates.Add((Join-Path $env:ProgramData "Salryn"))
@@ -221,18 +227,80 @@ function Get-ProtectedRootsList {
 
     $expanded = New-Object System.Collections.Generic.List[string]
     foreach ($c in $candidates) {
-        $lex = [System.IO.Path]::GetFullPath($c).TrimEnd('\', '/')
-        $expanded.Add($lex)
-        if (Test-Path -LiteralPath $lex) {
-            try {
-                $resolved = ([SalrynNativePathResolver]::GetFinalPath($lex)).TrimEnd('\', '/')
-                if (-not [string]::IsNullOrWhiteSpace($resolved) -and -not $resolved.Equals($lex, [System.StringComparison]::OrdinalIgnoreCase)) {
-                    $expanded.Add($resolved)
-                }
-            } catch {
-                # Keep lexical root even if handle query fails
-            }
+        if ([string]::IsNullOrWhiteSpace($c) -or $c.StartsWith("\\", [System.StringComparison]::OrdinalIgnoreCase)) {
+            Write-ProvenanceFailure -Code "PROTECTED_ROOT_RESOLUTION_FAILED" -HeadSha $HeadSha -Detail "Invalid protected root path '$c'."
         }
+        $lexFull = [System.IO.Path]::GetFullPath($c)
+        $lexTrim = $lexFull.TrimEnd('\', '/')
+        if ($lexFull -notmatch '^[A-Za-z]:\\') {
+            Write-ProvenanceFailure -Code "PROTECTED_ROOT_RESOLUTION_FAILED" -HeadSha $HeadSha -Detail "Protected root must be a local drive path: $c"
+        }
+
+        $root = [System.IO.Path]::GetPathRoot($lexFull)
+        $trimmedForParts = $lexFull.TrimEnd('\')
+        if ($trimmedForParts -match '^[A-Za-z]:$') { $trimmedForParts = "$trimmedForParts\" }
+        $remainder = $trimmedForParts.Substring($root.Length)
+        $parts = if ([string]::IsNullOrEmpty($remainder)) { @() } else { $remainder.Split('\') }
+
+        $current = $root.TrimEnd('\') + "\"
+        try {
+            $rootItem = Get-Item -LiteralPath $current -Force -ErrorAction Stop
+        } catch {
+            Write-ProvenanceFailure -Code "PROTECTED_ROOT_RESOLUTION_FAILED" -HeadSha $HeadSha -Detail "Failed inspecting drive root for protected path '$c': $_"
+        }
+        if (($rootItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Write-ProvenanceFailure -Code "PROTECTED_ROOT_RESOLUTION_FAILED" -HeadSha $HeadSha -Detail "Drive root for protected path is a reparse point: $current"
+        }
+        try {
+            $null = [SalrynNativePathResolver]::GetFinalPath($current)
+        } catch {
+            Write-ProvenanceFailure -Code "PROTECTED_ROOT_RESOLUTION_FAILED" -HeadSha $HeadSha -Detail "Failed canonical resolution for drive root '$current': $_"
+        }
+
+        $deepestExisting = $current
+        $nonExistentParts = New-Object System.Collections.Generic.List[string]
+        $sawNonExistent = $false
+
+        foreach ($part in $parts) {
+            if ([string]::IsNullOrWhiteSpace($part)) { continue }
+            $current = Join-Path $current $part
+            try {
+                $segItem = Get-Item -LiteralPath $current -Force -ErrorAction Stop
+            } catch [System.Management.Automation.ItemNotFoundException] {
+                $sawNonExistent = $true
+                $nonExistentParts.Add($part)
+                continue
+            } catch {
+                Write-ProvenanceFailure -Code "PROTECTED_ROOT_RESOLUTION_FAILED" -HeadSha $HeadSha -Detail "Failed inspecting protected root segment '$current': $_"
+            }
+
+            if ($sawNonExistent) {
+                Write-ProvenanceFailure -Code "PROTECTED_ROOT_RESOLUTION_FAILED" -HeadSha $HeadSha -Detail "Inconsistent filesystem state along protected root '$current'."
+            }
+            if (($segItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                Write-ProvenanceFailure -Code "PROTECTED_ROOT_RESOLUTION_FAILED" -HeadSha $HeadSha -Detail "Protected root path contains reparse point/junction at '$current'."
+            }
+            try {
+                $null = [SalrynNativePathResolver]::GetFinalPath($current)
+            } catch {
+                Write-ProvenanceFailure -Code "PROTECTED_ROOT_RESOLUTION_FAILED" -HeadSha $HeadSha -Detail "Failed canonical resolution for protected root segment '$current': $_"
+            }
+            $deepestExisting = $current
+        }
+
+        try {
+            $resolvedDeepest = [SalrynNativePathResolver]::GetFinalPath($deepestExisting)
+        } catch {
+            Write-ProvenanceFailure -Code "PROTECTED_ROOT_RESOLUTION_FAILED" -HeadSha $HeadSha -Detail "Failed canonical resolution for protected root '$deepestExisting': $_"
+        }
+        $resolvedFull = $resolvedDeepest
+        foreach ($missingPart in $nonExistentParts) {
+            $resolvedFull = Join-Path $resolvedFull $missingPart
+        }
+
+        $expanded.Add($lexTrim)
+        $resolvedTrim = ([System.IO.Path]::GetFullPath($resolvedFull)).TrimEnd('\', '/')
+        $expanded.Add($resolvedTrim)
     }
     return ,@($expanded | Select-Object -Unique)
 }
@@ -361,28 +429,181 @@ function Assert-NotReparsePoint {
     }
 }
 
+function Assert-TreeFreeOfReparsePointsAndAliases {
+    param(
+        [Parameter(Mandatory = $true)][string]$RootDir,
+        [Parameter(Mandatory = $true)][string]$AllowedParentRoot,
+        [Parameter(Mandatory = $true)][string]$HeadSha,
+        [Parameter(Mandatory = $true)][string]$ContextLabel,
+        [string]$ReparseErrorCode = "REPARSE_POINT_FORBIDDEN",
+        [string[]]$ProtectedRoots = @()
+    )
+
+    try {
+        $rootItem = Get-Item -LiteralPath $RootDir -Force -ErrorAction Stop
+    } catch [System.Management.Automation.ItemNotFoundException] {
+        return [ordered]@{
+            RootExists  = $false
+            RootFull    = [System.IO.Path]::GetFullPath($RootDir)
+            Files       = @()
+            Directories = @()
+        }
+    } catch {
+        Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "Failed inspecting directory '${ContextLabel}' ($RootDir): $_"
+    }
+
+    if (($rootItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        Write-ProvenanceFailure -Code $ReparseErrorCode -HeadSha $HeadSha -Detail "Reparse point/junction/symlink forbidden in ${ContextLabel}: $($rootItem.FullName)"
+    }
+    if (-not $rootItem.PSIsContainer) {
+        Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "Expected directory for ${ContextLabel} but found file: $($rootItem.FullName)"
+    }
+
+    $allowedFull = [System.IO.Path]::GetFullPath($AllowedParentRoot)
+    $allowedLexPrefix = Normalize-PathWithSeparator -Path $allowedFull
+    try {
+        $allowedCanon = [SalrynNativePathResolver]::GetFinalPath($allowedFull)
+        $rootCanon = [SalrynNativePathResolver]::GetFinalPath($rootItem.FullName)
+    } catch {
+        Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "Canonical resolution failed for ${ContextLabel}: $_"
+    }
+    $allowedCanonPrefix = Normalize-PathWithSeparator -Path $allowedCanon
+    $rootCanonPrefix = Normalize-PathWithSeparator -Path $rootCanon
+    $rootLexFull = [System.IO.Path]::GetFullPath($rootItem.FullName)
+    $rootLexPrefix = Normalize-PathWithSeparator -Path $rootLexFull
+
+    if (-not $rootLexPrefix.StartsWith($allowedLexPrefix, [System.StringComparison]::OrdinalIgnoreCase) -or
+        -not $rootCanonPrefix.StartsWith($allowedCanonPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Write-ProvenanceFailure -Code "PATH_TRAVERSAL_FORBIDDEN" -HeadSha $HeadSha -Detail "Directory escapes allowed root in ${ContextLabel}: $rootCanon"
+    }
+
+    $protectedNorms = @($ProtectedRoots | ForEach-Object { Normalize-PathWithSeparator -Path $_ })
+    $files = New-Object System.Collections.Generic.List[string]
+    $dirs = New-Object System.Collections.Generic.List[string]
+    $queue = New-Object System.Collections.Generic.Queue[string]
+    $queue.Enqueue($rootLexFull)
+
+    while ($queue.Count -gt 0) {
+        $currentDir = $queue.Dequeue()
+        $children = @(Get-ChildItem -LiteralPath $currentDir -Force -ErrorAction Stop)
+        foreach ($child in $children) {
+            if (($child.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                Write-ProvenanceFailure -Code $ReparseErrorCode -HeadSha $HeadSha -Detail "Reparse point/junction/symlink forbidden in ${ContextLabel}: $($child.FullName)"
+            }
+            $childFull = [System.IO.Path]::GetFullPath($child.FullName)
+            if (-not $childFull.StartsWith($rootLexPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                Write-ProvenanceFailure -Code "PATH_TRAVERSAL_FORBIDDEN" -HeadSha $HeadSha -Detail "Child path escapes ${ContextLabel} root: $childFull"
+            }
+
+            if ($child.PSIsContainer) {
+                try {
+                    $childCanon = [SalrynNativePathResolver]::GetFinalPath($childFull)
+                } catch {
+                    Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "Failed canonical check on descendant '${ContextLabel}' ($childFull): $_"
+                }
+                $childCanonNorm = Normalize-PathWithSeparator -Path $childCanon
+                if (-not $childCanonNorm.StartsWith($rootCanonPrefix, [System.StringComparison]::OrdinalIgnoreCase) -or
+                    -not $childCanonNorm.StartsWith($allowedCanonPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    Write-ProvenanceFailure -Code "PATH_TRAVERSAL_FORBIDDEN" -HeadSha $HeadSha -Detail "Descendant resolves outside allowed root in ${ContextLabel}: $childCanon"
+                }
+                foreach ($protNorm in $protectedNorms) {
+                    if ($childCanonNorm.StartsWith($protNorm, [System.StringComparison]::OrdinalIgnoreCase) -or
+                        $protNorm.StartsWith($childCanonNorm, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        Write-ProvenanceFailure -Code "PROTECTED_OUTPUT_DIR_FORBIDDEN" -HeadSha $HeadSha -Detail "Descendant resolves to protected root in ${ContextLabel}: $childCanon"
+                    }
+                }
+                $dirs.Add($childFull)
+                $queue.Enqueue($childFull)
+            } else {
+                $files.Add($childFull)
+            }
+        }
+    }
+
+    return [ordered]@{
+        RootExists  = $true
+        RootFull    = $rootLexFull
+        Files       = @($files)
+        Directories = @($dirs)
+    }
+}
+
+function Remove-OwnedDirectoryTreeSafely {
+    param(
+        [Parameter(Mandatory = $true)][string]$TargetDir,
+        [Parameter(Mandatory = $true)][string]$AllowedParentRoot,
+        [Parameter(Mandatory = $true)][string]$HeadSha,
+        [Parameter(Mandatory = $true)][string]$ContextLabel,
+        [string]$ReparseErrorCode = "REPARSE_POINT_FORBIDDEN",
+        [string[]]$ProtectedRoots = @()
+    )
+
+    $scan = Assert-TreeFreeOfReparsePointsAndAliases `
+        -RootDir $TargetDir `
+        -AllowedParentRoot $AllowedParentRoot `
+        -HeadSha $HeadSha `
+        -ContextLabel $ContextLabel `
+        -ReparseErrorCode $ReparseErrorCode `
+        -ProtectedRoots $ProtectedRoots
+    if (-not $scan.RootExists) { return }
+
+    foreach ($filePath in $scan.Files) {
+        $fItem = Get-Item -LiteralPath $filePath -Force -ErrorAction SilentlyContinue
+        if ($null -eq $fItem) { continue }
+        if (($fItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Write-ProvenanceFailure -Code $ReparseErrorCode -HeadSha $HeadSha -Detail "Reparse point appeared before file delete in ${ContextLabel}: $filePath"
+        }
+        if (($fItem.Attributes -band [System.IO.FileAttributes]::ReadOnly) -ne 0) {
+            [System.IO.File]::SetAttributes($filePath, ($fItem.Attributes -band (-bnot [System.IO.FileAttributes]::ReadOnly)))
+        }
+        [System.IO.File]::Delete($filePath)
+    }
+
+    $sortedDirs = @($scan.Directories | Sort-Object -Property { $_.Length } -Descending)
+    foreach ($dirPath in $sortedDirs) {
+        $dItem = Get-Item -LiteralPath $dirPath -Force -ErrorAction SilentlyContinue
+        if ($null -eq $dItem) { continue }
+        if (($dItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Write-ProvenanceFailure -Code $ReparseErrorCode -HeadSha $HeadSha -Detail "Reparse point appeared before directory delete in ${ContextLabel}: $dirPath"
+        }
+        if (($dItem.Attributes -band [System.IO.FileAttributes]::ReadOnly) -ne 0) {
+            $dItem.Attributes = ($dItem.Attributes -band (-bnot [System.IO.FileAttributes]::ReadOnly))
+        }
+        [System.IO.Directory]::Delete($dirPath, $false)
+    }
+
+    $rootFinalItem = Get-Item -LiteralPath $scan.RootFull -Force -ErrorAction SilentlyContinue
+    if ($null -ne $rootFinalItem) {
+        if (($rootFinalItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Write-ProvenanceFailure -Code $ReparseErrorCode -HeadSha $HeadSha -Detail "Reparse point appeared on root before delete in ${ContextLabel}: $($scan.RootFull)"
+        }
+        if (($rootFinalItem.Attributes -band [System.IO.FileAttributes]::ReadOnly) -ne 0) {
+            $rootFinalItem.Attributes = ($rootFinalItem.Attributes -band (-bnot [System.IO.FileAttributes]::ReadOnly))
+        }
+        [System.IO.Directory]::Delete($scan.RootFull, $false)
+    }
+}
+
 function Assert-NoReparsePointsOrTraversal {
     param(
         [Parameter(Mandatory = $true)][string]$RootDir,
         [Parameter(Mandatory = $true)][string]$HeadSha,
-        [Parameter(Mandatory = $true)][string]$ContextLabel
+        [Parameter(Mandatory = $true)][string]$ContextLabel,
+        [string]$ReparseErrorCode = "REPARSE_POINT_FORBIDDEN"
     )
     if (-not (Test-Path -LiteralPath $RootDir)) {
+        $rawItem = Get-Item -LiteralPath $RootDir -Force -ErrorAction SilentlyContinue
+        if ($null -ne $rawItem -and (($rawItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)) {
+            Write-ProvenanceFailure -Code $ReparseErrorCode -HeadSha $HeadSha -Detail "Reparse point/symlink forbidden in ${ContextLabel}: $($rawItem.FullName)"
+        }
         Write-ProvenanceFailure -Code "MISSING_REQUIRED_DIRECTORY" -HeadSha $HeadSha -Detail "Required directory missing in ${ContextLabel}: $RootDir"
     }
-    Assert-NotReparsePoint -Path $RootDir -HeadSha $HeadSha -ContextLabel $ContextLabel
-    $canonicalPrefix = Normalize-PathWithSeparator -Path $RootDir
-
-    $items = Get-ChildItem -LiteralPath $RootDir -Recurse -Force -ErrorAction Stop
-    foreach ($item in $items) {
-        if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-            Write-ProvenanceFailure -Code "REPARSE_POINT_FORBIDDEN" -HeadSha $HeadSha -Detail "Reparse point/symlink forbidden in ${ContextLabel}: $($item.FullName)"
-        }
-        $resolvedFull = [System.IO.Path]::GetFullPath($item.FullName)
-        if (-not $resolvedFull.StartsWith($canonicalPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-            Write-ProvenanceFailure -Code "PATH_TRAVERSAL_FORBIDDEN" -HeadSha $HeadSha -Detail "Path escapes ${ContextLabel} root: $resolvedFull"
-        }
-    }
+    [void](Assert-TreeFreeOfReparsePointsAndAliases `
+        -RootDir $RootDir `
+        -AllowedParentRoot $RootDir `
+        -HeadSha $HeadSha `
+        -ContextLabel $ContextLabel `
+        -ReparseErrorCode $ReparseErrorCode)
 }
 
 function Assert-SafeManifestRelativePath {
@@ -500,12 +721,19 @@ function Get-WebSourceInputDigest {
             Write-ProvenanceFailure -Code "REPARSE_POINT_FORBIDDEN" -HeadSha $HeadSha -Detail "Reparse point in web source: $($top.FullName)"
         }
         if ($top.PSIsContainer) {
-            foreach ($child in (Get-ChildItem -LiteralPath $top.FullName -Recurse -Force -ErrorAction Stop)) {
-                if (($child.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-                    Write-ProvenanceFailure -Code "REPARSE_POINT_FORBIDDEN" -HeadSha $HeadSha -Detail "Reparse point in web source: $($child.FullName)"
-                }
-                if (-not $child.PSIsContainer -and $child.Name -ne "tsconfig.tsbuildinfo") {
-                    $allFiles.Add($child)
+            $webQueue = New-Object System.Collections.Generic.Queue[string]
+            $webQueue.Enqueue($top.FullName)
+            while ($webQueue.Count -gt 0) {
+                $curWebDir = $webQueue.Dequeue()
+                foreach ($child in @(Get-ChildItem -LiteralPath $curWebDir -Force -ErrorAction Stop)) {
+                    if (($child.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                        Write-ProvenanceFailure -Code "REPARSE_POINT_FORBIDDEN" -HeadSha $HeadSha -Detail "Reparse point in web source: $($child.FullName)"
+                    }
+                    if ($child.PSIsContainer) {
+                        $webQueue.Enqueue($child.FullName)
+                    } elseif ($child.Name -ne "tsconfig.tsbuildinfo") {
+                        $allFiles.Add($child)
+                    }
                 }
             }
         } else {
@@ -597,16 +825,7 @@ function Assert-OutputDirSafe {
         ($resolvedArtifact.CanonicalFull)
     ) | Select-Object -Unique
 
-    # Check child lifecycle subpaths if they already exist on disk
-    foreach ($subName in @("staging", "staging\Salryn", "setup", "shell-publish")) {
-        foreach ($base in $candidateArtifactPaths) {
-            $subFull = Join-Path $base $subName
-            $subItem = Get-Item -LiteralPath $subFull -Force -ErrorAction SilentlyContinue
-            if ($null -ne $subItem -and (($subItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)) {
-                Write-ProvenanceFailure -Code "OUTPUT_DIR_REPARSE_POINT_FORBIDDEN" -HeadSha $HeadSha -Detail "Reparse point/junction/symlink forbidden in OutputDir child: $subFull"
-            }
-        }
-    }
+    $protectedRoots = Get-ProtectedRootsList -HeadSha $HeadSha -ExtraProtectedRoots $ExtraProtectedRoots
 
     $repoCandidates = @(
         (Normalize-PathWithSeparator -Path $resolvedRepo.LexicalFull),
@@ -639,7 +858,6 @@ function Assert-OutputDirSafe {
         }
     }
 
-    $protectedRoots = Get-ProtectedRootsList -ExtraProtectedRoots $ExtraProtectedRoots
     foreach ($candPath in $candidateArtifactPaths) {
         $artifactNorm = Normalize-PathWithSeparator -Path $candPath
         foreach ($prot in $protectedRoots) {
@@ -649,6 +867,19 @@ function Assert-OutputDirSafe {
                 Write-ProvenanceFailure -Code "PROTECTED_OUTPUT_DIR_FORBIDDEN" -HeadSha $HeadSha -Detail "OutputDir overlaps or resolves to protected Salryn/stand-in directory '$prot' (resolved='$candPath')"
             }
         }
+    }
+
+    # Deep non-following scan of any existing OutputDir subtree (catches nested junctions/symlinks inside
+    # staging, staging\Salryn\dist, assets, shell-publish, or setup before any delete or write occurs).
+    $existingOutItem = Get-Item -LiteralPath $resolvedArtifact.LexicalFull -Force -ErrorAction SilentlyContinue
+    if ($null -ne $existingOutItem) {
+        [void](Assert-TreeFreeOfReparsePointsAndAliases `
+            -RootDir $resolvedArtifact.LexicalFull `
+            -AllowedParentRoot $resolvedArtifact.LexicalFull `
+            -HeadSha $HeadSha `
+            -ContextLabel "OutputDir" `
+            -ReparseErrorCode "OUTPUT_DIR_REPARSE_POINT_FORBIDDEN" `
+            -ProtectedRoots $protectedRoots)
     }
 
     return $resolvedArtifact
@@ -668,7 +899,7 @@ function Remove-StaleSetupArtifacts {
     if (($setupDirItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
         Write-ProvenanceFailure -Code "OUTPUT_DIR_REPARSE_POINT_FORBIDDEN" -HeadSha $HeadSha -Detail "Setup directory cannot be a reparse point: $SetupDir"
     }
-    Assert-NoReparsePointsOrTraversal -RootDir $SetupDir -HeadSha $HeadSha -ContextLabel "setup-dir"
+    Assert-NoReparsePointsOrTraversal -RootDir $SetupDir -HeadSha $HeadSha -ContextLabel "setup-dir" -ReparseErrorCode "OUTPUT_DIR_REPARSE_POINT_FORBIDDEN"
     $setupExePath = Join-Path $SetupDir "Salryn-POS-BetaRC1-Setup.exe"
     foreach ($staleTarget in @($setupExePath, "$setupExePath.sha256.txt", "$setupExePath.provenance.json")) {
         $staleItem = Get-Item -LiteralPath $staleTarget -Force -ErrorAction SilentlyContinue
@@ -676,7 +907,10 @@ function Remove-StaleSetupArtifacts {
             if (($staleItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
                 Write-ProvenanceFailure -Code "OUTPUT_DIR_REPARSE_POINT_FORBIDDEN" -HeadSha $HeadSha -Detail "Setup artifact target cannot be a reparse point: $staleTarget"
             }
-            Remove-Item -Force -LiteralPath $staleTarget
+            if (($staleItem.Attributes -band [System.IO.FileAttributes]::ReadOnly) -ne 0) {
+                [System.IO.File]::SetAttributes($staleTarget, ($staleItem.Attributes -band (-bnot [System.IO.FileAttributes]::ReadOnly)))
+            }
+            [System.IO.File]::Delete($staleTarget)
         }
     }
 }
@@ -770,6 +1004,63 @@ function Assert-StagedBinariesAndAssets {
     }
 }
 
+function Assert-LockedWebDependencies {
+    param(
+        [Parameter(Mandatory = $true)][string]$WebRoot,
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string]$HeadSha,
+        [switch]$RunNpmCi
+    )
+
+    $pkgJsonPath = Join-Path $WebRoot "package.json"
+    $pkgLockPath = Join-Path $WebRoot "package-lock.json"
+    if (-not (Test-Path -LiteralPath $pkgJsonPath) -or -not (Test-Path -LiteralPath $pkgLockPath)) {
+        Write-ProvenanceFailure -Code "WEB_LOCKFILE_MISSING" -HeadSha $HeadSha -Detail "Missing package.json or package-lock.json in $WebRoot."
+    }
+    Assert-NotReparsePoint -Path $pkgJsonPath -HeadSha $HeadSha -ContextLabel "web-package-json"
+    Assert-NotReparsePoint -Path $pkgLockPath -HeadSha $HeadSha -ContextLabel "web-package-lock"
+
+    & git -C $RepoRoot ls-files --error-unmatch "src/Salryn.App.Web/package-lock.json" 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-ProvenanceFailure -Code "WEB_LOCKFILE_MISSING" -HeadSha $HeadSha -Detail "src/Salryn.App.Web/package-lock.json must be tracked in Git."
+    }
+
+    $nmDir = Join-Path $WebRoot "node_modules"
+    $nmLock = Join-Path $nmDir ".package-lock.json"
+    $nmExists = Get-Item -LiteralPath $nmDir -Force -ErrorAction SilentlyContinue
+    if ($null -ne $nmExists -and (($nmExists.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)) {
+        Write-ProvenanceFailure -Code "REPARSE_POINT_FORBIDDEN" -HeadSha $HeadSha -Detail "node_modules cannot be a reparse point/junction: $nmDir"
+    }
+
+    if ($RunNpmCi -or -not (Test-Path -LiteralPath $nmLock)) {
+        Write-Info "Installing locked web dependencies via npm ci --prefer-offline..."
+        & npm --prefix $WebRoot ci --prefer-offline --no-audit --no-fund
+        if ($LASTEXITCODE -ne 0) {
+            Write-ProvenanceFailure -Code "WEB_NPM_CI_FAILED" -HeadSha $HeadSha -Detail "npm ci failed with exit code $LASTEXITCODE."
+        }
+    }
+
+    if (-not (Test-Path -LiteralPath $nmLock)) {
+        Write-ProvenanceFailure -Code "WEB_LOCKFILE_MISMATCH" -HeadSha $HeadSha -Detail "node_modules\.package-lock.json missing in $WebRoot."
+    }
+
+    $prevCheckEnv = $env:SALRYN_CHECK_WEB_ROOT
+    $prevEap = $ErrorActionPreference
+    try {
+        $env:SALRYN_CHECK_WEB_ROOT = $WebRoot
+        $ErrorActionPreference = 'Continue'
+        $jsLockCheck = "const fs=require('fs'),path=require('path');const w=process.env.SALRYN_CHECK_WEB_ROOT;const l=JSON.parse(fs.readFileSync(path.join(w,'package-lock.json'),'utf8'));const n=JSON.parse(fs.readFileSync(path.join(w,'node_modules/.package-lock.json'),'utf8'));const lp=l.packages||{},np=n.packages||{};const b=[];for(const k of Object.keys(lp)){if(!k||lp[k].optional)continue;if(!np[k]||np[k].version!==lp[k].version||np[k].integrity!==lp[k].integrity){b.push('diff:'+k);continue;}const pjPath=path.join(w,k,'package.json');if(!fs.existsSync(pjPath)){b.push('missing:'+k);continue;}const pj=JSON.parse(fs.readFileSync(pjPath,'utf8'));if(pj.version!==lp[k].version)b.push('ver:'+k);}for(const k of Object.keys(np)){if(!lp[k]||lp[k].version!==np[k].version||lp[k].integrity!==np[k].integrity)b.push('extra:'+k);}if(b.length){console.log(b.slice(0,5).join(';'));process.exit(2);}"
+        $verifyOut = & node -e $jsLockCheck 2>&1
+        $verifyExit = $LASTEXITCODE
+        if ($verifyExit -ne 0) {
+            Write-ProvenanceFailure -Code "WEB_LOCKFILE_MISMATCH" -HeadSha $HeadSha -Detail "Installed node_modules does not match tracked package-lock.json: $($verifyOut -join ' ')"
+        }
+    } finally {
+        $ErrorActionPreference = $prevEap
+        $env:SALRYN_CHECK_WEB_ROOT = $prevCheckEnv
+    }
+}
+
 function Assert-StageManifestMatchesDisk {
     param(
         [Parameter(Mandatory = $true)][string]$PublishDir,
@@ -781,7 +1072,8 @@ function Assert-StageManifestMatchesDisk {
         [Parameter(Mandatory = $true)][string]$WebDistDir,
         [Parameter(Mandatory = $true)][string]$WebProvenanceStampPath,
         [string]$ExpectedManifestSha256 = "",
-        [switch]$RequireSourceTreeAssetParity
+        [switch]$RequireSourceTreeAssetParity,
+        [switch]$RequireAuthoritativeReleaseStage
     )
 
     Assert-NoReparsePointsOrTraversal -RootDir $PublishDir -HeadSha $HeadSha -ContextLabel "staging"
@@ -826,6 +1118,14 @@ function Assert-StageManifestMatchesDisk {
         $manifest.productVersion -ne $ExpectedVersion -or
         $manifest.configuration -ne $ExpectedConfiguration) {
         Write-ProvenanceFailure -Code "STAGE_MANIFEST_METADATA_MISMATCH" -HeadSha $HeadSha -Detail "Manifest metadata does not match active source HEAD='$HeadSha', version='$ExpectedVersion', config='$ExpectedConfiguration'."
+    }
+
+    if ($RequireAuthoritativeReleaseStage) {
+        if ($manifest.releaseAuthority -ne "SOURCE_BOUND_FRESH_BUILD" -or
+            $manifest.authoritativeInstallerAllowed -ne $true -or
+            $manifest.buildOptions.skipWebBuild -ne $false) {
+            Write-ProvenanceFailure -Code "NONRELEASE_STAGE_FORBIDDEN_FOR_INSTALLER" -HeadSha $HeadSha -Detail "Stage is marked '$($manifest.releaseAuthority)' (authoritativeInstallerAllowed=$($manifest.authoritativeInstallerAllowed)); Option A forbids non-release stages from producing an installer EXE."
+        }
     }
 
     $manifestFiles = @($manifest.files)
@@ -882,7 +1182,7 @@ function Assert-StageManifestMatchesDisk {
         Write-ProvenanceFailure -Code "STAGE_WEB_DIST_PROVENANCE_MISMATCH" -HeadSha $HeadSha -Detail "Staged dist inventory ($stagedDistInvSha) does not match manifest webDistInventorySha256 ($($manifest.buildOptions.webDistInventorySha256))."
     }
 
-    if ($RequireSourceTreeAssetParity) {
+    if ($RequireSourceTreeAssetParity -or $RequireAuthoritativeReleaseStage) {
         $verifiedWorktreeDist = Assert-VerifiedSkipWebDist `
             -WebDistDir $WebDistDir `
             -StampPath $WebProvenanceStampPath `
@@ -1007,17 +1307,26 @@ function Assert-VerifiedSkipWebDist {
 Remove-StaleSetupArtifacts -SetupDir $setupDir -ArtifactRoot $artifactRoot -RepoRoot $repoRoot -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots
 
 try {
+    # Option A trust-boundary enforcement (no reuse of existing stage or ignored dist in -BuildInstaller lane)
     if ($CompileExistingStageOnly) {
-        if ([string]::IsNullOrWhiteSpace($ExpectedSourceSha) -or
-            [string]::IsNullOrWhiteSpace($ExpectedStageManifestSha256) -or
-            ($ExpectedStageManifestSha256.Trim() -notmatch '^[0-9a-fA-F]{64}$')) {
-            Write-ProvenanceFailure -Code "UNATTESTED_EXISTING_STAGE_FORBIDDEN" -HeadSha $headSha -Detail "-CompileExistingStageOnly requires explicit -ExpectedSourceSha (<40-hex>) and external -ExpectedStageManifestSha256 (<64-hex>); stage self-attestation is forbidden."
-        }
-        Write-Info "CompileExistingStageOnly set; validating staged output against external digest & clean source tree before mutating setup dir..."
+        Write-ProvenanceFailure -Code "COMPILE_EXISTING_STAGE_FORBIDDEN" -HeadSha $headSha -Detail "-CompileExistingStageOnly is disabled under Option A fresh-build-only trust architecture."
+    }
+    if ($BuildInstaller -and [string]::IsNullOrWhiteSpace($ExpectedSourceSha)) {
+        Write-ProvenanceFailure -Code "EXPECTED_SHA_REQUIRED_FOR_INSTALLER" -HeadSha $headSha -Detail "-BuildInstaller requires an explicit 40-character -ExpectedSourceSha binding HEAD to the approved commit."
+    }
+    if ($BuildInstaller -and $SkipWebBuild) {
+        Write-ProvenanceFailure -Code "SKIP_WEB_BUILD_FORBIDDEN_FOR_INSTALLER" -HeadSha $headSha -Detail "-SkipWebBuild cannot be used with -BuildInstaller; trusted packages require a fresh locked web build."
+    }
+    if ($VerifyStageOnly -and $BuildInstaller) {
+        Write-ProvenanceFailure -Code "VERIFY_ONLY_CANNOT_BUILD_INSTALLER" -HeadSha $headSha -Detail "-VerifyStageOnly is read-only and cannot be combined with -BuildInstaller."
+    }
+
+    if ($VerifyStageOnly) {
+        Write-Info "VerifyStageOnly set; inspecting existing stage custody read-only against HEAD $headSha..."
         if (-not (Test-Path -LiteralPath $publishDir)) {
             Write-ProvenanceFailure -Code "MISSING_STAGE_DIRECTORY" -HeadSha $headSha -Detail "Existing stage directory not found: $publishDir"
         }
-        $preVerifiedStage = Assert-StageManifestMatchesDisk `
+        $readOnlyVerify = Assert-StageManifestMatchesDisk `
             -PublishDir $publishDir `
             -HeadSha $headSha `
             -ExpectedVersion $Version `
@@ -1028,14 +1337,43 @@ try {
             -WebProvenanceStampPath $webProvenanceStamp `
             -ExpectedManifestSha256 $ExpectedStageManifestSha256 `
             -RequireSourceTreeAssetParity
-    } elseif ($SkipWebBuild) {
-        Write-Info "SkipWebBuild set; verifying existing dist provenance stamp before mutating output..."
+        Write-Host "[STAGE_VERIFIED_READONLY] manifestId=$($readOnlyVerify.Manifest.manifestId) manifestSha256=$($readOnlyVerify.ManifestSha256) releaseAuthority=$($readOnlyVerify.Manifest.releaseAuthority)"
+        exit 0
+    }
+
+    if ($SkipWebBuild) {
+        Write-Info "SkipWebBuild set (NON-RELEASE / NOT ATTESTED dev staging only); verifying dist stamp..."
         $preWebSourceInputSha256 = Get-WebSourceInputDigest -WebRoot $webRoot -HeadSha $headSha
         $verifiedSkipWeb = Assert-VerifiedSkipWebDist `
             -WebDistDir $webDistSrc `
             -StampPath $webProvenanceStamp `
             -ExpectedHeadSha $headSha `
             -ExpectedWebSourceInputSha256 $preWebSourceInputSha256
+    }
+
+    # Scan source project bin/obj trees and web dist for nested reparse points BEFORE any build or cleanup
+    $srcRootDir = Join-Path $repoRoot "src"
+    Assert-NotReparsePoint -Path $srcRootDir -HeadSha $headSha -ContextLabel "src-root"
+    $projectDirs = New-Object System.Collections.Generic.List[string]
+    foreach ($subProj in @(Get-ChildItem -LiteralPath $srcRootDir -Directory -Force -ErrorAction Stop)) {
+        if (($subProj.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Write-ProvenanceFailure -Code "REPARSE_POINT_FORBIDDEN" -HeadSha $headSha -Detail "Reparse point/junction forbidden in src directory: $($subProj.FullName)"
+        }
+        $hasCsproj = @(Get-ChildItem -LiteralPath $subProj.FullName -Filter "*.csproj" -File -Force -ErrorAction SilentlyContinue).Count -gt 0
+        if ($hasCsproj) {
+            $projectDirs.Add($subProj.FullName)
+            foreach ($buildSub in @("bin", "obj")) {
+                $scanTarget = Join-Path $subProj.FullName $buildSub
+                $scanItem = Get-Item -LiteralPath $scanTarget -Force -ErrorAction SilentlyContinue
+                if ($null -ne $scanItem) {
+                    [void](Assert-TreeFreeOfReparsePointsAndAliases -RootDir $scanTarget -AllowedParentRoot $subProj.FullName -HeadSha $headSha -ContextLabel "project-$buildSub")
+                }
+            }
+        }
+    }
+    $existingDistItem = Get-Item -LiteralPath $webDistSrc -Force -ErrorAction SilentlyContinue
+    if ($null -ne $existingDistItem) {
+        [void](Assert-TreeFreeOfReparsePointsAndAliases -RootDir $webDistSrc -AllowedParentRoot $webRoot -HeadSha $headSha -ContextLabel "web-dist")
     }
 
     # Re-validate OutputDir before creating directories (TOCTOU protection)
@@ -1078,21 +1416,18 @@ $nodeVersion = (& node --version 2>$null | Out-String).Trim()
 $npmVersion = (& npm --version 2>$null | Out-String).Trim()
 
 # ---------------------------------------------------------------------------
-# 2. Build / Stage Pipeline (skipped ONLY if -CompileExistingStageOnly)
+# 2. Build / Stage Pipeline (fresh source-bound build required for release)
 # ---------------------------------------------------------------------------
-if (-not $CompileExistingStageOnly) {
-    $webSourceInputSha256 = Get-WebSourceInputDigest -WebRoot $webRoot -HeadSha $headSha
+$webSourceInputSha256 = Get-WebSourceInputDigest -WebRoot $webRoot -HeadSha $headSha
 
-    if (-not $SkipWebBuild) {
-        Write-Info "Cleaning previous web dist and running npm run build..."
-        if (Test-Path -LiteralPath $webDistSrc) {
-            Assert-NotReparsePoint -Path $webDistSrc -HeadSha $headSha -ContextLabel "web-dist"
-            Remove-Item -LiteralPath $webDistSrc -Recurse -Force
-        }
-        & npm --prefix $webRoot run build
-        if ($LASTEXITCODE -ne 0) {
-            Write-ProvenanceFailure -Code "WEB_BUILD_FAILED" -HeadSha $headSha -Detail "npm run build failed (exit $LASTEXITCODE)."
-        }
+if (-not $SkipWebBuild) {
+    Assert-LockedWebDependencies -WebRoot $webRoot -RepoRoot $repoRoot -HeadSha $headSha -RunNpmCi:$ForceNpmCi
+    Write-Info "Cleaning previous web dist safely and running fresh npm run build..."
+    Remove-OwnedDirectoryTreeSafely -TargetDir $webDistSrc -AllowedParentRoot $webRoot -HeadSha $headSha -ContextLabel "web-dist"
+    & npm --prefix $webRoot run build
+    if ($LASTEXITCODE -ne 0) {
+        Write-ProvenanceFailure -Code "WEB_BUILD_FAILED" -HeadSha $headSha -Detail "npm run build failed (exit $LASTEXITCODE)."
+    }
         if (-not (Test-Path -LiteralPath (Join-Path $webDistSrc "index.html"))) {
             Write-ProvenanceFailure -Code "MISSING_WEB_DIST" -HeadSha $headSha -Detail "Web dist missing index.html after npm run build."
         }
@@ -1120,34 +1455,42 @@ if (-not $CompileExistingStageOnly) {
         Write-Info "Verified cached web dist against commit $headSha ($($webDistInventory.Count) files)."
     }
 
-    # TOCTOU re-check output root immediately before wiping/writing staging directories
+    # TOCTOU re-check output root + get protected roots immediately before safe non-following wipes
     [void](Assert-OutputDirSafe -ArtifactRoot $artifactRoot -RepoRoot $repoRoot -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots)
+    $stageProtectedRoots = Get-ProtectedRootsList -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots
 
-    # Wipe staging directories cleanly
-    if (Test-Path -LiteralPath $publishDir) {
-        Assert-NotReparsePoint -Path $publishDir -HeadSha $headSha -ContextLabel "publish-dir"
-        Remove-Item -Recurse -Force -LiteralPath $publishDir
-    }
+    # Wipe staging directories safely (deep reparse scan + bottom-up non-following delete)
+    Remove-OwnedDirectoryTreeSafely `
+        -TargetDir $publishDir `
+        -AllowedParentRoot $artifactRoot `
+        -HeadSha $headSha `
+        -ContextLabel "publish-dir" `
+        -ReparseErrorCode "OUTPUT_DIR_REPARSE_POINT_FORBIDDEN" `
+        -ProtectedRoots $stageProtectedRoots
     New-Item -ItemType Directory -Force -Path $publishDir | Out-Null
 
-    if (Test-Path -LiteralPath $shellTemp) {
-        Assert-NotReparsePoint -Path $shellTemp -HeadSha $headSha -ContextLabel "shell-temp"
-        Remove-Item -Recurse -Force -LiteralPath $shellTemp
-    }
+    Remove-OwnedDirectoryTreeSafely `
+        -TargetDir $shellTemp `
+        -AllowedParentRoot $artifactRoot `
+        -HeadSha $headSha `
+        -ContextLabel "shell-temp" `
+        -ReparseErrorCode "OUTPUT_DIR_REPARSE_POINT_FORBIDDEN" `
+        -ProtectedRoots $stageProtectedRoots
     New-Item -ItemType Directory -Force -Path $shellTemp | Out-Null
 
     $apiProj = Join-Path $repoRoot "src\Salryn.Api.Local\Salryn.Api.Local.csproj"
     $shellProj = Join-Path $repoRoot "src\Salryn.Desktop.WebView\Salryn.Desktop.WebView.csproj"
 
-    # Remove prior configuration bin/obj intermediates (leaving NuGet project.assets.json intact)
+    # Safely remove prior configuration bin/obj intermediates (leaving NuGet project.assets.json intact)
     # so stale compiled DLLs cannot leak into fresh SourceRevisionId-stamped assemblies.
-    foreach ($projFile in (Get-ChildItem -LiteralPath (Join-Path $repoRoot "src") -Recurse -Filter "*.csproj" -File)) {
-        $projDir = $projFile.DirectoryName
+    foreach ($projDir in $projectDirs) {
         foreach ($sub in @("bin\$Configuration", "obj\$Configuration")) {
             $cleanTarget = Join-Path $projDir $sub
-            if (Test-Path -LiteralPath $cleanTarget) {
-                Remove-Item -LiteralPath $cleanTarget -Recurse -Force
-            }
+            Remove-OwnedDirectoryTreeSafely `
+                -TargetDir $cleanTarget `
+                -AllowedParentRoot $projDir `
+                -HeadSha $headSha `
+                -ContextLabel "project-$sub"
         }
     }
 
@@ -1203,11 +1546,21 @@ if (-not $CompileExistingStageOnly) {
     }
 
     # Stage React dist (excluding internal build stamp file) and verify parity
-    if (Test-Path -LiteralPath $stagedDist) { Remove-Item -Recurse -Force -LiteralPath $stagedDist }
+    Remove-OwnedDirectoryTreeSafely `
+        -TargetDir $stagedDist `
+        -AllowedParentRoot $artifactRoot `
+        -HeadSha $headSha `
+        -ContextLabel "staged-dist" `
+        -ReparseErrorCode "OUTPUT_DIR_REPARSE_POINT_FORBIDDEN" `
+        -ProtectedRoots $stageProtectedRoots
     Copy-Item -Recurse -Force -LiteralPath $webDistSrc -Destination $stagedDist
     $stagedStampCopy = Join-Path $stagedDist ".salryn-web-build-provenance.json"
-    if (Test-Path -LiteralPath $stagedStampCopy) {
-        Remove-Item -Force -LiteralPath $stagedStampCopy
+    $stagedStampItem = Get-Item -LiteralPath $stagedStampCopy -Force -ErrorAction SilentlyContinue
+    if ($null -ne $stagedStampItem) {
+        if (($stagedStampItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Write-ProvenanceFailure -Code "OUTPUT_DIR_REPARSE_POINT_FORBIDDEN" -HeadSha $headSha -Detail "Reparse point found at staged stamp copy: $stagedStampCopy"
+        }
+        [System.IO.File]::Delete($stagedStampCopy)
     }
     Assert-NoReparsePointsOrTraversal -RootDir $stagedDist -HeadSha $headSha -ContextLabel "staged-dist"
     $stagedDistInventory = Get-DirectoryFileHashInventory -RootDir $stagedDist
@@ -1223,6 +1576,9 @@ if (-not $CompileExistingStageOnly) {
         Copy-Item -Force -LiteralPath (Join-Path $repoRoot "assets\branding\$asset") -Destination (Join-Path $brandingStage $asset)
     }
 
+    $releaseAuthority = if ($SkipWebBuild) { "NONRELEASE_DEV_STAGE_NOT_ATTESTED" } else { "SOURCE_BOUND_FRESH_BUILD" }
+    $authoritativeAllowed = (-not $SkipWebBuild)
+
     # Human-readable stage metadata (relative paths only; no hostnames/usernames/secrets)
     $stagedUtc = (Get-Date).ToUniversalTime().ToString("o")
     $stageStampContent = (@(
@@ -1230,6 +1586,8 @@ if (-not $CompileExistingStageOnly) {
         "Publisher=Kirjane Information Technology Services"
         "ProductVersion=$Version"
         "Configuration=$Configuration"
+        "ReleaseAuthority=$releaseAuthority"
+        "AuthoritativeInstallerAllowed=$authoritativeAllowed"
         "SourceCommitSha=$headSha"
         "GitBranch=$($provenance.GitBranch)"
         "WorktreeClean=true"
@@ -1261,44 +1619,46 @@ if (-not $CompileExistingStageOnly) {
     $manifestId = "salryn-pos-$Version-$($headSha.Substring(0,12))-$($payloadInventorySha256.Substring(0,12))"
 
     $manifestObject = [ordered]@{
-        schemaVersion          = "1.0"
-        manifestId             = $manifestId
-        product                = "Salryn POS"
-        publisher              = "Kirjane Information Technology Services"
-        productVersion         = $Version
-        configuration          = $Configuration
-        builtUtc               = $stagedUtc
-        source                 = [ordered]@{
+        schemaVersion               = "1.0"
+        manifestId                  = $manifestId
+        product                     = "Salryn POS"
+        publisher                   = "Kirjane Information Technology Services"
+        productVersion              = $Version
+        configuration               = $Configuration
+        releaseAuthority            = $releaseAuthority
+        authoritativeInstallerAllowed = $authoritativeAllowed
+        builtUtc                    = $stagedUtc
+        source                      = [ordered]@{
             commitSha     = $headSha
             branch        = $provenance.GitBranch
             detachedHead  = $provenance.DetachedHead
             worktreeClean = $true
         }
-        buildOptions           = [ordered]@{
+        buildOptions                = [ordered]@{
             skipWebBuild            = [bool]$SkipWebBuild
             webDistInventorySha256  = $webDistInventorySha256
             webSourceInputSha256    = $webSourceInputSha256
         }
-        toolchain              = [ordered]@{
+        toolchain                   = [ordered]@{
             dotnetSdk  = $dotnetVersion
             node       = $nodeVersion
             npm        = $npmVersion
             powershell = $PSVersionTable.PSVersion.ToString()
         }
-        redistributables       = @(
+        redistributables            = @(
             [ordered]@{
                 relativePath = "installer/redist/MicrosoftEdgeWebview2Setup.exe"
                 bytes        = $redistBytes
                 sha256       = $redistSha256
             }
         )
-        excludedFromSelfHash   = @(
+        excludedFromSelfHash        = @(
             "salryn-installer-provenance-manifest.json",
             "salryn-installer-provenance-manifest.json.sha256"
         )
-        payloadFileCount       = $stageInventory.Count
-        payloadInventorySha256 = $payloadInventorySha256
-        files                  = $stageInventory
+        payloadFileCount            = $stageInventory.Count
+        payloadInventorySha256      = $payloadInventorySha256
+        files                       = $stageInventory
     }
 
     $manifestPath = Join-Path $publishDir "salryn-installer-provenance-manifest.json"
@@ -1307,28 +1667,20 @@ if (-not $CompileExistingStageOnly) {
     $manifestSha256 = Get-FileSha256Lower -FilePath $manifestPath
     Write-Utf8NoBom -Path $manifestShaPath -Content "$manifestSha256  salryn-installer-provenance-manifest.json`n"
 
-    Write-Info "Generated stage manifest: $manifestId ($($stageInventory.Count) payload files, inventorySha256=$payloadInventorySha256)"
-} else {
-    Write-Info "CompileExistingStageOnly set; re-verifying staged output against HEAD $headSha..."
-    if (-not (Test-Path -LiteralPath $publishDir)) {
-        Write-ProvenanceFailure -Code "MISSING_STAGE_DIRECTORY" -HeadSha $headSha -Detail "Existing stage directory not found: $publishDir"
-    }
-}
+    Write-Info "Generated stage manifest: $manifestId ($($stageInventory.Count) payload files, authority=$releaseAuthority, inventorySha256=$payloadInventorySha256)"
 
-$stageVerifyParams = @{
-    PublishDir             = $publishDir
-    HeadSha                = $headSha
-    ExpectedVersion        = $Version
-    ExpectedConfiguration  = $Configuration
-    RepoRoot               = $repoRoot
-    WebRoot                = $webRoot
-    WebDistDir             = $webDistSrc
-    WebProvenanceStampPath = $webProvenanceStamp
-}
-if ($CompileExistingStageOnly) {
-    $stageVerifyParams.ExpectedManifestSha256 = $ExpectedStageManifestSha256
-    $stageVerifyParams.RequireSourceTreeAssetParity = $true
-}
+    $stageVerifyParams = @{
+        PublishDir                      = $publishDir
+        HeadSha                         = $headSha
+        ExpectedVersion                 = $Version
+        ExpectedConfiguration           = $Configuration
+        RepoRoot                        = $repoRoot
+        WebRoot                         = $webRoot
+        WebDistDir                      = $webDistSrc
+        WebProvenanceStampPath          = $webProvenanceStamp
+        RequireSourceTreeAssetParity    = [bool]$BuildInstaller
+        RequireAuthoritativeReleaseStage = [bool]$BuildInstaller
+    }
 
 # Always verify on-disk stage matches manifest and HEAD cleanly
 $verifiedStage = Assert-StageManifestMatchesDisk @stageVerifyParams
@@ -1403,15 +1755,15 @@ if (-not (Test-Path -LiteralPath $setupExePath)) {
 [void](Assert-OutputDirSafe -ArtifactRoot $artifactRoot -RepoRoot $repoRoot -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots)
 Assert-NotReparsePoint -Path $setupExePath -HeadSha $headSha -ContextLabel "setup-exe"
 
-$setupItem = Get-Item -LiteralPath $setupExePath -Force
-if ($setupItem.Length -le 0) {
-    Remove-Item -Force -LiteralPath $setupExePath
-    Write-ProvenanceFailure -Code "SETUP_EXE_EMPTY" -HeadSha $headSha -Detail "Compiled setup EXE is zero bytes: $setupExePath"
-}
-if ($setupItem.LastWriteTimeUtc -lt $compileStartUtc.AddSeconds(-2)) {
-    Remove-Item -Force -LiteralPath $setupExePath
-    Write-ProvenanceFailure -Code "STALE_SETUP_EXE_DETECTED" -HeadSha $headSha -Detail "Setup EXE timestamp ($($setupItem.LastWriteTimeUtc.ToString('o'))) predates compile start ($($compileStartUtc.ToString('o')))."
-}
+    $setupItem = Get-Item -LiteralPath $setupExePath -Force
+    if ($setupItem.Length -le 0) {
+        Remove-StaleSetupArtifacts -SetupDir $setupDir -ArtifactRoot $artifactRoot -RepoRoot $repoRoot -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots
+        Write-ProvenanceFailure -Code "SETUP_EXE_EMPTY" -HeadSha $headSha -Detail "Compiled setup EXE is zero bytes: $setupExePath"
+    }
+    if ($setupItem.LastWriteTimeUtc -lt $compileStartUtc.AddSeconds(-2)) {
+        Remove-StaleSetupArtifacts -SetupDir $setupDir -ArtifactRoot $artifactRoot -RepoRoot $repoRoot -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots
+        Write-ProvenanceFailure -Code "STALE_SETUP_EXE_DETECTED" -HeadSha $headSha -Detail "Setup EXE timestamp ($($setupItem.LastWriteTimeUtc.ToString('o'))) predates compile start ($($compileStartUtc.ToString('o')))."
+    }
 
 # Re-verify stage after ISCC completes to confirm staging did not drift mid-compile
 $verifiedAfterCompile = Assert-StageManifestMatchesDisk @stageVerifyParams
@@ -1430,6 +1782,7 @@ $shaTxtContent = (@(
     "SHA256=$setupSha256"
     "Version=$Version"
     "Configuration=$Configuration"
+    "ReleaseAuthority=$($verifiedAfterCompile.Manifest.releaseAuthority)"
     "SourceCommitSha=$headSha"
     "GitBranch=$($provenance.GitBranch)"
     "WorktreeClean=true"
@@ -1452,6 +1805,8 @@ $provenanceObject = [ordered]@{
     setupExeSha256              = $setupSha256
     productVersion              = $Version
     configuration               = $Configuration
+    releaseAuthority            = $verifiedAfterCompile.Manifest.releaseAuthority
+    authoritativeInstallerAllowed = [bool]$verifiedAfterCompile.Manifest.authoritativeInstallerAllowed
     builtUtc                    = $compiledUtc
     sourceCommitSha             = $headSha
     gitBranch                   = $provenance.GitBranch
