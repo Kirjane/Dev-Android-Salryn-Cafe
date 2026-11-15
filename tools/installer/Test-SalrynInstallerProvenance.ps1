@@ -269,17 +269,9 @@ try {
 
     $srcNodeModules = Join-Path $sourceRepoRoot "src\Salryn.App.Web\node_modules"
     $dispNodeModules = Join-Path $dispWorktree "src\Salryn.App.Web\node_modules"
-    if (Test-Path -LiteralPath $srcNodeModules) {
-        Write-SuiteInfo "Seeding gitignored node_modules into disposable worktree..."
-        & robocopy $srcNodeModules $dispNodeModules /E /NFL /NDL /NJH /NJS /NC /NS /R:1 /W:1 | Out-Null
-        if ($LASTEXITCODE -ge 8) {
-            throw "robocopy of node_modules failed with exit code $LASTEXITCODE"
-        }
-    } else {
-        Write-SuiteInfo "Installing frontend packages via npm ci in disposable worktree..."
-        & npm --prefix (Join-Path $dispWorktree "src\Salryn.App.Web") ci --prefer-offline
-        if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
-    }
+    $dispViteBin = Join-Path $dispNodeModules "vite\bin\vite.js"
+    # Note: POS-01 now unconditionally wipes node_modules and runs clean npm ci --prefer-offline,
+    # so we seed only a poisoned vite.js dummy before POS-01 rather than copying 8000 files twice.
 
     $dispBuildScript = Join-Path $dispWorktree "tools\installer\Build-SalrynBetaRc1Installer.ps1"
     $dispWebDist = Join-Path $dispWorktree "src\Salryn.App.Web\dist"
@@ -370,19 +362,19 @@ try {
     if (Test-Path -LiteralPath $dispWebDist) { Remove-Item -Recurse -Force -LiteralPath $dispWebDist }
 
     # -----------------------------------------------------------------------
-    # POS-01: Full fresh clean build + QA-only ISCC compile in isolated nested OutputDir
-    #         Pre-seeds forged ignored worktree dist + stamp AND stale setup EXE +
-    #         sidecars to verify Option A wipes ignored dist and builds fresh from source.
+    # POS-01: Full fresh clean build + QA-only ISCC compile in isolated nested
+    #         non-existent OutputDir. Pre-seeds forged ignored worktree dist +
+    #         poisoned vite.js canary to prove Option A / F1 wipes node_modules
+    #         and runs clean lockfile-verified npm ci + fresh build from source.
     # -----------------------------------------------------------------------
     $pos01Out = Join-Path $outBase "pos01\nested\clean-run"
     $pos01SetupDir = Join-Path $pos01Out "setup"
-    New-Item -ItemType Directory -Force -Path $pos01SetupDir | Out-Null
     $pos01SetupExe = Join-Path $pos01SetupDir "Salryn-POS-BetaRC1-Setup.exe"
-    $pos01StaleSha = "$pos01SetupExe.sha256.txt"
-    $pos01StaleProv = "$pos01SetupExe.provenance.json"
-    Write-Utf8NoBom -Path $pos01SetupExe -Content "STALE_DUMMY_EXE!"
-    Write-Utf8NoBom -Path $pos01StaleSha -Content "SHA256=deadbeef`r`n"
-    Write-Utf8NoBom -Path $pos01StaleProv -Content '{"stale":true}'
+
+    $pos01ViteCanary = Join-Path $testRoot "pos01-vite-canary.txt"
+    $pos01ViteCanaryJs = $pos01ViteCanary.Replace('\', '\\')
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dispViteBin) | Out-Null
+    Write-Utf8NoBom -Path $dispViteBin -Content "require('fs').writeFileSync('$pos01ViteCanaryJs', 'POISONED_VITE_RAN');`nprocess.exit(99);`n"
 
     # Pre-seed forged ignored dist + stamp on clean HEAD to prove Option A ignores & wipes it
     New-Item -ItemType Directory -Force -Path $dispWebDist | Out-Null
@@ -413,7 +405,7 @@ try {
         $posArgs += @("-InnoSetupCompilerPath", $InnoSetupCompilerPath)
     }
 
-    Write-SuiteInfo "Running POS-01 full fresh build + QA-only ISCC compile in isolated nested dir..."
+    Write-SuiteInfo "Running POS-01 full fresh build + QA-only ISCC compile in isolated nested private dir..."
     $posCompileStart = (Get-Date).ToUniversalTime()
     $rPos01 = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments $posArgs
 
@@ -426,6 +418,7 @@ try {
     $stagedDistIdx = Join-Path $pos01Out "staging\Salryn\dist\index.html"
 
     $posOk = ($rPos01.ExitCode -eq 0) -and
+             (-not (Test-Path -LiteralPath $pos01ViteCanary)) -and
              (Test-Path -LiteralPath $manifestFile) -and
              (Test-Path -LiteralPath $manifestShaFile) -and
              (Test-Path -LiteralPath $pos01SetupExe) -and
@@ -457,6 +450,10 @@ try {
                  ($provJson.setupExeSha256 -eq $setupHash) -and
                  ($provJson.sourceCommitSha -eq $headSha) -and
                  ($provJson.worktreeClean -eq $true) -and
+                 ($provJson.privatePerRunOutput -eq $true) -and
+                 (-not [string]::IsNullOrWhiteSpace($provJson.packageLockSha256)) -and
+                 ($manifestObj.buildOptions.packageLockSha256 -eq $provJson.packageLockSha256) -and
+                 ($manifestObj.buildOptions.npmInstallCommand -match '^npm ci') -and
                  ($provJson.packedPayloadVerification -eq "PACKED_PAYLOAD_NOT_VERIFIED") -and
                  ($provJson.releaseAuthority -eq "SOURCE_BOUND_FRESH_BUILD") -and
                  ($provJson.authoritativeInstallerAllowed -eq $true) -and
@@ -569,8 +566,9 @@ try {
     }
 
     # -----------------------------------------------------------------------
-    # NEG-11: Option A blocks -CompileExistingStageOnly -BuildInstaller AND
-    #         -VerifyStageOnly detects tampered staged payload before ISCC
+    # NEG-11: Option A blocks -CompileExistingStageOnly -BuildInstaller
+    #         BEFORE mutating setup (F3 preserves existing setup files), AND
+    #         -VerifyStageOnly detects tampered staged payload read-only
     # -----------------------------------------------------------------------
     $neg11Out = Join-Path $outBase "neg11"
     & robocopy (Join-Path $pos01Out "staging") (Join-Path $neg11Out "staging") /E /NFL /NDL /NJH /NJS /NC /NS /R:1 /W:1 | Out-Null
@@ -583,19 +581,19 @@ try {
     $stageArgs11Compile = @("-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg11Out, "-ExpectedSourceSha", $headSha, "-ExpectedStageManifestSha256", $pos01ManifestSha, "-CompileExistingStageOnly", "-BuildInstaller")
     if (-not [string]::IsNullOrWhiteSpace($InnoSetupCompilerPath)) { $stageArgs11Compile += @("-InnoSetupCompilerPath", $InnoSetupCompilerPath) }
     $r11Compile = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments $stageArgs11Compile
-    $neg11ExeAfter = Test-Path -LiteralPath $neg11ExePath
 
     $r11Verify = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
         "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg11Out,
         "-ExpectedSourceSha", $headSha, "-ExpectedStageManifestSha256", $pos01ManifestSha, "-VerifyStageOnly"
     )
-    $ok = ($r11Compile.ExitCode -ne 0) -and ($r11Compile.Combined -match 'code=COMPILE_EXISTING_STAGE_FORBIDDEN') -and (-not $neg11ExeAfter) -and
+    $neg11ExeIntact = (Test-Path -LiteralPath $neg11ExePath) -and ((Get-Content -LiteralPath $neg11ExePath -Raw) -eq "STALE_NEG11_EXE")
+    $ok = ($r11Compile.ExitCode -ne 0) -and ($r11Compile.Combined -match 'code=COMPILE_EXISTING_STAGE_FORBIDDEN') -and $neg11ExeIntact -and
           ($r11Verify.ExitCode -ne 0) -and ($r11Verify.Combined -match 'code=STAGE_MANIFEST_INVENTORY_MISMATCH|STAGE_MANIFEST_FILE_MISMATCH')
-    Record-TestResult -Id "NEG-11_TAMPERED_STAGE_REJECTED_BEFORE_ISCC" -Passed $ok -ObservedCode "OPTION_A+STAGE_MISMATCH" -Notes "compileExit=$($r11Compile.ExitCode), verifyExit=$($r11Verify.ExitCode), setupExists=$neg11ExeAfter"
+    Record-TestResult -Id "NEG-11_TAMPERED_STAGE_REJECTED_BEFORE_ISCC" -Passed $ok -ObservedCode "OPTION_A+STAGE_MISMATCH_READONLY" -Notes "compileExit=$($r11Compile.ExitCode), verifyExit=$($r11Verify.ExitCode), exeIntact=$neg11ExeIntact"
 
     # -----------------------------------------------------------------------
-    # NEG-12: Option A blocks -CompileExistingStageOnly AND -VerifyStageOnly
-    #         detects missing required staged binary
+    # NEG-12: Option A blocks -CompileExistingStageOnly BEFORE mutation (F3),
+    #         AND -VerifyStageOnly detects missing staged binary read-only
     # -----------------------------------------------------------------------
     $neg12Out = Join-Path $outBase "neg12"
     & robocopy (Join-Path $pos01Out "staging") (Join-Path $neg12Out "staging") /E /NFL /NDL /NJH /NJS /NC /NS /R:1 /W:1 | Out-Null
@@ -608,32 +606,30 @@ try {
     $stageArgs12Compile = @("-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg12Out, "-ExpectedSourceSha", $headSha, "-ExpectedStageManifestSha256", $pos01ManifestSha, "-CompileExistingStageOnly", "-BuildInstaller")
     if (-not [string]::IsNullOrWhiteSpace($InnoSetupCompilerPath)) { $stageArgs12Compile += @("-InnoSetupCompilerPath", $InnoSetupCompilerPath) }
     $r12Compile = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments $stageArgs12Compile
-    $neg12ExeAfter = Test-Path -LiteralPath $neg12ExePath
 
     $r12Verify = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
         "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg12Out,
         "-ExpectedSourceSha", $headSha, "-ExpectedStageManifestSha256", $pos01ManifestSha, "-VerifyStageOnly"
     )
-    $ok = ($r12Compile.ExitCode -ne 0) -and ($r12Compile.Combined -match 'code=COMPILE_EXISTING_STAGE_FORBIDDEN') -and (-not $neg12ExeAfter) -and
+    $neg12ExeIntact = (Test-Path -LiteralPath $neg12ExePath) -and ((Get-Content -LiteralPath $neg12ExePath -Raw) -eq "STALE_NEG12_EXE")
+    $ok = ($r12Compile.ExitCode -ne 0) -and ($r12Compile.Combined -match 'code=COMPILE_EXISTING_STAGE_FORBIDDEN') -and $neg12ExeIntact -and
           ($r12Verify.ExitCode -ne 0) -and ($r12Verify.Combined -match 'code=MISSING_STAGED_FILE')
-    Record-TestResult -Id "NEG-12_MISSING_STAGE_BINARY_REJECTED" -Passed $ok -ObservedCode "OPTION_A+MISSING_STAGED_FILE" -Notes "compileExit=$($r12Compile.ExitCode), verifyExit=$($r12Verify.ExitCode), setupExists=$neg12ExeAfter"
+    Record-TestResult -Id "NEG-12_MISSING_STAGE_BINARY_REJECTED" -Passed $ok -ObservedCode "OPTION_A+MISSING_STAGED_FILE" -Notes "compileExit=$($r12Compile.ExitCode), verifyExit=$($r12Verify.ExitCode), exeIntact=$neg12ExeIntact"
 
     # -----------------------------------------------------------------------
     # NEG-13: Fresh -BuildInstaller with failing ISCC, no-op ISCC, and
-    #         mid-ISCC stage tampering must fail closed and purge stale/new EXE + sidecars
+    #         mid-ISCC stage tampering in non-existent private OutputDirs must
+    #         fail closed and purge partial/forged setup EXE + sidecars
     # -----------------------------------------------------------------------
     $neg13AOut = Join-Path $outBase "neg13a"
     $neg13ASetupDir = Join-Path $neg13AOut "setup"
-    New-Item -ItemType Directory -Force -Path $neg13ASetupDir | Out-Null
     $neg13AExe = Join-Path $neg13ASetupDir "Salryn-POS-BetaRC1-Setup.exe"
     $neg13ASha = "$neg13AExe.sha256.txt"
     $neg13AProv = "$neg13AExe.provenance.json"
-    Write-Utf8NoBom -Path $neg13AExe -Content "STALE_PREEXISTING_13A"
-    Write-Utf8NoBom -Path $neg13ASha -Content "SHA256=deadbeef`r`n"
-    Write-Utf8NoBom -Path $neg13AProv -Content '{"stale":true}'
 
     $fakeFailIscc = Join-Path $testRoot "fail-iscc.cmd"
-    Write-Utf8NoBom -Path $fakeFailIscc -Content "@echo off`r`necho Simulated ISCC failure`r`nexit /b 2`r`n"
+    $failCmd = "@echo off`r`n(echo PARTIAL_13A_SETUP)>`"$neg13AExe`"`r`n(echo SHA256=deadbeef)>`"$neg13ASha`"`r`n(echo {`"stale`":true})>`"$neg13AProv`"`r`necho Simulated ISCC failure`r`nexit /b 2`r`n"
+    Write-Utf8NoBom -Path $fakeFailIscc -Content $failCmd
     $rFail = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
         "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg13AOut,
         "-ExpectedSourceSha", $headSha, "-BuildInstaller", "-InnoSetupCompilerPath", $fakeFailIscc
@@ -642,13 +638,9 @@ try {
 
     $neg13BOut = Join-Path $outBase "neg13b"
     $neg13BSetupDir = Join-Path $neg13BOut "setup"
-    New-Item -ItemType Directory -Force -Path $neg13BSetupDir | Out-Null
     $neg13BExe = Join-Path $neg13BSetupDir "Salryn-POS-BetaRC1-Setup.exe"
     $neg13BSha = "$neg13BExe.sha256.txt"
     $neg13BProv = "$neg13BExe.provenance.json"
-    Write-Utf8NoBom -Path $neg13BExe -Content "STALE_PREEXISTING_13B"
-    Write-Utf8NoBom -Path $neg13BSha -Content "SHA256=deadbeef`r`n"
-    Write-Utf8NoBom -Path $neg13BProv -Content '{"stale":true}'
 
     $fakeNoopIscc = Join-Path $testRoot "noop-iscc.cmd"
     Write-Utf8NoBom -Path $fakeNoopIscc -Content "@echo off`r`necho Simulated ISCC wrote nothing`r`nexit /b 0`r`n"
@@ -660,17 +652,13 @@ try {
 
     $neg13COut = Join-Path $outBase "neg13c"
     $neg13CSetupDir = Join-Path $neg13COut "setup"
-    New-Item -ItemType Directory -Force -Path $neg13CSetupDir | Out-Null
     $neg13CExe = Join-Path $neg13CSetupDir "Salryn-POS-BetaRC1-Setup.exe"
     $neg13CSha = "$neg13CExe.sha256.txt"
     $neg13CProv = "$neg13CExe.provenance.json"
-    Write-Utf8NoBom -Path $neg13CExe -Content "STALE_PREEXISTING_13C"
-    Write-Utf8NoBom -Path $neg13CSha -Content "SHA256=deadbeef`r`n"
-    Write-Utf8NoBom -Path $neg13CProv -Content '{"stale":true}'
 
     $neg13CDistIdx = Join-Path $neg13COut "staging\Salryn\dist\index.html"
     $fakeTamperIscc = Join-Path $testRoot "tamper-iscc.cmd"
-    $tamperCmd = "@echo off`r`n(echo FAKE_MID_ISCC_SETUP)>`"$neg13CExe`"`r`n(echo mid-iscc-tamper)>>`"$neg13CDistIdx`"`r`nexit /b 0`r`n"
+    $tamperCmd = "@echo off`r`n(echo FAKE_MID_ISCC_SETUP)>`"$neg13CExe`"`r`n(echo SHA256=deadbeef)>`"$neg13CSha`"`r`n(echo {`"stale`":true})>`"$neg13CProv`"`r`n(echo mid-iscc-tamper)>>`"$neg13CDistIdx`"`r`nexit /b 0`r`n"
     Write-Utf8NoBom -Path $fakeTamperIscc -Content $tamperCmd
     $rTamper = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
         "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg13COut,
@@ -684,8 +672,9 @@ try {
     Record-TestResult -Id "NEG-13_FAILED_NOOP_OR_TAMPER_ISCC_PURGES_EXE" -Passed $ok -ObservedCode "ISCC_FAIL+NOOP+POST_CHECK" -Notes "failStale=$staleSurvivedFail, noopStale=$staleSurvivedNoop, tamperStale=$staleSurvivedTamper"
 
     # -----------------------------------------------------------------------
-    # NEG-15: Option A blocks -CompileExistingStageOnly AND -VerifyStageOnly
-    #         rejects path traversal in stage manifest (even with updated .sha256)
+    # NEG-15: Option A blocks -CompileExistingStageOnly BEFORE mutating setup
+    #         (F3 preserves setup files), AND -VerifyStageOnly rejects path
+    #         traversal in stage manifest read-only (even with updated .sha256)
     # -----------------------------------------------------------------------
     $neg15Out = Join-Path $outBase "neg15"
     & robocopy (Join-Path $pos01Out "staging") (Join-Path $neg15Out "staging") /E /NFL /NDL /NJH /NJS /NC /NS /R:1 /W:1 | Out-Null
@@ -704,19 +693,19 @@ try {
     $stageArgs15Compile = @("-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg15Out, "-ExpectedSourceSha", $headSha, "-ExpectedStageManifestSha256", $newMSha, "-CompileExistingStageOnly", "-BuildInstaller")
     if (-not [string]::IsNullOrWhiteSpace($InnoSetupCompilerPath)) { $stageArgs15Compile += @("-InnoSetupCompilerPath", $InnoSetupCompilerPath) }
     $r15Compile = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments $stageArgs15Compile
-    $neg15ExeAfter = Test-Path -LiteralPath $neg15ExePath
 
     $r15Verify = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
         "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg15Out,
         "-ExpectedSourceSha", $headSha, "-ExpectedStageManifestSha256", $newMSha, "-VerifyStageOnly"
     )
-    $ok15 = ($r15Compile.ExitCode -ne 0) -and ($r15Compile.Combined -match 'code=COMPILE_EXISTING_STAGE_FORBIDDEN') -and (-not $neg15ExeAfter) -and
+    $neg15ExeIntact = (Test-Path -LiteralPath $neg15ExePath) -and ((Get-Content -LiteralPath $neg15ExePath -Raw) -eq "STALE_NEG15_EXE")
+    $ok15 = ($r15Compile.ExitCode -ne 0) -and ($r15Compile.Combined -match 'code=COMPILE_EXISTING_STAGE_FORBIDDEN') -and $neg15ExeIntact -and
             ($r15Verify.ExitCode -ne 0) -and ($r15Verify.Combined -match 'code=PATH_TRAVERSAL_FORBIDDEN')
-    Record-TestResult -Id "NEG-15_PATH_TRAVERSAL_IN_STAGE_MANIFEST_REJECTED" -Passed $ok15 -ObservedCode "OPTION_A+PATH_TRAVERSAL_FORBIDDEN" -Notes "compileExit=$($r15Compile.ExitCode), verifyExit=$($r15Verify.ExitCode), setupExists=$neg15ExeAfter"
+    Record-TestResult -Id "NEG-15_PATH_TRAVERSAL_IN_STAGE_MANIFEST_REJECTED" -Passed $ok15 -ObservedCode "OPTION_A+PATH_TRAVERSAL_FORBIDDEN" -Notes "compileExit=$($r15Compile.ExitCode), verifyExit=$($r15Verify.ExitCode), exeIntact=$neg15ExeIntact"
 
     # -----------------------------------------------------------------------
-    # NEG-16 (F1): -CompileExistingStageOnly without external pinned manifest
-    #              SHA-256 fails closed under Option A and purges setup artifacts
+    # NEG-16 (F1+F3): -CompileExistingStageOnly fails BEFORE any disk
+    #                 mutation under Option A and preserves setup artifacts
     # -----------------------------------------------------------------------
     $neg16Out = Join-Path $outBase "neg16"
     & robocopy (Join-Path $pos01Out "staging") (Join-Path $neg16Out "staging") /E /NFL /NDL /NJH /NJS /NC /NS /R:1 /W:1 | Out-Null
@@ -732,14 +721,15 @@ try {
     $stageArgs16 = @("-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg16Out, "-ExpectedSourceSha", $headSha, "-CompileExistingStageOnly", "-BuildInstaller")
     if (-not [string]::IsNullOrWhiteSpace($InnoSetupCompilerPath)) { $stageArgs16 += @("-InnoSetupCompilerPath", $InnoSetupCompilerPath) }
     $r16 = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments $stageArgs16
-    $neg16StaleLeft = (Test-Path -LiteralPath $neg16StaleExe) -or (Test-Path -LiteralPath $neg16StaleSha) -or (Test-Path -LiteralPath $neg16StaleProv)
-    $ok16 = ($r16.ExitCode -ne 0) -and ($r16.Combined -match 'code=COMPILE_EXISTING_STAGE_FORBIDDEN') -and (-not $neg16StaleLeft)
-    Record-TestResult -Id "NEG-16_F1_COMPILE_EXISTING_STAGE_FORBIDDEN" -Passed $ok16 -ObservedCode "COMPILE_EXISTING_STAGE_FORBIDDEN" -Notes "exit=$($r16.ExitCode), staleLeft=$neg16StaleLeft"
+    $setupPreserved16 = ((Get-Content -LiteralPath $neg16StaleExe -Raw) -eq "STALE_PRE_F1_EXE") -and
+                        ((Get-Content -LiteralPath $neg16StaleSha -Raw) -eq "SHA256=deadbeef`r`n") -and
+                        ((Get-Content -LiteralPath $neg16StaleProv -Raw) -eq '{"stale":true}')
+    $ok16 = ($r16.ExitCode -ne 0) -and ($r16.Combined -match 'code=COMPILE_EXISTING_STAGE_FORBIDDEN') -and $setupPreserved16
+    Record-TestResult -Id "NEG-16_F1_COMPILE_EXISTING_STAGE_FORBIDDEN" -Passed $ok16 -ObservedCode "COMPILE_EXISTING_STAGE_FORBIDDEN" -Notes "exit=$($r16.ExitCode), preserved=$setupPreserved16"
 
     # -----------------------------------------------------------------------
-    # NEG-17 (F1): Coordinated forgery of ignored worktree dist+stamp AND staged
-    #              payload + consistently recomputed manifest ID/dist/inventory/.sha256
-    #              is rejected unconditionally by Option A (-CompileExistingStageOnly forbidden)
+    # NEG-17 (F1+F3): Coordinated forgery rejected BEFORE any disk mutation;
+    #                 pre-seeded setup artifacts remain preserved
     # -----------------------------------------------------------------------
     $neg17Out = Join-Path $outBase "neg17"
     New-Item -ItemType Directory -Force -Path (Join-Path $neg17Out "setup") | Out-Null
@@ -755,9 +745,11 @@ try {
         $stageArgs17 = @("-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg17Out, "-ExpectedSourceSha", $headSha, "-ExpectedStageManifestSha256", $forgedSha17, "-CompileExistingStageOnly", "-BuildInstaller")
         if (-not [string]::IsNullOrWhiteSpace($InnoSetupCompilerPath)) { $stageArgs17 += @("-InnoSetupCompilerPath", $InnoSetupCompilerPath) }
         $r17 = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments $stageArgs17
-        $neg17StaleLeft = (Test-Path -LiteralPath $neg17Exe) -or (Test-Path -LiteralPath $neg17Sha) -or (Test-Path -LiteralPath $neg17Prov)
-        $ok17 = ($r17.ExitCode -ne 0) -and ($forgedSha17 -ne $pos01ManifestSha) -and ($r17.Combined -match 'code=COMPILE_EXISTING_STAGE_FORBIDDEN') -and (-not $neg17StaleLeft)
-        Record-TestResult -Id "NEG-17_F1_COORDINATED_STAGE_AND_DIST_FORGERY_REJECTED" -Passed $ok17 -ObservedCode "COMPILE_EXISTING_STAGE_FORBIDDEN" -Notes "exit=$($r17.ExitCode), forgedDiffers=$($forgedSha17 -ne $pos01ManifestSha), staleLeft=$neg17StaleLeft"
+        $setupPreserved17 = ((Get-Content -LiteralPath $neg17Exe -Raw) -eq "STALE_PRE_17_EXE") -and
+                            ((Get-Content -LiteralPath $neg17Sha -Raw) -eq "SHA256=deadbeef`r`n") -and
+                            ((Get-Content -LiteralPath $neg17Prov -Raw) -eq '{"stale":true}')
+        $ok17 = ($r17.ExitCode -ne 0) -and ($forgedSha17 -ne $pos01ManifestSha) -and ($r17.Combined -match 'code=COMPILE_EXISTING_STAGE_FORBIDDEN') -and $setupPreserved17
+        Record-TestResult -Id "NEG-17_F1_COORDINATED_STAGE_AND_DIST_FORGERY_REJECTED" -Passed $ok17 -ObservedCode "COMPILE_EXISTING_STAGE_FORBIDDEN" -Notes "exit=$($r17.ExitCode), forgedDiffers=$($forgedSha17 -ne $pos01ManifestSha), preserved=$setupPreserved17"
     } finally {
         if (Test-Path -LiteralPath $dispWebDist) { Remove-Item -Recurse -Force -LiteralPath $dispWebDist }
         & robocopy $pos01DistBackup $dispWebDist /E /NFL /NDL /NJH /NJS /NC /NS /R:1 /W:1 | Out-Null
@@ -765,9 +757,9 @@ try {
     }
 
     # -----------------------------------------------------------------------
-    # NEG-18 (F1): Coordinated forged ignored worktree dist+stamp blocked on
-    #              -SkipWebBuild -BuildInstaller, AND -VerifyStageOnly still
-    #              catches staged dist & source branding asset parity tampering
+    # NEG-18 (F1+F3): -SkipWebBuild -BuildInstaller rejected BEFORE mutation
+    #                 (preserving setup), AND -VerifyStageOnly catches parity
+    #                 tampering read-only
     # -----------------------------------------------------------------------
     $neg18OutA = Join-Path $outBase "neg18a"
     New-Item -ItemType Directory -Force -Path (Join-Path $neg18OutA "setup") | Out-Null
@@ -783,7 +775,9 @@ try {
             "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg18OutA,
             "-ExpectedSourceSha", $headSha, "-SkipWebBuild", "-BuildInstaller"
         )
-        $neg18AStaleLeft = (Test-Path -LiteralPath $neg18AExe) -or (Test-Path -LiteralPath $neg18ASha) -or (Test-Path -LiteralPath $neg18AProv)
+        $setupPreserved18A = ((Get-Content -LiteralPath $neg18AExe -Raw) -eq "STALE_PRE_18A_EXE") -and
+                             ((Get-Content -LiteralPath $neg18ASha -Raw) -eq "SHA256=deadbeef`r`n") -and
+                             ((Get-Content -LiteralPath $neg18AProv -Raw) -eq '{"stale":true}')
     } finally {
         if (Test-Path -LiteralPath $dispWebDist) { Remove-Item -Recurse -Force -LiteralPath $dispWebDist }
         & robocopy $pos01DistBackup $dispWebDist /E /NFL /NDL /NJH /NJS /NC /NS /R:1 /W:1 | Out-Null
@@ -805,15 +799,15 @@ try {
         "-ExpectedSourceSha", $headSha, "-ExpectedStageManifestSha256", $forgedSha18C, "-VerifyStageOnly"
     )
 
-    $ok18 = ($r18A.ExitCode -ne 0) -and ($r18A.Combined -match 'code=SKIP_WEB_BUILD_FORBIDDEN_FOR_INSTALLER') -and (-not $neg18AStaleLeft) -and
+    $ok18 = ($r18A.ExitCode -ne 0) -and ($r18A.Combined -match 'code=SKIP_WEB_BUILD_FORBIDDEN_FOR_INSTALLER') -and $setupPreserved18A -and
             ($r18B.ExitCode -ne 0) -and ($r18B.Combined -match 'code=STAGE_WEB_DIST_PROVENANCE_MISMATCH') -and
             ($r18C.ExitCode -ne 0) -and ($r18C.Combined -match 'code=STAGE_BRANDING_ASSET_MISMATCH')
-    Record-TestResult -Id "NEG-18_F1_SKIPWEB_FORGERY_AND_STAGE_PARITY" -Passed $ok18 -ObservedCode "SKIPWEB_FORBIDDEN+STAGE_PARITY" -Notes "skipExit=$($r18A.ExitCode), distVerify=$($r18B.ExitCode), brandVerify=$($r18C.ExitCode)"
+    Record-TestResult -Id "NEG-18_F1_SKIPWEB_FORGERY_AND_STAGE_PARITY" -Passed $ok18 -ObservedCode "SKIPWEB_FORBIDDEN+STAGE_PARITY" -Notes "skipExit=$($r18A.ExitCode), preserved=$setupPreserved18A, distVerify=$($r18B.ExitCode), brandVerify=$($r18C.ExitCode)"
 
     # -----------------------------------------------------------------------
-    # NEG-23 (F1 Option A): Authentic existing stage (with exact pinned SHA)
-    #                       and authentic stamped dist are BOTH blocked from
-    #                       reused installer packaging (fresh-build-only lane)
+    # NEG-23 (F1 Option A + F3): Authentic existing stage & stamped dist are
+    #                            blocked from reused installer packaging BEFORE
+    #                            mutating existing setup artifacts
     # -----------------------------------------------------------------------
     $neg23OutA = Join-Path $outBase "neg23a"
     & robocopy (Join-Path $pos01Out "staging") (Join-Path $neg23OutA "staging") /E /NFL /NDL /NJH /NJS /NC /NS /R:1 /W:1 | Out-Null
@@ -828,7 +822,9 @@ try {
     $args23A = @("-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg23OutA, "-ExpectedSourceSha", $headSha, "-ExpectedStageManifestSha256", $pos01ManifestSha, "-CompileExistingStageOnly", "-BuildInstaller")
     if (-not [string]::IsNullOrWhiteSpace($InnoSetupCompilerPath)) { $args23A += @("-InnoSetupCompilerPath", $InnoSetupCompilerPath) }
     $r23A = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments $args23A
-    $stale23A = (Test-Path -LiteralPath $neg23AExe) -or (Test-Path -LiteralPath $neg23ASha) -or (Test-Path -LiteralPath $neg23AProv)
+    $preserved23A = ((Get-Content -LiteralPath $neg23AExe -Raw) -eq "STALE_23A") -and
+                    ((Get-Content -LiteralPath $neg23ASha -Raw) -eq "SHA256=deadbeef`r`n") -and
+                    ((Get-Content -LiteralPath $neg23AProv -Raw) -eq '{"stale":true}')
 
     $neg23OutB = Join-Path $outBase "neg23b"
     & robocopy (Join-Path $pos01Out "staging") (Join-Path $neg23OutB "staging") /E /NFL /NDL /NJH /NJS /NC /NS /R:1 /W:1 | Out-Null
@@ -844,7 +840,9 @@ try {
         "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg23OutB,
         "-ExpectedSourceSha", $headSha, "-ExpectedStageManifestSha256", $pos01ManifestSha, "-CompileExistingStageOnly"
     )
-    $stale23B = (Test-Path -LiteralPath $neg23BExe) -or (Test-Path -LiteralPath $neg23BSha) -or (Test-Path -LiteralPath $neg23BProv)
+    $preserved23B = ((Get-Content -LiteralPath $neg23BExe -Raw) -eq "STALE_23B") -and
+                    ((Get-Content -LiteralPath $neg23BSha -Raw) -eq "SHA256=deadbeef`r`n") -and
+                    ((Get-Content -LiteralPath $neg23BProv -Raw) -eq '{"stale":true}')
 
     $neg23OutC = Join-Path $outBase "neg23c"
     New-Item -ItemType Directory -Force -Path (Join-Path $neg23OutC "setup") | Out-Null
@@ -858,12 +856,108 @@ try {
         "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg23OutC,
         "-ExpectedSourceSha", $headSha, "-SkipWebBuild", "-BuildInstaller"
     )
-    $stale23C = (Test-Path -LiteralPath $neg23CExe) -or (Test-Path -LiteralPath $neg23CSha) -or (Test-Path -LiteralPath $neg23CProv)
+    $preserved23C = ((Get-Content -LiteralPath $neg23CExe -Raw) -eq "STALE_23C") -and
+                    ((Get-Content -LiteralPath $neg23CSha -Raw) -eq "SHA256=deadbeef`r`n") -and
+                    ((Get-Content -LiteralPath $neg23CProv -Raw) -eq '{"stale":true}')
 
-    $ok23 = ($r23A.ExitCode -ne 0) -and ($r23A.Combined -match 'code=COMPILE_EXISTING_STAGE_FORBIDDEN') -and (-not $stale23A) -and
-            ($r23B.ExitCode -ne 0) -and ($r23B.Combined -match 'code=COMPILE_EXISTING_STAGE_FORBIDDEN') -and (-not $stale23B) -and
-            ($r23C.ExitCode -ne 0) -and ($r23C.Combined -match 'code=SKIP_WEB_BUILD_FORBIDDEN_FOR_INSTALLER') -and (-not $stale23C)
-    Record-TestResult -Id "NEG-23_F1_OPTION_A_BLOCKS_AUTHENTIC_REUSE" -Passed $ok23 -ObservedCode "OPTION_A_BLOCKS_STAGE_AND_SKIPWEB" -Notes "A=$($r23A.ExitCode),B=$($r23B.ExitCode),C=$($r23C.ExitCode)"
+    $ok23 = ($r23A.ExitCode -ne 0) -and ($r23A.Combined -match 'code=COMPILE_EXISTING_STAGE_FORBIDDEN') -and $preserved23A -and
+            ($r23B.ExitCode -ne 0) -and ($r23B.Combined -match 'code=COMPILE_EXISTING_STAGE_FORBIDDEN') -and $preserved23B -and
+            ($r23C.ExitCode -ne 0) -and ($r23C.Combined -match 'code=SKIP_WEB_BUILD_FORBIDDEN_FOR_INSTALLER') -and $preserved23C
+    Record-TestResult -Id "NEG-23_F1_OPTION_A_BLOCKS_AUTHENTIC_REUSE" -Passed $ok23 -ObservedCode "OPTION_A_BLOCKS_STAGE_AND_SKIPWEB" -Notes "A=$($r23A.ExitCode)/$preserved23A,B=$($r23B.ExitCode)/$preserved23B,C=$($r23C.ExitCode)/$preserved23C"
+
+    # -----------------------------------------------------------------------
+    # POS-03 (F3): -VerifyStageOnly (valid & failing) and rejected mode
+    #              combinations leave existing output & setup artifacts 100%
+    #              byte-identical (read-only / zero writes or deletes)
+    # -----------------------------------------------------------------------
+    $pos03Out = Join-Path $outBase "pos03-readonly"
+    & robocopy $pos01Out $pos03Out /E /NFL /NDL /NJH /NJS /NC /NS /R:1 /W:1 | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw "Failed copying pos01Out for POS-03" }
+    $pos03PreFiles = @{}
+    foreach ($f in @(Get-ChildItem -LiteralPath $pos03Out -Recurse -File -Force)) {
+        $pos03PreFiles[$f.FullName] = [ordered]@{
+            Sha256    = (Get-TestFileSha256Lower -FilePath $f.FullName)
+            WriteUtc  = $f.LastWriteTimeUtc.ToString("o")
+        }
+    }
+    $r03Valid = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+        "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $pos03Out,
+        "-ExpectedSourceSha", $headSha, "-ExpectedStageManifestSha256", $pos01ManifestSha, "-VerifyStageOnly"
+    )
+    $wrongStageSha03 = "f" * 64
+    $r03BadPin = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+        "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $pos03Out,
+        "-ExpectedSourceSha", $headSha, "-ExpectedStageManifestSha256", $wrongStageSha03, "-VerifyStageOnly"
+    )
+    $r03VerifyBuild = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+        "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $pos03Out,
+        "-ExpectedSourceSha", $headSha, "-VerifyStageOnly", "-BuildInstaller"
+    )
+    $r03CompileStage = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+        "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $pos03Out,
+        "-ExpectedSourceSha", $headSha, "-CompileExistingStageOnly", "-BuildInstaller"
+    )
+    $r03SkipWebBuild = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+        "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $pos03Out,
+        "-ExpectedSourceSha", $headSha, "-SkipWebBuild", "-BuildInstaller"
+    )
+    $pos03PostFiles = @(Get-ChildItem -LiteralPath $pos03Out -Recurse -File -Force)
+    $pos03Unchanged = ($pos03PostFiles.Count -eq $pos03PreFiles.Count)
+    if ($pos03Unchanged) {
+        foreach ($pf in $pos03PostFiles) {
+            $preMeta = $pos03PreFiles[$pf.FullName]
+            if ($null -eq $preMeta -or
+                (Get-TestFileSha256Lower -FilePath $pf.FullName) -ne $preMeta.Sha256 -or
+                $pf.LastWriteTimeUtc.ToString("o") -ne $preMeta.WriteUtc) {
+                $pos03Unchanged = $false
+                break
+            }
+        }
+    }
+    $ok03 = ($r03Valid.ExitCode -eq 0) -and ($r03Valid.Combined -match '\[STAGE_VERIFIED_READONLY\]') -and
+            ($r03BadPin.ExitCode -ne 0) -and ($r03BadPin.Combined -match 'code=EXPECTED_STAGE_MANIFEST_SHA_MISMATCH') -and
+            ($r03VerifyBuild.ExitCode -ne 0) -and ($r03VerifyBuild.Combined -match 'code=VERIFY_ONLY_CANNOT_BUILD_INSTALLER') -and
+            ($r03CompileStage.ExitCode -ne 0) -and ($r03CompileStage.Combined -match 'code=COMPILE_EXISTING_STAGE_FORBIDDEN') -and
+            ($r03SkipWebBuild.ExitCode -ne 0) -and ($r03SkipWebBuild.Combined -match 'code=SKIP_WEB_BUILD_FORBIDDEN_FOR_INSTALLER') -and
+            $pos03Unchanged
+    Record-TestResult -Id "POS-03_F3_VERIFY_STAGE_ONLY_AND_REJECTED_MODES_BYTE_PRESERVING" -Passed $ok03 -ObservedCode "READONLY_BYTE_IDENTICAL" -Notes "files=$($pos03PostFiles.Count), unchanged=$pos03Unchanged"
+
+    # -----------------------------------------------------------------------
+    # NEG-26 (F1): Modifying node_modules\vite\bin\vite.js while leaving
+    #              package-lock.json & node_modules metadata unchanged is
+    #              overwritten by mandatory npm ci before vite runs
+    # -----------------------------------------------------------------------
+    $neg26Out = Join-Path $outBase "neg26"
+    $neg26Canary = Join-Path $testRoot "neg26-vite-canary.txt"
+    $neg26CanaryJs = $neg26Canary.Replace('\', '\\')
+    $dispPkgLock = Join-Path $dispWorktree "src\Salryn.App.Web\package-lock.json"
+    $dispNmPkgLock = Join-Path $dispNodeModules ".package-lock.json"
+    $dispVitePkg = Join-Path $dispNodeModules "vite\package.json"
+    $preViteSha26 = Get-TestFileSha256Lower -FilePath $dispViteBin
+    $preLockSha26 = Get-TestFileSha256Lower -FilePath $dispPkgLock
+    $preNmLockSha26 = Get-TestFileSha256Lower -FilePath $dispNmPkgLock
+    $preVitePkgSha26 = Get-TestFileSha256Lower -FilePath $dispVitePkg
+    $origVite26 = [System.IO.File]::ReadAllText($dispViteBin)
+    try {
+        [System.IO.File]::WriteAllText($dispViteBin, "require('fs').writeFileSync('$neg26CanaryJs', 'TAMPERED_VITE_RAN');`n" + $origVite26, (New-Object System.Text.UTF8Encoding($false)))
+        $args26 = @("-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg26Out, "-ExpectedSourceSha", $headSha, "-BuildInstaller")
+        if (-not [string]::IsNullOrWhiteSpace($InnoSetupCompilerPath)) { $args26 += @("-InnoSetupCompilerPath", $InnoSetupCompilerPath) }
+        $r26 = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments $args26
+        $postViteSha26 = Get-TestFileSha256Lower -FilePath $dispViteBin
+        $canaryRan26 = Test-Path -LiteralPath $neg26Canary
+        $metaUnchanged26 = ($preLockSha26 -eq (Get-TestFileSha256Lower -FilePath $dispPkgLock)) -and
+                           ($preNmLockSha26 -eq (Get-TestFileSha256Lower -FilePath $dispNmPkgLock)) -and
+                           ($preVitePkgSha26 -eq (Get-TestFileSha256Lower -FilePath $dispVitePkg))
+        $ok26 = ($r26.ExitCode -eq 0) -and (-not $canaryRan26) -and ($postViteSha26 -eq $preViteSha26) -and $metaUnchanged26
+        Record-TestResult -Id "NEG-26_F1_TAMPERED_VITE_EXECUTABLE_REPLACED_BY_MANDATORY_NPM_CI" -Passed $ok26 -ObservedCode "NPM_CI_REPLACED_TAMPERED_BIN" -Notes "exit=$($r26.ExitCode), canaryRan=$canaryRan26, viteRestored=$($postViteSha26 -eq $preViteSha26)"
+    } finally {
+        if ($null -ne $origVite26 -and (Test-Path -LiteralPath $dispViteBin)) {
+            $curSha26 = Get-TestFileSha256Lower -FilePath $dispViteBin
+            if ($curSha26 -ne $preViteSha26) {
+                [System.IO.File]::WriteAllText($dispViteBin, $origVite26, (New-Object System.Text.UTF8Encoding($false)))
+            }
+        }
+    }
 
     # -----------------------------------------------------------------------
     # NEG-19 (F2): Direct OutputDir junction redirecting to disposable stand-in
@@ -1039,77 +1133,95 @@ try {
     }
 
     # -----------------------------------------------------------------------
-    # NEG-22 (F3): Option A early gate failures and locked web dependency
-    #              mismatch purge pre-seeded .exe, .sha256.txt, and .provenance.json
+    # NEG-22 (F1+F3): Locked web dependency failures (missing SRI integrity,
+    #                 corrupted lockfile SRI rejected by npm ci before Vite runs,
+    #                 and nested junction in node_modules) fail closed cleanly
+    #                 on fresh private OutputDirs with zero setup artifacts
     # -----------------------------------------------------------------------
     $neg22AOut = Join-Path $outBase "neg22a"
-    & robocopy (Join-Path $pos01Out "staging") (Join-Path $neg22AOut "staging") /E /NFL /NDL /NJH /NJS /NC /NS /R:1 /W:1 | Out-Null
-    if ($LASTEXITCODE -ge 8) { throw "Failed copying pos01 staging for NEG-22A" }
-    New-Item -ItemType Directory -Force -Path (Join-Path $neg22AOut "setup") | Out-Null
-    $neg22AExe = Join-Path $neg22AOut "setup\Salryn-POS-BetaRC1-Setup.exe"
-    $neg22ASha = "$neg22AExe.sha256.txt"
-    $neg22AProv = "$neg22AExe.provenance.json"
-    Write-Utf8NoBom -Path $neg22AExe -Content "STALE_STAGE_VALIDATION_EXE"
-    Write-Utf8NoBom -Path $neg22ASha -Content "SHA256=deadbeef`r`n"
-    Write-Utf8NoBom -Path $neg22AProv -Content '{"stale":true}'
-    $stageArgs22A = @("-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg22AOut, "-ExpectedSourceSha", $headSha, "-ExpectedStageManifestSha256", $pos01ManifestSha, "-CompileExistingStageOnly", "-BuildInstaller")
-    if (-not [string]::IsNullOrWhiteSpace($InnoSetupCompilerPath)) { $stageArgs22A += @("-InnoSetupCompilerPath", $InnoSetupCompilerPath) }
-    $r22A = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments $stageArgs22A
-    $stale22A = (Test-Path -LiteralPath $neg22AExe) -or (Test-Path -LiteralPath $neg22ASha) -or (Test-Path -LiteralPath $neg22AProv)
+    $dispPkgLock22 = Join-Path $dispWorktree "src\Salryn.App.Web\package-lock.json"
+    $origPkgLock22Raw = [System.IO.File]::ReadAllText($dispPkgLock22)
+    try {
+        $prevCheck22 = $env:SALRYN_CHECK_WEB_ROOT
+        try {
+            $env:SALRYN_CHECK_WEB_ROOT = Join-Path $dispWorktree "src\Salryn.App.Web"
+            & node -e "const fs=require('fs'),p=require('path').join(process.env.SALRYN_CHECK_WEB_ROOT,'package-lock.json');const l=JSON.parse(fs.readFileSync(p,'utf8'));const k='node_modules/vite';if(!l.packages||!l.packages[k])throw new Error('vite missing');delete l.packages[k].integrity;fs.writeFileSync(p,JSON.stringify(l,null,2)+'\n');"
+            if ($LASTEXITCODE -ne 0) { throw "Failed creating missing-integrity lockfile for NEG-22A" }
+        } finally {
+            $env:SALRYN_CHECK_WEB_ROOT = $prevCheck22
+        }
+        & git -C $dispWorktree add "src/Salryn.App.Web/package-lock.json" | Out-Null
+        & git -C $dispWorktree -c user.name="QA Probe" -c user.email="qa@example.invalid" commit -m "temp missing SRI integrity probe" | Out-Null
+        $missingSriHead = (& git -C $dispWorktree rev-parse --verify HEAD 2>$null | Out-String).Trim().ToLowerInvariant()
+        $r22A = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+            "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg22AOut,
+            "-ExpectedSourceSha", $missingSriHead, "-BuildInstaller"
+        )
+        $setupFiles22A = @(Get-ChildItem -LiteralPath (Join-Path $neg22AOut "setup") -Force -ErrorAction SilentlyContinue).Count
+    } finally {
+        & git -C $dispWorktree checkout --detach $headSha | Out-Null
+        if (([System.IO.File]::ReadAllText($dispPkgLock22)) -ne $origPkgLock22Raw) {
+            [System.IO.File]::WriteAllText($dispPkgLock22, $origPkgLock22Raw, (New-Object System.Text.UTF8Encoding($false)))
+        }
+    }
 
     $neg22BOut = Join-Path $outBase "neg22b"
-    New-Item -ItemType Directory -Force -Path (Join-Path $neg22BOut "setup") | Out-Null
-    $neg22BExe = Join-Path $neg22BOut "setup\Salryn-POS-BetaRC1-Setup.exe"
-    $neg22BSha = "$neg22BExe.sha256.txt"
-    $neg22BProv = "$neg22BExe.provenance.json"
-    Write-Utf8NoBom -Path $neg22BExe -Content "STALE_SKIPWEB_FAIL_EXE"
-    Write-Utf8NoBom -Path $neg22BSha -Content "SHA256=deadbeef`r`n"
-    Write-Utf8NoBom -Path $neg22BProv -Content '{"stale":true}'
-    $r22B = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
-        "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg22BOut,
-        "-ExpectedSourceSha", $headSha, "-SkipWebBuild", "-BuildInstaller"
-    )
-    $stale22B = (Test-Path -LiteralPath $neg22BExe) -or (Test-Path -LiteralPath $neg22BSha) -or (Test-Path -LiteralPath $neg22BProv)
+    $neg22BCanary = Join-Path $testRoot "neg22b-vite-canary.txt"
+    $neg22BCanaryJs = $neg22BCanary.Replace('\', '\\')
+    try {
+        $prevCheck22B = $env:SALRYN_CHECK_WEB_ROOT
+        try {
+            $env:SALRYN_CHECK_WEB_ROOT = Join-Path $dispWorktree "src\Salryn.App.Web"
+            & node -e "const fs=require('fs'),p=require('path').join(process.env.SALRYN_CHECK_WEB_ROOT,'package-lock.json');const l=JSON.parse(fs.readFileSync(p,'utf8'));const k='node_modules/vite';l.packages[k].integrity='sha512-'+'A'.repeat(86)+'==';fs.writeFileSync(p,JSON.stringify(l,null,2)+'\n');"
+            if ($LASTEXITCODE -ne 0) { throw "Failed creating corrupted-integrity lockfile for NEG-22B" }
+        } finally {
+            $env:SALRYN_CHECK_WEB_ROOT = $prevCheck22B
+        }
+        & git -C $dispWorktree add "src/Salryn.App.Web/package-lock.json" | Out-Null
+        & git -C $dispWorktree -c user.name="QA Probe" -c user.email="qa@example.invalid" commit -m "temp corrupted SRI integrity probe" | Out-Null
+        $badSriHead = (& git -C $dispWorktree rev-parse --verify HEAD 2>$null | Out-String).Trim().ToLowerInvariant()
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dispViteBin) | Out-Null
+        Write-Utf8NoBom -Path $dispViteBin -Content "require('fs').writeFileSync('$neg22BCanaryJs', 'CORRUPT_LOCK_VITE_RAN');`nprocess.exit(99);`n"
+        $r22B = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+            "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg22BOut,
+            "-ExpectedSourceSha", $badSriHead, "-BuildInstaller"
+        )
+        $setupFiles22B = @(Get-ChildItem -LiteralPath (Join-Path $neg22BOut "setup") -Force -ErrorAction SilentlyContinue).Count
+        $canaryRan22B = Test-Path -LiteralPath $neg22BCanary
+    } finally {
+        & git -C $dispWorktree checkout --detach $headSha | Out-Null
+    }
 
     $neg22COut = Join-Path $outBase "neg22c"
-    New-Item -ItemType Directory -Force -Path (Join-Path $neg22COut "setup") | Out-Null
-    $neg22CExe = Join-Path $neg22COut "setup\Salryn-POS-BetaRC1-Setup.exe"
-    $neg22CSha = "$neg22CExe.sha256.txt"
-    $neg22CProv = "$neg22CExe.provenance.json"
-    Write-Utf8NoBom -Path $neg22CExe -Content "STALE_LOCKFILE_FAIL_EXE"
-    Write-Utf8NoBom -Path $neg22CSha -Content "SHA256=deadbeef`r`n"
-    Write-Utf8NoBom -Path $neg22CProv -Content '{"stale":true}'
-    $nmLockPath22C = Join-Path $dispNodeModules ".package-lock.json"
-    if (-not (Test-Path -LiteralPath $nmLockPath22C)) {
-        throw "Expected node_modules\.package-lock.json missing for NEG-22C lockfile mismatch test: $nmLockPath22C"
-    }
-    $nmLockBak22C = Get-Content -LiteralPath $nmLockPath22C -Raw
+    $canaryDir22C = Join-Path $testRoot "canary-target-22c"
+    New-Item -ItemType Directory -Force -Path $canaryDir22C | Out-Null
+    $canary22CTxt = Join-Path $canaryDir22C "canary.txt"
+    Write-Utf8NoBom -Path $canary22CTxt -Content "CANARY_22C_INTACT"
+    New-Item -ItemType Directory -Force -Path $dispNodeModules | Out-Null
+    $j22CNm = Join-Path $dispNodeModules "nested-nm-j"
+    & cmd /c "mklink /J `"$j22CNm`" `"$canaryDir22C`"" | Out-Null
+    if (-not (Test-Path -LiteralPath $j22CNm)) { throw "Failed creating junction at $j22CNm" }
     try {
-        Write-Utf8NoBom -Path $nmLockPath22C -Content '{"name":"salryn-web","lockfileVersion":3,"packages":{"":{}}}'
         $r22C = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
             "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg22COut,
             "-ExpectedSourceSha", $headSha, "-BuildInstaller"
         )
-        $stale22C = (Test-Path -LiteralPath $neg22CExe) -or (Test-Path -LiteralPath $neg22CSha) -or (Test-Path -LiteralPath $neg22CProv)
+        $out22CCreated = Test-Path -LiteralPath $neg22COut
+        $canaryIntact22C = ((Get-Content -LiteralPath $canary22CTxt -Raw) -eq "CANARY_22C_INTACT")
     } finally {
-        Write-Utf8NoBom -Path $nmLockPath22C -Content $nmLockBak22C
+        if (Test-Path -LiteralPath $j22CNm) { [System.IO.Directory]::Delete($j22CNm, $false) }
     }
 
-    $ok22 = ($r22A.ExitCode -ne 0) -and ($r22A.Combined -match 'code=COMPILE_EXISTING_STAGE_FORBIDDEN') -and (-not $stale22A) -and
-            ($r22B.ExitCode -ne 0) -and ($r22B.Combined -match 'code=SKIP_WEB_BUILD_FORBIDDEN_FOR_INSTALLER') -and (-not $stale22B) -and
-            ($r22C.ExitCode -ne 0) -and ($r22C.Combined -match 'code=WEB_LOCKFILE_MISMATCH') -and (-not $stale22C)
-    Record-TestResult -Id "NEG-22_F3_OPTIONA_AND_LOCKFILE_FAILURES_PURGE_SETUP" -Passed $ok22 -ObservedCode "OPTIONA+LOCKFILE_PURGE" -Notes "staleA=$stale22A, staleB=$stale22B, staleC=$stale22C"
+    $ok22 = ($r22A.ExitCode -ne 0) -and ($r22A.Combined -match 'code=WEB_LOCKFILE_INTEGRITY_MISSING') -and ($setupFiles22A -eq 0) -and
+            ($r22B.ExitCode -ne 0) -and ($r22B.Combined -match 'code=WEB_NPM_CI_FAILED') -and (-not $canaryRan22B) -and ($setupFiles22B -eq 0) -and
+            ($r22C.ExitCode -ne 0) -and ($r22C.Combined -match 'code=REPARSE_POINT_FORBIDDEN') -and (-not $out22CCreated) -and $canaryIntact22C
+    Record-TestResult -Id "NEG-22_F1_F3_LOCKFILE_INTEGRITY_AND_NPM_CI_FAILURES" -Passed $ok22 -ObservedCode "LOCKFILE_SRI+NPM_CI+NM_JUNCTION" -Notes "A=$($r22A.ExitCode)/$setupFiles22A,B=$($r22B.ExitCode)/$canaryRan22B/$setupFiles22B,C=$($r22C.ExitCode)/$canaryIntact22C"
 
     # -----------------------------------------------------------------------
-    # NEG-14: Failed dotnet publish (broken C# on temp detached commit) must
-    #         fail closed and purge pre-existing stale setup EXE
-    #         (Runs before NEG-21's broken-commit checkout; dist already verified)
+    # NEG-14: Failed dotnet publish (broken C# on temp detached commit) in
+    #         private OutputDir must fail closed and leave zero setup files
     # -----------------------------------------------------------------------
     $neg14Out = Join-Path $outBase "neg14"
-    $neg14SetupDir = Join-Path $neg14Out "setup"
-    New-Item -ItemType Directory -Force -Path $neg14SetupDir | Out-Null
-    $neg14StaleExe = Join-Path $neg14SetupDir "Salryn-POS-BetaRC1-Setup.exe"
-    Write-Utf8NoBom -Path $neg14StaleExe -Content "STALE_PRE_PUBLISH_EXE"
     $brokenCs = Join-Path $dispWorktree "src\Salryn.Api.Local\BrokenProvenanceProbe.cs"
     try {
         Write-Utf8NoBom -Path $brokenCs -Content "this is intentional syntax error for publish failure test;"
@@ -1120,28 +1232,19 @@ try {
             "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg14Out,
             "-ExpectedSourceSha", $brokenHead, "-BuildInstaller"
         )
-        $staleAfterPubFail = Test-Path -LiteralPath $neg14StaleExe
-        $ok = ($rPubFail.ExitCode -ne 0) -and ($rPubFail.Combined -match 'code=DOTNET_PUBLISH_API_FAILED') -and (-not $staleAfterPubFail)
-        Record-TestResult -Id "NEG-14_FAILED_DOTNET_PUBLISH_PURGES_STALE_EXE" -Passed $ok -ObservedCode "DOTNET_PUBLISH_API_FAILED" -Notes "exit=$($rPubFail.ExitCode), staleAfterPubFail=$staleAfterPubFail"
+        $setupFiles14 = @(Get-ChildItem -LiteralPath (Join-Path $neg14Out "setup") -Force -ErrorAction SilentlyContinue).Count
+        $ok = ($rPubFail.ExitCode -ne 0) -and ($rPubFail.Combined -match 'code=DOTNET_PUBLISH_API_FAILED') -and ($setupFiles14 -eq 0)
+        Record-TestResult -Id "NEG-14_FAILED_DOTNET_PUBLISH_PURGES_STALE_EXE" -Passed $ok -ObservedCode "DOTNET_PUBLISH_API_FAILED" -Notes "exit=$($rPubFail.ExitCode), setupFiles=$setupFiles14"
     } finally {
         & git -C $dispWorktree checkout --detach $headSha | Out-Null
         if (Test-Path -LiteralPath $brokenCs) { Remove-Item -Force -LiteralPath $brokenCs }
     }
 
     # -----------------------------------------------------------------------
-    # NEG-21 (F3): Failed frontend build (npm run build) purges pre-seeded
-    #              Salryn-POS-BetaRC1-Setup.exe + .sha256.txt + .provenance.json
+    # NEG-21 (F3): Failed frontend build (npm run build) in private OutputDir
+    #              fails closed and leaves zero setup artifacts
     # -----------------------------------------------------------------------
     $neg21Out = Join-Path $outBase "neg21"
-    $neg21SetupDir = Join-Path $neg21Out "setup"
-    New-Item -ItemType Directory -Force -Path $neg21SetupDir | Out-Null
-    $neg21Exe = Join-Path $neg21SetupDir "Salryn-POS-BetaRC1-Setup.exe"
-    $neg21Sha = "$neg21Exe.sha256.txt"
-    $neg21Prov = "$neg21Exe.provenance.json"
-    Write-Utf8NoBom -Path $neg21Exe -Content "STALE_PRE_WEB_BUILD_EXE"
-    Write-Utf8NoBom -Path $neg21Sha -Content "SHA256=deadbeef`r`n"
-    Write-Utf8NoBom -Path $neg21Prov -Content '{"stale":true}'
-
     $brokenTs = Join-Path $dispWorktree "src\Salryn.App.Web\src\BrokenUiProbe.ts"
     try {
         Write-Utf8NoBom -Path $brokenTs -Content "export const broken: number = 'intentional_type_error';"
@@ -1152,13 +1255,98 @@ try {
             "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg21Out,
             "-ExpectedSourceSha", $brokenWebHead, "-BuildInstaller"
         )
-        $anyStale21 = (Test-Path -LiteralPath $neg21Exe) -or (Test-Path -LiteralPath $neg21Sha) -or (Test-Path -LiteralPath $neg21Prov)
-        $ok21 = ($r21.ExitCode -ne 0) -and ($r21.Combined -match 'code=WEB_BUILD_FAILED') -and (-not $anyStale21)
-        Record-TestResult -Id "NEG-21_F3_WEB_BUILD_FAILURE_PURGES_PRESEEDED_SETUP_EXE" -Passed $ok21 -ObservedCode "WEB_BUILD_FAILED" -Notes "exit=$($r21.ExitCode), anyStale=$anyStale21"
+        $setupFiles21 = @(Get-ChildItem -LiteralPath (Join-Path $neg21Out "setup") -Force -ErrorAction SilentlyContinue).Count
+        $ok21 = ($r21.ExitCode -ne 0) -and ($r21.Combined -match 'code=WEB_BUILD_FAILED') -and ($setupFiles21 -eq 0)
+        Record-TestResult -Id "NEG-21_F3_WEB_BUILD_FAILURE_PURGES_PRESEEDED_SETUP_EXE" -Passed $ok21 -ObservedCode "WEB_BUILD_FAILED" -Notes "exit=$($r21.ExitCode), setupFiles=$setupFiles21"
     } finally {
         & git -C $dispWorktree checkout --detach $headSha | Out-Null
         if (Test-Path -LiteralPath $brokenTs) { Remove-Item -Force -LiteralPath $brokenTs }
     }
+
+    # -----------------------------------------------------------------------
+    # NEG-27 (F2): Private per-run OutputDir exclusivity, restricted ACLs,
+    #              and pinned scan-to-delete directory handles block concurrent
+    #              junction swaps and fail closed on post-scan injection
+    # -----------------------------------------------------------------------
+    $neg27AOut = Join-Path $outBase "neg27a-existing"
+    New-Item -ItemType Directory -Force -Path $neg27AOut | Out-Null
+    $keep27A = Join-Path $neg27AOut "keep.txt"
+    Write-Utf8NoBom -Path $keep27A -Content "PRE_EXISTING_PRIVATE_GUARD"
+    $r27ABuild = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+        "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg27AOut,
+        "-ExpectedSourceSha", $headSha, "-BuildInstaller"
+    )
+    $r27ASkip = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+        "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg27AOut,
+        "-ExpectedSourceSha", $headSha, "-SkipWebBuild"
+    )
+    $keepIntact27A = ((Get-Content -LiteralPath $keep27A -Raw) -eq "PRE_EXISTING_PRIVATE_GUARD")
+
+    $pos01Acl = [System.IO.Directory]::GetAccessControl($pos01Out)
+    $curUserSidVal = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $allowedSids = @($curUserSidVal, "S-1-5-18", "S-1-5-32-544")
+    $aclOk27B = $pos01Acl.AreAccessRulesProtected
+    if ($aclOk27B) {
+        $accessRules = @($pos01Acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))
+        if ($accessRules.Count -eq 0) { $aclOk27B = $false }
+        foreach ($ar in $accessRules) {
+            if ($allowedSids -notcontains $ar.IdentityReference.Value) {
+                $aclOk27B = $false
+                break
+            }
+        }
+    }
+
+    $neg27COut = Join-Path $outBase "neg27c-race"
+    $canary27C = Join-Path $testRoot "canary-27c"
+    New-Item -ItemType Directory -Force -Path $canary27C | Out-Null
+    $canary27CTxt = Join-Path $canary27C "canary.txt"
+    Write-Utf8NoBom -Path $canary27CTxt -Content "CANARY_27C_PROTECTED"
+    $nmRaceSub27 = Join-Path $dispNodeModules "sub27-race"
+    New-Item -ItemType Directory -Force -Path $nmRaceSub27 | Out-Null
+    Write-Utf8NoBom -Path (Join-Path $nmRaceSub27 "race.txt") -Content "race-seed"
+    $hookLog27C = Join-Path $testRoot "post-scan-hook-27c.log"
+    $hookScript27C = Join-Path $testRoot "post-scan-hook-27c.ps1"
+    $hookContent27C = @'
+param([string]$ContextLabel, [string]$TargetRoot)
+if ($ContextLabel -ne "web-node-modules") { return }
+$sub = Join-Path $TargetRoot "sub27-race"
+$logPath = "__LOG_PATH__"
+$canaryTarget = "__CANARY_TARGET__"
+$moved = $sub + "-moved"
+$moveBlocked = $false
+try {
+    [System.IO.Directory]::Move($sub, $moved)
+    & cmd /c "mklink /J `"$sub`" `"$canaryTarget`"" | Out-Null
+} catch {
+    $moveBlocked = $true
+}
+[System.IO.File]::WriteAllText((Join-Path $sub "injected-after-scan.txt"), "RACE_INJECTED", (New-Object System.Text.UTF8Encoding($false)))
+[System.IO.File]::WriteAllText($logPath, "MOVE_BLOCKED=$moveBlocked", (New-Object System.Text.UTF8Encoding($false)))
+'@
+    $hookContent27C = $hookContent27C.Replace("__LOG_PATH__", $hookLog27C).Replace("__CANARY_TARGET__", $canary27C)
+    Write-Utf8NoBom -Path $hookScript27C -Content $hookContent27C
+
+    $prevHook27C = $env:SALRYN_TEST_POST_SCAN_HOOK
+    try {
+        $env:SALRYN_TEST_POST_SCAN_HOOK = $hookScript27C
+        $r27C = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+            "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $neg27COut,
+            "-ExpectedSourceSha", $headSha, "-BuildInstaller"
+        )
+    } finally {
+        $env:SALRYN_TEST_POST_SCAN_HOOK = $prevHook27C
+        if (Test-Path -LiteralPath $dispWebDist) { Remove-Item -Recurse -Force -LiteralPath $dispWebDist }
+        & robocopy $pos01DistBackup $dispWebDist /E /NFL /NDL /NJH /NJS /NC /NS /R:1 /W:1 | Out-Null
+    }
+    $hookLogRaw27C = if (Test-Path -LiteralPath $hookLog27C) { (Get-Content -LiteralPath $hookLog27C -Raw).Trim() } else { "MISSING" }
+    $canaryIntact27C = ((Get-Content -LiteralPath $canary27CTxt -Raw) -eq "CANARY_27C_PROTECTED")
+    $ok27C = ($r27C.ExitCode -ne 0) -and ($r27C.Combined -match 'code=REPARSE_POINT_FORBIDDEN') -and ($hookLogRaw27C -eq "MOVE_BLOCKED=True") -and $canaryIntact27C
+
+    $ok27 = ($r27ABuild.ExitCode -ne 0) -and ($r27ABuild.Combined -match 'code=NONPRIVATE_OUTPUT_DIR_FORBIDDEN') -and
+            ($r27ASkip.ExitCode -ne 0) -and ($r27ASkip.Combined -match 'code=NONPRIVATE_OUTPUT_DIR_FORBIDDEN') -and
+            $keepIntact27A -and $aclOk27B -and $ok27C
+    Record-TestResult -Id "NEG-27_F2_PRIVATE_OUTPUT_OWNERSHIP_AND_SCAN_TO_DELETE_RACE_SAFE" -Passed $ok27 -ObservedCode "PRIVATE_OUT+ACL+PINNED_LOCK" -Notes "27A=$keepIntact27A,27B_ACL=$aclOk27B,27C_Hook=$hookLogRaw27C,canary=$canaryIntact27C"
 
     Write-Host ""
     Write-Host "=== INSTALLER PROVENANCE REGRESSION SUMMARY ==="

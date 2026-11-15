@@ -80,16 +80,16 @@ Build-SalrynBetaRc1Installer.ps1
 Parameters:
   -Version <semver>                    Product version (default 0.1.0-rc1)
   -Configuration <name>                dotnet publish configuration (default Release)
-  -OutputDir <path>                    Artifact root (default artifacts\installer)
+  -OutputDir <path>                    Artifact root (mutable runs require a new non-existent private dir; default auto-generated unique dir under artifacts\installer\run-*)
   -InnoSetupCompilerPath <path>        Explicit path to ISCC.exe (overrides auto-discovery)
   -ExpectedSourceSha <40-hex>          Require HEAD to match this 40-char Git SHA (required for -BuildInstaller)
-  -ExpectedStageManifestSha256 <hex>   Disabled reuse parameter (kept as fail-closed guard)
+  -ExpectedStageManifestSha256 <hex>   Expected 64-hex stage manifest SHA-256 (enforced in -VerifyStageOnly when provided)
   -AdditionalProtectedRoots <paths>    Extra directory roots treated as protected output boundaries
   -SkipWebBuild                        NON-RELEASE/NOT-ATTESTED dev staging only; forbidden with -BuildInstaller
-  -BuildInstaller                      Enforces fresh Option A build (-ExpectedSourceSha required; no reuse) + ISCC
+  -BuildInstaller                      Enforces fresh Option A build (-ExpectedSourceSha required, clean npm ci; no reuse) + ISCC
   -CompileExistingStageOnly            Disabled in Option A (always fails closed with COMPILE_EXISTING_STAGE_FORBIDDEN)
-  -VerifyStageOnly                     Read-only stage manifest verification; forbidden with -BuildInstaller
-  -ForceNpmCi                          Force fresh lockfile npm ci even when node_modules matches package-lock.json
+  -VerifyStageOnly                     Strictly read-only stage manifest verification (no writes/deletes; forbidden with -BuildInstaller)
+  -ForceNpmCi                          Retained for CLI compatibility; clean lockfile npm ci runs unconditionally on all fresh builds
   -Help                                Show this help
 "@
     exit 0
@@ -117,12 +117,42 @@ using Microsoft.Win32.SafeHandles;
 
 public static class SalrynNativePathResolver
 {
-    private const uint FILE_SHARE_READ = 0x00000001;
-    private const uint FILE_SHARE_WRITE = 0x00000002;
-    private const uint FILE_SHARE_DELETE = 0x00000004;
+    private const uint FILE_LIST_DIRECTORY = 0x0001;
+    private const uint FILE_READ_ATTRIBUTES = 0x0080;
+    private const uint FILE_SHARE_READ = 0x0001;
+    private const uint FILE_SHARE_WRITE = 0x0002;
+    private const uint FILE_SHARE_DELETE = 0x0004;
     private const uint OPEN_EXISTING = 3;
     private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
+    private const uint FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000;
+    private const uint FILE_ATTRIBUTE_DIRECTORY = 0x0010;
+    private const uint FILE_ATTRIBUTE_REPARSE_POINT = 0x0400;
     private const uint VOLUME_NAME_DOS = 0x0;
+    private const int ERROR_FILE_NOT_FOUND = 2;
+    private const int ERROR_PATH_NOT_FOUND = 3;
+    private const int ERROR_ALREADY_EXISTS = 183;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct FILETIME
+    {
+        public uint dwLowDateTime;
+        public uint dwHighDateTime;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct BY_HANDLE_FILE_INFORMATION
+    {
+        public uint dwFileAttributes;
+        public FILETIME ftCreationTime;
+        public FILETIME ftLastAccessTime;
+        public FILETIME ftLastWriteTime;
+        public uint dwVolumeSerialNumber;
+        public uint nFileSizeHigh;
+        public uint nFileSizeLow;
+        public uint nNumberOfLinks;
+        public uint nFileIndexHigh;
+        public uint nFileIndexLow;
+    }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern SafeFileHandle CreateFileW(
@@ -141,6 +171,39 @@ public static class SalrynNativePathResolver
         uint cchFilePath,
         uint dwFlags);
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetFileInformationByHandle(
+        SafeFileHandle hFile,
+        out BY_HANDLE_FILE_INFORMATION lpFileInformation);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool CreateDirectoryW(
+        string lpPathName,
+        IntPtr lpSecurityAttributes);
+
+    private static string GetFinalPathFromHandle(SafeFileHandle handle, string path)
+    {
+        StringBuilder sb = new StringBuilder(512);
+        uint len = GetFinalPathNameByHandleW(handle, sb, (uint)sb.Capacity, VOLUME_NAME_DOS);
+        if (len == 0)
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "GetFinalPathNameByHandleW failed: " + path);
+
+        if (len >= sb.Capacity)
+        {
+            sb = new StringBuilder((int)len + 2);
+            len = GetFinalPathNameByHandleW(handle, sb, (uint)sb.Capacity, VOLUME_NAME_DOS);
+            if (len == 0 || len >= sb.Capacity)
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "GetFinalPathNameByHandleW buffer resize failed: " + path);
+        }
+
+        string raw = sb.ToString();
+        if (raw.StartsWith("\\\\?\\UNC\\", StringComparison.OrdinalIgnoreCase))
+            return "\\\\" + raw.Substring(8);
+        if (raw.StartsWith("\\\\?\\", StringComparison.OrdinalIgnoreCase))
+            return raw.Substring(4);
+        return raw;
+    }
+
     public static string GetFinalPath(string path)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -157,26 +220,92 @@ public static class SalrynNativePathResolver
         {
             if (handle.IsInvalid)
                 throw new Win32Exception(Marshal.GetLastWin32Error(), "Unable to open path for canonical resolution: " + path);
+            return GetFinalPathFromHandle(handle, path);
+        }
+    }
 
-            StringBuilder sb = new StringBuilder(512);
-            uint len = GetFinalPathNameByHandleW(handle, sb, (uint)sb.Capacity, VOLUME_NAME_DOS);
-            if (len == 0)
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "GetFinalPathNameByHandleW failed: " + path);
+    public static bool CreateNewDirectoryExclusive(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            throw new ArgumentException("Path cannot be empty.");
+        if (CreateDirectoryW(path, IntPtr.Zero))
+            return true;
+        int err = Marshal.GetLastWin32Error();
+        if (err == ERROR_ALREADY_EXISTS)
+            return false;
+        throw new Win32Exception(err, "CreateDirectoryW failed: " + path);
+    }
 
-            if (len >= sb.Capacity)
+    public static SafeFileHandle OpenDirectoryNoDeleteShare(string path, out string fileId, out bool isReparse, out string finalPath)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            throw new ArgumentException("Path cannot be empty.");
+
+        SafeFileHandle handle = CreateFileW(
+            path,
+            FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            IntPtr.Zero,
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+            IntPtr.Zero);
+        if (handle.IsInvalid)
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "Unable to lock directory: " + path);
+
+        try
+        {
+            BY_HANDLE_FILE_INFORMATION info;
+            if (!GetFileInformationByHandle(handle, out info))
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "GetFileInformationByHandle failed: " + path);
+
+            isReparse = (info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+            if (!isReparse && (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0)
+                throw new InvalidOperationException("Target is not a directory: " + path);
+
+            fileId = info.dwVolumeSerialNumber.ToString("X8") + ":" + info.nFileIndexHigh.ToString("X8") + ":" + info.nFileIndexLow.ToString("X8");
+            finalPath = isReparse ? string.Empty : GetFinalPathFromHandle(handle, path);
+            return handle;
+        }
+        catch
+        {
+            handle.Dispose();
+            throw;
+        }
+    }
+
+    public static bool TryGetFileIdentityNoFollow(string path, out string fileId, out bool isReparse, out bool isDirectory)
+    {
+        fileId = string.Empty;
+        isReparse = false;
+        isDirectory = false;
+        if (string.IsNullOrWhiteSpace(path))
+            return false;
+
+        using (SafeFileHandle handle = CreateFileW(
+            path,
+            FILE_READ_ATTRIBUTES,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            IntPtr.Zero,
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+            IntPtr.Zero))
+        {
+            if (handle.IsInvalid)
             {
-                sb = new StringBuilder((int)len + 2);
-                len = GetFinalPathNameByHandleW(handle, sb, (uint)sb.Capacity, VOLUME_NAME_DOS);
-                if (len == 0 || len >= sb.Capacity)
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "GetFinalPathNameByHandleW buffer resize failed: " + path);
+                int err = Marshal.GetLastWin32Error();
+                if (err == ERROR_FILE_NOT_FOUND || err == ERROR_PATH_NOT_FOUND)
+                    return false;
+                throw new Win32Exception(err, "Unable to inspect file identity: " + path);
             }
 
-            string raw = sb.ToString();
-            if (raw.StartsWith("\\\\?\\UNC\\", StringComparison.OrdinalIgnoreCase))
-                return "\\\\" + raw.Substring(8);
-            if (raw.StartsWith("\\\\?\\", StringComparison.OrdinalIgnoreCase))
-                return raw.Substring(4);
-            return raw;
+            BY_HANDLE_FILE_INFORMATION info;
+            if (!GetFileInformationByHandle(handle, out info))
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "GetFileInformationByHandle failed: " + path);
+
+            isReparse = (info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+            isDirectory = (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+            fileId = info.dwVolumeSerialNumber.ToString("X8") + ":" + info.nFileIndexHigh.ToString("X8") + ":" + info.nFileIndexLow.ToString("X8");
+            return true;
         }
     }
 }
@@ -436,17 +565,23 @@ function Assert-TreeFreeOfReparsePointsAndAliases {
         [Parameter(Mandatory = $true)][string]$HeadSha,
         [Parameter(Mandatory = $true)][string]$ContextLabel,
         [string]$ReparseErrorCode = "REPARSE_POINT_FORBIDDEN",
-        [string[]]$ProtectedRoots = @()
+        [string[]]$ProtectedRoots = @(),
+        [switch]$AcquireDirectoryLocks
     )
 
     try {
         $rootItem = Get-Item -LiteralPath $RootDir -Force -ErrorAction Stop
     } catch [System.Management.Automation.ItemNotFoundException] {
         return [ordered]@{
-            RootExists  = $false
-            RootFull    = [System.IO.Path]::GetFullPath($RootDir)
-            Files       = @()
-            Directories = @()
+            RootExists         = $false
+            RootFull           = [System.IO.Path]::GetFullPath($RootDir)
+            AllowedCanonPrefix = ""
+            RootCanonPrefix    = ""
+            Files              = @()
+            Directories        = @()
+            DirIdentities      = @{}
+            FileIdentities     = @{}
+            LockedHandles      = @{}
         }
     } catch {
         Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "Failed inspecting directory '${ContextLabel}' ($RootDir): $_"
@@ -461,70 +596,116 @@ function Assert-TreeFreeOfReparsePointsAndAliases {
 
     $allowedFull = [System.IO.Path]::GetFullPath($AllowedParentRoot)
     $allowedLexPrefix = Normalize-PathWithSeparator -Path $allowedFull
-    try {
-        $allowedCanon = [SalrynNativePathResolver]::GetFinalPath($allowedFull)
-        $rootCanon = [SalrynNativePathResolver]::GetFinalPath($rootItem.FullName)
-    } catch {
-        Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "Canonical resolution failed for ${ContextLabel}: $_"
-    }
-    $allowedCanonPrefix = Normalize-PathWithSeparator -Path $allowedCanon
-    $rootCanonPrefix = Normalize-PathWithSeparator -Path $rootCanon
     $rootLexFull = [System.IO.Path]::GetFullPath($rootItem.FullName)
     $rootLexPrefix = Normalize-PathWithSeparator -Path $rootLexFull
 
-    if (-not $rootLexPrefix.StartsWith($allowedLexPrefix, [System.StringComparison]::OrdinalIgnoreCase) -or
-        -not $rootCanonPrefix.StartsWith($allowedCanonPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-        Write-ProvenanceFailure -Code "PATH_TRAVERSAL_FORBIDDEN" -HeadSha $HeadSha -Detail "Directory escapes allowed root in ${ContextLabel}: $rootCanon"
-    }
+    $dirIdentities = @{}
+    $fileIdentities = @{}
+    $lockedHandles = @{}
 
-    $protectedNorms = @($ProtectedRoots | ForEach-Object { Normalize-PathWithSeparator -Path $_ })
-    $files = New-Object System.Collections.Generic.List[string]
-    $dirs = New-Object System.Collections.Generic.List[string]
-    $queue = New-Object System.Collections.Generic.Queue[string]
-    $queue.Enqueue($rootLexFull)
-
-    while ($queue.Count -gt 0) {
-        $currentDir = $queue.Dequeue()
-        $children = @(Get-ChildItem -LiteralPath $currentDir -Force -ErrorAction Stop)
-        foreach ($child in $children) {
-            if (($child.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-                Write-ProvenanceFailure -Code $ReparseErrorCode -HeadSha $HeadSha -Detail "Reparse point/junction/symlink forbidden in ${ContextLabel}: $($child.FullName)"
+    try {
+        $allowedCanon = [SalrynNativePathResolver]::GetFinalPath($allowedFull)
+        $rootId = ""; $rootRep = $false; $rootCanon = ""
+        if ($AcquireDirectoryLocks) {
+            $hRoot = [SalrynNativePathResolver]::OpenDirectoryNoDeleteShare($rootLexFull, [ref]$rootId, [ref]$rootRep, [ref]$rootCanon)
+            $lockedHandles[$rootLexFull] = $hRoot
+            if ($rootRep) {
+                Write-ProvenanceFailure -Code $ReparseErrorCode -HeadSha $HeadSha -Detail "Reparse point/junction/symlink forbidden in ${ContextLabel}: $rootLexFull"
             }
-            $childFull = [System.IO.Path]::GetFullPath($child.FullName)
-            if (-not $childFull.StartsWith($rootLexPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-                Write-ProvenanceFailure -Code "PATH_TRAVERSAL_FORBIDDEN" -HeadSha $HeadSha -Detail "Child path escapes ${ContextLabel} root: $childFull"
+        } else {
+            $rootIsDir = $false
+            $rootExists = [SalrynNativePathResolver]::TryGetFileIdentityNoFollow($rootLexFull, [ref]$rootId, [ref]$rootRep, [ref]$rootIsDir)
+            if (-not $rootExists -or $rootRep -or (-not $rootIsDir)) {
+                Write-ProvenanceFailure -Code $ReparseErrorCode -HeadSha $HeadSha -Detail "Reparse point/junction or invalid root in ${ContextLabel}: $rootLexFull"
             }
+            $rootCanon = [SalrynNativePathResolver]::GetFinalPath($rootLexFull)
+        }
+        $dirIdentities[$rootLexFull] = $rootId
 
-            if ($child.PSIsContainer) {
-                try {
-                    $childCanon = [SalrynNativePathResolver]::GetFinalPath($childFull)
-                } catch {
-                    Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "Failed canonical check on descendant '${ContextLabel}' ($childFull): $_"
+        $allowedCanonPrefix = Normalize-PathWithSeparator -Path $allowedCanon
+        $rootCanonPrefix = Normalize-PathWithSeparator -Path $rootCanon
+
+        if (-not $rootLexPrefix.StartsWith($allowedLexPrefix, [System.StringComparison]::OrdinalIgnoreCase) -or
+            -not $rootCanonPrefix.StartsWith($allowedCanonPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+            Write-ProvenanceFailure -Code "PATH_TRAVERSAL_FORBIDDEN" -HeadSha $HeadSha -Detail "Directory escapes allowed root in ${ContextLabel}: $rootCanon"
+        }
+
+        $protectedNorms = @($ProtectedRoots | ForEach-Object { Normalize-PathWithSeparator -Path $_ })
+        $files = New-Object System.Collections.Generic.List[string]
+        $dirs = New-Object System.Collections.Generic.List[string]
+        $queue = New-Object System.Collections.Generic.Queue[string]
+        $queue.Enqueue($rootLexFull)
+
+        while ($queue.Count -gt 0) {
+            $currentDir = $queue.Dequeue()
+            foreach ($rawChild in [System.IO.Directory]::EnumerateFileSystemEntries($currentDir)) {
+                $childFull = [System.IO.Path]::GetFullPath($rawChild)
+                if (-not $childFull.StartsWith($rootLexPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    Write-ProvenanceFailure -Code "PATH_TRAVERSAL_FORBIDDEN" -HeadSha $HeadSha -Detail "Child path escapes ${ContextLabel} root: $childFull"
                 }
-                $childCanonNorm = Normalize-PathWithSeparator -Path $childCanon
-                if (-not $childCanonNorm.StartsWith($rootCanonPrefix, [System.StringComparison]::OrdinalIgnoreCase) -or
-                    -not $childCanonNorm.StartsWith($allowedCanonPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-                    Write-ProvenanceFailure -Code "PATH_TRAVERSAL_FORBIDDEN" -HeadSha $HeadSha -Detail "Descendant resolves outside allowed root in ${ContextLabel}: $childCanon"
+
+                $cId = ""; $cRep = $false; $cIsDir = $false
+                $cExists = [SalrynNativePathResolver]::TryGetFileIdentityNoFollow($childFull, [ref]$cId, [ref]$cRep, [ref]$cIsDir)
+                if (-not $cExists) {
+                    Write-ProvenanceFailure -Code $ReparseErrorCode -HeadSha $HeadSha -Detail "Child disappeared during scan of ${ContextLabel}: $childFull"
                 }
-                foreach ($protNorm in $protectedNorms) {
-                    if ($childCanonNorm.StartsWith($protNorm, [System.StringComparison]::OrdinalIgnoreCase) -or
-                        $protNorm.StartsWith($childCanonNorm, [System.StringComparison]::OrdinalIgnoreCase)) {
-                        Write-ProvenanceFailure -Code "PROTECTED_OUTPUT_DIR_FORBIDDEN" -HeadSha $HeadSha -Detail "Descendant resolves to protected root in ${ContextLabel}: $childCanon"
+                if ($cRep) {
+                    Write-ProvenanceFailure -Code $ReparseErrorCode -HeadSha $HeadSha -Detail "Reparse point/junction/symlink forbidden in ${ContextLabel}: $childFull"
+                }
+
+                if ($cIsDir) {
+                    $cIdFinal = $cId; $cRepFinal = $false; $childCanon = ""
+                    if ($AcquireDirectoryLocks) {
+                        $hChild = [SalrynNativePathResolver]::OpenDirectoryNoDeleteShare($childFull, [ref]$cIdFinal, [ref]$cRepFinal, [ref]$childCanon)
+                        $lockedHandles[$childFull] = $hChild
+                        if ($cRepFinal -or ($cIdFinal -ne $cId)) {
+                            Write-ProvenanceFailure -Code $ReparseErrorCode -HeadSha $HeadSha -Detail "Directory became reparse point or swapped during scan of ${ContextLabel}: $childFull"
+                        }
+                    } else {
+                        $childCanon = [SalrynNativePathResolver]::GetFinalPath($childFull)
                     }
+
+                    $childCanonNorm = Normalize-PathWithSeparator -Path $childCanon
+                    if (-not $childCanonNorm.StartsWith($rootCanonPrefix, [System.StringComparison]::OrdinalIgnoreCase) -or
+                        -not $childCanonNorm.StartsWith($allowedCanonPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        Write-ProvenanceFailure -Code "PATH_TRAVERSAL_FORBIDDEN" -HeadSha $HeadSha -Detail "Descendant resolves outside allowed root in ${ContextLabel}: $childCanon"
+                    }
+                    foreach ($protNorm in $protectedNorms) {
+                        if ($childCanonNorm.StartsWith($protNorm, [System.StringComparison]::OrdinalIgnoreCase) -or
+                            $protNorm.StartsWith($childCanonNorm, [System.StringComparison]::OrdinalIgnoreCase)) {
+                            Write-ProvenanceFailure -Code "PROTECTED_OUTPUT_DIR_FORBIDDEN" -HeadSha $HeadSha -Detail "Descendant resolves to protected root in ${ContextLabel}: $childCanon"
+                        }
+                    }
+                    $dirIdentities[$childFull] = $cIdFinal
+                    $dirs.Add($childFull)
+                    $queue.Enqueue($childFull)
+                } else {
+                    $fileIdentities[$childFull] = $cId
+                    $files.Add($childFull)
                 }
-                $dirs.Add($childFull)
-                $queue.Enqueue($childFull)
-            } else {
-                $files.Add($childFull)
             }
         }
-    }
 
-    return [ordered]@{
-        RootExists  = $true
-        RootFull    = $rootLexFull
-        Files       = @($files)
-        Directories = @($dirs)
+        return [ordered]@{
+            RootExists         = $true
+            RootFull           = $rootLexFull
+            AllowedCanonPrefix = $allowedCanonPrefix
+            RootCanonPrefix    = $rootCanonPrefix
+            Files              = @($files)
+            Directories        = @($dirs)
+            DirIdentities      = $dirIdentities
+            FileIdentities     = $fileIdentities
+            LockedHandles      = $lockedHandles
+        }
+    } catch {
+        foreach ($hKey in @($lockedHandles.Keys)) {
+            $hObj = $lockedHandles[$hKey]
+            if ($null -ne $hObj) {
+                try { $hObj.Dispose() } catch { }
+            }
+        }
+        $lockedHandles.Clear()
+        throw
     }
 }
 
@@ -538,49 +719,100 @@ function Remove-OwnedDirectoryTreeSafely {
         [string[]]$ProtectedRoots = @()
     )
 
-    $scan = Assert-TreeFreeOfReparsePointsAndAliases `
-        -RootDir $TargetDir `
-        -AllowedParentRoot $AllowedParentRoot `
-        -HeadSha $HeadSha `
-        -ContextLabel $ContextLabel `
-        -ReparseErrorCode $ReparseErrorCode `
-        -ProtectedRoots $ProtectedRoots
-    if (-not $scan.RootExists) { return }
+    $scan = $null
+    $lockedHandles = @{}
+    try {
+        $scan = Assert-TreeFreeOfReparsePointsAndAliases `
+            -RootDir $TargetDir `
+            -AllowedParentRoot $AllowedParentRoot `
+            -HeadSha $HeadSha `
+            -ContextLabel $ContextLabel `
+            -ReparseErrorCode $ReparseErrorCode `
+            -ProtectedRoots $ProtectedRoots `
+            -AcquireDirectoryLocks
+        if (-not $scan.RootExists) { return }
+        $lockedHandles = $scan.LockedHandles
 
-    foreach ($filePath in $scan.Files) {
-        $fItem = Get-Item -LiteralPath $filePath -Force -ErrorAction SilentlyContinue
-        if ($null -eq $fItem) { continue }
-        if (($fItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-            Write-ProvenanceFailure -Code $ReparseErrorCode -HeadSha $HeadSha -Detail "Reparse point appeared before file delete in ${ContextLabel}: $filePath"
+        if (-not [string]::IsNullOrWhiteSpace($env:SALRYN_TEST_POST_SCAN_HOOK) -and
+            (Test-Path -LiteralPath $env:SALRYN_TEST_POST_SCAN_HOOK -PathType Leaf)) {
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $env:SALRYN_TEST_POST_SCAN_HOOK -ContextLabel $ContextLabel -TargetRoot $scan.RootFull
         }
-        if (($fItem.Attributes -band [System.IO.FileAttributes]::ReadOnly) -ne 0) {
-            [System.IO.File]::SetAttributes($filePath, ($fItem.Attributes -band (-bnot [System.IO.FileAttributes]::ReadOnly)))
-        }
-        [System.IO.File]::Delete($filePath)
-    }
 
-    $sortedDirs = @($scan.Directories | Sort-Object -Property { $_.Length } -Descending)
-    foreach ($dirPath in $sortedDirs) {
-        $dItem = Get-Item -LiteralPath $dirPath -Force -ErrorAction SilentlyContinue
-        if ($null -eq $dItem) { continue }
-        if (($dItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-            Write-ProvenanceFailure -Code $ReparseErrorCode -HeadSha $HeadSha -Detail "Reparse point appeared before directory delete in ${ContextLabel}: $dirPath"
+        # Re-verify every scanned directory identity and reparse status before deleting any files
+        foreach ($dirCheck in (@($scan.RootFull) + @($scan.Directories))) {
+            $cId = ""; $cRep = $false; $cIsDir = $false
+            $cExists = [SalrynNativePathResolver]::TryGetFileIdentityNoFollow($dirCheck, [ref]$cId, [ref]$cRep, [ref]$cIsDir)
+            if ((-not $cExists) -or $cRep -or (-not $cIsDir) -or ($cId -ne $scan.DirIdentities[$dirCheck])) {
+                Write-ProvenanceFailure -Code $ReparseErrorCode -HeadSha $HeadSha -Detail "Directory identity or reparse state changed before file delete in ${ContextLabel}: $dirCheck"
+            }
         }
-        if (($dItem.Attributes -band [System.IO.FileAttributes]::ReadOnly) -ne 0) {
-            $dItem.Attributes = ($dItem.Attributes -band (-bnot [System.IO.FileAttributes]::ReadOnly))
-        }
-        [System.IO.Directory]::Delete($dirPath, $false)
-    }
 
-    $rootFinalItem = Get-Item -LiteralPath $scan.RootFull -Force -ErrorAction SilentlyContinue
-    if ($null -ne $rootFinalItem) {
-        if (($rootFinalItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-            Write-ProvenanceFailure -Code $ReparseErrorCode -HeadSha $HeadSha -Detail "Reparse point appeared on root before delete in ${ContextLabel}: $($scan.RootFull)"
+        foreach ($filePath in $scan.Files) {
+            $fId = ""; $fRep = $false; $fIsDir = $false
+            $fExists = [SalrynNativePathResolver]::TryGetFileIdentityNoFollow($filePath, [ref]$fId, [ref]$fRep, [ref]$fIsDir)
+            if (-not $fExists) { continue }
+            if ($fRep -or $fIsDir -or ($fId -ne $scan.FileIdentities[$filePath])) {
+                Write-ProvenanceFailure -Code $ReparseErrorCode -HeadSha $HeadSha -Detail "File identity changed or reparse point appeared before delete in ${ContextLabel}: $filePath"
+            }
+            $fAttr = [System.IO.File]::GetAttributes($filePath)
+            if (($fAttr -band [System.IO.FileAttributes]::ReadOnly) -ne 0) {
+                [System.IO.File]::SetAttributes($filePath, ($fAttr -band (-bnot [System.IO.FileAttributes]::ReadOnly)))
+            }
+            [System.IO.File]::Delete($filePath)
         }
-        if (($rootFinalItem.Attributes -band [System.IO.FileAttributes]::ReadOnly) -ne 0) {
-            $rootFinalItem.Attributes = ($rootFinalItem.Attributes -band (-bnot [System.IO.FileAttributes]::ReadOnly))
+
+        $sortedDirs = @($scan.Directories | Sort-Object -Property { $_.Length } -Descending)
+        foreach ($dirPath in $sortedDirs) {
+            $remEntries = @([System.IO.Directory]::EnumerateFileSystemEntries($dirPath))
+            if ($remEntries.Count -gt 0) {
+                Write-ProvenanceFailure -Code $ReparseErrorCode -HeadSha $HeadSha -Detail "Unexpected entry appeared during cleanup of ${ContextLabel} (possible concurrent modification/race): $($remEntries[0])"
+            }
+            $dId = ""; $dRep = $false; $dIsDir = $false
+            $dExists = [SalrynNativePathResolver]::TryGetFileIdentityNoFollow($dirPath, [ref]$dId, [ref]$dRep, [ref]$dIsDir)
+            if ($dExists) {
+                if ($dRep -or (-not $dIsDir) -or ($dId -ne $scan.DirIdentities[$dirPath])) {
+                    Write-ProvenanceFailure -Code $ReparseErrorCode -HeadSha $HeadSha -Detail "Directory identity changed before bottom-up delete in ${ContextLabel}: $dirPath"
+                }
+                if ($lockedHandles.ContainsKey($dirPath) -and $null -ne $lockedHandles[$dirPath]) {
+                    $lockedHandles[$dirPath].Dispose()
+                    [void]$lockedHandles.Remove($dirPath)
+                }
+                $dAttr = [System.IO.File]::GetAttributes($dirPath)
+                if (($dAttr -band [System.IO.FileAttributes]::ReadOnly) -ne 0) {
+                    [System.IO.File]::SetAttributes($dirPath, ($dAttr -band (-bnot [System.IO.FileAttributes]::ReadOnly)))
+                }
+                [System.IO.Directory]::Delete($dirPath, $false)
+            }
         }
-        [System.IO.Directory]::Delete($scan.RootFull, $false)
+
+        $rootRem = @([System.IO.Directory]::EnumerateFileSystemEntries($scan.RootFull))
+        if ($rootRem.Count -gt 0) {
+            Write-ProvenanceFailure -Code $ReparseErrorCode -HeadSha $HeadSha -Detail "Unexpected entry appeared in root during cleanup of ${ContextLabel} (possible race): $($rootRem[0])"
+        }
+        $rId = ""; $rRep = $false; $rIsDir = $false
+        $rExists = [SalrynNativePathResolver]::TryGetFileIdentityNoFollow($scan.RootFull, [ref]$rId, [ref]$rRep, [ref]$rIsDir)
+        if ($rExists) {
+            if ($rRep -or (-not $rIsDir) -or ($rId -ne $scan.DirIdentities[$scan.RootFull])) {
+                Write-ProvenanceFailure -Code $ReparseErrorCode -HeadSha $HeadSha -Detail "Root directory identity changed before delete in ${ContextLabel}: $($scan.RootFull)"
+            }
+            if ($lockedHandles.ContainsKey($scan.RootFull) -and $null -ne $lockedHandles[$scan.RootFull]) {
+                $lockedHandles[$scan.RootFull].Dispose()
+                [void]$lockedHandles.Remove($scan.RootFull)
+            }
+            $rAttr = [System.IO.File]::GetAttributes($scan.RootFull)
+            if (($rAttr -band [System.IO.FileAttributes]::ReadOnly) -ne 0) {
+                [System.IO.File]::SetAttributes($scan.RootFull, ($rAttr -band (-bnot [System.IO.FileAttributes]::ReadOnly)))
+            }
+            [System.IO.Directory]::Delete($scan.RootFull, $false)
+        }
+    } finally {
+        foreach ($hKey in @($lockedHandles.Keys)) {
+            $hObj = $lockedHandles[$hKey]
+            if ($null -ne $hObj) {
+                try { $hObj.Dispose() } catch { }
+            }
+        }
+        $lockedHandles.Clear()
     }
 }
 
@@ -1008,8 +1240,7 @@ function Assert-LockedWebDependencies {
     param(
         [Parameter(Mandatory = $true)][string]$WebRoot,
         [Parameter(Mandatory = $true)][string]$RepoRoot,
-        [Parameter(Mandatory = $true)][string]$HeadSha,
-        [switch]$RunNpmCi
+        [Parameter(Mandatory = $true)][string]$HeadSha
     )
 
     $pkgJsonPath = Join-Path $WebRoot "package.json"
@@ -1020,32 +1251,51 @@ function Assert-LockedWebDependencies {
     Assert-NotReparsePoint -Path $pkgJsonPath -HeadSha $HeadSha -ContextLabel "web-package-json"
     Assert-NotReparsePoint -Path $pkgLockPath -HeadSha $HeadSha -ContextLabel "web-package-lock"
 
-    & git -C $RepoRoot ls-files --error-unmatch "src/Salryn.App.Web/package-lock.json" 2>$null | Out-Null
+    & git -C $RepoRoot ls-files --error-unmatch "src/Salryn.App.Web/package.json" "src/Salryn.App.Web/package-lock.json" 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        Write-ProvenanceFailure -Code "WEB_LOCKFILE_MISSING" -HeadSha $HeadSha -Detail "src/Salryn.App.Web/package-lock.json must be tracked in Git."
+        Write-ProvenanceFailure -Code "WEB_LOCKFILE_MISSING" -HeadSha $HeadSha -Detail "src/Salryn.App.Web/package.json and package-lock.json must be tracked in Git."
+    }
+
+    $prevCheckEnv = $env:SALRYN_CHECK_WEB_ROOT
+    $prevEap = $ErrorActionPreference
+    try {
+        $env:SALRYN_CHECK_WEB_ROOT = $WebRoot
+        $ErrorActionPreference = 'Continue'
+        $jsPreLockCheck = "const fs=require('fs'),path=require('path');const w=process.env.SALRYN_CHECK_WEB_ROOT;const l=JSON.parse(fs.readFileSync(path.join(w,'package-lock.json'),'utf8'));if(!l.lockfileVersion||l.lockfileVersion<2){console.log('bad_lockfile_version');process.exit(3);}const lp=l.packages||{};const missing=[];for(const k of Object.keys(lp)){if(!k||lp[k].optional)continue;const integ=lp[k].integrity;if(!integ||!/^sha(512|384|256)-/.test(integ))missing.push(k);}if(missing.length){console.log('missing_integrity:'+missing.slice(0,5).join(';'));process.exit(4);}"
+        $preCheckOut = & node -e $jsPreLockCheck 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-ProvenanceFailure -Code "WEB_LOCKFILE_INTEGRITY_MISSING" -HeadSha $HeadSha -Detail "Tracked package-lock.json lacks valid lockfileVersion/SRI integrity digests: $($preCheckOut -join ' ')"
+        }
+    } finally {
+        $ErrorActionPreference = $prevEap
+        $env:SALRYN_CHECK_WEB_ROOT = $prevCheckEnv
     }
 
     $nmDir = Join-Path $WebRoot "node_modules"
     $nmLock = Join-Path $nmDir ".package-lock.json"
     $nmExists = Get-Item -LiteralPath $nmDir -Force -ErrorAction SilentlyContinue
-    if ($null -ne $nmExists -and (($nmExists.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)) {
-        Write-ProvenanceFailure -Code "REPARSE_POINT_FORBIDDEN" -HeadSha $HeadSha -Detail "node_modules cannot be a reparse point/junction: $nmDir"
+    if ($null -ne $nmExists) {
+        Remove-OwnedDirectoryTreeSafely -TargetDir $nmDir -AllowedParentRoot $WebRoot -HeadSha $HeadSha -ContextLabel "web-node-modules"
     }
 
-    if ($RunNpmCi -or -not (Test-Path -LiteralPath $nmLock)) {
-        Write-Info "Installing locked web dependencies via npm ci --prefer-offline..."
-        & npm --prefix $WebRoot ci --prefer-offline --no-audit --no-fund
-        if ($LASTEXITCODE -ne 0) {
-            Write-ProvenanceFailure -Code "WEB_NPM_CI_FAILED" -HeadSha $HeadSha -Detail "npm ci failed with exit code $LASTEXITCODE."
-        }
+    $npmCmdDisplay = "npm ci --prefer-offline --ignore-scripts --no-audit --no-fund"
+    Write-Info "Installing locked web dependencies via clean $npmCmdDisplay..."
+    & npm --prefix $WebRoot ci --prefer-offline --ignore-scripts --no-audit --no-fund
+    if ($LASTEXITCODE -ne 0) {
+        Write-ProvenanceFailure -Code "WEB_NPM_CI_FAILED" -HeadSha $HeadSha -Detail "npm ci failed with exit code $LASTEXITCODE."
     }
 
     if (-not (Test-Path -LiteralPath $nmLock)) {
-        Write-ProvenanceFailure -Code "WEB_LOCKFILE_MISMATCH" -HeadSha $HeadSha -Detail "node_modules\.package-lock.json missing in $WebRoot."
+        Write-ProvenanceFailure -Code "WEB_LOCKFILE_MISMATCH" -HeadSha $HeadSha -Detail "node_modules\.package-lock.json missing in $WebRoot after clean npm ci."
     }
+    $viteBinPath = Join-Path $nmDir "vite\bin\vite.js"
+    if (-not (Test-Path -LiteralPath $viteBinPath)) {
+        Write-ProvenanceFailure -Code "WEB_LOCKFILE_MISMATCH" -HeadSha $HeadSha -Detail "Expected vite CLI missing after clean npm ci: $viteBinPath"
+    }
+    Assert-NotReparsePoint -Path $viteBinPath -HeadSha $HeadSha -ContextLabel "web-vite-bin"
 
-    $prevCheckEnv = $env:SALRYN_CHECK_WEB_ROOT
-    $prevEap = $ErrorActionPreference
+    $prevCheckEnv2 = $env:SALRYN_CHECK_WEB_ROOT
+    $prevEap2 = $ErrorActionPreference
     try {
         $env:SALRYN_CHECK_WEB_ROOT = $WebRoot
         $ErrorActionPreference = 'Continue'
@@ -1056,8 +1306,13 @@ function Assert-LockedWebDependencies {
             Write-ProvenanceFailure -Code "WEB_LOCKFILE_MISMATCH" -HeadSha $HeadSha -Detail "Installed node_modules does not match tracked package-lock.json: $($verifyOut -join ' ')"
         }
     } finally {
-        $ErrorActionPreference = $prevEap
-        $env:SALRYN_CHECK_WEB_ROOT = $prevCheckEnv
+        $ErrorActionPreference = $prevEap2
+        $env:SALRYN_CHECK_WEB_ROOT = $prevCheckEnv2
+    }
+
+    return [ordered]@{
+        PackageLockSha256 = (Get-FileSha256Lower -FilePath $pkgLockPath)
+        NpmInstallCommand = $npmCmdDisplay
     }
 }
 
@@ -1193,6 +1448,15 @@ function Assert-StageManifestMatchesDisk {
         }
     }
 
+    # Verify tracked package-lock.json digest when manifest recorded it for a fresh npm ci build
+    $hasPkgLockProp = $null -ne $manifest.buildOptions.PSObject.Properties["packageLockSha256"]
+    if ($manifest.buildOptions.skipWebBuild -eq $false -and $hasPkgLockProp -and -not [string]::IsNullOrWhiteSpace([string]$manifest.buildOptions.packageLockSha256)) {
+        $livePkgLockSha = Get-FileSha256Lower -FilePath (Join-Path $WebRoot "package-lock.json")
+        if ([string]$manifest.buildOptions.packageLockSha256 -ne $livePkgLockSha) {
+            Write-ProvenanceFailure -Code "STAGE_WEB_LOCKFILE_DIGEST_MISMATCH" -HeadSha $HeadSha -Detail "Manifest packageLockSha256 ($($manifest.buildOptions.packageLockSha256)) does not match clean source tree ($livePkgLockSha)."
+        }
+    }
+
     return [ordered]@{
         Manifest               = $manifest
         ManifestSha256         = $actualManifestSha
@@ -1201,8 +1465,38 @@ function Assert-StageManifestMatchesDisk {
     }
 }
 
+function Set-PrivateDirectoryAcl {
+    param(
+        [Parameter(Mandatory = $true)][string]$DirectoryPath,
+        [Parameter(Mandatory = $true)][string]$HeadSha
+    )
+    $currentUserSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+    if ($null -eq $currentUserSid) {
+        Write-ProvenanceFailure -Code "OUTPUT_ACL_FAILED" -HeadSha $HeadSha -Detail "Could not resolve current Windows user SID for private output directory: $DirectoryPath"
+    }
+    $localSystemSid = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::LocalSystemSid, $null)
+    $adminsSid = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid, $null)
+
+    $acl = New-Object System.Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true, $false)
+    $inherit = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+    $prop = [System.Security.AccessControl.PropagationFlags]::None
+    $rights = [System.Security.AccessControl.FileSystemRights]::FullControl
+    $allow = [System.Security.AccessControl.AccessControlType]::Allow
+
+    foreach ($sid in @($currentUserSid, $localSystemSid, $adminsSid)) {
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid, $rights, $inherit, $prop, $allow)
+        $acl.AddAccessRule($rule)
+    }
+    try {
+        [System.IO.Directory]::SetAccessControl($DirectoryPath, $acl)
+    } catch {
+        Write-ProvenanceFailure -Code "OUTPUT_ACL_FAILED" -HeadSha $HeadSha -Detail "Failed to apply restricted ACL to private output directory '$DirectoryPath': $_"
+    }
+}
+
 # ---------------------------------------------------------------------------
-# 1. Fail-closed source custody preflight BEFORE any mutation or downloads
+# 1. Fail-closed mode & source custody preflight BEFORE any mutation
 # ---------------------------------------------------------------------------
 if ([string]::IsNullOrWhiteSpace($Version)) {
     throw "Version cannot be empty."
@@ -1211,12 +1505,40 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
 $repoRoot = Find-RepoRoot
 Set-Location $repoRoot
 
+$probeHeadSha = "UNKNOWN"
+$probeGitOut = (& git -C $repoRoot rev-parse HEAD 2>$null | Out-String).Trim()
+if ($LASTEXITCODE -eq 0 -and $probeGitOut -match '^[0-9a-fA-F]{40}$') {
+    $probeHeadSha = $probeGitOut.ToLowerInvariant()
+}
+
+# Enforce command-mode & Option-A constraints BEFORE touching or deleting anything on disk (F3)
+if ($CompileExistingStageOnly) {
+    Write-ProvenanceFailure -Code "COMPILE_EXISTING_STAGE_FORBIDDEN" -HeadSha $probeHeadSha -Detail "-CompileExistingStageOnly is disabled under Option A fresh-build-only trust architecture."
+}
+if ($VerifyStageOnly -and $BuildInstaller) {
+    Write-ProvenanceFailure -Code "VERIFY_ONLY_CANNOT_BUILD_INSTALLER" -HeadSha $probeHeadSha -Detail "-VerifyStageOnly is read-only and cannot be combined with -BuildInstaller."
+}
+if ($VerifyStageOnly -and ($SkipWebBuild -or $ForceNpmCi)) {
+    Write-ProvenanceFailure -Code "VERIFY_ONLY_INVALID_OPTIONS" -HeadSha $probeHeadSha -Detail "-VerifyStageOnly is strictly read-only and cannot be combined with -SkipWebBuild or -ForceNpmCi."
+}
+if ($BuildInstaller -and [string]::IsNullOrWhiteSpace($ExpectedSourceSha)) {
+    Write-ProvenanceFailure -Code "EXPECTED_SHA_REQUIRED_FOR_INSTALLER" -HeadSha $probeHeadSha -Detail "-BuildInstaller requires an explicit 40-character -ExpectedSourceSha binding HEAD to the approved commit."
+}
+if ($BuildInstaller -and $SkipWebBuild) {
+    Write-ProvenanceFailure -Code "SKIP_WEB_BUILD_FORBIDDEN_FOR_INSTALLER" -HeadSha $probeHeadSha -Detail "-SkipWebBuild cannot be used with -BuildInstaller; trusted packages require a fresh locked web build."
+}
+
 $provenance = Resolve-GitSourceProvenance -RepoRoot $repoRoot -ExpectedSha $ExpectedSourceSha
 $headSha = $provenance.HeadSha
 Write-Info "[PROVENANCE_PREFLIGHT] PASS head=$headSha branch=$($provenance.GitBranch) worktreeClean=true"
 
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
-    $rawArtifactRoot = Join-Path $repoRoot "artifacts\installer"
+    if ($VerifyStageOnly) {
+        $rawArtifactRoot = Join-Path $repoRoot "artifacts\installer"
+    } else {
+        $runStamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ") + "-" + ([guid]::NewGuid().ToString("N").Substring(0, 8))
+        $rawArtifactRoot = Join-Path $repoRoot "artifacts\installer\run-$runStamp"
+    }
 } else {
     if ($OutputDir.StartsWith("\\", [System.StringComparison]::OrdinalIgnoreCase)) {
         Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $headSha -Detail "UNC/device OutputDir path is not allowed: $OutputDir"
@@ -1239,6 +1561,7 @@ $issScript            = Join-Path $repoRoot "installer\SalrynSetup.iss"
 $webview2RedistDir    = Join-Path $repoRoot "installer\redist"
 $webview2Bootstrapper = Join-Path $webview2RedistDir "MicrosoftEdgeWebview2Setup.exe"
 $webview2BootstrapperUrl = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
+$stageProtectedRoots  = Get-ProtectedRootsList -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots
 
 # Check critical repo input paths for reparse points before creating outputs
 Assert-NoReparsePointsOrTraversal -RootDir (Join-Path $repoRoot "installer") -HeadSha $headSha -ContextLabel "installer-dir"
@@ -1302,132 +1625,158 @@ function Assert-VerifiedSkipWebDist {
     }
 }
 
-# Purge any prior setup artifact inside the verified-safe output dir BEFORE any fallible
-# verification or build path (F3), so failed web/stage/publish/ISCC runs never leave a stale EXE.
-Remove-StaleSetupArtifacts -SetupDir $setupDir -ArtifactRoot $artifactRoot -RepoRoot $repoRoot -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots
+if ($VerifyStageOnly) {
+    Write-Info "VerifyStageOnly set; inspecting existing stage custody read-only against HEAD $headSha..."
+    if (-not (Test-Path -LiteralPath $publishDir)) {
+        Write-ProvenanceFailure -Code "MISSING_STAGE_DIRECTORY" -HeadSha $headSha -Detail "Existing stage directory not found: $publishDir"
+    }
+    $readOnlyVerify = Assert-StageManifestMatchesDisk `
+        -PublishDir $publishDir `
+        -HeadSha $headSha `
+        -ExpectedVersion $Version `
+        -ExpectedConfiguration $Configuration `
+        -RepoRoot $repoRoot `
+        -WebRoot $webRoot `
+        -WebDistDir $webDistSrc `
+        -WebProvenanceStampPath $webProvenanceStamp `
+        -ExpectedManifestSha256 $ExpectedStageManifestSha256 `
+        -RequireSourceTreeAssetParity
+    Write-Host "[STAGE_VERIFIED_READONLY] manifestId=$($readOnlyVerify.Manifest.manifestId) manifestSha256=$($readOnlyVerify.ManifestSha256) releaseAuthority=$($readOnlyVerify.Manifest.releaseAuthority)"
+    exit 0
+}
 
-try {
-    # Option A trust-boundary enforcement (no reuse of existing stage or ignored dist in -BuildInstaller lane)
-    if ($CompileExistingStageOnly) {
-        Write-ProvenanceFailure -Code "COMPILE_EXISTING_STAGE_FORBIDDEN" -HeadSha $headSha -Detail "-CompileExistingStageOnly is disabled under Option A fresh-build-only trust architecture."
-    }
-    if ($BuildInstaller -and [string]::IsNullOrWhiteSpace($ExpectedSourceSha)) {
-        Write-ProvenanceFailure -Code "EXPECTED_SHA_REQUIRED_FOR_INSTALLER" -HeadSha $headSha -Detail "-BuildInstaller requires an explicit 40-character -ExpectedSourceSha binding HEAD to the approved commit."
-    }
-    if ($BuildInstaller -and $SkipWebBuild) {
-        Write-ProvenanceFailure -Code "SKIP_WEB_BUILD_FORBIDDEN_FOR_INSTALLER" -HeadSha $headSha -Detail "-SkipWebBuild cannot be used with -BuildInstaller; trusted packages require a fresh locked web build."
-    }
-    if ($VerifyStageOnly -and $BuildInstaller) {
-        Write-ProvenanceFailure -Code "VERIFY_ONLY_CANNOT_BUILD_INSTALLER" -HeadSha $headSha -Detail "-VerifyStageOnly is read-only and cannot be combined with -BuildInstaller."
-    }
+# Mutable build / staging lane (F2): strictly require a non-existent private per-run -OutputDir
+$preExistingOutputItem = Get-Item -LiteralPath $artifactRoot -Force -ErrorAction SilentlyContinue
+if ($null -ne $preExistingOutputItem) {
+    Write-ProvenanceFailure -Code "NONPRIVATE_OUTPUT_DIR_FORBIDDEN" -HeadSha $headSha -Detail "Mutable builds require a non-existent private per-run -OutputDir; existing directory/file reuse is forbidden under F2: $artifactRoot"
+}
 
-    if ($VerifyStageOnly) {
-        Write-Info "VerifyStageOnly set; inspecting existing stage custody read-only against HEAD $headSha..."
-        if (-not (Test-Path -LiteralPath $publishDir)) {
-            Write-ProvenanceFailure -Code "MISSING_STAGE_DIRECTORY" -HeadSha $headSha -Detail "Existing stage directory not found: $publishDir"
-        }
-        $readOnlyVerify = Assert-StageManifestMatchesDisk `
-            -PublishDir $publishDir `
-            -HeadSha $headSha `
-            -ExpectedVersion $Version `
-            -ExpectedConfiguration $Configuration `
-            -RepoRoot $repoRoot `
-            -WebRoot $webRoot `
-            -WebDistDir $webDistSrc `
-            -WebProvenanceStampPath $webProvenanceStamp `
-            -ExpectedManifestSha256 $ExpectedStageManifestSha256 `
-            -RequireSourceTreeAssetParity
-        Write-Host "[STAGE_VERIFIED_READONLY] manifestId=$($readOnlyVerify.Manifest.manifestId) manifestSha256=$($readOnlyVerify.ManifestSha256) releaseAuthority=$($readOnlyVerify.Manifest.releaseAuthority)"
-        exit 0
-    }
+if ($SkipWebBuild) {
+    Write-Info "SkipWebBuild set (NON-RELEASE / NOT ATTESTED dev staging only); verifying dist stamp..."
+    $preWebSourceInputSha256 = Get-WebSourceInputDigest -WebRoot $webRoot -HeadSha $headSha
+    $verifiedSkipWeb = Assert-VerifiedSkipWebDist `
+        -WebDistDir $webDistSrc `
+        -StampPath $webProvenanceStamp `
+        -ExpectedHeadSha $headSha `
+        -ExpectedWebSourceInputSha256 $preWebSourceInputSha256
+}
 
-    if ($SkipWebBuild) {
-        Write-Info "SkipWebBuild set (NON-RELEASE / NOT ATTESTED dev staging only); verifying dist stamp..."
-        $preWebSourceInputSha256 = Get-WebSourceInputDigest -WebRoot $webRoot -HeadSha $headSha
-        $verifiedSkipWeb = Assert-VerifiedSkipWebDist `
-            -WebDistDir $webDistSrc `
-            -StampPath $webProvenanceStamp `
-            -ExpectedHeadSha $headSha `
-            -ExpectedWebSourceInputSha256 $preWebSourceInputSha256
+# Scan source project bin/obj trees, web dist, and web node_modules for nested reparse points BEFORE any output creation or cleanup
+$srcRootDir = Join-Path $repoRoot "src"
+Assert-NotReparsePoint -Path $srcRootDir -HeadSha $headSha -ContextLabel "src-root"
+$projectDirs = New-Object System.Collections.Generic.List[string]
+foreach ($subProj in @(Get-ChildItem -LiteralPath $srcRootDir -Directory -Force -ErrorAction Stop)) {
+    if (($subProj.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        Write-ProvenanceFailure -Code "REPARSE_POINT_FORBIDDEN" -HeadSha $headSha -Detail "Reparse point/junction forbidden in src directory: $($subProj.FullName)"
     }
-
-    # Scan source project bin/obj trees and web dist for nested reparse points BEFORE any build or cleanup
-    $srcRootDir = Join-Path $repoRoot "src"
-    Assert-NotReparsePoint -Path $srcRootDir -HeadSha $headSha -ContextLabel "src-root"
-    $projectDirs = New-Object System.Collections.Generic.List[string]
-    foreach ($subProj in @(Get-ChildItem -LiteralPath $srcRootDir -Directory -Force -ErrorAction Stop)) {
-        if (($subProj.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-            Write-ProvenanceFailure -Code "REPARSE_POINT_FORBIDDEN" -HeadSha $headSha -Detail "Reparse point/junction forbidden in src directory: $($subProj.FullName)"
-        }
-        $hasCsproj = @(Get-ChildItem -LiteralPath $subProj.FullName -Filter "*.csproj" -File -Force -ErrorAction SilentlyContinue).Count -gt 0
-        if ($hasCsproj) {
-            $projectDirs.Add($subProj.FullName)
-            foreach ($buildSub in @("bin", "obj")) {
-                $scanTarget = Join-Path $subProj.FullName $buildSub
-                $scanItem = Get-Item -LiteralPath $scanTarget -Force -ErrorAction SilentlyContinue
-                if ($null -ne $scanItem) {
-                    [void](Assert-TreeFreeOfReparsePointsAndAliases -RootDir $scanTarget -AllowedParentRoot $subProj.FullName -HeadSha $headSha -ContextLabel "project-$buildSub")
-                }
+    $hasCsproj = @(Get-ChildItem -LiteralPath $subProj.FullName -Filter "*.csproj" -File -Force -ErrorAction SilentlyContinue).Count -gt 0
+    if ($hasCsproj) {
+        $projectDirs.Add($subProj.FullName)
+        foreach ($buildSub in @("bin", "obj")) {
+            $scanTarget = Join-Path $subProj.FullName $buildSub
+            $scanItem = Get-Item -LiteralPath $scanTarget -Force -ErrorAction SilentlyContinue
+            if ($null -ne $scanItem) {
+                [void](Assert-TreeFreeOfReparsePointsAndAliases -RootDir $scanTarget -AllowedParentRoot $subProj.FullName -HeadSha $headSha -ContextLabel "project-$buildSub" -ProtectedRoots $stageProtectedRoots)
             }
         }
     }
-    $existingDistItem = Get-Item -LiteralPath $webDistSrc -Force -ErrorAction SilentlyContinue
-    if ($null -ne $existingDistItem) {
-        [void](Assert-TreeFreeOfReparsePointsAndAliases -RootDir $webDistSrc -AllowedParentRoot $webRoot -HeadSha $headSha -ContextLabel "web-dist")
-    }
-
-    # Re-validate OutputDir before creating directories (TOCTOU protection)
-    [void](Assert-OutputDirSafe -ArtifactRoot $artifactRoot -RepoRoot $repoRoot -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots)
-    New-Item -ItemType Directory -Force -Path $stagingRoot, $setupDir, $webview2RedistDir | Out-Null
-
-function Ensure-WebView2Bootstrapper {
-    if (Test-Path -LiteralPath $webview2Bootstrapper) {
-        Assert-NotReparsePoint -Path $webview2Bootstrapper -HeadSha $headSha -ContextLabel "webview2-bootstrapper"
-        $hash = Get-FileSha256Lower -FilePath $webview2Bootstrapper
-        Write-Info "WebView2 bootstrapper present: $webview2Bootstrapper"
-        Write-Info "WebView2 bootstrapper SHA-256: $hash"
-        return
-    }
-
-    Write-Info "WebView2 bootstrapper missing; downloading from Microsoft..."
-    Write-Info "URL: $webview2BootstrapperUrl"
-    try {
-        Invoke-WebRequest -Uri $webview2BootstrapperUrl -OutFile $webview2Bootstrapper -UseBasicParsing
-    } catch {
-        throw "Failed to download Microsoft Edge WebView2 Evergreen Bootstrapper from $webview2BootstrapperUrl. $_"
-    }
-
-    if (-not (Test-Path -LiteralPath $webview2Bootstrapper)) {
-        throw "WebView2 bootstrapper download completed but file is missing: $webview2Bootstrapper"
-    }
-
-    $hash = Get-FileSha256Lower -FilePath $webview2Bootstrapper
-    $size = (Get-Item -LiteralPath $webview2Bootstrapper).Length
-    Write-Info "Downloaded WebView2 bootstrapper ($size bytes)"
-    Write-Info "WebView2 bootstrapper SHA-256: $hash"
+}
+$existingDistItem = Get-Item -LiteralPath $webDistSrc -Force -ErrorAction SilentlyContinue
+if ($null -ne $existingDistItem) {
+    [void](Assert-TreeFreeOfReparsePointsAndAliases -RootDir $webDistSrc -AllowedParentRoot $webRoot -HeadSha $headSha -ContextLabel "web-dist" -ProtectedRoots $stageProtectedRoots)
+}
+$existingNmItem = Get-Item -LiteralPath (Join-Path $webRoot "node_modules") -Force -ErrorAction SilentlyContinue
+if ($null -ne $existingNmItem) {
+    [void](Assert-TreeFreeOfReparsePointsAndAliases -RootDir $existingNmItem.FullName -AllowedParentRoot $webRoot -HeadSha $headSha -ContextLabel "web-node-modules" -ProtectedRoots $stageProtectedRoots)
 }
 
-Ensure-WebView2Bootstrapper
-$redistBytes = [int64](Get-Item -LiteralPath $webview2Bootstrapper).Length
-$redistSha256 = Get-FileSha256Lower -FilePath $webview2Bootstrapper
+# Create private per-run OutputDir exclusively, lock ACLs to CurrentUser/SYSTEM/Administrators, and pin non-delete-share kernel handles (F2)
+[void](Assert-OutputDirSafe -ArtifactRoot $artifactRoot -RepoRoot $repoRoot -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots)
+$artifactRootParent = Split-Path -Parent $artifactRoot
+if (-not [string]::IsNullOrWhiteSpace($artifactRootParent) -and -not (Test-Path -LiteralPath $artifactRootParent)) {
+    [System.IO.Directory]::CreateDirectory($artifactRootParent) | Out-Null
+    [void](Assert-OutputDirSafe -ArtifactRoot $artifactRoot -RepoRoot $repoRoot -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots)
+}
 
-$dotnetVersion = (& dotnet --version 2>$null | Out-String).Trim()
-$nodeVersion = (& node --version 2>$null | Out-String).Trim()
-$npmVersion = (& npm --version 2>$null | Out-String).Trim()
+$pinnedOutputHandles = New-Object System.Collections.Generic.List[object]
 
-# ---------------------------------------------------------------------------
-# 2. Build / Stage Pipeline (fresh source-bound build required for release)
-# ---------------------------------------------------------------------------
-$webSourceInputSha256 = Get-WebSourceInputDigest -WebRoot $webRoot -HeadSha $headSha
-
-if (-not $SkipWebBuild) {
-    Assert-LockedWebDependencies -WebRoot $webRoot -RepoRoot $repoRoot -HeadSha $headSha -RunNpmCi:$ForceNpmCi
-    Write-Info "Cleaning previous web dist safely and running fresh npm run build..."
-    Remove-OwnedDirectoryTreeSafely -TargetDir $webDistSrc -AllowedParentRoot $webRoot -HeadSha $headSha -ContextLabel "web-dist"
-    & npm --prefix $webRoot run build
-    if ($LASTEXITCODE -ne 0) {
-        Write-ProvenanceFailure -Code "WEB_BUILD_FAILED" -HeadSha $headSha -Detail "npm run build failed (exit $LASTEXITCODE)."
+function Open-PinnedPrivateOutputDir {
+    param(
+        [Parameter(Mandatory = $true)][string]$DirPath,
+        [Parameter(Mandatory = $true)][string]$HeadSha
+    )
+    if (-not [SalrynNativePathResolver]::CreateNewDirectoryExclusive($DirPath)) {
+        Write-ProvenanceFailure -Code "NONPRIVATE_OUTPUT_DIR_FORBIDDEN" -HeadSha $HeadSha -Detail "Could not exclusively create private output directory (already exists or race detected): $DirPath"
     }
+    $pinId = $null
+    $pinReparse = $false
+    $pinFinal = $null
+    $pinHandle = [SalrynNativePathResolver]::OpenDirectoryNoDeleteShare($DirPath, [ref]$pinId, [ref]$pinReparse, [ref]$pinFinal)
+    if ($pinReparse -or [string]::IsNullOrWhiteSpace($pinId)) {
+        if ($null -ne $pinHandle) { try { $pinHandle.Dispose() } catch {} }
+        Write-ProvenanceFailure -Code "OUTPUT_DIR_REPARSE_POINT_FORBIDDEN" -HeadSha $HeadSha -Detail "Newly created private output directory failed non-reparse identity verification: $DirPath"
+    }
+    return $pinHandle
+}
+
+try {
+    $pinnedOutputHandles.Add((Open-PinnedPrivateOutputDir -DirPath $artifactRoot -HeadSha $headSha))
+    Set-PrivateDirectoryAcl -DirectoryPath $artifactRoot -HeadSha $headSha
+    $pinnedOutputHandles.Add((Open-PinnedPrivateOutputDir -DirPath $stagingRoot -HeadSha $headSha))
+    $pinnedOutputHandles.Add((Open-PinnedPrivateOutputDir -DirPath $publishDir -HeadSha $headSha))
+    $pinnedOutputHandles.Add((Open-PinnedPrivateOutputDir -DirPath $setupDir -HeadSha $headSha))
+    $pinnedOutputHandles.Add((Open-PinnedPrivateOutputDir -DirPath $shellTemp -HeadSha $headSha))
+    New-Item -ItemType Directory -Force -Path $webview2RedistDir | Out-Null
+
+    function Ensure-WebView2Bootstrapper {
+        if (Test-Path -LiteralPath $webview2Bootstrapper) {
+            Assert-NotReparsePoint -Path $webview2Bootstrapper -HeadSha $headSha -ContextLabel "webview2-bootstrapper"
+            $hash = Get-FileSha256Lower -FilePath $webview2Bootstrapper
+            Write-Info "WebView2 bootstrapper present: $webview2Bootstrapper"
+            Write-Info "WebView2 bootstrapper SHA-256: $hash"
+            return
+        }
+
+        Write-Info "WebView2 bootstrapper missing; downloading from Microsoft..."
+        Write-Info "URL: $webview2BootstrapperUrl"
+        try {
+            Invoke-WebRequest -Uri $webview2BootstrapperUrl -OutFile $webview2Bootstrapper -UseBasicParsing
+        } catch {
+            throw "Failed to download Microsoft Edge WebView2 Evergreen Bootstrapper from $webview2BootstrapperUrl. $_"
+        }
+
+        if (-not (Test-Path -LiteralPath $webview2Bootstrapper)) {
+            throw "WebView2 bootstrapper download completed but file is missing: $webview2Bootstrapper"
+        }
+
+        $hash = Get-FileSha256Lower -FilePath $webview2Bootstrapper
+        $size = (Get-Item -LiteralPath $webview2Bootstrapper).Length
+        Write-Info "Downloaded WebView2 bootstrapper ($size bytes)"
+        Write-Info "WebView2 bootstrapper SHA-256: $hash"
+    }
+
+    Ensure-WebView2Bootstrapper
+    $redistBytes = [int64](Get-Item -LiteralPath $webview2Bootstrapper).Length
+    $redistSha256 = Get-FileSha256Lower -FilePath $webview2Bootstrapper
+
+    $dotnetVersion = (& dotnet --version 2>$null | Out-String).Trim()
+    $nodeVersion = (& node --version 2>$null | Out-String).Trim()
+    $npmVersion = (& npm --version 2>$null | Out-String).Trim()
+
+    # ---------------------------------------------------------------------------
+    # 2. Build / Stage Pipeline (fresh source-bound build required for release)
+    # ---------------------------------------------------------------------------
+    $webSourceInputSha256 = Get-WebSourceInputDigest -WebRoot $webRoot -HeadSha $headSha
+    $webDepInfo = $null
+
+    if (-not $SkipWebBuild) {
+        $webDepInfo = Assert-LockedWebDependencies -WebRoot $webRoot -RepoRoot $repoRoot -HeadSha $headSha
+        Write-Info "Cleaning previous web dist safely and running fresh npm run build..."
+        Remove-OwnedDirectoryTreeSafely -TargetDir $webDistSrc -AllowedParentRoot $webRoot -HeadSha $headSha -ContextLabel "web-dist" -ProtectedRoots $stageProtectedRoots
+        & npm --prefix $webRoot run build
+        if ($LASTEXITCODE -ne 0) {
+            Write-ProvenanceFailure -Code "WEB_BUILD_FAILED" -HeadSha $headSha -Detail "npm run build failed (exit $LASTEXITCODE)."
+        }
         if (-not (Test-Path -LiteralPath (Join-Path $webDistSrc "index.html"))) {
             Write-ProvenanceFailure -Code "MISSING_WEB_DIST" -HeadSha $headSha -Detail "Web dist missing index.html after npm run build."
         }
@@ -1455,28 +1804,8 @@ if (-not $SkipWebBuild) {
         Write-Info "Verified cached web dist against commit $headSha ($($webDistInventory.Count) files)."
     }
 
-    # TOCTOU re-check output root + get protected roots immediately before safe non-following wipes
+    # TOCTOU re-check output root immediately before compiling/publishing into pinned private dirs
     [void](Assert-OutputDirSafe -ArtifactRoot $artifactRoot -RepoRoot $repoRoot -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots)
-    $stageProtectedRoots = Get-ProtectedRootsList -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots
-
-    # Wipe staging directories safely (deep reparse scan + bottom-up non-following delete)
-    Remove-OwnedDirectoryTreeSafely `
-        -TargetDir $publishDir `
-        -AllowedParentRoot $artifactRoot `
-        -HeadSha $headSha `
-        -ContextLabel "publish-dir" `
-        -ReparseErrorCode "OUTPUT_DIR_REPARSE_POINT_FORBIDDEN" `
-        -ProtectedRoots $stageProtectedRoots
-    New-Item -ItemType Directory -Force -Path $publishDir | Out-Null
-
-    Remove-OwnedDirectoryTreeSafely `
-        -TargetDir $shellTemp `
-        -AllowedParentRoot $artifactRoot `
-        -HeadSha $headSha `
-        -ContextLabel "shell-temp" `
-        -ReparseErrorCode "OUTPUT_DIR_REPARSE_POINT_FORBIDDEN" `
-        -ProtectedRoots $stageProtectedRoots
-    New-Item -ItemType Directory -Force -Path $shellTemp | Out-Null
 
     $apiProj = Join-Path $repoRoot "src\Salryn.Api.Local\Salryn.Api.Local.csproj"
     $shellProj = Join-Path $repoRoot "src\Salryn.Desktop.WebView\Salryn.Desktop.WebView.csproj"
@@ -1490,7 +1819,8 @@ if (-not $SkipWebBuild) {
                 -TargetDir $cleanTarget `
                 -AllowedParentRoot $projDir `
                 -HeadSha $headSha `
-                -ContextLabel "project-$sub"
+                -ContextLabel "project-$sub" `
+                -ProtectedRoots $stageProtectedRoots
         }
     }
 
@@ -1617,6 +1947,8 @@ if (-not $SkipWebBuild) {
     ) -IncludeBinaryVersions
     $payloadInventorySha256 = Get-CanonicalInventorySha256 -InventoryEntries $stageInventory
     $manifestId = "salryn-pos-$Version-$($headSha.Substring(0,12))-$($payloadInventorySha256.Substring(0,12))"
+    $pkgLockSha = if ($null -ne $webDepInfo) { $webDepInfo.PackageLockSha256 } else { "" }
+    $npmInstallCmd = if ($null -ne $webDepInfo) { $webDepInfo.NpmInstallCommand } else { "SKIPPED_NONRELEASE_DEV_STAGE" }
 
     $manifestObject = [ordered]@{
         schemaVersion               = "1.0"
@@ -1636,6 +1968,8 @@ if (-not $SkipWebBuild) {
         }
         buildOptions                = [ordered]@{
             skipWebBuild            = [bool]$SkipWebBuild
+            npmInstallCommand       = $npmInstallCmd
+            packageLockSha256       = $pkgLockSha
             webDistInventorySha256  = $webDistInventorySha256
             webSourceInputSha256    = $webSourceInputSha256
         }
@@ -1807,6 +2141,7 @@ $provenanceObject = [ordered]@{
     configuration               = $Configuration
     releaseAuthority            = $verifiedAfterCompile.Manifest.releaseAuthority
     authoritativeInstallerAllowed = [bool]$verifiedAfterCompile.Manifest.authoritativeInstallerAllowed
+    privatePerRunOutput         = $true
     builtUtc                    = $compiledUtc
     sourceCommitSha             = $headSha
     gitBranch                   = $provenance.GitBranch
@@ -1816,11 +2151,13 @@ $provenanceObject = [ordered]@{
     stageManifestSha256         = $verifiedAfterCompile.ManifestSha256
     payloadFileCount            = $verifiedAfterCompile.Manifest.payloadFileCount
     payloadInventorySha256      = $verifiedAfterCompile.PayloadInventorySha256
+    packageLockSha256           = $pkgLockSha
+    npmInstallCommand           = $npmInstallCmd
     redistributableRelativePath = "installer/redist/MicrosoftEdgeWebview2Setup.exe"
     redistributableSha256       = $redistSha256
     isccVersion                 = $isccVersion
     packedPayloadVerification   = $packedStatus
-    trustBoundaryNote           = "Clean Git HEAD, binary ProductVersion (+SHA), full staging inventory hashes, and WebView2 bootstrapper SHA256 were verified immediately before and after ISCC.exe execution; packed bytes inside the compressed Inno Setup EXE were not extracted or independently inspected."
+    trustBoundaryNote           = "Clean Git HEAD, locked npm ci web dependencies, private per-run output ownership, binary ProductVersion (+SHA), full staging inventory hashes, and WebView2 bootstrapper SHA256 were verified immediately before and after ISCC.exe execution; packed bytes inside the compressed Inno Setup EXE were not extracted or independently inspected."
 }
 Write-Utf8NoBom -Path $provenanceFile -Content ($provenanceObject | ConvertTo-Json -Depth 6)
 
@@ -1832,8 +2169,8 @@ Write-Host "Setup EXE   : $($setupItem.FullName)"
 Write-Host "SHA-256     : $setupSha256"
 Write-Host "SHA file    : $shaFile"
 Write-Host "Provenance  : $provenanceFile"
-    Write-Host "App stage   : $publishDir"
-    Write-Host "Packed check: $packedStatus"
+Write-Host "App stage   : $publishDir"
+Write-Host "Packed check: $packedStatus"
 
     exit 0
 } catch {
@@ -1843,4 +2180,13 @@ Write-Host "Provenance  : $provenanceFile"
         Write-Warning "Cleanup of stale setup artifacts on failure aborted: $_"
     }
     throw
+} finally {
+    if ($null -ne $pinnedOutputHandles) {
+        foreach ($h in $pinnedOutputHandles) {
+            if ($null -ne $h) {
+                try { $h.Dispose() } catch {}
+            }
+        }
+        $pinnedOutputHandles.Clear()
+    }
 }
