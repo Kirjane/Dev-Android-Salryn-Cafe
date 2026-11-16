@@ -12,7 +12,7 @@ async function readDocumentResult<T extends { id: string; totalCents: number; li
   try {
     const document = await readJson<T>(response);
     console.info("[salryn-document-http]", {
-      method, path, status: response.status, code: "SUCCESS",
+      method, path, status: response.status, observedAtUtc: new Date().toISOString(), code: "SUCCESS",
       recordId: document.id,
       lineCount: document.lines?.length ?? null,
       totalCents: document.totalCents,
@@ -21,7 +21,7 @@ async function readDocumentResult<T extends { id: string; totalCents: number; li
     return document;
   } catch (error) {
     console.warn("[salryn-document-http]", {
-      method, path, status: response.status,
+      method, path, status: response.status, observedAtUtc: new Date().toISOString(),
       code: error instanceof ApiError ? error.code ?? "UNTYPED_HTTP_ERROR" : "RESPONSE_DECODE_ERROR",
       submittedLineCount: submittedLineCount ?? null,
     });
