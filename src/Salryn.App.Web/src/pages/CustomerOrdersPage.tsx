@@ -195,7 +195,7 @@ export function CustomerOrdersPage() {
         customerId: selectedCustomerId || undefined,
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim() || undefined,
-        promisedDate: promisedDate ? new Date(promisedDate).toISOString() : undefined,
+        promisedDate: promisedDate || undefined,
         notes: notes.trim() || undefined,
         lines,
       });

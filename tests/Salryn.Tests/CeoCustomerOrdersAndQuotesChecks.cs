@@ -451,6 +451,39 @@ public static class CeoCustomerOrdersAndQuotesChecks
                 Assert(createQuoteResp.StatusCode == HttpStatusCode.Created, $"POST /api/customer-quotations failed with {createQuoteResp.StatusCode}");
                 var createdHttpQuote = await createQuoteResp.Content.ReadFromJsonAsync<CustomerQuotation>();
                 Assert(createdHttpQuote != null, "Created quotation response body missing.");
+                // Issue #96: reject the legacy timestamp without writes; valid DateOnly creates
+                // exactly one quotation with persisted date/lines and an available native PDF.
+                long quotesBeforeBadDate = CountTableRows(paths.DatabasePath, "customer_quotations");
+                long quoteLinesBeforeBadDate = CountTableRows(paths.DatabasePath, "customer_quotation_lines");
+                var badDateQuote = await client.PostAsJsonAsync("/api/customer-quotations", new
+                {
+                    customerName = "Invalid ISO Timestamp", discountCents = 0,
+                    validUntil = "2026-12-01T00:00:00.000Z", lines = httpQuotePayload.lines
+                });
+                Assert(badDateQuote.StatusCode == HttpStatusCode.BadRequest, "C07 legacy timestamp DateOnly must return HTTP 400.");
+                Assert(quotesBeforeBadDate == CountTableRows(paths.DatabasePath, "customer_quotations") &&
+                       quoteLinesBeforeBadDate == CountTableRows(paths.DatabasePath, "customer_quotation_lines"),
+                    "C07 date bind failure must not persist quotation/header or child.");
+                string quoteDateOnly = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(14)).ToString("yyyy-MM-dd");
+                var datedQuoteResponse = await client.PostAsJsonAsync("/api/customer-quotations", new
+                {
+                    customerName = "DateOnly Quotation", discountCents = 0,
+                    validUntil = quoteDateOnly, lines = httpQuotePayload.lines
+                });
+                Assert(datedQuoteResponse.StatusCode == HttpStatusCode.Created, "C07 DateOnly quote must create (201).");
+                var datedQuote = await datedQuoteResponse.Content.ReadFromJsonAsync<CustomerQuotation>();
+                Assert(datedQuote is not null && datedQuote.ValidUntil?.ToString("yyyy-MM-dd") == quoteDateOnly &&
+                       datedQuote.Lines.Count == 1 && datedQuote.TotalCents == 85_000, "C07 dated quote shape/total mismatch.");
+                var datedQuoteDetail = await client.GetAsync($"/api/customer-quotations/{datedQuote!.Id}");
+                Assert(datedQuoteDetail.StatusCode == HttpStatusCode.OK, "C07 dated quotation detail GET must return 200.");
+                var datedQuoteLoaded = await datedQuoteDetail.Content.ReadFromJsonAsync<CustomerQuotation>();
+                Assert(datedQuoteLoaded is not null && datedQuoteLoaded.ValidUntil == datedQuote.ValidUntil &&
+                       datedQuoteLoaded.Lines.SequenceEqual(datedQuote.Lines), "C07 dated quotation persistence mismatch.");
+                var datedQuotePdf = await client.GetAsync($"/api/customer-quotations/{datedQuote.Id}/pdf");
+                Assert(datedQuotePdf.StatusCode == HttpStatusCode.OK &&
+                       datedQuotePdf.Content.Headers.ContentType?.MediaType == "application/pdf",
+                    "C07 existing quotation PDF route must remain valid.");
+
                 HttpResponseMessage expireQuoteResp = await client.PostAsJsonAsync($"/api/customer-quotations/{createdHttpQuote!.Id}/status", new { status = "Expired" });
                 Assert(expireQuoteResp.StatusCode == HttpStatusCode.OK, $"Sales.Create user must update quotation status, got {expireQuoteResp.StatusCode}");
 
@@ -545,6 +578,38 @@ public static class CeoCustomerOrdersAndQuotesChecks
                 Assert(createOrderResp.StatusCode == HttpStatusCode.Created, $"POST /api/customer-orders failed with {createOrderResp.StatusCode}");
                 var createdOrder = await createOrderResp.Content.ReadFromJsonAsync<CustomerOrder>();
                 Assert(createdOrder != null, "Created order payload is null");
+                // Issue #95: a timestamp in promisedDate must fail binder 400 without
+                // effects; selected HTML date must create/reopen a single valid order.
+                var beforeBadOrderDate = ReadOrderMutationCounts(paths.DatabasePath);
+                var badDateOrder = await managerClient.PostAsJsonAsync("/api/customer-orders", new
+                {
+                    customerName = "Invalid Order Timestamp", promisedDate = "2026-11-21T00:00:00.000Z",
+                    lines = httpOrderPayload.lines
+                });
+                Assert(badDateOrder.StatusCode == HttpStatusCode.BadRequest, "C08 ISO timestamp DateOnly must return HTTP 400.");
+                Assert(beforeBadOrderDate == ReadOrderMutationCounts(paths.DatabasePath),
+                    "C08 date bind failure must not create order, audit or financial side effects.");
+                string promisedDateOnly = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7)).ToString("yyyy-MM-dd");
+                var datedOrderResponse = await managerClient.PostAsJsonAsync("/api/customer-orders", new
+                {
+                    customerName = "DateOnly Order", promisedDate = promisedDateOnly, lines = httpOrderPayload.lines
+                });
+                Assert(datedOrderResponse.StatusCode == HttpStatusCode.Created, "C08 DateOnly order must create (201).");
+                var datedOrder = await datedOrderResponse.Content.ReadFromJsonAsync<CustomerOrder>();
+                Assert(datedOrder is not null && datedOrder.PromisedDate?.ToString("yyyy-MM-dd") == promisedDateOnly &&
+                       datedOrder.Lines.Count == 1 && datedOrder.TotalCents == 170_000, "C08 dated order shape/total mismatch.");
+                Assert(ReadPersistedOrderLines(paths.DatabasePath, datedOrder!.Id).Count == 1,
+                    "C08 dated order must persist one line.");
+                var datedOrderDetail = await managerClient.GetAsync($"/api/customer-orders/{datedOrder.Id}");
+                Assert(datedOrderDetail.StatusCode == HttpStatusCode.OK, "C08 dated order detail GET must return 200.");
+                var datedOrderLoaded = await datedOrderDetail.Content.ReadFromJsonAsync<CustomerOrder>();
+                Assert(datedOrderLoaded is not null && datedOrderLoaded.PromisedDate == datedOrder.PromisedDate &&
+                       datedOrderLoaded.Lines.SequenceEqual(datedOrder.Lines), "C08 dated order persistence mismatch.");
+                var datedOrderPdf = await managerClient.GetAsync($"/api/customer-orders/{datedOrder.Id}/pdf");
+                Assert(datedOrderPdf.StatusCode == HttpStatusCode.OK &&
+                       datedOrderPdf.Content.Headers.ContentType?.MediaType == "application/pdf",
+                    "C08 existing order PDF route must remain valid.");
+
                 Assert(ReadPersistedOrderLines(paths.DatabasePath, createdOrder.Id).Count == 1,
                     "CO-LINE-01 manager API order must persist one child.");
                 var postListResponse = await managerClient.GetAsync("/api/customer-orders");

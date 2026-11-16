@@ -24,6 +24,7 @@ import {
 } from "../components/ui";
 import { formatDateTime, formatMoney, formatQuantity } from "../utils/format";
 import { safeNotificationDescription } from "../utils/notificationError";
+import { localDateAfterDays } from "../utils/customerDocumentDates";
 import {
   customerQuotationDisplayItemCount,
   customerQuotationIntegrityIssue,
@@ -224,7 +225,7 @@ export function PriceCanvassPage() {
     setSavingQuote(true);
     try {
       const days = parseInt(validUntilDays) || 14;
-      const validUntil = new Date(Date.now() + days * 86400 * 1000).toISOString();
+      const validUntil = localDateAfterDays(days);
 
       const lines: CreateCustomerQuotationLineRequest[] = draftLines.map((l) => ({
         productId: l.productId,
