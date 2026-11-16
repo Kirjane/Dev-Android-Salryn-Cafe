@@ -117,20 +117,32 @@ using Microsoft.Win32.SafeHandles;
 
 public static class SalrynNativePathResolver
 {
+    private const uint SYNCHRONIZE = 0x00100000;
+    private const uint READ_CONTROL = 0x00020000;
     private const uint FILE_LIST_DIRECTORY = 0x0001;
+    private const uint FILE_ADD_SUBDIRECTORY = 0x0004;
+    private const uint FILE_TRAVERSE = 0x0020;
     private const uint FILE_READ_ATTRIBUTES = 0x0080;
     private const uint FILE_SHARE_READ = 0x0001;
     private const uint FILE_SHARE_WRITE = 0x0002;
     private const uint FILE_SHARE_DELETE = 0x0004;
     private const uint OPEN_EXISTING = 3;
+    private const uint FILE_OPEN = 1;
+    private const uint FILE_CREATE = 2;
+    private const uint FILE_DIRECTORY_FILE = 0x00000001;
+    private const uint FILE_SYNCHRONOUS_IO_NONALERT = 0x00000020;
+    private const uint FILE_OPEN_REPARSE_POINT = 0x00200000;
     private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
     private const uint FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000;
     private const uint FILE_ATTRIBUTE_DIRECTORY = 0x0010;
     private const uint FILE_ATTRIBUTE_REPARSE_POINT = 0x0400;
+    private const uint OBJ_CASE_INSENSITIVE = 0x00000040;
     private const uint VOLUME_NAME_DOS = 0x0;
+    private const int SE_FILE_OBJECT = 1;
+    private const uint OWNER_SECURITY_INFORMATION = 0x00000001;
+    private const uint DACL_SECURITY_INFORMATION = 0x00000004;
     private const int ERROR_FILE_NOT_FOUND = 2;
     private const int ERROR_PATH_NOT_FOUND = 3;
-    private const int ERROR_ALREADY_EXISTS = 183;
 
     [StructLayout(LayoutKind.Sequential)]
     public struct FILETIME
@@ -154,6 +166,32 @@ public static class SalrynNativePathResolver
         public uint nFileIndexLow;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct UNICODE_STRING
+    {
+        public ushort Length;
+        public ushort MaximumLength;
+        public IntPtr Buffer;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct OBJECT_ATTRIBUTES
+    {
+        public int Length;
+        public IntPtr RootDirectory;
+        public IntPtr ObjectName;
+        public uint Attributes;
+        public IntPtr SecurityDescriptor;
+        public IntPtr SecurityQualityOfService;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct IO_STATUS_BLOCK
+    {
+        public IntPtr Status;
+        public IntPtr Information;
+    }
+
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern SafeFileHandle CreateFileW(
         string lpFileName,
@@ -163,6 +201,20 @@ public static class SalrynNativePathResolver
         uint dwCreationDisposition,
         uint dwFlagsAndAttributes,
         IntPtr hTemplateFile);
+
+    [DllImport("ntdll.dll")]
+    private static extern int NtCreateFile(
+        out SafeFileHandle FileHandle,
+        uint DesiredAccess,
+        ref OBJECT_ATTRIBUTES ObjectAttributes,
+        out IO_STATUS_BLOCK IoStatusBlock,
+        IntPtr AllocationSize,
+        uint FileAttributes,
+        uint ShareAccess,
+        uint CreateDisposition,
+        uint CreateOptions,
+        IntPtr EaBuffer,
+        uint EaLength);
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern uint GetFinalPathNameByHandleW(
@@ -176,10 +228,25 @@ public static class SalrynNativePathResolver
         SafeFileHandle hFile,
         out BY_HANDLE_FILE_INFORMATION lpFileInformation);
 
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern bool CreateDirectoryW(
-        string lpPathName,
-        IntPtr lpSecurityAttributes);
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool IsValidSecurityDescriptor(IntPtr pSecurityDescriptor);
+
+    [DllImport("advapi32.dll")]
+    private static extern uint GetSecurityDescriptorLength(IntPtr pSecurityDescriptor);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern uint GetSecurityInfo(
+        IntPtr handle,
+        int ObjectType,
+        uint SecurityInfo,
+        out IntPtr ppsidOwner,
+        out IntPtr ppsidGroup,
+        out IntPtr ppDacl,
+        out IntPtr ppSacl,
+        out IntPtr ppSecurityDescriptor);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr LocalFree(IntPtr hMem);
 
     private static string GetFinalPathFromHandle(SafeFileHandle handle, string path)
     {
@@ -224,16 +291,260 @@ public static class SalrynNativePathResolver
         }
     }
 
-    public static bool CreateNewDirectoryExclusive(string path)
+    private static void ValidateSingleLeafSegment(string leafName)
     {
-        if (string.IsNullOrWhiteSpace(path))
-            throw new ArgumentException("Path cannot be empty.");
-        if (CreateDirectoryW(path, IntPtr.Zero))
-            return true;
-        int err = Marshal.GetLastWin32Error();
-        if (err == ERROR_ALREADY_EXISTS)
+        if (string.IsNullOrWhiteSpace(leafName) ||
+            leafName == "." ||
+            leafName == ".." ||
+            leafName.IndexOf('\\') >= 0 ||
+            leafName.IndexOf('/') >= 0 ||
+            leafName.IndexOf(':') >= 0 ||
+            leafName.IndexOf('\0') >= 0)
+        {
+            throw new ArgumentException("Invalid single directory leaf segment: " + leafName);
+        }
+    }
+
+    public static bool IsValidSecurityDescriptorBytes(byte[] sdBytes)
+    {
+        if (sdBytes == null || sdBytes.Length < 20)
             return false;
-        throw new Win32Exception(err, "CreateDirectoryW failed: " + path);
+        IntPtr pSd = Marshal.AllocHGlobal(sdBytes.Length);
+        try
+        {
+            Marshal.Copy(sdBytes, 0, pSd, sdBytes.Length);
+            return IsValidSecurityDescriptor(pSd);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(pSd);
+        }
+    }
+
+    public static void GetHandleIdentityAndPath(SafeFileHandle handle, string contextLabel, out string fileId, out bool isReparse, out bool isDir, out string finalPath)
+    {
+        if (handle == null || handle.IsInvalid)
+            throw new InvalidOperationException("Directory handle is null or invalid: " + contextLabel);
+        BY_HANDLE_FILE_INFORMATION info;
+        if (!GetFileInformationByHandle(handle, out info))
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "GetFileInformationByHandle failed: " + contextLabel);
+        isReparse = (info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+        isDir = (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+        fileId = info.dwVolumeSerialNumber.ToString("X8") + ":" + info.nFileIndexHigh.ToString("X8") + ":" + info.nFileIndexLow.ToString("X8");
+        finalPath = isReparse ? string.Empty : GetFinalPathFromHandle(handle, contextLabel);
+    }
+
+    public static byte[] GetSecurityDescriptorFromHandle(SafeFileHandle handle, string contextLabel)
+    {
+        if (handle == null || handle.IsInvalid)
+            throw new InvalidOperationException("Directory handle is null or invalid for ACL inspection: " + contextLabel);
+        IntPtr pOwner, pGroup, pDacl, pSacl, pSd = IntPtr.Zero;
+        uint rc = GetSecurityInfo(
+            handle.DangerousGetHandle(),
+            SE_FILE_OBJECT,
+            OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+            out pOwner,
+            out pGroup,
+            out pDacl,
+            out pSacl,
+            out pSd);
+        if (rc != 0)
+            throw new Win32Exception((int)rc, "GetSecurityInfo failed: " + contextLabel);
+        try
+        {
+            uint len = GetSecurityDescriptorLength(pSd);
+            byte[] buf = new byte[len];
+            Marshal.Copy(pSd, buf, 0, (int)len);
+            return buf;
+        }
+        finally
+        {
+            if (pSd != IntPtr.Zero)
+                LocalFree(pSd);
+        }
+    }
+
+    public static SafeFileHandle OpenRootDirectoryNoDeleteShare(string rootPath, out string fileId, out bool isReparse, out bool isDir, out string finalPath)
+    {
+        if (string.IsNullOrWhiteSpace(rootPath))
+            throw new ArgumentException("Root path cannot be empty.");
+
+        SafeFileHandle handle = CreateFileW(
+            rootPath,
+            FILE_LIST_DIRECTORY | FILE_TRAVERSE | FILE_READ_ATTRIBUTES | READ_CONTROL | SYNCHRONIZE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            IntPtr.Zero,
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+            IntPtr.Zero);
+        if (handle.IsInvalid)
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "Unable to lock root directory: " + rootPath);
+
+        try
+        {
+            GetHandleIdentityAndPath(handle, rootPath, out fileId, out isReparse, out isDir, out finalPath);
+            return handle;
+        }
+        catch
+        {
+            handle.Dispose();
+            throw;
+        }
+    }
+
+    public static SafeFileHandle OpenRelativeDirectoryNoDeleteShare(
+        SafeFileHandle parentHandle,
+        string leafName,
+        out int ntStatus,
+        out string fileId,
+        out bool isReparse,
+        out bool isDir,
+        out string finalPath)
+    {
+        if (parentHandle == null || parentHandle.IsInvalid)
+            throw new ArgumentException("Parent directory handle is invalid.");
+        ValidateSingleLeafSegment(leafName);
+
+        IntPtr pNameBuf = Marshal.StringToHGlobalUni(leafName);
+        IntPtr pUnicode = IntPtr.Zero;
+        try
+        {
+            UNICODE_STRING u = new UNICODE_STRING();
+            u.Length = checked((ushort)(leafName.Length * 2));
+            u.MaximumLength = checked((ushort)(u.Length + 2));
+            u.Buffer = pNameBuf;
+            pUnicode = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(UNICODE_STRING)));
+            Marshal.StructureToPtr(u, pUnicode, false);
+
+            OBJECT_ATTRIBUTES oa = new OBJECT_ATTRIBUTES();
+            oa.Length = Marshal.SizeOf(typeof(OBJECT_ATTRIBUTES));
+            oa.RootDirectory = parentHandle.DangerousGetHandle();
+            oa.ObjectName = pUnicode;
+            oa.Attributes = OBJ_CASE_INSENSITIVE;
+            oa.SecurityDescriptor = IntPtr.Zero;
+            oa.SecurityQualityOfService = IntPtr.Zero;
+
+            SafeFileHandle h;
+            IO_STATUS_BLOCK iosb;
+            ntStatus = NtCreateFile(
+                out h,
+                FILE_LIST_DIRECTORY | FILE_TRAVERSE | FILE_READ_ATTRIBUTES | READ_CONTROL | SYNCHRONIZE,
+                ref oa,
+                out iosb,
+                IntPtr.Zero,
+                FILE_ATTRIBUTE_DIRECTORY,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                FILE_OPEN,
+                FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_REPARSE_POINT,
+                IntPtr.Zero,
+                0);
+            if (ntStatus != 0 || h == null || h.IsInvalid)
+            {
+                if (h != null) h.Dispose();
+                fileId = string.Empty;
+                isReparse = false;
+                isDir = false;
+                finalPath = string.Empty;
+                return null;
+            }
+            try
+            {
+                GetHandleIdentityAndPath(h, leafName, out fileId, out isReparse, out isDir, out finalPath);
+                return h;
+            }
+            catch
+            {
+                h.Dispose();
+                throw;
+            }
+        }
+        finally
+        {
+            if (pUnicode != IntPtr.Zero) Marshal.FreeHGlobal(pUnicode);
+            if (pNameBuf != IntPtr.Zero) Marshal.FreeHGlobal(pNameBuf);
+        }
+    }
+
+    public static SafeFileHandle CreateRelativeDirectoryPrivate(
+        SafeFileHandle parentHandle,
+        string leafName,
+        byte[] sdBytes,
+        out int ntStatus,
+        out string fileId,
+        out bool isReparse,
+        out bool isDir,
+        out string finalPath)
+    {
+        if (parentHandle == null || parentHandle.IsInvalid)
+            throw new ArgumentException("Parent directory handle is invalid.");
+        ValidateSingleLeafSegment(leafName);
+        if (sdBytes == null || sdBytes.Length < 20)
+            throw new ArgumentException("Private security descriptor cannot be null or empty.");
+
+        IntPtr pNameBuf = Marshal.StringToHGlobalUni(leafName);
+        IntPtr pUnicode = IntPtr.Zero;
+        IntPtr pSd = Marshal.AllocHGlobal(sdBytes.Length);
+        try
+        {
+            Marshal.Copy(sdBytes, 0, pSd, sdBytes.Length);
+            if (!IsValidSecurityDescriptor(pSd))
+                throw new InvalidOperationException("Security descriptor failed IsValidSecurityDescriptor before NtCreateFile.");
+
+            UNICODE_STRING u = new UNICODE_STRING();
+            u.Length = checked((ushort)(leafName.Length * 2));
+            u.MaximumLength = checked((ushort)(u.Length + 2));
+            u.Buffer = pNameBuf;
+            pUnicode = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(UNICODE_STRING)));
+            Marshal.StructureToPtr(u, pUnicode, false);
+
+            OBJECT_ATTRIBUTES oa = new OBJECT_ATTRIBUTES();
+            oa.Length = Marshal.SizeOf(typeof(OBJECT_ATTRIBUTES));
+            oa.RootDirectory = parentHandle.DangerousGetHandle();
+            oa.ObjectName = pUnicode;
+            oa.Attributes = OBJ_CASE_INSENSITIVE;
+            oa.SecurityDescriptor = pSd;
+            oa.SecurityQualityOfService = IntPtr.Zero;
+
+            SafeFileHandle h;
+            IO_STATUS_BLOCK iosb;
+            ntStatus = NtCreateFile(
+                out h,
+                FILE_LIST_DIRECTORY | FILE_TRAVERSE | FILE_ADD_SUBDIRECTORY | FILE_READ_ATTRIBUTES | READ_CONTROL | SYNCHRONIZE,
+                ref oa,
+                out iosb,
+                IntPtr.Zero,
+                FILE_ATTRIBUTE_DIRECTORY,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                FILE_CREATE,
+                FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_REPARSE_POINT,
+                IntPtr.Zero,
+                0);
+            if (ntStatus != 0 || h == null || h.IsInvalid)
+            {
+                if (h != null) h.Dispose();
+                fileId = string.Empty;
+                isReparse = false;
+                isDir = false;
+                finalPath = string.Empty;
+                return null;
+            }
+            try
+            {
+                GetHandleIdentityAndPath(h, leafName, out fileId, out isReparse, out isDir, out finalPath);
+                return h;
+            }
+            catch
+            {
+                h.Dispose();
+                throw;
+            }
+        }
+        finally
+        {
+            if (pSd != IntPtr.Zero) Marshal.FreeHGlobal(pSd);
+            if (pUnicode != IntPtr.Zero) Marshal.FreeHGlobal(pUnicode);
+            if (pNameBuf != IntPtr.Zero) Marshal.FreeHGlobal(pNameBuf);
+        }
     }
 
     public static SafeFileHandle OpenDirectoryNoDeleteShare(string path, out string fileId, out bool isReparse, out string finalPath)
@@ -1465,14 +1776,16 @@ function Assert-StageManifestMatchesDisk {
     }
 }
 
-function Set-PrivateDirectoryAcl {
-    param(
-        [Parameter(Mandatory = $true)][string]$DirectoryPath,
-        [Parameter(Mandatory = $true)][string]$HeadSha
-    )
+function New-PrivateDirectorySecurityDescriptorBytes {
+    param([Parameter(Mandatory = $true)][string]$HeadSha)
+
+    if ($env:SALRYN_TEST_ISOLATED_HARNESS -eq "1" -and $env:SALRYN_TEST_FORCE_SD_FAILURE -eq "1") {
+        Write-ProvenanceFailure -Code "OUTPUT_ACL_FAILED" -HeadSha $HeadSha -Detail "Security descriptor setup aborted (isolated fault probe)."
+    }
+
     $currentUserSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
     if ($null -eq $currentUserSid) {
-        Write-ProvenanceFailure -Code "OUTPUT_ACL_FAILED" -HeadSha $HeadSha -Detail "Could not resolve current Windows user SID for private output directory: $DirectoryPath"
+        Write-ProvenanceFailure -Code "OUTPUT_ACL_FAILED" -HeadSha $HeadSha -Detail "Could not resolve current Windows user SID for creation-time security descriptor."
     }
     $localSystemSid = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::LocalSystemSid, $null)
     $adminsSid = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid, $null)
@@ -1488,10 +1801,278 @@ function Set-PrivateDirectoryAcl {
         $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid, $rights, $inherit, $prop, $allow)
         $acl.AddAccessRule($rule)
     }
+
+    $sdBytes = $acl.GetSecurityDescriptorBinaryForm()
+    if (-not [SalrynNativePathResolver]::IsValidSecurityDescriptorBytes($sdBytes)) {
+        Write-ProvenanceFailure -Code "OUTPUT_ACL_FAILED" -HeadSha $HeadSha -Detail "Constructed creation-time security descriptor failed IsValidSecurityDescriptor validation."
+    }
+    return ,$sdBytes
+}
+
+function Assert-HandleParentAclSafe {
+    param(
+        [Parameter(Mandatory = $true)][Microsoft.Win32.SafeHandles.SafeFileHandle]$DirHandle,
+        [Parameter(Mandatory = $true)][string]$CanonicalPath,
+        [Parameter(Mandatory = $true)][string]$HeadSha,
+        [Parameter(Mandatory = $true)][string]$ContextLabel
+    )
     try {
-        [System.IO.Directory]::SetAccessControl($DirectoryPath, $acl)
+        $rawSdBytes = [SalrynNativePathResolver]::GetSecurityDescriptorFromHandle($DirHandle, $ContextLabel)
+        $rsd = New-Object System.Security.AccessControl.RawSecurityDescriptor($rawSdBytes, 0)
     } catch {
-        Write-ProvenanceFailure -Code "OUTPUT_ACL_FAILED" -HeadSha $HeadSha -Detail "Failed to apply restricted ACL to private output directory '$DirectoryPath': $_"
+        Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_PARENT_ACL" -HeadSha $HeadSha -Detail "Failed reading security descriptor from pinned handle for ${ContextLabel} ($CanonicalPath): $_"
+    }
+
+    if ($null -eq $rsd.DiscretionaryAcl) {
+        Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_PARENT_ACL" -HeadSha $HeadSha -Detail "Pinned ${ContextLabel} ($CanonicalPath) has NULL DACL (world-accessible)."
+    }
+
+    $writeModifyBits = 0x500D0156
+    $alwaysUntrustedSids = @("S-1-1-0", "S-1-5-7", "S-1-5-32-545")
+    $explicitUntrustedSids = @("S-1-5-11", "S-1-5-4", "S-1-2-0")
+
+    foreach ($ace in $rsd.DiscretionaryAcl) {
+        if ($ace -is [System.Security.AccessControl.QualifiedAce]) {
+            if ($ace.AceQualifier -ne [System.Security.AccessControl.AceQualifier]::AccessAllowed) { continue }
+            if (($ace.AccessMask -band $writeModifyBits) -eq 0) { continue }
+            $sidVal = $ace.SecurityIdentifier.Value
+            if ($alwaysUntrustedSids -contains $sidVal) {
+                Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_PARENT_ACL" -HeadSha $HeadSha -Detail "Pinned ${ContextLabel} ($CanonicalPath) grants write/modify/create rights to shared principal $sidVal (mask=0x$($ace.AccessMask.ToString('X')))."
+            }
+            if (($explicitUntrustedSids -contains $sidVal) -and (-not $ace.IsInherited)) {
+                Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_PARENT_ACL" -HeadSha $HeadSha -Detail "Pinned ${ContextLabel} ($CanonicalPath) explicitly grants write/modify/create rights to shared principal $sidVal (mask=0x$($ace.AccessMask.ToString('X')))."
+            }
+        }
+    }
+}
+
+function Assert-HandlePrivateDaclAtBirth {
+    param(
+        [Parameter(Mandatory = $true)][Microsoft.Win32.SafeHandles.SafeFileHandle]$DirHandle,
+        [Parameter(Mandatory = $true)][string]$CanonicalPath,
+        [Parameter(Mandatory = $true)][string]$HeadSha,
+        [Parameter(Mandatory = $true)][string]$ContextLabel
+    )
+    try {
+        $rawSdBytes = [SalrynNativePathResolver]::GetSecurityDescriptorFromHandle($DirHandle, $ContextLabel)
+        $rsd = New-Object System.Security.AccessControl.RawSecurityDescriptor($rawSdBytes, 0)
+    } catch {
+        Write-ProvenanceFailure -Code "OUTPUT_ACL_FAILED" -HeadSha $HeadSha -Detail "Failed reading creation-time security descriptor from handle for ${ContextLabel} ($CanonicalPath): $_"
+    }
+
+    $currentUserSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+    if ($null -eq $currentUserSid) {
+        Write-ProvenanceFailure -Code "OUTPUT_ACL_FAILED" -HeadSha $HeadSha -Detail "Cannot verify creation-time owner SID (null current user)."
+    }
+    $allowedOwnerSids = @($currentUserSid.Value, "S-1-5-32-544")
+    if ($null -eq $rsd.Owner -or ($allowedOwnerSids -notcontains $rsd.Owner.Value)) {
+        $actualOwner = if ($null -eq $rsd.Owner) { "NULL" } else { $rsd.Owner.Value }
+        Write-ProvenanceFailure -Code "OUTPUT_ACL_FAILED" -HeadSha $HeadSha -Detail "Created directory ${ContextLabel} ($CanonicalPath) has unexpected owner SID '$actualOwner'."
+    }
+
+    if (($rsd.ControlFlags -band [System.Security.AccessControl.ControlFlags]::DiscretionaryAclProtected) -eq 0) {
+        Write-ProvenanceFailure -Code "OUTPUT_ACL_FAILED" -HeadSha $HeadSha -Detail "Created directory ${ContextLabel} ($CanonicalPath) lacks SE_DACL_PROTECTED at creation."
+    }
+
+    if ($null -eq $rsd.DiscretionaryAcl -or $rsd.DiscretionaryAcl.Count -eq 0) {
+        Write-ProvenanceFailure -Code "OUTPUT_ACL_FAILED" -HeadSha $HeadSha -Detail "Created directory ${ContextLabel} ($CanonicalPath) has empty or null DACL."
+    }
+
+    $allowedSids = @($currentUserSid.Value, "S-1-5-18", "S-1-5-32-544") | Select-Object -Unique
+    $observedSids = New-Object System.Collections.Generic.List[string]
+    foreach ($ace in $rsd.DiscretionaryAcl) {
+        if (-not ($ace -is [System.Security.AccessControl.QualifiedAce])) {
+            Write-ProvenanceFailure -Code "OUTPUT_ACL_FAILED" -HeadSha $HeadSha -Detail "Unexpected ACE type on newly created ${ContextLabel} ($CanonicalPath)."
+        }
+        if ($ace.IsInherited) {
+            Write-ProvenanceFailure -Code "OUTPUT_ACL_FAILED" -HeadSha $HeadSha -Detail "Inherited ACE detected on newly created ${ContextLabel} ($CanonicalPath): $($ace.SecurityIdentifier.Value)"
+        }
+        if ($ace.AceQualifier -ne [System.Security.AccessControl.AceQualifier]::AccessAllowed) {
+            Write-ProvenanceFailure -Code "OUTPUT_ACL_FAILED" -HeadSha $HeadSha -Detail "Unexpected non-Allow ACE on newly created ${ContextLabel} ($CanonicalPath)."
+        }
+        $sidVal = $ace.SecurityIdentifier.Value
+        if ($allowedSids -notcontains $sidVal) {
+            Write-ProvenanceFailure -Code "OUTPUT_ACL_FAILED" -HeadSha $HeadSha -Detail "Untrusted principal '$sidVal' present on newly created ${ContextLabel} ($CanonicalPath)."
+        }
+        if (($ace.AccessMask -band 0x1F01FF) -ne 0x1F01FF) {
+            Write-ProvenanceFailure -Code "OUTPUT_ACL_FAILED" -HeadSha $HeadSha -Detail "Unexpected partial access mask 0x$($ace.AccessMask.ToString('X')) for '$sidVal' on ${ContextLabel} ($CanonicalPath)."
+        }
+        $observedSids.Add($sidVal)
+    }
+
+    foreach ($reqSid in $allowedSids) {
+        if ($observedSids -notcontains $reqSid) {
+            Write-ProvenanceFailure -Code "OUTPUT_ACL_FAILED" -HeadSha $HeadSha -Detail "Missing required SID '$reqSid' in creation-time DACL for ${ContextLabel} ($CanonicalPath)."
+        }
+    }
+}
+
+function Get-ProtectedRootFileIds {
+    param([Parameter(Mandatory = $true)][string[]]$ProtectedRoots)
+    $idMap = @{}
+    foreach ($pr in $ProtectedRoots) {
+        $fId = ""; $fRep = $false; $fDir = $false
+        if ([SalrynNativePathResolver]::TryGetFileIdentityNoFollow($pr, [ref]$fId, [ref]$fRep, [ref]$fDir)) {
+            if (-not [string]::IsNullOrWhiteSpace($fId)) {
+                $idMap[$fId] = $pr
+            }
+        }
+    }
+    return $idMap
+}
+
+function Assert-HandleCanonicalContainment {
+    param(
+        [Parameter(Mandatory = $true)][Microsoft.Win32.SafeHandles.SafeFileHandle]$Handle,
+        [Parameter(Mandatory = $true)][string]$ExpectedPath,
+        [Parameter(Mandatory = $true)][string]$ExpectedVolumePrefix,
+        [Parameter(Mandatory = $true)][string]$RepoRootCanonical,
+        [Parameter(Mandatory = $true)][string[]]$ProtectedRoots,
+        [Parameter(Mandatory = $true)][hashtable]$ProtectedFileIds,
+        [Parameter(Mandatory = $true)][string]$HeadSha,
+        [Parameter(Mandatory = $true)][string]$ContextLabel,
+        [switch]$AllowRepoArtifactsAncestorOnly,
+        [switch]$RequireStrictRepoArtifactsChild
+    )
+
+    if ($env:SALRYN_TEST_ISOLATED_HARNESS -eq "1" -and $env:SALRYN_TEST_FORCE_HANDLE_READ_FAILURE -eq "1") {
+        Write-ProvenanceFailure -Code "OUTPUT_DIR_CANONICAL_CONTAINMENT_FAILED" -HeadSha $HeadSha -Detail "Kernel handle identity verification failed (isolated fault probe) for ${ContextLabel}."
+    }
+
+    $hId = ""; $hRep = $false; $hDir = $false; $hFinal = ""
+    try {
+        [SalrynNativePathResolver]::GetHandleIdentityAndPath($Handle, $ContextLabel, [ref]$hId, [ref]$hRep, [ref]$hDir, [ref]$hFinal)
+    } catch {
+        Write-ProvenanceFailure -Code "OUTPUT_DIR_CANONICAL_CONTAINMENT_FAILED" -HeadSha $HeadSha -Detail "Failed reading handle identity for ${ContextLabel}: $_"
+    }
+
+    if ($hRep) {
+        Write-ProvenanceFailure -Code "OUTPUT_DIR_REPARSE_POINT_FORBIDDEN" -HeadSha $HeadSha -Detail "Pinned handle for ${ContextLabel} resolved to a reparse point."
+    }
+    if (-not $hDir -or [string]::IsNullOrWhiteSpace($hId) -or [string]::IsNullOrWhiteSpace($hFinal)) {
+        Write-ProvenanceFailure -Code "OUTPUT_DIR_CANONICAL_CONTAINMENT_FAILED" -HeadSha $HeadSha -Detail "Invalid handle metadata for ${ContextLabel} (isDir=$hDir, id='$hId', final='$hFinal')."
+    }
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedVolumePrefix)) {
+        $volPrefix = ($hId -split ':')[0]
+        if (-not $volPrefix.Equals($ExpectedVolumePrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+            Write-ProvenanceFailure -Code "OUTPUT_DIR_CANONICAL_CONTAINMENT_FAILED" -HeadSha $HeadSha -Detail "Volume serial mismatch for ${ContextLabel}: expected $ExpectedVolumePrefix, actual $volPrefix ($hFinal)."
+        }
+    }
+
+    $actualNorm = Normalize-PathWithSeparator -Path $hFinal
+    $expectedNorm = Normalize-PathWithSeparator -Path $ExpectedPath
+    if (-not $actualNorm.Equals($expectedNorm, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Write-ProvenanceFailure -Code "OUTPUT_DIR_CANONICAL_CONTAINMENT_FAILED" -HeadSha $HeadSha -Detail "Canonical path mismatch for ${ContextLabel}: expected '$expectedNorm', actual '$actualNorm'."
+    }
+
+    if ($ProtectedFileIds.ContainsKey($hId)) {
+        Write-ProvenanceFailure -Code "PROTECTED_OUTPUT_DIR_FORBIDDEN" -HeadSha $HeadSha -Detail "Handle FileId '$hId' for ${ContextLabel} matches protected directory '$($ProtectedFileIds[$hId])'."
+    }
+
+    foreach ($prot in $ProtectedRoots) {
+        $protNorm = Normalize-PathWithSeparator -Path $prot
+        if ($AllowRepoArtifactsAncestorOnly) {
+            # Existing ancestor may naturally contain e.g. system roots only above protected subdirs? Wait:
+            # an existing ancestor equal to OR inside a protected root is always forbidden;
+            # C:\ is ancestor of C:\ProgramData\Salryn so ancestor containment is allowed ONLY for strict system ancestors above protected roots.
+            if ($actualNorm.StartsWith($protNorm, [System.StringComparison]::OrdinalIgnoreCase)) {
+                Write-ProvenanceFailure -Code "PROTECTED_OUTPUT_DIR_FORBIDDEN" -HeadSha $HeadSha -Detail "Pinned ${ContextLabel} ($hFinal) lies inside protected root '$prot'."
+            }
+        } else {
+            if ($actualNorm.StartsWith($protNorm, [System.StringComparison]::OrdinalIgnoreCase) -or
+                $protNorm.StartsWith($actualNorm, [System.StringComparison]::OrdinalIgnoreCase)) {
+                Write-ProvenanceFailure -Code "PROTECTED_OUTPUT_DIR_FORBIDDEN" -HeadSha $HeadSha -Detail "Pinned ${ContextLabel} ($hFinal) overlaps protected root '$prot'."
+            }
+        }
+    }
+
+    if ($RequireStrictRepoArtifactsChild) {
+        $repoNorm = Normalize-PathWithSeparator -Path $RepoRootCanonical
+        $artifactsNorm = Normalize-PathWithSeparator -Path (Join-Path $RepoRootCanonical "artifacts")
+        if ($actualNorm.Equals($repoNorm, [System.StringComparison]::OrdinalIgnoreCase) -or
+            $repoNorm.StartsWith($actualNorm, [System.StringComparison]::OrdinalIgnoreCase)) {
+            Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "${ContextLabel} ($hFinal) cannot be repo root or ancestor."
+        }
+        if ($actualNorm.StartsWith($repoNorm, [System.StringComparison]::OrdinalIgnoreCase)) {
+            if (-not $actualNorm.StartsWith($artifactsNorm, [System.StringComparison]::OrdinalIgnoreCase) -or
+                $actualNorm.Equals($artifactsNorm, [System.StringComparison]::OrdinalIgnoreCase)) {
+                Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "${ContextLabel} ($hFinal) inside repository must reside strictly beneath artifacts\."
+            }
+        }
+    }
+
+    return [ordered]@{
+        FileId        = $hId
+        VolumeSerial  = ($hId -split ':')[0]
+        CanonicalPath = $hFinal.TrimEnd('\')
+    }
+}
+
+function New-AnchoredPrivateDirectoryChild {
+    param(
+        [Parameter(Mandatory = $true)][Microsoft.Win32.SafeHandles.SafeFileHandle]$ParentHandle,
+        [Parameter(Mandatory = $true)][string]$ParentCanonical,
+        [Parameter(Mandatory = $true)][string]$ParentFileId,
+        [Parameter(Mandatory = $true)][string]$LeafName,
+        [Parameter(Mandatory = $true)][byte[]]$PrivateSdBytes,
+        [Parameter(Mandatory = $true)][string]$RepoRootCanonical,
+        [Parameter(Mandatory = $true)][string[]]$ProtectedRoots,
+        [Parameter(Mandatory = $true)][hashtable]$ProtectedFileIds,
+        [Parameter(Mandatory = $true)][System.Collections.Generic.List[object]]$HandleList,
+        [Parameter(Mandatory = $true)][string]$HeadSha,
+        [Parameter(Mandatory = $true)][string]$ContextLabel,
+        [switch]$RequireStrictRepoArtifactsChild
+    )
+
+    # Re-verify pinned parent handle before creation
+    $pIdNow = ""; $pRepNow = $false; $pDirNow = $false; $pFinNow = ""
+    [SalrynNativePathResolver]::GetHandleIdentityAndPath($ParentHandle, "$ContextLabel-parent", [ref]$pIdNow, [ref]$pRepNow, [ref]$pDirNow, [ref]$pFinNow)
+    if ($pRepNow -or (-not $pDirNow) -or ($pIdNow -ne $ParentFileId) -or
+        (-not (Normalize-PathWithSeparator -Path $pFinNow).Equals((Normalize-PathWithSeparator -Path $ParentCanonical), [System.StringComparison]::OrdinalIgnoreCase))) {
+        Write-ProvenanceFailure -Code "OUTPUT_DIR_CANONICAL_CONTAINMENT_FAILED" -HeadSha $HeadSha -Detail "Pinned parent handle identity shifted before creating ${ContextLabel} '$LeafName'."
+    }
+
+    $ntStatus = 0; $cId = ""; $cRep = $false; $cDir = $false; $cFinal = ""
+    $childHandle = [SalrynNativePathResolver]::CreateRelativeDirectoryPrivate($ParentHandle, $LeafName, $PrivateSdBytes, [ref]$ntStatus, [ref]$cId, [ref]$cRep, [ref]$cDir, [ref]$cFinal)
+    if ($null -eq $childHandle -or $ntStatus -ne 0) {
+        # Collision? Inspect leaf with FILE_OPEN_REPARSE_POINT to classify junction vs existing path without following link
+        if ($ntStatus -eq -1073741771) {
+            $prSt = 0; $prId = ""; $prRep = $false; $prDir = $false; $prFin = ""
+            $probeH = [SalrynNativePathResolver]::OpenRelativeDirectoryNoDeleteShare($ParentHandle, $LeafName, [ref]$prSt, [ref]$prId, [ref]$prRep, [ref]$prDir, [ref]$prFin)
+            if ($null -ne $probeH) { try { $probeH.Dispose() } catch {} }
+            if ($prRep) {
+                Write-ProvenanceFailure -Code "OUTPUT_DIR_REPARSE_POINT_FORBIDDEN" -HeadSha $HeadSha -Detail "Pre-existing reparse point/junction blocked creation of ${ContextLabel} '$LeafName' under $ParentCanonical."
+            }
+            Write-ProvenanceFailure -Code "NONPRIVATE_OUTPUT_DIR_FORBIDDEN" -HeadSha $HeadSha -Detail "Pre-existing entry blocked exclusive creation of ${ContextLabel} '$LeafName' under $ParentCanonical."
+        }
+        Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail ("NtCreateFile(FILE_CREATE) failed for {0} '{1}' under {2} (NTSTATUS=0x{3:X8})." -f $ContextLabel, $LeafName, $ParentCanonical, $ntStatus)
+    }
+
+    $HandleList.Add($childHandle)
+
+    $expectedChildPath = Join-Path ($ParentCanonical.TrimEnd('\') + "\") $LeafName
+    $parentVol = ($ParentFileId -split ':')[0]
+    $childIdentity = Assert-HandleCanonicalContainment `
+        -Handle $childHandle `
+        -ExpectedPath $expectedChildPath `
+        -ExpectedVolumePrefix $parentVol `
+        -RepoRootCanonical $RepoRootCanonical `
+        -ProtectedRoots $ProtectedRoots `
+        -ProtectedFileIds $ProtectedFileIds `
+        -HeadSha $HeadSha `
+        -ContextLabel $ContextLabel `
+        -RequireStrictRepoArtifactsChild:$RequireStrictRepoArtifactsChild
+
+    Assert-HandlePrivateDaclAtBirth `
+        -DirHandle $childHandle `
+        -CanonicalPath $childIdentity.CanonicalPath `
+        -HeadSha $HeadSha `
+        -ContextLabel $ContextLabel
+
+    return [ordered]@{
+        Handle        = $childHandle
+        FileId        = $childIdentity.FileId
+        CanonicalPath = $childIdentity.CanonicalPath
     }
 }
 
@@ -1690,42 +2271,222 @@ if ($null -ne $existingNmItem) {
     [void](Assert-TreeFreeOfReparsePointsAndAliases -RootDir $existingNmItem.FullName -AllowedParentRoot $webRoot -HeadSha $headSha -ContextLabel "web-node-modules" -ProtectedRoots $stageProtectedRoots)
 }
 
-# Create private per-run OutputDir exclusively, lock ACLs to CurrentUser/SYSTEM/Administrators, and pin non-delete-share kernel handles (F2)
-[void](Assert-OutputDirSafe -ArtifactRoot $artifactRoot -RepoRoot $repoRoot -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots)
-$artifactRootParent = Split-Path -Parent $artifactRoot
-if (-not [string]::IsNullOrWhiteSpace($artifactRootParent) -and -not (Test-Path -LiteralPath $artifactRootParent)) {
-    [System.IO.Directory]::CreateDirectory($artifactRootParent) | Out-Null
-    [void](Assert-OutputDirSafe -ArtifactRoot $artifactRoot -RepoRoot $repoRoot -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots)
-}
-
+# Anchor existing ancestors from fixed drive root, validate parent handle/ACL/containment, and create
+# missing output parent segments + private per-run OutputDir + staging/setup/shell children exclusively
+# bound to pinned parent directory objects with private SE_DACL_PROTECTED DACL from birth (F2 R5).
 $pinnedOutputHandles = New-Object System.Collections.Generic.List[object]
-
-function Open-PinnedPrivateOutputDir {
-    param(
-        [Parameter(Mandatory = $true)][string]$DirPath,
-        [Parameter(Mandatory = $true)][string]$HeadSha
-    )
-    if (-not [SalrynNativePathResolver]::CreateNewDirectoryExclusive($DirPath)) {
-        Write-ProvenanceFailure -Code "NONPRIVATE_OUTPUT_DIR_FORBIDDEN" -HeadSha $HeadSha -Detail "Could not exclusively create private output directory (already exists or race detected): $DirPath"
-    }
-    $pinId = $null
-    $pinReparse = $false
-    $pinFinal = $null
-    $pinHandle = [SalrynNativePathResolver]::OpenDirectoryNoDeleteShare($DirPath, [ref]$pinId, [ref]$pinReparse, [ref]$pinFinal)
-    if ($pinReparse -or [string]::IsNullOrWhiteSpace($pinId)) {
-        if ($null -ne $pinHandle) { try { $pinHandle.Dispose() } catch {} }
-        Write-ProvenanceFailure -Code "OUTPUT_DIR_REPARSE_POINT_FORBIDDEN" -HeadSha $HeadSha -Detail "Newly created private output directory failed non-reparse identity verification: $DirPath"
-    }
-    return $pinHandle
-}
+$pinnedArtifactRootHandle = $null
+$pinnedArtifactRootCanonical = ""
+$pinnedArtifactRootFileId = ""
 
 try {
-    $pinnedOutputHandles.Add((Open-PinnedPrivateOutputDir -DirPath $artifactRoot -HeadSha $headSha))
-    Set-PrivateDirectoryAcl -DirectoryPath $artifactRoot -HeadSha $headSha
-    $pinnedOutputHandles.Add((Open-PinnedPrivateOutputDir -DirPath $stagingRoot -HeadSha $headSha))
-    $pinnedOutputHandles.Add((Open-PinnedPrivateOutputDir -DirPath $publishDir -HeadSha $headSha))
-    $pinnedOutputHandles.Add((Open-PinnedPrivateOutputDir -DirPath $setupDir -HeadSha $headSha))
-    $pinnedOutputHandles.Add((Open-PinnedPrivateOutputDir -DirPath $shellTemp -HeadSha $headSha))
+    $resolvedRepoInfo = Resolve-CanonicalPathThroughAncestors -TargetPath $repoRoot -HeadSha $headSha -ContextLabel "RepoRoot"
+    $repoCanonicalClean = $resolvedRepoInfo.CanonicalFull.TrimEnd('\')
+    $protectedFileIds = Get-ProtectedRootFileIds -ProtectedRoots $stageProtectedRoots
+
+    $lexFullOut = [System.IO.Path]::GetFullPath($artifactRoot).TrimEnd('\')
+    if ($lexFullOut -notmatch '^[A-Za-z]:\\.+') {
+        Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $headSha -Detail "OutputDir must be a non-root fixed local directory path: $artifactRoot"
+    }
+    $driveRootOut = [System.IO.Path]::GetPathRoot($lexFullOut)
+    try {
+        $outDriveInfo = New-Object System.IO.DriveInfo($driveRootOut)
+        if ($outDriveInfo.DriveType -ne [System.IO.DriveType]::Fixed) {
+            Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "OutputDir drive type must be Fixed (found '$($outDriveInfo.DriveType)'): $lexFullOut"
+        }
+    } catch {
+        Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "Unable to validate drive locality for OutputDir '$lexFullOut': $_"
+    }
+
+    $rawRemainder = $lexFullOut.Substring($driveRootOut.Length)
+    $allSegments = @($rawRemainder.Split('\'))
+    if ($allSegments.Count -eq 0) {
+        Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "OutputDir contains no path segments: $lexFullOut"
+    }
+    foreach ($segCheck in $allSegments) {
+        if ([string]::IsNullOrWhiteSpace($segCheck) -or $segCheck -eq "." -or $segCheck -eq ".." -or $segCheck.IndexOf(':') -ge 0) {
+            Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $HeadSha -Detail "Unsafe OutputDir segment '$segCheck' in path: $lexFullOut"
+        }
+    }
+
+    $rootFId = ""; $rootRep = $false; $rootIsDir = $false; $rootFinal = ""
+    $rootDriveHandle = [SalrynNativePathResolver]::OpenRootDirectoryNoDeleteShare($driveRootOut, [ref]$rootFId, [ref]$rootRep, [ref]$rootIsDir, [ref]$rootFinal)
+    $pinnedOutputHandles.Add($rootDriveHandle)
+    if ($rootRep -or (-not $rootIsDir) -or [string]::IsNullOrWhiteSpace($rootFId)) {
+        Write-ProvenanceFailure -Code "OUTPUT_DIR_REPARSE_POINT_FORBIDDEN" -HeadSha $headSha -Detail "Drive root failed non-reparse directory check: $driveRootOut"
+    }
+    $volumeSerialExpected = ($rootFId -split ':')[0]
+
+    $curHandle = $rootDriveHandle
+    $curCanonical = $rootFinal.TrimEnd('\')
+    $curFileId = $rootFId
+    $walkedPathExpected = $driveRootOut.TrimEnd('\')
+    $existingAncHandlesBelowRoot = New-Object System.Collections.Generic.List[object]
+    $missingSegments = New-Object System.Collections.Generic.List[string]
+    $stoppedAtMissing = $false
+
+    for ($idx = 0; $idx -lt $allSegments.Count; $idx++) {
+        $seg = $allSegments[$idx]
+        $walkedPathExpected = "$walkedPathExpected\$seg"
+
+        if ($stoppedAtMissing) {
+            $missingSegments.Add($seg)
+            continue
+        }
+
+        $ntSt = 0; $segId = ""; $segRep = $false; $segDir = $false; $segFinal = ""
+        $segHandle = [SalrynNativePathResolver]::OpenRelativeDirectoryNoDeleteShare($curHandle, $seg, [ref]$ntSt, [ref]$segId, [ref]$segRep, [ref]$segDir, [ref]$segFinal)
+        if ($null -eq $segHandle -or $ntSt -ne 0) {
+            if ($ntSt -eq -1073741772 -or $ntSt -eq -1073741766) {
+                # STATUS_OBJECT_NAME_NOT_FOUND (0xC0000034) / STATUS_OBJECT_PATH_NOT_FOUND (0xC000003A)
+                $stoppedAtMissing = $true
+                $missingSegments.Add($seg)
+                continue
+            }
+            if ($ntSt -eq -1073741565) {
+                # STATUS_NOT_A_DIRECTORY -> existing non-directory file
+                Write-ProvenanceFailure -Code "NONPRIVATE_OUTPUT_DIR_FORBIDDEN" -HeadSha $headSha -Detail "Existing non-directory entry blocks private OutputDir creation at '$walkedPathExpected'."
+            }
+            Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $headSha -Detail ("Failed opening OutputDir ancestor '{0}' (NTSTATUS=0x{1:X8})." -f $walkedPathExpected, $ntSt)
+        }
+
+        $pinnedOutputHandles.Add($segHandle)
+        if ($segRep) {
+            Write-ProvenanceFailure -Code "OUTPUT_DIR_REPARSE_POINT_FORBIDDEN" -HeadSha $headSha -Detail "Reparse point/junction forbidden along OutputDir path at '$walkedPathExpected'."
+        }
+        if (-not $segDir) {
+            Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $headSha -Detail "OutputDir path segment is not a directory: '$walkedPathExpected'."
+        }
+
+        # If final target OutputDir itself already exists, fail closed unconditionally under F2
+        if ($idx -eq ($allSegments.Count - 1)) {
+            Write-ProvenanceFailure -Code "NONPRIVATE_OUTPUT_DIR_FORBIDDEN" -HeadSha $headSha -Detail "Mutable builds require a non-existent private per-run -OutputDir: $artifactRoot"
+        }
+
+        $verifiedAnc = Assert-HandleCanonicalContainment `
+            -Handle $segHandle `
+            -ExpectedPath $walkedPathExpected `
+            -ExpectedVolumePrefix $volumeSerialExpected `
+            -RepoRootCanonical $repoCanonicalClean `
+            -ProtectedRoots $stageProtectedRoots `
+            -ProtectedFileIds $protectedFileIds `
+            -HeadSha $headSha `
+            -ContextLabel "output-ancestor" `
+            -AllowRepoArtifactsAncestorOnly
+
+        $existingAncHandlesBelowRoot.Add(@{ Handle = $segHandle; Canonical = $verifiedAnc.CanonicalPath })
+        $curHandle = $segHandle
+        $curCanonical = $verifiedAnc.CanonicalPath
+        $curFileId = $verifiedAnc.FileId
+    }
+
+    if ($missingSegments.Count -eq 0) {
+        Write-ProvenanceFailure -Code "NONPRIVATE_OUTPUT_DIR_FORBIDDEN" -HeadSha $headSha -Detail "OutputDir already exists: $artifactRoot"
+    }
+
+    # Validate ACL safety across pinned ancestors below drive root & intended parent
+    foreach ($ancEntry in $existingAncHandlesBelowRoot) {
+        Assert-HandleParentAclSafe `
+            -DirHandle $ancEntry.Handle `
+            -CanonicalPath $ancEntry.Canonical `
+            -HeadSha $headSha `
+            -ContextLabel "output-parent"
+    }
+
+    # Verify intended canonical target from pinned parent handle BEFORE any creation
+    $intendedArtifactCanonical = $curCanonical.TrimEnd('\')
+    foreach ($ms in $missingSegments) {
+        $intendedArtifactCanonical = "$intendedArtifactCanonical\$ms"
+    }
+    $intendedNorm = Normalize-PathWithSeparator -Path $intendedArtifactCanonical
+    $repoNormCheck = Normalize-PathWithSeparator -Path $repoCanonicalClean
+    $artifactsNormCheck = Normalize-PathWithSeparator -Path (Join-Path $repoCanonicalClean "artifacts")
+    if ($intendedNorm.Equals($repoNormCheck, [System.StringComparison]::OrdinalIgnoreCase) -or
+        $repoNormCheck.StartsWith($intendedNorm, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $headSha -Detail "Pinned canonical OutputDir cannot be repository root or ancestor: $intendedArtifactCanonical"
+    }
+    if ($intendedNorm.StartsWith($repoNormCheck, [System.StringComparison]::OrdinalIgnoreCase) -and
+        ((-not $intendedNorm.StartsWith($artifactsNormCheck, [System.StringComparison]::OrdinalIgnoreCase)) -or
+         $intendedNorm.Equals($artifactsNormCheck, [System.StringComparison]::OrdinalIgnoreCase))) {
+        Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $headSha -Detail "Pinned canonical OutputDir inside repository must reside strictly beneath artifacts\: $intendedArtifactCanonical"
+    }
+    foreach ($prot in $stageProtectedRoots) {
+        $protNorm = Normalize-PathWithSeparator -Path $prot
+        if ($intendedNorm.StartsWith($protNorm, [System.StringComparison]::OrdinalIgnoreCase) -or
+            $protNorm.StartsWith($intendedNorm, [System.StringComparison]::OrdinalIgnoreCase)) {
+            Write-ProvenanceFailure -Code "PROTECTED_OUTPUT_DIR_FORBIDDEN" -HeadSha $headSha -Detail "Pinned canonical OutputDir overlaps protected directory '$prot': $intendedArtifactCanonical"
+        }
+    }
+
+    # Re-run static OutputDir safety check with anchors pinned
+    [void](Assert-OutputDirSafe -ArtifactRoot $artifactRoot -RepoRoot $repoRoot -HeadSha $headSha -ExtraProtectedRoots $AdditionalProtectedRoots)
+
+    # Deterministic pre-creation race barrier (strictly gated to isolated test harness under %TEMP%)
+    if ($env:SALRYN_TEST_ISOLATED_HARNESS -eq "1" -and
+        -not [string]::IsNullOrWhiteSpace($env:SALRYN_TEST_PRE_CREATE_HOOK) -and
+        (Test-Path -LiteralPath $env:SALRYN_TEST_PRE_CREATE_HOOK -PathType Leaf)) {
+        $hookFullPre = [System.IO.Path]::GetFullPath($env:SALRYN_TEST_PRE_CREATE_HOOK)
+        $tempRootPre = ([System.IO.Path]::GetFullPath($env:TEMP)).TrimEnd('\') + '\'
+        if ($hookFullPre.StartsWith($tempRootPre, [System.StringComparison]::OrdinalIgnoreCase)) {
+            Assert-NotReparsePoint -Path $hookFullPre -HeadSha $headSha -ContextLabel "test-pre-create-hook"
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $hookFullPre `
+                -ParentCanonical $curCanonical `
+                -TargetRoot $intendedArtifactCanonical `
+                -FirstMissingSegment $missingSegments[0]
+        }
+    }
+
+    # Construct and validate private SE_DACL_PROTECTED security descriptor BEFORE NtCreateFile(FILE_CREATE)
+    $privateSdBytes = New-PrivateDirectorySecurityDescriptorBytes -HeadSha $headSha
+
+    # Create missing parent segments + final OutputDir bound to pinned parent handle with DACL at birth
+    for ($mIdx = 0; $mIdx -lt $missingSegments.Count; $mIdx++) {
+        $mSeg = $missingSegments[$mIdx]
+        $isFinalOutLeaf = ($mIdx -eq ($missingSegments.Count - 1))
+        $ctxLbl = if ($isFinalOutLeaf) { "output-root" } else { "output-missing-parent" }
+
+        $createdRes = New-AnchoredPrivateDirectoryChild `
+            -ParentHandle $curHandle `
+            -ParentCanonical $curCanonical `
+            -ParentFileId $curFileId `
+            -LeafName $mSeg `
+            -PrivateSdBytes $privateSdBytes `
+            -RepoRootCanonical $repoCanonicalClean `
+            -ProtectedRoots $stageProtectedRoots `
+            -ProtectedFileIds $protectedFileIds `
+            -HandleList $pinnedOutputHandles `
+            -HeadSha $headSha `
+            -ContextLabel $ctxLbl `
+            -RequireStrictRepoArtifactsChild:$isFinalOutLeaf
+
+        $curHandle = $createdRes.Handle
+        $curCanonical = $createdRes.CanonicalPath
+        $curFileId = $createdRes.FileId
+    }
+
+    $pinnedArtifactRootHandle = $curHandle
+    $pinnedArtifactRootCanonical = $curCanonical
+    $pinnedArtifactRootFileId = $curFileId
+
+    # Optional isolated test inspection hook right when OutputDir is born (before any child mkdir/writes)
+    if ($env:SALRYN_TEST_ISOLATED_HARNESS -eq "1" -and
+        -not [string]::IsNullOrWhiteSpace($env:SALRYN_TEST_POST_CREATE_ROOT_HOOK) -and
+        (Test-Path -LiteralPath $env:SALRYN_TEST_POST_CREATE_ROOT_HOOK -PathType Leaf)) {
+        $hookFullPost = [System.IO.Path]::GetFullPath($env:SALRYN_TEST_POST_CREATE_ROOT_HOOK)
+        $tempRootPost = ([System.IO.Path]::GetFullPath($env:TEMP)).TrimEnd('\') + '\'
+        if ($hookFullPost.StartsWith($tempRootPost, [System.StringComparison]::OrdinalIgnoreCase)) {
+            Assert-NotReparsePoint -Path $hookFullPost -HeadSha $headSha -ContextLabel "test-post-create-hook"
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $hookFullPost `
+                -ArtifactRootCanonical $pinnedArtifactRootCanonical `
+                -FileId $pinnedArtifactRootFileId
+        }
+    }
+
+    # Create staging, staging\Salryn, setup, and shell-publish bound directly to pinned parent handles with DACL at birth
+    $stagingRes = New-AnchoredPrivateDirectoryChild -ParentHandle $pinnedArtifactRootHandle -ParentCanonical $pinnedArtifactRootCanonical -ParentFileId $pinnedArtifactRootFileId -LeafName "staging" -PrivateSdBytes $privateSdBytes -RepoRootCanonical $repoCanonicalClean -ProtectedRoots $stageProtectedRoots -ProtectedFileIds $protectedFileIds -HandleList $pinnedOutputHandles -HeadSha $headSha -ContextLabel "staging-root" -RequireStrictRepoArtifactsChild
+    [void](New-AnchoredPrivateDirectoryChild -ParentHandle $stagingRes.Handle -ParentCanonical $stagingRes.CanonicalPath -ParentFileId $stagingRes.FileId -LeafName "Salryn" -PrivateSdBytes $privateSdBytes -RepoRootCanonical $repoCanonicalClean -ProtectedRoots $stageProtectedRoots -ProtectedFileIds $protectedFileIds -HandleList $pinnedOutputHandles -HeadSha $headSha -ContextLabel "publish-dir" -RequireStrictRepoArtifactsChild)
+    [void](New-AnchoredPrivateDirectoryChild -ParentHandle $pinnedArtifactRootHandle -ParentCanonical $pinnedArtifactRootCanonical -ParentFileId $pinnedArtifactRootFileId -LeafName "setup" -PrivateSdBytes $privateSdBytes -RepoRootCanonical $repoCanonicalClean -ProtectedRoots $stageProtectedRoots -ProtectedFileIds $protectedFileIds -HandleList $pinnedOutputHandles -HeadSha $headSha -ContextLabel "setup-dir" -RequireStrictRepoArtifactsChild)
+    [void](New-AnchoredPrivateDirectoryChild -ParentHandle $pinnedArtifactRootHandle -ParentCanonical $pinnedArtifactRootCanonical -ParentFileId $pinnedArtifactRootFileId -LeafName "shell-publish" -PrivateSdBytes $privateSdBytes -RepoRootCanonical $repoCanonicalClean -ProtectedRoots $stageProtectedRoots -ProtectedFileIds $protectedFileIds -HandleList $pinnedOutputHandles -HeadSha $headSha -ContextLabel "shell-temp" -RequireStrictRepoArtifactsChild)
     New-Item -ItemType Directory -Force -Path $webview2RedistDir | Out-Null
 
     function Ensure-WebView2Bootstrapper {
@@ -2142,6 +2903,8 @@ $provenanceObject = [ordered]@{
     releaseAuthority            = $verifiedAfterCompile.Manifest.releaseAuthority
     authoritativeInstallerAllowed = [bool]$verifiedAfterCompile.Manifest.authoritativeInstallerAllowed
     privatePerRunOutput         = $true
+    parentAnchoredHandleCreation = $true
+    aclProtectedAtCreation      = $true
     builtUtc                    = $compiledUtc
     sourceCommitSha             = $headSha
     gitBranch                   = $provenance.GitBranch
@@ -2157,7 +2920,7 @@ $provenanceObject = [ordered]@{
     redistributableSha256       = $redistSha256
     isccVersion                 = $isccVersion
     packedPayloadVerification   = $packedStatus
-    trustBoundaryNote           = "Clean Git HEAD, locked npm ci web dependencies, private per-run output ownership, binary ProductVersion (+SHA), full staging inventory hashes, and WebView2 bootstrapper SHA256 were verified immediately before and after ISCC.exe execution; packed bytes inside the compressed Inno Setup EXE were not extracted or independently inspected."
+    trustBoundaryNote           = "Clean Git HEAD, locked npm ci web dependencies, handle-anchored private per-run output creation with protected DACL at birth, binary ProductVersion (+SHA), full staging inventory hashes, and WebView2 bootstrapper SHA256 were verified immediately before and after ISCC.exe execution; packed bytes inside the compressed Inno Setup EXE were not extracted or independently inspected."
 }
 Write-Utf8NoBom -Path $provenanceFile -Content ($provenanceObject | ConvertTo-Json -Depth 6)
 
@@ -2182,7 +2945,8 @@ Write-Host "Packed check: $packedStatus"
     throw
 } finally {
     if ($null -ne $pinnedOutputHandles) {
-        foreach ($h in $pinnedOutputHandles) {
+        for ($hi = $pinnedOutputHandles.Count - 1; $hi -ge 0; $hi--) {
+            $h = $pinnedOutputHandles[$hi]
             if ($null -ne $h) {
                 try { $h.Dispose() } catch {}
             }

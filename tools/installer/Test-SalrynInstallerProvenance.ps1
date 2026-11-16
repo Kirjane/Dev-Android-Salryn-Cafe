@@ -451,6 +451,8 @@ try {
                  ($provJson.sourceCommitSha -eq $headSha) -and
                  ($provJson.worktreeClean -eq $true) -and
                  ($provJson.privatePerRunOutput -eq $true) -and
+                 ($provJson.parentAnchoredHandleCreation -eq $true) -and
+                 ($provJson.aclProtectedAtCreation -eq $true) -and
                  (-not [string]::IsNullOrWhiteSpace($provJson.packageLockSha256)) -and
                  ($manifestObj.buildOptions.packageLockSha256 -eq $provJson.packageLockSha256) -and
                  ($manifestObj.buildOptions.npmInstallCommand -match '^npm ci') -and
@@ -1347,6 +1349,209 @@ try {
             ($r27ASkip.ExitCode -ne 0) -and ($r27ASkip.Combined -match 'code=NONPRIVATE_OUTPUT_DIR_FORBIDDEN') -and
             $keepIntact27A -and $aclOk27B -and $ok27C
     Record-TestResult -Id "NEG-27_F2_PRIVATE_OUTPUT_OWNERSHIP_AND_SCAN_TO_DELETE_RACE_SAFE" -Passed $ok27 -ObservedCode "PRIVATE_OUT+ACL+PINNED_LOCK" -Notes "27A=$keepIntact27A,27B_ACL=$aclOk27B,27C_Hook=$hookLogRaw27C,canary=$canaryIntact27C"
+
+    # -----------------------------------------------------------------------
+    # NEG-28 (F2 R5): Pre-creation parent/ancestor junction-swap race blocked
+    #                 under pinned handles, missing-leaf collision rejected
+    #                 without touching canary, and unsafe UNC paths denied
+    # -----------------------------------------------------------------------
+    $canary28 = Join-Path $testRoot "canary-28"
+    New-Item -ItemType Directory -Force -Path $canary28 | Out-Null
+    $canary28Txt = Join-Path $canary28 "canary.txt"
+    Write-Utf8NoBom -Path $canary28Txt -Content "CANARY_28_INTACT"
+    $canary28SddlPre = ([System.IO.Directory]::GetAccessControl($canary28)).Sddl
+
+    $anc28A = Join-Path $outBase "neg28-anc"
+    $par28A = Join-Path $anc28A "parent"
+    New-Item -ItemType Directory -Force -Path $par28A | Out-Null
+    $out28A = Join-Path $par28A "missing-mid\run-28a"
+    $hookLog28A = Join-Path $testRoot "pre-create-28a.log"
+    $hookScript28A = Join-Path $testRoot "pre-create-28a.ps1"
+    $hookContent28A = @'
+param([string]$ParentCanonical, [string]$TargetRoot, [string]$FirstMissingSegment)
+$logPath = "__LOG_PATH__"
+$canaryTarget = "__CANARY__"
+$parBlocked = $false; $parErr = ""
+$ancBlocked = $false; $ancErr = ""
+try {
+    [System.IO.Directory]::Move($ParentCanonical, $ParentCanonical + "-swapped")
+    & cmd /c "mklink /J `"$ParentCanonical`" `"$canaryTarget`"" | Out-Null
+} catch {
+    $parBlocked = $true
+    $parErr = ($_.Exception.GetBaseException().HResult.ToString("X8") + ":" + $_.Exception.Message)
+}
+$ancDir = Split-Path -Parent $ParentCanonical
+try {
+    [System.IO.Directory]::Move($ancDir, $ancDir + "-swapped")
+    & cmd /c "mklink /J `"$ancDir`" `"$canaryTarget`"" | Out-Null
+} catch {
+    $ancBlocked = $true
+    $ancErr = ($_.Exception.GetBaseException().HResult.ToString("X8") + ":" + $_.Exception.Message)
+}
+[System.IO.File]::WriteAllText($logPath, "PAR_BLOCKED=$parBlocked`nANC_BLOCKED=$ancBlocked`nPAR_ERR=$parErr`nANC_ERR=$ancErr", (New-Object System.Text.UTF8Encoding($false)))
+'@
+    $hookContent28A = $hookContent28A.Replace("__LOG_PATH__", $hookLog28A).Replace("__CANARY__", $canary28)
+    Write-Utf8NoBom -Path $hookScript28A -Content $hookContent28A
+
+    $par28B = Join-Path $outBase "neg28b-parent"
+    New-Item -ItemType Directory -Force -Path $par28B | Out-Null
+    $out28B = Join-Path $par28B "missing-leaf\run-28b"
+    $j28B = Join-Path $par28B "missing-leaf"
+    $hookLog28B = Join-Path $testRoot "pre-create-28b.log"
+    $hookScript28B = Join-Path $testRoot "pre-create-28b.ps1"
+    $hookContent28B = @'
+param([string]$ParentCanonical, [string]$TargetRoot, [string]$FirstMissingSegment)
+$logPath = "__LOG_PATH__"
+$canaryTarget = "__CANARY__"
+$parBlocked = $false
+try {
+    [System.IO.Directory]::Move($ParentCanonical, $ParentCanonical + "-swapped")
+} catch {
+    $parBlocked = $true
+}
+$childJ = Join-Path $ParentCanonical $FirstMissingSegment
+& cmd /c "mklink /J `"$childJ`" `"$canaryTarget`"" | Out-Null
+$jCreated = Test-Path -LiteralPath $childJ
+[System.IO.File]::WriteAllText($logPath, "PAR_BLOCKED=$parBlocked`nLEAF_JUNCTION_SEEDED=$jCreated", (New-Object System.Text.UTF8Encoding($false)))
+'@
+    $hookContent28B = $hookContent28B.Replace("__LOG_PATH__", $hookLog28B).Replace("__CANARY__", $canary28)
+    Write-Utf8NoBom -Path $hookScript28B -Content $hookContent28B
+
+    try {
+        [System.Environment]::SetEnvironmentVariable("SALRYN_TEST_ISOLATED_HARNESS", "1")
+        [System.Environment]::SetEnvironmentVariable("SALRYN_TEST_PRE_CREATE_HOOK", $hookScript28A)
+        $r28A = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+            "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $out28A,
+            "-AdditionalProtectedRoots", $canary28, "-ExpectedSourceSha", $headSha, "-SkipWebBuild"
+        )
+
+        [System.Environment]::SetEnvironmentVariable("SALRYN_TEST_PRE_CREATE_HOOK", $hookScript28B)
+        $r28B = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+            "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $out28B,
+            "-AdditionalProtectedRoots", $canary28, "-ExpectedSourceSha", $headSha, "-BuildInstaller"
+        )
+    } finally {
+        [System.Environment]::SetEnvironmentVariable("SALRYN_TEST_PRE_CREATE_HOOK", $null)
+        [System.Environment]::SetEnvironmentVariable("SALRYN_TEST_ISOLATED_HARNESS", $null)
+        $jItem28B = Get-Item -LiteralPath $j28B -Force -ErrorAction SilentlyContinue
+        if ($null -ne $jItem28B) { [System.IO.Directory]::Delete($j28B, $false) }
+    }
+
+    $r28C = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+        "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", "\\localhost\c$\salryn-unsafe-28c",
+        "-ExpectedSourceSha", $headSha, "-BuildInstaller"
+    )
+
+    $log28ARaw = if (Test-Path -LiteralPath $hookLog28A) { Get-Content -LiteralPath $hookLog28A -Raw } else { "" }
+    $log28BRaw = if (Test-Path -LiteralPath $hookLog28B) { Get-Content -LiteralPath $hookLog28B -Raw } else { "" }
+    $canary28Entries = @([System.IO.Directory]::EnumerateFileSystemEntries($canary28))
+    $canary28SddlPost = ([System.IO.Directory]::GetAccessControl($canary28)).Sddl
+    $canary28Clean = ($canary28Entries.Count -eq 1) -and
+                     ((Get-Content -LiteralPath $canary28Txt -Raw) -eq "CANARY_28_INTACT") -and
+                     ($canary28SddlPost -eq $canary28SddlPre)
+
+    $ok28 = ($r28A.ExitCode -eq 0) -and ($log28ARaw -match 'PAR_BLOCKED=True') -and ($log28ARaw -match 'ANC_BLOCKED=True') -and
+            ($r28B.ExitCode -ne 0) -and ($r28B.Combined -match 'code=OUTPUT_DIR_REPARSE_POINT_FORBIDDEN') -and
+            ($log28BRaw -match 'PAR_BLOCKED=True') -and ($log28BRaw -match 'LEAF_JUNCTION_SEEDED=True') -and
+            ($r28C.ExitCode -ne 0) -and ($r28C.Combined -match 'code=UNSAFE_OUTPUT_DIR') -and
+            $canary28Clean
+    Record-TestResult -Id "NEG-28_F2_PRE_CREATE_PARENT_JUNCTION_RACE" -Passed $ok28 -ObservedCode "PINNED_PAR+COLLISION+CANARY_SAFE" -Notes "28A_Blocked=True,28B_CollisionExit=$($r28B.ExitCode),28C_UncExit=$($r28C.ExitCode),canaryClean=$canary28Clean"
+
+    # -----------------------------------------------------------------------
+    # NEG-29 (F2 R5): Shared-writable parent ACL denied, DACL-at-birth verified
+    #                 before any child mkdir/writes (no Users ACE inheritance),
+    #                 and SD/handle-containment failures abort fail-closed
+    # -----------------------------------------------------------------------
+    $badPar29A = Join-Path $outBase "neg29a-users-modify-parent"
+    New-Item -ItemType Directory -Force -Path $badPar29A | Out-Null
+    $badAcl29A = [System.IO.Directory]::GetAccessControl($badPar29A)
+    $usersSid29 = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::BuiltinUsersSid, $null)
+    $inherit29 = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+    $badAcl29A.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($usersSid29, [System.Security.AccessControl.FileSystemRights]::Modify, $inherit29, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)))
+    [System.IO.Directory]::SetAccessControl($badPar29A, $badAcl29A)
+
+    $out29A = Join-Path $badPar29A "blocked-child"
+    $r29A = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+        "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $out29A,
+        "-ExpectedSourceSha", $headSha, "-BuildInstaller"
+    )
+    $out29ACreated = Test-Path -LiteralPath $out29A
+
+    $rxPar29B = Join-Path $outBase "neg29b-users-rx-parent"
+    New-Item -ItemType Directory -Force -Path $rxPar29B | Out-Null
+    $rxAcl29B = [System.IO.Directory]::GetAccessControl($rxPar29B)
+    $rxAcl29B.SetAccessRuleProtection($true, $false)
+    $curUserSid29 = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+    $sysSid29 = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::LocalSystemSid, $null)
+    $admSid29 = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid, $null)
+    foreach ($s29 in @($curUserSid29, $sysSid29, $admSid29)) {
+        $rxAcl29B.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($s29, [System.Security.AccessControl.FileSystemRights]::FullControl, $inherit29, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)))
+    }
+    $rxAcl29B.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($usersSid29, [System.Security.AccessControl.FileSystemRights]::ReadAndExecute, $inherit29, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)))
+    [System.IO.Directory]::SetAccessControl($rxPar29B, $rxAcl29B)
+
+    $out29B = Join-Path $rxPar29B "born-private-run"
+    $hookLog29B = Join-Path $testRoot "post-create-29b.log"
+    $hookScript29B = Join-Path $testRoot "post-create-29b.ps1"
+    $hookContent29B = @'
+param([string]$ArtifactRootCanonical, [string]$FileId)
+$logPath = "__LOG_PATH__"
+$childrenAtBirth = @([System.IO.Directory]::EnumerateFileSystemEntries($ArtifactRootCanonical)).Count
+$acl = [System.IO.Directory]::GetAccessControl($ArtifactRootCanonical)
+$rules = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))
+$inheritedCount = @($rules | Where-Object { $_.IsInherited }).Count
+$sids = @($rules | ForEach-Object { $_.IdentityReference.Value } | Sort-Object -Unique) -join ";"
+[System.IO.File]::WriteAllText($logPath, "CHILD_COUNT=$childrenAtBirth`nPROTECTED=$($acl.AreAccessRulesProtected)`nINHERITED=$inheritedCount`nSIDS=$sids`nCANONICAL=$ArtifactRootCanonical`nFID=$FileId", (New-Object System.Text.UTF8Encoding($false)))
+'@
+    $hookContent29B = $hookContent29B.Replace("__LOG_PATH__", $hookLog29B)
+    Write-Utf8NoBom -Path $hookScript29B -Content $hookContent29B
+
+    $out29CSd = Join-Path $outBase "neg29c-sd-fail"
+    $out29CHdr = Join-Path $outBase "neg29c-hdr-fail"
+    try {
+        [System.Environment]::SetEnvironmentVariable("SALRYN_TEST_ISOLATED_HARNESS", "1")
+        [System.Environment]::SetEnvironmentVariable("SALRYN_TEST_POST_CREATE_ROOT_HOOK", $hookScript29B)
+        $r29B = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+            "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $out29B,
+            "-ExpectedSourceSha", $headSha, "-SkipWebBuild"
+        )
+        [System.Environment]::SetEnvironmentVariable("SALRYN_TEST_POST_CREATE_ROOT_HOOK", $null)
+
+        [System.Environment]::SetEnvironmentVariable("SALRYN_TEST_FORCE_SD_FAILURE", "1")
+        $r29CSd = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+            "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $out29CSd,
+            "-ExpectedSourceSha", $headSha, "-BuildInstaller"
+        )
+        [System.Environment]::SetEnvironmentVariable("SALRYN_TEST_FORCE_SD_FAILURE", $null)
+
+        [System.Environment]::SetEnvironmentVariable("SALRYN_TEST_FORCE_HANDLE_READ_FAILURE", "1")
+        $r29CHdr = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+            "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $out29CHdr,
+            "-ExpectedSourceSha", $headSha, "-BuildInstaller"
+        )
+    } finally {
+        [System.Environment]::SetEnvironmentVariable("SALRYN_TEST_FORCE_HANDLE_READ_FAILURE", $null)
+        [System.Environment]::SetEnvironmentVariable("SALRYN_TEST_FORCE_SD_FAILURE", $null)
+        [System.Environment]::SetEnvironmentVariable("SALRYN_TEST_POST_CREATE_ROOT_HOOK", $null)
+        [System.Environment]::SetEnvironmentVariable("SALRYN_TEST_ISOLATED_HARNESS", $null)
+    }
+
+    $log29BRaw = if (Test-Path -LiteralPath $hookLog29B) { Get-Content -LiteralPath $hookLog29B -Raw } else { "" }
+    $expectedSidsSorted = (@($curUserSid29.Value, "S-1-5-18", "S-1-5-32-544") | Sort-Object -Unique) -join ";"
+    $birthOk29B = ($r29B.ExitCode -eq 0) -and
+                  ($log29BRaw -match 'CHILD_COUNT=0') -and
+                  ($log29BRaw -match 'PROTECTED=True') -and
+                  ($log29BRaw -match 'INHERITED=0') -and
+                  ($log29BRaw -notmatch 'S-1-5-32-545') -and
+                  ($log29BRaw -match ([regex]::Escape("SIDS=$expectedSidsSorted")))
+    $out29CSdCreated = Test-Path -LiteralPath $out29CSd
+    $out29CHdrChildren = @(Get-ChildItem -LiteralPath $out29CHdr -Force -ErrorAction SilentlyContinue).Count
+
+    $ok29 = ($r29A.ExitCode -ne 0) -and ($r29A.Combined -match 'code=UNSAFE_OUTPUT_PARENT_ACL') -and (-not $out29ACreated) -and
+            $birthOk29B -and
+            ($r29CSd.ExitCode -ne 0) -and ($r29CSd.Combined -match 'code=OUTPUT_ACL_FAILED') -and (-not $out29CSdCreated) -and
+            ($r29CHdr.ExitCode -ne 0) -and ($r29CHdr.Combined -match 'code=OUTPUT_DIR_CANONICAL_CONTAINMENT_FAILED') -and ($out29CHdrChildren -eq 0)
+    Record-TestResult -Id "NEG-29_F2_DACL_AT_BIRTH_PARENT_ACL_AND_HANDLE_IDENTITY" -Passed $ok29 -ObservedCode "BIRTH_ACL+PARENT_ACL+HANDLE_CHECK" -Notes "29A_Denied=$(-not $out29ACreated),29B_Birth=$birthOk29B,29C_Sd=$(-not $out29CSdCreated),29C_HdrChildren=$out29CHdrChildren"
 
     Write-Host ""
     Write-Host "=== INSTALLER PROVENANCE REGRESSION SUMMARY ==="
