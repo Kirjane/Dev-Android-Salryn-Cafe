@@ -1,4 +1,33 @@
-import { readJson } from "./http";
+import { ApiError, readJson } from "./http";
+
+// Only stable request metadata is emitted: never customer names, contact fields,
+// session credentials, request bodies, or license data. This separates the
+// creation POST from the follow-up detail GET in pilot HTTP 400 triage.
+async function readDocumentResult<T extends { id: string; totalCents: number; lines: unknown[] }>(
+  response: Response,
+  method: "GET" | "POST",
+  path: string,
+  submittedLineCount?: number,
+): Promise<T> {
+  try {
+    const document = await readJson<T>(response);
+    console.info("[salryn-document-http]", {
+      method, path, status: response.status, code: "SUCCESS",
+      recordId: document.id,
+      lineCount: document.lines?.length ?? null,
+      totalCents: document.totalCents,
+      submittedLineCount: submittedLineCount ?? null,
+    });
+    return document;
+  } catch (error) {
+    console.warn("[salryn-document-http]", {
+      method, path, status: response.status,
+      code: error instanceof ApiError ? error.code ?? "UNTYPED_HTTP_ERROR" : "RESPONSE_DECODE_ERROR",
+      submittedLineCount: submittedLineCount ?? null,
+    });
+    throw error;
+  }
+}
 
 export type CustomerQuotationLine = {
   id: string;
@@ -103,8 +132,9 @@ export async function fetchCustomerQuotations(): Promise<CustomerQuotation[]> {
 }
 
 export async function fetchCustomerQuotation(id: string): Promise<CustomerQuotation> {
-  const response = await fetch(`/api/customer-quotations/${encodeURIComponent(id)}`);
-  return readJson<CustomerQuotation>(response);
+  const path = `/api/customer-quotations/${encodeURIComponent(id)}`;
+  const response = await fetch(path);
+  return readDocumentResult<CustomerQuotation>(response, "GET", path);
 }
 
 export async function createCustomerQuotation(
@@ -115,7 +145,7 @@ export async function createCustomerQuotation(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
   });
-  return readJson<CustomerQuotation>(response);
+  return readDocumentResult<CustomerQuotation>(response, "POST", "/api/customer-quotations", request.lines.length);
 }
 
 export async function updateCustomerQuotationStatus(
@@ -137,8 +167,9 @@ export async function fetchCustomerOrders(status?: string): Promise<CustomerOrde
 }
 
 export async function fetchCustomerOrder(id: string): Promise<CustomerOrder> {
-  const response = await fetch(`/api/customer-orders/${encodeURIComponent(id)}`);
-  return readJson<CustomerOrder>(response);
+  const path = `/api/customer-orders/${encodeURIComponent(id)}`;
+  const response = await fetch(path);
+  return readDocumentResult<CustomerOrder>(response, "GET", path);
 }
 
 export async function createCustomerOrder(
@@ -149,7 +180,7 @@ export async function createCustomerOrder(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
   });
-  return readJson<CustomerOrder>(response);
+  return readDocumentResult<CustomerOrder>(response, "POST", "/api/customer-orders", request.lines.length);
 }
 
 export async function updateCustomerOrderStatus(
