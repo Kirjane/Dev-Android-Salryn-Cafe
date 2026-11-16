@@ -1553,6 +1553,199 @@ $sids = @($rules | ForEach-Object { $_.IdentityReference.Value } | Sort-Object -
             ($r29CHdr.ExitCode -ne 0) -and ($r29CHdr.Combined -match 'code=OUTPUT_DIR_CANONICAL_CONTAINMENT_FAILED') -and ($out29CHdrChildren -eq 0)
     Record-TestResult -Id "NEG-29_F2_DACL_AT_BIRTH_PARENT_ACL_AND_HANDLE_IDENTITY" -Passed $ok29 -ObservedCode "BIRTH_ACL+PARENT_ACL+HANDLE_CHECK" -Notes "29A_Denied=$(-not $out29ACreated),29B_Birth=$birthOk29B,29C_Sd=$(-not $out29CSdCreated),29C_HdrChildren=$out29CHdrChildren"
 
+    # -----------------------------------------------------------------------
+    # NEG-30 (F2 R6): Inherited shared S-1-5-11:FullControl (propagated from
+    #                 InheritOnly parent), custom SID FILE_DELETE_CHILD on
+    #                 parent and higher ancestor, and direct unsafe C:\ drive-root
+    #                 target fail closed BEFORE mkdir; InheritOnly parent passes
+    # -----------------------------------------------------------------------
+    $curUserSid30 = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+    $sysSid30 = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::LocalSystemSid, $null)
+    $admSid30 = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid, $null)
+    $authSid30 = New-Object System.Security.Principal.SecurityIdentifier("S-1-5-11")
+    $customSid30 = New-Object System.Security.Principal.SecurityIdentifier("S-1-5-21-999888777-666555444-333222111-1234")
+    $inh30 = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+
+    $canary30 = Join-Path $testRoot "canary-30"
+    New-Item -ItemType Directory -Force -Path $canary30 | Out-Null
+    $canary30Txt = Join-Path $canary30 "canary.txt"
+    Write-Utf8NoBom -Path $canary30Txt -Content "CANARY_30_INTACT"
+    $canary30SddlPre = ([System.IO.Directory]::GetAccessControl($canary30)).Sddl
+
+    $par30A = Join-Path $outBase "neg30a-inhonly-parent"
+    $desc30A = Join-Path $par30A "inherited-child"
+    New-Item -ItemType Directory -Force -Path $par30A | Out-Null
+    $acl30A = [System.IO.Directory]::GetAccessControl($par30A)
+    $acl30A.SetAccessRuleProtection($true, $false)
+    foreach ($s30 in @($curUserSid30, $sysSid30, $admSid30)) {
+        $acl30A.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($s30, [System.Security.AccessControl.FileSystemRights]::FullControl, $inh30, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)))
+    }
+    $acl30A.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($authSid30, [System.Security.AccessControl.FileSystemRights]::FullControl, $inh30, [System.Security.AccessControl.PropagationFlags]::InheritOnly, [System.Security.AccessControl.AccessControlType]::Allow)))
+    [System.IO.Directory]::SetAccessControl($par30A, $acl30A)
+    New-Item -ItemType Directory -Force -Path $desc30A | Out-Null
+
+    # Confirm desc30A holds only IsInherited=True S-1-5-11 ACE
+    $rsdDesc30A = New-Object System.Security.AccessControl.RawSecurityDescriptor(([System.IO.Directory]::GetAccessControl($desc30A)).GetSecurityDescriptorBinaryForm(), 0)
+    $descAuthAces30 = @($rsdDesc30A.DiscretionaryAcl | Where-Object { $_.SecurityIdentifier.Value -eq "S-1-5-11" })
+    $descOnlyInherited30A = ($descAuthAces30.Count -eq 1) -and ($descAuthAces30[0].IsInherited -eq $true)
+
+    $out30A = Join-Path $desc30A "blocked-inh-auth"
+    $r30A = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+        "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $out30A,
+        "-AdditionalProtectedRoots", $canary30, "-ExpectedSourceSha", $headSha, "-BuildInstaller"
+    )
+    $out30ACreated = Test-Path -LiteralPath $out30A
+
+    # 30B: Directly under par30A (InheritOnly is non-applicable on par30A itself -> allowed, child born protected)
+    $out30B = Join-Path $par30A "direct-ok-under-inhonly"
+    $r30B = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+        "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $out30B,
+        "-ExpectedSourceSha", $headSha, "-SkipWebBuild"
+    )
+    $rsd30BChild = New-Object System.Security.AccessControl.RawSecurityDescriptor(([System.IO.Directory]::GetAccessControl($out30B)).GetSecurityDescriptorBinaryForm(), 0)
+    $child30BHasAuth = (@($rsd30BChild.DiscretionaryAcl | Where-Object { $_.SecurityIdentifier.Value -eq "S-1-5-11" }).Count -gt 0)
+
+    # 30C: Custom domain SID with FILE_DELETE_CHILD on immediate parent AND on higher ancestor above clean parent
+    $par30C1 = Join-Path $outBase "neg30c1-custom-delchild"
+    New-Item -ItemType Directory -Force -Path $par30C1 | Out-Null
+    $acl30C1 = [System.IO.Directory]::GetAccessControl($par30C1)
+    $acl30C1.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($customSid30, [System.Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles, [System.Security.AccessControl.InheritanceFlags]::None, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)))
+    [System.IO.Directory]::SetAccessControl($par30C1, $acl30C1)
+    $out30C1 = Join-Path $par30C1 "blocked-custom-imm"
+    $r30C1 = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+        "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $out30C1,
+        "-AdditionalProtectedRoots", $canary30, "-ExpectedSourceSha", $headSha, "-BuildInstaller"
+    )
+
+    $anc30C2 = Join-Path $outBase "neg30c2-custom-anc"
+    $par30C2 = Join-Path $anc30C2 "clean-child-parent"
+    New-Item -ItemType Directory -Force -Path $anc30C2 | Out-Null
+    $acl30C2Anc = [System.IO.Directory]::GetAccessControl($anc30C2)
+    $acl30C2Anc.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($customSid30, [System.Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles, [System.Security.AccessControl.InheritanceFlags]::None, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)))
+    [System.IO.Directory]::SetAccessControl($anc30C2, $acl30C2Anc)
+    New-Item -ItemType Directory -Force -Path $par30C2 | Out-Null
+    $acl30C2Par = [System.IO.Directory]::GetAccessControl($par30C2)
+    $acl30C2Par.SetAccessRuleProtection($true, $false)
+    foreach ($s30 in @($curUserSid30, $sysSid30, $admSid30)) {
+        $acl30C2Par.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($s30, [System.Security.AccessControl.FileSystemRights]::FullControl, $inh30, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)))
+    }
+    [System.IO.Directory]::SetAccessControl($par30C2, $acl30C2Par)
+    $out30C2 = Join-Path $par30C2 "blocked-via-anc"
+    $r30C2 = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+        "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $out30C2,
+        "-AdditionalProtectedRoots", $canary30, "-ExpectedSourceSha", $headSha, "-BuildInstaller"
+    )
+
+    # 30D: Live fixed-drive root C:\ direct child rejected by pinned C:\ handle ACL before mkdir (zero touch to C:\)
+    $out30D = "C:\r6-drive-root-probe-$runId"
+    $r30D = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+        "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $out30D,
+        "-ExpectedSourceSha", $headSha, "-BuildInstaller"
+    )
+    $out30DCreated = Test-Path -LiteralPath $out30D
+    $canary30Clean = ((Get-Content -LiteralPath $canary30Txt -Raw) -eq "CANARY_30_INTACT") -and
+                     (([System.IO.Directory]::GetAccessControl($canary30)).Sddl -eq $canary30SddlPre)
+
+    $ok30 = $descOnlyInherited30A -and
+            ($r30A.ExitCode -ne 0) -and ($r30A.Combined -match 'code=UNSAFE_OUTPUT_PARENT_ACL') -and (-not $out30ACreated) -and
+            ($r30B.ExitCode -eq 0) -and (-not $child30BHasAuth) -and
+            ($r30C1.ExitCode -ne 0) -and ($r30C1.Combined -match 'code=UNSAFE_OUTPUT_PARENT_ACL') -and (-not (Test-Path -LiteralPath $out30C1)) -and
+            ($r30C2.ExitCode -ne 0) -and ($r30C2.Combined -match 'code=UNSAFE_OUTPUT_PARENT_ACL') -and (-not (Test-Path -LiteralPath $out30C2)) -and
+            ($r30D.ExitCode -ne 0) -and ($r30D.Combined -match 'code=UNSAFE_OUTPUT_PARENT_ACL') -and (-not $out30DCreated) -and
+            $canary30Clean
+    Record-TestResult -Id "NEG-30_F2_R6_INHERITED_SHARED_CUSTOM_DELETE_CHILD_AND_DRIVE_ROOT" -Passed $ok30 -ObservedCode "INH_AUTH+CUSTOM_DC+DRIVE_ROOT" -Notes "30A=$descOnlyInherited30A/$(-not $out30ACreated),30B=$($r30B.ExitCode)/$child30BHasAuth,30C1=$($r30C1.ExitCode),30C2=$($r30C2.ExitCode),30D=$($r30D.ExitCode),canary=$canary30Clean"
+
+    # -----------------------------------------------------------------------
+    # NEG-31 (F2 R6): Allow/Deny ACE ordering, real NTFS AccessAllowedCallback
+    #                 ACE fail-closed rejection, and safe inherited ReadAndExecute
+    # -----------------------------------------------------------------------
+    $usersSid31 = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::BuiltinUsersSid, $null)
+    $customSid31 = New-Object System.Security.Principal.SecurityIdentifier("S-1-5-21-999888777-666555444-333222111-1234")
+
+    # 31A: Canonical Deny FullControl BEFORE Allow FullControl for BUILTIN\Users -> SAFE (allowed)
+    $par31A = Join-Path $outBase "neg31a-deny-before-allow"
+    New-Item -ItemType Directory -Force -Path $par31A | Out-Null
+    $acl31A = [System.IO.Directory]::GetAccessControl($par31A)
+    $acl31A.SetAccessRuleProtection($true, $false)
+    foreach ($s31 in @($curUserSid30, $sysSid30, $admSid30)) {
+        $acl31A.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($s31, [System.Security.AccessControl.FileSystemRights]::FullControl, $inh30, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)))
+    }
+    [System.IO.Directory]::SetAccessControl($par31A, $acl31A)
+    $rsd31A = New-Object System.Security.AccessControl.RawSecurityDescriptor(([System.IO.Directory]::GetAccessControl($par31A)).GetSecurityDescriptorBinaryForm(), 0)
+    $rsd31A.DiscretionaryAcl.InsertAce($rsd31A.DiscretionaryAcl.Count, (New-Object System.Security.AccessControl.CommonAce([System.Security.AccessControl.AceFlags]::None, [System.Security.AccessControl.AceQualifier]::AccessDenied, 0x001F01FF, $usersSid31, $false, $null)))
+    $rsd31A.DiscretionaryAcl.InsertAce($rsd31A.DiscretionaryAcl.Count, (New-Object System.Security.AccessControl.CommonAce([System.Security.AccessControl.AceFlags]::None, [System.Security.AccessControl.AceQualifier]::AccessAllowed, 0x001F01FF, $usersSid31, $false, $null)))
+    $sdBytes31A = New-Object byte[] $rsd31A.BinaryLength
+    $rsd31A.GetBinaryForm($sdBytes31A, 0)
+    $ds31A = New-Object System.Security.AccessControl.DirectorySecurity
+    $ds31A.SetSecurityDescriptorBinaryForm($sdBytes31A, [System.Security.AccessControl.AccessControlSections]::Access)
+    [System.IO.Directory]::SetAccessControl($par31A, $ds31A)
+    $out31A = Join-Path $par31A "ok-deny-first"
+    $r31A = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+        "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $out31A,
+        "-ExpectedSourceSha", $headSha, "-SkipWebBuild"
+    )
+
+    # 31B: Non-canonical Allow Modify BEFORE Deny Modify for BUILTIN\Users -> REJECTED before mkdir
+    $par31B = Join-Path $outBase "neg31b-allow-before-deny"
+    New-Item -ItemType Directory -Force -Path $par31B | Out-Null
+    [System.IO.Directory]::SetAccessControl($par31B, $acl31A)
+    $rsd31B = New-Object System.Security.AccessControl.RawSecurityDescriptor(([System.IO.Directory]::GetAccessControl($par31B)).GetSecurityDescriptorBinaryForm(), 0)
+    $rsd31B.DiscretionaryAcl.InsertAce($rsd31B.DiscretionaryAcl.Count, (New-Object System.Security.AccessControl.CommonAce([System.Security.AccessControl.AceFlags]::None, [System.Security.AccessControl.AceQualifier]::AccessAllowed, 0x001301BF, $usersSid31, $false, $null)))
+    $rsd31B.DiscretionaryAcl.InsertAce($rsd31B.DiscretionaryAcl.Count, (New-Object System.Security.AccessControl.CommonAce([System.Security.AccessControl.AceFlags]::None, [System.Security.AccessControl.AceQualifier]::AccessDenied, 0x001301BF, $usersSid31, $false, $null)))
+    $sdBytes31B = New-Object byte[] $rsd31B.BinaryLength
+    $rsd31B.GetBinaryForm($sdBytes31B, 0)
+    $ds31B = New-Object System.Security.AccessControl.DirectorySecurity
+    $ds31B.SetSecurityDescriptorBinaryForm($sdBytes31B, [System.Security.AccessControl.AccessControlSections]::Access)
+    [System.IO.Directory]::SetAccessControl($par31B, $ds31B)
+    $out31B = Join-Path $par31B "blocked-allow-first"
+    $r31B = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+        "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $out31B,
+        "-ExpectedSourceSha", $headSha, "-BuildInstaller"
+    )
+
+    # 31C: Real NTFS AccessAllowedCallback ACE -> fail closed before mkdir
+    $par31C = Join-Path $outBase "neg31c-callback-ace"
+    New-Item -ItemType Directory -Force -Path $par31C | Out-Null
+    [System.IO.Directory]::SetAccessControl($par31C, $acl31A)
+    $rsd31C = New-Object System.Security.AccessControl.RawSecurityDescriptor(([System.IO.Directory]::GetAccessControl($par31C)).GetSecurityDescriptorBinaryForm(), 0)
+    $cbOpaque31C = New-Object byte[] 4
+    $cbAce31C = New-Object System.Security.AccessControl.CommonAce([System.Security.AccessControl.AceFlags]::None, [System.Security.AccessControl.AceQualifier]::AccessAllowed, 0x001200A9, $usersSid31, $true, $cbOpaque31C)
+    $rsd31C.DiscretionaryAcl.InsertAce($rsd31C.DiscretionaryAcl.Count, $cbAce31C)
+    $sdBytes31C = New-Object byte[] $rsd31C.BinaryLength
+    $rsd31C.GetBinaryForm($sdBytes31C, 0)
+    $ds31C = New-Object System.Security.AccessControl.DirectorySecurity
+    $ds31C.SetSecurityDescriptorBinaryForm($sdBytes31C, [System.Security.AccessControl.AccessControlSections]::Access)
+    [System.IO.Directory]::SetAccessControl($par31C, $ds31C)
+    $out31C = Join-Path $par31C "blocked-callback"
+    $r31C = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+        "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $out31C,
+        "-ExpectedSourceSha", $headSha, "-BuildInstaller"
+    )
+
+    # 31D: Safe read-only inherited ACE for custom SID (ReadAndExecute 0x001200A9) -> SAFE (allowed)
+    $par31DRoot = Join-Path $outBase "neg31d-safe-rx-root"
+    $par31DChild = Join-Path $par31DRoot "child-with-inherited-rx"
+    New-Item -ItemType Directory -Force -Path $par31DRoot | Out-Null
+    $acl31D = [System.IO.Directory]::GetAccessControl($par31DRoot)
+    $acl31D.SetAccessRuleProtection($true, $false)
+    foreach ($s31 in @($curUserSid30, $sysSid30, $admSid30)) {
+        $acl31D.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($s31, [System.Security.AccessControl.FileSystemRights]::FullControl, $inh30, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)))
+    }
+    $acl31D.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($customSid31, [System.Security.AccessControl.FileSystemRights]::ReadAndExecute, $inh30, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)))
+    [System.IO.Directory]::SetAccessControl($par31DRoot, $acl31D)
+    New-Item -ItemType Directory -Force -Path $par31DChild | Out-Null
+    $out31D = Join-Path $par31DChild "ok-inherited-rx"
+    $r31D = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+        "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $out31D,
+        "-ExpectedSourceSha", $headSha, "-SkipWebBuild"
+    )
+
+    $ok31 = ($r31A.ExitCode -eq 0) -and
+            ($r31B.ExitCode -ne 0) -and ($r31B.Combined -match 'code=UNSAFE_OUTPUT_PARENT_ACL') -and (-not (Test-Path -LiteralPath $out31B)) -and
+            ($r31C.ExitCode -ne 0) -and ($r31C.Combined -match 'code=UNSAFE_OUTPUT_PARENT_ACL') -and (-not (Test-Path -LiteralPath $out31C)) -and
+            ($r31D.ExitCode -eq 0)
+    Record-TestResult -Id "NEG-31_F2_R6_ALLOW_DENY_ORDER_CALLBACK_AND_SAFE_READ_ACE" -Passed $ok31 -ObservedCode "ACL_ORDER+CALLBACK+SAFE_RX" -Notes "31A=$($r31A.ExitCode),31B=$($r31B.ExitCode)/$(-not (Test-Path -LiteralPath $out31B)),31C=$($r31C.ExitCode)/$(-not (Test-Path -LiteralPath $out31C)),31D=$($r31D.ExitCode)"
+
     Write-Host ""
     Write-Host "=== INSTALLER PROVENANCE REGRESSION SUMMARY ==="
     $results | Format-Table -AutoSize | Out-String | Write-Host

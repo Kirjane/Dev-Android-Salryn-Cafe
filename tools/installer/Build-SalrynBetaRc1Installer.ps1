@@ -1814,7 +1814,9 @@ function Assert-HandleParentAclSafe {
         [Parameter(Mandatory = $true)][Microsoft.Win32.SafeHandles.SafeFileHandle]$DirHandle,
         [Parameter(Mandatory = $true)][string]$CanonicalPath,
         [Parameter(Mandatory = $true)][string]$HeadSha,
-        [Parameter(Mandatory = $true)][string]$ContextLabel
+        [Parameter(Mandatory = $true)][string]$ContextLabel,
+        [switch]$IsDriveRoot,
+        [switch]$IsDeepestCreationParent
     )
     try {
         $rawSdBytes = [SalrynNativePathResolver]::GetSecurityDescriptorFromHandle($DirHandle, $ContextLabel)
@@ -1823,25 +1825,93 @@ function Assert-HandleParentAclSafe {
         Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_PARENT_ACL" -HeadSha $HeadSha -Detail "Failed reading security descriptor from pinned handle for ${ContextLabel} ($CanonicalPath): $_"
     }
 
-    if ($null -eq $rsd.DiscretionaryAcl) {
+    $currentUserSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+    if ($null -eq $currentUserSid) {
+        Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_PARENT_ACL" -HeadSha $HeadSha -Detail "Cannot resolve current build identity SID while validating ${ContextLabel} ($CanonicalPath)."
+    }
+
+    # Owner implicitly holds WRITE_DAC + READ_CONTROL regardless of DACL entries
+    $trustedOwnerSids = @(
+        $currentUserSid.Value,
+        "S-1-5-18",
+        "S-1-5-32-544",
+        "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"
+    ) | Select-Object -Unique
+    if ($null -eq $rsd.Owner -or ($trustedOwnerSids -notcontains $rsd.Owner.Value)) {
+        $ownerStr = if ($null -eq $rsd.Owner) { "NULL" } else { $rsd.Owner.Value }
+        Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_PARENT_ACL" -HeadSha $HeadSha -Detail "Pinned ${ContextLabel} ($CanonicalPath) has untrusted owner SID '$ownerStr'."
+    }
+
+    if ((($rsd.ControlFlags -band [System.Security.AccessControl.ControlFlags]::DiscretionaryAclPresent) -eq 0) -or
+        ($null -eq $rsd.DiscretionaryAcl)) {
         Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_PARENT_ACL" -HeadSha $HeadSha -Detail "Pinned ${ContextLabel} ($CanonicalPath) has NULL DACL (world-accessible)."
     }
 
-    $writeModifyBits = 0x500D0156
-    $alwaysUntrustedSids = @("S-1-1-0", "S-1-5-7", "S-1-5-32-545")
-    $explicitUntrustedSids = @("S-1-5-11", "S-1-5-4", "S-1-2-0")
+    # Explicit trusted trustee allowlist for effective dangerous directory access
+    $trustedTrusteeSids = @($currentUserSid.Value, "S-1-5-18", "S-1-5-32-544") | Select-Object -Unique
+
+    # Destructive/takeover/content-write rights:
+    # FILE_ADD_FILE(0x2) | FILE_WRITE_EA(0x10) | FILE_DELETE_CHILD(0x40) | FILE_WRITE_ATTRIBUTES(0x100) |
+    # DELETE(0x10000) | WRITE_DAC(0x40000) | WRITE_OWNER(0x80000) | GENERIC_ALL(0x10000000) | GENERIC_WRITE(0x40000000)
+    $baseDangerousBits = [int64]0x500D0152
+    $fullDangerousBits = [int64]0x500D0156  # includes FILE_ADD_SUBDIRECTORY(0x4)
+    $maskAll32 = [int64]4294967295          # 0xFFFFFFFF
+
+    $deniedBySid = @{}
+    $allowedBySid = @{}
 
     foreach ($ace in $rsd.DiscretionaryAcl) {
-        if ($ace -is [System.Security.AccessControl.QualifiedAce]) {
-            if ($ace.AceQualifier -ne [System.Security.AccessControl.AceQualifier]::AccessAllowed) { continue }
-            if (($ace.AccessMask -band $writeModifyBits) -eq 0) { continue }
-            $sidVal = $ace.SecurityIdentifier.Value
-            if ($alwaysUntrustedSids -contains $sidVal) {
-                Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_PARENT_ACL" -HeadSha $HeadSha -Detail "Pinned ${ContextLabel} ($CanonicalPath) grants write/modify/create rights to shared principal $sidVal (mask=0x$($ace.AccessMask.ToString('X')))."
-            }
-            if (($explicitUntrustedSids -contains $sidVal) -and (-not $ace.IsInherited)) {
-                Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_PARENT_ACL" -HeadSha $HeadSha -Detail "Pinned ${ContextLabel} ($CanonicalPath) explicitly grants write/modify/create rights to shared principal $sidVal (mask=0x$($ace.AccessMask.ToString('X')))."
-            }
+        # Fail closed on non-CommonAce, ObjectAce, CompoundAce, CustomAce, or conditional/callback ACEs
+        if (($ace.GetType().FullName -ne "System.Security.AccessControl.CommonAce") -or $ace.IsCallback) {
+            Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_PARENT_ACL" -HeadSha $HeadSha -Detail "Pinned ${ContextLabel} ($CanonicalPath) contains unsupported/callback/object ACE type '$($ace.GetType().Name)' ($($ace.AceType))."
+        }
+        if (($ace.AceType -ne [System.Security.AccessControl.AceType]::AccessAllowed) -and
+            ($ace.AceType -ne [System.Security.AccessControl.AceType]::AccessDenied)) {
+            Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_PARENT_ACL" -HeadSha $HeadSha -Detail "Pinned ${ContextLabel} ($CanonicalPath) contains unsupported ACE type '$($ace.AceType)'."
+        }
+
+        # INHERIT_ONLY ACEs do not grant or deny effective rights on this directory object itself
+        $aceFlagsInt = [int]$ace.AceFlags
+        $inheritOnlyInt = [int][System.Security.AccessControl.AceFlags]::InheritOnly
+        if (($aceFlagsInt -band $inheritOnlyInt) -ne 0) {
+            continue
+        }
+
+        $sidVal = $ace.SecurityIdentifier.Value
+        $rawMask = [int64]([BitConverter]::ToUInt32([BitConverter]::GetBytes([int]$ace.AccessMask), 0))
+        $expandedMask = $rawMask
+        if (($rawMask -band [int64]0x10000000) -ne 0) { $expandedMask = $expandedMask -bor [int64]0x001F01FF } # GENERIC_ALL
+        if (($rawMask -band [int64]0x40000000) -ne 0) { $expandedMask = $expandedMask -bor [int64]0x00120116 } # GENERIC_WRITE
+        if (($rawMask -band [int64]2147483648) -ne 0) { $expandedMask = $expandedMask -bor [int64]0x00120089 } # GENERIC_READ (0x80000000)
+        if (($rawMask -band [int64]0x20000000) -ne 0) { $expandedMask = $expandedMask -bor [int64]0x001200A0 } # GENERIC_EXECUTE
+
+        $curAllowed = if ($allowedBySid.ContainsKey($sidVal)) { [int64]$allowedBySid[$sidVal] } else { [int64]0 }
+        $curDenied = if ($deniedBySid.ContainsKey($sidVal)) { [int64]$deniedBySid[$sidVal] } else { [int64]0 }
+
+        if ($ace.AceType -eq [System.Security.AccessControl.AceType]::AccessDenied) {
+            $notAllowedYet = ((-bnot $curAllowed) -band $maskAll32)
+            $deniedBySid[$sidVal] = ($curDenied -bor ($expandedMask -band $notAllowedYet))
+        } else {
+            $notDeniedYet = ((-bnot $curDenied) -band $maskAll32)
+            $allowedBySid[$sidVal] = ($curAllowed -bor ($expandedMask -band $notDeniedYet))
+        }
+    }
+
+    foreach ($sidKey in $allowedBySid.Keys) {
+        if ($trustedTrusteeSids -contains $sidKey) {
+            continue
+        }
+        $effAllowed = [int64]$allowedBySid[$sidKey]
+        # Allow strict fixed-drive-root non-destructive FILE_ADD_SUBDIRECTORY(0x4) ONLY for S-1-5-11
+        # when strictly above an already-existing protected child path (not when drive root itself is creation parent).
+        $checkMask = if ($IsDriveRoot -and (-not $IsDeepestCreationParent) -and ($sidKey -eq "S-1-5-11")) {
+            $baseDangerousBits
+        } else {
+            $fullDangerousBits
+        }
+        $effDangerous = $effAllowed -band $checkMask
+        if ($effDangerous -ne 0) {
+            Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_PARENT_ACL" -HeadSha $HeadSha -Detail ("Pinned {0} ({1}) grants effective dangerous rights (effective=0x{2:X8}, dangerous=0x{3:X8}) to non-trusted SID {4}." -f $ContextLabel, $CanonicalPath, $effAllowed, $effDangerous, $sidKey)
         }
     }
 }
@@ -2321,7 +2391,8 @@ try {
     $curCanonical = $rootFinal.TrimEnd('\')
     $curFileId = $rootFId
     $walkedPathExpected = $driveRootOut.TrimEnd('\')
-    $existingAncHandlesBelowRoot = New-Object System.Collections.Generic.List[object]
+    $pinnedExistingAncestorChain = New-Object System.Collections.Generic.List[object]
+    $pinnedExistingAncestorChain.Add(@{ Handle = $rootDriveHandle; Canonical = $curCanonical; IsDriveRoot = $true })
     $missingSegments = New-Object System.Collections.Generic.List[string]
     $stoppedAtMissing = $false
 
@@ -2374,7 +2445,7 @@ try {
             -ContextLabel "output-ancestor" `
             -AllowRepoArtifactsAncestorOnly
 
-        $existingAncHandlesBelowRoot.Add(@{ Handle = $segHandle; Canonical = $verifiedAnc.CanonicalPath })
+        $pinnedExistingAncestorChain.Add(@{ Handle = $segHandle; Canonical = $verifiedAnc.CanonicalPath; IsDriveRoot = $false })
         $curHandle = $segHandle
         $curCanonical = $verifiedAnc.CanonicalPath
         $curFileId = $verifiedAnc.FileId
@@ -2384,13 +2455,17 @@ try {
         Write-ProvenanceFailure -Code "NONPRIVATE_OUTPUT_DIR_FORBIDDEN" -HeadSha $headSha -Detail "OutputDir already exists: $artifactRoot"
     }
 
-    # Validate ACL safety across pinned ancestors below drive root & intended parent
-    foreach ($ancEntry in $existingAncHandlesBelowRoot) {
+    # Validate effective parent-ACL safety across the pinned drive root AND every existing ancestor handle
+    for ($ancIdx = 0; $ancIdx -lt $pinnedExistingAncestorChain.Count; $ancIdx++) {
+        $ancEntry = $pinnedExistingAncestorChain[$ancIdx]
+        $isCreationParent = ($ancIdx -eq ($pinnedExistingAncestorChain.Count - 1))
         Assert-HandleParentAclSafe `
             -DirHandle $ancEntry.Handle `
             -CanonicalPath $ancEntry.Canonical `
             -HeadSha $headSha `
-            -ContextLabel "output-parent"
+            -ContextLabel $(if ($ancEntry.IsDriveRoot) { "drive-root-parent" } elseif ($isCreationParent) { "output-parent" } else { "output-ancestor" }) `
+            -IsDriveRoot:([bool]$ancEntry.IsDriveRoot) `
+            -IsDeepestCreationParent:$isCreationParent
     }
 
     # Verify intended canonical target from pinned parent handle BEFORE any creation
