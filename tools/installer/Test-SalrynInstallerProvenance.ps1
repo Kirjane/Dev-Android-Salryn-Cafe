@@ -1746,6 +1746,238 @@ $sids = @($rules | ForEach-Object { $_.IdentityReference.Value } | Sort-Object -
             ($r31D.ExitCode -eq 0)
     Record-TestResult -Id "NEG-31_F2_R6_ALLOW_DENY_ORDER_CALLBACK_AND_SAFE_READ_ACE" -Passed $ok31 -ObservedCode "ACL_ORDER+CALLBACK+SAFE_RX" -Notes "31A=$($r31A.ExitCode),31B=$($r31B.ExitCode)/$(-not (Test-Path -LiteralPath $out31B)),31C=$($r31C.ExitCode)/$(-not (Test-Path -LiteralPath $out31C)),31D=$($r31D.ExitCode)"
 
+    if (-not ([System.Management.Automation.PSTypeName]'SalrynTestKnownFolder').Type) {
+        Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+public static class SalrynTestKnownFolder {
+    [DllImport("shell32.dll")]
+    private static extern int SHGetKnownFolderPath(
+        [MarshalAs(UnmanagedType.LPStruct)] Guid rfid,
+        uint dwFlags,
+        IntPtr hToken,
+        out IntPtr ppszPath);
+
+    public static string GetTrustedLocalAppData() {
+        Guid folderId = new Guid("F1B32785-6FBA-4FCF-9D55-7B8E7F157091");
+        IntPtr pPath = IntPtr.Zero;
+        try {
+            int hr = SHGetKnownFolderPath(folderId, 0x00004000u | 0x00000800u, IntPtr.Zero, out pPath);
+            if (hr != 0 || pPath == IntPtr.Zero) {
+                throw new InvalidOperationException("SHGetKnownFolderPath failed: 0x" + hr.ToString("X8"));
+            }
+            return Marshal.PtrToStringUni(pPath);
+        } finally {
+            if (pPath != IntPtr.Zero) {
+                Marshal.FreeCoTaskMem(pPath);
+            }
+        }
+    }
+}
+"@
+    }
+    $trustedLocalR7 = [SalrynTestKnownFolder]::GetTrustedLocalAppData()
+    $trustedBuildsRootR7 = Join-Path $trustedLocalR7 "SalrynInstallerBuilds"
+    $trustedSalrynProtectedR7 = Join-Path $trustedLocalR7 "Salryn"
+    $curUserSid32 = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+    $authSid32 = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::AuthenticatedUserSid, $null)
+    $sysSid32 = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::LocalSystemSid, $null)
+    $admSid32 = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid, $null)
+    $inh32 = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+    $allowedPrivateSids32 = @($curUserSid32.Value, "S-1-5-18", "S-1-5-32-544")
+    $r7CleanupDirs = New-Object System.Collections.Generic.List[string]
+
+    try {
+        # -------------------------------------------------------------------
+        # POS-04 (R7 Contract A): Default private per-user output succeeds
+        #        from an S-1-5-11-inheriting root-like checkout and private
+        #        worktree while preserving strict explicit-path ACL custody
+        # -------------------------------------------------------------------
+        $pos04Parent = Join-Path $outBase "pos04-rootlike-parent"
+        New-Item -ItemType Directory -Force -Path $pos04Parent | Out-Null
+        $aclPos04Parent = [System.IO.Directory]::GetAccessControl($pos04Parent)
+        $aclPos04Parent.SetAccessRuleProtection($true, $false)
+        foreach ($s04 in @($curUserSid32, $sysSid32, $admSid32)) {
+            $aclPos04Parent.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($s04, [System.Security.AccessControl.FileSystemRights]::FullControl, $inh32, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)))
+        }
+        $aclPos04Parent.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($authSid32, [System.Security.AccessControl.FileSystemRights]::Modify, $inh32, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)))
+        [System.IO.Directory]::SetAccessControl($pos04Parent, $aclPos04Parent)
+
+        $pos04Repo = Join-Path $pos04Parent "repo"
+        & git -C $sourceRepoRoot worktree add --quiet --detach $pos04Repo $headSha | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Failed creating disposable root-like worktree at $pos04Repo" }
+        $pos04BuildScript = Join-Path $pos04Repo "tools\installer\Build-SalrynBetaRc1Installer.ps1"
+
+        # Confirm repo-relative explicit output under S-1-5-11 checkout still fails closed before npm/mkdir
+        $pos04RelUnsafe = Join-Path $pos04Repo "artifacts\installer\rel-unsafe"
+        $pos04RelArgs = @("-Version", $Version, "-Configuration", $Configuration, "-OutputDir", "artifacts\installer\rel-unsafe", "-ExpectedSourceSha", $headSha, "-BuildInstaller")
+        if (-not [string]::IsNullOrWhiteSpace($InnoSetupCompilerPath)) {
+            $pos04RelArgs += @("-InnoSetupCompilerPath", $InnoSetupCompilerPath)
+        }
+        $rPos04RelReject = Invoke-BuildInstallerChild -ScriptPath $pos04BuildScript -WorkingDir $pos04Repo -Arguments $pos04RelArgs
+        $pos04RelRejected = ($rPos04RelReject.ExitCode -ne 0) -and ($rPos04RelReject.Combined -match 'code=UNSAFE_OUTPUT_PARENT_ACL') -and (-not (Test-Path -LiteralPath $pos04RelUnsafe))
+
+        # Run full -BuildInstaller with NO -OutputDir from the S-1-5-11 root-like checkout
+        $pos04ArgsA = @("-Version", $Version, "-Configuration", $Configuration, "-ExpectedSourceSha", $headSha, "-BuildInstaller")
+        if (-not [string]::IsNullOrWhiteSpace($InnoSetupCompilerPath)) {
+            $pos04ArgsA += @("-InnoSetupCompilerPath", $InnoSetupCompilerPath)
+        }
+        $rPos04A = Invoke-BuildInstallerChild -ScriptPath $pos04BuildScript -WorkingDir $pos04Repo -Arguments $pos04ArgsA
+        $outRootA = ""
+        $verifyLineAOk = $false
+        $pos04AOk = $false
+        if ($rPos04A.ExitCode -eq 0 -and $rPos04A.Combined -match '(?m)^Output root\s*:\s*(.+?)\s*$') {
+            $outRootA = $Matches[1].Trim()
+            if (-not [string]::IsNullOrWhiteSpace($outRootA)) { $r7CleanupDirs.Add($outRootA) }
+            $escapedRootA = [regex]::Escape($outRootA)
+            $verifyLineAOk = ($rPos04A.Combined -match ("(?m)^Verify cmd\s*:\s*powershell .*-VerifyStageOnly -OutputDir `"" + $escapedRootA + "`""))
+            $provAPath = Join-Path $outRootA "setup\Salryn-POS-BetaRC1-Setup.exe.provenance.json"
+            $setupAPath = Join-Path $outRootA "setup\Salryn-POS-BetaRC1-Setup.exe"
+            $manifestAPath = Join-Path $outRootA "staging\Salryn\salryn-installer-provenance-manifest.json"
+            if ((Test-Path -LiteralPath $provAPath) -and (Test-Path -LiteralPath $setupAPath) -and (Test-Path -LiteralPath $manifestAPath)) {
+                $provA = Get-Content -LiteralPath $provAPath -Raw | ConvertFrom-Json
+                $manifestASha = Get-TestFileSha256Lower -FilePath $manifestAPath
+                $setupAShaPre = Get-TestFileSha256Lower -FilePath $setupAPath
+                $aclOutA = [System.IO.Directory]::GetAccessControl($outRootA)
+                $rulesOutA = @($aclOutA.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))
+                $inhOutACount = @($rulesOutA | Where-Object { $_.IsInherited }).Count
+                $badSidOutA = @($rulesOutA | Where-Object { $allowedPrivateSids32 -notcontains $_.IdentityReference.Value }).Count
+
+                $rPos04AVerify = Invoke-BuildInstallerChild -ScriptPath $pos04BuildScript -WorkingDir $pos04Repo -Arguments @(
+                    "-Version", $Version, "-Configuration", $Configuration,
+                    "-OutputDir", $outRootA, "-ExpectedSourceSha", $headSha,
+                    "-ExpectedStageManifestSha256", $manifestASha, "-VerifyStageOnly"
+                )
+                $setupAShaPost = Get-TestFileSha256Lower -FilePath $setupAPath
+                $pos04AOk = $outRootA.StartsWith((Join-Path $trustedBuildsRootR7 "run-"), [System.StringComparison]::OrdinalIgnoreCase) -and
+                            (-not $outRootA.StartsWith(($pos04Repo.TrimEnd('\') + '\'), [System.StringComparison]::OrdinalIgnoreCase)) -and
+                            (-not $outRootA.StartsWith(($trustedSalrynProtectedR7.TrimEnd('\') + '\'), [System.StringComparison]::OrdinalIgnoreCase)) -and
+                            $verifyLineAOk -and
+                            ($provA.defaultOutputLocationUsed -eq $true) -and
+                            ($provA.outputSource -eq "PRIVATE_USER_LOCALAPPDATA_DEFAULT") -and
+                            ($provA.privatePerRunOutput -eq $true) -and
+                            ($provA.parentAnchoredHandleCreation -eq $true) -and
+                            ($provA.aclProtectedAtCreation -eq $true) -and
+                            $aclOutA.AreAccessRulesProtected -and ($inhOutACount -eq 0) -and ($rulesOutA.Count -gt 0) -and ($badSidOutA -eq 0) -and
+                            ($rPos04AVerify.ExitCode -eq 0) -and ($setupAShaPost -eq $setupAShaPre)
+            }
+        }
+
+        # Second no-OutputDir run from private worktree produces a unique sibling private run-* directory
+        $rPos04B = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+            "-Version", $Version, "-Configuration", $Configuration, "-ExpectedSourceSha", $headSha, "-SkipWebBuild"
+        )
+        $outRootB = ""
+        $pos04BOk = $false
+        if ($rPos04B.ExitCode -eq 0 -and $rPos04B.Combined -match '(?m)^Output root\s*:\s*(.+?)\s*$') {
+            $outRootB = $Matches[1].Trim()
+            if (-not [string]::IsNullOrWhiteSpace($outRootB)) { $r7CleanupDirs.Add($outRootB) }
+            $manifestBPath = Join-Path $outRootB "staging\Salryn\salryn-installer-provenance-manifest.json"
+            if (Test-Path -LiteralPath $manifestBPath) {
+                $aclOutB = [System.IO.Directory]::GetAccessControl($outRootB)
+                $rulesOutB = @($aclOutB.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))
+                $inhOutBCount = @($rulesOutB | Where-Object { $_.IsInherited }).Count
+                $badSidOutB = @($rulesOutB | Where-Object { $allowedPrivateSids32 -notcontains $_.IdentityReference.Value }).Count
+                $manifestBSha = Get-TestFileSha256Lower -FilePath $manifestBPath
+                $rPos04BVerify = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+                    "-Version", $Version, "-Configuration", $Configuration,
+                    "-OutputDir", $outRootB, "-ExpectedSourceSha", $headSha,
+                    "-ExpectedStageManifestSha256", $manifestBSha, "-VerifyStageOnly"
+                )
+                $pos04BOk = $outRootB.StartsWith((Join-Path $trustedBuildsRootR7 "run-"), [System.StringComparison]::OrdinalIgnoreCase) -and
+                            ($outRootB -ne $outRootA) -and
+                            (-not $outRootB.StartsWith($dispWorktree, [System.StringComparison]::OrdinalIgnoreCase)) -and
+                            $aclOutB.AreAccessRulesProtected -and ($inhOutBCount -eq 0) -and ($rulesOutB.Count -gt 0) -and ($badSidOutB -eq 0) -and
+                            ($rPos04BVerify.ExitCode -eq 0)
+            }
+        }
+
+        $okPos04 = $pos04RelRejected -and $pos04AOk -and $pos04BOk
+        Record-TestResult -Id "POS-04_R7_CONTRACTA_DEFAULT_OUTPUT_FROM_ROOT_LIKE_AND_PRIVATE_CHECKOUTS" -Passed $okPos04 -ObservedCode $(if ($okPos04) { "PRIVATE_USER_LOCALAPPDATA_DEFAULT" } else { "FAILED" }) -Notes "relReject=$pos04RelRejected,buildA=$($rPos04A.ExitCode)/$pos04AOk,stageB=$($rPos04B.ExitCode)/$pos04BOk"
+
+        # -------------------------------------------------------------------
+        # NEG-32 (R7 Contract A): Boundary & spoof rejections:
+        #        -VerifyStageOnly requires -OutputDir; $env:LOCALAPPDATA spoof
+        #        cannot redirect default output; %LOCALAPPDATA%\Salryn stays
+        #        protected; shared explicit root rejected before mkdir; existing
+        #        explicit run collision fails closed
+        # -------------------------------------------------------------------
+        # 32A: -VerifyStageOnly without -OutputDir fails closed
+        $r32A = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+            "-Version", $Version, "-Configuration", $Configuration, "-ExpectedSourceSha", $headSha, "-VerifyStageOnly"
+        )
+        $ok32A = ($r32A.ExitCode -ne 0) -and ($r32A.Combined -match 'code=VERIFY_ONLY_REQUIRES_OUTPUT_DIR')
+
+        # 32B: Spoofed $env:LOCALAPPDATA does NOT redirect default output away from SHGetKnownFolderPath
+        $spoofLocal32 = Join-Path $outBase "spoofed-localappdata"
+        New-Item -ItemType Directory -Force -Path $spoofLocal32 | Out-Null
+        $origLocal32 = $env:LOCALAPPDATA
+        $r32B = $null
+        try {
+            $env:LOCALAPPDATA = $spoofLocal32
+            $r32B = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+                "-Version", $Version, "-Configuration", $Configuration, "-ExpectedSourceSha", $headSha, "-SkipWebBuild"
+            )
+        } finally {
+            $env:LOCALAPPDATA = $origLocal32
+        }
+        $outRoot32B = ""
+        if ($r32B.ExitCode -eq 0 -and $r32B.Combined -match '(?m)^Output root\s*:\s*(.+?)\s*$') {
+            $outRoot32B = $Matches[1].Trim()
+            if (-not [string]::IsNullOrWhiteSpace($outRoot32B)) { $r7CleanupDirs.Add($outRoot32B) }
+        }
+        $spoofEntries = @(Get-ChildItem -LiteralPath $spoofLocal32 -Force -ErrorAction SilentlyContinue)
+        $ok32B = ($r32B.ExitCode -eq 0) -and
+                 $outRoot32B.StartsWith((Join-Path $trustedBuildsRootR7 "run-"), [System.StringComparison]::OrdinalIgnoreCase) -and
+                 ($spoofEntries.Count -eq 0)
+
+        # 32C: Explicit output inside %LOCALAPPDATA%\Salryn remains strictly forbidden
+        $probeSalrynProtected = Join-Path $trustedSalrynProtectedR7 "probe-r7-$runId"
+        $r32C = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+            "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $probeSalrynProtected,
+            "-ExpectedSourceSha", $headSha, "-SkipWebBuild"
+        )
+        $ok32C = ($r32C.ExitCode -ne 0) -and ($r32C.Combined -match 'code=PROTECTED_OUTPUT_DIR_FORBIDDEN') -and (-not (Test-Path -LiteralPath $probeSalrynProtected))
+
+        # 32D: Explicit output under S-1-5-11 parent with sibling canary fails before mkdir and leaves canary untouched
+        $neg32DCanary = Join-Path $pos04Parent "neg32d-canary.txt"
+        Write-Utf8NoBom -Path $neg32DCanary -Content "CANARY_32D_INTACT"
+        $neg32DCleanSddl = ([System.IO.Directory]::GetAccessControl($pos04Parent)).Sddl
+        $out32D = Join-Path $pos04Parent "blocked-explicit-r7"
+        $r32D = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+            "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $out32D,
+            "-ExpectedSourceSha", $headSha, "-SkipWebBuild"
+        )
+        $ok32D = ($r32D.ExitCode -ne 0) -and ($r32D.Combined -match 'code=UNSAFE_OUTPUT_PARENT_ACL') -and
+                 (-not (Test-Path -LiteralPath $out32D)) -and
+                 ((Get-Content -LiteralPath $neg32DCanary -Raw) -eq "CANARY_32D_INTACT") -and
+                 (([System.IO.Directory]::GetAccessControl($pos04Parent)).Sddl -eq $neg32DCleanSddl)
+
+        # 32E: Re-using pre-existing explicit private output directory fails closed
+        $r32E = Invoke-BuildInstallerChild -ScriptPath $dispBuildScript -WorkingDir $dispWorktree -Arguments @(
+            "-Version", $Version, "-Configuration", $Configuration, "-OutputDir", $outRootB,
+            "-ExpectedSourceSha", $headSha, "-SkipWebBuild"
+        )
+        $ok32E = ($r32E.ExitCode -ne 0) -and ($r32E.Combined -match 'code=NONPRIVATE_OUTPUT_DIR_FORBIDDEN')
+
+        $ok32 = $ok32A -and $ok32B -and $ok32C -and $ok32D -and $ok32E
+        Record-TestResult -Id "NEG-32_R7_CONTRACTA_DEFAULT_AND_PROFILE_BOUNDARY_REJECTIONS" -Passed $ok32 -ObservedCode "VERIFY_DIR+SPOOF+PROTECTED+ACL+NONPRIVATE" -Notes "32A=$ok32A,32B=$ok32B,32C=$ok32C,32D=$ok32D,32E=$ok32E"
+    } finally {
+        foreach ($d in $r7CleanupDirs) {
+            if (-not [string]::IsNullOrWhiteSpace($d) -and (Test-Path -LiteralPath $d)) {
+                Remove-Item -Recurse -Force -LiteralPath $d -ErrorAction SilentlyContinue
+            }
+        }
+        if ($pos04Repo -and (Test-Path -LiteralPath $pos04Repo)) {
+            $pos04Nm = Join-Path $pos04Repo "src\Salryn.App.Web\node_modules"
+            if (Test-Path -LiteralPath $pos04Nm) {
+                Remove-Item -Recurse -Force -LiteralPath $pos04Nm -ErrorAction SilentlyContinue
+            }
+            & git -C $sourceRepoRoot worktree remove --force $pos04Repo 2>$null | Out-Null
+        }
+    }
+
     Write-Host ""
     Write-Host "=== INSTALLER PROVENANCE REGRESSION SUMMARY ==="
     $results | Format-Table -AutoSize | Out-String | Write-Host

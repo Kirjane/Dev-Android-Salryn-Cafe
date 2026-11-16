@@ -45,11 +45,11 @@ cd C:\path\to\Salryn
 # Regenerate branding assets from the approved local source files (when needed)
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\branding\Generate-SalrynBrandingAssets.ps1
 
-# Stage publish output only (no Inno Setup required)
+# Stage publish output only (no Inno Setup required; defaults to private <KnownFolder:LocalAppData>\SalrynInstallerBuilds\run-<utc>-<id>)
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\installer\Build-SalrynBetaRc1Installer.ps1
 
-# Stage + compile setup EXE (requires Inno Setup 6)
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\installer\Build-SalrynBetaRc1Installer.ps1 -BuildInstaller
+# Stage + compile setup EXE (requires Inno Setup 6 and explicit -ExpectedSourceSha)
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\installer\Build-SalrynBetaRc1Installer.ps1 -BuildInstaller -ExpectedSourceSha <40-hex-sha>
 ```
 
 ---
@@ -65,7 +65,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\installer\Build-Salryn
 | Desktop shortcut | Salryn POS |
 | Start Menu folder | `Kirjane Information Technology Services\Salryn POS` |
 | App / shortcut icon | `assets\branding\salryn-icon.ico` |
-| Output EXE | `artifacts\installer\setup\Salryn-POS-BetaRC1-Setup.exe` |
+| Output EXE | `<output-root>\setup\Salryn-POS-BetaRC1-Setup.exe` (defaults to `<KnownFolder:LocalAppData>\SalrynInstallerBuilds\run-<utc>-<id>\setup\Salryn-POS-BetaRC1-Setup.exe`; override with `-OutputDir <new-private-path>`; exact `Setup EXE:` and `-VerifyStageOnly` command are printed at completion) |
 | WebView2 | Evergreen Bootstrapper (`installer/redist/MicrosoftEdgeWebview2Setup.exe`) |
 
 ---

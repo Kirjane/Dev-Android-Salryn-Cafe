@@ -14,14 +14,14 @@
 #   6. C:\Program Files\Inno Setup 6\ISCC.exe
 #
 # Usage:
-#   # Stage only (clean worktree required):
+#   # Stage only into private per-user default output (<LocalAppData>\SalrynInstallerBuilds\run-...):
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\installer\Build-SalrynBetaRc1Installer.ps1
 #
-#   # Stage + compile setup EXE:
-#   powershell -NoProfile -ExecutionPolicy Bypass -File tools\installer\Build-SalrynBetaRc1Installer.ps1 -BuildInstaller
-#
-#   # Stage + compile asserting expected 40-char Git commit SHA:
+#   # Stage + compile setup EXE into private per-user default output:
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\installer\Build-SalrynBetaRc1Installer.ps1 -BuildInstaller -ExpectedSourceSha <40-hex-sha>
+#
+#   # Stage + compile into explicit private non-existent directory:
+#   powershell -NoProfile -ExecutionPolicy Bypass -File tools\installer\Build-SalrynBetaRc1Installer.ps1 -BuildInstaller -ExpectedSourceSha <40-hex-sha> -OutputDir <new-private-dir>
 
 [CmdletBinding()]
 param(
@@ -80,7 +80,7 @@ Build-SalrynBetaRc1Installer.ps1
 Parameters:
   -Version <semver>                    Product version (default 0.1.0-rc1)
   -Configuration <name>                dotnet publish configuration (default Release)
-  -OutputDir <path>                    Artifact root (mutable runs require a new non-existent private dir; default auto-generated unique dir under artifacts\installer\run-*)
+  -OutputDir <path>                    Artifact root (mutable runs require a new non-existent private dir; default auto-generated unique dir under <KnownFolder:LocalAppData>\SalrynInstallerBuilds\run-*)
   -InnoSetupCompilerPath <path>        Explicit path to ISCC.exe (overrides auto-discovery)
   -ExpectedSourceSha <40-hex>          Require HEAD to match this 40-char Git SHA (required for -BuildInstaller)
   -ExpectedStageManifestSha256 <hex>   Expected 64-hex stage manifest SHA-256 (enforced in -VerifyStageOnly when provided)
@@ -88,7 +88,7 @@ Parameters:
   -SkipWebBuild                        NON-RELEASE/NOT-ATTESTED dev staging only; forbidden with -BuildInstaller
   -BuildInstaller                      Enforces fresh Option A build (-ExpectedSourceSha required, clean npm ci; no reuse) + ISCC
   -CompileExistingStageOnly            Disabled in Option A (always fails closed with COMPILE_EXISTING_STAGE_FORBIDDEN)
-  -VerifyStageOnly                     Strictly read-only stage manifest verification (no writes/deletes; forbidden with -BuildInstaller)
+  -VerifyStageOnly                     Strictly read-only stage manifest verification (-OutputDir required; no writes/deletes; forbidden with -BuildInstaller)
   -ForceNpmCi                          Retained for CLI compatibility; clean lockfile npm ci runs unconditionally on all fresh builds
   -Help                                Show this help
 "@
@@ -247,6 +247,36 @@ public static class SalrynNativePathResolver
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr LocalFree(IntPtr hMem);
+
+    [DllImport("shell32.dll")]
+    private static extern int SHGetKnownFolderPath(
+        [MarshalAs(UnmanagedType.LPStruct)] Guid rfid,
+        uint dwFlags,
+        IntPtr hToken,
+        out IntPtr ppszPath);
+
+    private const uint KF_FLAG_DONT_VERIFY = 0x00004000;
+    private const uint KF_FLAG_NO_ALIAS    = 0x00000800;
+
+    public static string GetTrustedLocalAppDataPath() {
+        Guid folderIdLocalAppData = new Guid("F1B32785-6FBA-4FCF-9D55-7B8E7F157091");
+        IntPtr pPath = IntPtr.Zero;
+        try {
+            int hr = SHGetKnownFolderPath(folderIdLocalAppData, KF_FLAG_DONT_VERIFY | KF_FLAG_NO_ALIAS, IntPtr.Zero, out pPath);
+            if (hr != 0 || pPath == IntPtr.Zero) {
+                throw new InvalidOperationException("SHGetKnownFolderPath(FOLDERID_LocalAppData) failed with HRESULT 0x" + hr.ToString("X8"));
+            }
+            string resolved = Marshal.PtrToStringUni(pPath);
+            if (string.IsNullOrWhiteSpace(resolved)) {
+                throw new InvalidOperationException("SHGetKnownFolderPath(FOLDERID_LocalAppData) returned an empty path.");
+            }
+            return resolved;
+        } finally {
+            if (pPath != IntPtr.Zero) {
+                Marshal.FreeCoTaskMem(pPath);
+            }
+        }
+    }
 
     private static string GetFinalPathFromHandle(SafeFileHandle handle, string path)
     {
@@ -641,8 +671,11 @@ function Get-ProtectedRootsList {
     if (-not [string]::IsNullOrWhiteSpace($env:ProgramData)) {
         $candidates.Add((Join-Path $env:ProgramData "Salryn"))
     }
-    if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
-        $candidates.Add((Join-Path $env:LOCALAPPDATA "Salryn"))
+    try {
+        $trustedLocalAppData = [SalrynNativePathResolver]::GetTrustedLocalAppDataPath()
+        $candidates.Add((Join-Path $trustedLocalAppData "Salryn"))
+    } catch {
+        Write-ProvenanceFailure -Code "PROTECTED_ROOT_RESOLUTION_FAILED" -HeadSha $HeadSha -Detail "Failed to resolve OS-trusted LocalAppData path for protected root enforcement: $($_.Exception.Message)"
     }
     if (-not [string]::IsNullOrWhiteSpace($env:ProgramFiles)) {
         $candidates.Add((Join-Path $env:ProgramFiles "Kirjane Information Technology Services"))
@@ -2172,6 +2205,9 @@ if ($VerifyStageOnly -and $BuildInstaller) {
 if ($VerifyStageOnly -and ($SkipWebBuild -or $ForceNpmCi)) {
     Write-ProvenanceFailure -Code "VERIFY_ONLY_INVALID_OPTIONS" -HeadSha $probeHeadSha -Detail "-VerifyStageOnly is strictly read-only and cannot be combined with -SkipWebBuild or -ForceNpmCi."
 }
+if ($VerifyStageOnly -and [string]::IsNullOrWhiteSpace($OutputDir)) {
+    Write-ProvenanceFailure -Code "VERIFY_ONLY_REQUIRES_OUTPUT_DIR" -HeadSha $probeHeadSha -Detail "-VerifyStageOnly requires an explicit -OutputDir pointing to a staged or built per-run directory."
+}
 if ($BuildInstaller -and [string]::IsNullOrWhiteSpace($ExpectedSourceSha)) {
     Write-ProvenanceFailure -Code "EXPECTED_SHA_REQUIRED_FOR_INSTALLER" -HeadSha $probeHeadSha -Detail "-BuildInstaller requires an explicit 40-character -ExpectedSourceSha binding HEAD to the approved commit."
 }
@@ -2183,13 +2219,20 @@ $provenance = Resolve-GitSourceProvenance -RepoRoot $repoRoot -ExpectedSha $Expe
 $headSha = $provenance.HeadSha
 Write-Info "[PROVENANCE_PREFLIGHT] PASS head=$headSha branch=$($provenance.GitBranch) worktreeClean=true"
 
-if ([string]::IsNullOrWhiteSpace($OutputDir)) {
-    if ($VerifyStageOnly) {
-        $rawArtifactRoot = Join-Path $repoRoot "artifacts\installer"
-    } else {
-        $runStamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ") + "-" + ([guid]::NewGuid().ToString("N").Substring(0, 8))
-        $rawArtifactRoot = Join-Path $repoRoot "artifacts\installer\run-$runStamp"
+$defaultOutputLocationUsed = [bool]([string]::IsNullOrWhiteSpace($OutputDir))
+$outputSource = if ($defaultOutputLocationUsed) { "PRIVATE_USER_LOCALAPPDATA_DEFAULT" } else { "EXPLICIT_OUTPUT_DIR" }
+
+if ($defaultOutputLocationUsed) {
+    $runStamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ") + "-" + ([guid]::NewGuid().ToString("N").Substring(0, 8))
+    $trustedLocalAppData = $null
+    try {
+        $trustedLocalAppData = [SalrynNativePathResolver]::GetTrustedLocalAppDataPath()
+    } catch {
+        Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $headSha -Detail "Failed to resolve OS-trusted LocalAppData known folder for default output directory: $($_.Exception.Message)"
     }
+    Assert-SupportedLocalDrivePath -RawPath $trustedLocalAppData -HeadSha $headSha -ContextLabel "TrustedLocalAppData"
+    $defaultParentRoot = Join-Path $trustedLocalAppData "SalrynInstallerBuilds"
+    $rawArtifactRoot = Join-Path $defaultParentRoot "run-$runStamp"
 } else {
     if ($OutputDir.StartsWith("\\", [System.StringComparison]::OrdinalIgnoreCase)) {
         Write-ProvenanceFailure -Code "UNSAFE_OUTPUT_DIR" -HeadSha $headSha -Detail "UNC/device OutputDir path is not allowed: $OutputDir"
@@ -2865,10 +2908,13 @@ Write-Info "Staging complete: $publishDir"
 if (-not $BuildInstaller) {
     Write-Host ""
     Write-Host "BETA RC1 INSTALLER STAGE COMPLETE (staging only)"
-    Write-Host "Source SHA: $headSha"
-    Write-Host "Manifest  : $(Join-Path $publishDir 'salryn-installer-provenance-manifest.json')"
-    Write-Host "App stage : $publishDir"
-    Write-Host "Setup dir : $setupDir"
+    Write-Host "Source SHA : $headSha"
+    Write-Host "Output root: $artifactRoot"
+    Write-Host "Output src : $outputSource"
+    Write-Host "Manifest   : $(Join-Path $publishDir 'salryn-installer-provenance-manifest.json')"
+    Write-Host "App stage  : $publishDir"
+    Write-Host "Setup dir  : $setupDir"
+    Write-Host "Verify cmd : powershell -NoProfile -ExecutionPolicy Bypass -File tools\installer\Build-SalrynBetaRc1Installer.ps1 -VerifyStageOnly -OutputDir `"$artifactRoot`" -Version `"$Version`" -Configuration `"$Configuration`" -ExpectedSourceSha $headSha -ExpectedStageManifestSha256 $($verifiedStage.ManifestSha256)"
     Write-Host ""
     Write-Host "Installer EXE not compiled because -BuildInstaller was not requested."
     exit 0
@@ -2978,6 +3024,8 @@ $provenanceObject = [ordered]@{
     releaseAuthority            = $verifiedAfterCompile.Manifest.releaseAuthority
     authoritativeInstallerAllowed = [bool]$verifiedAfterCompile.Manifest.authoritativeInstallerAllowed
     privatePerRunOutput         = $true
+    defaultOutputLocationUsed   = $defaultOutputLocationUsed
+    outputSource                = $outputSource
     parentAnchoredHandleCreation = $true
     aclProtectedAtCreation      = $true
     builtUtc                    = $compiledUtc
@@ -3002,12 +3050,15 @@ Write-Utf8NoBom -Path $provenanceFile -Content ($provenanceObject | ConvertTo-Js
 Write-Host ""
 Write-Host "BETA RC1 INSTALLER EXE COMPILED (SOURCE-BOUND)"
 Write-Host "Source SHA  : $headSha"
+Write-Host "Output root : $artifactRoot"
+Write-Host "Output src  : $outputSource"
 Write-Host "Manifest ID : $($verifiedAfterCompile.Manifest.manifestId)"
 Write-Host "Setup EXE   : $($setupItem.FullName)"
 Write-Host "SHA-256     : $setupSha256"
 Write-Host "SHA file    : $shaFile"
 Write-Host "Provenance  : $provenanceFile"
 Write-Host "App stage   : $publishDir"
+Write-Host "Verify cmd  : powershell -NoProfile -ExecutionPolicy Bypass -File tools\installer\Build-SalrynBetaRc1Installer.ps1 -VerifyStageOnly -OutputDir `"$artifactRoot`" -Version `"$Version`" -Configuration `"$Configuration`" -ExpectedSourceSha $headSha -ExpectedStageManifestSha256 $($verifiedAfterCompile.ManifestSha256)"
 Write-Host "Packed check: $packedStatus"
 
     exit 0
