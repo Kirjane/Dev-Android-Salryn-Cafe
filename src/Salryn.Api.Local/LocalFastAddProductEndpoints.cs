@@ -57,7 +57,7 @@ internal static class LocalFastAddProductEndpoints
                LocalApiPermissionGuards.RequirePermission(
                    httpContext,
                    sessions,
-                   LocalApiPermissions.InventoryView);
+                   LocalApiPermissions.ProductsFastAdd);
     }
 
     private static IResult ToFastAddErrorResult(Error error)
@@ -69,7 +69,7 @@ internal static class LocalFastAddProductEndpoints
             ErrorType.Conflict => StatusCodes.Status409Conflict,
             ErrorType.Unauthorized => StatusCodes.Status401Unauthorized,
             ErrorType.Forbidden => StatusCodes.Status403Forbidden,
-            _ => StatusCodes.Status400BadRequest
+            _ => StatusCodes.Status500InternalServerError
         };
 
         return Results.Json(

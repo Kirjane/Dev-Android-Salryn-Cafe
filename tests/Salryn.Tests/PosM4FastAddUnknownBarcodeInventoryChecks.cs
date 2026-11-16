@@ -16,6 +16,7 @@ public static class PosM4FastAddUnknownBarcodeInventoryChecks
         string fastAddContracts = ReadRequiredFile(apiLocal, "Contracts", "FastAddProductContracts.cs");
         string fastAddService = ReadRequiredFile(apiLocal, "Services", "FastAddProductApiService.cs");
         string fastAddEndpoints = ReadRequiredFile(apiLocal, "LocalFastAddProductEndpoints.cs");
+        string atomicFastAdd = ReadRequiredFile(repo, "src", "Salryn.Infrastructure", "Data", "Repositories", "Products", "SqliteFastAddProductWriteRepository.cs");
         string appFactory = ReadRequiredFile(apiLocal, "LocalApiApplicationFactory.cs");
         string composition = ReadRequiredFile(repo, "src", "Salryn.Composition.Local", "SalrynLocalComposition.cs");
         string readOnlyEndpoints = ReadRequiredFile(apiLocal, "ReadOnlyEndpointExtensions.cs");
@@ -39,7 +40,9 @@ public static class PosM4FastAddUnknownBarcodeInventoryChecks
         RequireContains(fastAddEndpoints, "/api/products/fast-add", "Fast Add endpoint must be mapped under products fast-add.");
         RequireContains(fastAddEndpoints, "LocalApiPermissions.SalesCreate", "Fast Add must require sales-create permission.");
         RequireContains(fastAddEndpoints, "LocalApiPermissions.ProductsView", "Fast Add must require product permission boundary.");
-        RequireContains(fastAddEndpoints, "LocalApiPermissions.InventoryView", "Fast Add must require inventory permission boundary.");
+        RequireContains(fastAddEndpoints, "LocalApiPermissions.ProductsFastAdd", "Fast Add must require narrow Products.FastAdd permission.");
+        RequireNotContains(fastAddEndpoints, "LocalApiPermissions.InventoryView", "Fast Add must not demand broad Inventory.View.");
+        RequireContains(fastAddEndpoints, "StatusCodes.Status500InternalServerError", "Unexpected failure must be typed HTTP 500.");
         RequireContains(fastAddEndpoints, "StatusCodes.Status409Conflict", "Duplicate barcode must return conflict status.");
         RequireContains(appFactory, "AddSingleton<FastAddProductApiService>()", "Fast Add service must be registered.");
         RequireContains(appFactory, "MapLocalFastAddProductEndpoints()", "Fast Add endpoints must be mapped.");
@@ -49,14 +52,16 @@ public static class PosM4FastAddUnknownBarcodeInventoryChecks
         RequireContains(fastAddService, "FastAdd.UnitRequired", "Fast Add must validate unit.");
         RequireContains(fastAddService, "FastAdd.SellingPriceRequired", "Fast Add must validate selling price greater than zero.");
         RequireContains(fastAddService, "FastAdd.InitialStockQuantityInvalid", "Fast Add must validate initial stock quantity.");
-        RequireContains(fastAddService, "Products.DuplicateBarcode", "Fast Add must reject duplicate active barcode.");
-        RequireContains(fastAddService, "ProductWriteRepository", "Fast Add must use product write repository.");
-        RequireContains(fastAddService, "InventoryWriteRepository", "Fast Add must use inventory write repository.");
-        RequireContains(fastAddService, "StockMovementType.StockIn", "Fast Add must create initial stock through StockIn movement.");
-        RequireContains(fastAddService, "StockOnHand = Quantity.Zero", "Fast Add product creation must avoid double-counting initial stock.");
-        RequireContains(fastAddService, "if (input.InitialStockQuantity.ValueX1000 > 0)", "Fast Add must only create stock movement for positive initial stock.");
-        RequireContains(fastAddService, "ReferenceType = ReferenceType", "Fast Add stock movement must be traceable.");
-        RequireContains(fastAddService, "session.UserId", "Fast Add stock movement must use current cashier/user identity.");
+        RequireContains(fastAddService, "SqliteFastAddProductWriteRepository", "Fast Add must use a dedicated atomic write repository.");
+        RequireContains(fastAddService, "StockOnHand = Quantity.Zero", "Product starts at zero in the atomic write transaction.");
+        RequireContains(fastAddService, "session.UserId", "Operator identity must be passed to atomic write.");
+        RequireContains(atomicFastAdd, "Products.DuplicateBarcode", "Unique active barcode must conflict.");
+        RequireContains(atomicFastAdd, "StockMovementType.StockIn", "Positive initial stock must produce one stock-in movement.");
+        RequireContains(atomicFastAdd, "StockBucketSyncHelper.SyncAvailableStockBucket", "Initial stock must be synchronized in MAIN-STORE.");
+        RequireContains(atomicFastAdd, "transaction.Commit();", "Commit must occur after all mutation and audit writes.");
+        RequireContains(atomicFastAdd, "PRODUCT_CREATED", "Zero-stock and positive-stock creation must both be audited.");
+        RequireContains(atomicFastAdd, "INSERT INTO audit_logs", "Creation audit must be inside transaction.");
+        RequireContains(atomicFastAdd, "ReferenceType", "Stock-in movement must be traceable.");
 
         RequireContains(readOnlyEndpoints, "/api/products/catalog/units", "Checkout must have unit catalog read endpoint.");
         RequireContains(productsApi, "fetchProductUnits", "Product API client must expose units read path.");
@@ -75,6 +80,7 @@ public static class PosM4FastAddUnknownBarcodeInventoryChecks
         RequireContains(checkoutPage, "fastAddUnknownBarcode", "Checkout must call isolated Fast Add API client.");
         RequireContains(checkoutPage, "addProduct(result.product)", "Successful Fast Add must add returned product to cart.");
         RequireContains(checkoutPage, "Duplicate barcode", "Checkout must surface duplicate barcode errors clearly.");
+        RequireContains(checkoutPage, "describeFastAddBackendError(error)", "Fast Add permission failures must not claim cashier checkout is forbidden.");
         RequireContains(checkoutPage, "Stock changes only when checkout completes", "Fast Add must not claim sale stock reduction before checkout.");
         RequireContains(checkoutPage, "submitCheckout", "Checkout submit path must remain available.");
         RequireContains(checkoutPage, "fileReceiptStatus", "POS-M1 receipt file behavior must remain wired.");
@@ -85,6 +91,7 @@ public static class PosM4FastAddUnknownBarcodeInventoryChecks
         RequireNotContains(checkoutPage, "method: \"POST\"", "Checkout must not perform direct POST calls.");
         RequireNotContains(checkoutPage, "Official", "POS-M4 must not add official/RMO/BIR UI claims.");
         RequireNotContains(checkoutPage, "Void Sale", "POS-M4 must not add void/refund behavior.");
+        PilotCashierFastAddAtomicityChecks.Run();
     }
 
     private static DirectoryInfo FindRepositoryRoot()

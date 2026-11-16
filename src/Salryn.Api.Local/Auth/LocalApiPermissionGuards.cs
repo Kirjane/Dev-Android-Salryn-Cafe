@@ -4,6 +4,7 @@ internal static class LocalApiPermissions
 {
     public const string ProductsView = "Products.View";
     public const string ProductsManage = "Products.Manage";
+    public const string ProductsFastAdd = "Products.FastAdd";
     public const string InventoryView = "Inventory.View";
     public const string InventoryAdjust = "Inventory.Adjust";
     public const string SalesViewHistory = "Sales.ViewHistory";

@@ -29,6 +29,7 @@ public static class DefaultSeedData
         public const string UsersManage = "Users.Manage";
         public const string ProductsView = "Products.View";
         public const string ProductsManage = "Products.Manage";
+        public const string ProductsFastAdd = "Products.FastAdd";
         public const string InventoryView = "Inventory.View";
         public const string InventoryAdjust = "Inventory.Adjust";
         public const string SalesCreate = "Sales.Create";
@@ -86,6 +87,7 @@ public static class DefaultSeedData
     {
         Permissions.SettingsManage,
         Permissions.UsersManage,
+        Permissions.ProductsFastAdd,
         Permissions.ProductsView,
         Permissions.ProductsManage,
         Permissions.InventoryView,
@@ -136,6 +138,7 @@ public static class DefaultSeedData
 
     public static IReadOnlyList<string> ManagerPermissions { get; } = new string[]
     {
+        Permissions.ProductsFastAdd,
         Permissions.ProductsView,
         Permissions.ProductsManage,
         Permissions.InventoryView,
@@ -172,6 +175,7 @@ public static class DefaultSeedData
 
     public static IReadOnlyList<string> CashierPermissions { get; } = new string[]
     {
+        Permissions.ProductsFastAdd,
         Permissions.ProductsView,
         Permissions.SalesCreate,
         Permissions.SalesViewHistory,

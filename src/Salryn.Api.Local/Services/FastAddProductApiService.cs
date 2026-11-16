@@ -5,18 +5,19 @@ using Salryn.Core.Common;
 using Salryn.Core.Models;
 using Salryn.Core.ReadModels;
 using Salryn.Core.ValueObjects;
+using Salryn.Infrastructure.Data.Repositories.Products;
 
 namespace Salryn.Api.Local.Services;
 
 public sealed class FastAddProductApiService
 {
-    private const string ReferenceType = "POS_M4_FAST_ADD";
-
     private readonly SalrynLocalComposition _composition;
+    private readonly SqliteFastAddProductWriteRepository _fastAddWriter;
 
     public FastAddProductApiService(SalrynLocalComposition composition)
     {
         _composition = composition ?? throw new ArgumentNullException(nameof(composition));
+        _fastAddWriter = new SqliteFastAddProductWriteRepository(_composition.ConnectionFactory);
     }
 
     public async Task<Result<FastAddProductResponse>> FastAddAsync(
@@ -35,13 +36,6 @@ public sealed class FastAddProductApiService
         }
 
         FastAddInput input = inputResult.Value;
-
-        Result duplicateCheck = await EnsureBarcodeIsNotActiveDuplicateAsync(input.Barcode, cancellationToken)
-            .ConfigureAwait(false);
-        if (duplicateCheck.IsFailure)
-        {
-            return Result<FastAddProductResponse>.Fail(duplicateCheck.ErrorDetail);
-        }
 
         Guid productId = Guid.NewGuid();
         Product product = new()
@@ -69,41 +63,17 @@ public sealed class FastAddProductApiService
             UpdatedAt = null
         };
 
-        Result addProductResult = await _composition.ProductWriteRepository
-            .AddAsync(product, cancellationToken)
+        // One repository transaction owns product, MAIN-STORE bucket, stock-in and creation audit.
+        // A failed stock or audit stage rolls back the product, including for zero-stock creates.
+        Result writeResult = await _fastAddWriter
+            .CreateAsync(product, input.InitialStockQuantity, session.UserId, cancellationToken)
             .ConfigureAwait(false);
-        if (addProductResult.IsFailure)
+        if (writeResult.IsFailure)
         {
-            return Result<FastAddProductResponse>.Fail(addProductResult.ErrorDetail);
+            return Result<FastAddProductResponse>.Fail(writeResult.ErrorDetail);
         }
 
-        bool stockMovementCreated = false;
-        if (input.InitialStockQuantity.ValueX1000 > 0)
-        {
-            StockMovement initialStockMovement = new()
-            {
-                Id = Guid.NewGuid(),
-                ProductId = productId,
-                MovementType = StockMovementType.StockIn,
-                QuantityChange = input.InitialStockQuantity,
-                CostPrice = null,
-                ReferenceType = ReferenceType,
-                ReferenceId = productId,
-                Reason = "POS-M4 Fast Add initial inventory quantity.",
-                UserId = session.UserId,
-                CreatedAt = DateTimeOffset.UtcNow
-            };
-
-            Result stockResult = await _composition.InventoryWriteRepository
-                .AddStockMovementAsync(initialStockMovement, cancellationToken)
-                .ConfigureAwait(false);
-            if (stockResult.IsFailure)
-            {
-                return Result<FastAddProductResponse>.Fail(stockResult.ErrorDetail);
-            }
-
-            stockMovementCreated = true;
-        }
+        bool stockMovementCreated = input.InitialStockQuantity.ValueX1000 > 0;
 
         Result<ProductDetailReadModel?> detailResult = await _composition.ProductReadRepository
             .FindDetailByIdAsync(productId, cancellationToken)
@@ -116,8 +86,8 @@ public sealed class FastAddProductApiService
         if (detailResult.Value is null)
         {
             return Result<FastAddProductResponse>.Fail(Error.Unexpected(
-                "FastAdd.ProductReadbackMissing",
-                "Fast Add created the product but readback failed."));
+                "FastAdd.CreatedButReadbackFailed",
+                "Fast Add committed the product, stock and audit, but readback failed. Refresh before retrying."));
         }
 
         ProductListItemResponse productResponse = ReadModelMapper.ToProductListItem(detailResult.Value);
@@ -130,38 +100,6 @@ public sealed class FastAddProductApiService
             message,
             productResponse,
             stockMovementCreated));
-    }
-
-    private async Task<Result> EnsureBarcodeIsNotActiveDuplicateAsync(
-        Barcode barcode,
-        CancellationToken cancellationToken)
-    {
-        Result<PagedResult<ProductListItemReadModel>> searchResult = await _composition.ProductReadRepository
-            .SearchAsync(
-                new ProductSearchFilter(
-                    barcode.Value,
-                    CategoryId: null,
-                    BrandId: null,
-                    IsActive: true,
-                    IncludeInactive: false,
-                    PageRequest.FirstPage(50)),
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        if (searchResult.IsFailure)
-        {
-            return Result.Fail(searchResult.ErrorDetail);
-        }
-
-        bool duplicate = searchResult.Value.Items.Any(product =>
-            product.IsActive &&
-            string.Equals(product.Barcode, barcode.Value, StringComparison.Ordinal));
-
-        return duplicate
-            ? Result.Fail(Error.Conflict(
-                "Products.DuplicateBarcode",
-                "Barcode is already assigned to another active product."))
-            : Result.Success();
     }
 
     private static Result<FastAddInput> ValidateRequest(FastAddProductRequest request)
@@ -189,18 +127,22 @@ public sealed class FastAddProductApiService
                 "Unit is required."));
         }
 
-        if (request.SellingPrice <= 0m)
+        if (request.SellingPrice <= 0m ||
+            request.SellingPrice > long.MaxValue / 100m ||
+            request.SellingPrice * 100m != decimal.Truncate(request.SellingPrice * 100m))
         {
             return Result<FastAddInput>.Fail(Error.Validation(
                 "FastAdd.SellingPriceRequired",
-                "Selling price must be greater than zero."));
+                "Selling price must be positive and contain no fractional cent."));
         }
 
-        if (request.InitialStockQuantity < 0m)
+        if (request.InitialStockQuantity < 0m ||
+            request.InitialStockQuantity > long.MaxValue / 1000m ||
+            request.InitialStockQuantity * 1000m != decimal.Truncate(request.InitialStockQuantity * 1000m))
         {
             return Result<FastAddInput>.Fail(Error.Validation(
                 "FastAdd.InitialStockQuantityInvalid",
-                "Initial stock quantity cannot be negative."));
+                "Initial stock must be nonnegative with at most three decimal places."));
         }
 
         Result<Quantity> initialStockResult = Quantity.FromUnits(request.InitialStockQuantity);

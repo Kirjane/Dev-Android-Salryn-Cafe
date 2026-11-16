@@ -32,6 +32,17 @@ function exactBarcodeMatch(products: ProductListItem[], barcode: string): Produc
   return products.find((product) => normalizeBarcode(product.barcode) === normalized) ?? null;
 }
 
+export function describeFastAddBackendError(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 401) return "Session expired. Sign in again before using Fast Add.";
+    if (error.status === 403) return "Your role cannot use Fast Add. Ask a manager to check product-creation access.";
+    if (error.status === 409 && error.code === "Products.DuplicateBarcode") return "Duplicate barcode. Refresh products and scan the existing item.";
+    if (error.status === 400) return error.message || "Invalid Fast Add details. Check the name, unit, price and stock.";
+    if (error.status >= 500) return `Fast Add could not be confirmed (${error.code ?? "server error"}). Refresh the catalog before retrying.`;
+  }
+  return describeCheckoutBackendError(error);
+}
+
 export function describeCheckoutBackendError(error: unknown): string {
   if (error instanceof ApiError) {
     const code = error.code ?? "";
@@ -291,7 +302,7 @@ export function CheckoutPage() {
     try {
       const result = await fastAddUnknownBarcode({ productName: fastAddProductName.trim(), barcode: normalizeBarcode(fastAddBarcode), unitId: fastAddUnitId, sellingPrice: toNumber(fastAddSellingPrice), initialStockQuantity: toNumber(fastAddInitialStock) });
       addProduct(result.product); setBarcodeStatus(`${result.product.name} created by Fast Add and added to cart.`); setShowFastAdd(false); setSearch(""); setProductPage(1); notify.success("Product created", "The product was added to the active cart."); await productsQuery.refetch();
-    } catch (error) { const description = describeCheckoutBackendError(error); setFastAddError(description); notify.error("Product was not created", safeNotificationDescription(new Error(description), "Check the required fields and try again.")); }
+    } catch (error) { const description = describeFastAddBackendError(error); setFastAddError(description); notify.error("Product was not created", safeNotificationDescription(new Error(description), "Check the required fields and try again.")); }
     finally { setIsFastAdding(false); focusScanField(); }
   }
 

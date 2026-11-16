@@ -7,6 +7,7 @@ public static class SalrynPermissions
     public const string UsersManage = "Users.Manage";
     public const string ProductsView = "Products.View";
     public const string ProductsManage = "Products.Manage";
+    public const string ProductsFastAdd = "Products.FastAdd";
     public const string InventoryView = "Inventory.View";
     public const string InventoryAdjust = "Inventory.Adjust";
     public const string SalesCreate = "Sales.Create";
