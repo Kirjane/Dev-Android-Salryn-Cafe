@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Data.Sqlite;
@@ -245,6 +247,7 @@ public static class PilotCashierFastAddAtomicityChecks
                     !readerLogin.Permissions.Contains(LocalApiPermissions.InventoryAdjust),
                 "Insufficient-permission login must retain read access but lack Fast Add and broad stock authority.");
             new DatabaseSeeder(composition.ConnectionFactory).SeedDefaultData();
+            AssertSnapshotDetectsCountPreservingMutation(composition);
 
             object validPayload = new
             {
@@ -292,6 +295,8 @@ public static class PilotCashierFastAddAtomicityChecks
 
             Require(Scalar(composition, "SELECT COUNT(*) FROM products WHERE barcode='FASTADD-R2-HTTP';") == productsBefore + 1,
                 "HTTP matrix must persist exactly one product.");
+            Require(Scalar(composition, "SELECT stock_on_hand_x1000 FROM products WHERE barcode='FASTADD-R2-HTTP';") == 4000,
+                "HTTP Fast Add product stock must persist exactly 4.000 units.");
             Require(Scalar(composition, """
                 SELECT COUNT(*) FROM product_stock_buckets b
                 INNER JOIN products p ON p.id=b.product_id
@@ -302,6 +307,10 @@ public static class PilotCashierFastAddAtomicityChecks
                 SELECT COUNT(*) FROM stock_movements sm INNER JOIN products p ON p.id=sm.product_id
                 WHERE p.barcode='FASTADD-R2-HTTP' AND sm.reference_type='POS_M4_FAST_ADD';
                 """) == 1, "HTTP Fast Add must persist one initial-stock movement.");
+            Require(Scalar(composition, """
+                SELECT sm.qty_change_x1000 FROM stock_movements sm INNER JOIN products p ON p.id=sm.product_id
+                WHERE p.barcode='FASTADD-R2-HTTP' AND sm.reference_type='POS_M4_FAST_ADD';
+                """) == 4000, "HTTP Fast Add stock movement must persist exactly 4.000 units.");
             Require(Scalar(composition, """
                 SELECT COUNT(*) FROM audit_logs a INNER JOIN products p ON p.id=a.entity_id
                 WHERE p.barcode='FASTADD-R2-HTTP' AND a.action='PRODUCT_CREATED';
@@ -345,14 +354,98 @@ public static class PilotCashierFastAddAtomicityChecks
             user.GetProperty("permissions").EnumerateArray().Select(x => x.GetString()!).ToArray());
     }
 
-    private static FastAddStateSnapshot Snapshot(SalrynLocalComposition composition) => new(
-        Scalar(composition, "SELECT COUNT(*) FROM products;"),
-        Scalar(composition, "SELECT COUNT(*) FROM product_stock_buckets;"),
-        Scalar(composition, "SELECT COUNT(*) FROM stock_movements WHERE reference_type='POS_M4_FAST_ADD';"),
-        Scalar(composition, "SELECT COUNT(*) FROM audit_logs WHERE action='PRODUCT_CREATED';"));
+    private static FastAddStateSnapshot Snapshot(SalrynLocalComposition composition)
+    {
+        using SqliteConnection connection = Open(composition);
+        return Snapshot(connection, transaction: null);
+    }
+
+    private static FastAddStateSnapshot Snapshot(SqliteConnection connection, SqliteTransaction? transaction) => new(
+        SnapshotRows(connection, transaction, "SELECT * FROM products ORDER BY id;"),
+        SnapshotRows(connection, transaction, "SELECT * FROM product_stock_buckets ORDER BY id;"),
+        SnapshotRows(connection, transaction, "SELECT * FROM stock_movements ORDER BY id;"),
+        SnapshotRows(connection, transaction, "SELECT * FROM audit_logs WHERE action='PRODUCT_CREATED' ORDER BY id;"));
+
+    private static void AssertSnapshotDetectsCountPreservingMutation(SalrynLocalComposition composition)
+    {
+        FastAddStateSnapshot persistedBaseline = Snapshot(composition);
+        using SqliteConnection connection = Open(composition);
+        using SqliteTransaction transaction = connection.BeginTransaction();
+        FastAddStateSnapshot transactionBaseline = Snapshot(connection, transaction);
+        Require(transactionBaseline == persistedBaseline,
+            "Snapshot baseline must encode the same persisted rows inside and outside the rollback transaction.");
+
+        using (SqliteCommand mutate = connection.CreateCommand())
+        {
+            mutate.Transaction = transaction;
+            mutate.CommandText = """
+                UPDATE products
+                SET stock_on_hand_x1000 = stock_on_hand_x1000 + 1000
+                WHERE id = (SELECT id FROM products ORDER BY id LIMIT 1);
+                """;
+            Require(mutate.ExecuteNonQuery() == 1,
+                "Count-preserving negative control requires one disposable product row.");
+        }
+
+        Require(Snapshot(connection, transaction) != transactionBaseline,
+            "Row-content snapshot negative control must detect a stock mutation that preserves every row count.");
+        transaction.Rollback();
+        Require(Snapshot(composition) == persistedBaseline,
+            "Rollback must restore the exact row-content snapshot after the negative control.");
+    }
+
+    private static string SnapshotRows(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        string sql)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        using SqliteDataReader reader = command.ExecuteReader();
+        StringBuilder snapshot = new();
+        while (reader.Read())
+        {
+            snapshot.Append('R');
+            for (int ordinal = 0; ordinal < reader.FieldCount; ordinal++)
+            {
+                AppendToken(snapshot, reader.GetName(ordinal));
+                if (reader.IsDBNull(ordinal))
+                {
+                    snapshot.Append("N;");
+                    continue;
+                }
+
+                object value = reader.GetValue(ordinal);
+                switch (value)
+                {
+                    case byte[] bytes:
+                        snapshot.Append('B');
+                        AppendToken(snapshot, Convert.ToHexString(bytes));
+                        break;
+                    case long integer:
+                        snapshot.Append('I');
+                        AppendToken(snapshot, integer.ToString(CultureInfo.InvariantCulture));
+                        break;
+                    case double real:
+                        snapshot.Append('F');
+                        AppendToken(snapshot, real.ToString("R", CultureInfo.InvariantCulture));
+                        break;
+                    default:
+                        snapshot.Append('S');
+                        AppendToken(snapshot, Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty);
+                        break;
+                }
+            }
+        }
+        return snapshot.ToString();
+    }
+
+    private static void AppendToken(StringBuilder target, string value) =>
+        target.Append(value.Length.ToString(CultureInfo.InvariantCulture)).Append(':').Append(value).Append(';');
 
     private sealed record LoginEvidence(HttpClient Client, Guid UserId, string RoleName, string[] Permissions);
-    private sealed record FastAddStateSnapshot(long Products, long Buckets, long Movements, long Audits);
+    private sealed record FastAddStateSnapshot(string Products, string Buckets, string Movements, string Audits);
 
     private static Product Product(Guid id, string barcode, Guid unitId)
     {
