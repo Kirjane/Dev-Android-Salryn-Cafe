@@ -445,6 +445,9 @@ public static class RoleM4PermissionBoundaryRegressionMatrixChecks
 
         AssertContains(cashierBlock, "Permissions.ProductsView", "Cashier seed must include Products.View.");
         AssertContains(cashierBlock, "Permissions.SalesViewHistory", "Cashier seed must include Sales.ViewHistory.");
+        AssertContains(cashierBlock, "Permissions.SalesVoid", "Engineer-approved cashier role must include completed-sale Sales.Void without Manager approval.");
+        AssertNotContains(cashierBlock, "Permissions.OfficialDocumentRefund", "Cashier void must not grant official-document refunds.");
+        AssertNotContains(cashierBlock, "Permissions.OfficialDocumentVoid", "Cashier Sales.Void must not imply official fiscal document void.");
         AssertNotContains(cashierBlock, "Permissions.InventoryView", "Cashier seed must not include Inventory.View.");
         AssertNotContains(cashierBlock, "Permissions.UsersManage", "Cashier seed must not include Users.Manage.");
         AssertNotContains(cashierBlock, "Permissions.AuditView", "Cashier seed must not include Audit.View.");
