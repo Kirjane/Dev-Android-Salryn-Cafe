@@ -297,13 +297,58 @@ export function CheckoutPage() {
 
   async function handleSubmitFastAdd() {
     if (isFastAdding) return;
-    const validation = validateFastAdd(); if (validation) { setFastAddError(validation); notify.warning("Product was not created", validation); return; }
-    setIsFastAdding(true); setFastAddError(null);
+    const validation = validateFastAdd();
+    if (validation) {
+      setFastAddError(validation);
+      notify.warning("Product was not created", validation);
+      return;
+    }
+
+    setIsFastAdding(true);
+    setFastAddError(null);
+    let result: Awaited<ReturnType<typeof fastAddUnknownBarcode>>;
     try {
-      const result = await fastAddUnknownBarcode({ productName: fastAddProductName.trim(), barcode: normalizeBarcode(fastAddBarcode), unitId: fastAddUnitId, sellingPrice: toNumber(fastAddSellingPrice), initialStockQuantity: toNumber(fastAddInitialStock) });
-      addProduct(result.product); setBarcodeStatus(`${result.product.name} created by Fast Add and added to cart.`); setShowFastAdd(false); setSearch(""); setProductPage(1); notify.success("Product created", "The product was added to the active cart."); await productsQuery.refetch();
-    } catch (error) { const description = describeFastAddBackendError(error); setFastAddError(description); notify.error("Product was not created", safeNotificationDescription(new Error(description), "Check the required fields and try again.")); }
-    finally { setIsFastAdding(false); focusScanField(); }
+      result = await fastAddUnknownBarcode({
+        productName: fastAddProductName.trim(),
+        barcode: normalizeBarcode(fastAddBarcode),
+        unitId: fastAddUnitId,
+        sellingPrice: toNumber(fastAddSellingPrice),
+        initialStockQuantity: toNumber(fastAddInitialStock),
+      });
+    } catch (error) {
+      // This branch only covers the create HTTP request, not post-commit catalog refresh.
+      const description = describeFastAddBackendError(error);
+      setFastAddError(description);
+      notify.error("Fast Add not confirmed", safeNotificationDescription(new Error(description), "Check the product catalog before retrying."));
+      setIsFastAdding(false);
+      focusScanField();
+      return;
+    }
+
+    try {
+      // An OK Fast Add response confirms the product, stock and audit are committed.
+      // Never reclassify a subsequent UI/catalog failure as failed product creation.
+      addProduct(result.product);
+      setBarcodeStatus(`${result.product.name} created by Fast Add and added to cart.`);
+      setShowFastAdd(false);
+      setSearch("");
+      setProductPage(1);
+      notify.success("Product created", "The product was saved and added to the active cart.");
+
+      try {
+        await productsQuery.refetch({ throwOnError: true });
+      } catch {
+        setBarcodeStatus("Product saved and added to cart. Catalog refresh failed; refresh products before another scan.");
+        notify.warning("Catalog refresh unavailable", "Product creation succeeded. Refresh the product list; do not create this barcode again.");
+      }
+    } catch {
+      setShowFastAdd(false);
+      setBarcodeStatus("Fast Add was committed, but cart presentation could not be confirmed. Refresh before retrying.");
+      notify.warning("Product saved; cart needs review", "Refresh the catalog and check the cart before scanning this barcode again.");
+    } finally {
+      setIsFastAdding(false);
+      focusScanField();
+    }
   }
 
   function updateQuantity(productId: string, quantity: number) {
