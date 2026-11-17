@@ -195,6 +195,16 @@ public static class WebA3ShellDesignSystemChecks
 
     private static void ValidateReadOnlyPdfDownloadSource(string source)
     {
+        const string approvedNormalizedSha256 = "E6E88CCB63306EFD6B6AEA98D6A3E12F380360F0D348003C13CAA3B9C7E98C86";
+        string normalizedSource = source.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
+        string actualSha256 = Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(normalizedSource)));
+        if (!string.Equals(actualSha256, approvedNormalizedSha256, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"WEB-A3 PDF helper differs from its reviewed read-only contract (SHA-256 {actualSha256}).");
+        }
+
         RequireContains(source, "fetch(url, {", "PDF helper must download using its provided URL.");
         RequireContains(source, "method: \"GET\"", "PDF download must remain a read-only GET.");
         RequireContains(source, "credentials: \"include\"", "PDF download must use the authenticated session.");
@@ -237,6 +247,7 @@ public static class WebA3ShellDesignSystemChecks
             "\nconst unauthorized = 'type=\"file\"';",
             "\nconst unauthorized = { method: \"POST\" };",
             "\nconst unauthorized = fetch('/other');",
+            "\nURL.createObjectURL(blob);",
         })
         {
             bool rejected = false;
@@ -254,6 +265,25 @@ public static class WebA3ShellDesignSystemChecks
                 throw new InvalidOperationException(
                     "WEB-A3 PDF guard failed to reject a synthetic unauthorized upload or Blob addition.");
             }
+        }
+
+        string postWithGetComment = validSource.Replace(
+            "method: \"GET\",",
+            "method: 'POST', // method: \"GET\"",
+            StringComparison.Ordinal);
+        bool postBypassRejected = false;
+        try
+        {
+            ValidateReadOnlyPdfDownloadSource(postWithGetComment);
+        }
+        catch (InvalidOperationException)
+        {
+            postBypassRejected = true;
+        }
+        if (!postBypassRejected)
+        {
+            throw new InvalidOperationException(
+                "WEB-A3 PDF guard failed to reject POST disguised by an expected GET comment.");
         }
     }
 
