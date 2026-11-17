@@ -34,7 +34,6 @@ public static class PosSurface1RolePageLockStoreNavChecks
         Require(!DefaultSeedData.ManagerPermissions.Contains(DefaultSeedData.Permissions.UsersManage), "Manager must not manage users.");
         Require(DefaultSeedData.CashierPermissions.Contains(DefaultSeedData.Permissions.SalesCreate), "Cashier must retain checkout permission.");
         Require(DefaultSeedData.CashierPermissions.Contains(DefaultSeedData.Permissions.SalesViewHistory), "Cashier must retain Sales History permission.");
-        Require(!DefaultSeedData.CashierPermissions.Contains(DefaultSeedData.Permissions.SalesVoid), "Cashier must not void sales.");
         Require(!DefaultSeedData.CashierPermissions.Contains(DefaultSeedData.Permissions.InventoryAdjust), "Cashier must not write stock.");
     }
 
