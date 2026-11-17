@@ -55,6 +55,9 @@ public static class PosM4FastAddUnknownBarcodeInventoryChecks
         RequireContains(fastAddService, "SqliteFastAddProductWriteRepository", "Fast Add must use a dedicated atomic write repository.");
         RequireContains(fastAddService, "StockOnHand = Quantity.Zero", "Product starts at zero in the atomic write transaction.");
         RequireContains(fastAddService, "session.UserId", "Operator identity must be passed to atomic write.");
+        RequireContains(fastAddService, "GetUnitsAsync(cancellationToken:", "Unit metadata must resolve before transactional Fast Add commit.");
+        RequireContains(fastAddService, "ProductListItemResponse productResponse = new(", "Build success response from committed values, without a fallible postcommit readback.");
+        RequireNotContains(fastAddService, "FindDetailByIdAsync(", "A postcommit product read must not cause a committed Fast Add to be reported as failed.");
         RequireContains(atomicFastAdd, "Products.DuplicateBarcode", "Unique active barcode must conflict.");
         RequireContains(atomicFastAdd, "StockMovementType.StockIn", "Positive initial stock must produce one stock-in movement.");
         RequireContains(atomicFastAdd, "StockBucketSyncHelper.SyncAvailableStockBucket", "Initial stock must be synchronized in MAIN-STORE.");
@@ -81,6 +84,8 @@ public static class PosM4FastAddUnknownBarcodeInventoryChecks
         RequireContains(checkoutPage, "addProduct(result.product)", "Successful Fast Add must add returned product to cart.");
         RequireContains(checkoutPage, "Duplicate barcode", "Checkout must surface duplicate barcode errors clearly.");
         RequireContains(checkoutPage, "describeFastAddBackendError(error)", "Fast Add permission failures must not claim cashier checkout is forbidden.");
+        RequireContains(checkoutPage, "refreshAfterCommittedFastAdd(", "Optional catalog refresh must not turn committed product creation into an error.");
+        RequireContains(checkoutPage, "Fast Add was committed", "Postcommit cart presentation failure must be disclosed as committed.");
         RequireContains(checkoutPage, "Stock changes only when checkout completes", "Fast Add must not claim sale stock reduction before checkout.");
         RequireContains(checkoutPage, "submitCheckout", "Checkout submit path must remain available.");
         RequireContains(checkoutPage, "fileReceiptStatus", "POS-M1 receipt file behavior must remain wired.");
