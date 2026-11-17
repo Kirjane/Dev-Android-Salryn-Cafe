@@ -37,6 +37,24 @@ public sealed class FastAddProductApiService
 
         FastAddInput input = inputResult.Value;
 
+        // Resolve display metadata BEFORE the atomic write. A post-commit catalog
+        // or product readback must never turn a committed stock change into a false failure.
+        Result<IReadOnlyList<UnitReadModel>> unitsResult = await _composition.CatalogReadRepository
+            .GetUnitsAsync(cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+        if (unitsResult.IsFailure)
+        {
+            return Result<FastAddProductResponse>.Fail(unitsResult.ErrorDetail);
+        }
+
+        UnitReadModel? unit = unitsResult.Value.FirstOrDefault(value => value.Id == input.UnitId);
+        if (unit is null)
+        {
+            return Result<FastAddProductResponse>.Fail(Error.Validation(
+                "FastAdd.UnitUnavailable",
+                "The selected unit is unavailable. Refresh the unit list before submitting."));
+        }
+
         Guid productId = Guid.NewGuid();
         Product product = new()
         {
@@ -75,22 +93,24 @@ public sealed class FastAddProductApiService
 
         bool stockMovementCreated = input.InitialStockQuantity.ValueX1000 > 0;
 
-        Result<ProductDetailReadModel?> detailResult = await _composition.ProductReadRepository
-            .FindDetailByIdAsync(productId, cancellationToken)
-            .ConfigureAwait(false);
-        if (detailResult.IsFailure)
-        {
-            return Result<FastAddProductResponse>.Fail(detailResult.ErrorDetail);
-        }
+        // The atomic repository has committed before returning Success. Build the cart
+        // response from those exact committed values and unit data validated above,
+        // without another fallible read after commit.
+        ProductListItemResponse productResponse = new(
+            productId,
+            product.Sku,
+            product.Barcode.Value.Value,
+            product.Name,
+            unit.Name,
+            null,
+            null,
+            product.SellingPrice.ToPesos(),
+            null,
+            input.InitialStockQuantity.ToUnits(),
+            product.ReorderLevel.ToUnits(),
+            product.TrackStock,
+            product.IsActive);
 
-        if (detailResult.Value is null)
-        {
-            return Result<FastAddProductResponse>.Fail(Error.Unexpected(
-                "FastAdd.CreatedButReadbackFailed",
-                "Fast Add committed the product, stock and audit, but readback failed. Refresh before retrying."));
-        }
-
-        ProductListItemResponse productResponse = ReadModelMapper.ToProductListItem(detailResult.Value);
         string message = stockMovementCreated
             ? "Product created, initial stock recorded, and product is ready for cart add."
             : "Product created with zero initial stock. Add stock before checkout if stock tracking blocks sale.";
