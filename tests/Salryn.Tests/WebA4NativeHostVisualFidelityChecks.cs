@@ -128,6 +128,9 @@ public static class WebA4NativeHostVisualFidelityChecks
                 Path.Combine("api", "storeSettings.ts"),
                 Path.Combine("pages", "BackupRestorePage.tsx"),
                 Path.Combine("api", "backups.ts"),
+                // The existing authenticated read-only PDF response downloader is vetted
+                // below. Exclude ONLY this exact helper from the broad upload token scan.
+                Path.Combine("utils", "documentPdf.ts"),
             }).Replace("No ESC/POS", string.Empty, StringComparison.Ordinal);
 
         string[] alwaysForbiddenTokens =
@@ -185,6 +188,10 @@ public static class WebA4NativeHostVisualFidelityChecks
                 $"WEB-A4 must not add forbidden capability outside store logo branding: {token}");
         }
 
+        string pdfDownloadSource = ReadRequiredFile(webSrc, "utils", "documentPdf.ts");
+        ValidateReadOnlyPdfDownloadSource(pdfDownloadSource);
+        AssertPdfDownloadExceptionRejectsSyntheticUploads(pdfDownloadSource);
+
         // --- No fake module data copied from the visual reference screenshots ---
         string[] fakeDataMarkers =
         {
@@ -199,6 +206,65 @@ public static class WebA4NativeHostVisualFidelityChecks
         foreach (string marker in fakeDataMarkers)
         {
             RequireNotContains(combinedWebSource, marker, $"WEB-A4 must not embed fake module data: {marker}");
+        }
+    }
+
+    private static void ValidateReadOnlyPdfDownloadSource(string source)
+    {
+        RequireContains(source, "fetch(url, {", "PDF helper must download using its provided URL.");
+        RequireContains(source, "method: \"GET\"", "PDF download must remain a read-only GET.");
+        RequireContains(source, "credentials: \"include\"", "PDF download must use the authenticated session.");
+        RequireContains(source, "if (!response.ok)", "PDF download must validate the HTTP status.");
+        RequireContains(source, "const blob = await response.blob();", "PDF response may be read into a Blob.");
+        RequireContains(source, "URL.createObjectURL(blob)", "PDF helper must use its response Blob for the download.");
+        RequireContains(source, "URL.revokeObjectURL(objectUrl)", "PDF helper must release its temporary object URL.");
+
+        if (source.Split("fetch(", StringSplitOptions.None).Length != 2)
+        {
+            throw new InvalidOperationException("WEB-A4 PDF exception permits exactly one fetch call.");
+        }
+
+        foreach (string token in new[] { "multipart/form-data", "/upload", "FormData(", "type=\"file\"" })
+        {
+            RequireNotContains(source, token, $"WEB-A4 PDF helper must not contain upload capability: {token}");
+        }
+        RequireNotContains(source.ToLowerInvariant(), "method: \"post\"", "WEB-A4 PDF helper must never POST.");
+
+        string withoutAllowedBlobOperations = source
+            .Replace("const blob = await response.blob();", string.Empty, StringComparison.Ordinal)
+            .Replace("URL.createObjectURL(blob)", string.Empty, StringComparison.Ordinal);
+        RequireNotContains(withoutAllowedBlobOperations.ToLowerInvariant(), "blob",
+            "WEB-A4 PDF exception must not authorize additional Blob operations.");
+    }
+
+    private static void AssertPdfDownloadExceptionRejectsSyntheticUploads(string validSource)
+    {
+        foreach (string forbiddenAddition in new[]
+        {
+            "\nconst unauthorized = await response.blob();",
+            "\nconst unauthorized = new Blob();",
+            "\nconst unauthorized = new FormData();",
+            "\nconst unauthorized = '/upload';",
+            "\nconst unauthorized = 'type=\"file\"';",
+            "\nconst unauthorized = { method: \"POST\" };",
+            "\nconst unauthorized = fetch('/other');",
+        })
+        {
+            bool rejected = false;
+            try
+            {
+                ValidateReadOnlyPdfDownloadSource(validSource + forbiddenAddition);
+            }
+            catch (InvalidOperationException)
+            {
+                rejected = true;
+            }
+
+            if (!rejected)
+            {
+                throw new InvalidOperationException(
+                    "WEB-A4 PDF guard failed to reject a synthetic unauthorized upload or Blob addition.");
+            }
         }
     }
 
@@ -218,16 +284,18 @@ public static class WebA4NativeHostVisualFidelityChecks
         IEnumerable<string> relativeExcludeSuffixes)
     {
         string[] excludes = relativeExcludeSuffixes
-            .Select(x => x.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar))
+            .Select(x => Path.GetFullPath(Path.Combine(
+                root,
+                x.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar))))
             .ToArray();
         IEnumerable<string> files = Directory
             .GetFiles(root, "*.*", searchOption)
             .Where(path => extensions.Any(ext => path.EndsWith(ext, StringComparison.OrdinalIgnoreCase)))
             .Where(path =>
             {
-                foreach (string suffix in excludes)
+                foreach (string excludedFile in excludes)
                 {
-                    if (path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                    if (string.Equals(Path.GetFullPath(path), excludedFile, StringComparison.OrdinalIgnoreCase))
                     {
                         return false;
                     }
