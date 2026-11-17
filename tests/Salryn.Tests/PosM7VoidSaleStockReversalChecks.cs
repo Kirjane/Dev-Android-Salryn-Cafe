@@ -11,6 +11,7 @@ using Salryn.Core.ValueObjects;
 using Salryn.Infrastructure.Data;
 using Salryn.Infrastructure.Data.Bootstrap;
 using Salryn.Infrastructure.Data.Migrations;
+using Salryn.Infrastructure.Data.Seeding;
 using Salryn.Infrastructure.Paths;
 
 namespace Salryn.Tests;
@@ -32,6 +33,51 @@ public static class PosM7VoidSaleStockReversalChecks
             LocalApiSession session = RequireValue(sessions.LoginAsync(new LoginRequest("admin", "StrongAdmin123!"))
                 .GetAwaiter().GetResult(), "login");
             Require(session.Permissions.Contains(SalrynPermissions.SalesVoid), "Admin session must carry Sales.Void.");
+
+            // Engineer 2026-11-17: Cashier can void any Completed sale without Manager
+            // pre-approval. The existing backend still requires a reason and audit.
+            Require(DefaultSeedData.CashierPermissions.Contains(SalrynPermissions.SalesVoid),
+                "Cashier seed must grant Sales.Void.");
+            Require(!DefaultSeedData.CashierPermissions.Contains(SalrynPermissions.OfficialDocumentVoid) &&
+                    !DefaultSeedData.CashierPermissions.Contains(SalrynPermissions.OfficialDocumentRefund) &&
+                    !DefaultSeedData.CashierPermissions.Contains(SalrynPermissions.InventoryAdjust),
+                "Cashier void must not imply official-document refund or inventory adjustment authority.");
+            Guid cashierRoleId = Guid.Parse(DefaultSeedData.CashierRoleId);
+            Require(GetScalar(composition,
+                "SELECT COUNT(*) FROM role_permissions WHERE role_id=$id AND permission='Sales.Void'", cashierRoleId) == 1,
+                "Fresh installation must persist cashier Sales.Void once.");
+
+            // Recreate an old installed-role state using ONLY the disposable test DB.
+            // Standard startup seeding should restore the new bounded permission
+            // without removing a historically customized permission.
+            using (SqliteConnection upgrade = new($"Data Source={composition.DbPaths.DatabasePath}"))
+            {
+                upgrade.Open();
+                using SqliteCommand change = upgrade.CreateCommand();
+                change.CommandText = """
+                    DELETE FROM role_permissions WHERE role_id=$cashier AND permission='Sales.Void';
+                    INSERT OR IGNORE INTO role_permissions (id, role_id, permission, created_at)
+                    VALUES ($newId, $cashier, 'Custom.LocalPolicy', $at);
+                    """;
+                change.Parameters.AddWithValue("$cashier", DefaultSeedData.CashierRoleId);
+                change.Parameters.AddWithValue("$newId", Guid.NewGuid().ToString("D"));
+                change.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O"));
+                change.ExecuteNonQuery();
+            }
+            new DatabaseSeeder(composition.ConnectionFactory).SeedDefaultData();
+            Require(GetScalar(composition,
+                "SELECT COUNT(*) FROM role_permissions WHERE role_id=$id AND permission='Sales.Void'", cashierRoleId) == 1,
+                "Existing-role reseed must restore exactly one cashier Sales.Void grant.");
+            Require(GetScalar(composition,
+                "SELECT COUNT(*) FROM role_permissions WHERE role_id=$id AND permission='Custom.LocalPolicy'", cashierRoleId) == 1,
+                "Existing-role reseed must retain local custom permissions.");
+            Require(GetScalar(composition,
+                """
+                SELECT COUNT(*) FROM role_permissions WHERE role_id=$id
+                  AND permission IN ('Products.Manage', 'Inventory.Adjust',
+                                     'OfficialDocument.Void', 'OfficialDocument.Refund')
+                """, cashierRoleId) == 0,
+                "Cashier Sales.Void must not grant privileged catalog/stock/fiscal permissions.");
 
             var categories = RequireValue(composition.CatalogReadRepository.GetCategoriesAsync().GetAwaiter().GetResult(), "categories");
             var brands = RequireValue(composition.CatalogReadRepository.GetBrandsAsync().GetAwaiter().GetResult(), "brands");
@@ -157,6 +203,8 @@ public static class PosM7VoidSaleStockReversalChecks
         string endpoints = File.ReadAllText(Path.Combine(root.FullName, "src", "Salryn.Api.Local", "LocalSaleVoidEndpoints.cs"));
         string page = File.ReadAllText(Path.Combine(root.FullName, "src", "Salryn.App.Web", "src", "pages", "SalesHistoryPage.tsx"));
         Require(endpoints.Contains("LocalApiPermissions.SalesVoid", StringComparison.Ordinal), "Void endpoint must require Sales.Void.");
+        Require(!endpoints.Contains("RequireManager", StringComparison.OrdinalIgnoreCase),
+            "Completed-sale Cashier void must not require Manager pre-approval.");
         Require(page.Contains("Reprint blocked: VOIDED", StringComparison.Ordinal), "Voided sale reprint behavior must be explicit.");
         Require(page.Contains("Void reason", StringComparison.Ordinal), "Void UI must require a reason.");
         string service = File.ReadAllText(Path.Combine(root.FullName, "src", "Salryn.Api.Local", "Services", "SaleVoidApiService.cs"));
