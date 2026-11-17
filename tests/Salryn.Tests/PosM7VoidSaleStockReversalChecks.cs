@@ -256,21 +256,41 @@ public static class PosM7VoidSaleStockReversalChecks
             Status = SaleStatus.Completed,
             ReceiptSnapshot = "R2 closed-shift receipt"
         };
+        long stockBeforeHistorical = GetScalar(composition, "SELECT stock_on_hand_x1000 FROM products WHERE id=$id", product.Id);
         AddSale(composition, historicalSale, product, unitName, one,
             new Payment { SaleId = historicalSaleId, Method = PaymentMethod.Cash, Amount = Money.FromCents(1500) });
-        long historicalPayments = GetScalar(composition, "SELECT COUNT(*) FROM payments WHERE sale_id=$id", historicalSaleId);
+        Require(GetScalar(composition, "SELECT stock_on_hand_x1000 FROM products WHERE id=$id", product.Id) == stockBeforeHistorical - 1000,
+            "Historical sale fixture must deduct stock once before void.");
+        string historicalReceipt = GetText(composition, "SELECT receipt_snapshot FROM sales WHERE id=$id", historicalSaleId);
+        string historicalPayment = PaymentSignature(composition, historicalSaleId);
         SaleVoidResponse historicalVoid = RequireValue(service.VoidAsync(
             historicalSaleId, new SaleVoidRequest("Historical closed-shift correction"), cashierSession)
             .GetAwaiter().GetResult(), "historical closed-shift void");
         Require(historicalVoid.Sale.Status == "Voided", "Closed historical shift sale must be voidable by Cashier.");
+        Require(historicalVoid.Sale.ReceiptSnapshot == historicalReceipt &&
+                GetText(composition, "SELECT receipt_snapshot FROM sales WHERE id=$id", historicalSaleId) == historicalReceipt,
+            "Historical void must preserve the exact receipt snapshot.");
         Require(GetText(composition, "SELECT voided_by_user_id FROM sales WHERE id=$id", historicalSaleId) == cashierSession.UserId.ToString("D"),
             "Historical void must identify current Cashier.");
-        Require(GetScalar(composition, "SELECT COUNT(*) FROM payments WHERE sale_id=$id", historicalSaleId) == historicalPayments,
-            "Historical void must preserve payment history.");
+        Require(PaymentSignature(composition, historicalSaleId) == historicalPayment,
+            "Historical void must preserve payment identity, method and amount.");
+        Require(GetScalar(composition, "SELECT stock_on_hand_x1000 FROM products WHERE id=$id", product.Id) == stockBeforeHistorical,
+            "Historical void must restore stock exactly once.");
+        Require(GetScalar(composition, "SELECT COUNT(*) FROM stock_movements WHERE reference_id=$id AND movement_type=2", historicalSaleId) == 1,
+            "Historical void must persist exactly one VoidSale stock movement.");
         Require(GetScalar(composition, "SELECT COUNT(*) FROM cash_drawer_events WHERE source_id=$id AND event_type='CashRefund'", historicalSaleId) == 0,
             "Historical void must not fabricate a cash refund.");
         Require(GetScalar(composition, "SELECT COUNT(*) FROM cash_drawer_events WHERE source_id=$id AND event_type='CashSaleNet'", historicalSaleId) == 1,
             "Historical cash-sale drawer event must remain preserved.");
+        Require(GetText(composition, "SELECT user_id FROM audit_logs WHERE entity_id=$id AND action='SALE_VOIDED'", historicalSaleId) == cashierSession.UserId.ToString("D"),
+            "Historical void audit must identify the acting Cashier.");
+        VoidScenarioSnapshot historicalAfterVoid = SnapshotVoidScenario(composition, historicalSaleId, product.Id);
+        Result<SaleVoidResponse> historicalReplay = service.VoidAsync(
+            historicalSaleId, new SaleVoidRequest("Historical replay"), cashierSession).GetAwaiter().GetResult();
+        Require(historicalReplay.IsFailure && historicalReplay.ErrorDetail.Code == "Sales.NotVoidable",
+            "Historical void replay must fail as already voided.");
+        Require(SnapshotVoidScenario(composition, historicalSaleId, product.Id) == historicalAfterVoid,
+            "Historical void replay must not change stock, AR, payments, receipt, audit or drawer state.");
 
         Guid customerId = Guid.NewGuid();
         using (SqliteConnection connection = new($"Data Source={composition.DbPaths.DatabasePath}"))
@@ -308,27 +328,45 @@ public static class PosM7VoidSaleStockReversalChecks
             Status = SaleStatus.Completed,
             ReceiptSnapshot = "R2 credit receipt"
         };
+        long stockBeforeCredit = GetScalar(composition, "SELECT stock_on_hand_x1000 FROM products WHERE id=$id", product.Id);
         AddSale(composition, creditSale, product, unitName, one,
             new Payment { SaleId = creditSaleId, Method = PaymentMethod.AccountsReceivable, Amount = Money.FromCents(1500) });
+        Require(GetScalar(composition, "SELECT stock_on_hand_x1000 FROM products WHERE id=$id", product.Id) == stockBeforeCredit - 1000,
+            "AR sale fixture must deduct stock once before void.");
         Require(GetScalar(composition, "SELECT COUNT(*) FROM accounts_receivable_entries WHERE sale_id=$id AND entry_type='CreditSale'", creditSaleId) == 1,
             "Credit fixture must create one receivable debit.");
-        long creditPayments = GetScalar(composition, "SELECT COUNT(*) FROM payments WHERE sale_id=$id", creditSaleId);
+        string creditReceipt = GetText(composition, "SELECT receipt_snapshot FROM sales WHERE id=$id", creditSaleId);
+        string creditPayment = PaymentSignature(composition, creditSaleId);
         SaleVoidResponse creditVoid = RequireValue(service.VoidAsync(
             creditSaleId, new SaleVoidRequest("Uncollected credit sale cancelled"), cashierSession)
             .GetAwaiter().GetResult(), "credit sale void");
         Require(creditVoid.Sale.Status == "Voided", "Uncollected AR sale must be voidable by Cashier.");
+        Require(creditVoid.Sale.ReceiptSnapshot == creditReceipt &&
+                GetText(composition, "SELECT receipt_snapshot FROM sales WHERE id=$id", creditSaleId) == creditReceipt,
+            "AR void must preserve the exact receipt snapshot.");
         Require(GetScalar(composition, "SELECT COUNT(*) FROM accounts_receivable_entries WHERE sale_id=$id AND entry_type='SaleReversal'", creditSaleId) == 1,
             "AR void must create exactly one receivable reversal.");
         Require(GetScalar(composition, "SELECT balance_after_cents FROM accounts_receivable_entries WHERE sale_id=$id AND entry_type='SaleReversal'", creditSaleId) == 0,
             "AR void must return customer balance to zero.");
-        Require(GetScalar(composition, "SELECT COUNT(*) FROM payments WHERE sale_id=$id", creditSaleId) == creditPayments,
-            "AR void must preserve original payment history.");
+        Require(PaymentSignature(composition, creditSaleId) == creditPayment,
+            "AR void must preserve payment identity, method and amount.");
+        Require(GetScalar(composition, "SELECT stock_on_hand_x1000 FROM products WHERE id=$id", product.Id) == stockBeforeCredit,
+            "AR void must restore stock exactly once.");
+        Require(GetScalar(composition, "SELECT COUNT(*) FROM stock_movements WHERE reference_id=$id AND movement_type=2", creditSaleId) == 1,
+            "AR void must persist exactly one VoidSale stock movement.");
         Require(GetScalar(composition, "SELECT COUNT(*) FROM cash_drawer_events WHERE source_id=$id AND event_type='CashRefund'", creditSaleId) == 0,
             "AR void must not fabricate a cash refund.");
         Require(GetScalar(composition, "SELECT COUNT(*) FROM audit_logs WHERE entity_id=$id AND action='SALE_VOIDED'", creditSaleId) == 1,
             "AR void must create one Cashier-attributed audit.");
         Require(GetText(composition, "SELECT user_id FROM audit_logs WHERE entity_id=$id AND action='SALE_VOIDED'", creditSaleId) == cashierSession.UserId.ToString("D"),
             "AR void audit must identify the acting Cashier.");
+        VoidScenarioSnapshot creditAfterVoid = SnapshotVoidScenario(composition, creditSaleId, product.Id);
+        Result<SaleVoidResponse> creditReplay = service.VoidAsync(
+            creditSaleId, new SaleVoidRequest("AR replay"), cashierSession).GetAwaiter().GetResult();
+        Require(creditReplay.IsFailure && creditReplay.ErrorDetail.Code == "Sales.NotVoidable",
+            "AR void replay must fail as already voided.");
+        Require(SnapshotVoidScenario(composition, creditSaleId, product.Id) == creditAfterVoid,
+            "AR void replay must not change stock, AR, payments, receipt, audit or drawer state.");
 
         Console.WriteLine("[VOID R2] cross-operator + closed historical shift + uncollected AR sale PASS; payments/receipts preserved, no CashRefund, stock and AR reversed exactly once.");
     }
@@ -378,6 +416,39 @@ public static class PosM7VoidSaleStockReversalChecks
         command.Parameters.AddWithValue("$id", id.ToString("D"));
         return Convert.ToInt64(command.ExecuteScalar());
     }
+
+    private static string PaymentSignature(SalrynLocalComposition composition, Guid saleId) =>
+        GetText(composition,
+            "SELECT group_concat(id || '|' || method || '|' || amount_cents, ';') FROM payments WHERE sale_id=$id ORDER BY id",
+            saleId);
+
+    private static VoidScenarioSnapshot SnapshotVoidScenario(
+        SalrynLocalComposition composition, Guid saleId, Guid productId) => new(
+            GetScalar(composition, "SELECT stock_on_hand_x1000 FROM products WHERE id=$id", productId),
+            PaymentSignature(composition, saleId),
+            GetText(composition, "SELECT receipt_snapshot FROM sales WHERE id=$id", saleId),
+            GetScalar(composition, "SELECT COUNT(*) FROM stock_movements WHERE reference_id=$id AND movement_type=2", saleId),
+            GetText(composition, """
+                SELECT group_concat(id || '|' || entry_type || '|' || debit_cents || '|' || credit_cents || '|' || balance_after_cents, ';')
+                FROM accounts_receivable_entries WHERE sale_id=$id ORDER BY id
+                """, saleId),
+            GetText(composition, """
+                SELECT group_concat(id || '|' || user_id || '|' || action || '|' || COALESCE(reason,'') || '|' || COALESCE(new_value_json,''), ';')
+                FROM audit_logs WHERE entity_id=$id AND action='SALE_VOIDED' ORDER BY id
+                """, saleId),
+            GetText(composition, """
+                SELECT group_concat(id || '|' || event_type || '|' || direction || '|' || amount_cents || '|' || source_type || '|' || actor_user_id || '|' || method, ';')
+                FROM cash_drawer_events WHERE source_id=$id ORDER BY id
+                """, saleId));
+
+    private sealed record VoidScenarioSnapshot(
+        long StockQuantity,
+        string Payments,
+        string ReceiptSnapshot,
+        long VoidMovements,
+        string ArEntries,
+        string VoidAudits,
+        string DrawerEvents);
 
     private static void RunSourceGuards()
     {

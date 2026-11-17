@@ -42,6 +42,7 @@ public static class LpiP1IntegrityReproductionChecks
 
     public static async Task RunAsync()
     {
+        AssertAuditTimestampComparisonControls();
         string root = Path.Combine(Path.GetTempPath(), "salryn-lpi-p1-integrity-" + Guid.NewGuid().ToString("N"));
         try
         {
@@ -445,9 +446,12 @@ public static class LpiP1IntegrityReproductionChecks
                     current.GetProperty("PreviousOutstandingBalanceCents").GetInt64() == 200_000 &&
                     current.GetProperty("NewOutstandingBalanceCents").GetInt64() == 100_000 &&
                     current.GetProperty("AppliedApLedgerAmountCents").GetInt64() == 100_000 &&
-                    current.GetProperty("ApLedgerReference").GetString() == pendingPayment.PaymentNumber &&
-                    current.GetProperty("SettlementTimestamp").GetString() == auditReader.GetString(3),
+                    current.GetProperty("ApLedgerReference").GetString() == pendingPayment.PaymentNumber,
                 "Partial settlement audit must preserve complete transaction identity, custody, and before/after accounting values.");
+            RequireSameAuditInstant(
+                current.GetProperty("SettlementTimestamp").GetString(),
+                auditReader.GetString(3),
+                "SettlementTimestamp");
             Require(!auditReader.Read(), "Settlement replay must not append a second audit event.");
         }
 
@@ -4457,6 +4461,42 @@ public static class LpiP1IntegrityReproductionChecks
             throw new InvalidOperationException($"{area} failed [{result.ErrorDetail.Code}]: {result.ErrorDetail.Message}");
         }
         return result.Value;
+    }
+
+    private static void AssertAuditTimestampComparisonControls()
+    {
+        const string jsonTimestamp = "2026-11-17T12:00:00.123456+00:00";
+        const string sqliteTimestamp = "2026-11-17T12:00:00.1234560+00:00";
+        const string oneTickLater = "2026-11-17T12:00:00.1234561+00:00";
+
+        Require(AuditTimestampsMatch(jsonTimestamp, sqliteTimestamp),
+            "Timestamp positive control must accept equivalent instants with trimmed fractional zeroes.");
+        Require(!AuditTimestampsMatch(jsonTimestamp, oneTickLater),
+            "Timestamp negative control must reject a one-tick audit mismatch.");
+    }
+
+    private static void RequireSameAuditInstant(string? payloadValue, string persistedValue, string fieldName)
+    {
+        if (!AuditTimestampsMatch(payloadValue, persistedValue))
+        {
+            throw new InvalidOperationException(
+                $"Audit field {fieldName} instant mismatch: payload='{payloadValue ?? "<null>"}', persisted='{persistedValue}'.");
+        }
+    }
+
+    private static bool AuditTimestampsMatch(string? left, string? right)
+    {
+        return DateTimeOffset.TryParse(
+                   left,
+                   System.Globalization.CultureInfo.InvariantCulture,
+                   System.Globalization.DateTimeStyles.RoundtripKind,
+                   out DateTimeOffset leftInstant) &&
+               DateTimeOffset.TryParse(
+                   right,
+                   System.Globalization.CultureInfo.InvariantCulture,
+                   System.Globalization.DateTimeStyles.RoundtripKind,
+                   out DateTimeOffset rightInstant) &&
+               leftInstant.UtcDateTime.Ticks == rightInstant.UtcDateTime.Ticks;
     }
 
     private static T RequireValue<T>(T? value, string area) where T : class

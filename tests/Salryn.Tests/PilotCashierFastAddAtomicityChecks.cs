@@ -1,9 +1,12 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Data.Sqlite;
 using Salryn.Api.Local;
 using Salryn.Api.Local.Auth;
+using Salryn.Api.Local.Contracts;
+using Salryn.Api.Local.Services;
 using Salryn.Composition.Local;
 using Salryn.Core.Models;
 using Salryn.Core.Security;
@@ -170,9 +173,28 @@ public static class PilotCashierFastAddAtomicityChecks
 
     private static async Task RunHttpMatrixAsync(
         SalrynLocalComposition composition,
-        Guid operatorId,
+        Guid adminUserId,
         Guid unitId)
     {
+        const string cashierUsername = "fastadd_http_cashier";
+        const string cashierPassword = "FastAddCashier123!";
+        const string readerUsername = "fastadd_http_reader";
+        const string readerPassword = "FastAddReader123!";
+        Guid cashierRoleId = Guid.Parse(DefaultSeedData.CashierRoleId);
+        UserAdminApiService userAdmin = new(composition);
+        Require((await userAdmin.CreateUserAsync(new CreateUserApiRequest(
+            cashierUsername, "Fast Add HTTP Cashier", cashierPassword, cashierPassword,
+            cashierRoleId, true), adminUserId).ConfigureAwait(false)).IsSuccess,
+            "Persisted Fast Add Cashier creation failed.");
+        Require((await userAdmin.CreateUserAsync(new CreateUserApiRequest(
+            readerUsername, "Fast Add HTTP Reader", readerPassword, readerPassword,
+            cashierRoleId, true), adminUserId).ConfigureAwait(false)).IsSuccess,
+            "Persisted insufficient-permission user creation failed.");
+        Guid cashierUserId = Guid.Parse(ScalarText(composition,
+            "SELECT id FROM users WHERE username='fastadd_http_cashier';"));
+        Guid readerUserId = Guid.Parse(ScalarText(composition,
+            "SELECT id FROM users WHERE username='fastadd_http_reader';"));
+
         InMemoryLocalApiSessionStore sessionStore = new();
         await using WebApplication app = await LocalApiApplicationFactory.CreateAsync(
             new[] { "--dev" },
@@ -195,29 +217,34 @@ public static class PilotCashierFastAddAtomicityChecks
             Require(!string.IsNullOrWhiteSpace(boundUrl), "Fast Add HTTP host did not bind a loopback port.");
             Uri baseAddress = new(boundUrl!);
 
-            LocalApiSession cashier = sessionStore.Create(new AuthenticatedUserReadModel(
-                operatorId,
-                "fastadd-http-cashier",
-                "Fast Add HTTP Cashier",
-                "Cashier",
-                UserStatus.Active,
-                new[]
-                {
-                    LocalApiPermissions.SalesCreate,
-                    LocalApiPermissions.ProductsView,
-                    LocalApiPermissions.ProductsFastAdd
-                }));
-            LocalApiSession unauthorized = sessionStore.Create(new AuthenticatedUserReadModel(
-                operatorId,
-                "fastadd-http-reader",
-                "Fast Add HTTP Reader",
-                "Custom",
-                UserStatus.Active,
-                new[] { LocalApiPermissions.ProductsView }));
-
             using HttpClient anonymousClient = new() { BaseAddress = baseAddress };
-            using HttpClient cashierClient = ClientFor(baseAddress, cashier);
-            using HttpClient unauthorizedClient = ClientFor(baseAddress, unauthorized);
+            var cashierLogin = await LoginClientAsync(baseAddress, cashierUsername, cashierPassword).ConfigureAwait(false);
+            using HttpClient cashierClient = cashierLogin.Client;
+            Require(cashierLogin.UserId == cashierUserId && cashierLogin.RoleName == "Cashier",
+                "Normal login must authenticate the persisted Cashier identity and role.");
+            Require(cashierLogin.Permissions.Contains(LocalApiPermissions.ProductsFastAdd) &&
+                    cashierLogin.Permissions.Contains(LocalApiPermissions.ProductsView) &&
+                    !cashierLogin.Permissions.Contains(LocalApiPermissions.ProductsManage) &&
+                    !cashierLogin.Permissions.Contains(LocalApiPermissions.InventoryAdjust),
+                "Persisted Cashier login must carry bounded Fast Add without broad catalog/stock authority.");
+
+            using (SqliteConnection connection = Open(composition))
+            {
+                using SqliteCommand removeFastAdd = connection.CreateCommand();
+                removeFastAdd.CommandText = "DELETE FROM role_permissions WHERE role_id=$role AND permission='Products.FastAdd';";
+                removeFastAdd.Parameters.AddWithValue("$role", DefaultSeedData.CashierRoleId);
+                removeFastAdd.ExecuteNonQuery();
+            }
+            var readerLogin = await LoginClientAsync(baseAddress, readerUsername, readerPassword).ConfigureAwait(false);
+            using HttpClient unauthorizedClient = readerLogin.Client;
+            Require(readerLogin.UserId == readerUserId && readerLogin.RoleName == "Cashier",
+                "Normal login must authenticate the persisted insufficient-permission identity.");
+            Require(readerLogin.Permissions.Contains(LocalApiPermissions.ProductsView) &&
+                    !readerLogin.Permissions.Contains(LocalApiPermissions.ProductsFastAdd) &&
+                    !readerLogin.Permissions.Contains(LocalApiPermissions.ProductsManage) &&
+                    !readerLogin.Permissions.Contains(LocalApiPermissions.InventoryAdjust),
+                "Insufficient-permission login must retain read access but lack Fast Add and broad stock authority.");
+            new DatabaseSeeder(composition.ConnectionFactory).SeedDefaultData();
 
             object validPayload = new
             {
@@ -229,12 +256,16 @@ public static class PilotCashierFastAddAtomicityChecks
             };
 
             long productsBefore = Scalar(composition, "SELECT COUNT(*) FROM products WHERE barcode='FASTADD-R2-HTTP';");
+            FastAddStateSnapshot beforeAnonymous = Snapshot(composition);
             HttpResponseMessage unauthenticated = await anonymousClient.PostAsJsonAsync("/api/products/fast-add", validPayload).ConfigureAwait(false);
             Require(unauthenticated.StatusCode == HttpStatusCode.Unauthorized,
                 $"Unauthenticated Fast Add must be 401, got {(int)unauthenticated.StatusCode}.");
+            Require(Snapshot(composition) == beforeAnonymous, "401 Fast Add must not mutate product, stock or audit state.");
+            FastAddStateSnapshot beforeForbidden = Snapshot(composition);
             HttpResponseMessage forbidden = await unauthorizedClient.PostAsJsonAsync("/api/products/fast-add", validPayload).ConfigureAwait(false);
             Require(forbidden.StatusCode == HttpStatusCode.Forbidden,
                 $"Products.View-only Fast Add must be 403, got {(int)forbidden.StatusCode}.");
+            Require(Snapshot(composition) == beforeForbidden, "403 Fast Add must not mutate product, stock or audit state.");
 
             object invalidPayload = new
             {
@@ -244,16 +275,20 @@ public static class PilotCashierFastAddAtomicityChecks
                 sellingPrice = 0m,
                 initialStockQuantity = -1m
             };
+            FastAddStateSnapshot beforeInvalid = Snapshot(composition);
             HttpResponseMessage invalid = await cashierClient.PostAsJsonAsync("/api/products/fast-add", invalidPayload).ConfigureAwait(false);
             Require(invalid.StatusCode == HttpStatusCode.BadRequest,
                 $"Invalid Fast Add must be 400, got {(int)invalid.StatusCode}.");
+            Require(Snapshot(composition) == beforeInvalid, "400 Fast Add must not mutate product, stock or audit state.");
 
             HttpResponseMessage created = await cashierClient.PostAsJsonAsync("/api/products/fast-add", validPayload).ConfigureAwait(false);
             Require(created.StatusCode == HttpStatusCode.OK,
                 $"Valid Fast Add must be 200, got {(int)created.StatusCode}.");
+            FastAddStateSnapshot beforeDuplicate = Snapshot(composition);
             HttpResponseMessage duplicate = await cashierClient.PostAsJsonAsync("/api/products/fast-add", validPayload).ConfigureAwait(false);
             Require(duplicate.StatusCode == HttpStatusCode.Conflict,
                 $"Duplicate Fast Add must be 409, got {(int)duplicate.StatusCode}.");
+            Require(Snapshot(composition) == beforeDuplicate, "409 Fast Add must not mutate product, stock or audit state.");
 
             Require(Scalar(composition, "SELECT COUNT(*) FROM products WHERE barcode='FASTADD-R2-HTTP';") == productsBefore + 1,
                 "HTTP matrix must persist exactly one product.");
@@ -271,6 +306,14 @@ public static class PilotCashierFastAddAtomicityChecks
                 SELECT COUNT(*) FROM audit_logs a INNER JOIN products p ON p.id=a.entity_id
                 WHERE p.barcode='FASTADD-R2-HTTP' AND a.action='PRODUCT_CREATED';
                 """) == 1, "HTTP Fast Add must persist one creation audit.");
+            Require(ScalarText(composition, """
+                SELECT sm.user_id FROM stock_movements sm INNER JOIN products p ON p.id=sm.product_id
+                WHERE p.barcode='FASTADD-R2-HTTP' AND sm.reference_type='POS_M4_FAST_ADD';
+                """) == cashierUserId.ToString("D"), "HTTP stock movement must identify the authenticated persisted Cashier.");
+            Require(ScalarText(composition, """
+                SELECT a.user_id FROM audit_logs a INNER JOIN products p ON p.id=a.entity_id
+                WHERE p.barcode='FASTADD-R2-HTTP' AND a.action='PRODUCT_CREATED';
+                """) == cashierUserId.ToString("D"), "HTTP creation audit must identify the authenticated persisted Cashier.");
             Require(Scalar(composition, "SELECT COUNT(*) FROM products WHERE barcode='FASTADD-R2-INVALID';") == 0,
                 "Invalid HTTP request must leave no product.");
             Require(Scalar(composition, "SELECT COUNT(*) FROM products WHERE barcode='FASTADD-R2-HTTP';") == 1,
@@ -284,12 +327,32 @@ public static class PilotCashierFastAddAtomicityChecks
         }
     }
 
-    private static HttpClient ClientFor(Uri baseAddress, LocalApiSession session)
+    private static async Task<LoginEvidence> LoginClientAsync(Uri baseAddress, string username, string password)
     {
-        HttpClient client = new(new HttpClientHandler { UseCookies = false }) { BaseAddress = baseAddress };
-        client.DefaultRequestHeaders.Add("Cookie", $"{LocalApiSessionService.SessionCookieName}={session.SessionId}");
-        return client;
+        HttpClient client = new(new HttpClientHandler { UseCookies = true }) { BaseAddress = baseAddress };
+        HttpResponseMessage response = await client.PostAsJsonAsync("/api/auth/login", new { username, password }).ConfigureAwait(false);
+        string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        Require(response.StatusCode == HttpStatusCode.OK,
+            $"Normal login for {username} failed: {(int)response.StatusCode} {body}");
+        using JsonDocument document = JsonDocument.Parse(body);
+        JsonElement root = document.RootElement;
+        Require(root.GetProperty("isAuthenticated").GetBoolean(), $"Login response for {username} must be authenticated.");
+        JsonElement user = root.GetProperty("user");
+        return new LoginEvidence(
+            client,
+            user.GetProperty("userId").GetGuid(),
+            user.GetProperty("roleName").GetString() ?? string.Empty,
+            user.GetProperty("permissions").EnumerateArray().Select(x => x.GetString()!).ToArray());
     }
+
+    private static FastAddStateSnapshot Snapshot(SalrynLocalComposition composition) => new(
+        Scalar(composition, "SELECT COUNT(*) FROM products;"),
+        Scalar(composition, "SELECT COUNT(*) FROM product_stock_buckets;"),
+        Scalar(composition, "SELECT COUNT(*) FROM stock_movements WHERE reference_type='POS_M4_FAST_ADD';"),
+        Scalar(composition, "SELECT COUNT(*) FROM audit_logs WHERE action='PRODUCT_CREATED';"));
+
+    private sealed record LoginEvidence(HttpClient Client, Guid UserId, string RoleName, string[] Permissions);
+    private sealed record FastAddStateSnapshot(long Products, long Buckets, long Movements, long Audits);
 
     private static Product Product(Guid id, string barcode, Guid unitId)
     {
@@ -327,6 +390,14 @@ public static class PilotCashierFastAddAtomicityChecks
         command.CommandText = sql;
         if (id.HasValue) command.Parameters.AddWithValue("$id", id.Value.ToString("D"));
         return Convert.ToInt64(command.ExecuteScalar());
+    }
+
+    private static string ScalarText(SalrynLocalComposition composition, string sql)
+    {
+        using SqliteConnection connection = Open(composition);
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+        return Convert.ToString(command.ExecuteScalar()) ?? string.Empty;
     }
 
     private static void Require(bool condition, string message)
