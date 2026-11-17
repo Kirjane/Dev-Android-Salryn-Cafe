@@ -200,6 +200,9 @@ public static class PosM7VoidSaleStockReversalChecks
             Require(duplicate.IsFailure && duplicate.ErrorDetail.Code == "Sales.NotVoidable", "Double void must fail.");
             Require(GetScalar(composition, "SELECT stock_on_hand_x1000 FROM products WHERE id=$id", product.Id) == 5000, "Failed double void must not change stock.");
 
+            RunHistoricalAndCreditVoidScenarios(
+                composition, service, cashierSession, session.UserId, product, units[0].Name);
+
             RunSourceGuards();
         }
         finally
@@ -207,6 +210,163 @@ public static class PosM7VoidSaleStockReversalChecks
             SqliteConnectionFactory.ClearAllPools();
             if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, true);
         }
+    }
+
+    private static void RunHistoricalAndCreditVoidScenarios(
+        SalrynLocalComposition composition,
+        SaleVoidApiService service,
+        LocalApiSession cashierSession,
+        Guid originalOperatorId,
+        Product product,
+        string unitName)
+    {
+        DateTimeOffset historicalAt = DateTimeOffset.UtcNow.AddDays(-30);
+        Guid closedSessionId = Guid.NewGuid();
+        using (SqliteConnection connection = new($"Data Source={composition.DbPaths.DatabasePath}"))
+        {
+            connection.Open();
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO cashier_sessions
+                (id,user_id,opened_at,closed_at,opening_cash_cents,expected_cash_cents,
+                 counted_cash_cents,variance_cents,status,notes)
+                VALUES ($id,$user,$opened,$closed,0,1500,1500,0,2,'R2 closed historical shift');
+                """;
+            command.Parameters.AddWithValue("$id", closedSessionId.ToString("D"));
+            command.Parameters.AddWithValue("$user", originalOperatorId.ToString("D"));
+            command.Parameters.AddWithValue("$opened", historicalAt.AddHours(-8).ToString("O"));
+            command.Parameters.AddWithValue("$closed", historicalAt.ToString("O"));
+            command.ExecuteNonQuery();
+        }
+
+        Guid historicalSaleId = Guid.NewGuid();
+        Quantity one = RequireValue(Quantity.FromX1000(1000), "historical quantity");
+        Sale historicalSale = new()
+        {
+            Id = historicalSaleId,
+            ReceiptNumber = "POS-M7-HIST-0001",
+            SaleDate = historicalAt.AddHours(-1),
+            CreatedAt = historicalAt.AddHours(-1),
+            CashierUserId = originalOperatorId,
+            CashierSessionId = closedSessionId,
+            Subtotal = Money.FromCents(1500),
+            Total = Money.FromCents(1500),
+            AmountPaid = Money.FromCents(1500),
+            Change = Money.Zero,
+            Status = SaleStatus.Completed,
+            ReceiptSnapshot = "R2 closed-shift receipt"
+        };
+        AddSale(composition, historicalSale, product, unitName, one,
+            new Payment { SaleId = historicalSaleId, Method = PaymentMethod.Cash, Amount = Money.FromCents(1500) });
+        long historicalPayments = GetScalar(composition, "SELECT COUNT(*) FROM payments WHERE sale_id=$id", historicalSaleId);
+        SaleVoidResponse historicalVoid = RequireValue(service.VoidAsync(
+            historicalSaleId, new SaleVoidRequest("Historical closed-shift correction"), cashierSession)
+            .GetAwaiter().GetResult(), "historical closed-shift void");
+        Require(historicalVoid.Sale.Status == "Voided", "Closed historical shift sale must be voidable by Cashier.");
+        Require(GetText(composition, "SELECT voided_by_user_id FROM sales WHERE id=$id", historicalSaleId) == cashierSession.UserId.ToString("D"),
+            "Historical void must identify current Cashier.");
+        Require(GetScalar(composition, "SELECT COUNT(*) FROM payments WHERE sale_id=$id", historicalSaleId) == historicalPayments,
+            "Historical void must preserve payment history.");
+        Require(GetScalar(composition, "SELECT COUNT(*) FROM cash_drawer_events WHERE source_id=$id AND event_type='CashRefund'", historicalSaleId) == 0,
+            "Historical void must not fabricate a cash refund.");
+        Require(GetScalar(composition, "SELECT COUNT(*) FROM cash_drawer_events WHERE source_id=$id AND event_type='CashSaleNet'", historicalSaleId) == 1,
+            "Historical cash-sale drawer event must remain preserved.");
+
+        Guid customerId = Guid.NewGuid();
+        using (SqliteConnection connection = new($"Data Source={composition.DbPaths.DatabasePath}"))
+        {
+            connection.Open();
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO customers
+                (id,full_name,is_active,created_by_user_id,created_at,updated_at)
+                VALUES ($id,'R2 Credit Customer',1,$user,$at,$at);
+                """;
+            command.Parameters.AddWithValue("$id", customerId.ToString("D"));
+            command.Parameters.AddWithValue("$user", originalOperatorId.ToString("D"));
+            command.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O"));
+            command.ExecuteNonQuery();
+        }
+
+        Guid creditSaleId = Guid.NewGuid();
+        Sale creditSale = new()
+        {
+            Id = creditSaleId,
+            ReceiptNumber = "POS-M7-AR-0001",
+            CashierUserId = originalOperatorId,
+            CustomerId = customerId,
+            Subtotal = Money.FromCents(1500),
+            Total = Money.FromCents(1500),
+            // The repository's tender invariant counts the AR tender as covering the total;
+            // BalanceDue separately drives the receivable debit.
+            AmountPaid = Money.FromCents(1500),
+            Change = Money.Zero,
+            PaymentStatus = SalePaymentStatus.Credit,
+            BalanceDue = Money.FromCents(1500),
+            ReceivableDueDate = DateOnly.FromDateTime(DateTime.Today.AddDays(30)),
+            ReceivableNote = "R2 disposable AR fixture",
+            Status = SaleStatus.Completed,
+            ReceiptSnapshot = "R2 credit receipt"
+        };
+        AddSale(composition, creditSale, product, unitName, one,
+            new Payment { SaleId = creditSaleId, Method = PaymentMethod.AccountsReceivable, Amount = Money.FromCents(1500) });
+        Require(GetScalar(composition, "SELECT COUNT(*) FROM accounts_receivable_entries WHERE sale_id=$id AND entry_type='CreditSale'", creditSaleId) == 1,
+            "Credit fixture must create one receivable debit.");
+        long creditPayments = GetScalar(composition, "SELECT COUNT(*) FROM payments WHERE sale_id=$id", creditSaleId);
+        SaleVoidResponse creditVoid = RequireValue(service.VoidAsync(
+            creditSaleId, new SaleVoidRequest("Uncollected credit sale cancelled"), cashierSession)
+            .GetAwaiter().GetResult(), "credit sale void");
+        Require(creditVoid.Sale.Status == "Voided", "Uncollected AR sale must be voidable by Cashier.");
+        Require(GetScalar(composition, "SELECT COUNT(*) FROM accounts_receivable_entries WHERE sale_id=$id AND entry_type='SaleReversal'", creditSaleId) == 1,
+            "AR void must create exactly one receivable reversal.");
+        Require(GetScalar(composition, "SELECT balance_after_cents FROM accounts_receivable_entries WHERE sale_id=$id AND entry_type='SaleReversal'", creditSaleId) == 0,
+            "AR void must return customer balance to zero.");
+        Require(GetScalar(composition, "SELECT COUNT(*) FROM payments WHERE sale_id=$id", creditSaleId) == creditPayments,
+            "AR void must preserve original payment history.");
+        Require(GetScalar(composition, "SELECT COUNT(*) FROM cash_drawer_events WHERE source_id=$id AND event_type='CashRefund'", creditSaleId) == 0,
+            "AR void must not fabricate a cash refund.");
+        Require(GetScalar(composition, "SELECT COUNT(*) FROM audit_logs WHERE entity_id=$id AND action='SALE_VOIDED'", creditSaleId) == 1,
+            "AR void must create one Cashier-attributed audit.");
+        Require(GetText(composition, "SELECT user_id FROM audit_logs WHERE entity_id=$id AND action='SALE_VOIDED'", creditSaleId) == cashierSession.UserId.ToString("D"),
+            "AR void audit must identify the acting Cashier.");
+
+        Console.WriteLine("[VOID R2] cross-operator + closed historical shift + uncollected AR sale PASS; payments/receipts preserved, no CashRefund, stock and AR reversed exactly once.");
+    }
+
+    private static void AddSale(
+        SalrynLocalComposition composition,
+        Sale sale,
+        Product product,
+        string unitName,
+        Quantity quantity,
+        Payment payment)
+    {
+        SaleItem item = new()
+        {
+            SaleId = sale.Id,
+            ProductId = product.Id,
+            ProductNameSnapshot = product.Name,
+            BarcodeSnapshot = product.Barcode?.Value,
+            UnitNameSnapshot = unitName,
+            Quantity = quantity,
+            UnitPrice = Money.FromCents(1500),
+            CostPrice = product.CostPrice,
+            LineTotal = Money.FromCents(1500)
+        };
+        StockMovement movement = new()
+        {
+            ProductId = product.Id,
+            MovementType = StockMovementType.Sale,
+            QuantityChange = quantity,
+            CostPrice = product.CostPrice,
+            ReferenceType = "SALE",
+            ReferenceId = sale.Id,
+            Reason = "R2 disposable void fixture",
+            UserId = sale.CashierUserId
+        };
+        RequireSuccess(composition.SaleWriteRepository.AddCompletedSaleAsync(
+            sale, new[] { item }, new[] { payment }, new[] { movement }).GetAwaiter().GetResult(),
+            "R2 completed sale fixture");
     }
 
     private static long GetScalar(SalrynLocalComposition composition, string sql, Guid id)

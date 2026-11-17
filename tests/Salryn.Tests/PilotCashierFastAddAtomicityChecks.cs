@@ -1,4 +1,9 @@
+using System.Net;
+using System.Net.Http.Json;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Data.Sqlite;
+using Salryn.Api.Local;
+using Salryn.Api.Local.Auth;
 using Salryn.Composition.Local;
 using Salryn.Core.Models;
 using Salryn.Core.Security;
@@ -150,6 +155,8 @@ public static class PilotCashierFastAddAtomicityChecks
                 SELECT COUNT(*) FROM stock_movements sm INNER JOIN products p ON p.id=sm.product_id
                 WHERE p.barcode='FASTADD-R1-RACE' AND sm.reference_type='POS_M4_FAST_ADD';
                 """) == 1, "Concurrent barcode must create one initial stock movement.");
+
+            RunHttpMatrixAsync(composition, operatorId, unitId).GetAwaiter().GetResult();
         }
         finally
         {
@@ -159,6 +166,129 @@ public static class PilotCashierFastAddAtomicityChecks
                 Directory.Delete(root, recursive: true);
             }
         }
+    }
+
+    private static async Task RunHttpMatrixAsync(
+        SalrynLocalComposition composition,
+        Guid operatorId,
+        Guid unitId)
+    {
+        InMemoryLocalApiSessionStore sessionStore = new();
+        await using WebApplication app = await LocalApiApplicationFactory.CreateAsync(
+            new[] { "--dev" },
+            new LocalApiApplicationOptions
+            {
+                Url = "http://127.0.0.1:0",
+                Composition = composition,
+                SessionStore = sessionStore,
+                InitializeDatabase = false,
+                EnableStaticWebAssets = false,
+                WriteDevelopmentDatabasePath = false
+            }).ConfigureAwait(false);
+
+        await app.StartAsync().ConfigureAwait(false);
+        try
+        {
+            string? boundUrl = app.Urls.FirstOrDefault(url =>
+                url.StartsWith("http://127.0.0.1:", StringComparison.OrdinalIgnoreCase) &&
+                !url.EndsWith(":0", StringComparison.Ordinal));
+            Require(!string.IsNullOrWhiteSpace(boundUrl), "Fast Add HTTP host did not bind a loopback port.");
+            Uri baseAddress = new(boundUrl!);
+
+            LocalApiSession cashier = sessionStore.Create(new AuthenticatedUserReadModel(
+                operatorId,
+                "fastadd-http-cashier",
+                "Fast Add HTTP Cashier",
+                "Cashier",
+                UserStatus.Active,
+                new[]
+                {
+                    LocalApiPermissions.SalesCreate,
+                    LocalApiPermissions.ProductsView,
+                    LocalApiPermissions.ProductsFastAdd
+                }));
+            LocalApiSession unauthorized = sessionStore.Create(new AuthenticatedUserReadModel(
+                operatorId,
+                "fastadd-http-reader",
+                "Fast Add HTTP Reader",
+                "Custom",
+                UserStatus.Active,
+                new[] { LocalApiPermissions.ProductsView }));
+
+            using HttpClient anonymousClient = new() { BaseAddress = baseAddress };
+            using HttpClient cashierClient = ClientFor(baseAddress, cashier);
+            using HttpClient unauthorizedClient = ClientFor(baseAddress, unauthorized);
+
+            object validPayload = new
+            {
+                productName = "HTTP Fast Add Product",
+                barcode = "FASTADD-R2-HTTP",
+                unitId,
+                sellingPrice = 12.50m,
+                initialStockQuantity = 4m
+            };
+
+            long productsBefore = Scalar(composition, "SELECT COUNT(*) FROM products WHERE barcode='FASTADD-R2-HTTP';");
+            HttpResponseMessage unauthenticated = await anonymousClient.PostAsJsonAsync("/api/products/fast-add", validPayload).ConfigureAwait(false);
+            Require(unauthenticated.StatusCode == HttpStatusCode.Unauthorized,
+                $"Unauthenticated Fast Add must be 401, got {(int)unauthenticated.StatusCode}.");
+            HttpResponseMessage forbidden = await unauthorizedClient.PostAsJsonAsync("/api/products/fast-add", validPayload).ConfigureAwait(false);
+            Require(forbidden.StatusCode == HttpStatusCode.Forbidden,
+                $"Products.View-only Fast Add must be 403, got {(int)forbidden.StatusCode}.");
+
+            object invalidPayload = new
+            {
+                productName = "",
+                barcode = "FASTADD-R2-INVALID",
+                unitId,
+                sellingPrice = 0m,
+                initialStockQuantity = -1m
+            };
+            HttpResponseMessage invalid = await cashierClient.PostAsJsonAsync("/api/products/fast-add", invalidPayload).ConfigureAwait(false);
+            Require(invalid.StatusCode == HttpStatusCode.BadRequest,
+                $"Invalid Fast Add must be 400, got {(int)invalid.StatusCode}.");
+
+            HttpResponseMessage created = await cashierClient.PostAsJsonAsync("/api/products/fast-add", validPayload).ConfigureAwait(false);
+            Require(created.StatusCode == HttpStatusCode.OK,
+                $"Valid Fast Add must be 200, got {(int)created.StatusCode}.");
+            HttpResponseMessage duplicate = await cashierClient.PostAsJsonAsync("/api/products/fast-add", validPayload).ConfigureAwait(false);
+            Require(duplicate.StatusCode == HttpStatusCode.Conflict,
+                $"Duplicate Fast Add must be 409, got {(int)duplicate.StatusCode}.");
+
+            Require(Scalar(composition, "SELECT COUNT(*) FROM products WHERE barcode='FASTADD-R2-HTTP';") == productsBefore + 1,
+                "HTTP matrix must persist exactly one product.");
+            Require(Scalar(composition, """
+                SELECT COUNT(*) FROM product_stock_buckets b
+                INNER JOIN products p ON p.id=b.product_id
+                INNER JOIN inventory_locations l ON l.id=b.location_id
+                WHERE p.barcode='FASTADD-R2-HTTP' AND l.code='MAIN-STORE' AND b.quantity_x1000=4000;
+                """) == 1, "HTTP Fast Add must persist one MAIN-STORE bucket at quantity 4.");
+            Require(Scalar(composition, """
+                SELECT COUNT(*) FROM stock_movements sm INNER JOIN products p ON p.id=sm.product_id
+                WHERE p.barcode='FASTADD-R2-HTTP' AND sm.reference_type='POS_M4_FAST_ADD';
+                """) == 1, "HTTP Fast Add must persist one initial-stock movement.");
+            Require(Scalar(composition, """
+                SELECT COUNT(*) FROM audit_logs a INNER JOIN products p ON p.id=a.entity_id
+                WHERE p.barcode='FASTADD-R2-HTTP' AND a.action='PRODUCT_CREATED';
+                """) == 1, "HTTP Fast Add must persist one creation audit.");
+            Require(Scalar(composition, "SELECT COUNT(*) FROM products WHERE barcode='FASTADD-R2-INVALID';") == 0,
+                "Invalid HTTP request must leave no product.");
+            Require(Scalar(composition, "SELECT COUNT(*) FROM products WHERE barcode='FASTADD-R2-HTTP';") == 1,
+                "401/403/409 requests must not add partial or duplicate products.");
+
+            Console.WriteLine("[FASTADD HTTP] 200 valid / 400 invalid / 401 anonymous / 403 unauthorized / 409 duplicate; product=1 bucket=1 movement=1 audit=1.");
+        }
+        finally
+        {
+            await app.StopAsync().ConfigureAwait(false);
+        }
+    }
+
+    private static HttpClient ClientFor(Uri baseAddress, LocalApiSession session)
+    {
+        HttpClient client = new(new HttpClientHandler { UseCookies = false }) { BaseAddress = baseAddress };
+        client.DefaultRequestHeaders.Add("Cookie", $"{LocalApiSessionService.SessionCookieName}={session.SessionId}");
+        return client;
     }
 
     private static Product Product(Guid id, string barcode, Guid unitId)
