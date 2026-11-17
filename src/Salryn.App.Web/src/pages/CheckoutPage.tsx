@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { closeHostShift, fetchHostShift, openHostShift, submitCheckout, type CheckoutEnvelope, type CheckoutPaymentRequest } from "../api/checkout";
 import { ApiError } from "../api/http";
 import { fastAddUnknownBarcode } from "../api/fastAddProduct";
+import { refreshAfterCommittedFastAdd } from "../utils/fastAddOutcome";
 import { fetchProducts, fetchProductUnits, type ProductListItem } from "../api/products";
 import { printReceiptForSale, type ReceiptPrintResult } from "../api/receiptPrint";
 import { fetchSession } from "../api/session";
@@ -335,9 +336,10 @@ export function CheckoutPage() {
       setProductPage(1);
       notify.success("Product created", "The product was saved and added to the active cart.");
 
-      try {
-        await productsQuery.refetch({ throwOnError: true });
-      } catch {
+      const catalogRefreshed = await refreshAfterCommittedFastAdd(
+        () => productsQuery.refetch({ throwOnError: true }),
+      );
+      if (!catalogRefreshed) {
         setBarcodeStatus("Product saved and added to cart. Catalog refresh failed; refresh products before another scan.");
         notify.warning("Catalog refresh unavailable", "Product creation succeeded. Refresh the product list; do not create this barcode again.");
       }
