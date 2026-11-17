@@ -272,7 +272,9 @@ public static class WebA3ShellDesignSystemChecks
     private static string ReadAllWebSourceExcluding(string webSrc, IEnumerable<string> relativeExcludeSuffixes)
     {
         string[] excludes = relativeExcludeSuffixes
-            .Select(x => x.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar))
+            .Select(x => Path.GetFullPath(Path.Combine(
+                webSrc,
+                x.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar))))
             .ToArray();
         IEnumerable<string> files = Directory
             .GetFiles(webSrc, "*.*", SearchOption.AllDirectories)
@@ -282,9 +284,11 @@ public static class WebA3ShellDesignSystemChecks
                 path.EndsWith(".css", StringComparison.OrdinalIgnoreCase))
             .Where(path =>
             {
-                foreach (string suffix in excludes)
+                // Only explicitly named files may be excluded. EndsWith would
+                // incorrectly exempt a nested shadow path (e.g. other/utils/documentPdf.ts).
+                foreach (string excludedFile in excludes)
                 {
-                    if (path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                    if (string.Equals(Path.GetFullPath(path), excludedFile, StringComparison.OrdinalIgnoreCase))
                     {
                         return false;
                     }
