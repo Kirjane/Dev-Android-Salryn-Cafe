@@ -79,6 +79,22 @@ public static class PosM7VoidSaleStockReversalChecks
                 """, cashierRoleId) == 0,
                 "Cashier Sales.Void must not grant privileged catalog/stock/fiscal permissions.");
 
+            // Real Cashier login after normal reseeding must carry Sales.Void.
+            // The sale below is recorded by Admin to exercise cross-operator void.
+            const string cashierPassword = "CashierStrong123!";
+            _ = RequireValue(new UserAdminApiService(composition).CreateUserAsync(
+                new CreateUserApiRequest("void_cashier", "POS-M7 Cashier",
+                    cashierPassword, cashierPassword, cashierRoleId, true), session.UserId)
+                .GetAwaiter().GetResult(), "cashier user creation");
+            LocalApiSession cashierSession = RequireValue(
+                sessions.LoginAsync(new LoginRequest("void_cashier", cashierPassword))
+                    .GetAwaiter().GetResult(), "cashier login");
+            Require(cashierSession.Permissions.Contains(SalrynPermissions.SalesVoid),
+                "Cashier login must carry persisted Sales.Void without Manager approval.");
+            Require(!cashierSession.Permissions.Contains(SalrynPermissions.OfficialDocumentRefund) &&
+                    !cashierSession.Permissions.Contains(SalrynPermissions.OfficialDocumentVoid),
+                "Cashier void session must not carry fiscal refund or official-document void.");
+
             var categories = RequireValue(composition.CatalogReadRepository.GetCategoriesAsync().GetAwaiter().GetResult(), "categories");
             var brands = RequireValue(composition.CatalogReadRepository.GetBrandsAsync().GetAwaiter().GetResult(), "brands");
             var units = RequireValue(composition.CatalogReadRepository.GetUnitsAsync().GetAwaiter().GetResult(), "units");
@@ -147,20 +163,26 @@ public static class PosM7VoidSaleStockReversalChecks
             long saleCount = GetScalar(composition, "SELECT COUNT(*) FROM sales WHERE id=$id", saleId);
 
             SaleVoidApiService service = new(composition);
-            Result<SaleVoidResponse> missingReason = service.VoidAsync(saleId, new SaleVoidRequest(" "), session).GetAwaiter().GetResult();
+            Result<SaleVoidResponse> missingReason = service.VoidAsync(saleId, new SaleVoidRequest(" "), cashierSession).GetAwaiter().GetResult();
             Require(missingReason.IsFailure && missingReason.ErrorDetail.Code == "Sales.VoidReasonRequired", "Void without reason must fail.");
 
             SaleVoidResponse response = RequireValue(service.VoidAsync(
-                saleId, new SaleVoidRequest("Customer cancelled completed sale"), session).GetAwaiter().GetResult(), "void");
+                saleId, new SaleVoidRequest("Customer cancelled completed sale"), cashierSession).GetAwaiter().GetResult(), "void");
             Require(response.Sale.Status == "Voided", "Void must mark sale voided.");
             Require(response.ReversalMovementCount == 1, "Tracked sale movement must create one reversal.");
             Require(response.Sale.ReceiptSnapshot == snapshot, "Void must preserve receipt snapshot.");
+            Require(GetText(composition, "SELECT voided_by_user_id FROM sales WHERE id=$id", saleId) ==
+                    cashierSession.UserId.ToString("D"),
+                "Cross-operator sale void must persist the actual Cashier identity.");
             Require(GetScalar(composition, "SELECT stock_on_hand_x1000 FROM products WHERE id=$id", product.Id) == 5000, "Void must restore stock.");
             Require(GetScalar(composition, "SELECT COUNT(*) FROM stock_movements WHERE reference_id=$id AND movement_type=2", saleId) == 1, "Void must persist one VoidSale movement.");
             Require(GetScalar(composition, "SELECT COUNT(*) FROM payments WHERE sale_id=$id", saleId) == paymentCount, "Void must not duplicate payment.");
             Require(GetScalar(composition, "SELECT COUNT(*) FROM sales WHERE id=$id", saleId) == saleCount, "Void must not duplicate sale.");
             Require(GetScalar(composition, "SELECT COUNT(*) FROM audit_logs WHERE entity_id=$id AND action='SALE_VOIDED'", saleId) == 1, "Successful void must append one searchable SALE_VOIDED audit record.");
             Require(GetText(composition, "SELECT reason FROM audit_logs WHERE entity_id=$id AND action='SALE_VOIDED'", saleId) == "Customer cancelled completed sale", "Void audit must preserve the operator reason.");
+            Require(GetText(composition, "SELECT user_id FROM audit_logs WHERE entity_id=$id AND action='SALE_VOIDED'", saleId) ==
+                    cashierSession.UserId.ToString("D"),
+                "Cashier void audit must identify the cashier, not the original sale operator.");
 
             Execute(composition, "DELETE FROM audit_logs WHERE entity_id=$id AND action='SALE_VOIDED'", saleId);
             using (SqliteConnection migrationConnection = new($"Data Source={composition.DbPaths.DatabasePath}"))
@@ -174,7 +196,7 @@ public static class PosM7VoidSaleStockReversalChecks
             Require(GetText(composition, "SELECT new_value_json FROM audit_logs WHERE entity_id=$id AND action='SALE_VOIDED'", saleId).Contains("reconciledFromSaleRecord", StringComparison.Ordinal), "Reconciled historical audit must be explicitly marked.");
 
             Result<SaleVoidResponse> duplicate = service.VoidAsync(
-                saleId, new SaleVoidRequest("Second void"), session).GetAwaiter().GetResult();
+                saleId, new SaleVoidRequest("Second void"), cashierSession).GetAwaiter().GetResult();
             Require(duplicate.IsFailure && duplicate.ErrorDetail.Code == "Sales.NotVoidable", "Double void must fail.");
             Require(GetScalar(composition, "SELECT stock_on_hand_x1000 FROM products WHERE id=$id", product.Id) == 5000, "Failed double void must not change stock.");
 
