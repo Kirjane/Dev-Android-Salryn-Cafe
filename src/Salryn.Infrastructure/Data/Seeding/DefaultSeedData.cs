@@ -178,6 +178,7 @@ public static class DefaultSeedData
         Permissions.ProductsFastAdd,
         Permissions.ProductsView,
         Permissions.SalesCreate,
+        Permissions.SalesVoid,
         Permissions.SalesViewHistory,
         Permissions.ShiftOpenClose,
         Permissions.ProcurementView,
