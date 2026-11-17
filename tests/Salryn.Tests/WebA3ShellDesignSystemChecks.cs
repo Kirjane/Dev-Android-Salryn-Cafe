@@ -138,6 +138,9 @@ public static class WebA3ShellDesignSystemChecks
             Path.Combine("api", "backups.ts"),
             Path.Combine("pages", "AuditPage.tsx"),
             Path.Combine("api", "audit.ts"),
+            // The existing authenticated read-only PDF response downloader is vetted
+            // below. Exclude ONLY this exact helper from the broad upload token scan.
+            Path.Combine("utils", "documentPdf.ts"),
         }).Replace("No ESC/POS", string.Empty, StringComparison.Ordinal);
 
         string[] alwaysForbiddenTokens =
@@ -180,6 +183,77 @@ public static class WebA3ShellDesignSystemChecks
                 capabilitySourceWithoutLogoUpload,
                 token,
                 $"WEB-A3 must not add forbidden capability outside store logo branding: {token}");
+        }
+
+        // Explicitly vet the sole exception instead of weakening the global upload ban.
+        // Reading an authenticated PDF GET response as a Blob is a download operation,
+        // NOT authority to upload a Blob or accept arbitrary client-side files.
+        string pdfDownloadSource = ReadRequiredFile(webSrc, "utils", "documentPdf.ts");
+        ValidateReadOnlyPdfDownloadSource(pdfDownloadSource);
+        AssertPdfDownloadExceptionRejectsSyntheticUploads(pdfDownloadSource);
+    }
+
+    private static void ValidateReadOnlyPdfDownloadSource(string source)
+    {
+        RequireContains(source, "fetch(url, {", "PDF helper must download using its provided URL.");
+        RequireContains(source, "method: \"GET\"", "PDF download must remain a read-only GET.");
+        RequireContains(source, "credentials: \"include\"", "PDF download must use the authenticated session.");
+        RequireContains(source, "if (!response.ok)", "PDF download must validate the HTTP status.");
+        RequireContains(source, "const blob = await response.blob();", "PDF response may be read into a Blob.");
+        RequireContains(source, "URL.createObjectURL(blob)", "PDF helper must use its response Blob for the download.");
+        RequireContains(source, "URL.revokeObjectURL(objectUrl)", "PDF helper must release its temporary object URL.");
+
+        // Require a single download fetch; an added upload or other request is not exempt.
+        if (source.Split("fetch(", StringSplitOptions.None).Length != 2)
+        {
+            throw new InvalidOperationException("WEB-A3 PDF exception permits exactly one fetch call.");
+        }
+
+        foreach (string token in new[] { "multipart/form-data", "/upload", "FormData(", "type=\"file\"" })
+        {
+            RequireNotContains(source, token, $"WEB-A3 PDF helper must not contain upload capability: {token}");
+        }
+        RequireNotContains(source.ToLowerInvariant(), "method: \"post\"", "WEB-A3 PDF helper must never POST.");
+
+        // Permit precisely the three occurrences of 'blob' in the known GET-response
+        // conversion and object-URL creation. Any extra Blob usage still fails closed.
+        string withoutAllowedBlobOperations = source
+            .Replace("const blob = await response.blob();", string.Empty, StringComparison.Ordinal)
+            .Replace("URL.createObjectURL(blob)", string.Empty, StringComparison.Ordinal);
+        RequireNotContains(withoutAllowedBlobOperations.ToLowerInvariant(), "blob",
+            "WEB-A3 PDF exception must not authorize additional Blob operations.");
+    }
+
+    private static void AssertPdfDownloadExceptionRejectsSyntheticUploads(string validSource)
+    {
+        // Executed negative assertions ensure the exception never becomes a broad
+        // allowlist if future edits add uploads or more Blob operations to this helper.
+        foreach (string forbiddenAddition in new[]
+        {
+            "\nconst unauthorized = await response.blob();",
+            "\nconst unauthorized = new Blob();",
+            "\nconst unauthorized = new FormData();",
+            "\nconst unauthorized = '/upload';",
+            "\nconst unauthorized = 'type=\"file\"';",
+            "\nconst unauthorized = { method: \"POST\" };",
+            "\nconst unauthorized = fetch('/other');",
+        })
+        {
+            bool rejected = false;
+            try
+            {
+                ValidateReadOnlyPdfDownloadSource(validSource + forbiddenAddition);
+            }
+            catch (InvalidOperationException)
+            {
+                rejected = true;
+            }
+
+            if (!rejected)
+            {
+                throw new InvalidOperationException(
+                    "WEB-A3 PDF guard failed to reject a synthetic unauthorized upload or Blob addition.");
+            }
         }
     }
 
