@@ -318,7 +318,7 @@ public sealed class MobileCashierAndSyncTests
     {
         string[] forbiddenPrefixes = ["Microsoft.AspNetCore", "Salryn.Api.Local", "System.Windows.Forms", "PdfSharp", "MigraDoc", "Microsoft.Web.WebView2"];
 
-        foreach (var asm in new[] { typeof(MobileCashierEngine).Assembly, typeof(HttpSyncOutboxTransport).Assembly })
+        foreach (var asm in new[] { typeof(MobileProductionComposition).Assembly, typeof(Salryn.Infrastructure.Data.SqliteConnectionFactory).Assembly, typeof(HttpSyncOutboxTransport).Assembly })
         {
             var refs = asm.GetReferencedAssemblies().Select(a => a.Name ?? string.Empty).ToArray();
             foreach (string forbidden in forbiddenPrefixes)
