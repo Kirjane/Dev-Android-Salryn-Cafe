@@ -36,6 +36,9 @@ public sealed class SimulatedEscPosPrinterTransport : IBluetoothPrinterTransport
 
     public bool SimulateOfflineFailure { get; set; }
 
+    // Simulates bytes reaching the peripheral before the connection outcome is lost.
+    public bool SimulateUnknownDelivery { get; set; }
+
     public IReadOnlyList<CapturedEscPosPrint> CapturedPrints => _captured.ToArray();
 
     public IReadOnlyList<PairedBluetoothPrinterInfo> ListPairedPrinters() => _pairedPrinters;
@@ -65,6 +68,12 @@ public sealed class SimulatedEscPosPrinterTransport : IBluetoothPrinterTransport
         byte[] copy = payload.ToArray();
         string preview = Encoding.ASCII.GetString(copy);
         _captured.Enqueue(new CapturedEscPosPrint(targetId, copy, preview, DateTimeOffset.UtcNow));
+
+        if (SimulateUnknownDelivery)
+        {
+            return Task.FromResult(PrinterTransportResult.Unknown(
+                "SimPrinter.UnknownDelivery", "Print bytes may have reached the printer; do not automatically resend."));
+        }
 
         return Task.FromResult(PrinterTransportResult.AcceptedForTransport($"Simulated ESC/POS print delivered ({copy.Length} bytes) to {targetId}."));
     }
