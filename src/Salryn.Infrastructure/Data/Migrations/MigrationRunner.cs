@@ -33,6 +33,23 @@ public sealed class MigrationRunner
         return _migrations.Count > 0;
     }
 
+    public SchemaLineageClassification ClassifyDatabase()
+    {
+        if (!File.Exists(_connectionFactory.DatabasePath))
+        {
+            return new SchemaLineageClassification(
+                SchemaLineageKind.Fresh,
+                null,
+                0,
+                "Database file does not exist yet.");
+        }
+
+        using var connection = _connectionFactory.CreateConnection();
+        connection.Open();
+        SqlitePragma.Apply(connection);
+        return SchemaLineageClassifier.Classify(connection);
+    }
+
     public int GetPendingMigrationCount()
     {
         if (_migrations.Count == 0)
@@ -76,10 +93,20 @@ public sealed class MigrationRunner
             return;
         }
 
+        bool enforcesCafeLineage = _migrations.Any(m => m is CafeLineageAdoptionAndKernelParityMigration);
+
         using var connection = _connectionFactory.CreateConnection();
         connection.Open();
 
         SqlitePragma.Apply(connection);
+
+        SchemaLineageClassification? lineage = null;
+        if (enforcesCafeLineage)
+        {
+            // Fail closed BEFORE touching schema_migrations or mutating any table.
+            lineage = SchemaLineageClassifier.EnsureAllowedForCafeMigration(connection);
+        }
+
         EnsureSchemaMigrationsTable(connection);
 
         var appliedVersions = GetAppliedVersions(connection);
@@ -91,12 +118,24 @@ public sealed class MigrationRunner
                 continue;
             }
 
+            // On legacy Yza v25-v39 DBs, v23 was intentionally skipped in Yza and is adopted/retired atomically inside v40.
+            if (lineage?.Kind == SchemaLineageKind.YzaV39Legacy && migration.Version == 23)
+            {
+                continue;
+            }
+
             using var transaction = connection.BeginTransaction();
 
             migration.Up(connection, transaction);
             RecordMigration(connection, transaction, migration);
 
             transaction.Commit();
+            appliedVersions.Add(migration.Version);
+
+            if (migration is CafeLineageAdoptionAndKernelParityMigration)
+            {
+                appliedVersions.Add(23);
+            }
         }
     }
 
