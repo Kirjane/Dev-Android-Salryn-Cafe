@@ -1,0 +1,17 @@
+:root {
+  --salryn-espresso: #3b1204;
+  --salryn-cream: #fff4e1;
+  --salryn-copper: #cc7436;
+  --salryn-dark-copper: #934719;
+  --salryn-latte: #e9d5bb;
+  --salryn-mocha: #735447;
+
+  --salryn-background: var(--salryn-cream);
+  --salryn-text: var(--salryn-espresso);
+  --salryn-text-muted: var(--salryn-mocha);
+  --salryn-primary: var(--salryn-espresso);
+  --salryn-on-primary: var(--salryn-cream);
+  --salryn-accent: var(--salryn-copper);
+  --salryn-link: var(--salryn-dark-copper);
+  --salryn-border: var(--salryn-latte);
+}
