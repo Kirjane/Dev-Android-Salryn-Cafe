@@ -247,9 +247,9 @@ public static class CentralSyncEndpoints
             {
                 IPAddress? remoteIp = ctx.Connection.RemoteIpAddress;
                 // Only trust X-Forwarded-Proto from loopback or an explicitly configured TrustedProxyAddresses allowlist
-                if (remoteIp is null ||
-                    IPAddress.IsLoopback(remoteIp) ||
-                    options.TrustedProxyAddresses.Contains(remoteIp.ToString()))
+                if (remoteIp is not null &&
+                    (IPAddress.IsLoopback(remoteIp) ||
+                     options.TrustedProxyAddresses.Contains(remoteIp.ToString())))
                 {
                     return true;
                 }
