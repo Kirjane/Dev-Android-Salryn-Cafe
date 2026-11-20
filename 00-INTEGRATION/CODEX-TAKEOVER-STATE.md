@@ -1,3 +1,51 @@
+# COMPLETED SHARED-MOBILE / FIXTURE SLICE CHECKPOINT — 2026-11-21
+
+Latest root tested/reviewed source a16afe3bbee2ad651c4ff49ce11077cc626510df;
+root20e1a04f merged independent reviewed b3224236 shared mobile extraction.
+Combined root tests on20e1a04f: I2 17, I3 20, I1/isolation31 PASS exit0, clean
+source before/after. Logs shared-integrated-<suite>.log/TRX under recovery.
+Independent review_shared_mobile also reran extraction Release17/17 PASS.
+
+Test fixture delta3547018b→a16afe3b independent scoped PASS (backup_review_resume).
+Cash replay conflict preserved (also retained AR52-11); Cafe unsupported tenders
+reject with unchanged AR balance/rows. Analytics Cash fixtures now have legitimate
+own open session; original collection insertion precedes later void evidence.
+Focused owner-analytics-w0-w3 PASS exit0 analytics-only-proof.log (100k synthetic
+scale, read-only/aging/reconciliation assertions). W4 inherited kernel close-note
+migration body proof no longer deletes/replays divergent Cafe26; focused W4 PASS
+exit0 w4-cafe-lineage-proof.log after build PASS. No trigger/assertion removal.
+Full CoreSmoke running at frozena16afe3b via --no-build, process session68706;
+log full-coresmoke-after-cafe-fixtures.log. Confirm authoritative terminal result
+before rerunning. Earlier run failure logs remain retained.
+IMPORTANT: dotnet run -m:1 can pass -m:1 into application args and prevent --only
+selection. Use separate dotnet build -m:1, then dotnet run --no-build -- --only X.
+Earlier cafe-analytics-session-proof-r2.log was a full-run progression despite its
+name; analytics-only-proof.log is the correctly selected focused proof.
+
+Android original worktree now a3130eb9f8cdb92be13655f1eeaddb1008a25551:
+ba1d86c5 merges reviewed candidate20e1a04f, explicitly resolves add/add Runtime
+csproj retaining shared Persistence and Foundation adapter refs.40cc0406 switches
+MainActivity to canonical MobileProductionComposition/app-privateSalrynCafe schema;
+old salryn prototype files and salryn-p0 protected identity untouched. Unknown
+lineage blocks startup without deleting/recreating data. Old duplicate engine/db
+moved byte-identically into test-only Prototypes; excluded from production runtime.
+Independent native wiring review scoped PASS at40cc0406.1f1d6fb3 boundary regression
+now inspects actual canonical Runtime/Persistence, not test assembly containing
+prototype.10/10 I6B PASS exit0 canonical-android-boundary.log/TRX; these include
+synthetic prototype tests and do NOT prove cashier correctness. Native final Debug
+build PASS0 errors (2 inherited nullable warnings) android-canonical-final-build.log.
+No fresh signed APK/emulator/physical proof yet for current native code.
+
+All current root/mobile extraction/Android worktrees preserved. No recent source
+publication or main promotion. Shared mobile branchb3224236 retained clean. Native
+runtime still lacks pairing/operator login/cashier workflows/outbox projections and
+full print recovery; not an operational cashier. Next: observe full CoreSmoke,
+recover original C1–C11/mobile production proof harnesses and semantic central
+processors per continuation plan, then implement canonical native workflows and
+host atomicity/RBAC/pairing/live frontend; independent reviews before acceptance.
+
+---
+
 # CONTINUATION CHECKPOINT — TENDER PROOFS / SHARED MOBILE PERSISTENCE
 
 Primary local candidate d86128be27b03f31f3a6987474269cf314f00106; separate primary
