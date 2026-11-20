@@ -608,6 +608,16 @@ public static class U1AccountsReceivableRuntimeChecks
         Require(Count(databasePath, "accounts_receivable_collections", "id", first.Id.ToString("D")) == 1 &&
                 Count(databasePath, "accounts_receivable_entries", "collection_id", first.Id.ToString("D")) == 1,
             "Duplicate collection must create one collection and one AR credit.");
+        long balanceBeforeConflict = Balance(RequireSuccess(await receivables.SearchCustomersAsync(null), "Replay balance"), customerId).BalanceCents;
+        long collectionsBeforeConflict = ReadLong(databasePath, "SELECT COUNT(*) FROM accounts_receivable_collections WHERE $value IS NOT NULL", "1");
+        long drawerBeforeConflict = ReadLong(databasePath, "SELECT COUNT(*) FROM cash_drawer_events WHERE $value IS NOT NULL", "1");
+        var conflict = await receivables.CollectAsync(request with { AmountCents = amountCents + 1 });
+        Require(conflict.IsFailure && conflict.ErrorDetail.Type == ErrorType.Conflict,
+            "Same Cash request ID with altered amount must conflict.");
+        Require(Balance(RequireSuccess(await receivables.SearchCustomersAsync(null), "Replay balance after denial"), customerId).BalanceCents == balanceBeforeConflict &&
+            ReadLong(databasePath, "SELECT COUNT(*) FROM accounts_receivable_collections WHERE $value IS NOT NULL", "1") == collectionsBeforeConflict &&
+            ReadLong(databasePath, "SELECT COUNT(*) FROM cash_drawer_events WHERE $value IS NOT NULL", "1") == drawerBeforeConflict,
+            "Conflicting Cash replay must preserve balance, collection rows and drawer effects.");
         return first;
     }
 

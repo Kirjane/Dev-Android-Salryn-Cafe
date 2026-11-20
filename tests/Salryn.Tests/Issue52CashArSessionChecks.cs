@@ -122,16 +122,13 @@ public static class Issue52CashArSessionChecks
             Require(ScalarLong(paths.DatabasePath, "SELECT COUNT(*) FROM cashier_sessions WHERE user_id=$u AND status=1;",
                 ("$u", managerId.ToString("D"))) == 0, "AR52-03 must never reopen closed shift.");
 
-            // AR52-07: Valid noncash/digital collection with external reference and operator confirmation, no open cash shift -> succeeds with 0 drawer events
-            string digitalReqId = Guid.NewGuid().ToString("N");
+            // Cafe AR52-07: external confirmation cannot enable a prohibited tender.
+            SqlSnapshot beforeDigital = CaptureSnapshot(paths.DatabasePath, customer.Id);
             Result<AccountsReceivableCollection> digitalResult = await service.CollectAsync(new(
-                customer.Id, 2_500, "GCash", "GCash Ref #GC-2026-001", managerId, digitalReqId, "GC-2026-001", true));
-            Require(digitalResult.IsSuccess, "AR52-07 noncash collection without open shift must succeed.");
-            Require(ScalarLong(paths.DatabasePath, "SELECT COUNT(*) FROM cash_drawer_events;") == 0,
-                "AR52-07 noncash collection must create zero drawer events.");
-            // Reset balance back to 20,000 for deterministic 20,000 -> 15,000 Cash test
-            RequireSuccess(await service.AdjustAsync(new(customer.Id, 2_500, true, "AR52 reset to 20000", managerId)),
-                "AR52 reset balance");
+                customer.Id, 2_500, "GCash", "Synthetic disabled tender", managerId,
+                Guid.NewGuid().ToString("N"), "SYNTHETIC-REF", true));
+            AssertDeniedWithCode(digitalResult, "Receivables.InvalidPaymentMethod", ErrorType.Validation, "Cafe AR52-07");
+            AssertSnapshotUnchanged(beforeDigital, CaptureSnapshot(paths.DatabasePath, customer.Id), "Cafe AR52-07");
 
             // AR52-01: Valid own open accountable session, Cash 5,000 from 20,000 -> 15,000
             var openShift = await host.ShiftService.OpenShiftAsync(managerId, 10_000);
