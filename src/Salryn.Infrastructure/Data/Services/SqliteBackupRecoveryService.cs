@@ -3,6 +3,7 @@ using Salryn.Core.Common;
 using Salryn.Core.Models;
 using Salryn.Core.Services;
 using Salryn.Infrastructure.Paths;
+using Salryn.Infrastructure.Data.Migrations;
 
 namespace Salryn.Infrastructure.Data.Services;
 
@@ -31,6 +32,13 @@ public sealed class SqliteBackupRecoveryService : IBackupRecoveryService
                 return Result<string>.Fail(Error.Failure(
                     "Backup.DatabaseNotFound",
                     "Live database file was not found."));
+            }
+
+            var sourceVerification = VerifyBackup(sourcePath);
+            if (sourceVerification.IsFailure || !sourceVerification.Value.IsRestorable)
+            {
+                return Result<string>.Fail(Error.Validation(
+                    "Backup.SourceRejected", "Source database must pass Cafe lineage and schema verification before backup."));
             }
 
             Directory.CreateDirectory(backupFolder);
@@ -134,6 +142,23 @@ public sealed class SqliteBackupRecoveryService : IBackupRecoveryService
 
             using SqliteConnection connection = CreateReadOnlyConnection(backupFile.FullName);
             connection.Open();
+
+            SchemaLineageClassification lineage = SchemaLineageClassifier.Classify(connection);
+            if (lineage.Kind is not (SchemaLineageKind.SalrynCafe or SchemaLineageKind.YzaV39Legacy))
+            {
+                return Result<BackupVerificationSummary>.Fail(Error.Validation(
+                    "Backup.LineageRejected", "Only verified Salryn Cafe or legacy Cafe Yza backups may be restored."));
+            }
+
+            using (var integrity = connection.CreateCommand())
+            {
+                integrity.CommandText = "PRAGMA integrity_check;";
+                if (!string.Equals(integrity.ExecuteScalar()?.ToString(), "ok", StringComparison.Ordinal))
+                {
+                    return Result<BackupVerificationSummary>.Fail(Error.Validation(
+                        "Backup.IntegrityFailed", "Backup SQLite integrity verification failed."));
+                }
+            }
 
             HashSet<string> tableNames = ReadTableNames(connection);
             int? backupMigrationVersion = ReadMaxMigrationVersion(connection);
