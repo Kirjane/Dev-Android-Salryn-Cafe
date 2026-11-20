@@ -102,6 +102,21 @@ public sealed class MigrationRunner
 
         bool enforcesCafeLineage = _migrations.Any(m => m is CafeLineageAdoptionAndKernelParityMigration);
 
+        // Opening a retained database read/write may recover a hot rollback journal
+        // before the first SQL statement. Inspect read-only first; recovery-required,
+        // unknown and wrong-product databases must never reach the writable open.
+        if (enforcesCafeLineage && File.Exists(_connectionFactory.DatabasePath))
+        {
+            using var preflight = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = _connectionFactory.DatabasePath,
+                Mode = SqliteOpenMode.ReadOnly,
+                Pooling = false
+            }.ToString());
+            preflight.Open();
+            SchemaLineageClassifier.EnsureAllowedForCafeMigration(preflight);
+        }
+
         using var connection = _connectionFactory.CreateConnection();
         connection.Open();
 
