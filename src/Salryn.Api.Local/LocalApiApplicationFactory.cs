@@ -12,12 +12,13 @@ using Salryn.Core.Services;
 using Salryn.Core.Services.Licensing;
 using Salryn.Infrastructure.Data.Services;
 using Salryn.Infrastructure.Licensing;
+using Salryn.Infrastructure.Paths;
 
 namespace Salryn.Api.Local;
 
 public sealed class LocalApiApplicationOptions
 {
-    public string Url { get; init; } = "http://127.0.0.1:5299";
+    public string Url { get; init; } = SalrynProductIdentity.ResolveLoopbackApiBaseUrl();
 
     public SalrynLocalComposition? Composition { get; init; }
 
@@ -175,20 +176,53 @@ public static class LocalApiApplicationFactory
         HostOperatorApiServices hostOperatorServices = HostOperatorApiServices.Create(composition);
         builder.Services.AddSingleton(hostOperatorServices);
 
-        builder.Services.AddCors(corsOptions =>
+        bool isDevCorsEnabled = SalrynLocalLaunchModeResolver.IsDevelopmentRequested(args)
+            || builder.Environment.IsDevelopment();
+
+        if (isDevCorsEnabled)
         {
-            corsOptions.AddDefaultPolicy(policy =>
+            builder.Services.AddCors(corsOptions =>
             {
-                policy.WithOrigins("http://127.0.0.1:5173", "http://localhost:5173")
-                    .AllowAnyHeader()
-                    .AllowAnyMethod()
-                    .AllowCredentials();
+                corsOptions.AddDefaultPolicy(policy =>
+                {
+                    policy.WithOrigins("http://127.0.0.1:5173", "http://localhost:5173")
+                        .AllowAnyHeader()
+                        .AllowAnyMethod()
+                        .AllowCredentials();
+                });
             });
-        });
+        }
 
         WebApplication app = builder.Build();
 
-        app.UseCors();
+        app.Use(async (httpContext, next) =>
+        {
+            httpContext.Response.Headers[SalrynProductIdentity.ProductHeaderName] = SalrynProductIdentity.ProductId;
+
+            if (httpContext.Request.Headers.TryGetValue(SalrynProductIdentity.ProductHeaderName, out var incomingValues))
+            {
+                string? incomingProductId = incomingValues.FirstOrDefault();
+                Result productCheck = SalrynProductGuard.ValidateProductId(incomingProductId);
+                if (productCheck.IsFailure)
+                {
+                    httpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    await httpContext.Response.WriteAsJsonAsync(new
+                    {
+                        errorCode = SalrynProductGuard.ErrorWrongProductIdentity,
+                        error = productCheck.ErrorDetail.Message,
+                        expectedProductId = SalrynProductIdentity.ProductId
+                    }).ConfigureAwait(false);
+                    return;
+                }
+            }
+
+            await next().ConfigureAwait(false);
+        });
+
+        if (isDevCorsEnabled)
+        {
+            app.UseCors();
+        }
 
         string? webDistPath = options.EnableStaticWebAssets
             ? ResolveWebDistPath()
@@ -228,8 +262,29 @@ public static class LocalApiApplicationFactory
         app.MapGet("/health", () => Results.Ok(new
         {
             status = "ok",
-            service = "Salryn.Api.Local"
+            service = "Salryn.Api.Local",
+            productId = SalrynProductIdentity.ProductId,
+            productName = SalrynProductIdentity.ProductDisplayName,
+            loopbackPort = SalrynProductIdentity.LoopbackPort,
+            lanHttpsPort = SalrynProductIdentity.LanHttpsPort
         }));
+
+        app.MapGet("/api/system/identity", (HttpContext httpContext) =>
+        {
+            bool isLoopback = LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is null;
+            return Results.Ok(new
+            {
+                productId = SalrynProductIdentity.ProductId,
+                productName = SalrynProductIdentity.ProductDisplayName,
+                service = "Salryn.Api.Local",
+                loopbackPort = SalrynProductIdentity.LoopbackPort,
+                lanHttpsPort = SalrynProductIdentity.LanHttpsPort,
+                desktopMutex = SalrynProductIdentity.DesktopMutexName,
+                localApiMutex = SalrynProductIdentity.LocalApiMutexName,
+                dataRoot = isLoopback ? composition.DbPaths.RootPath : null,
+                databasePath = isLoopback ? composition.DbPaths.DatabasePath : null
+            });
+        });
 
         if (!string.IsNullOrWhiteSpace(options.TestHostNonce))
         {
@@ -426,7 +481,9 @@ public static class LocalApiApplicationFactory
 
     private static int ExtractListenPort(string localUrl)
     {
-        return Uri.TryCreate(localUrl, UriKind.Absolute, out Uri? uri) && uri.Port > 0 ? uri.Port : 5299;
+        return Uri.TryCreate(localUrl, UriKind.Absolute, out Uri? uri) && uri.Port > 0
+            ? uri.Port
+            : SalrynProductIdentity.LoopbackPort;
     }
 
     private static void AppendSessionCookie(HttpContext httpContext, string sessionId)

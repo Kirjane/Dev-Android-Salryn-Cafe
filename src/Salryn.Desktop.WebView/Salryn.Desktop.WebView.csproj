@@ -8,10 +8,17 @@
     <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>Salryn.Desktop.WebView</RootNamespace>
     <AssemblyName>Salryn.Desktop.WebView</AssemblyName>
+    <AssemblyTitle>Salryn Cafe Desktop</AssemblyTitle>
+    <Product>Salryn Cafe</Product>
+    <Company>Kirjane Information Technology Services</Company>
     <ApplicationIcon>..\..\assets\branding\salryn-icon.ico</ApplicationIcon>
     <!-- WEB-A4 / PRELAN-HARDEN-4: WebView2 pulls a WPF companion assembly referencing WindowsBase 5.0 while the SDK provides 4.0. Runtime unification is safe for this standalone WinForms host; see PRELAN_HARDENING_CLOSURE.md. -->
     <NoWarn>$(NoWarn);MSB3277</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Salryn.Cafe.Tests" />
+  </ItemGroup>
 
   <!--
     WEB-A4 native dev host.

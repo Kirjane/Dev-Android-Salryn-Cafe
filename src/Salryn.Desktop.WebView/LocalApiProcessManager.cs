@@ -1,10 +1,11 @@
 using System.Diagnostics;
 using System.Net.Http;
+using System.Text.Json;
 
 namespace Salryn.Desktop.WebView;
 
 /// <summary>
-/// Ensures the Salryn local API is reachable for the native host.
+/// Ensures the Salryn Cafe local API is reachable and verified as ProductId=Salryn.Cafe.
 /// Installed layout: starts <c>Salryn.Api.Local.exe</c> beside this shell.
 /// Dev layout: launches <c>dotnet run --project</c> against the repository when present.
 /// This wrapper performs no business logic and never touches the database directly.
@@ -28,9 +29,57 @@ internal sealed class LocalApiProcessManager : IDisposable
                 .GetAsync(DevHostConfig.HealthUrl)
                 .ConfigureAwait(false);
 
-            return response.IsSuccessStatusCode;
+            if (!response.IsSuccessStatusCode)
+            {
+                return false;
+            }
+
+            string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            string? headerProductId = response.Headers.TryGetValues(DevHostConfig.ProductHeaderName, out IEnumerable<string>? values)
+                ? values.FirstOrDefault()
+                : null;
+
+            return IsVerifiedCafeHealthResponse(headerProductId, body);
         }
         catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    internal static bool IsVerifiedCafeHealthResponse(string? headerProductId, string? responseBody)
+    {
+        if (!string.IsNullOrWhiteSpace(headerProductId) &&
+            !string.Equals(headerProductId.Trim(), DevHostConfig.ProductId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(responseBody))
+        {
+            return false;
+        }
+
+        try
+        {
+            using JsonDocument doc = JsonDocument.Parse(responseBody);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            if (!doc.RootElement.TryGetProperty("productId", out JsonElement productIdElement) ||
+                productIdElement.ValueKind != JsonValueKind.String)
+            {
+                return false;
+            }
+
+            return string.Equals(
+                productIdElement.GetString()?.Trim(),
+                DevHostConfig.ProductId,
+                StringComparison.Ordinal);
+        }
+        catch (JsonException)
         {
             return false;
         }
@@ -96,9 +145,9 @@ internal sealed class LocalApiProcessManager : IDisposable
             CreateNoWindow = true,
         };
 
-        // Production host binds localhost; urls may also come from launchSettings/defaults.
+        // Production host binds Cafe loopback 127.0.0.1:5399; never falls back to retail ports.
         startInfo.ArgumentList.Add("--urls");
-        startInfo.ArgumentList.Add(DevHostConfig.ApiBaseUrl);
+        startInfo.ArgumentList.Add(DevHostConfig.ResolveApiBaseUrl());
 
         try
         {
