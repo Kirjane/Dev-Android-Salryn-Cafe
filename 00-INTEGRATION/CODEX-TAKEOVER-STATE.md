@@ -1,3 +1,42 @@
+# CONTINUATION CHECKPOINT — TENDER PROOFS / SHARED MOBILE PERSISTENCE
+
+Primary local candidate d86128be27b03f31f3a6987474269cf314f00106; separate primary
+implementation branch codex/cafe-mobile-shared in sibling codex-mobile-shared at
+b3224236cef2baae51d2861aea5a5f17fb438e4a. Both preserved, no destructive Git.
+
+3547018b adapts obsolete U1 GCash/Maya/Debit success expectations to locked Cafe
+rejection plus unchanged balance/rows. Reviewer requested preservation of altered
+payload replay conflict. Retained AR52-11 already covers Cash mismatch with snapshot
+parity; d86128be additionally adds mismatch/row/balance proof directly in U1 helper
+and adapts AR52-07 noncash-success case to rejection/no mutation, removing only its
+now-unneeded compensating adjustment. CoreSmoke built/runs these successfully but
+FAILS later OwnerAnalyticsW0W3RuntimeChecks.cs:141: fixture inserts Cash collection
+without collector open cashier session, which canonical Cafe trigger correctly
+rejects. Do not remove trigger or activate noncash to pass. Repair fixture with
+legitimate session attribution/cash facts, retaining aging/read-only assertions.
+Log cafe-cash-replay-coresmoke.log retained. Exact full CoreSmoke still FAIL.
+
+Shared mobile extraction b3224236: recovered original portable Persistence project
+and friend declarations; current Data/DbPaths/ProductIdentity compiled once there,
+Infrastructure excludes and references Persistence. Existing source paths/namespaces
+and Cafe current migrations/financial code unchanged. Restored original
+MobileProductionComposition over current C1–C11 stores with app-private Cafe paths,
+read-only Cafe lineage/readiness, required v23+v41 tables/immutable triggers and
+rejection of p0/mobile_* duplicate authority. Runtime has no Infrastructure/PDF/
+ASP.NET/Desktop reference. Solution includes Persistence/Runtime/Sync.Contracts.
+.gitignore exception prevents portable project directory being mistaken for *.sqlite.
+Exact b3224236: dotnet test tests/Salryn.Cafe.I2Tests/Salryn.Cafe.I2Tests.csproj -c Release
+-m:1 --no-restore --logger trx --results-directory <recovery>/test-results =>17 PASS,
+exit0, Windows/.NET10.0.404; b3224236-mobile-persistence.log and matching TRX.
+Infrastructure and Runtime individual builds PASS (existing nullable warnings).
+Independent temporary review_shared_mobile inspecting frozen b3224236; verdict
+pending, not integrated/published. Native Android adaptation/APK boundary still NOT RUN.
+Next: close independent review findings, integrate extraction only after clearance,
+reconcile preserved Android1f34b694 with canonical composition; do not retain duplicate
+mobile business ledger. Mobile and sync proof recovery sequence below still applies.
+
+---
+
 # BACKUP CORRECTION SLICE CHECKPOINT — 2026-11-21
 
 Latest tested source7ec74074 (git rev-parse for full SHA). Clean source at test.
