@@ -5,10 +5,12 @@
     <ProjectReference Include="..\Salryn.Core\Salryn.Core.csproj" />
     <ProjectReference Include="..\Salryn.Host.Local\Salryn.Host.Local.csproj" />
     <ProjectReference Include="..\Salryn.Infrastructure\Salryn.Infrastructure.csproj" />
+    <ProjectReference Include="..\Salryn.Sync.Contracts\Salryn.Sync.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="Salryn.Tests" />
+    <InternalsVisibleTo Include="Salryn.Cafe.I3Tests" />
   </ItemGroup>
 
   <PropertyGroup>
