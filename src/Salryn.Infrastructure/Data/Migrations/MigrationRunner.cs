@@ -33,6 +33,27 @@ public sealed class MigrationRunner
         return _migrations.Count > 0;
     }
 
+    public SchemaLineageClassification ClassifyDatabase()
+    {
+        if (!File.Exists(_connectionFactory.DatabasePath))
+        {
+            return new SchemaLineageClassification(
+                SchemaLineageKind.Fresh,
+                null,
+                0,
+                "Database file does not exist yet.");
+        }
+
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = _connectionFactory.DatabasePath,
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false
+        }.ToString());
+        connection.Open();
+        return SchemaLineageClassifier.Classify(connection);
+    }
+
     public int GetPendingMigrationCount()
     {
         if (_migrations.Count == 0)
@@ -42,13 +63,16 @@ public sealed class MigrationRunner
 
         if (!File.Exists(_connectionFactory.DatabasePath))
         {
-            return 0;
+            return _migrations.Count;
         }
 
-        using var connection = _connectionFactory.CreateConnection();
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = _connectionFactory.DatabasePath,
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false
+        }.ToString());
         connection.Open();
-
-        SqlitePragma.Apply(connection);
 
         if (!SchemaMigrationsTableExists(connection))
         {
@@ -76,17 +100,67 @@ public sealed class MigrationRunner
             return;
         }
 
+        bool enforcesCafeLineage = _migrations.Any(m => m is CafeLineageAdoptionAndKernelParityMigration);
+
+        // Opening a retained database read/write may recover a hot rollback journal
+        // before the first SQL statement. Inspect read-only first; recovery-required,
+        // unknown and wrong-product databases must never reach the writable open.
+        if (enforcesCafeLineage && File.Exists(_connectionFactory.DatabasePath))
+        {
+            using var preflight = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = _connectionFactory.DatabasePath,
+                Mode = SqliteOpenMode.ReadOnly,
+                Pooling = false
+            }.ToString());
+            preflight.Open();
+            SchemaLineageClassifier.EnsureAllowedForCafeMigration(preflight);
+        }
+
         using var connection = _connectionFactory.CreateConnection();
         connection.Open();
 
+        SchemaLineageClassification? lineage = null;
+        if (enforcesCafeLineage)
+        {
+            // Fail closed BEFORE touching schema_migrations or mutating any table.
+            lineage = SchemaLineageClassifier.EnsureAllowedForCafeMigration(connection);
+        }
+
+        // WAL changes the retained database header. Only configure it after lineage authorization.
         SqlitePragma.Apply(connection);
         EnsureSchemaMigrationsTable(connection);
 
         var appliedVersions = GetAppliedVersions(connection);
 
+        // A fresh Cafe database must acquire its lineage marker atomically with its
+        // foundation. Otherwise a crash before v40 leaves an ambiguous shared lineage
+        // that correctly fails closed on the next launch and cannot safely resume.
+        if (enforcesCafeLineage && lineage?.Kind == SchemaLineageKind.Fresh)
+        {
+            using var freshTransaction = connection.BeginTransaction();
+            foreach (var migration in _migrations)
+            {
+                if (appliedVersions.Contains(migration.Version))
+                {
+                    continue;
+                }
+                migration.Up(connection, freshTransaction);
+                RecordMigration(connection, freshTransaction, migration);
+            }
+            freshTransaction.Commit();
+            return;
+        }
+
         foreach (var migration in _migrations)
         {
             if (appliedVersions.Contains(migration.Version))
+            {
+                continue;
+            }
+
+            // On legacy Yza v25-v39 DBs, v23 was intentionally skipped in Yza and is adopted/retired atomically inside v40.
+            if (lineage?.Kind == SchemaLineageKind.YzaV39Legacy && migration.Version == 23)
             {
                 continue;
             }
@@ -97,6 +171,12 @@ public sealed class MigrationRunner
             RecordMigration(connection, transaction, migration);
 
             transaction.Commit();
+            appliedVersions.Add(migration.Version);
+
+            if (migration is CafeLineageAdoptionAndKernelParityMigration)
+            {
+                appliedVersions.Add(23);
+            }
         }
     }
 

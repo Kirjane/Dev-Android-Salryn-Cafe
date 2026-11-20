@@ -302,7 +302,7 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         if (!TryNormalizeCollectionMethod(request.Method, out string canonicalMethod))
             return Result<AccountsReceivableCollection>.Fail(Error.Validation(
                 "Receivables.InvalidPaymentMethod",
-                "Collection payment method must be Cash, GCash, Maya, or Debit."));
+                "Collection payment method must be Cash."));
         bool isCash = string.Equals(canonicalMethod, "Cash", StringComparison.Ordinal);
         string? referenceNumber = Clean(request.ReferenceNumber);
         if (!isCash)
@@ -646,15 +646,6 @@ public sealed class SqliteAccountsReceivableService : IAccountsReceivableService
         {
             case "CASH":
                 canonicalMethod = "Cash";
-                return true;
-            case "GCASH":
-                canonicalMethod = "GCash";
-                return true;
-            case "MAYA":
-                canonicalMethod = "Maya";
-                return true;
-            case "DEBIT":
-                canonicalMethod = "Debit";
                 return true;
             default:
                 return false;

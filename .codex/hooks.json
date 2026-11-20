@@ -1,0 +1,14 @@
+{
+  "description": "Project-only Forge shell policy adapter. Requires Codex hook review/trust; never the sole security boundary.",
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "^(Bash|exec_command|functions.exec_command)$",
+      "hooks": [{
+        "type": "command",
+        "command": "python C:/Users/arane/.gemini/antigravity/scratch/Dev-Salryn-Cafe-wt/i0/scripts/forge/codex_guard.py",
+        "timeout": 10,
+        "statusMessage": "Checking preserved-worktree and protected-ref boundaries"
+      }]
+    }]
+  }
+}

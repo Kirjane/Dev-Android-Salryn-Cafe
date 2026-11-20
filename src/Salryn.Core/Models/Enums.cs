@@ -17,10 +17,19 @@ public enum SaleStatus
 public enum PaymentMethod
 {
     Cash = 1,
-    AccountsReceivable = 2,
-    GCash = 3,
-    Maya = 4,
-    Debit = 5
+    AccountsReceivable = 2
+}
+
+public enum CashMovementType
+{
+    SaleCashReceipt = 1,
+    ReceivableCashCollection = 2,
+    CashIn = 3,
+    InventoryPurchase = 4,
+    OperationalExpense = 5,
+    CashRefund = 6,
+    CashOut = 7,
+    Reversal = 8
 }
 
 public enum StockMovementType
@@ -49,6 +58,12 @@ public enum CashierSessionStatus
     Open = 1,
     Closed = 2,
     ForceClosed = 3
+}
+
+public enum CashierSessionReconciliationBasis
+{
+    PreLedgerCompatibility = 0,
+    CashMovementLedger = 1
 }
 
 public enum ImportExportJobType

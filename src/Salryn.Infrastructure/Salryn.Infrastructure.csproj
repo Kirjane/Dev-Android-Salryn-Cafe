@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Salryn.Core\Salryn.Core.csproj" />
+    <ProjectReference Include="..\Salryn.Sync.Contracts\Salryn.Sync.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

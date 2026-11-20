@@ -1,6 +1,8 @@
 ﻿using Salryn.Core.Repositories;
 using Salryn.Infrastructure.Data.Repositories.Catalog;
+using Salryn.Infrastructure.Data.Repositories.Ingredients;
 using Salryn.Infrastructure.Data.Repositories.Inventory;
+using Salryn.Infrastructure.Data.Repositories.Menu;
 using Salryn.Infrastructure.Data.Repositories.Products;
 using Salryn.Infrastructure.Data.Repositories.Sales;
 using Salryn.Infrastructure.Data.Repositories.System;
@@ -19,6 +21,16 @@ public sealed class SqliteRepositoryFactory
     public ICatalogReadRepository CreateCatalogReadRepository()
     {
         return new SqliteCatalogReadRepository(_connectionFactory);
+    }
+
+    public SqliteMenuCatalogStore CreateMenuCatalogStore()
+    {
+        return new SqliteMenuCatalogStore(_connectionFactory);
+    }
+
+    public SqliteIngredientRecipeStore CreateIngredientRecipeStore()
+    {
+        return new SqliteIngredientRecipeStore(_connectionFactory);
     }
 
     public IProductReadRepository CreateProductReadRepository()

@@ -9,12 +9,27 @@ internal static class Program
     {
         ApplicationConfiguration.Initialize();
 
+        using var singleInstanceMutex = new Mutex(
+            initiallyOwned: true,
+            name: DevHostConfig.DesktopMutexName,
+            out bool createdNew);
+
+        if (!createdNew)
+        {
+            MessageBox.Show(
+                "Salryn Cafe is already running on this workstation.",
+                DevHostConfig.ProductDisplayName,
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
         if (!IsWebView2RuntimeAvailable())
         {
             MessageBox.Show(
-                "Salryn POS could not start because Microsoft Edge WebView2 Runtime is missing or damaged.\n" +
-                "Re-run the Salryn installer or install WebView2 Runtime, then reopen Salryn.",
-                "Salryn POS",
+                "Salryn Cafe could not start because Microsoft Edge WebView2 Runtime is missing or damaged.\n" +
+                "Re-run the Salryn Cafe installer or install WebView2 Runtime, then reopen Salryn Cafe.",
+                DevHostConfig.ProductDisplayName,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
             return;
@@ -38,10 +53,10 @@ internal static class Program
         if (!apiReady)
         {
             string apiMessage = DevHostConfig.IsInstalledLayout()
-                ? "Salryn POS could not start its local service.\n\n" +
-                  "Close any other Salryn windows, then open Salryn POS again from the Start Menu or desktop shortcut.\n" +
-                  "If the problem continues, re-run the Salryn installer or contact salryn.info@gmail.com."
-                : "The Salryn local API at " + DevHostConfig.ApiBaseUrl + " is not responding.\n\n" +
+                ? "Salryn Cafe could not start or verify its local service (ProductId=Salryn.Cafe).\n\n" +
+                  "Close any other Salryn Cafe windows, then open Salryn Cafe again from the Start Menu or desktop shortcut.\n" +
+                  "If the problem continues, re-run Salryn-Cafe-Setup.exe or contact salryn.info@gmail.com."
+                : "The Salryn Cafe local API at " + DevHostConfig.ResolveApiBaseUrl() + " is not responding with ProductId=Salryn.Cafe.\n\n" +
                   "Start it manually with:\n" +
                   "dotnet run --project .\\src\\Salryn.Api.Local\\Salryn.Api.Local.csproj -- --dev\n\n" +
                   "Open the web view anyway?";
@@ -50,7 +65,7 @@ internal static class Program
             {
                 MessageBox.Show(
                     apiMessage,
-                    "Salryn POS",
+                    DevHostConfig.ProductDisplayName,
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
                 apiManager.Dispose();
@@ -59,7 +74,7 @@ internal static class Program
 
             DialogResult choice = MessageBox.Show(
                 apiMessage,
-                "Salryn POS",
+                DevHostConfig.ProductDisplayName,
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Warning);
 
@@ -76,7 +91,7 @@ internal static class Program
         {
             MessageBox.Show(
                 configurationRejection + "\n\nFalling back to " + DevHostConfig.DefaultViteUrl + ".",
-                "Salryn POS",
+                DevHostConfig.ProductDisplayName,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
         }

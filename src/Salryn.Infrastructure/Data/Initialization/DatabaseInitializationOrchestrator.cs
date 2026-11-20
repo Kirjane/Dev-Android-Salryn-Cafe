@@ -49,6 +49,26 @@ public sealed class DatabaseInitializationOrchestrator
                     PendingMigrationCount: ConfiguredMigrationCount));
         }
 
+        // Bootstrap status configures WAL. Reject retained wrong/unknown databases first,
+        // using the runner's read-only classifier just as migration initialization does.
+        if (_migrationRunner.Migrations.Any(m => m is CafeLineageAdoptionAndKernelParityMigration))
+        {
+            try
+            {
+                var lineage = _migrationRunner.ClassifyDatabase();
+                if (lineage.Kind is not (SchemaLineageKind.Fresh or SchemaLineageKind.YzaV39Legacy or SchemaLineageKind.SalrynCafe))
+                {
+                    return Result<DatabaseInitializationStatus>.Fail(Error.Failure(
+                        "DatabaseInitialization.LineageRejected", lineage.Reason));
+                }
+            }
+            catch (SqliteException)
+            {
+                return Result<DatabaseInitializationStatus>.Fail(Error.Failure(
+                    "DatabaseInitialization.LineageRejected", "Database lineage could not be safely inspected."));
+            }
+        }
+
         int pendingMigrationCount = _migrationRunner.GetPendingMigrationCount();
 
         Result<FirstRunStatus> firstRunStatusResult = _firstRunBootstrapper.CheckStatus();
@@ -70,6 +90,11 @@ public sealed class DatabaseInitializationOrchestrator
 
     public Result<AdminBootstrapSummary> CreateFirstAdmin(AdminBootstrapRequest request)
     {
+        var status = CheckStatus();
+        if (status.IsFailure)
+        {
+            return Result<AdminBootstrapSummary>.Fail(status.ErrorDetail);
+        }
         return _firstRunBootstrapper.CreateFirstAdmin(request);
     }
 

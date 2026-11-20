@@ -42,4 +42,7 @@ dist/
 
 playwright-report/
 test-results/
+__pycache__/
+*.pyc
+.forge/state/
 00-HANDOFF/evidence-out/

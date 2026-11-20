@@ -82,7 +82,7 @@ public sealed class CentralSyncDatabase
                 );
 
                 CREATE TABLE IF NOT EXISTS sync_inbox_operations (
-                    operation_id TEXT PRIMARY KEY,
+                    operation_id TEXT NOT NULL,
                     tenant_id TEXT NOT NULL,
                     store_id TEXT NOT NULL,
                     device_id TEXT NOT NULL,
@@ -99,7 +99,8 @@ public sealed class CentralSyncDatabase
                     result_code TEXT NOT NULL,
                     result_json TEXT NOT NULL,
                     received_at_utc TEXT NOT NULL,
-                    resolved_at_utc TEXT NOT NULL
+                    resolved_at_utc TEXT NOT NULL,
+                    PRIMARY KEY (tenant_id, store_id, operation_id)
                 );
 
                 CREATE INDEX IF NOT EXISTS ix_sync_inbox_store_device_seq
@@ -110,7 +111,7 @@ public sealed class CentralSyncDatabase
                     change_id TEXT NOT NULL UNIQUE,
                     tenant_id TEXT NOT NULL,
                     store_id TEXT NOT NULL,
-                    source_operation_id TEXT NOT NULL UNIQUE,
+                    source_operation_id TEXT NOT NULL,
                     origin_device_id TEXT NOT NULL,
                     origin_local_sequence INTEGER NOT NULL,
                     change_type TEXT NOT NULL,
@@ -119,7 +120,8 @@ public sealed class CentralSyncDatabase
                     payload_json TEXT NOT NULL,
                     payload_hash TEXT NOT NULL,
                     change_hash TEXT NOT NULL,
-                    created_at_utc TEXT NOT NULL
+                    created_at_utc TEXT NOT NULL,
+                    UNIQUE (tenant_id, store_id, source_operation_id)
                 );
 
                 CREATE INDEX IF NOT EXISTS ix_sync_change_feed_tenant_store_seq

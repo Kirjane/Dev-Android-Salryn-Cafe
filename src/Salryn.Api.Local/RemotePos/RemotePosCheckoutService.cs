@@ -389,8 +389,16 @@ public sealed class RemotePosCheckoutService
                 await ExecuteSubmitAsync(session, request, durable, cancellationToken).ConfigureAwait(false);
             return result;
         }
-        catch (Exception)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+        {
+            System.Diagnostics.Trace.TraceWarning(
+                "RemotePosCheckoutService.SubmitAsync fault for ClientRequestId={0}: {1}",
+                request.ClientRequestId,
+                ex.GetType().Name);
             RemotePosCheckoutRequestRecord? durable = await _requestStore
                 .FindAsync(session.StoreId, session.TerminalId, request.ClientRequestId, CancellationToken.None)
                 .ConfigureAwait(false);

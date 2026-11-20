@@ -1,0 +1,49 @@
+name: Salryn Cafe Verify
+on:
+  pull_request:
+    branches: [main, 'forge/**']
+  push:
+    branches: ['forge/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: salryn-cafe-verify-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    name: ${{ matrix.mode }} scoped checks (required nonzero suites)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            mode: Windows
+          - os: ubuntu-latest
+            mode: Portable
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check runner regressions without application builds
+        shell: pwsh
+        run: ./scripts/test-verify-candidate.ps1
+      - name: Run explicit platform suite (not full RC acceptance)
+        shell: pwsh
+        run: ./scripts/verify-candidate.ps1 -Configuration Release -Mode ${{ matrix.mode }}
+      - name: Retain logs, reports and source identity
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-${{ matrix.mode }}-${{ github.sha }}
+          path: artifacts/verification/
+          if-no-files-found: error
+          retention-days: 14

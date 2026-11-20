@@ -128,21 +128,6 @@ public static class PosReceiptTextRenderer
         {
             builder.AppendLine("Cash    : " + FormatMoney(cashPaid));
         }
-        long gcashCents = draft.Payments.Where(payment => payment.Method == PaymentMethod.GCash).Sum(payment => payment.Amount.Cents);
-        if (gcashCents > 0)
-        {
-            builder.AppendLine("GCash   : " + FormatMoney(Money.FromCents(gcashCents)));
-        }
-        long mayaCents = draft.Payments.Where(payment => payment.Method == PaymentMethod.Maya).Sum(payment => payment.Amount.Cents);
-        if (mayaCents > 0)
-        {
-            builder.AppendLine("Maya    : " + FormatMoney(Money.FromCents(mayaCents)));
-        }
-        long debitCents = draft.Payments.Where(payment => payment.Method == PaymentMethod.Debit).Sum(payment => payment.Amount.Cents);
-        if (debitCents > 0)
-        {
-            builder.AppendLine("Debit   : " + FormatMoney(Money.FromCents(debitCents)));
-        }
         if (draft.UtangAmount is Money utang && utang.Cents > 0)
         {
             builder.AppendLine("Utang   : " + FormatMoney(utang));
@@ -194,21 +179,6 @@ public static class PosReceiptTextRenderer
         if (cashPaidCents > 0)
         {
             builder.AppendLine("Cash    : " + FormatMoney(Money.FromCents(cashPaidCents)));
-        }
-        long gcashCents = sale.Payments.Where(payment => payment.Method == PaymentMethod.GCash).Sum(payment => payment.Amount.Cents);
-        if (gcashCents > 0)
-        {
-            builder.AppendLine("GCash   : " + FormatMoney(Money.FromCents(gcashCents)));
-        }
-        long mayaCents = sale.Payments.Where(payment => payment.Method == PaymentMethod.Maya).Sum(payment => payment.Amount.Cents);
-        if (mayaCents > 0)
-        {
-            builder.AppendLine("Maya    : " + FormatMoney(Money.FromCents(mayaCents)));
-        }
-        long debitCents = sale.Payments.Where(payment => payment.Method == PaymentMethod.Debit).Sum(payment => payment.Amount.Cents);
-        if (debitCents > 0)
-        {
-            builder.AppendLine("Debit   : " + FormatMoney(Money.FromCents(debitCents)));
         }
         long utangCents = sale.Payments.Where(payment => payment.Method == PaymentMethod.AccountsReceivable).Sum(payment => payment.Amount.Cents);
         if (utangCents > 0)

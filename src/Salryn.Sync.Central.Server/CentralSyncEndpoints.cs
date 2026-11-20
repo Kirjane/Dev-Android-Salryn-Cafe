@@ -1,3 +1,6 @@
+using System.Collections.Concurrent;
+using System.Net;
+
 namespace Salryn.Sync.Central.Server;
 
 public static class CentralSyncEndpoints
@@ -7,13 +10,15 @@ public static class CentralSyncEndpoints
     public const string StoreIdHeader = "X-Salryn-Store-Id";
     public const string DeviceIdHeader = "X-Salryn-Device-Id";
 
+    private static readonly ConcurrentDictionary<string, Queue<DateTimeOffset>> DeviceRateBuckets = new(StringComparer.Ordinal);
+
     public static WebApplication MapCentralSyncEndpoints(this WebApplication app)
     {
         // Mandatory HTTPS middleware (fail-closed on plaintext HTTP when RequireHttps=true)
         app.Use(async (ctx, next) =>
         {
             CentralServerOptions options = ctx.RequestServices.GetRequiredService<CentralServerOptions>();
-            if (options.RequireHttps && !IsHttpsRequest(ctx, options.TrustForwardedProto))
+            if (options.RequireHttps && !IsHttpsRequest(ctx, options))
             {
                 ctx.Response.StatusCode = StatusCodes.Status426UpgradeRequired;
                 await ctx.Response.WriteAsJsonAsync(new ErrorResponseDto(
@@ -146,15 +151,33 @@ public static class CentralSyncEndpoints
             return ToResult(service.BumpEpoch(admin, req));
         });
 
-        // --- Device Enrollment, Challenge & Token ---
-        api.MapPost("/devices/enroll", (EnrollDeviceRequest req, CentralSyncService service) =>
-            ToResult(service.EnrollDevice(req)));
+        // --- Device Enrollment, Challenge & Token (sliding-window rate-limited) ---
+        api.MapPost("/devices/enroll", (HttpContext http, EnrollDeviceRequest req, CentralSyncService service, CentralServerOptions opts, TimeProvider time) =>
+        {
+            if (!TryConsumeDeviceRateLimit(http, "enroll", opts, time))
+            {
+                return Results.Json(new ErrorResponseDto("ERR_RATE_LIMITED", "Too many enrollment requests. Try again shortly."), statusCode: 429);
+            }
+            return ToResult(service.EnrollDevice(req));
+        });
 
-        api.MapPost("/devices/challenge", (DeviceChallengeRequest req, CentralSyncService service) =>
-            ToResult(service.CreateChallenge(req)));
+        api.MapPost("/devices/challenge", (HttpContext http, DeviceChallengeRequest req, CentralSyncService service, CentralServerOptions opts, TimeProvider time) =>
+        {
+            if (!TryConsumeDeviceRateLimit(http, "challenge", opts, time))
+            {
+                return Results.Json(new ErrorResponseDto("ERR_RATE_LIMITED", "Too many challenge requests. Try again shortly."), statusCode: 429);
+            }
+            return ToResult(service.CreateChallenge(req));
+        });
 
-        api.MapPost("/devices/token", (DeviceTokenRequest req, CentralSyncService service) =>
-            ToResult(service.ExchangeToken(req)));
+        api.MapPost("/devices/token", (HttpContext http, DeviceTokenRequest req, CentralSyncService service, CentralServerOptions opts, TimeProvider time) =>
+        {
+            if (!TryConsumeDeviceRateLimit(http, "token", opts, time))
+            {
+                return Results.Json(new ErrorResponseDto("ERR_RATE_LIMITED", "Too many token requests. Try again shortly."), statusCode: 429);
+            }
+            return ToResult(service.ExchangeToken(req));
+        });
 
         // --- Sync Bootstrap, Push & Pull ---
         api.MapGet("/bootstrap", (HttpContext http, Guid storeId, CentralSyncService service) =>
@@ -210,23 +233,60 @@ public static class CentralSyncEndpoints
         return service.AuthenticateDeviceToken(rawToken, deviceId, tenantId, storeId, productId, allowRevokedForQuarantinePush);
     }
 
-    private static bool IsHttpsRequest(HttpContext ctx, bool trustForwardedProto)
+    public static bool IsHttpsRequest(HttpContext ctx, CentralServerOptions options)
     {
         if (ctx.Request.IsHttps)
         {
             return true;
         }
 
-        if (trustForwardedProto)
+        if (options.TrustForwardedProto)
         {
             string forwarded = ctx.Request.Headers["X-Forwarded-Proto"].ToString();
             if (string.Equals(forwarded, "https", StringComparison.OrdinalIgnoreCase))
             {
-                return true;
+                IPAddress? remoteIp = ctx.Connection.RemoteIpAddress;
+                // Only trust X-Forwarded-Proto from loopback or an explicitly configured TrustedProxyAddresses allowlist
+                if (remoteIp is null ||
+                    IPAddress.IsLoopback(remoteIp) ||
+                    options.TrustedProxyAddresses.Contains(remoteIp.ToString()))
+                {
+                    return true;
+                }
             }
         }
 
         return false;
+    }
+
+    private static bool TryConsumeDeviceRateLimit(
+        HttpContext http,
+        string bucketName,
+        CentralServerOptions options,
+        TimeProvider time)
+    {
+        int limit = Math.Max(1, options.DeviceEndpointRateLimitPerMinute);
+        string ip = http.Connection.RemoteIpAddress?.ToString() ?? "loopback";
+        string key = $"{bucketName}:{ip}";
+        DateTimeOffset now = time.GetUtcNow();
+        DateTimeOffset cutoff = now.AddMinutes(-1);
+
+        Queue<DateTimeOffset> q = DeviceRateBuckets.GetOrAdd(key, _ => new Queue<DateTimeOffset>());
+        lock (q)
+        {
+            while (q.Count > 0 && q.Peek() <= cutoff)
+            {
+                q.Dequeue();
+            }
+
+            if (q.Count >= limit)
+            {
+                return false;
+            }
+
+            q.Enqueue(now);
+            return true;
+        }
     }
 
     private static string? ExtractBearerToken(HttpRequest request)

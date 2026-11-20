@@ -174,14 +174,20 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
                     "Checkout payment cannot be less than the sale total."));
             }
 
+            if (request.Payments.Any(payment =>
+                    payment.Method != PaymentMethod.Cash &&
+                    payment.Method != PaymentMethod.AccountsReceivable))
+            {
+                return Result<TrustedPosCheckoutSaleBuildResult>.Fail(Error.Validation(
+                    "CheckoutBoundary.UnsupportedPaymentMethod",
+                    "Only Cash and AccountsReceivable (or partial Cash + AccountsReceivable) tenders are supported."));
+            }
+
             long receivableCents = request.Payments
                 .Where(payment => payment.Method == PaymentMethod.AccountsReceivable)
                 .Sum(payment => payment.AmountCents);
             long cashTenderCents = request.Payments
                 .Where(payment => payment.Method == PaymentMethod.Cash)
-                .Sum(payment => payment.AmountCents);
-            long digitalCents = request.Payments
-                .Where(payment => payment.Method == PaymentMethod.GCash || payment.Method == PaymentMethod.Maya || payment.Method == PaymentMethod.Debit)
                 .Sum(payment => payment.AmountCents);
 
             if (receivableCents > 0 && (!request.CustomerId.HasValue || request.CustomerId.Value == Guid.Empty))
@@ -196,21 +202,8 @@ public sealed class TrustedPosCheckoutSaleBuilder : ITrustedPosCheckoutSaleBuild
                     "CheckoutBoundary.InvalidUtangAmount",
                     "Utang cannot exceed the sale total."));
             }
-            if (digitalCents > totalCents)
-            {
-                return Result<TrustedPosCheckoutSaleBuildResult>.Fail(Error.Validation(
-                    "CheckoutBoundary.InvalidDigitalAmount",
-                    "Digital payment cannot exceed the sale total."));
-            }
-            if (digitalCents + receivableCents > totalCents)
-            {
-                return Result<TrustedPosCheckoutSaleBuildResult>.Fail(Error.Validation(
-                    "CheckoutBoundary.InvalidNonCashAmount",
-                    "Digital and Utang payments combined cannot exceed the sale total."));
-            }
 
-            long nonCashCents = checked(digitalCents + receivableCents);
-            long cashDueCents = Math.Max(0L, totalCents - nonCashCents);
+            long cashDueCents = Math.Max(0L, totalCents - receivableCents);
 
             if (receivableCents > 0 && cashTenderCents > cashDueCents)
             {

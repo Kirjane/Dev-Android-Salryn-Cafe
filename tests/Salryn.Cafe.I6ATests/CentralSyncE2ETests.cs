@@ -378,4 +378,50 @@ public sealed class CentralSyncE2ETests
         Assert.Equal(HttpStatusCode.TooManyRequests, locked.StatusCode);
         Assert.Equal("ERR_ADMIN_LOCKED_OUT", (await locked.Content.ReadFromJsonAsync<ErrorResponseDto>())?.ErrorCode);
     }
+
+    [Fact]
+    public async Task SecurityHardening_UntrustedForwardedProtoRejected_AndExpiredRevokedTokenRejected()
+    {
+        // P1 #2: Untrusted non-loopback RemoteIpAddress cannot spoof X-Forwarded-Proto: https
+        Microsoft.AspNetCore.Http.DefaultHttpContext spoofedCtx = new();
+        spoofedCtx.Request.Scheme = "http";
+        spoofedCtx.Request.Headers["X-Forwarded-Proto"] = "https";
+        spoofedCtx.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("203.0.113.10");
+        CentralServerOptions opts = new() { RequireHttps = true, TrustForwardedProto = true };
+        Assert.False(CentralSyncEndpoints.IsHttpsRequest(spoofedCtx, opts));
+
+        // Loopback proxy IS trusted
+        spoofedCtx.Connection.RemoteIpAddress = System.Net.IPAddress.Loopback;
+        Assert.True(CentralSyncEndpoints.IsHttpsRequest(spoofedCtx, opts));
+
+        // P1 #1: Revoked device with EXPIRED token cannot flood quarantine (401 ERR_DEVICE_TOKEN_EXPIRED)
+        using CentralSyncTestHost host = new();
+        using HttpClient adminClient = host.CreateHttpsClient();
+        string adminToken = await host.LoginAsAdminAsync(adminClient);
+        using EnrolledDeviceClient tablet = await host.EnrollApproveAndAuthenticateDeviceAsync(adminClient, adminToken, "Expired-Revoked");
+
+        using (HttpRequestMessage revokeReq = new(HttpMethod.Post, $"/api/sync/v1/admin/devices/{tablet.DeviceId:D}/revoke"))
+        {
+            revokeReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+            revokeReq.Content = JsonContent.Create(new RevokeDeviceRequest("Revoked"));
+            Assert.Equal(HttpStatusCode.OK, (await adminClient.SendAsync(revokeReq)).StatusCode);
+        }
+
+        // Backdate token expiry in SQLite to simulate an expired stolen token
+        CentralSyncDatabase db = host.Factory.Services.GetRequiredService<CentralSyncDatabase>();
+        using (Microsoft.Data.Sqlite.SqliteConnection conn = db.OpenConnection())
+        using (Microsoft.Data.Sqlite.SqliteCommand cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "UPDATE sync_device_tokens SET expires_at_utc = $past WHERE device_id = $did;";
+            cmd.Parameters.AddWithValue("$past", DateTimeOffset.UtcNow.AddHours(-2).ToString("O"));
+            cmd.Parameters.AddWithValue("$did", tablet.DeviceId.ToString("D"));
+            cmd.ExecuteNonQuery();
+        }
+
+        SyncOperationEnvelopeV1 op = MakeEnvelope(tablet.DeviceId, host.StoreId, 1, "cafe.sale.committed.v3", "{\"x\":1}");
+        HttpResponseMessage expiredPush = await tablet.Http.PostAsJsonAsync(
+            "/api/sync/v1/push", new PushOperationsRequest(1, [op]));
+        Assert.Equal(HttpStatusCode.Unauthorized, expiredPush.StatusCode);
+        Assert.Equal("ERR_DEVICE_TOKEN_EXPIRED", (await expiredPush.Content.ReadFromJsonAsync<ErrorResponseDto>())?.ErrorCode);
+    }
 }

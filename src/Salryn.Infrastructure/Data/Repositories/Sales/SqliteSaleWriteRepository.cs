@@ -2,7 +2,9 @@ using Microsoft.Data.Sqlite;
 using Salryn.Core.Common;
 using Salryn.Core.Models;
 using Salryn.Core.Repositories;
+using Salryn.Core.Services;
 using Salryn.Core.ValueObjects;
+using Salryn.Infrastructure.Data.Repositories.Ingredients;
 
 namespace Salryn.Infrastructure.Data.Repositories.Sales;
 
@@ -44,6 +46,22 @@ public sealed class SqliteSaleWriteRepository :
                 return Task.FromResult(writeResult);
             }
 
+            if (TableExists(connection, transaction, "sale_ingredient_consumption_decisions"))
+            {
+                Result<SaleIngredientConsumptionDecision> ingredientResult =
+                    SqliteIngredientConsumptionParticipant.ApplySale(
+                        connection,
+                        transaction,
+                        new CompleteCheckoutSaleRequest(sale, items, payments, stockMovements),
+                        sourceSaleOperationId: null);
+
+                if (ingredientResult.IsFailure)
+                {
+                    transaction.Rollback();
+                    return Task.FromResult(Result.Fail(ingredientResult.ErrorDetail));
+                }
+            }
+
             transaction.Commit();
 
             return Task.FromResult(Result.Success());
@@ -61,7 +79,9 @@ public sealed class SqliteSaleWriteRepository :
         IReadOnlyList<SaleItem> items,
         IReadOnlyList<Payment> payments,
         IReadOnlyList<StockMovement> stockMovements,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool grossSubtotalBeforeAllocatedDiscounts = false,
+        long bookingDepositAppliedCents = 0)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -69,7 +89,9 @@ public sealed class SqliteSaleWriteRepository :
             sale,
             items,
             payments,
-            stockMovements);
+            stockMovements,
+            grossSubtotalBeforeAllocatedDiscounts,
+            bookingDepositAppliedCents);
 
         if (validation.IsFailure)
         {
@@ -211,6 +233,22 @@ public sealed class SqliteSaleWriteRepository :
                 {
                     transaction.Rollback();
                     return Task.FromResult(stockResult);
+                }
+            }
+
+            if (TableExists(connection, transaction, "sale_ingredient_consumption_decisions"))
+            {
+                Result ingredientReversal =
+                    SqliteIngredientConsumptionParticipant.ReverseSale(
+                        connection,
+                        transaction,
+                        saleId,
+                        voidedByUserId);
+
+                if (ingredientReversal.IsFailure)
+                {
+                    transaction.Rollback();
+                    return Task.FromResult(ingredientReversal);
                 }
             }
 
@@ -708,11 +746,22 @@ public sealed class SqliteSaleWriteRepository :
         command.ExecuteNonQuery();
     }
 
+    private static bool TableExists(SqliteConnection connection, SqliteTransaction transaction, string tableName)
+    {
+        using SqliteCommand cmd = connection.CreateCommand();
+        cmd.Transaction = transaction;
+        cmd.CommandText = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = $name LIMIT 1;";
+        cmd.Parameters.AddWithValue("$name", tableName);
+        return cmd.ExecuteScalar() is not null;
+    }
+
     private static Result ValidateCompletedSale(
         Sale sale,
         IReadOnlyList<SaleItem> items,
         IReadOnlyList<Payment> payments,
-        IReadOnlyList<StockMovement> stockMovements)
+        IReadOnlyList<StockMovement> stockMovements,
+        bool grossSubtotalBeforeAllocatedDiscounts = false,
+        long bookingDepositAppliedCents = 0)
     {
         if (sale is null)
         {
@@ -793,7 +842,14 @@ public sealed class SqliteSaleWriteRepository :
                 "At least one sale item is required."));
         }
 
-        if (payments.Count == 0)
+        if (bookingDepositAppliedCents < 0)
+        {
+            return Result.Fail(Error.Validation(
+                "Sales.InvalidBookingDepositApplied",
+                "Booking deposit application cannot be negative."));
+        }
+
+        if (payments.Count == 0 && bookingDepositAppliedCents == 0)
         {
             return Result.Fail(Error.Validation(
                 "Sales.EmptyPayments",
@@ -803,6 +859,7 @@ public sealed class SqliteSaleWriteRepository :
         if (sale.Subtotal.Cents < 0 ||
             sale.Discount.Cents < 0 ||
             sale.Tax.Cents < 0 ||
+            sale.FeeTotal.Cents < 0 ||
             sale.Total.Cents < 0 ||
             sale.AmountPaid.Cents < 0 ||
             sale.Change.Cents < 0)
@@ -812,7 +869,7 @@ public sealed class SqliteSaleWriteRepository :
                 "Sale money amounts cannot be negative."));
         }
 
-        long expectedTotal = checked(sale.Subtotal.Cents - sale.Discount.Cents + sale.Tax.Cents);
+        long expectedTotal = checked(sale.Subtotal.Cents - sale.Discount.Cents + sale.FeeTotal.Cents + sale.Tax.Cents);
 
         if (expectedTotal < 0)
         {
