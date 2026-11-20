@@ -1,9 +1,12 @@
 # Android source recovery status
 
 This launcher is a setup preview, not a release candidate or an operational cashier.
-It opens an app-private SQLite database and exposes Bluetooth permission diagnostics.
-It does not create sample menu items or operators. Offline mutations fail closed
-until an independent server trust key and real platform clock are supplied.
+It opens the shared canonical Cafe SQLite schema through MobileProductionComposition
+and exposes Bluetooth permission diagnostics. It does not use the interrupted
+prototype mobile_* business ledger. Those sources are preserved under
+tests/Salryn.Cafe.I6BTests/Prototypes for synthetic failure provenance only.
+It does not create sample menu items or operators. Cashier mutations remain unavailable until independent device trust, operator
+authorization and complete native workflows are wired. No sample data is seeded.
 
 ## Build and synthetic test commands
 
@@ -57,3 +60,7 @@ Manual preview checks (not yet observed):
 
 Passing foundation tests and producing an APK do not close Issue #14. Independent
 frozen-SHA security review and live software acceptance remain required.
+
+The app-private canonical root is files/SalrynCafe and database filename salryn-cafe.db.
+Prior files/salryn prototype databases and salryn-p0 identity files are preserved;
+there is no automatic migration of prototype financial records.
