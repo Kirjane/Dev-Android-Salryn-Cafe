@@ -1,0 +1,27 @@
+[Unit]
+Description=Salryn Cafe Central Sync Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+User=salryn-cafe
+Group=salryn-cafe
+WorkingDirectory=/opt/salryn-cafe-central
+ExecStart=/usr/bin/dotnet /opt/salryn-cafe-central/Salryn.Sync.Central.Server.dll
+Restart=always
+RestartSec=5
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://127.0.0.1:8443
+Environment=SALRYN_CAFE_CENTRAL_DB_PATH=/var/lib/salryn-cafe-central/data/salryn-cafe-central.db
+Environment=SALRYN_CAFE_CENTRAL_REQUIRE_HTTPS=true
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/salryn-cafe-central
+
+[Install]
+WantedBy=multi-user.target

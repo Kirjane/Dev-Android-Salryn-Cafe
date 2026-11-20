@@ -1,0 +1,12 @@
+# Cloudflare Tunnel Config Template (NO LIVE TUNNEL ID OR HOSTNAME)
+# Replace <TUNNEL_UUID> and <YOUR_DOMAIN> on the target Ubuntu server.
+tunnel: <TUNNEL_UUID>
+credentials-file: /etc/cloudflared/credentials.json
+
+ingress:
+  - hostname: sync-cafe.<YOUR_DOMAIN>
+    service: http://127.0.0.1:8443
+    originRequest:
+      noTLSVerify: false
+      connectTimeout: 10s
+  - service: http_status:404
