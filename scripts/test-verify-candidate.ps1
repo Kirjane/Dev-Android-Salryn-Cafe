@@ -150,3 +150,6 @@ if ($LASTEXITCODE -ne 0) { throw 'Fixture missing-app commit failed.' }
 Assert ($LASTEXITCODE -eq 1) 'Actual runner blocks missing Android app.'
 Remove-Item Function:dotnet
 Write-Host "PASS: $assertions assertions; synthetic fixtures retained at $fixture"
+
+# Expected-negative runner probes leave LASTEXITCODE=1; successful regression suite must return zero.
+exit 0
