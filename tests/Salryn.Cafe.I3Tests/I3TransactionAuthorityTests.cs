@@ -9,6 +9,8 @@ using Salryn.Core.Models;
 using Salryn.Core.Security;
 using Salryn.Core.Services;
 using Salryn.Infrastructure.Data.Services;
+using Salryn.Infrastructure.Data.Repositories.System;
+using Salryn.Core.ReadModels;
 using Xunit;
 
 namespace Salryn.Cafe.I3Tests;
@@ -199,6 +201,92 @@ public sealed class I3TransactionAuthorityTests
 
         Assert.True(collection.IsSuccess, collection.IsFailure ? collection.ErrorDetail.Message : string.Empty);
         Assert.Equal("Cash", collection.Value.Method);
+    }
+
+    [Theory]
+    [InlineData(false, StatusCodes.Status401Unauthorized)]
+    [InlineData(true, StatusCodes.Status403Forbidden)]
+    public async Task CafeMutationFilter_RevokedOperatorOrPermission_BlocksCachedReplay(
+        bool revokePermission, int expectedStatus)
+    {
+        using I3TestDatabaseFixture fx = new();
+        SqliteUserPermissionReadRepository permissionReader = new(fx.ConnectionFactory);
+        Result<UserPermissionReadModel?> profileResult =
+            await permissionReader.FindByUserIdAsync(fx.AdminUserId);
+        Assert.True(profileResult.IsSuccess);
+        UserPermissionReadModel profile = Assert.IsType<UserPermissionReadModel>(profileResult.Value);
+        Assert.Equal(UserStatus.Active, profile.Status);
+        Assert.NotEmpty(profile.Permissions);
+
+        InMemoryLocalApiSessionStore sessionStore = new();
+        LocalApiSession session = sessionStore.Create(new AuthenticatedUserReadModel(
+            profile.UserId, profile.Username, profile.DisplayName, profile.RoleName,
+            profile.Status, profile.Permissions)
+        {
+            RoleId = profile.RoleId
+        });
+        LocalApiSessionService sessionService = new(fx.Composition.Authentication, sessionStore);
+        using ServiceProvider services = new ServiceCollection()
+            .AddSingleton(sessionService)
+            .AddSingleton(fx.Composition)
+            .AddSingleton(new CafeMutationIdempotencyGuard(fx.ConnectionFactory))
+            .BuildServiceProvider();
+
+        Guid operationId = Guid.NewGuid();
+        DefaultHttpContext Request()
+        {
+            DefaultHttpContext http = new();
+            http.RequestServices = services;
+            http.Request.Method = HttpMethods.Post;
+            http.Request.Path = "/api/cafe/orders/revision";
+            http.Request.Headers["Idempotency-Key"] = operationId.ToString("D");
+            http.Request.Headers["Cookie"] =
+                LocalApiSessionService.SessionCookieName + "=" + session.SessionId;
+            return http;
+        }
+
+        int executions = 0;
+        EndpointFilterDelegate next = _ =>
+        {
+            executions++;
+            return ValueTask.FromResult<object?>(Results.Ok(new { committed = true }));
+        };
+        CafeMutationIdempotencyEndpointFilter filter = new();
+
+        DefaultHttpContext first = Request();
+        object? committed = await filter.InvokeAsync(
+            EndpointFilterInvocationContext.Create(first), next);
+        Assert.Equal(StatusCodes.Status200OK,
+            Assert.IsAssignableFrom<IStatusCodeHttpResult>(committed).StatusCode);
+        Assert.Equal(1, executions);
+
+        using (var connection = fx.ConnectionFactory.CreateConnection())
+        {
+            connection.Open();
+            using var cmd = connection.CreateCommand();
+            if (revokePermission)
+            {
+                cmd.CommandText = "DELETE FROM role_permissions WHERE role_id = $role AND permission = $permission;";
+                cmd.Parameters.AddWithValue("$role", profile.RoleId.ToString("D"));
+                cmd.Parameters.AddWithValue("$permission", profile.Permissions[0]);
+            }
+            else
+            {
+                cmd.CommandText = "UPDATE users SET status = 0 WHERE id = $user;";
+                cmd.Parameters.AddWithValue("$user", profile.UserId.ToString("D"));
+            }
+
+            Assert.Equal(1, cmd.ExecuteNonQuery());
+        }
+
+        DefaultHttpContext second = Request();
+        object? denied = await filter.InvokeAsync(
+            EndpointFilterInvocationContext.Create(second), next);
+        Assert.Equal(expectedStatus,
+            Assert.IsAssignableFrom<IStatusCodeHttpResult>(denied).StatusCode);
+        Assert.Equal(1, executions);
+        Assert.False(second.Response.Headers.ContainsKey("X-Idempotency-Replayed"));
+        Assert.Null(sessionService.GetRequiredSession(session.SessionId));
     }
 
     [Fact]
