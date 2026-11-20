@@ -1,10 +1,12 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Data.Sqlite;
 using Salryn.Core.Common;
 using Salryn.Core.Services;
 using Salryn.Infrastructure.Paths;
+using Salryn.Infrastructure.Data.Migrations;
 
 namespace Salryn.Infrastructure.Data.Services;
 
@@ -14,7 +16,8 @@ public sealed record ControlledBackupManifest(
     string BackupId,
     DateTimeOffset CreatedAt,
     int SchemaVersion,
-    IReadOnlyList<ControlledBackupFile> Files);
+    IReadOnlyList<ControlledBackupFile> Files,
+    [property: JsonPropertyName("product_id")] string? ProductId = null);
 
 public sealed record ControlledBackupSummary(string BackupId, DateTimeOffset CreatedAt, long SizeBytes);
 
@@ -73,7 +76,8 @@ public sealed class ControlledBackupPackageService
             id,
             DateTimeOffset.UtcNow,
             ReadVersion(db),
-            new[] { new ControlledBackupFile(DatabaseName, info.Length, hash) });
+            new[] { new ControlledBackupFile(DatabaseName, info.Length, hash) },
+            SalrynProductIdentity.ProductId);
         WriteManifest(dir, manifest);
         return Result<ControlledBackupSummary>.Success(new ControlledBackupSummary(id, manifest.CreatedAt, info.Length));
     }
@@ -156,6 +160,23 @@ public sealed class ControlledBackupPackageService
             if (v.IsFailure)
             {
                 return Fail("BackupPackage.DatabaseInvalid", "Backup database validation failed.");
+            }
+
+            if (m.ProductId is not null && !string.Equals(m.ProductId, SalrynProductIdentity.ProductId, StringComparison.Ordinal))
+            {
+                return Fail("BackupPackage.ProductMismatch", "Backup belongs to a different product.");
+            }
+            if (m.ProductId is null)
+            {
+                using var lineageConnection = new SqliteConnection(new SqliteConnectionStringBuilder
+                {
+                    DataSource = db, Mode = SqliteOpenMode.ReadOnly, Pooling = false
+                }.ToString());
+                lineageConnection.Open();
+                if (SchemaLineageClassifier.Classify(lineageConnection).Kind != SchemaLineageKind.YzaV39Legacy)
+                {
+                    return Fail("BackupPackage.ProductMissing", "Only verified legacy Cafe Yza packages may omit product_id.");
+                }
             }
 
             if (v.Value.HasFutureMigrationVersion)

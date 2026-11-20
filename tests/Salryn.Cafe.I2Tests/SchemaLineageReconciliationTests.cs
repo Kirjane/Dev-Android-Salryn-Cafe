@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using System.Text.Json.Nodes;
 using Salryn.Infrastructure.Data;
 using Salryn.Infrastructure.Data.Migrations;
 using Salryn.Infrastructure.Data.Initialization;
@@ -41,6 +42,27 @@ public sealed class SchemaLineageReconciliationTests : IDisposable
         DbPaths paths = DbPaths.CreateDevelopment(sub);
         paths.EnsureDirectories();
         return (paths, new SqliteConnectionFactory(paths));
+    }
+
+    [Fact]
+    public void ControlledBackup_ProductBindingRejectsMissingOrWrongProductOnCafeDatabase()
+    {
+        var (paths, _) = CreateTempDb("package-product-binding");
+        Assert.True(DefaultDatabaseInitializationFactory.Create(paths).InitializeDatabase().IsSuccess);
+        var packages = new ControlledBackupPackageService(paths);
+        var created = packages.Create();
+        Assert.True(created.IsSuccess, created.IsFailure ? created.Error : "");
+        string id = created.Value.BackupId;
+        Assert.True(packages.Verify(id).IsSuccess);
+        string manifestPath = Path.Combine(paths.BackupPath, id, "manifest.json");
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        Assert.Equal("Salryn.Cafe", manifest["product_id"]!.GetValue<string>());
+        manifest["product_id"] = "Salryn.POS";
+        File.WriteAllText(manifestPath, manifest.ToJsonString());
+        Assert.Equal("BackupPackage.ProductMismatch", packages.Verify(id).ErrorDetail.Code);
+        manifest.Remove("product_id");
+        File.WriteAllText(manifestPath, manifest.ToJsonString());
+        Assert.Equal("BackupPackage.ProductMissing", packages.Verify(id).ErrorDetail.Code);
     }
 
     [Fact]
