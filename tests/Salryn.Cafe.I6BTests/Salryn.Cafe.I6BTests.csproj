@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Salryn.Mobile.Foundation\Salryn.Mobile.Foundation.csproj" />
+    <ProjectReference Include="..\..\src\Salryn.Mobile.Runtime\Salryn.Mobile.Runtime.csproj" />
+    <ProjectReference Include="..\..\src\Salryn.Sync.Contracts\Salryn.Sync.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Salryn.Sync.Central.Server\Salryn.Sync.Central.Server.csproj" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.0.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>
