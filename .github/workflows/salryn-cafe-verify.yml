@@ -1,0 +1,88 @@
+name: Salryn Cafe Verify
+
+on:
+  pull_request:
+    branches:
+      - main
+      - 'forge/**'
+  push:
+    branches:
+      - 'forge/**'
+      - '!archive/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: salryn-cafe-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-verify:
+    name: Windows Verify (.NET 10 + Node 22 + Executed>0 Gate)
+    runs-on: windows-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run unified verification gates (hard Executed > 0 enforcement)
+        shell: pwsh
+        run: |
+          ./scripts/verify-candidate.ps1 -Configuration Release -SkipAndroid
+
+      - name: Upload Windows verification summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-windows-${{ github.sha }}
+          path: artifacts/verification/
+          retention-days: 14
+
+  linux-verify:
+    name: Linux Verify (.NET 10 + Node 22 Cross-OS Gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run cross-OS verification gates
+        shell: pwsh
+        run: |
+          ./scripts/verify-candidate.ps1 -Configuration Release -EnableWindowsTargeting -SkipAndroid
+
+      - name: Upload Linux verification summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-linux-${{ github.sha }}
+          path: artifacts/verification/
+          retention-days: 14
