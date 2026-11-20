@@ -536,13 +536,21 @@ public sealed class RemotePosCheckoutService
 
         // ---- The host sale is now COMMITTED. Everything below must be fail-safe. ----------------
 
-        // Read back the authoritative persisted sale (host-owned totals + sale id). A read-back
-        // failure must not undo the committed sale, so a null sale still yields a Completed result.
+        // A read-back failure cannot undo the host commit, but it also cannot
+        // authorize a fabricated Completed result with missing financial totals.
         Result<SaleDetailReadModel?> saleResult = await _saleReadRepository
             .FindSaleByReceiptNoAsync(receiptNumber, cancellationToken)
             .ConfigureAwait(false);
 
         SaleDetailReadModel? sale = saleResult.IsSuccess ? saleResult.Value : null;
+        if (sale is null)
+        {
+            // The stable pending receipt survives a lost acknowledgement or read failure.
+            // Reconciliation on retry will confirm or recover the committed sale.
+            return Result(RemotePosCheckoutStatus.PendingConfirmation, request.ClientRequestId,
+                "Host sale confirmation is unavailable. Retry with the same checkout request id.",
+                duplicate: false);
+        }
 
         RemotePosCheckoutResultResponse completed = new(
             RemotePosCheckoutStatus.Completed,
@@ -683,7 +691,10 @@ public sealed class RemotePosCheckoutService
         RemotePosCheckoutRequestRecord record,
         CancellationToken cancellationToken)
     {
-        if (record.State == RemotePosCheckoutRequestStore.Completed)
+        if (record.State == RemotePosCheckoutRequestStore.Completed &&
+            !string.IsNullOrWhiteSpace(record.SaleId) &&
+            record.TotalCents.HasValue &&
+            record.ChangeCents.HasValue)
         {
             return new RemotePosCheckoutResultResponse(
                 RemotePosCheckoutStatus.Completed,
