@@ -129,7 +129,8 @@ public sealed class MobileCashierEngine
         _leaseGuard = leaseGuard ?? throw new ArgumentNullException(nameof(leaseGuard));
         _printerTransport = printerTransport ?? throw new ArgumentNullException(nameof(printerTransport));
         _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
-        _clockSource = clockSource ?? (() => (Environment.TickCount64, 1));
+        // Platform callers must supply a real elapsed clock and persistent boot counter.
+        _clockSource = clockSource ?? (() => (-1L, -1));
     }
 
     public void ConfigureDeviceBinding(

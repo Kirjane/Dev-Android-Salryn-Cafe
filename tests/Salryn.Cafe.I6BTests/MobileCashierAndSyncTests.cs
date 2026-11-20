@@ -60,11 +60,11 @@ public sealed class MobileCashierAndSyncTests
         db.Initialize();
 
         InMemorySecretStore secrets = new();
-        MobileOfflineLeaseGuard leaseGuard = new(secrets);
+        (MobileSignedOfflineLease lease, string serverKey) = CreateSignedLease(deviceId, tenantId, storeId, 1, now.AddMinutes(-5), now.AddHours(24));
+        MobileOfflineLeaseGuard leaseGuard = new(secrets, serverKey);
         SimulatedEscPosPrinterTransport printer = new();
         MobileCashierEngine engine = new(db, leaseGuard, printer, utcNow: () => now, clockSource: () => (1000L, 1));
 
-        (MobileSignedOfflineLease lease, _) = CreateSignedLease(deviceId, tenantId, storeId, 1, now.AddMinutes(-5), now.AddHours(24));
         engine.ConfigureDeviceBinding(deviceId, tenantId, storeId, 1, lease);
         engine.ConfigurePrinterStation("Receipt", "AA:BB:CC:11:22:01", "Salryn Receipt BT-58");
         engine.ConfigurePrinterStation("Kitchen", "AA:BB:CC:11:22:02", "Salryn Kitchen BT-80");
@@ -163,11 +163,11 @@ public sealed class MobileCashierAndSyncTests
         CafeMobileDatabase db = new(dbPath);
         db.Initialize();
         InMemorySecretStore secrets = new();
-        MobileOfflineLeaseGuard guard = new(secrets);
+        (MobileSignedOfflineLease lease, string serverKey) = CreateSignedLease(deviceId, tenantId, storeId, 1, t0.AddMinutes(-1), t0.AddHours(1));
+        MobileOfflineLeaseGuard guard = new(secrets, serverKey);
         SimulatedEscPosPrinterTransport printer = new();
         MobileCashierEngine engine = new(db, guard, printer, utcNow: () => t0, clockSource: () => (elapsed, bootCount));
 
-        (MobileSignedOfflineLease lease, _) = CreateSignedLease(deviceId, tenantId, storeId, 1, t0.AddMinutes(-1), t0.AddHours(1));
         engine.ConfigureDeviceBinding(deviceId, tenantId, storeId, 1, lease);
         engine.SeedOperator(Guid.CreateVersion7(), "c1", "Cashier", "Cashier", "1234");
         MobileOperatorPrincipal cashier = engine.AuthenticateOperator("c1", "1234")!;
@@ -267,7 +267,12 @@ public sealed class MobileCashierAndSyncTests
         mobileDb.Initialize();
         InMemorySecretStore secrets = new();
         SimulatedEscPosPrinterTransport printer = new();
-        MobileCashierEngine engine = new(mobileDb, new MobileOfflineLeaseGuard(secrets), printer);
+        // Provision trust from the synthetic server fixture, independently of token/lease data.
+        CentralSyncDatabase centralDb = factory.Services.GetRequiredService<CentralSyncDatabase>();
+        using SqliteConnection centralConnection = centralDb.OpenConnection();
+        string trustedServerKey = centralDb.ReadServerState(centralConnection).LeaseSigningPublicKeySpki;
+        MobileCashierEngine engine = new(mobileDb, new MobileOfflineLeaseGuard(secrets, trustedServerKey), printer,
+            clockSource: () => (Environment.TickCount64, 1));
         engine.ConfigureDeviceBinding(enrolled.DeviceId, tenantId, storeId, activeEpoch, auth.OfflineLease);
         engine.SeedOperator(Guid.CreateVersion7(), "cashier", "Ana", "Cashier", "1234");
         MobileOperatorPrincipal cashier = engine.AuthenticateOperator("cashier", "1234")!;

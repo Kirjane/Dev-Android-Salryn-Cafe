@@ -33,10 +33,8 @@ public sealed class MainActivity : Activity
     {
         base.OnCreate(savedInstanceState);
 
-        AndroidAppPaths paths = AndroidAppPaths.FromContext(this);
-        paths.EnsureDirectories();
-
-        _db = new CafeMobileDatabase(paths.ProductionDatabasePath);
+        AndroidAppPaths paths = new(this);
+        _db = new CafeMobileDatabase(paths.DatabasePath);
         _db.Initialize();
 
         AndroidKeyStoreSecretStore secretStore = new(paths.ProtectedSecretRoot);
@@ -46,19 +44,7 @@ public sealed class MainActivity : Activity
             _db,
             leaseGuard,
             btTransport,
-            clockSource: () => (SystemClock.ElapsedRealtime(), 1));
-
-        // Seed default menu catalog if empty for first-run offline readiness
-        if (_engine.GetMenuItems().Count == 0)
-        {
-            _engine.SeedMenuItems(
-            [
-                new MobileMenuItemDto(Guid.CreateVersion7(), "Iced Spanish Latte", "Espresso", 14500, true),
-                new MobileMenuItemDto(Guid.CreateVersion7(), "Americano", "Espresso", 11000, true),
-                new MobileMenuItemDto(Guid.CreateVersion7(), "Caramel Macchiato", "Signature", 16000, true),
-                new MobileMenuItemDto(Guid.CreateVersion7(), "Matcha Latte", "Non-Coffee", 15500, true)
-            ]);
-        }
+            clockSource: () => (SystemClock.ElapsedRealtime(), ReadBootCount()));
 
         ScrollView scroll = new(this);
         scroll.SetBackgroundColor(Cream);
@@ -79,7 +65,7 @@ public sealed class MainActivity : Activity
 
         TextView title = new(this)
         {
-            Text = "SALRYN CAFE — OFFLINE CASHIER",
+            Text = "SALRYN CAFE — CASHIER PREVIEW",
             TextSize = 20f
         };
         title.SetTextColor(Cream);
@@ -87,7 +73,7 @@ public sealed class MainActivity : Activity
 
         TextView subtitle = new(this)
         {
-            Text = "Product: Salryn.Cafe | Tenders: Cash / AR / Partial Cash+AR | BT ESC/POS Ready",
+            Text = "Setup is incomplete. Pairing and cashier actions are not available in this preview.",
             TextSize = 12f
         };
         subtitle.SetTextColor(Latte);
@@ -111,12 +97,23 @@ public sealed class MainActivity : Activity
         // Menu items preview
         TextView menuHeader = new(this)
         {
-            Text = "Offline Menu Catalog (SQLite WAL)",
+            Text = "Cached Menu",
             TextSize = 16f
         };
         menuHeader.SetTextColor(DarkCopper);
         menuHeader.SetTypeface(null, TypefaceStyle.Bold);
         root.AddView(menuHeader);
+
+        if (_engine.GetMenuItems().Count == 0)
+        {
+            TextView emptyMenu = new(this)
+            {
+                Text = "No menu downloaded. Connect through approved device setup before taking orders.",
+                TextSize = 14f
+            };
+            emptyMenu.SetTextColor(Mocha);
+            root.AddView(emptyMenu);
+        }
 
         foreach (MobileMenuItemDto item in _engine.GetMenuItems())
         {
@@ -163,9 +160,23 @@ public sealed class MainActivity : Activity
         int pairedPrinters = btGranted ? btTransport.ListPairedPrinters().Count : 0;
 
         _statusView.Text =
-            $"Local SQLite WAL: READY ({menuCount} menu items)\n" +
+            $"Cached menu: {menuCount} items\n" +
             $"Pending Sync Outbox: {outboxCount} envelopes\n" +
-            $"Device Trust: AndroidKeyStore AES-256-GCM + ECDSA P-256\n" +
+            $"Device setup: incomplete; cashier authorization unavailable\n" +
             $"Bluetooth Printer Transport: {(btGranted ? $"PERMITTED ({pairedPrinters} paired)" : "PERMISSION NEEDED")}";
+    }
+
+    private int ReadBootCount()
+    {
+        try
+        {
+            return global::Android.Provider.Settings.Global.GetInt(ContentResolver,
+                global::Android.Provider.Settings.Global.BootCount, -1);
+        }
+        catch (Java.Lang.SecurityException)
+        {
+            // Unknown clock provenance must lock offline mutations, never invent a boot ID.
+            return -1;
+        }
     }
 }
