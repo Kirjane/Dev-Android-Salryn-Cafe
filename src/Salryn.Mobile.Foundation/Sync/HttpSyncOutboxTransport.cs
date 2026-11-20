@@ -154,7 +154,35 @@ public sealed class HttpSyncOutboxTransport : IP0OutboxTransport
         using HttpResponseMessage resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
         if (resp.IsSuccessStatusCode)
         {
-            PushRespDto dto = (await resp.Content.ReadFromJsonAsync<PushRespDto>(JsonOpts, ct).ConfigureAwait(false))!;
+            PushRespDto? dto;
+            try
+            {
+                dto = await resp.Content.ReadFromJsonAsync<PushRespDto>(JsonOpts, ct).ConfigureAwait(false);
+            }
+            catch (JsonException)
+            {
+                dto = null;
+            }
+
+            // HTTP 2xx alone must never clear durable outbox rows. Require exactly one
+            // central receipt per submitted operation; missing, foreign or duplicate IDs
+            // leave the entire batch pending for safe retry/reconciliation. This is only
+            // a transport receipt, NOT proof of canonical business projection.
+            HashSet<Guid> outstanding = envelopes.Select(e => e.OperationId).ToHashSet();
+            if (dto?.Results is null ||
+                outstanding.Count != envelopes.Count ||
+                outstanding.Contains(Guid.Empty) ||
+                dto.Results.Count != envelopes.Count ||
+                dto.Results.Any(r => !outstanding.Remove(r.OperationId)) ||
+                outstanding.Count != 0)
+            {
+                return new MobilePushOutcome(
+                    false, false, false, dto?.ServerEpoch,
+                    Array.Empty<Guid>(), Array.Empty<Guid>(),
+                    "ERR_SYNC_ACK_MISMATCH",
+                    "Central response did not acknowledge exactly the submitted operation IDs; local outbox remains pending.");
+            }
+
             return new MobilePushOutcome(
                 true, false, false, dto.ServerEpoch,
                 dto.Results.Select(r => r.OperationId).ToArray(),
