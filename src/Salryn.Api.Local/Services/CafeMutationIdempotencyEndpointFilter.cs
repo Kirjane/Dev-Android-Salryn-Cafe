@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 using Salryn.Api.Local.Auth;
 using Salryn.Composition.Local;
+using Salryn.Core.Models;
+using Salryn.Infrastructure.Data.Repositories.System;
 
 namespace Salryn.Api.Local.Services;
 
@@ -45,6 +47,41 @@ internal sealed class CafeMutationIdempotencyEndpointFilter : IEndpointFilter
             if (session is null)
             {
                 return await next(context).ConfigureAwait(false);
+            }
+        }
+
+        // Revalidate the database authority before either executing or replaying.
+        // Local sessions snapshot permissions at login; without this check, a
+        // revoked role or inactive operator can retrieve a cached financial result.
+        if (session is not null)
+        {
+            SalrynLocalComposition composition = httpContext.RequestServices
+                .GetRequiredService<SalrynLocalComposition>();
+            SqliteUserPermissionReadRepository permissions =
+                new(composition.ConnectionFactory);
+            var current = await permissions.FindByUserIdAsync(
+                    session.UserId, httpContext.RequestAborted)
+                .ConfigureAwait(false);
+
+            if (current.IsFailure || current.Value is null ||
+                current.Value.Status != UserStatus.Active ||
+                session.Status != UserStatus.Active ||
+                current.Value.RoleId != session.RoleId ||
+                !string.Equals(current.Value.Username, session.Username, StringComparison.OrdinalIgnoreCase))
+            {
+                sessions!.Logout(session.SessionId);
+                return Results.Json(
+                    new { code = "Auth.OperatorSessionRevoked", error = "Operator session is no longer authorized." },
+                    statusCode: StatusCodes.Status401Unauthorized);
+            }
+
+            if (!new HashSet<string>(session.Permissions, StringComparer.OrdinalIgnoreCase)
+                .SetEquals(current.Value.Permissions))
+            {
+                sessions!.Logout(session.SessionId);
+                return Results.Json(
+                    new { code = "Auth.OperatorPermissionsChanged", error = "Operator permissions changed; sign in again." },
+                    statusCode: StatusCodes.Status403Forbidden);
             }
         }
 
