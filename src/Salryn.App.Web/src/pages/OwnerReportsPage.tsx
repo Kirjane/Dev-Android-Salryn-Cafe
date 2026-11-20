@@ -1,3 +1,4 @@
+import { CafeManagementReportsPanel } from "./CafeManagementReportsPanel";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -309,6 +310,7 @@ export function OwnerReportsPage({
 
   return (
     <div className="space-y-4">
+      <CafeManagementReportsPanel />
       <CommandBar
         title="Reports"
         subtitle="Owner analytics by store day in Asia/Manila; Read-only and bounded."

@@ -23,10 +23,30 @@ public sealed class OwnerReportsApiService
         _composition = composition ?? throw new ArgumentNullException(nameof(composition));
     }
 
+    // Legacy in-process summary consumers do not acquire an operator identity here.
+    // HTTP callers use the explicit authenticated-actor overload below.
     public Task<Result<OwnerReportsResponse>> GetSummaryAsync(
         DateTimeOffset? nowOverride = null,
         CancellationToken cancellationToken = default,
-        bool includeReceivables = true)
+        bool includeReceivables = true) =>
+        ReadSummaryAsync(null, null, null, nowOverride, cancellationToken, includeReceivables);
+
+    public Task<Result<OwnerReportsResponse>> GetSummaryAsync(
+        Guid actorUserId,
+        DateTimeOffset? rangeStartUtc = null,
+        DateTimeOffset? rangeEndUtc = null,
+        DateTimeOffset? nowOverride = null,
+        CancellationToken cancellationToken = default,
+        bool includeReceivables = true) =>
+        ReadSummaryAsync(actorUserId, rangeStartUtc, rangeEndUtc, nowOverride, cancellationToken, includeReceivables);
+
+    private async Task<Result<OwnerReportsResponse>> ReadSummaryAsync(
+        Guid? actorUserId,
+        DateTimeOffset? rangeStartUtc,
+        DateTimeOffset? rangeEndUtc,
+        DateTimeOffset? nowOverride,
+        CancellationToken cancellationToken,
+        bool includeReceivables)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -40,6 +60,30 @@ public sealed class OwnerReportsApiService
             DateTimeOffset weekEnd = weekStart.AddDays(7);
             DateTimeOffset monthStart = new(now.Year, now.Month, 1, 0, 0, 0, now.Offset);
             DateTimeOffset monthEnd = monthStart.AddMonths(1);
+
+            OwnerCafeManagementReport? cafeManagement = null;
+            if (actorUserId is Guid actor)
+            {
+                DateTimeOffset cafeStart = (rangeStartUtc ?? monthStart).ToUniversalTime();
+                DateTimeOffset cafeEnd = (rangeEndUtc ?? monthEnd).ToUniversalTime();
+                if (cafeEnd <= cafeStart)
+                    return Result<OwnerReportsResponse>.Fail(Error.Validation(
+                        "OwnerReports.RangeInvalid", "Report end must be after report start."));
+
+                var deployment = await _composition.DeploymentIdentityRepository
+                    .GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+                if (deployment.IsFailure)
+                    return Result<OwnerReportsResponse>.Fail(deployment.ErrorDetail);
+                if (deployment.Value is null)
+                    return Result<OwnerReportsResponse>.Fail(Error.Conflict(
+                        "OwnerReports.DeploymentIdentityMissing", "Configured StoreId is required for Cafe management reporting."));
+
+                Result<CafeManagementReport> cafe = _composition.CafeManagementReports.GetReport(
+                    new(deployment.Value.Store.StoreId, actor, cafeStart, cafeEnd, now.ToUniversalTime()));
+                if (cafe.IsFailure)
+                    return Result<OwnerReportsResponse>.Fail(cafe.ErrorDetail);
+                cafeManagement = OwnerCafeManagementReport.From(cafe.Value, includeReceivables);
+            }
 
             using SqliteConnection connection = _composition.ConnectionFactory.CreateConnection();
             connection.Open();
@@ -77,15 +121,16 @@ public sealed class OwnerReportsApiService
                 InventoryValue: ReadInventoryValue(connection),
                 Receivables: includeReceivables
                     ? ReadReceivables(connection, monthStart, monthEnd, todayStart)
-                    : null);
+                    : null,
+                CafeManagement: cafeManagement);
 
-            return Task.FromResult(Result<OwnerReportsResponse>.Success(response));
+            return Result<OwnerReportsResponse>.Success(response);
         }
         catch (Exception ex) when (ex is SqliteException or InvalidOperationException or FormatException or OverflowException)
         {
-            return Task.FromResult(Result<OwnerReportsResponse>.Fail(Error.Unexpected(
+            return Result<OwnerReportsResponse>.Fail(Error.Unexpected(
                 "OwnerReports.ReadFailed",
-                ex.Message)));
+                ex.Message));
         }
     }
 

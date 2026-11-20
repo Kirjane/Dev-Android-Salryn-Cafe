@@ -86,6 +86,8 @@ internal static class C11DApiReactSurfaceProof
             "src",
             "pages",
             "OwnerReportsPage.tsx");
+        ProofAssert.Contains(page, "<CafeManagementReportsPanel />", "Owner Reports must mount the C11 panel.");
+        page += Read(root, "src", "Salryn.App.Web", "src", "pages", "CafeManagementReportsPanel.tsx");
         string dashboard = Read(
             root,
             "src",

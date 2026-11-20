@@ -44,7 +44,7 @@ export function DashboardPage({
   });
   const ownerReportsQuery = useQuery({
     queryKey: ["dashboard-owner-report-summary"],
-    queryFn: fetchOwnerReportsSummary,
+    queryFn: () => fetchOwnerReportsSummary(),
     enabled: session.isAuthenticated && canOpenReports,
     retry: false,
   });

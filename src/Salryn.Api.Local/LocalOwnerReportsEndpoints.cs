@@ -11,6 +11,8 @@ internal static class LocalOwnerReportsEndpoints
     public static WebApplication MapLocalOwnerReportsEndpoints(this WebApplication app)
     {
         app.MapGet("/api/owner-reports/summary", async (
+            DateTimeOffset? fromUtc,
+            DateTimeOffset? toUtc,
             HttpContext httpContext,
             LocalApiSessionService sessions,
             OwnerReportsApiService service,
@@ -37,7 +39,13 @@ internal static class LocalOwnerReportsEndpoints
                     sessions,
                     LocalApiPermissions.ReceivablesView) is null;
 
+            LocalApiSession? session = sessions.GetRequiredSession(
+                httpContext.Request.Cookies[LocalApiSessionService.SessionCookieName]);
+            if (session is null)
+                return Results.Unauthorized();
+
             Result<OwnerReportsResponse> result = await service.GetSummaryAsync(
+                    session.UserId, fromUtc, toUtc,
                     includeReceivables: receivablesDecision.Allowed && canViewReceivables,
                     cancellationToken: cancellationToken)
                 .ConfigureAwait(false);

@@ -22,9 +22,10 @@ try
         Path.Combine(root, "mobile"));
 
     C11DApiReactSurfaceProof.Run();
+    C11EApiAdapterProof.Run(Path.Combine(root, "adapter"));
 
     Console.WriteLine(
-        "PASS C11 Cafe Reporting / COGS / Profitability proof");
+        "PASS C11 Cafe Reporting / COGS / Profitability proof; assertions=" + ProofAssert.Assertions);
 }
 finally
 {
