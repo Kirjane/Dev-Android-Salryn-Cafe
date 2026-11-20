@@ -1,5 +1,6 @@
 using Salryn.Core.Host;
 using Salryn.Core.TerminalRegistry;
+using Salryn.Infrastructure.Data.Migrations;
 
 namespace Salryn.Tests;
 
@@ -48,7 +49,8 @@ public static class LanM6PairingActivationRemoteHandshakeChecks
         Require(migration.Contains("salryn_remote_client_handshakes", StringComparison.Ordinal), "Remote client handshake table must exist.");
         Require(!migration.Contains("raw_pairing", StringComparison.OrdinalIgnoreCase), "Raw pairing secret must not be persisted.");
         Require(!migration.Contains("raw_terminal", StringComparison.OrdinalIgnoreCase), "Raw terminal credential must not be persisted.");
-        Require(migrationFactory.Contains("new TerminalCredentialHandshakeSchemaMigration()", StringComparison.Ordinal), "LAN-M6 migration must be registered.");
+        Require(migrationFactory.Contains("CafeMigrationCatalog.CreateCanonicalCafeMigrations()", StringComparison.Ordinal), "Default initialization must use the canonical Cafe migration catalog.");
+        Require(CafeMigrationCatalog.CreateCanonicalCafeMigrations().Any(migration => migration is TerminalCredentialHandshakeSchemaMigration), "Canonical Cafe migrations must retain terminal credential/handshake persistence.");
 
         Require(credentialRepository.Contains("UpsertCredentialAsync", StringComparison.Ordinal), "Terminal credential write path must exist.");
         Require(credentialRepository.Contains("GetCredentialByTerminalIdAsync", StringComparison.Ordinal), "Terminal credential read path must exist.");

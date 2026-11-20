@@ -32,7 +32,7 @@ public static class LanM9M13RemoteReadOnlyLanUsabilityChecks
         Require(File.Exists(Path.Combine(webRoot, "src", "pages", "RemoteReadOnlyClientPage.tsx")), "Remote page must live under App.Web.");
         Require(!Directory.Exists(Path.Combine(root.FullName, "src", "Salryn.App.WinForms", "Features", "RemoteClient")), "WinForms RemoteClient feature path must not exist.");
 
-        Require(localProgram.Contains("http://127.0.0.1:5299", StringComparison.Ordinal), "Api.Local must remain bound to localhost by default.");
+        CafeLoopbackBoundaryChecks.Run();
         Require(!localProgram.Contains("0.0.0.0", StringComparison.Ordinal), "Api.Local must not bind to all interfaces.");
         Require(!localProgram.Contains("http://192.", StringComparison.OrdinalIgnoreCase), "Api.Local must not use a default LAN IP bind.");
         Require(localProgram.Contains("MapRemoteReadOnlyEndpoints", StringComparison.Ordinal), "Remote-readonly endpoints must be mapped.");

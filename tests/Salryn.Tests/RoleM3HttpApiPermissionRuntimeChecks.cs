@@ -222,7 +222,7 @@ public static class RoleM3HttpApiPermissionRuntimeChecks
 
         AssertContains(factory, "LocalApiApplicationFactory", "ROLE-M3 app factory seam must exist.");
         AssertContains(factory, "public static async Task<WebApplication> CreateAsync", "ROLE-M3 seam must expose WebApplication creation.");
-        AssertContains(factory, "http://127.0.0.1:5299", "Production Api.Local loopback bind must remain unchanged.");
+        CafeLoopbackBoundaryChecks.Run();
         AssertContains(program, "LocalApiApplicationFactory.CreateAsync(args)", "Program.cs must use the shared factory.");
         AssertContains(program, "app.Run();", "Production Program.cs must still run the app.");
         AssertContains(coreSmokeProgram, "RoleM3HttpApiPermissionRuntimeChecks.RunAsync()", "ROLE-M3 runtime checks must be wired explicitly into CoreSmoke.");
