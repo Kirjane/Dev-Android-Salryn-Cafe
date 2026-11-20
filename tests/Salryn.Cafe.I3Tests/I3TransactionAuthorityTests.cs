@@ -4,6 +4,7 @@ using Salryn.Api.Local;
 using Salryn.Api.Local.Auth;
 using Salryn.Api.Local.Contracts;
 using Salryn.Api.Local.Services;
+using Salryn.Api.Local.RemotePos;
 using Salryn.Core.Common;
 using Salryn.Core.Models;
 using Salryn.Core.Security;
@@ -201,6 +202,55 @@ public sealed class I3TransactionAuthorityTests
 
         Assert.True(collection.IsSuccess, collection.IsFailure ? collection.ErrorDetail.Message : string.Empty);
         Assert.Equal("Cash", collection.Value.Method);
+    }
+
+    [Fact]
+    public async Task HostCheckoutRequestStore_RejectsIncompleteAndMismatchedCompletionWithoutMutating()
+    {
+        using I3TestDatabaseFixture fx = new();
+        HostCheckoutRequestStore store = new(fx.ConnectionFactory);
+        string requestId = Guid.NewGuid().ToString("D");
+        HostCheckoutRequestRecord pending = await store.GetOrCreatePendingAsync(
+            fx.AdminUserId, requestId, "SHA256-SYNTHETIC", "POS-I3-HOST-001");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.MarkCompletedAsync(pending, null, 15000, 0, "Not authoritative"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.MarkCompletedAsync(pending with { RequestHash = "TAMPERED" },
+                Guid.NewGuid().ToString("D"), 15000, 0, "Not authoritative"));
+
+        HostCheckoutRequestRecord actual = Assert.IsType<HostCheckoutRequestRecord>(
+            await store.FindAsync(fx.AdminUserId, requestId));
+        Assert.Equal(HostCheckoutRequestStore.Pending, actual.State);
+        Assert.Null(actual.SaleId);
+        Assert.Null(actual.TotalCents);
+        Assert.Null(actual.ChangeCents);
+        Assert.Equal(0, fx.CountSales());
+    }
+
+    [Fact]
+    public async Task RemoteCheckoutRequestStore_RejectsIncompleteAndMismatchedCompletionWithoutMutating()
+    {
+        using I3TestDatabaseFixture fx = new();
+        RemotePosCheckoutRequestStore store = new(fx.ConnectionFactory);
+        Guid terminalId = Guid.NewGuid();
+        string requestId = Guid.NewGuid().ToString("D");
+        RemotePosCheckoutRequestRecord pending = await store.GetOrCreatePendingAsync(
+            fx.StoreId, terminalId, requestId, "SHA256-SYNTHETIC", "POS-I3-REMOTE-001");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.MarkCompletedAsync(pending, null, 15000, 0, "Not authoritative"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.MarkCompletedAsync(pending with { RequestHash = "TAMPERED" },
+                Guid.NewGuid().ToString("D"), 15000, 0, "Not authoritative"));
+
+        RemotePosCheckoutRequestRecord actual = Assert.IsType<RemotePosCheckoutRequestRecord>(
+            await store.FindAsync(fx.StoreId, terminalId, requestId));
+        Assert.Equal(RemotePosCheckoutRequestStore.Pending, actual.State);
+        Assert.Null(actual.SaleId);
+        Assert.Null(actual.TotalCents);
+        Assert.Null(actual.ChangeCents);
+        Assert.Equal(0, fx.CountSales());
     }
 
     [Theory]
