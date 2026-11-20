@@ -266,7 +266,19 @@ public sealed class SqliteBackupRecoveryService : IBackupRecoveryService
             var stagePaths = DbPaths.CreateDevelopment(Path.Combine(_dbPaths.BackupPath,
                 "restore-stage-" + Guid.NewGuid().ToString("N")));
             stagePaths.EnsureDirectories();
-            File.Copy(freshVerification.Value.FilePath, stagePaths.DatabasePath, overwrite: false);
+            // Snapshot through SQLite so committed WAL rows are included without
+            // checkpointing or modifying the retained source evidence.
+            using (var source = CreateReadOnlyConnection(freshVerification.Value.FilePath))
+            using (var stage = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = stagePaths.DatabasePath, Mode = SqliteOpenMode.ReadWriteCreate,
+                Pooling = false
+            }.ToString()))
+            {
+                source.Open();
+                stage.Open();
+                source.BackupDatabase(stage);
+            }
             var stagedInitialization = DefaultDatabaseInitializationFactory.Create(stagePaths).InitializeDatabase();
             if (stagedInitialization.IsFailure)
             {
@@ -295,27 +307,21 @@ public sealed class SqliteBackupRecoveryService : IBackupRecoveryService
             CheckpointLiveDatabase(liveDatabasePath);
             SqliteConnectionFactory.ClearAllPools();
 
-            if (!CanOpenLiveDatabaseExclusively(liveDatabasePath))
+            // Keep denial of new readers/writers through the atomic replacement.
+            // Delete sharing permits the OS rename primitive, not SQLite access.
+            using (var exclusion = File.Open(liveDatabasePath, FileMode.Open,
+                FileAccess.ReadWrite, FileShare.Delete))
             {
-                SqliteBackupLogWriter.TryWrite(
-                    _connectionFactory,
-                    new BackupLog
-                    {
-                        FilePath = verifiedBackup.FilePath,
-                        Status = JobStatus.Failed,
-                        CreatedAt = DateTimeOffset.UtcNow,
-                        ErrorMessage = "Restore blocked because live database could not be opened exclusively.",
-                    });
-
-                return Result<BackupRestoreResult>.Fail(Error.Failure(
-                    "Backup.RestoreRequiresRestart",
-                    "Safety backup was created, but the live database could not be opened exclusively. " +
-                    "Restore requires app restart or a manual operator step. Safety backup: " + safetyBackupPath));
+                string walPath = liveDatabasePath + "-wal";
+                if (File.Exists(walPath) && new FileInfo(walPath).Length > 0)
+                {
+                    return Result<BackupRestoreResult>.Fail(Error.Failure(
+                        "Backup.RestoreRequiresRestart", "Live WAL is not empty; close all writers before restore."));
+                }
+                SqliteDatabaseBackupUtility.RemoveWalShmSidecars(liveDatabasePath);
+                string replacedOriginal = safetyBackupPath + ".replaced-original";
+                File.Replace(stagePaths.DatabasePath, liveDatabasePath, replacedOriginal);
             }
-
-            SqliteDatabaseBackupUtility.RemoveWalShmSidecars(liveDatabasePath);
-            File.Copy(stagePaths.DatabasePath, liveDatabasePath, overwrite: true);
-            SqliteDatabaseBackupUtility.RemoveWalShmSidecars(liveDatabasePath);
 
             SqliteBackupLogWriter.TryWrite(
                 _connectionFactory,
