@@ -114,6 +114,7 @@ public sealed class DeviceChallengeHandshakeService
         Guid challengeId = Guid.NewGuid();
         string nonceHex = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
         DateTimeOffset now = _timeProvider.GetUtcNow();
+        PruneExpiredEntries(now);
         DateTimeOffset expires = now.Add(PairingConstants.ChallengeLifetime);
         byte[] canonicalPayload = BuildCanonicalChallengePayload(challengeId, nonceHex, deviceId, scope, now);
 
@@ -299,7 +300,7 @@ public sealed class DeviceChallengeHandshakeService
                 httpStatusCode: 401);
         }
 
-        if (stored.RevokedAtUtc.HasValue)
+        if (stored.IsRevoked)
         {
             return PairingResult<DeviceTrustPrincipal>.Fail(
                 PairingErrorCodes.SessionRevoked,
@@ -371,12 +372,30 @@ public sealed class DeviceChallengeHandshakeService
 
     public void RevokeAllSessionsForDevice(Guid deviceId)
     {
-        DateTimeOffset now = _timeProvider.GetUtcNow();
         foreach (StoredDeviceSession session in _sessions.Values)
         {
             if (session.DeviceId == deviceId)
             {
-                session.RevokedAtUtc = now;
+                session.MarkRevoked();
+            }
+        }
+    }
+
+    private void PruneExpiredEntries(DateTimeOffset now)
+    {
+        foreach (KeyValuePair<Guid, ChallengeState> entry in _challenges)
+        {
+            if (entry.Value.ExpiresAtUtc <= now)
+            {
+                _challenges.TryRemove(entry.Key, out _);
+            }
+        }
+
+        foreach (KeyValuePair<Guid, StoredDeviceSession> entry in _sessions)
+        {
+            if (entry.Value.ExpiresAtUtc <= now)
+            {
+                _sessions.TryRemove(entry.Key, out _);
             }
         }
     }
@@ -471,11 +490,16 @@ public sealed class DeviceChallengeHandshakeService
 
     private sealed class StoredDeviceSession
     {
+        private int _revoked;
+
         public required Guid SessionId { get; init; }
         public required Guid DeviceId { get; init; }
         public required byte[] TokenHash { get; init; }
         public required DeviceTrustPrincipal Principal { get; init; }
         public required DateTimeOffset ExpiresAtUtc { get; init; }
-        public DateTimeOffset? RevokedAtUtc { get; set; }
+
+        public bool IsRevoked => Volatile.Read(ref _revoked) != 0;
+
+        public void MarkRevoked() => Interlocked.Exchange(ref _revoked, 1);
     }
 }

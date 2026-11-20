@@ -259,17 +259,14 @@ public sealed class DeviceEnrollmentService
         DateTimeOffset now = _timeProvider.GetUtcNow();
         lock (_capacityLock)
         {
+            ExpireStaleEnrollments(now);
+
             lock (state)
             {
                 PairingResult scopeMatch = ProductScopeGuard.ValidateExactMatch(state.Scope, expectedScope);
                 if (scopeMatch.IsFailure)
                 {
                     return PairingResult<ApprovedEnrollmentResponse>.Fail(scopeMatch.ErrorCode!, scopeMatch.ErrorMessage!, scopeMatch.HttpStatusCode);
-                }
-
-                if (state.Status == EnrollmentRequestStatus.Pending && state.ExpiresAtUtc <= now)
-                {
-                    state.Status = EnrollmentRequestStatus.Expired;
                 }
 
                 if (state.Status == EnrollmentRequestStatus.Expired)
@@ -288,8 +285,8 @@ public sealed class DeviceEnrollmentService
                         httpStatusCode: 409);
                 }
 
-                int activeCount = CountActiveDevices(expectedScope);
-                if (activeCount >= maxPairedTerminals)
+                int reservedOrActive = CountActiveDevices(expectedScope) + CountNonExpiredApproved(expectedScope, now);
+                if (reservedOrActive >= maxPairedTerminals)
                 {
                     return PairingResult<ApprovedEnrollmentResponse>.Fail(
                         PairingErrorCodes.CapacityExceeded,
@@ -305,6 +302,7 @@ public sealed class DeviceEnrollmentService
                 state.ApprovedAtUtc = now;
                 state.ActivationTokenHash = SecretCrypto.ComputeSha256(rawActivationToken);
                 state.ActivationExpiresAtUtc = activationExpires;
+                state.ApprovedMaxPairedTerminals = maxPairedTerminals;
 
                 return PairingResult<ApprovedEnrollmentResponse>.Success(
                     new ApprovedEnrollmentResponse(
@@ -353,80 +351,104 @@ public sealed class DeviceEnrollmentService
         }
 
         DateTimeOffset now = _timeProvider.GetUtcNow();
-        lock (state)
+        // Acquire _capacityLock before lock(state) to match ApproveEnrollment lock order.
+        lock (_capacityLock)
         {
-            PairingResult match = ProductScopeGuard.ValidateExactMatch(scope, state.Scope);
-            if (match.IsFailure)
+            ExpireStaleEnrollments(now);
+
+            lock (state)
             {
-                _rateLimiter.RecordFailure(rateKey);
-                return PairingResult<EnrolledDeviceRecord>.Fail(match.ErrorCode!, match.ErrorMessage!, match.HttpStatusCode);
+                PairingResult match = ProductScopeGuard.ValidateExactMatch(scope, state.Scope);
+                if (match.IsFailure)
+                {
+                    _rateLimiter.RecordFailure(rateKey);
+                    return PairingResult<EnrolledDeviceRecord>.Fail(match.ErrorCode!, match.ErrorMessage!, match.HttpStatusCode);
+                }
+
+                if (state.Status == EnrollmentRequestStatus.Activated)
+                {
+                    _rateLimiter.RecordFailure(rateKey);
+                    return PairingResult<EnrolledDeviceRecord>.Fail(
+                        PairingErrorCodes.ActivationTokenAlreadyConsumed,
+                        "Activation token has already been consumed.",
+                        httpStatusCode: 409);
+                }
+
+                if (state.Status == EnrollmentRequestStatus.Expired && state.ApprovedAtUtc.HasValue)
+                {
+                    _rateLimiter.RecordFailure(rateKey);
+                    return PairingResult<EnrolledDeviceRecord>.Fail(
+                        PairingErrorCodes.ActivationTokenExpired,
+                        "One-time activation token has expired.",
+                        httpStatusCode: 403);
+                }
+
+                if (state.Status != EnrollmentRequestStatus.Approved || state.ActivationTokenHash is null || state.ActivationExpiresAtUtc is null)
+                {
+                    _rateLimiter.RecordFailure(rateKey);
+                    return PairingResult<EnrolledDeviceRecord>.Fail(
+                        PairingErrorCodes.EnrollmentNotApproved,
+                        "Enrollment request is not approved for activation.",
+                        httpStatusCode: 403);
+                }
+
+                if (state.ActivationExpiresAtUtc.Value <= now)
+                {
+                    state.Status = EnrollmentRequestStatus.Expired;
+                    _rateLimiter.RecordFailure(rateKey);
+                    return PairingResult<EnrolledDeviceRecord>.Fail(
+                        PairingErrorCodes.ActivationTokenExpired,
+                        "One-time activation token has expired.",
+                        httpStatusCode: 403);
+                }
+
+                if (!string.Equals(state.ObservedOrigin, observedOrigin.Trim(), StringComparison.OrdinalIgnoreCase))
+                {
+                    _rateLimiter.RecordFailure(rateKey);
+                    return PairingResult<EnrolledDeviceRecord>.Fail(
+                        PairingErrorCodes.OriginMismatch,
+                        "Activation origin does not match the enrollment origin.",
+                        httpStatusCode: 403);
+                }
+
+                if (!SecretCrypto.FixedTimeEqualsSecretHash(oneTimeActivationToken, state.ActivationTokenHash))
+                {
+                    _rateLimiter.RecordFailure(rateKey);
+                    return PairingResult<EnrolledDeviceRecord>.Fail(
+                        PairingErrorCodes.ActivationTokenInvalid,
+                        "Activation token is invalid.",
+                        httpStatusCode: 403);
+                }
+
+                int effectiveCap = state.ApprovedMaxPairedTerminals;
+                if (effectiveCap <= 0 || CountActiveDevices(scope) >= effectiveCap)
+                {
+                    return PairingResult<EnrolledDeviceRecord>.Fail(
+                        PairingErrorCodes.CapacityExceeded,
+                        $"Paired terminal entitlement capacity ({effectiveCap}) has been reached.",
+                        httpStatusCode: 403);
+                }
+
+                // Atomic single-consume: mark activated before releasing locks.
+                state.Status = EnrollmentRequestStatus.Activated;
+                state.ActivationTokenHash = null;
+
+                EnrolledDeviceRecord record = new(
+                    DeviceId: Guid.NewGuid(),
+                    Scope: state.Scope,
+                    DeviceName: state.DeviceName,
+                    DeviceRole: state.DeviceRole,
+                    Status: DeviceStatus.Active,
+                    SpkiPublicKey: (byte[])state.SpkiPublicKey.Clone(),
+                    PublicKeyThumbprint: state.PublicKeyThumbprint,
+                    EnrolledAtUtc: now,
+                    ApprovedByUserId: state.ApprovedByUserId!.Value);
+
+                _devices[record.DeviceId] = record;
+                _rateLimiter.RecordSuccess(rateKey);
+
+                return PairingResult<EnrolledDeviceRecord>.Success(record, httpStatusCode: 201);
             }
-
-            if (state.Status == EnrollmentRequestStatus.Activated)
-            {
-                _rateLimiter.RecordFailure(rateKey);
-                return PairingResult<EnrolledDeviceRecord>.Fail(
-                    PairingErrorCodes.ActivationTokenAlreadyConsumed,
-                    "Activation token has already been consumed.",
-                    httpStatusCode: 409);
-            }
-
-            if (state.Status != EnrollmentRequestStatus.Approved || state.ActivationTokenHash is null || state.ActivationExpiresAtUtc is null)
-            {
-                _rateLimiter.RecordFailure(rateKey);
-                return PairingResult<EnrolledDeviceRecord>.Fail(
-                    PairingErrorCodes.EnrollmentNotApproved,
-                    "Enrollment request is not approved for activation.",
-                    httpStatusCode: 403);
-            }
-
-            if (state.ActivationExpiresAtUtc.Value <= now)
-            {
-                state.Status = EnrollmentRequestStatus.Expired;
-                _rateLimiter.RecordFailure(rateKey);
-                return PairingResult<EnrolledDeviceRecord>.Fail(
-                    PairingErrorCodes.ActivationTokenExpired,
-                    "One-time activation token has expired.",
-                    httpStatusCode: 403);
-            }
-
-            if (!string.Equals(state.ObservedOrigin, observedOrigin.Trim(), StringComparison.OrdinalIgnoreCase))
-            {
-                _rateLimiter.RecordFailure(rateKey);
-                return PairingResult<EnrolledDeviceRecord>.Fail(
-                    PairingErrorCodes.OriginMismatch,
-                    "Activation origin does not match the enrollment origin.",
-                    httpStatusCode: 403);
-            }
-
-            if (!SecretCrypto.FixedTimeEqualsSecretHash(oneTimeActivationToken, state.ActivationTokenHash))
-            {
-                _rateLimiter.RecordFailure(rateKey);
-                return PairingResult<EnrolledDeviceRecord>.Fail(
-                    PairingErrorCodes.ActivationTokenInvalid,
-                    "Activation token is invalid.",
-                    httpStatusCode: 403);
-            }
-
-            // Atomic single-consume: mark activated before releasing lock.
-            state.Status = EnrollmentRequestStatus.Activated;
-            state.ActivationTokenHash = null;
-
-            EnrolledDeviceRecord record = new(
-                DeviceId: Guid.NewGuid(),
-                Scope: state.Scope,
-                DeviceName: state.DeviceName,
-                DeviceRole: state.DeviceRole,
-                Status: DeviceStatus.Active,
-                SpkiPublicKey: (byte[])state.SpkiPublicKey.Clone(),
-                PublicKeyThumbprint: state.PublicKeyThumbprint,
-                EnrolledAtUtc: now,
-                ApprovedByUserId: state.ApprovedByUserId!.Value);
-
-            _devices[record.DeviceId] = record;
-            _rateLimiter.RecordSuccess(rateKey);
-
-            return PairingResult<EnrolledDeviceRecord>.Success(record, httpStatusCode: 201);
         }
     }
 
@@ -483,13 +505,45 @@ public sealed class DeviceEnrollmentService
     private int CountActiveDevices(TenantScope scope) =>
         _devices.Values.Count(d => d.Scope == scope && d.Status == DeviceStatus.Active);
 
-    private void ExpirePendingRequests(DateTimeOffset now)
+    private int CountNonExpiredApproved(TenantScope scope, DateTimeOffset now)
+    {
+        int count = 0;
+        foreach (EnrollmentState state in _enrollments.Values)
+        {
+            if (state.Scope != scope)
+            {
+                continue;
+            }
+
+            lock (state)
+            {
+                if (state.Status == EnrollmentRequestStatus.Approved &&
+                    state.ActivationExpiresAtUtc.HasValue &&
+                    state.ActivationExpiresAtUtc.Value > now)
+                {
+                    count++;
+                }
+            }
+        }
+
+        return count;
+    }
+
+    private void ExpirePendingRequests(DateTimeOffset now) => ExpireStaleEnrollments(now);
+
+    private void ExpireStaleEnrollments(DateTimeOffset now)
     {
         foreach (EnrollmentState state in _enrollments.Values)
         {
             lock (state)
             {
                 if (state.Status == EnrollmentRequestStatus.Pending && state.ExpiresAtUtc <= now)
+                {
+                    state.Status = EnrollmentRequestStatus.Expired;
+                }
+                else if (state.Status == EnrollmentRequestStatus.Approved &&
+                         state.ActivationExpiresAtUtc.HasValue &&
+                         state.ActivationExpiresAtUtc.Value <= now)
                 {
                     state.Status = EnrollmentRequestStatus.Expired;
                 }
@@ -513,5 +567,6 @@ public sealed class DeviceEnrollmentService
         public DateTimeOffset? ApprovedAtUtc { get; set; }
         public byte[]? ActivationTokenHash { get; set; }
         public DateTimeOffset? ActivationExpiresAtUtc { get; set; }
+        public int ApprovedMaxPairedTerminals { get; set; }
     }
 }

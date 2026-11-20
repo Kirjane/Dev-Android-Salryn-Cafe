@@ -125,8 +125,9 @@ public static class OfflineLeaseService
                 httpStatusCode: 403);
         }
 
-        // Anti-rollback check 1: Wall-clock rollback (catches reboot + rolled-back system clock).
-        if (nowUtc < currentWatermark.LastObservedUtc - PairingConstants.ClockRollbackTolerance ||
+        // Anti-rollback check 1: Wall-clock rollback (catches reboot + rolled-back clock and initial clock-behind-IssuedAtUtc).
+        if (nowUtc < lease.IssuedAtUtc - PairingConstants.ClockRollbackTolerance ||
+            nowUtc < currentWatermark.LastObservedUtc - PairingConstants.ClockRollbackTolerance ||
             nowUtc < currentWatermark.LastAttestedUtc - PairingConstants.ClockRollbackTolerance)
         {
             return PairingResult<AntiRollbackWatermark>.Fail(

@@ -411,4 +411,67 @@ public sealed class DevicePairingAndTrustTests
         Assert.True(TransportSecurityPolicy.ValidateEndpoint(new Uri("https://192.168.1.10:5400"), TransportContext.LanRemoteTerminal).IsSuccess);
         Assert.True(TransportSecurityPolicy.ValidateEndpoint(new Uri("https://sync.salryncafe.ph"), TransportContext.CentralSync).IsSuccess);
     }
+
+    [Fact]
+    public void DualApproval_CannotBypassEntitlementCapacity_AndExpiredApprovalReleasesSlot()
+    {
+        FakeTimeProvider clock = new(new DateTimeOffset(2026, 11, 21, 8, 0, 0, TimeSpan.Zero));
+        DeviceEnrollmentService enrollment = new(clock);
+        (ECDsa k1, byte[] spki1) = GenerateP256KeyPair();
+        (ECDsa k2, byte[] spki2) = GenerateP256KeyPair();
+        using (k1)
+        using (k2)
+        {
+            string joinCode = enrollment.RotateJoinCode(CafeScopeA, maxPairedTerminals: 1, AdminUserId).Value!.JoinCode;
+
+            Guid reqA = enrollment.RequestEnrollment(joinCode, CafeScopeA, "Tablet A", DeviceRole.LanThinTerminal, spki1, "192.168.1.11").Value!.RequestId;
+            Guid reqB = enrollment.RequestEnrollment(joinCode, CafeScopeA, "Tablet B", DeviceRole.LanThinTerminal, spki2, "192.168.1.12").Value!.RequestId;
+
+            // Approve Req A -> reserves the single slot
+            PairingResult<ApprovedEnrollmentResponse> approveA = enrollment.ApproveEnrollment(reqA, CafeScopeA, AdminUserId, maxPairedTerminals: 1);
+            Assert.True(approveA.IsSuccess);
+
+            // Attempt to approve Req B while Req A's approval is still active -> MUST fail with CapacityExceeded
+            PairingResult<ApprovedEnrollmentResponse> approveBBlocked = enrollment.ApproveEnrollment(reqB, CafeScopeA, AdminUserId, maxPairedTerminals: 1);
+            Assert.True(approveBBlocked.IsFailure);
+            Assert.Equal(PairingErrorCodes.CapacityExceeded, approveBBlocked.ErrorCode);
+
+            // Once Req A's 5-min activation expires without activation, slot is released and Req B (10-min pending TTL) can be approved & activated
+            clock.Advance(PairingConstants.ActivationTokenLifetime + TimeSpan.FromSeconds(1));
+
+            PairingResult<EnrolledDeviceRecord> lateA = enrollment.ActivateDevice(reqA, approveA.Value!.OneTimeActivationToken, CafeScopeA, "192.168.1.11");
+            Assert.True(lateA.IsFailure);
+            Assert.Equal(PairingErrorCodes.ActivationTokenExpired, lateA.ErrorCode);
+
+            PairingResult<ApprovedEnrollmentResponse> approveB = enrollment.ApproveEnrollment(reqB, CafeScopeA, AdminUserId, maxPairedTerminals: 1);
+            Assert.True(approveB.IsSuccess);
+            PairingResult<EnrolledDeviceRecord> activateB = enrollment.ActivateDevice(reqB, approveB.Value!.OneTimeActivationToken, CafeScopeA, "192.168.1.12");
+            Assert.True(activateB.IsSuccess);
+        }
+    }
+
+    [Fact]
+    public void OfflineLease_RejectsInitialClockBehindIssuedAtUtc()
+    {
+        DateTimeOffset centralNow = new(2026, 11, 21, 8, 0, 0, TimeSpan.Zero);
+        FakeTimeProvider clock = new(centralNow);
+        (_, _, EnrolledDeviceRecord device, ECDsa deviceKey) = EnrollActiveDevice(clock);
+        (ECDsa centralKey, byte[] centralSpki) = GenerateP256KeyPair();
+        using (deviceKey)
+        using (centralKey)
+        {
+            OfflineAuthorizationLease lease = OfflineLeaseService.IssueLease(
+                centralKey, device, syncEpoch: 1, nowUtc: centralNow, lifetime: TimeSpan.FromHours(24)).Value!;
+
+            // Device clock is 10 minutes behind Central's IssuedAtUtc on first check
+            DateTimeOffset skewedClientClock = centralNow.AddMinutes(-10);
+            AntiRollbackWatermark wm = new(skewedClientClock, skewedClientClock, LastBootCount: 1, LastElapsedRealtimeMs: 1_000);
+
+            PairingResult<AntiRollbackWatermark> res = OfflineLeaseService.VerifyLeaseAndAdvanceWatermark(
+                lease, centralSpki, device.DeviceId, CafeScopeA, wm, skewedClientClock, currentBootCount: 1, currentElapsedRealtimeMs: 2_000);
+
+            Assert.True(res.IsFailure);
+            Assert.Equal(PairingErrorCodes.ClockRollbackDetected, res.ErrorCode);
+        }
+    }
 }
