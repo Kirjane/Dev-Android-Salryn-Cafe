@@ -45,6 +45,29 @@ public sealed class SchemaLineageReconciliationTests : IDisposable
     }
 
     [Fact]
+    public void RestoreSnapshotIncludesCommittedRowsStillInSourceWal()
+    {
+        var (livePaths, liveFactory) = CreateTempDb("wal-live");
+        Assert.True(DefaultDatabaseInitializationFactory.Create(livePaths).InitializeDatabase().IsSuccess);
+        var (sourcePaths, sourceFactory) = CreateTempDb("wal-source");
+        new MigrationRunner(sourceFactory, CafeMigrationCatalog.CreateLegacyYzaV39Migrations()).RunPendingMigrations();
+        using var writer = sourceFactory.CreateConnection();
+        writer.Open();
+        Execute(writer, "PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;");
+        Execute(writer, "INSERT INTO categories(id,name) VALUES('wal-proof','Committed WAL evidence');");
+        Assert.True(new FileInfo(sourcePaths.DatabasePath + "-wal").Length > 0);
+        var recovery = new SqliteBackupRecoveryService(livePaths);
+        var verified = recovery.VerifyBackup(sourcePaths.DatabasePath);
+        Assert.True(verified.IsSuccess);
+        var restored = recovery.RestoreVerifiedBackup(verified.Value, SqliteBackupRecoveryService.RestoreConfirmationText);
+        Assert.True(restored.IsSuccess, restored.IsFailure ? restored.Error : "");
+        using var live = liveFactory.CreateConnection();
+        live.Open();
+        Assert.Equal("Committed WAL evidence", ScalarString(live, "SELECT name FROM categories WHERE id='wal-proof';"));
+        Assert.Equal("Committed WAL evidence", ScalarString(writer, "SELECT name FROM categories WHERE id='wal-proof';"));
+    }
+
+    [Fact]
     public void RestoreLegacyBackup_StagesUpgradeAndPreservesOriginalEvidence()
     {
         var (livePaths, liveFactory) = CreateTempDb("restore-live");
