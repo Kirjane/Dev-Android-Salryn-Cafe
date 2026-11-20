@@ -11,8 +11,8 @@ public sealed class AndroidAppPaths
         string filesRoot = context.FilesDir?.AbsolutePath
             ?? throw new InvalidOperationException("Android app-local files directory is unavailable.");
 
-        RootPath = Path.Combine(filesRoot, "salryn");
-        DatabasePath = Path.Combine(RootPath, "data", "salryn.db");
+        RootPath = Path.Combine(filesRoot, "SalrynCafe");
+        DatabasePath = Path.Combine(RootPath, "data", "salryn-cafe.db");
 
         // Preserve the existing P0 identity location so upgrading the launcher does not
         // silently regenerate the public device ID or protected authentication secret.

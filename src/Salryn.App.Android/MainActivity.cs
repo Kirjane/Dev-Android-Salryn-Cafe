@@ -7,6 +7,8 @@ using Android.Widget;
 using Salryn.App.Android.Platform;
 using Salryn.Mobile.Foundation.Security;
 using Salryn.Mobile.Runtime;
+using Salryn.Core.Models;
+using Microsoft.Data.Sqlite;
 
 namespace Salryn.App.Android;
 
@@ -25,8 +27,8 @@ public sealed class MainActivity : Activity
     private static readonly Color Latte = Color.ParseColor("#E9D5BB");
     private static readonly Color Mocha = Color.ParseColor("#735447");
 
-    private CafeMobileDatabase? _db;
-    private MobileCashierEngine? _engine;
+    private MobileProductionComposition? _composition;
+    private IReadOnlyList<MenuItemConfig> _menuItems = Array.Empty<MenuItemConfig>();
     private TextView? _statusView;
 
     protected override void OnCreate(Bundle? savedInstanceState)
@@ -34,17 +36,27 @@ public sealed class MainActivity : Activity
         base.OnCreate(savedInstanceState);
 
         AndroidAppPaths paths = new(this);
-        _db = new CafeMobileDatabase(paths.DatabasePath);
-        _db.Initialize();
-
-        AndroidKeyStoreSecretStore secretStore = new(paths.ProtectedSecretRoot);
-        MobileOfflineLeaseGuard leaseGuard = new(secretStore);
+        try
+        {
+            _composition = MobileProductionComposition.Create(paths.RootPath);
+            _composition.InitializeDatabaseAsync().GetAwaiter().GetResult();
+            if (!_composition.InspectReadiness().IsReady)
+                throw new InvalidOperationException("Canonical Cafe database is not ready.");
+            var catalog = _composition.MenuCatalog.GetDraft();
+            if (catalog.IsFailure) throw new InvalidOperationException(catalog.Error);
+            _menuItems = catalog.Value.Items;
+        }
+        catch (Exception error)
+        {
+            global::Android.Util.Log.Error("SalrynCafe", "Canonical database startup blocked: " + error.GetType().Name);
+            // Preserve unknown/legacy files. Never reset data to obtain a usable screen.
+            var blocked = new TextView(this) { Text = "Cafe database setup is blocked. Existing data is preserved. Ask the administrator to review recovery evidence.", TextSize = 18f };
+            blocked.SetTextColor(Espresso);
+            blocked.SetBackgroundColor(Cream);
+            SetContentView(blocked);
+            return;
+        }
         AndroidBluetoothPrinterTransport btTransport = new(this);
-        _engine = new MobileCashierEngine(
-            _db,
-            leaseGuard,
-            btTransport,
-            clockSource: () => (SystemClock.ElapsedRealtime(), ReadBootCount()));
 
         ScrollView scroll = new(this);
         scroll.SetBackgroundColor(Cream);
@@ -104,7 +116,7 @@ public sealed class MainActivity : Activity
         menuHeader.SetTypeface(null, TypefaceStyle.Bold);
         root.AddView(menuHeader);
 
-        if (_engine.GetMenuItems().Count == 0)
+        if (_menuItems.Count == 0)
         {
             TextView emptyMenu = new(this)
             {
@@ -115,11 +127,11 @@ public sealed class MainActivity : Activity
             root.AddView(emptyMenu);
         }
 
-        foreach (MobileMenuItemDto item in _engine.GetMenuItems())
+        foreach (MenuItemConfig item in _menuItems)
         {
             TextView row = new(this)
             {
-                Text = $"• {item.Name} ({item.Category}) — PHP {(item.PriceCents / 100m):0.00}",
+                Text = $"• {item.Name}  — PHP {(item.SellingPriceCents / 100m):0.00}",
                 TextSize = 14f
             };
             row.SetTextColor(Mocha);
@@ -153,15 +165,19 @@ public sealed class MainActivity : Activity
 
     private void RefreshStatus(AndroidBluetoothPrinterTransport btTransport)
     {
-        if (_statusView is null || _engine is null) return;
-        int menuCount = _engine.GetMenuItems().Count;
-        int outboxCount = _engine.GetPendingOutboxCount();
+        if (_statusView is null || _composition is null) return;
+        int menuCount = _menuItems.Count;
+        using var connection = _composition.ConnectionFactory.CreateConnection();
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM sync_outbox;";
+        int outboxCount = Convert.ToInt32(command.ExecuteScalar());
         bool btGranted = AndroidBluetoothPrinterTransport.HasRequiredPermissions(this);
         int pairedPrinters = btGranted ? btTransport.ListPairedPrinters().Count : 0;
 
         _statusView.Text =
             $"Cached menu: {menuCount} items\n" +
-            $"Pending Sync Outbox: {outboxCount} envelopes\n" +
+            $"Stored Sync Outbox: {outboxCount} envelopes\n" +
             $"Device setup: incomplete; cashier authorization unavailable\n" +
             $"Bluetooth Printer Transport: {(btGranted ? $"PERMITTED ({pairedPrinters} paired)" : "PERMISSION NEEDED")}";
     }
