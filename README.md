@@ -1,82 +1,27 @@
-# Salryn POS
+# Salryn Cafe
 
-Salryn is an offline-ready point-of-sale and retail operations platform developed for micro, small, and medium enterprises. It centralizes sales, inventory, stock movement, receipts, reporting, user activity, and local data protection in one Windows-based system.
+Offline-first café POS, F&B operations, central sync, and multi-device platform built on the Salryn transactional kernel and Cafe Yza operational domain.
 
-## Problem Addressed
+![Salryn Cafe banner](assets/brand/salryn-banner.png)
 
-Many small retail businesses still maintain sales and inventory records through notebooks, spreadsheets, or disconnected applications. This creates repetitive encoding, delayed stock information, inconsistent records, and limited visibility for day-to-day business decisions.
+## Authority & Integration Provenance
 
-Salryn connects completed sales directly to inventory movement and reporting so that transaction records, stock levels, receipts, and operational activity remain organized in one system.
+- **Canonical Dispatch:** [00-INTEGRATION/FORGE-DISPATCH-V2.md](00-INTEGRATION/FORGE-DISPATCH-V2.md)
+- **I0 Provenance Report:** [00-INTEGRATION/i0-provenance/I0_PROVENANCE_REPORT.md](00-INTEGRATION/i0-provenance/I0_PROVENANCE_REPORT.md)
+- **Kernel Baseline Pin:** `Kirjane/Salryn` (`codex/salryn-r3-canonical-integration-r1`) @ `607fcc4b17e2c069d0fd36d0646c554940977e2d` (preserved under `refs/heads/archive/kernel/*` and `refs/tags/archive/kernel/*`)
+- **F&B Domain Reference Pin:** `Kirjane/Salryn-CafeYza` (`main`) @ `4241ea1ec0a8cebf552d93f25a7ac134d7d4d6f3` (preserved under `refs/heads/archive/yza/*`)
+- **Destination Brand Root:** `6b266249566c59cf0128c8f2ee8583010316ca1f` (preserved intact in parent history)
 
-## Core Capabilities
+## Brand assets
 
-- Point-of-sale checkout and sales recording
-- Automatic inventory deduction for completed sales
-- Product, barcode, SKU, unit, category, and brand management
-- Stock-in and controlled stock-adjustment workflows
-- Low-stock and out-of-stock monitoring
-- Sales history and receipt preservation
-- Receipt reprinting without modifying the original sale
-- Daily, weekly, monthly, and product-level reporting
-- Cashier, shift, and user activity tracking
-- Role-based access controls
-- Audit records and CSV export
-- Local backup and restore
-- Offline operation without continuous internet access
+| Asset | File | Use |
+| --- | --- | --- |
+| App icon | [PNG](assets/brand/salryn-app-icon.png) | Application icon and social profile |
+| Banner | [PNG](assets/brand/salryn-banner.png) | Website header and social cover |
+| Transparent logo | [PNG](assets/brand/salryn-transparent-logo.png) | Light backgrounds, menus, and packaging |
 
-## Design Principles
+Original generation prompts are in [prompts.txt](assets/brand/prompts.txt). Assets were created with OpenAI image generation. These are raster PNG files.
 
-- Transaction records are saved before receipt printing.
-- Receipt snapshots remain immutable after a completed sale.
-- Inventory changes are represented through traceable stock movements.
-- Voids and reversals follow controlled workflows.
-- Business logic is separated from the user interface.
-- Monetary and quantity values use deterministic representations.
-- Compliance claims are not made without the corresponding review and implementation work.
+## Colors
 
-## Technology
-
-- C# and .NET
-- Local ASP.NET Core application services
-- Windows desktop application shell
-- Web-based user interface hosted locally
-- SQLite-based local persistence
-- Keyboard-wedge barcode scanner support
-- Receipt printer integration
-- Layered application architecture
-
-## Current Stage
-
-Salryn has a functional, internally validated build covering the principal retail workflows, including checkout, inventory updates, stock management, receipt handling, reporting, user controls, auditing, and backup operations.
-
-The solution is positioned for controlled pilot implementation with selected MSMEs to validate real operating conditions, staff usability, hardware compatibility, deployment procedures, and business-specific requirements.
-
-## Intended Users
-
-- Small retail and general merchandise stores
-- Sari-sari and neighborhood stores
-- Specialty retailers
-- MSMEs transitioning from manual sales and inventory records
-- Businesses operating in locations with limited or unstable connectivity
-
-## Project Structure
-
-- `src/` — application and supporting services
-- `tests/` — automated and validation-focused tests
-- `docs/` — technical, operational, and release documentation
-- `installer/` — packaging and deployment resources where applicable
-
-## Product and Publisher
-
-**Product:** Salryn POS  
-**Publisher:** Kirjane Information Technology Services
-
-Salryn is proprietary software. Access, deployment, licensing, and use are subject to the applicable written agreement with Kirjane Information Technology Services.
-
-## Release-candidate boundaries
-
-- The Windows Host is the supported production shape for this candidate.
-- LAN Terminals are a future feature and are not included in the current production release.
-- Accounts Receivable / Utang is an optional paid Host entitlement named `ReceivablesUtangLedger`; it is an operational ledger, not an accounting or tax-compliance system.
-- Historical PASS reports are not fresh execution evidence. Current results and blockers are recorded in `00-HANDOFF/SALRYN_STABILIZATION_EXECUTION_LEDGER.md`.
-- No merge, public release, production installer distribution, or client deployment is authorized without Kirch's approval of the exact candidate SHA.
+See the [palette guide](assets/brand/PALETTE.md) for hex values and usage. Use [colors.css](assets/brand/colors.css) in a web application, or [colors.json](assets/brand/colors.json) in other tooling.
