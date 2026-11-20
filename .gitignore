@@ -46,3 +46,6 @@ __pycache__/
 *.pyc
 .forge/state/
 00-HANDOFF/evidence-out/
+
+# Portable SQLite project source is not a database artifact.
+!/src/Salryn.Persistence.Sqlite/

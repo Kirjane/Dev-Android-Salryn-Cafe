@@ -32,6 +32,12 @@ public sealed class DbPaths
 
     public string DatabasePath { get; }
 
+    public static DbPaths CreateAtRoot(string appPrivateRoot)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(appPrivateRoot);
+        return new DbPaths(Path.GetFullPath(appPrivateRoot));
+    }
+
     public static DbPaths CreateProduction()
     {
         return new DbPaths(SalrynProductIdentity.GetProgramDataRoot());

@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Salryn.Core\Salryn.Core.csproj" />
+    <ProjectReference Include="..\Salryn.Sync.Contracts\Salryn.Sync.Contracts.csproj" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.8" />
+  </ItemGroup>
+
+  <!--
+    F1A Option A extraction:
+    these are the single authoritative SQLite persistence sources. They remain at
+    their historical repository paths to avoid a namespace/financial-rule rewrite,
+    but Salryn.Infrastructure explicitly stops compiling them.
+  -->
+  <ItemGroup>
+    <Compile Include="..\Salryn.Infrastructure\Data\**\*.cs"
+             Link="Data\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Salryn.Infrastructure\Paths\DbPaths.cs"
+             Link="Paths\DbPaths.cs" />
+    <Compile Include="..\Salryn.Infrastructure\Paths\SalrynProductIdentity.cs" Link="Paths\SalrynProductIdentity.cs" />
+  </ItemGroup>
+
+</Project>
