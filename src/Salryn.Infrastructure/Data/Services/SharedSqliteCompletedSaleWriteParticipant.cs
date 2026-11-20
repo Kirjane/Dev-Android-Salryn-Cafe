@@ -59,4 +59,52 @@ public sealed class SharedSqliteCompletedSaleWriteParticipant :
 
         return Task.FromResult(Result<SharedSqliteCompletedSaleWriteResult>.Success(result));
     }
+
+    public Task<Result<SharedSqliteCompletedSaleWriteResult>> ExecuteC5Async(
+        SqliteSharedTransactionContext context,
+        CompleteCheckoutSaleRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (context is null)
+        {
+            return Task.FromResult(
+                Result<SharedSqliteCompletedSaleWriteResult>.Fail(
+                    Error.Validation(
+                        "CompletedSale.SharedTransactionContextRequired",
+                        "Shared SQLite transaction context is required.")));
+        }
+
+        if (request is null || request.Sale is null)
+        {
+            return Task.FromResult(
+                Result<SharedSqliteCompletedSaleWriteResult>.Fail(
+                    Error.Validation(
+                        "CompletedSale.C5RequestRequired",
+                        "C5 completed sale write requires a sale request.")));
+        }
+
+        Result writeResult =
+            SqliteSaleWriteRepository.WriteCompletedSale(
+                context.Connection,
+                context.Transaction,
+                request.Sale,
+                request.Items,
+                request.Payments,
+                request.StockMovements,
+                cancellationToken,
+                grossSubtotalBeforeAllocatedDiscounts: true);
+
+        if (writeResult.IsFailure)
+        {
+            return Task.FromResult(
+                Result<SharedSqliteCompletedSaleWriteResult>.Fail(
+                    writeResult.ErrorDetail));
+        }
+
+        return Task.FromResult(
+            Result<SharedSqliteCompletedSaleWriteResult>.Success(
+                new SharedSqliteCompletedSaleWriteResult(
+                    request.Sale.Id,
+                    request.Sale.ReceiptNumber)));
+    }
 }

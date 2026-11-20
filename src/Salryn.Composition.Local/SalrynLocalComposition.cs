@@ -4,6 +4,13 @@ using Salryn.Core.Services;
 using Salryn.Infrastructure.Data;
 using Salryn.Infrastructure.Data.Initialization;
 using Salryn.Infrastructure.Data.Repositories;
+using Salryn.Infrastructure.Data.Repositories.Ingredients;
+using Salryn.Infrastructure.Data.Repositories.Inventory;
+using Salryn.Infrastructure.Data.Repositories.Menu;
+using Salryn.Infrastructure.Data.Repositories.Orders;
+using Salryn.Infrastructure.Data.Repositories.System;
+using Salryn.Infrastructure.Data.Services;
+using Salryn.Infrastructure.Data.Sync;
 using Salryn.Infrastructure.Paths;
 
 namespace Salryn.Composition.Local;
@@ -17,6 +24,21 @@ public sealed class SalrynLocalComposition
         SqliteConnectionFactory connectionFactory,
         DatabaseInitializationOrchestrator databaseInitialization,
         IAuthenticationService authentication,
+        SqliteMenuCatalogStore menuCatalog,
+        SqliteIngredientRecipeStore ingredientRecipes,
+        SqliteSupplierDirectoryStore supplierDirectory,
+        SqliteCafeInventoryStore cafeInventory,
+        SqliteCafeOrderStore cafeOrders,
+        SqliteCafeOrderCompletionCoordinator cafeOrderCompletion,
+        ICafeCashService cafeCash,
+        ICafePrintService cafePrint,
+        ICafeDeliveryService cafeDelivery,
+        ICafeBookingService cafeBooking,
+        ICafeAttendanceIncidentService cafeAttendanceIncident,
+        ICafeManagementReportingService cafeManagementReports,
+        SqliteCafeCashBootstrapStore cafeCashBootstrap,
+        SqliteCafeOrderBootstrapStore cafeOrderBootstrap,
+        SqliteDeploymentIdentityRepository deploymentIdentityRepository,
         ISaleReadRepository saleReadRepository,
         ISaleWriteRepository saleWriteRepository,
         IProductReadRepository productReadRepository,
@@ -33,6 +55,21 @@ public sealed class SalrynLocalComposition
         ConnectionFactory = connectionFactory;
         DatabaseInitialization = databaseInitialization;
         Authentication = authentication;
+        MenuCatalog = menuCatalog;
+        IngredientRecipes = ingredientRecipes;
+        SupplierDirectory = supplierDirectory;
+        CafeInventory = cafeInventory;
+        CafeOrders = cafeOrders;
+        CafeOrderCompletion = cafeOrderCompletion;
+        CafeCash = cafeCash;
+        CafePrint = cafePrint;
+        CafeDelivery = cafeDelivery;
+        CafeBooking = cafeBooking;
+        CafeAttendanceIncident = cafeAttendanceIncident;
+        CafeManagementReports = cafeManagementReports;
+        CafeCashBootstrap = cafeCashBootstrap;
+        CafeOrderBootstrap = cafeOrderBootstrap;
+        DeploymentIdentityRepository = deploymentIdentityRepository;
         SaleReadRepository = saleReadRepository;
         SaleWriteRepository = saleWriteRepository;
         ProductReadRepository = productReadRepository;
@@ -53,6 +90,36 @@ public sealed class SalrynLocalComposition
     public DatabaseInitializationOrchestrator DatabaseInitialization { get; }
 
     public IAuthenticationService Authentication { get; }
+
+    public SqliteMenuCatalogStore MenuCatalog { get; }
+
+    public SqliteIngredientRecipeStore IngredientRecipes { get; }
+
+    public SqliteSupplierDirectoryStore SupplierDirectory { get; }
+
+    public SqliteCafeInventoryStore CafeInventory { get; }
+
+    public SqliteCafeOrderStore CafeOrders { get; }
+
+    public SqliteCafeOrderCompletionCoordinator CafeOrderCompletion { get; }
+
+    public ICafeCashService CafeCash { get; }
+
+    public ICafePrintService CafePrint { get; }
+
+    public ICafeDeliveryService CafeDelivery { get; }
+
+    public ICafeBookingService CafeBooking { get; }
+
+    public ICafeAttendanceIncidentService CafeAttendanceIncident { get; }
+
+    public ICafeManagementReportingService CafeManagementReports { get; }
+
+    public SqliteCafeCashBootstrapStore CafeCashBootstrap { get; }
+
+    public SqliteCafeOrderBootstrapStore CafeOrderBootstrap { get; }
+
+    public SqliteDeploymentIdentityRepository DeploymentIdentityRepository { get; }
 
     public ISaleReadRepository SaleReadRepository { get; }
 
@@ -124,6 +191,21 @@ public sealed class SalrynLocalComposition
             connectionFactory,
             databaseInitialization,
             authentication,
+            repositories.CreateMenuCatalogStore(),
+            repositories.CreateIngredientRecipeStore(),
+            new SqliteSupplierDirectoryStore(connectionFactory),
+            new SqliteCafeInventoryStore(connectionFactory),
+            new SqliteCafeOrderStore(connectionFactory),
+            new SqliteCafeOrderCompletionCoordinator(connectionFactory),
+            new SqliteCafeCashService(connectionFactory),
+            new SqliteCafePrintService(connectionFactory),
+            new SqliteCafeDeliveryService(connectionFactory),
+            new SqliteCafeBookingService(connectionFactory),
+            new SqliteCafeAttendanceIncidentService(connectionFactory),
+            new SqliteCafeManagementReportingService(connectionFactory),
+            new SqliteCafeCashBootstrapStore(connectionFactory),
+            new SqliteCafeOrderBootstrapStore(connectionFactory),
+            repositories.CreateDeploymentIdentityRepository(),
             repositories.CreateSaleReadRepository(),
             repositories.CreateSaleWriteRepository(),
             repositories.CreateProductReadRepository(),

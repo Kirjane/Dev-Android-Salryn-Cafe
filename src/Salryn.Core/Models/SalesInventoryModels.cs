@@ -46,6 +46,8 @@ public sealed class Sale
 
     public Money Tax { get; init; } = Money.Zero;
 
+    public Money FeeTotal { get; init; } = Money.Zero;
+
     public Money Total { get; init; }
 
     public Money AmountPaid { get; init; }
