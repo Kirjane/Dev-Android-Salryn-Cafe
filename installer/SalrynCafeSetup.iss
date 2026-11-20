@@ -105,6 +105,14 @@ begin
     (Pos(ProtectedRetailRoot + '\', NormalizedCandidate) = 1);
 end;
 
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := '';
+  // This gate also runs for /SILENT and /VERYSILENT, which skip the directory page.
+  if IsProtectedRetailInstallPath(WizardDirValue) then
+    Result := 'Salryn Cafe cannot be installed inside the protected Salryn General Merchandise folder.';
+end;
+
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;

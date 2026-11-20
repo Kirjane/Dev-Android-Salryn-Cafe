@@ -44,9 +44,13 @@ public sealed class MigrationRunner
                 "Database file does not exist yet.");
         }
 
-        using var connection = _connectionFactory.CreateConnection();
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = _connectionFactory.DatabasePath,
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false
+        }.ToString());
         connection.Open();
-        SqlitePragma.Apply(connection);
         return SchemaLineageClassifier.Classify(connection);
     }
 
@@ -59,13 +63,16 @@ public sealed class MigrationRunner
 
         if (!File.Exists(_connectionFactory.DatabasePath))
         {
-            return 0;
+            return _migrations.Count;
         }
 
-        using var connection = _connectionFactory.CreateConnection();
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = _connectionFactory.DatabasePath,
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false
+        }.ToString());
         connection.Open();
-
-        SqlitePragma.Apply(connection);
 
         if (!SchemaMigrationsTableExists(connection))
         {
@@ -98,8 +105,6 @@ public sealed class MigrationRunner
         using var connection = _connectionFactory.CreateConnection();
         connection.Open();
 
-        SqlitePragma.Apply(connection);
-
         SchemaLineageClassification? lineage = null;
         if (enforcesCafeLineage)
         {
@@ -107,6 +112,8 @@ public sealed class MigrationRunner
             lineage = SchemaLineageClassifier.EnsureAllowedForCafeMigration(connection);
         }
 
+        // WAL changes the retained database header. Only configure it after lineage authorization.
+        SqlitePragma.Apply(connection);
         EnsureSchemaMigrationsTable(connection);
 
         var appliedVersions = GetAppliedVersions(connection);

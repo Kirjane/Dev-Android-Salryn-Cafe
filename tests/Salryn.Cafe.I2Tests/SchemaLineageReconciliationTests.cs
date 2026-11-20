@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Salryn.Infrastructure.Data;
 using Salryn.Infrastructure.Data.Migrations;
+using Salryn.Infrastructure.Data.Initialization;
 using Salryn.Infrastructure.Paths;
 using Xunit;
 
@@ -39,6 +40,26 @@ public sealed class SchemaLineageReconciliationTests : IDisposable
         DbPaths paths = DbPaths.CreateDevelopment(sub);
         paths.EnsureDirectories();
         return (paths, new SqliteConnectionFactory(paths));
+    }
+
+    [Fact]
+    public void LiveFactory_InitializesCanonicalCafeAndPendingCountDoesNotCreateMissingDatabase()
+    {
+        var (paths, factory) = CreateTempDb("live-factory");
+        var migrations = CafeMigrationCatalog.CreateCanonicalCafeMigrations();
+        MigrationRunner runner = new(factory, migrations);
+        Assert.False(File.Exists(paths.DatabasePath));
+        Assert.Equal(migrations.Count, runner.GetPendingMigrationCount());
+        Assert.False(File.Exists(paths.DatabasePath));
+
+        var initialization = DefaultDatabaseInitializationFactory.Create(paths);
+        Assert.Equal(migrations.Count, initialization.ConfiguredMigrationCount);
+        var result = initialization.InitializeDatabase();
+        Assert.True(result.IsSuccess, result.IsFailure ? result.Error : "");
+        Assert.Equal(SchemaLineageKind.SalrynCafe, runner.ClassifyDatabase().Kind);
+        Assert.Equal(41, runner.ClassifyDatabase().MaxAppliedVersion);
+        Assert.Equal(0, runner.GetPendingMigrationCount());
+        Assert.True(initialization.InitializeDatabase().IsSuccess);
     }
 
     [Fact]
@@ -234,7 +255,7 @@ public sealed class SchemaLineageReconciliationTests : IDisposable
     [Fact]
     public void UnknownOrCorruptDatabase_FailsClosed_WithoutMutatingData()
     {
-        var (_, factory) = CreateTempDb("unknown-corrupt");
+        var (paths, factory) = CreateTempDb("unknown-corrupt");
         using (SqliteConnection seedConn = factory.CreateConnection())
         {
             seedConn.Open();
@@ -242,11 +263,21 @@ public sealed class SchemaLineageReconciliationTests : IDisposable
             Execute(seedConn, "INSERT INTO mystery_table (id, label) VALUES (1, 'preserve-me');");
         }
 
+        SqliteConnection.ClearAllPools();
+        byte[] originalBytes = File.ReadAllBytes(paths.DatabasePath);
+
         MigrationRunner cafeRunner = new(factory, CafeMigrationCatalog.CreateCanonicalCafeMigrations());
         Assert.Equal(SchemaLineageKind.UnknownOrCorrupt, cafeRunner.ClassifyDatabase().Kind);
 
         UnknownSchemaLineageException ex = Assert.Throws<UnknownSchemaLineageException>(() => cafeRunner.RunPendingMigrations());
         Assert.Contains(UnknownSchemaLineageException.ErrorCode, ex.Message);
+
+        // Status probes and live initialization must not switch unknown databases to WAL.
+        Assert.Equal(CafeMigrationCatalog.CreateCanonicalCafeMigrations().Count, cafeRunner.GetPendingMigrationCount());
+        Assert.True(DefaultDatabaseInitializationFactory.Create(paths).InitializeDatabase().IsFailure);
+        SqliteConnection.ClearAllPools();
+        Assert.Equal(originalBytes, File.ReadAllBytes(paths.DatabasePath));
+        Assert.False(File.Exists(paths.DatabasePath + "-wal"));
 
         using SqliteConnection verifyConn = factory.CreateConnection();
         verifyConn.Open();
