@@ -390,6 +390,11 @@ public sealed class CentralSyncE2ETests
         CentralServerOptions opts = new() { RequireHttps = true, TrustForwardedProto = true };
         Assert.False(CentralSyncEndpoints.IsHttpsRequest(spoofedCtx, opts));
 
+        // Missing peer address is not evidence of a trusted reverse proxy.
+        // A caller-controlled forwarded header must fail closed in this case.
+        spoofedCtx.Connection.RemoteIpAddress = null;
+        Assert.False(CentralSyncEndpoints.IsHttpsRequest(spoofedCtx, opts));
+
         // Loopback proxy IS trusted
         spoofedCtx.Connection.RemoteIpAddress = System.Net.IPAddress.Loopback;
         Assert.True(CentralSyncEndpoints.IsHttpsRequest(spoofedCtx, opts));
