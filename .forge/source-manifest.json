@@ -1,0 +1,352 @@
+{
+  "source_repository": "Kirch-Nairu/Operation-FORGE.kirion",
+  "source_sha": "0e8765de6e0e87ea9b4503714f08fa650e1a79c6",
+  "adoption": "project-opt-in-candidate",
+  "files": [
+    {
+      "path": ".agents/skills/kirion-architecture/SKILL.md",
+      "source": ".agents/skills/kirion-architecture/SKILL.md",
+      "sha256": "541af3eafeced5f3710aed9c09b07887322327bbc9fd05f2cb5aef3c9e912082"
+    },
+    {
+      "path": ".agents/skills/kirion-business-logic/SKILL.md",
+      "source": ".agents/skills/kirion-business-logic/SKILL.md",
+      "sha256": "7ed7d6975ad02cc898f321d1963d82ddb6238def308c5fbb8f589913cb37e941"
+    },
+    {
+      "path": ".agents/skills/kirion-cognition/SKILL.md",
+      "source": ".agents/skills/kirion-cognition/SKILL.md",
+      "sha256": "58ce80ba27e57aa8a4097aa05a3daa29137ff528a76f624cb7902bdd5d09a2a9"
+    },
+    {
+      "path": ".agents/skills/kirion-core/SKILL.md",
+      "source": ".agents/skills/kirion-core/SKILL.md",
+      "sha256": "0d6877a0c765760109a281d200a5e50b83e7942f4a17e09515cf7fa6a6fcc4a3"
+    },
+    {
+      "path": ".agents/skills/kirion-debug/SKILL.md",
+      "source": ".agents/skills/kirion-debug/SKILL.md",
+      "sha256": "aa22a384f539f144194504a1a1a9a984d2c546b6cc03461e24caf81f40134eb0"
+    },
+    {
+      "path": ".agents/skills/kirion-dispatch/SKILL.md",
+      "source": ".agents/skills/kirion-dispatch/SKILL.md",
+      "sha256": "090d71b74075467ff97657725cf3f066fbe4d583506771098f5fbf11670552f1"
+    },
+    {
+      "path": ".agents/skills/kirion-evidence/SKILL.md",
+      "source": ".agents/skills/kirion-evidence/SKILL.md",
+      "sha256": "fc92d0e766bcf058a11bd6ada99156d1ca6a01a3967c9c34da00202a62faa0a0"
+    },
+    {
+      "path": ".agents/skills/kirion-frontend/SKILL.md",
+      "source": ".agents/skills/kirion-frontend/SKILL.md",
+      "sha256": "c64590128466648dbc62e867a22b69b161c9c6ec28d7137dc9212776c8d9bbec"
+    },
+    {
+      "path": ".agents/skills/kirion-integrator/SKILL.md",
+      "source": ".agents/skills/kirion-integrator/SKILL.md",
+      "sha256": "6ac3ed12abb3189763d31510d5daccf242c62e4fd27148535042baa952d8e922"
+    },
+    {
+      "path": ".agents/skills/kirion-qa/SKILL.md",
+      "source": ".agents/skills/kirion-qa/SKILL.md",
+      "sha256": "ed076777bca3477d432ce5ad80d5965bb5984da0b855e525dba455cd78c9e29f"
+    },
+    {
+      "path": ".agents/skills/kirion-review/SKILL.md",
+      "source": ".agents/skills/kirion-review/SKILL.md",
+      "sha256": "3320b1f6a1623b3d6cc5e349c02392719075a42724c5caf960d0745ec4c45409"
+    },
+    {
+      "path": ".agents/skills/kirion-runtime/SKILL.md",
+      "source": ".agents/skills/kirion-runtime/SKILL.md",
+      "sha256": "417560bb03c23200f62742650244abf1dec4b7be380ea35ad7cbcf8c05efc937"
+    },
+    {
+      "path": ".agents/skills/kirion-security/SKILL.md",
+      "source": ".agents/skills/kirion-security/SKILL.md",
+      "sha256": "f0ce1523057b69916172cfe325abc3977ae50edc52f29db74d59e6b9cc128371"
+    },
+    {
+      "path": ".agents/skills/kirion-session-host/SKILL.md",
+      "source": ".agents/skills/kirion-session-host/SKILL.md",
+      "sha256": "ce25178976b04c8f2f89988bdb538d1b75c4eea03f00c6725fd1c7d37d2eb8dd"
+    },
+    {
+      "path": ".agents/skills/kirion-skill-smith/SKILL.md",
+      "source": ".agents/skills/kirion-skill-smith/SKILL.md",
+      "sha256": "0662a7233401ef0f5102f5483a5ef2b60011dde37ed3b3be1c24e98d296d476b"
+    },
+    {
+      "path": ".agents/skills/kirion-worker/SKILL.md",
+      "source": ".agents/skills/kirion-worker/SKILL.md",
+      "sha256": "4c2c16337e9fa2483e8ffbfcfa877a42a25c0559af14e30ae95a213eb5eafce6"
+    },
+    {
+      "path": ".agents/skills/kirion-api/SKILL.md",
+      "source": "integrations/antigravity/plugins/kirion-forge/skills/kirion-api/SKILL.md",
+      "sha256": "a96e16dcc2bae91ec477f463272d053e3c93c3f137146e156595c3fcb0f54a98"
+    },
+    {
+      "path": ".agents/skills/kirion-aspnet/SKILL.md",
+      "source": "integrations/antigravity/plugins/kirion-forge/skills/kirion-aspnet/SKILL.md",
+      "sha256": "416cc35eaaae4e9cbf9ea787fae42dca7fd9448f16aa4f2679fab6d4b593e01d"
+    },
+    {
+      "path": ".agents/skills/kirion-concurrency/SKILL.md",
+      "source": "integrations/antigravity/plugins/kirion-forge/skills/kirion-concurrency/SKILL.md",
+      "sha256": "41a0e14b6c1ed65a5a1b073a3ebceccb9d4de2486e415251b49db87303c50125"
+    },
+    {
+      "path": ".agents/skills/kirion-csharp/SKILL.md",
+      "source": "integrations/antigravity/plugins/kirion-forge/skills/kirion-csharp/SKILL.md",
+      "sha256": "3d58a4b31a886573e8fbbc0b8ab8757e42eb2c135855226d0f6282a768c1e37d"
+    },
+    {
+      "path": ".agents/skills/kirion-database/SKILL.md",
+      "source": "integrations/antigravity/plugins/kirion-forge/skills/kirion-database/SKILL.md",
+      "sha256": "605ad6b18b5b79decf86a6e520610471945c99f6af946f2ce8f8f227ac4ea3ca"
+    },
+    {
+      "path": ".agents/skills/kirion-design-engineering/SKILL.md",
+      "source": "integrations/antigravity/plugins/kirion-forge/skills/kirion-design-engineering/SKILL.md",
+      "sha256": "d40637515d5b229a02b4382dd0e646ae94b39d440d30a7c6ab92ba9cf806e93e"
+    },
+    {
+      "path": ".agents/skills/kirion-devsecops/SKILL.md",
+      "source": "integrations/antigravity/plugins/kirion-forge/skills/kirion-devsecops/SKILL.md",
+      "sha256": "5e6ee80ae78b864fef97c9e39853cd1afd8767ea392c3f03581fa46077775068"
+    },
+    {
+      "path": ".agents/skills/kirion-efcore/SKILL.md",
+      "source": "integrations/antigravity/plugins/kirion-forge/skills/kirion-efcore/SKILL.md",
+      "sha256": "0dfeeda94e40935b0d58252556ee4ee642634db36c78aa2509066acacfa59627"
+    },
+    {
+      "path": ".agents/skills/kirion-eloquent/SKILL.md",
+      "source": "integrations/antigravity/plugins/kirion-forge/skills/kirion-eloquent/SKILL.md",
+      "sha256": "05cc6589665cbf220bda97c7ebfa1a98f955dcfd8101542336986988fa1d219f"
+    },
+    {
+      "path": ".agents/skills/kirion-laravel/SKILL.md",
+      "source": "integrations/antigravity/plugins/kirion-forge/skills/kirion-laravel/SKILL.md",
+      "sha256": "f9c2e25dffa04a8b7f4d9fcd28a4b41d2b4051414a8abe85a8e668c64d55c9db"
+    },
+    {
+      "path": ".agents/skills/kirion-laravel-runtime/SKILL.md",
+      "source": "integrations/antigravity/plugins/kirion-forge/skills/kirion-laravel-runtime/SKILL.md",
+      "sha256": "a0edb6966c74dcb6026c253085cbc2e4d0c557870b8bdc32ec6cc72c1487bd1b"
+    },
+    {
+      "path": ".agents/skills/kirion-laravel-security/SKILL.md",
+      "source": "integrations/antigravity/plugins/kirion-forge/skills/kirion-laravel-security/SKILL.md",
+      "sha256": "a3cfbf31f202249a1ed17779f9a96f02dfffac1031248c541f3003d5f286c453"
+    },
+    {
+      "path": ".agents/skills/kirion-observability/SKILL.md",
+      "source": "integrations/antigravity/plugins/kirion-forge/skills/kirion-observability/SKILL.md",
+      "sha256": "1b1e73ed25d126ad0464948a75a0d6b900fd08691ac0335e947f0e9f8c50055b"
+    },
+    {
+      "path": ".agents/skills/kirion-performance/SKILL.md",
+      "source": "integrations/antigravity/plugins/kirion-forge/skills/kirion-performance/SKILL.md",
+      "sha256": "d94162b7ce014693809b258fae8cb7cd041de497cc226dd7d9fa42211f4da2a1"
+    },
+    {
+      "path": ".agents/skills/kirion-php/SKILL.md",
+      "source": "integrations/antigravity/plugins/kirion-forge/skills/kirion-php/SKILL.md",
+      "sha256": "2fcc47a7998a0f93343a71babbcb4a47afd254b363d4739957b4123467b2a860"
+    },
+    {
+      "path": ".agents/skills/kirion-test-engineering/SKILL.md",
+      "source": "integrations/antigravity/plugins/kirion-forge/skills/kirion-test-engineering/SKILL.md",
+      "sha256": "2e14025ef0848e5ee509f5f932750fa87f31c0c5b14918330833a170e53eb0b7"
+    },
+    {
+      "path": ".forge/vendor/kirion/EVIDENCE_CROSSWALK.md",
+      "source": "EVIDENCE_CROSSWALK.md",
+      "sha256": "fa05c71bad3c185ea29b3413bb6b9ef9fa873549a720c0d033645b631f5222a8"
+    },
+    {
+      "path": ".forge/vendor/kirion/SYSTEM_BOUNDARY.md",
+      "source": "SYSTEM_BOUNDARY.md",
+      "sha256": "99090228f0524b19f4c7c1d5a0964a225970c85d45c6a5956e4768a58a045049"
+    },
+    {
+      "path": ".forge/vendor/kirion/schemas/active-work.schema.json",
+      "source": "schemas/active-work.schema.json",
+      "sha256": "a1c07672b2cf4ce14fb1ac76b4dcb6d409fa7ba3246852bc33b43dc7da5c5603"
+    },
+    {
+      "path": ".forge/vendor/kirion/schemas/evidence-manifest.schema.json",
+      "source": "schemas/evidence-manifest.schema.json",
+      "sha256": "e912be894d21d07fbb595f7c0ee253eb06575d4f9714d99568f8c68798d3abf8"
+    },
+    {
+      "path": ".forge/vendor/kirion/schemas/nest.schema.json",
+      "source": "schemas/nest.schema.json",
+      "sha256": "37ea9b27688530559d735649ce869b9ffff4dc858488b0c5fc6a56a48598b56a"
+    },
+    {
+      "path": ".forge/vendor/kirion/schemas/README.md",
+      "source": "schemas/README.md",
+      "sha256": "2d9316b80d3e62282329d5dcde17eff13789fb305b16c6c1483b79335190cccb"
+    },
+    {
+      "path": ".forge/vendor/kirion/schemas/sandbox-capsule.schema.json",
+      "source": "schemas/sandbox-capsule.schema.json",
+      "sha256": "604bdc9f5b01d3fe2dcecca1c74e6251ae30d356d27e4df024dd963bc53430c9"
+    },
+    {
+      "path": ".forge/vendor/kirion/schemas/writer-handoff.schema.json",
+      "source": "schemas/writer-handoff.schema.json",
+      "sha256": "bbd83668292b7ac16a2c08dfed58829cac9c84f54c0d643d446d804b957c4d4e"
+    },
+    {
+      "path": ".forge/vendor/kirion/schemas/writer-report.schema.json",
+      "source": "schemas/writer-report.schema.json",
+      "sha256": "ce0da754c1e7a36c112ae49c92a7545ae9fad3dc9bfdaee6a0ceaf13d65c7c20"
+    },
+    {
+      "path": ".forge/vendor/kirion/state-machine/candidate-lifecycle.md",
+      "source": "state-machine/candidate-lifecycle.md",
+      "sha256": "57a5dbb8e1562d06d5654a06a652477a8326ad25c5d73b2a31e58fb9bac73776"
+    },
+    {
+      "path": ".forge/vendor/kirion/state-machine/nest-lifecycle.md",
+      "source": "state-machine/nest-lifecycle.md",
+      "sha256": "04156da85a30e70383e931b879aa3dd3f1f79a98231f0a748b0b17d976b39866"
+    },
+    {
+      "path": ".forge/vendor/kirion/state-machine/project-lifecycle.md",
+      "source": "state-machine/project-lifecycle.md",
+      "sha256": "45f730eebc9f2476be562557f12980b86557e1eae2f2166e2ea9e034171945e8"
+    },
+    {
+      "path": ".forge/vendor/kirion/state-machine/README.md",
+      "source": "state-machine/README.md",
+      "sha256": "459c78b3e5f3a017c1df91ed7b2b7c0b90fe139cc166a96d618e79c61f615001"
+    },
+    {
+      "path": ".forge/vendor/kirion/state-machine/role-transitions.md",
+      "source": "state-machine/role-transitions.md",
+      "sha256": "247b8ec09fb6345b706a42aa51244ef2438b02dfbcf2e7427a2e346819642c68"
+    },
+    {
+      "path": ".forge/vendor/kirion/integrations/antigravity/factory/authority.py",
+      "source": "integrations/antigravity/factory/authority.py",
+      "sha256": "8aadc905f5d07e30b70a37c57ae98e80f7fcefe42bc533e132c7f25da4391933"
+    },
+    {
+      "path": ".forge/vendor/kirion/integrations/antigravity/factory/cli.py",
+      "source": "integrations/antigravity/factory/cli.py",
+      "sha256": "b0662488b1f053b6a85f292ae9cad02aa8f1c4b4822942a75efd0196a4a0b863"
+    },
+    {
+      "path": ".forge/vendor/kirion/integrations/antigravity/factory/delivery.py",
+      "source": "integrations/antigravity/factory/delivery.py",
+      "sha256": "20396ad230237e13849c98fac2eb8db9b3e6bdf020f935fa06a1bc99cc0f7332"
+    },
+    {
+      "path": ".forge/vendor/kirion/integrations/antigravity/factory/dispatcher.py",
+      "source": "integrations/antigravity/factory/dispatcher.py",
+      "sha256": "9cefa049fff869117ece9ec0939c790991883caa43a5c51839020b8e4e3e9c43"
+    },
+    {
+      "path": ".forge/vendor/kirion/integrations/antigravity/factory/evidence.py",
+      "source": "integrations/antigravity/factory/evidence.py",
+      "sha256": "dd672e2eae51a9ee6c289850ef225c283a9098bf80a72a45cff5e0a272b6c4ef"
+    },
+    {
+      "path": ".forge/vendor/kirion/integrations/antigravity/factory/knowledge.py",
+      "source": "integrations/antigravity/factory/knowledge.py",
+      "sha256": "682d5678799f1f1b00ff8b9f169d5ba0ea23a012c87aa846d23ee6563d3cb25c"
+    },
+    {
+      "path": ".forge/vendor/kirion/integrations/antigravity/factory/ownership.py",
+      "source": "integrations/antigravity/factory/ownership.py",
+      "sha256": "ba3cfeaf29a0fdf6d94d79700673438fdbc3c888ad058a736f2b794e1a2e833b"
+    },
+    {
+      "path": ".forge/vendor/kirion/integrations/antigravity/factory/policy.py",
+      "source": "integrations/antigravity/factory/policy.py",
+      "sha256": "019b8393f4c7b83dadf62320885957e7ae8cd0323014bc7e413f282ab4b3079f"
+    },
+    {
+      "path": ".forge/vendor/kirion/integrations/antigravity/factory/quality.py",
+      "source": "integrations/antigravity/factory/quality.py",
+      "sha256": "916a3d8271c81725dc136b4fcfbfcc6ae1b422b952e1fbb8da163f58d9782814"
+    },
+    {
+      "path": ".forge/vendor/kirion/integrations/antigravity/factory/recovery.py",
+      "source": "integrations/antigravity/factory/recovery.py",
+      "sha256": "42c4e086ce511e791614731536990e3999986f9f9c2fa163c324e4b5fe581c86"
+    },
+    {
+      "path": ".forge/vendor/kirion/integrations/antigravity/factory/scheduler.py",
+      "source": "integrations/antigravity/factory/scheduler.py",
+      "sha256": "bb39310ec7afb4431420b3e58dd77525103946bf5e569c1f0a1134cd02b1f7b7"
+    },
+    {
+      "path": ".forge/vendor/kirion/integrations/antigravity/factory/__init__.py",
+      "source": "integrations/antigravity/factory/__init__.py",
+      "sha256": "71d655d0dba36089d264ba85effeee8937c1fef79d621e5c0376589fed3ecc25"
+    },
+    {
+      "path": ".forge/vendor/kirion/integrations/antigravity/profiles/csharp_aspnet.json",
+      "source": "integrations/antigravity/profiles/csharp_aspnet.json",
+      "sha256": "197108b1055d3917a823a6d49df21fb14e6c47fdf7f2101e5a69183fa35a03e6"
+    },
+    {
+      "path": ".forge/vendor/kirion/integrations/antigravity/profiles/frontend_web.json",
+      "source": "integrations/antigravity/profiles/frontend_web.json",
+      "sha256": "1c408ecd3aecd614e34947759504e248024e697f59f79dd3877569e8a662abff"
+    },
+    {
+      "path": ".forge/vendor/kirion/integrations/antigravity/profiles/php_laravel.json",
+      "source": "integrations/antigravity/profiles/php_laravel.json",
+      "sha256": "cb36ef7b62d177b83c910cf4d3ecff96050c18406cec9cf8c22862b7e6872ff8"
+    },
+    {
+      "path": ".forge/vendor/kirion/integrations/antigravity/profiles/salryn_high_integrity.json",
+      "source": "integrations/antigravity/profiles/salryn_high_integrity.json",
+      "sha256": "bf2a357062cc8db5ffbc25ef3de1145d5c42058d6266e670817daa4226658cf0"
+    },
+    {
+      "path": ".forge/vendor/kirion/integrations/antigravity/schemas/evidence-envelope.schema.json",
+      "source": "integrations/antigravity/schemas/evidence-envelope.schema.json",
+      "sha256": "7b63d00f67e3374324b2d4d8e200c8cbaa1d9251f2c1c217529cb44ccfea62a4"
+    },
+    {
+      "path": ".forge/vendor/kirion/integrations/antigravity/schemas/journal-event.schema.json",
+      "source": "integrations/antigravity/schemas/journal-event.schema.json",
+      "sha256": "5863c1651e11f3e7632c0cced912b6ab42697ace7ea2ec2eec6e74b024cf7d5d"
+    },
+    {
+      "path": ".forge/vendor/kirion/integrations/antigravity/schemas/mission-packet.schema.json",
+      "source": "integrations/antigravity/schemas/mission-packet.schema.json",
+      "sha256": "5c65ab5dee6affb5167f14a220f23728c028dacd7d297dd25bde6b1eff45b15c"
+    },
+    {
+      "path": ".forge/vendor/kirion/integrations/antigravity/schemas/nox-result.schema.json",
+      "source": "integrations/antigravity/schemas/nox-result.schema.json",
+      "sha256": "02970bc061ef92fd00fda9710f91722b1e130607ce14dc73852e82bf00dd8f4a"
+    },
+    {
+      "path": ".forge/vendor/kirion/integrations/antigravity/schemas/recovery-capsule.schema.json",
+      "source": "integrations/antigravity/schemas/recovery-capsule.schema.json",
+      "sha256": "998ea8eeca69c55cd6d72cef5c27dc08c1210feb3c288fe432a0397b1fa45be2"
+    },
+    {
+      "path": ".forge/vendor/kirion/integrations/antigravity/schemas/writer-result.schema.json",
+      "source": "integrations/antigravity/schemas/writer-result.schema.json",
+      "sha256": "16e1b0c39e21aae5e004573d8cc64afcf8da279b9f4c14d8babff71ef5ac5fe6"
+    },
+    {
+      "path": ".forge/vendor/kirion/integrations/antigravity/plugins/kirion-forge/hooks/forge_guard.py",
+      "source": "integrations/antigravity/plugins/kirion-forge/hooks/forge_guard.py",
+      "sha256": "dfcd81d5721a502de413ddb9865f9649df5b44ec163dff4ed96c2918751d313e"
+    }
+  ]
+}

@@ -1,5 +1,27 @@
 # Salryn Cafe — Operation Forge V2 Engineering Rules
 
+## Codex takeover execution override (Technical Authority, 2026-11-21)
+
+[Issue #27 directive](https://github.com/Kirjane/Dev-Salryn-Cafe/issues/27#issuecomment-7048261423)
+supersedes the persistent Swarm execution model below. Default: one primary Codex
+agent; at most three total concurrent agents for bounded independent review or
+technically justified disjoint work. Do not reactivate the Antigravity Swarm.
+Temporary reviewers return authority when done. Preserve every existing worktree.
+All product, history, financial, evidence and no-main/no-production boundaries remain.
+
+Load `.agents/skills/kirion-core/SKILL.md`, then `kirion-dispatch` and only the
+specialists needed for the current slice. These are project-only opt-in candidate
+skills from Forge `0e8765de6e0e87ea9b4503714f08fa650e1a79c6`; they grant no
+additional authority. Existing Salryn skills remain preserved and superseded as
+described below. See `00-INTEGRATION/CODEX-TAKEOVER-STATE.md` and
+`00-INTEGRATION/CODEX-FORGE-ADAPTER.md` for current state and enforcement limits.
+
+Use frozen-SHA nonauthor review for financial/security/migration/release changes.
+Primary may act as Maintainer, Code Writer or Integration Writer for explicit
+bounded slices under the takeover authority; never self-approve. Continue the
+accepted dependency graph without routine approval pauses. Keep restricted raw
+audit/board backups outside Git; checkpoint concise sanitized evidence per slice.
+
 - **Repository:** `Kirjane/Dev-Salryn-Cafe` (private) — **Salryn Cafe** (Cafe Yza first F&B profile; **not** School Supplies / General Merchandise retail POS).
 - **Technical Authority:** Kirch Ivan Balite.
 - **Canonical Dispatch:** `00-INTEGRATION/FORGE-DISPATCH-V2.md` and [Master Issue #1](https://github.com/Kirjane/Dev-Salryn-Cafe/issues/1) (work queue: Issues `#1`–`#15`).
