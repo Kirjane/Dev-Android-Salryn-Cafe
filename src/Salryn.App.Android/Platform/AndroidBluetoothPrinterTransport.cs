@@ -109,6 +109,7 @@ public sealed class AndroidBluetoothPrinterTransport : IBluetoothPrinterTranspor
 
         return await Task.Run(() =>
         {
+            bool writeStarted = false;
             try
             {
                 BluetoothDevice? device = adapter.GetRemoteDevice(targetId.Trim());
@@ -131,13 +132,21 @@ public sealed class AndroidBluetoothPrinterTransport : IBluetoothPrinterTranspor
                 }
 
                 byte[] bytes = payload.ToArray();
+                writeStarted = true;
                 outStream.Write(bytes, 0, bytes.Length);
                 outStream.Flush();
                 return PrinterTransportResult.AcceptedForTransport($"Delivered {bytes.Length} ESC/POS bytes via Bluetooth SPP to {targetId}.");
             }
             catch (Exception ex)
             {
-                return PrinterTransportResult.NotReady("AndroidBluetooth.TransportError", ex.Message);
+                if (writeStarted)
+                {
+                    return PrinterTransportResult.Unknown(
+                        "AndroidBluetooth.OutcomeUnknown",
+                        "Bluetooth write started but delivery cannot be confirmed; manual inspection is required before reprinting.");
+                }
+
+                return PrinterTransportResult.NotReady("AndroidBluetooth.TransportError", ex.GetType().Name);
             }
         }, cancellationToken).ConfigureAwait(false);
     }
