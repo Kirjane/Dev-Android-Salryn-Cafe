@@ -17,6 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Salryn.Mobile.Runtime\Salryn.Mobile.Runtime.csproj" />
     <ProjectReference Include="..\..\src\Salryn.Infrastructure\Salryn.Infrastructure.csproj" />
   </ItemGroup>
 </Project>
