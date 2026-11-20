@@ -1,5 +1,8 @@
 using Microsoft.Data.Sqlite;
 using System.Text.Json.Nodes;
+using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Text.Json;
 using Salryn.Infrastructure.Data;
 using Salryn.Infrastructure.Data.Migrations;
 using Salryn.Infrastructure.Data.Initialization;
@@ -42,6 +45,29 @@ public sealed class SchemaLineageReconciliationTests : IDisposable
         DbPaths paths = DbPaths.CreateDevelopment(sub);
         paths.EnsureDirectories();
         return (paths, new SqliteConnectionFactory(paths));
+    }
+
+    [Fact]
+    public void PortableLegacyBackupCannotLaunderAnExplicitWrongProduct()
+    {
+        var (legacyPaths, factory) = CreateTempDb("legacy-wrong-product-import");
+        new MigrationRunner(factory, CafeMigrationCatalog.CreateLegacyYzaV39Migrations()).RunPendingMigrations();
+        SqliteConnection.ClearAllPools();
+        byte[] bytes = File.ReadAllBytes(legacyPaths.DatabasePath);
+        var manifest = new ControlledBackupManifest("backup-synthetic", DateTimeOffset.UtcNow, 39,
+            new[] { new ControlledBackupFile("salryn.db", bytes.Length, Convert.ToHexString(SHA256.HashData(bytes))) },
+            "Salryn.POS");
+        using var zip = new MemoryStream();
+        using (var archive = new ZipArchive(zip, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            using (var db = archive.CreateEntry("salryn.db").Open()) db.Write(bytes);
+            using (var json = archive.CreateEntry("manifest.json").Open()) JsonSerializer.Serialize(json, manifest);
+        }
+        zip.Position = 0;
+        var (target, _) = CreateTempDb("import-destination");
+        var result = new ControlledBackupPackageService(target).ImportPortable(zip, zip.Length);
+        Assert.True(result.IsFailure);
+        Assert.Equal("BackupPackage.ProductMismatch", result.ErrorDetail.Code);
     }
 
     [Fact]
