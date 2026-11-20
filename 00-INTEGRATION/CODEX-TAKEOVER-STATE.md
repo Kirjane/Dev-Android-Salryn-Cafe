@@ -1,3 +1,29 @@
+# RESUMED — EXPLICIT INTERRUPTED-CHECKPOINT RECOVERY (2026-11-21)
+
+User explicitly authorized CONTINUE; the historical safe-exit pause below is
+superseded for execution only. Recovery verified clean local182a51fe, remote
+candidate ae169420, Android1f34b694 and unchanged remote main16ce5f29. Current
+GitHub actor observed Kirch-Nairu. Original harness and completed work retained;
+no repeated adoption/discovery. Existing journal hash chain verified and
+HOST-COMPOSITION-02 transitioned BLOCKED→ACTIVE under continuation authority.
+
+New source43387b9c43ab8cf8fcb1daf173adeb04d6a45e01 binds controlled manifests to
+product_id=Salryn.Cafe, rejects wrong product, and accepts absent ID only when
+read-only classifier confirms legacy Yza. Focused I2 run on this source: 11 passed,
+0 failed/skipped, exit0, Windows/.NET10.0.404; command dotnet test
+ tests/Salryn.Cafe.I2Tests/Salryn.Cafe.I2Tests.csproj -c Release -m:1 --no-restore
+ --logger trx --results-directory <restricted recovery>/test-results.
+Actual log resume-product-binding.log and TRX resume-product-binding.trx retained.
+Independent bounded reviewer backup_review_resume inspecting frozen43387b9c and
+previous6770e5f9; verdict pending. No remote publication of unreviewed source.
+
+Next: stage/migrate/verify legacy backup copy before replacing live destination,
+protect live destination against wrong-product/hot-journal writes, close review
+findings, focused regressions then full CoreSmoke; remaining dependency sequence
+below unchanged. Product-bound manifest does not complete restore hardening.
+
+---
+
 # SAFE EXIT — ACCOUNT TRANSITION (2026-11-21, Asia/Manila)
 
 **Execution PAUSED by Technical Authority. Do not auto-resume until the next
