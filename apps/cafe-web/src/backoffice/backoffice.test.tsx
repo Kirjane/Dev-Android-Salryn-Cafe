@@ -1,9 +1,11 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { BackofficeConsoleApp } from "./BackofficeConsoleApp";
 import { createMockBackofficeClient } from "./mockBackofficeClient";
+
+const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 describe("Salryn Cafe UX-C — Back-Office, Owner & Device Management (MOCKED_UI)", () => {
   it("renders Owner Reports & COGS in Central Owner View and gates Host-Only controls", async () => {
@@ -50,15 +52,35 @@ describe("Salryn Cafe UX-C — Back-Office, Owner & Device Management (MOCKED_UI
     await user.click(within(dialog).getByRole("button", { name: "Revoke device" }));
 
     // Unknown-outcome recovery panel appears
-    expect(await screen.findByText(/Unknown Revocation Outcome · Operation dev-revoke-/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Unknown Revocation Outcome · Operation/i)).toBeInTheDocument();
 
-    // Retry with same operationId
+    // Retry with same RFC-4122 Guid operationId
     await user.click(screen.getByRole("button", { name: /Retry & Confirm Revocation/i }));
     expect(await screen.findByText(/Device revoked · Counter Tablet #1/i)).toBeInTheDocument();
 
     const opIds = client.getSubmittedOpIds();
     expect(opIds).toHaveLength(2);
+    expect(opIds[0]).toMatch(UUID_V4_REGEX);
     expect(opIds[0]).toBe(opIds[1]);
+  });
+
+  it("blocks rapid synchronous double-click on Join Code issuance via inFlightRef guard", async () => {
+    const user = userEvent.setup();
+    const client = createMockBackofficeClient({ delayMs: 80 });
+    const spy = vi.spyOn(client, "issueJoinCode");
+    render(<BackofficeConsoleApp client={client} />);
+
+    await user.click(screen.getByRole("button", { name: /Device Trust & Health/i }));
+    const btn = screen.getByRole("button", { name: /Issue 10-Min Join Code/i });
+    act(() => {
+      btn.click();
+      btn.click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Active Join Code: CAFE-7492-X9/i)).toBeInTheDocument();
+    });
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 
   it("posts inventory purchase/waste movements and Cash AR settlements", async () => {

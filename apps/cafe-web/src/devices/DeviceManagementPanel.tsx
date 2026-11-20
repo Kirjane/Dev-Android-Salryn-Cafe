@@ -60,8 +60,9 @@ export function DeviceManagementPanel({
   }
 
   async function handleApprove(device: EnrolledDevice) {
-    const updated = await approveOp.execute((operationId) =>
-      client.approveDevice({ operationId, deviceId: device.deviceId }),
+    const updated = await approveOp.execute(
+      (operationId) => client.approveDevice({ operationId, deviceId: device.deviceId }),
+      device.deviceId,
     );
     if (updated) {
       onDeviceUpdated(updated);
@@ -71,8 +72,9 @@ export function DeviceManagementPanel({
 
   async function handleRevoke(deviceId: string) {
     setPendingRevokeDeviceId(deviceId);
-    const updated = await revokeOp.execute((operationId) =>
-      client.revokeDevice({ operationId, deviceId }),
+    const updated = await revokeOp.execute(
+      (operationId) => client.revokeDevice({ operationId, deviceId }),
+      deviceId,
     );
     if (updated) {
       setPendingRevokeDeviceId(null);
@@ -92,6 +94,9 @@ export function DeviceManagementPanel({
             : "Windows Host Console manages local LAN Thin Terminals (HTTPS port 5400) and synced device registry. Bluetooth receipt/kitchen printers are isolated local peripherals."
         }
       />
+
+      {approveOp.error ? <Alert tone="danger" title="Device Approval Failed" description={approveOp.error} /> : null}
+      {revokeOp.error ? <Alert tone="danger" title="Device Revocation Failed" description={revokeOp.error} /> : null}
 
       {revokeOp.unknownOutcome && pendingRevokeDeviceId ? (
         <Card>
