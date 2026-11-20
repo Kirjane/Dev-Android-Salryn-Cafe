@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <RuntimeIdentifiers>android-arm64;android-x64</RuntimeIdentifiers>
+    <OutputType>Exe</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ApplicationId>ph.kirjanelabs.salryncafe</ApplicationId>
+    <ApplicationTitle>Salryn Cafe</ApplicationTitle>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>1.0.0-rc1</ApplicationDisplayVersion>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Salryn.Core\Salryn.Core.csproj" />
+    <ProjectReference Include="..\Salryn.Sync.Contracts\Salryn.Sync.Contracts.csproj" />
+    <ProjectReference Include="..\Salryn.Mobile.Foundation\Salryn.Mobile.Foundation.csproj" />
+    <ProjectReference Include="..\Salryn.Mobile.Runtime\Salryn.Mobile.Runtime.csproj" />
+  </ItemGroup>
+
+</Project>
