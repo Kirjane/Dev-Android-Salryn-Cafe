@@ -417,7 +417,8 @@ public sealed class ControlledBackupPackageService
                 localId,
                 importedManifest.CreatedAt == default ? DateTimeOffset.UtcNow : importedManifest.CreatedAt,
                 importedManifest.SchemaVersion > 0 ? importedManifest.SchemaVersion : ReadVersion(finalDb),
-                new[] { new ControlledBackupFile(DatabaseName, dbInfo.Length, actualHash) });
+                new[] { new ControlledBackupFile(DatabaseName, dbInfo.Length, actualHash) },
+                importedManifest.ProductId);
             WriteManifest(packageDir, localManifest);
 
             Result<ControlledBackupVerification> verified = Verify(localId);
