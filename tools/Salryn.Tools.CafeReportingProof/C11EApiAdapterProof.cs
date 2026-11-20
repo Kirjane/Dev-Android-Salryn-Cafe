@@ -10,6 +10,7 @@ internal static class C11EApiAdapterProof
     public static void Run(string root)
     {
         using C11ProofFixture fixture = C11ProofFixture.Create(root);
+        fixture.SeedCashierSessionReport(C11ProofFixture.Day.AddHours(17));
         OwnerReportsApiService adapter = new(SalrynLocalComposition.Create(fixture.Paths));
         var now = C11ProofFixture.Day.AddHours(23);
         var result = ProofAssert.Value(adapter.GetSummaryAsync(
@@ -22,12 +23,12 @@ internal static class C11EApiAdapterProof
         ProofAssert.That(result.CafeManagement!.RangeStartUtc == C11ProofFixture.Day &&
             result.CafeManagement.RangeEndUtc == C11ProofFixture.Day.AddDays(1),
             "Explicit report range must reach shared C11 service unchanged.");
-        ProofAssert.That(result.CafeManagement.AccountsReceivable is not null && result.CafeManagement.Cash is not null,
+        ProofAssert.That(result.CafeManagement.AccountsReceivable is not null && result.CafeManagement.Cash is not null && result.CafeManagement.CashierSessions?.Count == 1,
             "Authorized receivables details must remain available.");
         var redacted = ProofAssert.Value(adapter.GetSummaryAsync(
             fixture.ManagerUserId, nowOverride: now, includeReceivables: false).GetAwaiter().GetResult(), "redacted report");
         ProofAssert.That(redacted.Receivables is null && redacted.CafeManagement!.AccountsReceivable is null &&
-            redacted.CafeManagement.Cash is null, "No receivables entitlement must redact both legacy and C11 AR-bearing sections.");
+            redacted.CafeManagement.Cash is null && redacted.CafeManagement.CashierSessions is null, "No receivables entitlement must redact both legacy and C11 AR-bearing sections.");
         var denied = adapter.GetSummaryAsync(fixture.CashierUserId, nowOverride: now).GetAwaiter().GetResult();
         ProofAssert.That(denied.IsFailure, "Reports.View must be checked by shared service for the actual actor.");
         var unknown = adapter.GetSummaryAsync(Guid.NewGuid(), nowOverride: now).GetAwaiter().GetResult();

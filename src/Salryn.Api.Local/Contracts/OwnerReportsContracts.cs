@@ -86,7 +86,7 @@ public sealed record OwnerCafeManagementReport(
     CafeReportInventorySummary Inventory,
     IReadOnlyList<CafeReportRecipeCostRow> RecipeCosts,
     IReadOnlyList<CafeReportPerformanceRow> Performance,
-    IReadOnlyList<CafeReportSessionRow> CashierSessions,
+    IReadOnlyList<CafeReportSessionRow>? CashierSessions,
     CafeReportBookingSummary Bookings,
     CafeReportDeliverySummary Delivery,
     CafeReportSyncCompleteness SyncCompleteness)
@@ -97,5 +97,5 @@ public sealed record OwnerCafeManagementReport(
         includeReceivables ? report.Cash : null,
         includeReceivables ? report.AccountsReceivable : null,
         report.Purchases, report.Waste, report.Inventory, report.RecipeCosts, report.Performance,
-        report.CashierSessions, report.Bookings, report.Delivery, report.SyncCompleteness);
+        includeReceivables ? report.CashierSessions : null, report.Bookings, report.Delivery, report.SyncCompleteness);
 }

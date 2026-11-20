@@ -243,7 +243,7 @@ export type CafeManagementReport = {
   inventory: CafeReportInventorySummary;
   recipeCosts: CafeReportRecipeCostRow[];
   performance: CafeReportPerformanceRow[];
-  cashierSessions: CafeReportSessionRow[];
+  cashierSessions: CafeReportSessionRow[] | null;
   bookings: CafeReportBookingSummary;
   delivery: CafeReportDeliverySummary;
   syncCompleteness: CafeReportSyncCompleteness;

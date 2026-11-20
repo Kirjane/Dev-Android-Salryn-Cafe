@@ -194,9 +194,9 @@ export function CafeManagementReportsPanel() {
   ];
 
   return (
-    <div className="flex h-[calc(100vh-9rem)] max-h-[calc(100vh-9rem)] min-h-0 flex-col gap-3 overflow-hidden">
+    <div className="flex min-h-0 flex-col gap-3">
       <CommandBar
-        title="Reports"
+        title="Cafe management reports"
         subtitle="Store operations, historical COGS, and profitability visibility."
         status={
           cafe ? (
@@ -235,7 +235,7 @@ export function CafeManagementReportsPanel() {
       {query.isError ? <ErrorState message={(query.error as Error).message} /> : null}
 
       {range && data && cafe ? (
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+        <div className="min-h-0">
           <div className="space-y-4">
             <Alert
               tone={cafe.profitability.authority === "Authoritative" ? "success" : "warning"}
@@ -343,10 +343,10 @@ export function CafeManagementReportsPanel() {
                   <div className="max-h-80 overflow-y-auto">
                     <DataTable
                       columns={sessionColumns}
-                      rows={cafe.cashierSessions}
+                      rows={cafe.cashierSessions ?? []}
                       getRowKey={(row) => row.sessionId}
-                      emptyTitle="No closed sessions"
-                      emptyDescription="Immutable session reports in the selected range will appear here."
+                      emptyTitle={cafe.cashierSessions === null ? "Session details unavailable" : "No closed sessions"}
+                      emptyDescription={cafe.cashierSessions === null ? "Requires Receivables.View and signed receivables entitlement because session totals include AR sales." : "Immutable session reports in the selected range will appear here."}
                     />
                   </div>
                 </CardBody>
