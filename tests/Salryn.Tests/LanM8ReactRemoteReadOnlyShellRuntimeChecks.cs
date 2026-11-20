@@ -50,7 +50,7 @@ public static class LanM8ReactRemoteReadOnlyShellRuntimeChecks
         Require(!Directory.Exists(Path.Combine(root.FullName, "src", "Salryn.App.WinForms", "Features", "RemoteClient")), "WinForms RemoteClient feature path must not exist.");
         Require(m7Service.Contains("IRemoteHostCommandTransport", StringComparison.Ordinal), "LAN-M7 transport abstraction missing.");
         Require(!m7Service.Contains("Salryn.Host.Local", StringComparison.Ordinal), "LAN-M7 service must not reference Host.Local.");
-        Require(localApiProgram.Contains("http://127.0.0.1:5299", StringComparison.Ordinal), "Api.Local must stay localhost-only.");
+        CafeLoopbackBoundaryChecks.Run();
         Require(!localApiProgram.Contains("0.0.0.0", StringComparison.Ordinal), "Api.Local must not bind to all interfaces.");
         RequireNoForbiddenWebMarkers(webRoot);
         LanM5ControlledRemoteTransportGateChecks.Run();

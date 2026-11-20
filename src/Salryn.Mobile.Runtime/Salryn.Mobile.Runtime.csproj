@@ -6,12 +6,12 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
-  <!-- Strictly mobile-safe: zero ASP.NET/Kestrel, WinForms, WebView2, or PDFsharp dependencies -->
+  <!-- One canonical persistence authority; Foundation supplies platform adapters. -->
   <ItemGroup>
     <ProjectReference Include="..\Salryn.Core\Salryn.Core.csproj" />
     <ProjectReference Include="..\Salryn.Sync.Contracts\Salryn.Sync.Contracts.csproj" />
+    <ProjectReference Include="..\Salryn.Persistence.Sqlite\Salryn.Persistence.Sqlite.csproj" />
     <ProjectReference Include="..\Salryn.Mobile.Foundation\Salryn.Mobile.Foundation.csproj" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.8" />
   </ItemGroup>
 
 </Project>

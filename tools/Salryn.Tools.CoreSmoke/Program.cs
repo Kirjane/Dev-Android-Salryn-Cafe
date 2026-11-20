@@ -341,6 +341,9 @@ public static class Program
     {
         switch (checkName.ToLowerInvariant())
         {
+            case "cafe-loopback-boundary":
+                CafeLoopbackBoundaryChecks.Run();
+                return;
             case "pos-stab-b3-production-db-writability":
                 PosStabB3ProductionDbWritabilityChecks.Run();
                 return;

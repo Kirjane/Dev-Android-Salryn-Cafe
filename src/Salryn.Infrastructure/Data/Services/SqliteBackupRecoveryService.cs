@@ -3,6 +3,8 @@ using Salryn.Core.Common;
 using Salryn.Core.Models;
 using Salryn.Core.Services;
 using Salryn.Infrastructure.Paths;
+using Salryn.Infrastructure.Data.Migrations;
+using Salryn.Infrastructure.Data.Initialization;
 
 namespace Salryn.Infrastructure.Data.Services;
 
@@ -31,6 +33,13 @@ public sealed class SqliteBackupRecoveryService : IBackupRecoveryService
                 return Result<string>.Fail(Error.Failure(
                     "Backup.DatabaseNotFound",
                     "Live database file was not found."));
+            }
+
+            var sourceVerification = VerifyBackup(sourcePath);
+            if (sourceVerification.IsFailure || !sourceVerification.Value.IsRestorable)
+            {
+                return Result<string>.Fail(Error.Validation(
+                    "Backup.SourceRejected", "Source database must pass Cafe lineage and schema verification before backup."));
             }
 
             Directory.CreateDirectory(backupFolder);
@@ -135,6 +144,23 @@ public sealed class SqliteBackupRecoveryService : IBackupRecoveryService
             using SqliteConnection connection = CreateReadOnlyConnection(backupFile.FullName);
             connection.Open();
 
+            SchemaLineageClassification lineage = SchemaLineageClassifier.Classify(connection);
+            if (lineage.Kind is not (SchemaLineageKind.SalrynCafe or SchemaLineageKind.YzaV39Legacy))
+            {
+                return Result<BackupVerificationSummary>.Fail(Error.Validation(
+                    "Backup.LineageRejected", "Only verified Salryn Cafe or legacy Cafe Yza backups may be restored."));
+            }
+
+            using (var integrity = connection.CreateCommand())
+            {
+                integrity.CommandText = "PRAGMA integrity_check;";
+                if (!string.Equals(integrity.ExecuteScalar()?.ToString(), "ok", StringComparison.Ordinal))
+                {
+                    return Result<BackupVerificationSummary>.Fail(Error.Validation(
+                        "Backup.IntegrityFailed", "Backup SQLite integrity verification failed."));
+                }
+            }
+
             HashSet<string> tableNames = ReadTableNames(connection);
             int? backupMigrationVersion = ReadMaxMigrationVersion(connection);
             int supportedMigrationVersion = SalrynDatabaseMigrationCatalog.SupportedMigrationVersion;
@@ -227,6 +253,48 @@ public sealed class SqliteBackupRecoveryService : IBackupRecoveryService
                     "Live database file was not found."));
             }
 
+            // Never let a writable open recover or replace a wrong-product destination.
+            var liveVerification = VerifyBackup(liveDatabasePath);
+            if (liveVerification.IsFailure || !liveVerification.Value.IsRestorable)
+            {
+                return Result<BackupRestoreResult>.Fail(Error.Validation(
+                    "Backup.DestinationRejected", "Live destination must pass Cafe lineage and integrity verification."));
+            }
+
+            // Keep source evidence immutable. Upgrade a separate disposable restore
+            // candidate before touching the live destination or creating its safety copy.
+            var stagePaths = DbPaths.CreateDevelopment(Path.Combine(_dbPaths.BackupPath,
+                "restore-stage-" + Guid.NewGuid().ToString("N")));
+            stagePaths.EnsureDirectories();
+            // Snapshot through SQLite so committed WAL rows are included without
+            // checkpointing or modifying the retained source evidence.
+            using (var source = CreateReadOnlyConnection(freshVerification.Value.FilePath))
+            using (var stage = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = stagePaths.DatabasePath, Mode = SqliteOpenMode.ReadWriteCreate,
+                Pooling = false
+            }.ToString()))
+            {
+                source.Open();
+                stage.Open();
+                source.BackupDatabase(stage);
+            }
+            var stagedInitialization = DefaultDatabaseInitializationFactory.Create(stagePaths).InitializeDatabase();
+            if (stagedInitialization.IsFailure)
+            {
+                return Result<BackupRestoreResult>.Fail(stagedInitialization.ErrorDetail);
+            }
+            SqliteConnectionFactory.ClearAllPools();
+            CheckpointLiveDatabase(stagePaths.DatabasePath);
+            SqliteConnectionFactory.ClearAllPools();
+            var stagedVerification = VerifyBackup(stagePaths.DatabasePath);
+            if (stagedVerification.IsFailure || !stagedVerification.Value.IsRestorable
+                || stagedVerification.Value.BackupMigrationVersion != CafeMigrationCatalog.CurrentCafeSchemaVersion)
+            {
+                return Result<BackupRestoreResult>.Fail(Error.Validation(
+                    "Backup.StageRejected", "Migrated restore candidate did not pass Cafe schema verification."));
+            }
+
             Directory.CreateDirectory(_dbPaths.BackupPath);
             string safetyBackupPath = CreateSafetyBackupPath();
 
@@ -239,27 +307,21 @@ public sealed class SqliteBackupRecoveryService : IBackupRecoveryService
             CheckpointLiveDatabase(liveDatabasePath);
             SqliteConnectionFactory.ClearAllPools();
 
-            if (!CanOpenLiveDatabaseExclusively(liveDatabasePath))
+            // Keep denial of new readers/writers through the atomic replacement.
+            // Delete sharing permits the OS rename primitive, not SQLite access.
+            using (var exclusion = File.Open(liveDatabasePath, FileMode.Open,
+                FileAccess.ReadWrite, FileShare.Delete))
             {
-                SqliteBackupLogWriter.TryWrite(
-                    _connectionFactory,
-                    new BackupLog
-                    {
-                        FilePath = verifiedBackup.FilePath,
-                        Status = JobStatus.Failed,
-                        CreatedAt = DateTimeOffset.UtcNow,
-                        ErrorMessage = "Restore blocked because live database could not be opened exclusively.",
-                    });
-
-                return Result<BackupRestoreResult>.Fail(Error.Failure(
-                    "Backup.RestoreRequiresRestart",
-                    "Safety backup was created, but the live database could not be opened exclusively. " +
-                    "Restore requires app restart or a manual operator step. Safety backup: " + safetyBackupPath));
+                string walPath = liveDatabasePath + "-wal";
+                if (File.Exists(walPath) && new FileInfo(walPath).Length > 0)
+                {
+                    return Result<BackupRestoreResult>.Fail(Error.Failure(
+                        "Backup.RestoreRequiresRestart", "Live WAL is not empty; close all writers before restore."));
+                }
+                SqliteDatabaseBackupUtility.RemoveWalShmSidecars(liveDatabasePath);
+                string replacedOriginal = safetyBackupPath + ".replaced-original";
+                File.Replace(stagePaths.DatabasePath, liveDatabasePath, replacedOriginal);
             }
-
-            SqliteDatabaseBackupUtility.RemoveWalShmSidecars(liveDatabasePath);
-            File.Copy(freshVerification.Value.FilePath, liveDatabasePath, overwrite: true);
-            SqliteDatabaseBackupUtility.RemoveWalShmSidecars(liveDatabasePath);
 
             SqliteBackupLogWriter.TryWrite(
                 _connectionFactory,

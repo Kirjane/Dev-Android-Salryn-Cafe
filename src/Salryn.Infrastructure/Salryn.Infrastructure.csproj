@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\Salryn.Persistence.Sqlite\Salryn.Persistence.Sqlite.csproj" />
     <ProjectReference Include="..\Salryn.Core\Salryn.Core.csproj" />
     <ProjectReference Include="..\Salryn.Sync.Contracts\Salryn.Sync.Contracts.csproj" />
   </ItemGroup>
@@ -17,4 +18,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Compile Remove="Data\**\*.cs" />
+    <Compile Remove="Paths\DbPaths.cs" />
+    <Compile Remove="Paths\SalrynProductIdentity.cs" />
+  </ItemGroup>
 </Project>

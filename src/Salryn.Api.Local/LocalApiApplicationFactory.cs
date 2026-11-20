@@ -145,6 +145,7 @@ public static class LocalApiApplicationFactory
 
         builder.WebHost.UseUrls(listenUrls.ToArray());
         builder.Services.AddSingleton(composition);
+        builder.Services.AddLocalCafeDomainServices(composition);
         builder.Services.AddSingleton(lanRemoteTransportServices);
         builder.Services.AddSingleton(remotePosRuntimeGate);
         builder.Services.AddSingleton(remotePosServices);

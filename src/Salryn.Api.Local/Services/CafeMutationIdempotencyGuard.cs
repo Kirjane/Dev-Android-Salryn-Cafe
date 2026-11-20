@@ -101,8 +101,10 @@ public sealed class CafeMutationIdempotencyGuard
             IdempotentExecutionOutcome outcome = await executeAsync(operationId).ConfigureAwait(false);
             string responseJson = JsonSerializer.Serialize(outcome.Body, JsonOptions);
 
-            // Persist completed deterministic outcomes (2xx or 4xx domain decisions, never transient 5xx).
-            if (outcome.StatusCode is >= 200 and < 500)
+            // Authorization can change between attempts. Never pin an authentication
+            // or permission denial to a durable business-operation identifier.
+            if (outcome.StatusCode is >= 200 and < 500
+                && outcome.StatusCode is not (StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden))
             {
                 bool inserted = TryInsertRecord(
                     operationId,
