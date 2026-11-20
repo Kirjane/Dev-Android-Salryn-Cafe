@@ -1,6 +1,8 @@
 """Disposable adapter checks; no real prohibited command is executed."""
 import hashlib
+from contextlib import closing
 import json
+import sqlite3
 from pathlib import Path
 import sys
 import tempfile
@@ -37,15 +39,22 @@ class AdapterTests(unittest.TestCase):
         self.assertFalse(paths_overlap('src/Auth', 'src/Authentication'))
         self.assertEqual(build_topological_waves([{'id':'P0'}, {'id':'I1','depends_on':['P0']}]), [['P0'],['I1']])
 
-    def test_journal_backup_and_tamper_rejection(self):
+    def test_journal_backup_and_missing_file_rejection(self):
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
             journal = FactoryJournal(d / 'journal.db')
+            with closing(journal._connect()) as conn, conn:
+                journal._append_event_in_tx(conn, mission_id='ADAPTER-TEST', run_id='synthetic',
+                    stage='INTAKE', event_type='FIXTURE', state_version=1, payload={'synthetic': True})
             self.assertTrue(journal.verify_hash_chain())
             recovery = RecoveryManager(journal)
             recovery.backup_journal(d / 'backup.db')
             restored = recovery.restore_journal(d / 'backup.db', d / 'restored.db')
             self.assertTrue(restored.verify_hash_chain())
+            with closing(sqlite3.connect(d / 'backup.db')) as conn, conn:
+                conn.execute("UPDATE journal_events SET payload_json = '{}' WHERE seq = 1")
+            with self.assertRaises(RuntimeError):
+                recovery.restore_journal(d / 'backup.db', d / 'tampered.db')
             with self.assertRaises(Exception):
                 recovery.restore_journal(d / 'missing.db', d / 'other.db')
 
