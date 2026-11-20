@@ -1,3 +1,154 @@
+# SAFE EXIT — ACCOUNT TRANSITION (2026-11-21, Asia/Manila)
+
+**Execution PAUSED by Technical Authority. Do not auto-resume until the next
+explicit authorized continuation. No release candidate readiness claim.**
+
+- Exact local candidate source/integration SHA at safe-exit entry:
+  `ad2ab978ffc837d4d92a76b4fb17b7a149646fdb` on `forge/candidate-salryn-cafe`.
+  The later commit containing this checkpoint changes documentation only; use
+  `git rev-parse HEAD` for its exact checkpoint SHA (also in the external receipt
+  and published documentation checkpoint branch).
+- Verified remote candidate: `ae169420e590a729ccabd8f07518d0050bbd1260`.
+  Published only through independently reviewed source. Local `6770e5f9` backup
+  repair and its following legacy merge remain ahead locally, not accepted or
+  published as a validated candidate. No uncommitted source at pause entry.
+- `main` unchanged: local `a85fb2ec92651e3255f901acae6221928098b764`, remote
+  `16ce5f2947f44d3b571147d69a599c5f3dc94517`. No production deployment.
+- Authenticated publishing actor observed: `Kirch-Nairu`. Next account must verify
+  its own authorized identity; no credential copying or account impersonation.
+
+## Branch/worktree custody
+
+All existing worktrees preserved. Paths below are under
+`C:/Users/arane/.gemini/antigravity/scratch/Dev-Salryn-Cafe-wt/` except local main.
+SHA prefixes are unambiguous; full SHAs and all local/remote archival refs are in
+restricted `safe-exit/worktrees.json`, `local-refs.txt` and remote-ref snapshots.
+
+| Worktree | Branch | Local head | Verified remote head / disposition |
+|---|---|---|---|
+| i0 | forge/candidate-salryn-cafe | ad2ab978 at code checkpoint | ae169420; local backup repair unreviewed |
+| i1 | forge/i1-product-isolation | c78e4d94 | c78e4d94 |
+| i2 | forge/i2-schema-reconciliation | b84d7c04 | b84d7c04 |
+| i3 | forge/i3-fb-domain-authority | d5d63c87 | d5d63c87 |
+| i4 | forge/i4-device-pairing | 89a463b5 | 89a463b5 |
+| i6a | forge/i6a-central-sync | 50e3f442 | 50e3f442 |
+| i6b | forge/i6b-android-cashier | 1f34b694 | No remote; preserved local only, review pending |
+| ci-gates | forge/i7-ci-gates | fc0998b5 | fc0998b5, reviewed and pushed |
+| codex-legacy-qa | codex/cafe-legacy-verification | 3a930e24 | 3a930e24, reviewed and pushed |
+| agents-doc | forge/reconcile-agents-md | e7a239cb | e7a239cb |
+| ux-a | forge/ux-a-design-system | 11ce49b3 | 11ce49b3 |
+| ux-b | forge/ux-b-cashier-kitchen | dd399e38 | dd399e38 |
+| ux-c | forge/ux-c-backoffice-devices | 38f1535a | 38f1535a |
+
+Read-only recovery adapter checkout is detached at `ec8ea8cb` under the recovery
+root. A documentation-only `codex/safe-exit-20261121` branch may be published from
+reviewed `ae169420` to make this handoff available remotely without publishing
+unreviewed code. Its source parent/disposition is explicit in its receipt.
+Archival refs/history remain protected; no branch, worktree, tag or commit deleted.
+
+## Preserved recovery material (LOCAL RESTRICTED — DO NOT UPLOAD)
+
+Root: `C:/Users/arane/SalrynForgeRecovery/20261121-takeover`.
+
+- Issue 27 body/all five comments, all 138 board records, swarm metadata, issues
+  1–15 and PR receipts. Original harness archive/source pin `0e8765de...` and
+  disposable qualification clones. No raw transcripts/recovery archives in Git.
+- Android original 20-file byte-parity backup + staged/working binary patches,
+  preserved source commit `0438c7244abef1e0b670f7cfb1b0b342fb0eaf1c`.
+- All test logs, TRX, failure evidence, independent hot-journal reproduction,
+  legacy-qa log hashes, Android final receipt, and Windows runner artifacts.
+- `safe-exit/engineering-journal.db` is a consistent SQLite online backup;
+  `.forge/state/journal.db` and backup/mission packets remain in the project.
+  Hash chain verified. HOST-COMPOSITION-02 is BLOCKED solely for explicit user
+  safe exit (factory has no PAUSED lifecycle state); not a technical deadlock.
+- All-ref Git bundle will preserve published/unpublished commits; consult the
+  external safe-exit receipt for its exact hash and verification result.
+- Installed project harness, 32 skills, pinned vendor source, source manifest,
+  `.gitattributes`, Codex config and hook adapter all retained. Fresh Windows
+  checkout at `ec8ea8cb` independently of the original file materialization ran
+  all 6 adapter checks successfully. Real hook trust/execution and effective
+  host concurrency-cap validation remain NOT RUN; manual policy stays required.
+
+## Worker closure and verification frontier
+
+All temporary engineering/review workers have returned authority or were stopped;
+no persistent Swarm was created. Do not reactivate it. No additional expensive
+verification was initiated for safe exit. Push-triggered runs `44805551262` and
+`44805539697` received cancellation requests to avoid further verification work.
+
+- Guard delta `ae169420`: independent scoped PASS; I3 **20/20**, exit0. Singleton,
+  missing-registration fail-closed and no 401/403 caching verified. This does not
+  close atomic mutation/response persistence or replay RBAC.
+- Legacy delta `3a930e24`: independent scoped PASS. Build PASS; focused CoreSmoke
+  **52 explicit typed assertions**, exit0. Full CoreSmoke **FAIL** at U1 backup
+  restore verification because catalog was still retail v32 while Cafe is v41.
+- Primary backup repair `6770e5f9`, integrated locally into `ad2ab978`: recovered
+  Yza critical-table catalog, reconciled v40/v41 tables/current ceiling, added
+  read-only Cafe/Yza lineage + integrity admission and source backup guard.
+  I2 **10/10**, exit0 at local `ad2ab978`; log `backup-catalog-i2.log`, TRX retained.
+  **Independent review and full CoreSmoke rerun NOT RUN.** Do not interpret this
+  as completion of backup/restore hardening.
+- Exact `59ebdcde` Windows gate: **FAIL, exit1** (clean source before/after).
+  Solution build passed; **78** xUnit tests passed, both frontend test/build
+  gates passed (**MOCKED_UI**). CoreSmoke failed. Full raw evidence remains
+  `i0/artifacts/verification/f397257291fc40ba953bd644fbf55e35/`.
+- Original portable harness **16 tests PASS**, 6 adapter tests PASS; earlier
+  Git-fixture/CRLF failures preserved, not hidden. Native host-specific tests,
+  live frontend E2E/full C1–C11 proofs, installer execution and Linux CI NOT RUN.
+
+## Android custody and acceptance limits
+
+Full local head `1f34b6946e0b7fa75ab6086c5c8764b924ae6b01`, clean and unpushed.
+Bounded fixes compile paths, real boot count, removal of seeded production sample
+menu/false readiness, independently supplied issuer SPKI, serialized anti-rollback
+watermark and clock rejection. Exact-SHA **10 tests PASS**, Debug signed APK build
+PASS (0 warnings/errors); apksigner v2/v3 verification PASS, **Android Debug cert**.
+No independent security review or emulator execution; Issue14 remains incomplete.
+
+APK `i6b/src/Salryn.App.Android/bin/Debug/net10.0-android/ph.kirjanelabs.salryncafe-Signed.apk`,
+8,264,230 bytes, SHA256
+`CA2C3605E208652848096809E9B1D04655A72E920EEC4D6A93760F8224B3EDAE`.
+A hash-verified copy is under restricted `safe-exit/`; no private signing key copied.
+Receipt: `android-completion/final-receipt.json` and adjacent logs/TRX.
+
+Open Android defects: no complete native enrollment/operator auth/cashier screens;
+platform-protected asymmetric identity/trust provisioning incomplete; caller-created
+principals/prices/quantities insufficiently validated; checkout/refund payload
+mismatch not enforced; pull/bootstrap advances cursor without proper projection;
+print retry lacks durable unknown-outcome recovery; watermark deletion/reboot
+limits remain. Current `mobile_*` ledger must not become a second authority.
+
+## EXACT CONTINUATION POINT / REMAINING DEPENDENCIES
+
+1. Reverify this local candidate, all worktrees, remote heads, account authority,
+   journal hashes and ownership. Do not replay imports or discard local ahead work.
+   No development until explicit authorized resume.
+2. Review local backup patch `6770e5f9`/candidate `ad2ab978` and complete controlled
+   backup/restore hardening: manifest still lacks product_id, missing product_id
+   must be legacy-Yza-only, legacy restore must migrate/verify a staged copy before
+   replacing live data; validate live destination before writable recovery; retain
+   safety backup/failure evidence. Do not merely bump a version ceiling.
+3. Rerun impacted I2/backup and full CoreSmoke after repair (NOT during safe exit),
+   resolve further genuine defects without weakening assertions, review and publish
+   the resulting exact candidate. Android head needs nonauthor security review.
+4. Recover shared Persistence/mobile composition as detailed in
+   `CODEX-MOBILE-CONTINUATION.md`. All authoritative Data source files already exist;
+   do not replace them with old Yza versions. Port missing C1–C11/F1 proofs and
+   reconcile omitted Central.Sqlite semantic processors against central Server.
+5. Finish host composition: atomic mutation+receipt+outbox crash/restart proof,
+   replay permission checks before cache, approved Cafe endpoint registration/RBAC,
+   durable pairing/HTTPS5400, host sync/outbox and one-active-offline-cashier fencing.
+   Windows must not become an unauthorized independent second cashier.
+6. Finish native Android from shared canonical services, then full cashier/pairing,
+   secure local auth, sync projections, print queue recovery, APK/emulator tests.
+   Wire unified live frontend/routes/owner remote APIs and all accessibility fixes.
+7. Exact-SHA full C1–C11/F1A–E/security/partition/recovery/live Playwright and
+   independent adversarial review/repair; installer/APK/central assets/checksums,
+   rollback and human checklist. Hardware/physical BT/tablet/coexistence/signing
+   remain HUMAN_REQUIRED. No main promotion or production deployment authorized.
+
+---
+
 # Codex takeover state / decision ledger
 
 Authority: Kirch Ivan Balite, Issue #27 comment `7048261423` (2026-11-21).
