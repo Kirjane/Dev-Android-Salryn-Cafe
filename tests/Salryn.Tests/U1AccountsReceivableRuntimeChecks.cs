@@ -788,97 +788,30 @@ public static class U1AccountsReceivableRuntimeChecks
                         $"Issue #57 N03: method '{badMethod}' must fail with 400 Receivables.InvalidPaymentMethod, got {badMethodResp.StatusCode} {body}");
                 }
 
-                using HttpResponseMessage missingRefResp = await manager.PostAsJsonAsync("/api/receivables/collections", new
+                // Cafe authority permits Cash/AR only. Provider references and operator
+                // confirmation cannot activate an otherwise unsupported collection tender.
+                foreach (string method in new[] { "GCash", "Maya", "Debit", " gcash " })
+                foreach (bool confirmed in new[] { false, true })
                 {
-                    customerId = digitalCustomer.Id,
-                    amountCents = 1_000,
-                    method = "GCash",
-                    note = "Missing reference",
-                    clientRequestId = Guid.NewGuid().ToString("N"),
-                    nonCashConfirmed = true
-                });
-                Require(missingRefResp.StatusCode == HttpStatusCode.BadRequest &&
-                        (await missingRefResp.Content.ReadAsStringAsync()).Contains("Receivables.ReferenceNumberRequired", StringComparison.Ordinal),
-                    "Issue #57 D06: GCash without referenceNumber must return 400 Receivables.ReferenceNumberRequired.");
-
-                foreach (string unconfirmedMethod in new[] { "GCash", "Maya", "Debit" })
-                {
-                    using HttpResponseMessage missingConfirmResp = await manager.PostAsJsonAsync("/api/receivables/collections", new
+                    using HttpResponseMessage response = await manager.PostAsJsonAsync("/api/receivables/collections", new
                     {
                         customerId = digitalCustomer.Id,
                         amountCents = 1_000,
-                        method = unconfirmedMethod,
-                        referenceNumber = $"{unconfirmedMethod.ToUpperInvariant()}-REF-001",
-                        nonCashConfirmed = false,
+                        method,
+                        referenceNumber = "SYNTHETIC-REFERENCE",
+                        nonCashConfirmed = confirmed,
                         clientRequestId = Guid.NewGuid().ToString("N")
                     });
-                    Require(missingConfirmResp.StatusCode == HttpStatusCode.BadRequest &&
-                            (await missingConfirmResp.Content.ReadAsStringAsync()).Contains("Receivables.NonCashConfirmationRequired", StringComparison.Ordinal),
-                        $"Issue #57 D06: {unconfirmedMethod} without explicit operator confirmation must return 400 Receivables.NonCashConfirmationRequired.");
+                    string body = await response.Content.ReadAsStringAsync();
+                    Require(response.StatusCode == HttpStatusCode.BadRequest &&
+                        body.Contains("Receivables.InvalidPaymentMethod", StringComparison.Ordinal),
+                        $"Cafe disabled tender {method} must reject regardless of confirmation: {response.StatusCode} {body}");
                 }
-
+                Require(Balance(RequireSuccess(await isolatedReceivables.SearchCustomersAsync(null), "Cafe denied tender balances"), digitalCustomer.Id).BalanceCents == 10_000,
+                    "Rejected noncash attempts must preserve the complete AR balance.");
                 Require(ReadLong(isolatedPaths.DatabasePath, "SELECT COUNT(*) FROM accounts_receivable_collections WHERE $value IS NOT NULL", "1") == 0 &&
                         ReadLong(isolatedPaths.DatabasePath, "SELECT COUNT(*) FROM cash_drawer_events WHERE $value IS NOT NULL", "1") == 0,
-                    "Issue #57 N03/D06: Rejected collection attempts must create zero collection or drawer rows.");
-
-                string gcashRequestId = Guid.NewGuid().ToString("N");
-                using HttpResponseMessage validGcash = await manager.PostAsJsonAsync("/api/receivables/collections", new
-                {
-                    customerId = digitalCustomer.Id,
-                    amountCents = 4_000,
-                    method = " gcash ",
-                    note = "Digital verification ok",
-                    referenceNumber = "GCASH-REF-9001",
-                    nonCashConfirmed = true,
-                    clientRequestId = gcashRequestId
-                });
-                string validGcashBody = await validGcash.Content.ReadAsStringAsync();
-                Require(validGcash.StatusCode == HttpStatusCode.Created &&
-                        validGcashBody.Contains("\"method\":\"GCash\"", StringComparison.Ordinal) &&
-                        validGcashBody.Contains("GCASH-REF-9001", StringComparison.Ordinal) &&
-                        validGcashBody.Contains("Operator-confirmed", StringComparison.Ordinal),
-                    $"Issue #57 D06: Valid confirmed GCash collection must succeed cleanly, got {validGcash.StatusCode} {validGcashBody}");
-
-                using HttpResponseMessage conflictingReplay = await manager.PostAsJsonAsync("/api/receivables/collections", new
-                {
-                    customerId = digitalCustomer.Id,
-                    amountCents = 4_000,
-                    method = "GCash",
-                    note = "Digital verification ok",
-                    referenceNumber = "GCASH-REF-TAMPERED",
-                    nonCashConfirmed = true,
-                    clientRequestId = gcashRequestId
-                });
-                Require(conflictingReplay.StatusCode == HttpStatusCode.Conflict,
-                    "Issue #57 D06: Reused clientRequestId with altered referenceNumber must return 409 Conflict.");
-
-                using HttpResponseMessage validMaya = await manager.PostAsJsonAsync("/api/receivables/collections", new
-                {
-                    customerId = digitalCustomer.Id,
-                    amountCents = 3_000,
-                    method = "Maya",
-                    referenceNumber = "MAYA-REF-9002",
-                    nonCashConfirmed = true,
-                    clientRequestId = Guid.NewGuid().ToString("N")
-                });
-                Require(validMaya.StatusCode == HttpStatusCode.Created, "Issue #57 D06: Confirmed Maya collection must succeed.");
-
-                using HttpResponseMessage validDebit = await manager.PostAsJsonAsync("/api/receivables/collections", new
-                {
-                    customerId = digitalCustomer.Id,
-                    amountCents = 2_000,
-                    method = "Debit",
-                    referenceNumber = "DEBIT-REF-9003",
-                    nonCashConfirmed = true,
-                    clientRequestId = Guid.NewGuid().ToString("N")
-                });
-                Require(validDebit.StatusCode == HttpStatusCode.Created, "Issue #57 D06: Confirmed Debit collection must succeed.");
-
-                Require(Balance(RequireSuccess(await isolatedReceivables.SearchCustomersAsync(null), "D06 balances"), digitalCustomer.Id).BalanceCents == 1_000,
-                    "Issue #57 D06: Digital/Debit collections totaling 9,000 must leave 1,000 balance.");
-                Require(ReadLong(isolatedPaths.DatabasePath, "SELECT COUNT(*) FROM cash_drawer_events WHERE $value IS NOT NULL", "1") == 0 &&
-                        ReadLong(isolatedPaths.DatabasePath, "SELECT COUNT(*) FROM accounts_receivable_collections WHERE cashier_session_id IS NOT NULL AND $value IS NOT NULL", "1") == 0,
-                    "Issue #57 D06: Non-cash collections must create zero cash_drawer_events and leave cashier_session_id null.");
+                    "Rejected Cafe tenders must create zero collection or drawer rows.");
             }
             finally
             {
