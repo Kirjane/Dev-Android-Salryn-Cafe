@@ -279,7 +279,7 @@ internal static class C11CSyncCompletenessMobileProof
             readiness.RequiredSchemaPresent &&
             mobile.CafeManagementReports is not null &&
             SalrynDatabaseMigrationCatalog.SupportedMigrationVersion == 41,
-            "MobileProductionComposition must expose shared C11 reporting authority at current migration 39.");
+            "MobileProductionComposition must expose shared C11 reporting authority at current migration 41.");
 
         using var connection =
             mobile.ConnectionFactory.CreateConnection();
@@ -287,10 +287,10 @@ internal static class C11CSyncCompletenessMobileProof
         using var command =
             connection.CreateCommand();
         command.CommandText =
-            "SELECT COUNT(*) FROM schema_migrations WHERE version=40;";
+            "SELECT COUNT(*) FROM schema_migrations WHERE version IN (40,41);";
 
         ProofAssert.That(
-            Convert.ToInt64(command.ExecuteScalar() ?? 0L) == 0,
+            Convert.ToInt64(command.ExecuteScalar() ?? 0L) == 2,
             "Cafe lineage40 and idempotency41 must be present.");
 
         Console.WriteLine(
