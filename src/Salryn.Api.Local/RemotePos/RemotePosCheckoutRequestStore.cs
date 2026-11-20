@@ -106,6 +106,15 @@ public sealed class RemotePosCheckoutRequestStore
         string message,
         CancellationToken cancellationToken = default)
     {
+        if (!Guid.TryParse(saleId, out Guid completedSaleId) ||
+            completedSaleId == Guid.Empty ||
+            totalCents is null or < 0 ||
+            changeCents is null or < 0)
+        {
+            throw new InvalidOperationException(
+                "Completed remote checkout requires authoritative sale identity and nonnegative confirmed totals.");
+        }
+
         await using SqliteConnection connection = _connectionFactory.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using SqliteCommand command = connection.CreateCommand();
@@ -114,9 +123,10 @@ public sealed class RemotePosCheckoutRequestStore
             UPDATE remote_pos_checkout_requests
             SET state = 'Completed', sale_id = $sale, total_cents = $total,
                 change_cents = $change, message = $message, updated_at_utc = $now
-            WHERE store_id = $store AND terminal_id = $terminal AND client_request_id = $request;
+            WHERE store_id = $store AND terminal_id = $terminal AND client_request_id = $request
+              AND request_hash = $hash AND receipt_no = $receipt;
             """;
-        command.Parameters.AddWithValue("$sale", (object?)saleId ?? DBNull.Value);
+        command.Parameters.AddWithValue("$sale", saleId);
         command.Parameters.AddWithValue("$total", (object?)totalCents ?? DBNull.Value);
         command.Parameters.AddWithValue("$change", (object?)changeCents ?? DBNull.Value);
         command.Parameters.AddWithValue("$message", message);
@@ -124,6 +134,12 @@ public sealed class RemotePosCheckoutRequestStore
         command.Parameters.AddWithValue("$store", record.StoreId.ToString("D"));
         command.Parameters.AddWithValue("$terminal", record.TerminalId.ToString("D"));
         command.Parameters.AddWithValue("$request", record.ClientRequestId);
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        command.Parameters.AddWithValue("$hash", record.RequestHash);
+        command.Parameters.AddWithValue("$receipt", record.ReceiptNumber);
+        if (await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
+        {
+            throw new InvalidOperationException(
+                "Remote checkout completion could not match its immutable pending request.");
+        }
     }
 }
