@@ -360,7 +360,17 @@ public sealed class HostOperatorCheckoutApiService
             .ConfigureAwait(false);
 
         SaleDetailReadModel? sale = saleResult.IsSuccess ? saleResult.Value : null;
-        bool receiptSnapshotSaved = !string.IsNullOrWhiteSpace(sale?.ReceiptSnapshot);
+        if (sale is null)
+        {
+            // Posting may have committed. Keep the stable pending request rather than
+            // persisting a false Completed result with no authoritative sale evidence.
+            return Fail(
+                "HostOperator.Checkout.PendingConfirmation",
+                HostOperatorCheckoutStatus.ValidationFailed,
+                "Host sale confirmation is unavailable. Retry with the same checkout request id.");
+        }
+
+        bool receiptSnapshotSaved = !string.IsNullOrWhiteSpace(sale.ReceiptSnapshot);
         FileReceiptWriteResult fileReceipt = await WriteFileReceiptAfterCommitAsync(sale, saleResult, cancellationToken)
             .ConfigureAwait(false);
 
@@ -415,10 +425,15 @@ public sealed class HostOperatorCheckoutApiService
         HostCheckoutRequestRecord record,
         CancellationToken cancellationToken)
     {
-        if (record.State == HostCheckoutRequestStore.Completed)
+        if (record.State == HostCheckoutRequestStore.Completed &&
+            !string.IsNullOrWhiteSpace(record.SaleId) &&
+            record.TotalCents.HasValue &&
+            record.ChangeCents.HasValue)
         {
             return CompletedFromRecord(record, duplicate: false);
         }
+
+        // Legacy incomplete results are not authority: reconcile by receipt instead.
 
         Result<SaleDetailReadModel?> saleResult = await _saleReadRepository
             .FindSaleByReceiptNoAsync(record.ReceiptNumber, cancellationToken)
