@@ -29,20 +29,46 @@ public sealed class CafeMutationIdempotencyGuard
         Guid? bodyOperationId,
         out Guid operationId)
     {
-        if (bodyOperationId is { } bodyId && bodyId != Guid.Empty)
+        // Every supplied identifier must be valid and agree. Silently preferring the
+        // body over a conflicting header can make retries ambiguous across clients.
+        bool hasPrimary = httpContext.Request.Headers.ContainsKey("Idempotency-Key");
+        bool hasSecondary = httpContext.Request.Headers.ContainsKey("X-Operation-Id");
+        if ((hasPrimary && !TryParseHeaderGuid(httpContext, "Idempotency-Key", out _)) ||
+            (hasSecondary && !TryParseHeaderGuid(httpContext, "X-Operation-Id", out _)))
         {
-            operationId = bodyId;
-            return true;
+            operationId = Guid.Empty;
+            return false;
         }
 
-        if (TryParseHeaderGuid(httpContext, "Idempotency-Key", out operationId) ||
-            TryParseHeaderGuid(httpContext, "X-Operation-Id", out operationId))
+        Guid? resolved = bodyOperationId is { } bodyId && bodyId != Guid.Empty
+            ? bodyId
+            : null;
+        if (hasPrimary)
         {
-            return true;
+            TryParseHeaderGuid(httpContext, "Idempotency-Key", out Guid primary);
+            if (resolved.HasValue && resolved.Value != primary)
+            {
+                operationId = Guid.Empty;
+                return false;
+            }
+
+            resolved = primary;
         }
 
-        operationId = Guid.Empty;
-        return false;
+        if (hasSecondary)
+        {
+            TryParseHeaderGuid(httpContext, "X-Operation-Id", out Guid secondary);
+            if (resolved.HasValue && resolved.Value != secondary)
+            {
+                operationId = Guid.Empty;
+                return false;
+            }
+
+            resolved = secondary;
+        }
+
+        operationId = resolved ?? Guid.Empty;
+        return operationId != Guid.Empty;
     }
 
     public static IResult OperationIdRequiredResult()
