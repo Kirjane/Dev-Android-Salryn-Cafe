@@ -48,6 +48,24 @@ public sealed class SchemaLineageReconciliationTests : IDisposable
     }
 
     [Fact]
+    public void CafeRoleSeedsRestoreOperationalPermissionsWithoutCashierAdministration()
+    {
+        var (paths, factory) = CreateTempDb("cafe-role-seeds");
+        var initialization = DefaultDatabaseInitializationFactory.Create(paths);
+        Assert.True(initialization.InitializeDatabase().IsSuccess);
+        Assert.True(initialization.InitializeDatabase().IsSuccess);
+        using var connection = factory.CreateConnection();
+        connection.Open();
+        foreach (string permission in new[] { "Printing.View", "Printing.Print", "Orders.Create", "Orders.Complete", "Booking.View" })
+        {
+            Assert.Equal(1L, ScalarLong(connection, "SELECT COUNT(*) FROM role_permissions WHERE role_id='00000000-0000-0000-0000-000000000001' AND permission=$p;", ("$p", permission)));
+        }
+        Assert.Equal(1L, ScalarLong(connection, "SELECT COUNT(*) FROM role_permissions WHERE role_id='00000000-0000-0000-0000-000000000003' AND permission='Printing.Print';"));
+        Assert.Equal(0L, ScalarLong(connection, "SELECT COUNT(*) FROM role_permissions WHERE role_id='00000000-0000-0000-0000-000000000003' AND permission IN ('Printing.StationManage','Recipes.Publish','Users.Manage');"));
+        Assert.Equal(3L, ScalarLong(connection, "SELECT COUNT(*) FROM roles;"));
+    }
+
+    [Fact]
     public void PortableLegacyBackupCannotLaunderAnExplicitWrongProduct()
     {
         var (legacyPaths, factory) = CreateTempDb("legacy-wrong-product-import");

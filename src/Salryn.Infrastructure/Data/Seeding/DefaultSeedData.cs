@@ -25,6 +25,53 @@ public static class DefaultSeedData
 
     public static class Permissions
     {
+        public const string InventoryWaste = "Inventory.Waste";
+        public const string InventoryCount = "Inventory.Count";
+        public const string SuppliersView = "Suppliers.View";
+        public const string SuppliersManage = "Suppliers.Manage";
+        public const string PurchasingView = "Purchasing.View";
+        public const string PurchasingReceive = "Purchasing.Receive";
+        public const string OrdersView = "Orders.View";
+        public const string OrdersCreate = "Orders.Create";
+        public const string OrdersManage = "Orders.Manage";
+        public const string OrdersCancel = "Orders.Cancel";
+        public const string OrdersComplete = "Orders.Complete";
+        public const string PreparationView = "Preparation.View";
+        public const string PreparationManage = "Preparation.Manage";
+        public const string IngredientsView = "Ingredients.View";
+        public const string IngredientsManage = "Ingredients.Manage";
+        public const string RecipesView = "Recipes.View";
+        public const string RecipesManage = "Recipes.Manage";
+        public const string RecipesPublish = "Recipes.Publish";
+        public const string SalesDiscountApply = "Sales.DiscountApply";
+        public const string SalesFeeApply = "Sales.FeeApply";
+        public const string SalesRefundRequest = "Sales.RefundRequest";
+        public const string SalesRefundApprove = "Sales.RefundApprove";
+        public const string CashView = "Cash.View";
+        public const string CashIn = "Cash.In";
+        public const string CashOut = "Cash.Out";
+        public const string CashReverse = "Cash.Reverse";
+        public const string ExpensesRecord = "Expenses.Record";
+        public const string PrintingView = "Printing.View";
+        public const string PrintingPrint = "Printing.Print";
+        public const string PrintingReprint = "Printing.Reprint";
+        public const string PrintingStationManage = "Printing.StationManage";
+        public const string DeliveryView = "Delivery.View";
+        public const string DeliveryManage = "Delivery.Manage";
+        public const string DeliveryAdvance = "Delivery.Advance";
+        public const string BookingView = "Booking.View";
+        public const string BookingManage = "Booking.Manage";
+        public const string BookingCancel = "Booking.Cancel";
+        public const string BookingFulfill = "Booking.Fulfill";
+        public const string BookingDepositReceive = "Booking.DepositReceive";
+        public const string BookingDepositRefund = "Booking.DepositRefund";
+        public const string AttendanceView = "Attendance.View";
+        public const string AttendanceRecord = "Attendance.Record";
+        public const string AttendanceManage = "Attendance.Manage";
+        public const string IncidentView = "Incident.View";
+        public const string IncidentRecord = "Incident.Record";
+        public const string IncidentManage = "Incident.Manage";
+
         public const string SettingsManage = "Settings.Manage";
         public const string UsersManage = "Users.Manage";
         public const string ProductsView = "Products.View";
@@ -133,7 +180,53 @@ public static class DefaultSeedData
         Permissions.PayablesManageInvoices,
         Permissions.PayablesApproveVariance,
         Permissions.PayablesRecordPayment,
-        Permissions.PayablesApprovePayment
+        Permissions.PayablesApprovePayment,
+        Permissions.InventoryWaste,
+        Permissions.InventoryCount,
+        Permissions.SuppliersView,
+        Permissions.SuppliersManage,
+        Permissions.PurchasingView,
+        Permissions.PurchasingReceive,
+        Permissions.OrdersView,
+        Permissions.OrdersCreate,
+        Permissions.OrdersManage,
+        Permissions.OrdersCancel,
+        Permissions.OrdersComplete,
+        Permissions.PreparationView,
+        Permissions.PreparationManage,
+        Permissions.IngredientsView,
+        Permissions.IngredientsManage,
+        Permissions.RecipesView,
+        Permissions.RecipesManage,
+        Permissions.RecipesPublish,
+        Permissions.SalesDiscountApply,
+        Permissions.SalesFeeApply,
+        Permissions.SalesRefundRequest,
+        Permissions.SalesRefundApprove,
+        Permissions.CashView,
+        Permissions.CashIn,
+        Permissions.CashOut,
+        Permissions.CashReverse,
+        Permissions.ExpensesRecord,
+        Permissions.PrintingView,
+        Permissions.PrintingPrint,
+        Permissions.PrintingReprint,
+        Permissions.PrintingStationManage,
+        Permissions.DeliveryView,
+        Permissions.DeliveryManage,
+        Permissions.DeliveryAdvance,
+        Permissions.BookingView,
+        Permissions.BookingManage,
+        Permissions.BookingCancel,
+        Permissions.BookingFulfill,
+        Permissions.BookingDepositReceive,
+        Permissions.BookingDepositRefund,
+        Permissions.AttendanceView,
+        Permissions.AttendanceRecord,
+        Permissions.AttendanceManage,
+        Permissions.IncidentView,
+        Permissions.IncidentRecord,
+        Permissions.IncidentManage
     };
 
     public static IReadOnlyList<string> ManagerPermissions { get; } = new string[]
@@ -170,7 +263,53 @@ public static class DefaultSeedData
         Permissions.PayablesManageInvoices,
         Permissions.PayablesApproveVariance,
         Permissions.PayablesRecordPayment,
-        Permissions.PayablesApprovePayment
+        Permissions.PayablesApprovePayment,
+        Permissions.InventoryWaste,
+        Permissions.InventoryCount,
+        Permissions.SuppliersView,
+        Permissions.SuppliersManage,
+        Permissions.PurchasingView,
+        Permissions.PurchasingReceive,
+        Permissions.OrdersView,
+        Permissions.OrdersCreate,
+        Permissions.OrdersManage,
+        Permissions.OrdersCancel,
+        Permissions.OrdersComplete,
+        Permissions.PreparationView,
+        Permissions.PreparationManage,
+        Permissions.IngredientsView,
+        Permissions.IngredientsManage,
+        Permissions.RecipesView,
+        Permissions.RecipesManage,
+        Permissions.RecipesPublish,
+        Permissions.SalesDiscountApply,
+        Permissions.SalesFeeApply,
+        Permissions.SalesRefundRequest,
+        Permissions.SalesRefundApprove,
+        Permissions.CashView,
+        Permissions.CashIn,
+        Permissions.CashOut,
+        Permissions.CashReverse,
+        Permissions.ExpensesRecord,
+        Permissions.PrintingView,
+        Permissions.PrintingPrint,
+        Permissions.PrintingReprint,
+        Permissions.PrintingStationManage,
+        Permissions.DeliveryView,
+        Permissions.DeliveryManage,
+        Permissions.DeliveryAdvance,
+        Permissions.BookingView,
+        Permissions.BookingManage,
+        Permissions.BookingCancel,
+        Permissions.BookingFulfill,
+        Permissions.BookingDepositReceive,
+        Permissions.BookingDepositRefund,
+        Permissions.AttendanceView,
+        Permissions.AttendanceRecord,
+        Permissions.AttendanceManage,
+        Permissions.IncidentView,
+        Permissions.IncidentRecord,
+        Permissions.IncidentManage
     };
 
     public static IReadOnlyList<string> CashierPermissions { get; } = new string[]
@@ -182,7 +321,23 @@ public static class DefaultSeedData
         Permissions.SalesViewHistory,
         Permissions.ShiftOpenClose,
         Permissions.ProcurementView,
-        Permissions.ProcurementRequest
+        Permissions.ProcurementRequest,
+        Permissions.OrdersView,
+        Permissions.OrdersCreate,
+        Permissions.OrdersManage,
+        Permissions.OrdersComplete,
+        Permissions.PreparationView,
+        Permissions.PreparationManage,
+        Permissions.SalesRefundRequest,
+        Permissions.CashView,
+        Permissions.PrintingView,
+        Permissions.PrintingPrint,
+        Permissions.DeliveryView,
+        Permissions.DeliveryManage,
+        Permissions.BookingView,
+        Permissions.AttendanceView,
+        Permissions.AttendanceRecord,
+        Permissions.IncidentRecord
     };
 
     private static IReadOnlyList<SeedPermission>? _rolePermissions;
