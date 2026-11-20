@@ -30,7 +30,7 @@ export type FormFieldProps = {
 export function FormField({ label, id, hint, error, required = false, children }: FormFieldProps) {
   const autoId = useId();
   const controlId = id ?? children.props.id ?? autoId;
-  const hintId = hint ? `${controlId}-hint` : undefined;
+  const hintId = hint && !error ? `${controlId}-hint` : undefined;
   const errorId = error ? `${controlId}-error` : undefined;
   const describedBy = [errorId, hintId, children.props["aria-describedby"]].filter(Boolean).join(" ") || undefined;
 

@@ -19,12 +19,13 @@ import { CatalogApp } from "../catalog/CatalogApp";
 
 function DialogHarness() {
   const [open, setOpen] = useState(false);
+  const [cashCount, setCashCount] = useState("5000");
   return (
     <div>
       <Button onClick={() => setOpen(true)}>Launch Modal</Button>
       <Dialog open={open} title="Shift Confirmation" description="Verify drawer count." onClose={() => setOpen(false)}>
         <FormField label="Cash Count">
-          <TextInput defaultValue="5000" />
+          <TextInput value={cashCount} onChange={(e) => setCashCount(e.target.value)} />
         </FormField>
       </Dialog>
     </div>
@@ -61,6 +62,11 @@ describe("Salryn Cafe UI primitives — interaction, keyboard & accessibility", 
     await user.tab();
     expect(input).toHaveFocus();
 
+    // Typing into a controlled input with inline onClose must NOT yank focus away from input
+    await user.type(input, "99");
+    expect(input).toHaveFocus();
+    expect(input).toHaveValue("500099");
+
     await user.tab();
     expect(footerCloseBtn).toHaveFocus();
 
@@ -78,9 +84,9 @@ describe("Salryn Cafe UI primitives — interaction, keyboard & accessibility", 
     expect(trigger).toHaveFocus();
   });
 
-  it("FormField wires programmatic <label htmlFor>, aria-invalid, aria-describedby, and role='alert'", () => {
+  it("FormField wires programmatic <label htmlFor>, aria-invalid, aria-describedby, and role='alert' without dangling hint IDREF", () => {
     render(
-      <FormField label="Unit Price" required error="Price must be greater than zero.">
+      <FormField label="Unit Price" hint="Server authoritative" required error="Price must be greater than zero.">
         <TextInput defaultValue="-5" />
       </FormField>,
     );
@@ -90,7 +96,8 @@ describe("Salryn Cafe UI primitives — interaction, keyboard & accessibility", 
     expect(input).toHaveAttribute("required");
     const alert = screen.getByRole("alert");
     expect(alert).toHaveTextContent("Price must be greater than zero.");
-    expect(input.getAttribute("aria-describedby")).toContain(alert.id);
+    expect(input.getAttribute("aria-describedby")).toBe(alert.id);
+    expect(input.getAttribute("aria-describedby")).not.toContain("-hint");
   });
 
   it("BrandMark preserves aspect ratio (object-fit: contain) and frames transparent logo on light surface", () => {

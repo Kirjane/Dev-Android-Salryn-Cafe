@@ -28,6 +28,8 @@ export function Dialog({ open, title, description, children, footer, onClose }: 
   const descriptionId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
@@ -52,7 +54,7 @@ export function Dialog({ open, title, description, children, footer, onClose }: 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -79,7 +81,7 @@ export function Dialog({ open, title, description, children, footer, onClose }: 
       document.removeEventListener("keydown", handleKeyDown);
       previousFocusRef.current?.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
