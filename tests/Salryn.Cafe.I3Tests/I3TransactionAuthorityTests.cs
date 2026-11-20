@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Salryn.Api.Local;
 using Salryn.Api.Local.Auth;
 using Salryn.Api.Local.Contracts;
 using Salryn.Api.Local.Services;
@@ -13,6 +15,23 @@ namespace Salryn.Cafe.I3Tests;
 
 public sealed class I3TransactionAuthorityTests
 {
+    [Fact]
+    public async Task LiveHostComposition_SharesMutationGuardAcrossRequestScopes()
+    {
+        using I3TestDatabaseFixture fx = new();
+        await using var app = await LocalApiApplicationFactory.CreateAsync(Array.Empty<string>(), new LocalApiApplicationOptions
+        {
+            Composition = fx.Composition,
+            InitializeDatabase = false,
+            EnableStaticWebAssets = false,
+            WriteDevelopmentDatabasePath = false
+        });
+        using var firstRequest = app.Services.CreateScope();
+        using var secondRequest = app.Services.CreateScope();
+        Assert.Same(firstRequest.ServiceProvider.GetRequiredService<CafeMutationIdempotencyGuard>(),
+            secondRequest.ServiceProvider.GetRequiredService<CafeMutationIdempotencyGuard>());
+    }
+
     [Fact]
     public void PaymentMethodEnum_ContainsOnlyCashAndAccountsReceivable()
     {
@@ -245,6 +264,39 @@ public sealed class I3TransactionAuthorityTests
         Assert.Equal(StatusCodes.Status200OK, Assert.IsAssignableFrom<IStatusCodeHttpResult>(r1).StatusCode);
         Assert.Equal(StatusCodes.Status200OK, Assert.IsAssignableFrom<IStatusCodeHttpResult>(r2).StatusCode);
         Assert.Equal("true", http2.Response.Headers["X-Idempotency-Replayed"].ToString());
+    }
+
+    [Theory]
+    [InlineData(401)]
+    [InlineData(403)]
+    public async Task CafeMutationIdempotencyGuard_DoesNotCacheAuthorizationDenials(int deniedStatus)
+    {
+        using I3TestDatabaseFixture fx = new();
+        Guid operationId = Guid.NewGuid();
+        int calls = 0;
+        CafeMutationIdempotencyGuard guard = new(fx.ConnectionFactory);
+        var denied = await guard.ExecuteSyncAsync(new DefaultHttpContext(), "POST /api/menu/categories",
+            fx.AdminUserId, operationId, new { name = "Coffee" }, _ =>
+            {
+                calls++;
+                return new IdempotentExecutionOutcome(deniedStatus, new { error = "denied" });
+            });
+        Assert.Equal(deniedStatus, Assert.IsAssignableFrom<IStatusCodeHttpResult>(denied).StatusCode);
+        // Simulate a new request/service instance after permission/session correction.
+        guard = new CafeMutationIdempotencyGuard(fx.ConnectionFactory);
+        var allowed = await guard.ExecuteSyncAsync(new DefaultHttpContext(), "POST /api/menu/categories",
+            fx.AdminUserId, operationId, new { name = "Coffee" }, _ =>
+            {
+                calls++;
+                return new IdempotentExecutionOutcome(200, new { id = "coffee" });
+            });
+        Assert.Equal(200, Assert.IsAssignableFrom<IStatusCodeHttpResult>(allowed).StatusCode);
+        Assert.Equal(2, calls);
+        var replayContext = new DefaultHttpContext();
+        await new CafeMutationIdempotencyGuard(fx.ConnectionFactory).ExecuteSyncAsync(replayContext,
+            "POST /api/menu/categories", fx.AdminUserId, operationId, new { name = "Coffee" },
+            _ => throw new InvalidOperationException("Successful outcome must replay durably."));
+        Assert.Equal("true", replayContext.Response.Headers["X-Idempotency-Replayed"].ToString());
     }
 
     [Fact]

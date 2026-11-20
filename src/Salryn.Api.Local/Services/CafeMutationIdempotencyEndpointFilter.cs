@@ -51,17 +51,9 @@ internal sealed class CafeMutationIdempotencyEndpointFilter : IEndpointFilter
 
         httpContext.Items[ResolvedOperationIdItemKey] = operationId;
 
-        CafeMutationIdempotencyGuard? guard = httpContext.RequestServices.GetService<CafeMutationIdempotencyGuard>();
-        if (guard is null)
-        {
-            SalrynLocalComposition? composition = httpContext.RequestServices.GetService<SalrynLocalComposition>();
-            if (composition is null)
-            {
-                return await next(context).ConfigureAwait(false);
-            }
-
-            guard = new CafeMutationIdempotencyGuard(composition.ConnectionFactory);
-        }
+        // Missing registration is a composition failure, never permission to execute
+        // an unguarded mutation or create a separate per-request concurrency gate.
+        CafeMutationIdempotencyGuard guard = httpContext.RequestServices.GetRequiredService<CafeMutationIdempotencyGuard>();
 
         string routePattern = (httpContext.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText
             ?? httpContext.Request.Path.Value
