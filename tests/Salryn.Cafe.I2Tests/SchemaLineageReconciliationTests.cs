@@ -45,6 +45,65 @@ public sealed class SchemaLineageReconciliationTests : IDisposable
     }
 
     [Fact]
+    public void RestoreLegacyBackup_StagesUpgradeAndPreservesOriginalEvidence()
+    {
+        var (livePaths, liveFactory) = CreateTempDb("restore-live");
+        Assert.True(DefaultDatabaseInitializationFactory.Create(livePaths).InitializeDatabase().IsSuccess);
+        var (legacyPaths, legacyFactory) = CreateTempDb("restore-legacy");
+        new MigrationRunner(legacyFactory, CafeMigrationCatalog.CreateLegacyYzaV39Migrations()).RunPendingMigrations();
+        SqliteConnection.ClearAllPools();
+        byte[] before = File.ReadAllBytes(legacyPaths.DatabasePath);
+        var recovery = new SqliteBackupRecoveryService(livePaths);
+        var verified = recovery.VerifyBackup(legacyPaths.DatabasePath);
+        Assert.True(verified.IsSuccess);
+        var restored = recovery.RestoreVerifiedBackup(verified.Value, SqliteBackupRecoveryService.RestoreConfirmationText);
+        Assert.True(restored.IsSuccess, restored.IsFailure ? restored.Error : "");
+        SqliteConnection.ClearAllPools();
+        Assert.Equal(before, File.ReadAllBytes(legacyPaths.DatabasePath));
+        Assert.True(File.Exists(restored.Value.SafetyBackupPath));
+        var runner = new MigrationRunner(liveFactory, CafeMigrationCatalog.CreateCanonicalCafeMigrations());
+        Assert.Equal(SchemaLineageKind.SalrynCafe, runner.ClassifyDatabase().Kind);
+        Assert.Equal(41, runner.ClassifyDatabase().MaxAppliedVersion);
+        Assert.Equal(0, runner.GetPendingMigrationCount());
+    }
+
+    [Fact]
+    public void RestoreRejectsRetailDestinationWithoutChangingItsBytes()
+    {
+        var (cafePaths, _) = CreateTempDb("restore-source");
+        Assert.True(DefaultDatabaseInitializationFactory.Create(cafePaths).InitializeDatabase().IsSuccess);
+        var (retailPaths, retailFactory) = CreateTempDb("restore-retail-target");
+        new MigrationRunner(retailFactory, CafeMigrationCatalog.CreateLegacyRetailKernelV32Migrations()).RunPendingMigrations();
+        SqliteConnection.ClearAllPools();
+        byte[] before = File.ReadAllBytes(retailPaths.DatabasePath);
+        var recovery = new SqliteBackupRecoveryService(retailPaths);
+        var verified = recovery.VerifyBackup(cafePaths.DatabasePath);
+        Assert.True(verified.IsSuccess);
+        var result = recovery.RestoreVerifiedBackup(verified.Value, SqliteBackupRecoveryService.RestoreConfirmationText);
+        Assert.True(result.IsFailure);
+        Assert.Equal("Backup.DestinationRejected", result.ErrorDetail.Code);
+        SqliteConnection.ClearAllPools();
+        Assert.Equal(before, File.ReadAllBytes(retailPaths.DatabasePath));
+    }
+
+    [Fact]
+    public void PortableBackup_RoundTripPreservesProductIdentity()
+    {
+        var (paths, _) = CreateTempDb("portable-roundtrip");
+        Assert.True(DefaultDatabaseInitializationFactory.Create(paths).InitializeDatabase().IsSuccess);
+        var packages = new ControlledBackupPackageService(paths);
+        var created = packages.Create();
+        Assert.True(created.IsSuccess);
+        var exported = packages.ExportPortable(created.Value.BackupId);
+        Assert.True(exported.IsSuccess);
+        using var stream = File.OpenRead(exported.Value.ZipPath);
+        var imported = packages.ImportPortable(stream, stream.Length);
+        Assert.True(imported.IsSuccess, imported.IsFailure ? imported.Error : "");
+        Assert.Equal("Salryn.Cafe", imported.Value.Manifest.ProductId);
+        Assert.True(imported.Value.Database.IsRestorable);
+    }
+
+    [Fact]
     public void ControlledBackup_ProductBindingRejectsMissingOrWrongProductOnCafeDatabase()
     {
         var (paths, _) = CreateTempDb("package-product-binding");

@@ -4,6 +4,7 @@ using Salryn.Core.Models;
 using Salryn.Core.Services;
 using Salryn.Infrastructure.Paths;
 using Salryn.Infrastructure.Data.Migrations;
+using Salryn.Infrastructure.Data.Initialization;
 
 namespace Salryn.Infrastructure.Data.Services;
 
@@ -252,6 +253,36 @@ public sealed class SqliteBackupRecoveryService : IBackupRecoveryService
                     "Live database file was not found."));
             }
 
+            // Never let a writable open recover or replace a wrong-product destination.
+            var liveVerification = VerifyBackup(liveDatabasePath);
+            if (liveVerification.IsFailure || !liveVerification.Value.IsRestorable)
+            {
+                return Result<BackupRestoreResult>.Fail(Error.Validation(
+                    "Backup.DestinationRejected", "Live destination must pass Cafe lineage and integrity verification."));
+            }
+
+            // Keep source evidence immutable. Upgrade a separate disposable restore
+            // candidate before touching the live destination or creating its safety copy.
+            var stagePaths = DbPaths.CreateDevelopment(Path.Combine(_dbPaths.BackupPath,
+                "restore-stage-" + Guid.NewGuid().ToString("N")));
+            stagePaths.EnsureDirectories();
+            File.Copy(freshVerification.Value.FilePath, stagePaths.DatabasePath, overwrite: false);
+            var stagedInitialization = DefaultDatabaseInitializationFactory.Create(stagePaths).InitializeDatabase();
+            if (stagedInitialization.IsFailure)
+            {
+                return Result<BackupRestoreResult>.Fail(stagedInitialization.ErrorDetail);
+            }
+            SqliteConnectionFactory.ClearAllPools();
+            CheckpointLiveDatabase(stagePaths.DatabasePath);
+            SqliteConnectionFactory.ClearAllPools();
+            var stagedVerification = VerifyBackup(stagePaths.DatabasePath);
+            if (stagedVerification.IsFailure || !stagedVerification.Value.IsRestorable
+                || stagedVerification.Value.BackupMigrationVersion != CafeMigrationCatalog.CurrentCafeSchemaVersion)
+            {
+                return Result<BackupRestoreResult>.Fail(Error.Validation(
+                    "Backup.StageRejected", "Migrated restore candidate did not pass Cafe schema verification."));
+            }
+
             Directory.CreateDirectory(_dbPaths.BackupPath);
             string safetyBackupPath = CreateSafetyBackupPath();
 
@@ -283,7 +314,7 @@ public sealed class SqliteBackupRecoveryService : IBackupRecoveryService
             }
 
             SqliteDatabaseBackupUtility.RemoveWalShmSidecars(liveDatabasePath);
-            File.Copy(freshVerification.Value.FilePath, liveDatabasePath, overwrite: true);
+            File.Copy(stagePaths.DatabasePath, liveDatabasePath, overwrite: true);
             SqliteDatabaseBackupUtility.RemoveWalShmSidecars(liveDatabasePath);
 
             SqliteBackupLogWriter.TryWrite(
