@@ -373,46 +373,24 @@ public sealed class CentralSyncDatabase
         source.BackupDatabase(destination);
     }
 
+    // The former helper copied a potentially stale backup over an active SQLite database
+    // and incremented the epoch *inside the restored data*. That can reuse an old epoch
+    // and erase previously acknowledged financial operations. A safe restore requires
+    // external high-watermark evidence, quiescence, staging, reconciliation and fencing.
+    // Until that protocol is implemented and verified, fail before ANY destination write.
     public static void RestoreAndBumpEpoch(string backupFilePath, string targetDatabasePath, string reason)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(backupFilePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetDatabasePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
         if (!File.Exists(backupFilePath))
         {
             throw new FileNotFoundException("Backup file not found.", backupFilePath);
         }
 
-        SqliteConnection.ClearAllPools();
-        File.Copy(backupFilePath, targetDatabasePath, overwrite: true);
-        if (File.Exists(targetDatabasePath + "-wal"))
-        {
-            File.Delete(targetDatabasePath + "-wal");
-        }
-        if (File.Exists(targetDatabasePath + "-shm"))
-        {
-            File.Delete(targetDatabasePath + "-shm");
-        }
-
-        using SqliteConnection connection = new(new SqliteConnectionStringBuilder
-        {
-            DataSource = targetDatabasePath,
-            Mode = SqliteOpenMode.ReadWrite,
-            Pooling = false
-        }.ToString());
-        connection.Open();
-        ApplyPragmas(connection);
-
-        using SqliteTransaction tx = connection.BeginTransaction();
-        using (SqliteCommand bump = connection.CreateCommand())
-        {
-            bump.Transaction = tx;
-            bump.CommandText = """
-                UPDATE sync_server_state
-                SET server_epoch = server_epoch + 1,
-                    updated_at_utc = $now
-                WHERE singleton_id = 1;
-                """;
-            bump.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
-            bump.ExecuteNonQuery();
-        }
-        tx.Commit();
+        throw new InvalidOperationException(
+            "ERR_RESTORE_RECONCILIATION_REQUIRED: Restore is disabled until acknowledged " +
+            "operations, prior epoch/instance, high-watermark and staged backup integrity " +
+            "can be reconciled under a quiesced, independently fenced recovery protocol.");
     }
 }

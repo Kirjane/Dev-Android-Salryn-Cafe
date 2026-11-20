@@ -40,3 +40,11 @@ Still required: production-level reverse-proxy boundary test and configuration r
 - No real customer data, credentials, production deployment, shared contract edits, Android sync activation or integration merge.
 
 This is a reviewable S4 partial candidate and integration blocker record, **not a completed central synchronization service**.
+
+## S4 Wave B fail-closed central semantics (2026-11-21 continuation)
+
+The original generic `Applied` response must not stand in for ledger/domain processing. S4 now admits only explicitly recognized Cafe operation names/schema versions, with immutable inbox evidence resolved to `NeedsReview`, code `DOMAIN_PROCESSOR_UNAVAILABLE`, no applied-feed sequence, and no fabricated ledger effect. Entire mixed-type batches fail with 422 before admitting any operation. Duplicate identical envelopes replay the same durable resolution, divergent operation IDs/hashes or device-local sequence conflicts reject transactionally. **This is safe holding behavior, not working financial synchronization**: S2 domain and Integrator must approve an authoritative processor and transaction schema before promotion.
+
+Bootstrap now returns HTTP 503 `ERR_BOOTSTRAP_DOMAIN_SNAPSHOT_UNAVAILABLE` instead of an empty recoverability claim. Clients must retain local state and never advance pull cursor from this response. Existing `RestoreAndBumpEpoch` helper is disabled before destination mutation, pending external durable high-watermark + lossless reconciliation + quiesced staged restore. No production recoverability is claimed.
+
+**Integrator consumer impacts:** S2 host outbox must distinguish `NeedsReview` from `Applied` and not mark financial settlement complete; S3 Android must stop re-bootstrap on 503 and not clear outbox; both must retain operation IDs, surface review/error state, and never advance applied cursor from pending receipts. The shared protocol needs explicit authoritative applied-vs-received semantics and a versioned domain snapshot. Changes to Sync.Contracts, canonical migrations, host transport and Android are NOT made by S4.
