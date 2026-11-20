@@ -118,6 +118,25 @@ public sealed class MigrationRunner
 
         var appliedVersions = GetAppliedVersions(connection);
 
+        // A fresh Cafe database must acquire its lineage marker atomically with its
+        // foundation. Otherwise a crash before v40 leaves an ambiguous shared lineage
+        // that correctly fails closed on the next launch and cannot safely resume.
+        if (enforcesCafeLineage && lineage?.Kind == SchemaLineageKind.Fresh)
+        {
+            using var freshTransaction = connection.BeginTransaction();
+            foreach (var migration in _migrations)
+            {
+                if (appliedVersions.Contains(migration.Version))
+                {
+                    continue;
+                }
+                migration.Up(connection, freshTransaction);
+                RecordMigration(connection, freshTransaction, migration);
+            }
+            freshTransaction.Commit();
+            return;
+        }
+
         foreach (var migration in _migrations)
         {
             if (appliedVersions.Contains(migration.Version))

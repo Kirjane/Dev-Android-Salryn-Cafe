@@ -43,6 +43,35 @@ public sealed class SchemaLineageReconciliationTests : IDisposable
     }
 
     [Fact]
+    public void InterruptedFreshInitialization_RollsBackToClassifiableFreshAndCanRetry()
+    {
+        var (_, factory) = CreateTempDb("interrupted-fresh");
+        var migrations = CafeMigrationCatalog.CreateCanonicalCafeMigrations();
+        var faulty = migrations.Select(m => m.Version == 20 ? (IDatabaseMigration)new InjectedFailureMigration() : m);
+        var failed = new MigrationRunner(factory, faulty);
+        Assert.Throws<InvalidOperationException>(() => failed.RunPendingMigrations());
+        Assert.Equal(SchemaLineageKind.Fresh, failed.ClassifyDatabase().Kind);
+        using (var connection = factory.CreateConnection())
+        {
+            connection.Open();
+            Assert.Equal(0L, ScalarLong(connection, "SELECT COUNT(*) FROM schema_migrations;"));
+            Assert.False(SchemaLineageClassifier.TableExists(connection, null, "users"));
+        }
+        var retry = new MigrationRunner(factory, migrations);
+        retry.RunPendingMigrations();
+        Assert.Equal(SchemaLineageKind.SalrynCafe, retry.ClassifyDatabase().Kind);
+        Assert.Equal(0, retry.GetPendingMigrationCount());
+    }
+
+    private sealed class InjectedFailureMigration : IDatabaseMigration
+    {
+        public int Version => 20;
+        public string Name => "Synthetic interruption";
+        public void Up(SqliteConnection connection, SqliteTransaction transaction) =>
+            throw new InvalidOperationException("Synthetic interruption before lineage marker");
+    }
+
+    [Fact]
     public void LiveFactory_InitializesCanonicalCafeAndPendingCountDoesNotCreateMissingDatabase()
     {
         var (paths, factory) = CreateTempDb("live-factory");
@@ -274,6 +303,7 @@ public sealed class SchemaLineageReconciliationTests : IDisposable
 
         // Status probes and live initialization must not switch unknown databases to WAL.
         Assert.Equal(CafeMigrationCatalog.CreateCanonicalCafeMigrations().Count, cafeRunner.GetPendingMigrationCount());
+        Assert.True(DefaultDatabaseInitializationFactory.Create(paths).CheckStatus().IsFailure);
         Assert.True(DefaultDatabaseInitializationFactory.Create(paths).InitializeDatabase().IsFailure);
         SqliteConnection.ClearAllPools();
         Assert.Equal(originalBytes, File.ReadAllBytes(paths.DatabasePath));
