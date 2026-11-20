@@ -13,7 +13,7 @@ public sealed class DbPaths
         LogPath = Path.Combine(rootPath, "logs");
         ReceiptPath = Path.Combine(rootPath, "receipts");
         ConfigPath = Path.Combine(rootPath, "config");
-        DatabasePath = Path.Combine(DataPath, "salryn.db");
+        DatabasePath = Path.Combine(DataPath, SalrynProductIdentity.DatabaseFileName);
     }
 
     public string RootPath { get; }
@@ -34,13 +34,12 @@ public sealed class DbPaths
 
     public static DbPaths CreateProduction()
     {
-        var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
-        return new DbPaths(Path.Combine(programData, "Salryn"));
+        return new DbPaths(SalrynProductIdentity.GetProgramDataRoot());
     }
 
     public static DbPaths CreateDevelopment(string projectRoot)
     {
-        return new DbPaths(Path.Combine(projectRoot, ".salryn-dev"));
+        return new DbPaths(Path.Combine(projectRoot, SalrynProductIdentity.DevelopmentRootFolderName));
     }
 
     public Result ValidateProductionWritability()
@@ -51,7 +50,7 @@ public sealed class DbPaths
 
             string probePath = Path.Combine(
                 DataPath,
-                ".salryn-write-probe-" + Guid.NewGuid().ToString("N") + ".tmp");
+                ".salryn-cafe-write-probe-" + Guid.NewGuid().ToString("N") + ".tmp");
 
             File.WriteAllText(probePath, DateTimeOffset.UtcNow.ToString("O"));
             File.Delete(probePath);
@@ -71,9 +70,9 @@ public sealed class DbPaths
         {
             return Result.Fail(Error.Failure(
                 "DatabasePath.ProductionNotWritable",
-                "SALRYN production database folder or database file is not writable. " +
+                "Salryn Cafe production database folder or database file is not writable. " +
                 "Database path: " + DatabasePath + ". " +
-                "Run SALRYN with permissions to write to ProgramData\\Salryn, fix the folder permissions, " +
+                "Run Salryn Cafe with permissions to write to ProgramData\\SalrynCafe, fix the folder permissions, " +
                 "or use --dev only for development."));
         }
     }

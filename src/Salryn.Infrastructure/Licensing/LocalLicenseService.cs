@@ -1,6 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Salryn.Core.Common;
 using Salryn.Core.Services.Licensing;
+using Salryn.Infrastructure.Paths;
 
 namespace Salryn.Infrastructure.Licensing;
 
@@ -46,7 +48,9 @@ public sealed class LocalLicenseService : ILocalLicenseService
         LocalLicenseValidator? validator = null,
         Func<DateTimeOffset>? clock = null)
     {
-        _store = store ?? new LocalLicenseFileStore();
+        _store = store ?? new LocalLicenseFileStore(new LocalLicenseFileStoreOptions(
+            SalrynProductIdentity.GetLicenseRootDirectory(),
+            LocalLicenseFileStore.DefaultFileName));
         _validator = validator ?? CreateDefaultValidator();
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
     }
@@ -54,6 +58,36 @@ public sealed class LocalLicenseService : ILocalLicenseService
     public async Task<LocalLicenseValidationResult> GetStatusAsync(CancellationToken cancellationToken = default)
     {
         LocalLicenseFileReadResult read = await _store.ReadAsync(cancellationToken).ConfigureAwait(false);
+        if (read.Exists && !read.Malformed && read.Document is not null)
+        {
+            Result productCheck = SalrynProductGuard.ValidateLicenseProductId(read.Document.ApplicationId);
+            if (productCheck.IsFailure)
+            {
+                return new LocalLicenseValidationResult(
+                    LicenseStatus.Invalid,
+                    read.Document.Edition,
+                    Array.Empty<string>(),
+                    read.Document.ExpiresAt,
+                    DaysRemaining: null,
+                    MachineMatched: false,
+                    productCheck.ErrorDetail.Message,
+                    read.SourcePath,
+                    _clock(),
+                    read.Document.LicenseId,
+                    read.Document.CustomerName,
+                    read.Document.ApplicationId,
+                    read.Document.StoreId,
+                    AllowedLanTerminals: null,
+                    read.Document.SupportExpiresAt,
+                    read.Document.UpdatesUntil,
+                    MachineFingerprint: null,
+                    read.Document.LicenseType,
+                    read.Document.HostLicenseId,
+                    read.Document.TerminalId,
+                    MachineCode: null);
+            }
+        }
+
         return _validator.Validate(read);
     }
 
@@ -72,6 +106,16 @@ public sealed class LocalLicenseService : ILocalLicenseService
                 _store.LicenseFilePath,
                 draft.ErrorCode,
                 draft.ErrorMessage ?? "Local license install request is invalid.");
+        }
+
+        Result productCheck = SalrynProductGuard.ValidateLicenseProductId(draft.Document?.ApplicationId);
+        if (productCheck.IsFailure)
+        {
+            return Reject(
+                LicenseStatus.Invalid,
+                _store.LicenseFilePath,
+                SalrynProductGuard.ErrorWrongProductLicense,
+                productCheck.ErrorDetail.Message);
         }
 
         LocalLicenseFileReadResult candidate = new(
@@ -137,11 +181,12 @@ public sealed class LocalLicenseService : ILocalLicenseService
     });
 
     /// <summary>
-    /// Development licensing mode is opt-in via SALRYN_LICENSE_DEVELOPMENT_MODE=1
-    /// or when CoreSmoke isolates a development DB root (automated regression only).
+    /// Development licensing mode is compile-gated behind DEBUG builds only.
+    /// Release builds always fail closed regardless of environment variables.
     /// </summary>
     public static bool IsExplicitDevelopmentLicenseMode()
     {
+#if DEBUG
         if (string.Equals(
                 Environment.GetEnvironmentVariable("SALRYN_LICENSE_DEVELOPMENT_MODE"),
                 "1",
@@ -152,6 +197,9 @@ public sealed class LocalLicenseService : ILocalLicenseService
 
         return !string.IsNullOrWhiteSpace(
             Environment.GetEnvironmentVariable("SALRYN_CORE_SMOKE_DEVELOPMENT_ROOT"));
+#else
+        return false;
+#endif
     }
 
     private static LocalLicenseInstallDraft BuildDraft(string? licenseJson)

@@ -1,9 +1,18 @@
 using Salryn.Core.Host;
+using Salryn.Infrastructure.Paths;
 
 namespace Salryn.Api.Local.Services;
 
+/// <summary>
+/// Resolves Kestrel listen URLs for Salryn Cafe:
+/// - Loopback (Desktop WebView2 only): http://127.0.0.1:5399 (or explicit loopback override).
+/// - LAN listener (opt-in): https://&lt;lan-ip&gt;:5400 (TLS mandatory; no cleartext HTTP on LAN).
+/// </summary>
 public static class LocalApiLanUrlResolver
 {
+    public const int DefaultLoopbackPort = SalrynProductIdentity.LoopbackPort;
+    public const int DefaultLanHttpsPort = SalrynProductIdentity.LanHttpsPort;
+
     public static IReadOnlyList<string> ResolveListenUrls(string defaultUrl, LanRemoteTransportConfig config)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(defaultUrl);
@@ -34,20 +43,24 @@ public static class LocalApiLanUrlResolver
             return urls;
         }
 
-        int port = ExtractPort(defaultUrl) ?? 5299;
-        urls.Add($"http://{bindAddress}:{port}");
+        int lanPort = ResolveLanHttpsPort(config);
+        urls.Add($"https://{bindAddress}:{lanPort}");
 
         return urls;
     }
 
-    private static int? ExtractPort(string url)
+    public static int ResolveLanHttpsPort(LanRemoteTransportConfig config)
     {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri))
+        if (config.Port > 0
+            && config.Port != LanRemoteTransportConfig.DefaultPort
+            && config.Port != SalrynProductIdentity.LoopbackPort
+            && config.Port != SalrynProductIdentity.ProtectedRetailLegacyPort
+            && config.Port != SalrynProductIdentity.ProtectedRetailPort)
         {
-            return null;
+            return config.Port;
         }
 
-        return uri.Port > 0 ? uri.Port : null;
+        return DefaultLanHttpsPort;
     }
 
     private static bool UsesEphemeralPort(string url)

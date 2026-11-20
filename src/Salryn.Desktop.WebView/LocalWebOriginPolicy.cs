@@ -1,7 +1,8 @@
 namespace Salryn.Desktop.WebView;
 
 /// <summary>
-/// Restricts the native WebView host to local frontend/API origins only.
+/// Restricts the Salryn Cafe WebView host to Cafe loopback origins only (ports 5399 / dev 5173).
+/// Explicitly blocks protected retail ports (5299, 5387), external hosts, and non-HTTP schemes.
 /// </summary>
 internal static class LocalWebOriginPolicy
 {
@@ -9,14 +10,10 @@ internal static class LocalWebOriginPolicy
     [
         "http://127.0.0.1:5173",
         "http://localhost:5173",
-        "http://127.0.0.1:5299",
-        "http://localhost:5299",
+        "http://127.0.0.1:5399",
+        "http://localhost:5399",
     ];
 
-    /// <summary>
-    /// Resolves SALRYN_WEB_URL when set, otherwise <paramref name="fallbackUrl"/>.
-    /// Returns false when an explicit override was rejected.
-    /// </summary>
     public static bool TryResolveConfiguredWebUrl(
         string? configuredUrl,
         string fallbackUrl,
@@ -40,16 +37,13 @@ internal static class LocalWebOriginPolicy
         }
 
         rejectionReason =
-            "SALRYN_WEB_URL must be a local http URL on 127.0.0.1 or localhost port 5173 or 5299. " +
-            "External sites, file/data/javascript URLs, and LAN addresses are blocked.";
+            "SALRYN_CAFE_WEB_URL must be a local http URL on 127.0.0.1 or localhost port 5173 or 5399. " +
+            "Retail ports (5299/5387), external sites, file/data/javascript URLs, and LAN addresses are blocked.";
 
         resolvedUrl = fallbackUrl;
         return false;
     }
 
-    /// <summary>
-    /// Back-compat overload used by older call sites/tests; defaults fallback to Vite.
-    /// </summary>
     public static bool TryResolveConfiguredWebUrl(
         string? configuredUrl,
         out string resolvedUrl,
@@ -99,7 +93,7 @@ internal static class LocalWebOriginPolicy
             return false;
         }
 
-        if (uri.Port is not (5173 or 5299))
+        if (uri.Port is not (5173 or 5399))
         {
             return false;
         }

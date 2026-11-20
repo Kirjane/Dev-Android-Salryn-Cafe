@@ -18,11 +18,11 @@ internal sealed class MainForm : Form
         _webUrl = webUrl;
         _apiManager = apiManager;
 
-        Text = "Salryn POS";
+        Text = DevHostConfig.ProductDisplayName;
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(1100, 720);
+        MinimumSize = new Size(1024, 720);
         ClientSize = new Size(1366, 850);
-        BackColor = Color.FromArgb(15, 27, 45);
+        BackColor = Color.FromArgb(0x3B, 0x12, 0x04);
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
 
         _webView = new WebView2
@@ -38,10 +38,7 @@ internal sealed class MainForm : Form
     {
         try
         {
-            string userDataFolder = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Salryn",
-                "WebView2");
+            string userDataFolder = DevHostConfig.GetWebView2UserDataFolder();
 
             CoreWebView2Environment environment =
                 await CoreWebView2Environment.CreateAsync(userDataFolder: userDataFolder)
@@ -61,8 +58,8 @@ internal sealed class MainForm : Form
         {
             MessageBox.Show(
                 this,
-                $"Failed to start the Salryn web view.\n\n{ex.Message}",
-                "Salryn POS",
+                $"Failed to start the Salryn Cafe web view.\n\n{ex.Message}",
+                DevHostConfig.ProductDisplayName,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
 
@@ -98,10 +95,10 @@ internal sealed class MainForm : Form
 
         MessageBox.Show(
             this,
-            "Salryn blocked navigation to a non-local URL.\n\n" +
-            "Only localhost frontend/API origins on ports 5173 and 5299 are allowed.\n\n" +
+            "Salryn Cafe blocked navigation to a non-local URL.\n\n" +
+            "Only Salryn Cafe localhost frontend/API origins on ports 5173 and 5399 are allowed.\n\n" +
             "Blocked: " + uri,
-            "Salryn Ledger Console",
+            DevHostConfig.ProductDisplayName,
             MessageBoxButtons.OK,
             MessageBoxIcon.Warning);
     }
