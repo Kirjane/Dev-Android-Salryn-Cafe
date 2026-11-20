@@ -1,3 +1,33 @@
+# BACKUP CORRECTION SLICE CHECKPOINT — 2026-11-21
+
+Latest tested source7ec74074 (git rev-parse for full SHA). Clean source at test.
+Portable correction1b0866f7 verified with true export/import roundtrip; explicit
+wrong-product legacy import negative regression added and passed. Restore now
+read-only admits destination, snapshots source via SQLite BackupDatabase (includes
+committed WAL), upgrades/reverifies staged copy to41 and holds Windows FileShare.Delete
+exclusion through sidecar cleanup and atomic File.Replace. Original source and
+safety backup retained. 16 I2 tests PASS, exit0, Windows/.NET10.0.404:
+`dotnet test tests/Salryn.Cafe.I2Tests/Salryn.Cafe.I2Tests.csproj -c Release -m:1
+--no-restore --logger trx --results-directory <recovery>/test-results`.
+Log backup-final-regressions.log; TRX backup-final-regressions.trx. Earlier12/14/15
+passing runs preserved. Independent backup_review_resume scoped PASS at53af9ae6;
+last7ec74074 test-only addition has not been independently rereviewed. Concurrent
+writer/interrupted atomic swap and Linux restore execution remain NOT RUN.
+
+Full CoreSmoke post-restore run FAIL: progressed beyond previous backup failure,
+now U1AccountsReceivableRuntimeChecks.cs:800 expects GCash missing-reference error;
+Cafe locked tender policy rejects GCash outright. Log post-restore-coresmoke.log.
+Do not activate noncash tenders to satisfy inherited retail expectations; port
+those assertions to Cafe rejection + zero persisted mutation proof, retaining
+all Cash/AR invariants. Full suite not green. No release candidate acceptance.
+
+Next: bounded independent test-only delta review, adapt obsolete tender checks,
+continue shared Persistence/mobile extraction and semantic Central.Sqlite proof
+reconciliation per CODEX-MOBILE-CONTINUATION, then host atomicity/RBAC/pairing,
+live frontend and Android completion. Existing worktrees/harness/source retained.
+
+---
+
 # RESUMED — EXPLICIT INTERRUPTED-CHECKPOINT RECOVERY (2026-11-21)
 
 User explicitly authorized CONTINUE; the historical safe-exit pause below is
