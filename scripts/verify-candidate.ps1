@@ -1,297 +1,249 @@
 <#
 .SYNOPSIS
-    Canonical Salryn Cafe candidate verification runner (Issue #9 I7 / Directive #4).
+    Fail-closed, scoped Salryn Cafe verification. A mode PASS is not RC acceptance.
 .DESCRIPTION
-    Eliminates zero-test false-green passes by:
-      1. Never running legacy non-xUnit tests/Salryn.Tests as a pass gate.
-      2. Enforcing Executed > 0 and Passed > 0 on every discovered xUnit TRX and Vitest suite.
-      3. Emitting machine-readable JSON + Markdown summaries and SHA-256 artifact manifests for I8 (#15).
+    Windows runs desktop build/smoke plus host suites; Portable runs only portable
+    suites and web; Android requires mobile tests and a newly produced test-signed APK.
+    Required suite inventories are deliberate: absent components fail partial branches.
+    Raw command logs, TRX/JSON reports, source identity and output hashes are retained.
 #>
 param(
-    [string]$Configuration = "Release",
+    [ValidateSet('Auto', 'Windows', 'Portable', 'Android')][string]$Mode = 'Auto',
+    [string]$Configuration = 'Release',
+    [string]$OutputDir = '',
+    # Compatibility flags never turn missing required gates into successful checks.
     [switch]$EnableWindowsTargeting,
     [switch]$RequireXunitSuites,
     [switch]$RequireAndroid,
     [switch]$SkipWeb,
-    [switch]$SkipAndroid,
-    [string]$OutputDir = ""
+    [switch]$SkipAndroid
 )
+$ErrorActionPreference = 'Stop'
 
-$ErrorActionPreference = "Stop"
+function Get-SourceIdentity {
+    param([string]$Root)
+    $head = (& git -C $Root rev-parse HEAD 2>&1) | Out-String
+    if ($LASTEXITCODE -ne 0 -or $head.Trim() -notmatch '^[a-f0-9]{40}$') { throw 'Cannot identify exact Git HEAD.' }
+    $tree = (& git -C $Root rev-parse 'HEAD^{tree}' 2>&1) | Out-String
+    if ($LASTEXITCODE -ne 0 -or $tree.Trim() -notmatch '^[a-f0-9]{40}$') { throw 'Cannot identify exact Git tree.' }
+    $status = (& git -C $Root status --porcelain=v1 --untracked-files=all 2>&1) | Out-String
+    if ($LASTEXITCODE -ne 0) { throw 'Git status inspection failed.' }
+    if (-not [string]::IsNullOrWhiteSpace($status)) { throw 'Verification requires a clean tracked/index/untracked source tree.' }
+    return [pscustomobject]@{ head = $head.Trim(); tree = $tree.Trim(); dirty = $false }
+}
+
+function Assert-SourceUnchanged {
+    param($Before, $After)
+    if ($Before.head -cne $After.head -or $Before.tree -cne $After.tree -or $After.dirty) {
+        throw 'Source identity changed during verification.'
+    }
+}
+
+function Get-RequiredSuitePaths {
+    param([string]$Mode)
+    $portable = @('Salryn.Cafe.I2Tests', 'Salryn.Cafe.I3Tests', 'Salryn.Cafe.I4Tests', 'Salryn.Cafe.I6ATests')
+    $names = switch ($Mode) {
+        'Windows' { @('Salryn.Cafe.Tests') + $portable }
+        'Portable' { $portable }
+        'Android' { @('Salryn.Cafe.I6BTests') }
+        default { throw 'Unknown explicit verification mode.' }
+    }
+    return @($names | ForEach-Object { "tests/$_/$_.csproj" })
+}
+
+function Read-TrxCounts {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "Missing TRX: $Path" }
+    [xml]$xml = Get-Content -LiteralPath $Path -Raw
+    $ns = [System.Xml.XmlNamespaceManager]::new($xml.NameTable)
+    $ns.AddNamespace('t', 'http://microsoft.com/schemas/VisualStudio/TeamTest/2010')
+    $c = $xml.SelectSingleNode('//t:ResultSummary/t:Counters', $ns)
+    if ($null -eq $c) { throw 'TRX counters missing.' }
+    $counts = @{}
+    foreach ($key in @('total','executed','passed','failed','notExecuted')) {
+        $value = 0
+        if (-not [int]::TryParse($c.GetAttribute($key), [ref]$value) -or $value -lt 0) { throw "Invalid TRX $key count." }
+        $counts[$key] = $value
+    }
+    return $counts
+}
+
+function Assert-NonzeroTests {
+    param([int]$ExitCode, [int]$Executed, [int]$Passed, [int]$Failed)
+    if ($ExitCode -ne 0 -or $Executed -le 0 -or $Passed -le 0 -or $Failed -ne 0 -or $Passed -gt $Executed) {
+        throw "Failed/zero-test gate: exit=$ExitCode executed=$Executed passed=$Passed failed=$Failed"
+    }
+}
+
+function Get-ProducedApks {
+    param([string]$OutputPath)
+    if (-not (Test-Path -LiteralPath $OutputPath -PathType Container)) { throw 'Android publish output missing.' }
+    $apks = @(Get-ChildItem -LiteralPath $OutputPath -Recurse -File -Filter '*.apk')
+    if ($apks.Count -eq 0) { throw 'Android publish produced no APK in this run output.' }
+    return $apks
+}
+
+function Get-OverallStatus {
+    param([object[]]$Results)
+    if ($Results.Count -eq 0) { return 'FAIL' }
+    if (@($Results | Where-Object { $_.status -notin @('PASS','BUILD_OK','RUNTIME_OBSERVED','SOURCE_CHECKED') }).Count -gt 0) { return 'FAIL' }
+    if (@($Results | Where-Object { $_.kind -eq 'TEST' -and $_.status -eq 'PASS' -and $_.executed -gt 0 }).Count -eq 0) { return 'FAIL' }
+    return 'PASS'
+}
+
+function Assert-PortableProject {
+    param([string]$Path, [System.Collections.Generic.HashSet[string]]$Seen)
+    $full = [IO.Path]::GetFullPath($Path)
+    if (-not $Seen.Add($full)) { return }
+    [xml]$project = Get-Content -LiteralPath $full -Raw
+    $raw = $project.OuterXml
+    if ($raw -match 'net\d+\.\d+-windows|<UseWindowsForms>\s*true|<UseWPF>\s*true|Microsoft.WindowsDesktop.App') {
+        throw "Windows-only project in portable execution graph: $full"
+    }
+    foreach ($ref in $project.SelectNodes('//ProjectReference')) {
+        # MSBuild uses backslashes even when evaluated on Linux.
+        $relative = $ref.GetAttribute('Include').Replace('\', [IO.Path]::DirectorySeparatorChar)
+        Assert-PortableProject -Path (Join-Path (Split-Path -Parent $full) $relative) -Seen $Seen
+    }
+}
+
+function Invoke-RecordedCommand {
+    param([string]$Gate, [string]$Executable, [string[]]$Arguments, [string]$WorkingDirectory = $script:repoRoot)
+    $start = (Get-Date).ToUniversalTime()
+    $log = Join-Path $script:runDir (([regex]::Replace($Gate, '[^a-zA-Z0-9._-]', '_')) + '.log')
+    $exit = 1
+    $output = ''
+    Push-Location $WorkingDirectory
+    try {
+        $output = (& $Executable @Arguments 2>&1 | Out-String)
+        $exit = $LASTEXITCODE
+    } catch { $output += "`n$($_.Exception.Message)" } finally { Pop-Location }
+    [IO.File]::WriteAllText($log, $output)
+    $end = (Get-Date).ToUniversalTime()
+    $record = [pscustomobject]@{
+        gate = $Gate; command = $Executable; arguments = $Arguments; cwd = $WorkingDirectory
+        startUtc = $start.ToString('O'); endUtc = $end.ToString('O'); exitCode = $exit
+        log = $log; logSha256 = (Get-FileHash -LiteralPath $log -Algorithm SHA256).Hash
+        output = $output
+    }
+    $script:commands.Add($record)
+    if ($exit -ne 0) { throw "Command failed ($exit): $Executable. See $log" }
+    return $record
+}
+
+function Invoke-Gate {
+    param([string]$GateName, [string]$Kind, [scriptblock]$Action)
+    $result = [pscustomobject]@{ gate = $GateName; kind = $Kind; status = 'FAIL'; executed = 0; passed = 0; failed = 0; notes = '' }
+    try {
+        & $Action $result | Out-Null
+        $result.status = switch ($Kind) { 'TEST' { 'PASS' } 'BUILD' { 'BUILD_OK' } 'RUNTIME' { 'RUNTIME_OBSERVED' } default { 'SOURCE_CHECKED' } }
+        if ($Kind -eq 'TEST') { Assert-NonzeroTests 0 $result.executed $result.passed $result.failed }
+    } catch { $result.status = 'FAIL'; $result.notes = $_.Exception.Message }
+    $script:results.Add($result)
+    Write-Host "[$($result.status)] $GateName $($result.notes)"
+}
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-if ([string]::IsNullOrWhiteSpace($OutputDir)) {
-    $OutputDir = Join-Path $repoRoot "artifacts\verification"
-}
-$trxDir = Join-Path $OutputDir "trx"
-New-Item -ItemType Directory -Force -Path $OutputDir, $trxDir | Out-Null
+$runId = [guid]::NewGuid().ToString('N')
+$initial = Get-SourceIdentity $repoRoot
+if ($Mode -eq 'Auto') { $Mode = if ($IsWindows) { 'Windows' } else { 'Portable' } }
+if ($Mode -eq 'Windows' -and -not $IsWindows) { throw 'Windows mode requires Windows runtime, not EnableWindowsTargeting.' }
+if ($SkipWeb -and $Mode -ne 'Android') { throw 'Web gates are required for Windows/Portable modes.' }
+if ($RequireAndroid -and $Mode -ne 'Android') { throw 'Use a separate -Mode Android invocation for required Android qualification.' }
+if ($SkipAndroid -and $Mode -eq 'Android') { throw 'Cannot skip required Android gate.' }
+if ([string]::IsNullOrWhiteSpace($OutputDir)) { $OutputDir = Join-Path $repoRoot 'artifacts/verification' }
+$runDir = Join-Path $OutputDir $runId
+New-Item -ItemType Directory -Path $runDir | Out-Null
+$trxDir = Join-Path $runDir 'trx'
+New-Item -ItemType Directory -Path $trxDir | Out-Null
+$results = [System.Collections.Generic.List[object]]::new()
+$commands = [System.Collections.Generic.List[object]]::new()
+$artifacts = [System.Collections.Generic.List[object]]::new()
+$forgeEnv = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'SalrynForgeTools/forge-env.ps1' } else { $null }
+if ($forgeEnv -and (Test-Path -LiteralPath $forgeEnv)) { . $forgeEnv }
 
-# Load local Forge toolchain environment when available on Windows developer hosts
-$forgeEnv = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA "SalrynForgeTools\forge-env.ps1" } else { $null }
-if ($forgeEnv -and (Test-Path $forgeEnv)) {
-    . $forgeEnv
-}
-
-$headSha = (git -C $repoRoot rev-parse HEAD 2>$null)
-if (-not $headSha) { $headSha = "unknown" }
-$branchName = (git -C $repoRoot rev-parse --abbrev-ref HEAD 2>$null)
-if (-not $branchName) { $branchName = "unknown" }
-
-$results = New-Object System.Collections.Generic.List[object]
-$overallFailed = $false
-
-function Add-GateResult {
-    param(
-        [string]$Gate,
-        [string]$Command,
-        [string]$Status,
-        [int]$ExitCode,
-        [int]$Executed = 0,
-        [int]$Passed = 0,
-        [int]$Failed = 0,
-        [int]$Skipped = 0,
-        [double]$DurationSeconds = 0,
-        [string]$Notes = ""
-    )
-    $entry = [ordered]@{
-        gate            = $Gate
-        command         = $Command
-        status          = $Status
-        exitCode        = $ExitCode
-        executed        = $Executed
-        passed          = $Passed
-        failed          = $Failed
-        skipped         = $Skipped
-        durationSeconds = [math]::Round($DurationSeconds, 2)
-        notes           = $Notes
-    }
-    $script:results.Add([pscustomobject]$entry) | Out-Null
-    Write-Host ("[{0}] {1} (exit={2}, executed={3}, passed={4}, failed={5}) {6}" -f $Status, $Gate, $ExitCode, $Executed, $Passed, $Failed, $Notes)
-    if ($Status -eq "FAIL") {
-        $script:overallFailed = $true
+Invoke-Gate 'toolchain-dotnet' 'SOURCE' { param($r) Invoke-RecordedCommand 'dotnet-version' 'dotnet' @('--info') }
+if ($Mode -eq 'Windows') {
+    Invoke-Gate 'solution-build' 'BUILD' { param($r) Invoke-RecordedCommand 'solution-build' 'dotnet' @('build', 'Salryn.sln', '-c', $Configuration, '--nologo') }
+    Invoke-Gate 'core-smoke' 'RUNTIME' {
+        param($r)
+        $record = Invoke-RecordedCommand 'core-smoke' 'dotnet' @('run','--project','tools/Salryn.Tools.CoreSmoke/Salryn.Tools.CoreSmoke.csproj','-c',$Configuration,'--no-build')
+        if ($record.output -notmatch 'SALRYN Core smoke checks passed\.') { throw 'Missing CoreSmoke completion marker.' }
+        $r.notes = 'Completion marker observed. Harness does not emit measured assertion counts; no test count inferred.'
     }
 }
 
-function Parse-TrxCounts {
-    param([string]$TrxPath)
-    if (-not (Test-Path $TrxPath)) {
-        return @{ Found = $false; Total = 0; Executed = 0; Passed = 0; Failed = 0; Skipped = 0 }
+foreach ($relative in (Get-RequiredSuitePaths $Mode)) {
+    $project = Join-Path $repoRoot $relative
+    $name = [IO.Path]::GetFileNameWithoutExtension($project)
+    Invoke-Gate "xunit:$name" 'TEST' {
+        param($r)
+        if (-not (Test-Path -LiteralPath $project -PathType Leaf)) { throw "Required suite missing: $relative" }
+        if ($Mode -ne 'Windows') { Assert-PortableProject $project ([System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)) }
+        $record = Invoke-RecordedCommand "xunit-$name" 'dotnet' @('test',$project,'-c',$Configuration,'--nologo','--logger',"trx;LogFileName=$name.trx",'--results-directory',$trxDir)
+        $c = Read-TrxCounts (Join-Path $trxDir "$name.trx")
+        Assert-NonzeroTests $record.exitCode $c.executed $c.passed $c.failed
+        $r.executed = $c.executed; $r.passed = $c.passed; $r.failed = $c.failed
+        $r.notes = "TRX=$name.trx total=$($c.total) skipped=$($c.notExecuted); disposable synthetic fixtures required by suites."
     }
-    [xml]$xml = Get-Content -Path $TrxPath -Raw
-    $ns = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
-    $ns.AddNamespace("t", "http://microsoft.com/schemas/VisualStudio/TeamTest/2010")
-    $counters = $xml.SelectSingleNode("//t:ResultSummary/t:Counters", $ns)
-    if (-not $counters) {
-        return @{ Found = $false; Total = 0; Executed = 0; Passed = 0; Failed = 0; Skipped = 0 }
-    }
-    $total = [int]$counters.GetAttribute("total")
-    $executed = [int]$counters.GetAttribute("executed")
-    $passed = [int]$counters.GetAttribute("passed")
-    $failed = [int]$counters.GetAttribute("failed")
-    $notExecuted = [int]$counters.GetAttribute("notExecuted")
-    return @{ Found = $true; Total = $total; Executed = $executed; Passed = $passed; Failed = $failed; Skipped = $notExecuted }
 }
 
-# 1. Solution Build
-$sw = [System.Diagnostics.Stopwatch]::StartNew()
-$buildArgs = @("build", (Join-Path $repoRoot "Salryn.sln"), "-c", $Configuration, "--nologo")
-if ($EnableWindowsTargeting) {
-    $buildArgs += "-p:EnableWindowsTargeting=true"
-}
-$buildCmd = "dotnet " + ($buildArgs -join " ")
-& dotnet @buildArgs
-$buildExit = $LASTEXITCODE
-$sw.Stop()
-Add-GateResult -Gate "solution-build" -Command $buildCmd -Status ($(if ($buildExit -eq 0) { "PASS" } else { "FAIL" })) -ExitCode $buildExit -DurationSeconds $sw.Elapsed.TotalSeconds
-
-# 2. CoreSmoke Executable Check (replaces legacy 0-test dotnet test tests/Salryn.Tests)
-$coreSmokeProj = Join-Path $repoRoot "tools\Salryn.Tools.CoreSmoke\Salryn.Tools.CoreSmoke.csproj"
-if (Test-Path $coreSmokeProj) {
-    $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $smokeArgs = @("run", "--project", $coreSmokeProj, "-c", $Configuration, "--no-build")
-    if ($EnableWindowsTargeting) { $smokeArgs += "-p:EnableWindowsTargeting=true" }
-    Push-Location $repoRoot
-    try {
-        $smokeOut = (& dotnet @smokeArgs 2>&1) | Out-String
-        $smokeExit = $LASTEXITCODE
-    } finally {
-        Pop-Location
-    }
-    $sw.Stop()
-    $hasPassMarker = $smokeOut -match "SALRYN Core smoke checks passed\."
-    $smokeStatus = if ($smokeExit -eq 0 -and $hasPassMarker) { "PASS" } else { "FAIL" }
-    $smokeNotes = if ($hasPassMarker) { "Observed pass marker: SALRYN Core smoke checks passed." } else { "Missing CoreSmoke pass marker." }
-    Add-GateResult -Gate "core-smoke" -Command ("dotnet " + ($smokeArgs -join " ")) -Status $smokeStatus -ExitCode $smokeExit -Executed $(if ($hasPassMarker) { 1 } else { 0 }) -Passed $(if ($smokeStatus -eq "PASS") { 1 } else { 0 }) -Failed $(if ($smokeStatus -eq "FAIL") { 1 } else { 0 }) -DurationSeconds $sw.Elapsed.TotalSeconds -Notes $smokeNotes
-} else {
-    Add-GateResult -Gate "core-smoke" -Command "n/a" -Status "NOT RUN" -ExitCode 0 -Notes "CoreSmoke project not present."
-}
-
-# 3. Real xUnit Test Suites (auto-discover tests/Salryn.Cafe*Tests/*.csproj; hard Executed > 0 gate)
-$xunitProjects = Get-ChildItem -Path (Join-Path $repoRoot "tests") -Directory -Filter "Salryn.Cafe*Tests" -ErrorAction SilentlyContinue |
-    ForEach-Object { Get-ChildItem -Path $_.FullName -Filter "*.csproj" -File } |
-    Sort-Object FullName
-
-if (-not $xunitProjects -or $xunitProjects.Count -eq 0) {
-    $status = if ($RequireXunitSuites) { "FAIL" } else { "NOT RUN" }
-    Add-GateResult -Gate "xunit-suites" -Command "discover tests/Salryn.Cafe*Tests/*.csproj" -Status $status -ExitCode $(if ($status -eq "FAIL") { 1 } else { 0 }) -Notes "No Salryn.Cafe*Tests xUnit projects discovered on this commit (legacy Salryn.Tests intentionally excluded from xUnit pass gate)."
-} else {
-    foreach ($proj in $xunitProjects) {
-        $name = [System.IO.Path]::GetFileNameWithoutExtension($proj.Name)
-        $trxName = "$name.trx"
-        $trxPath = Join-Path $trxDir $trxName
-        if (Test-Path $trxPath) { Remove-Item -Force $trxPath }
-
-        $sw = [System.Diagnostics.Stopwatch]::StartNew()
-        $testArgs = @("test", $proj.FullName, "-c", $Configuration, "--nologo", "--logger", "trx;LogFileName=$trxName", "--results-directory", $trxDir)
-        if ($EnableWindowsTargeting) { $testArgs += "-p:EnableWindowsTargeting=true" }
-        & dotnet @testArgs
-        $testExit = $LASTEXITCODE
-        $sw.Stop()
-
-        $counts = Parse-TrxCounts -TrxPath $trxPath
-        $passedGate = ($testExit -eq 0) -and $counts.Found -and ($counts.Executed -gt 0) -and ($counts.Passed -gt 0) -and ($counts.Failed -eq 0)
-        $notes = if (-not $counts.Found) {
-            "TRX file missing or unreadable ($trxPath)."
-        } elseif ($counts.Executed -le 0 -or $counts.Passed -le 0) {
-            "ZERO-TEST FALSE-GREEN BLOCKED: executed=$($counts.Executed), passed=$($counts.Passed)."
-        } else {
-            "TRX verified: total=$($counts.Total), executed=$($counts.Executed), passed=$($counts.Passed), failed=$($counts.Failed), skipped=$($counts.Skipped)."
+if ($Mode -ne 'Android') {
+    foreach ($relative in @('packages/salryn-cafe-ui','apps/cafe-web')) {
+        $dir = Join-Path $repoRoot $relative
+        $name = $relative.Replace('/', '-')
+        Invoke-Gate "web:$name" 'TEST' {
+            param($r)
+            if (-not (Test-Path -LiteralPath (Join-Path $dir 'package-lock.json'))) { throw "Required locked web project missing: $relative" }
+            Invoke-RecordedCommand "$name-npm-version" 'npm' @('--version') $dir
+            Invoke-RecordedCommand "$name-ci" 'npm' @('ci') $dir
+            $jsonPath = Join-Path $runDir "$name-vitest.json"
+            Invoke-RecordedCommand "$name-test" 'npm' @('test','--','--reporter=json',"--outputFile=$jsonPath") $dir
+            $report = Get-Content -LiteralPath $jsonPath -Raw | ConvertFrom-Json
+            Assert-NonzeroTests 0 $report.numTotalTests $report.numPassedTests $report.numFailedTests
+            if (-not $report.success -or $report.numPendingTests -ne 0 -or $report.numPassedTests -ne $report.numTotalTests) { throw 'Vitest failure or unexecuted tests.' }
+            $r.executed = $report.numTotalTests; $r.passed = $report.numPassedTests; $r.failed = $report.numFailedTests
+            $r.notes = 'MOCKED_UI unless suite explicitly proves a live backend. Vitest JSON retained.'
         }
-
-        Add-GateResult -Gate "xunit:$name" -Command ("dotnet " + ($testArgs -join " ")) -Status ($(if ($passedGate) { "PASS" } else { "FAIL" })) -ExitCode $testExit -Executed $counts.Executed -Passed $counts.Passed -Failed $counts.Failed -Skipped $counts.Skipped -DurationSeconds $sw.Elapsed.TotalSeconds -Notes $notes
+        Invoke-Gate "web-build:$name" 'BUILD' { param($r) Invoke-RecordedCommand "$name-build" 'npm' @('run','build') $dir }
     }
 }
 
-# 4. Web / UI Suites (packages/salryn-cafe-ui and apps/cafe-web)
-if (-not $SkipWeb) {
-    $webDirs = @(
-        @{ Gate = "web:salryn-cafe-ui"; RelPath = "packages\salryn-cafe-ui" },
-        @{ Gate = "web:cafe-web"; RelPath = "apps\cafe-web" }
-    )
-    foreach ($w in $webDirs) {
-        $dir = Join-Path $repoRoot $w.RelPath
-        $pkgJson = Join-Path $dir "package.json"
-        if (-not (Test-Path $pkgJson)) {
-            Add-GateResult -Gate $w.Gate -Command "n/a" -Status "NOT RUN" -ExitCode 0 -Notes "$($w.RelPath) not present on this commit."
-            continue
+if ($Mode -eq 'Android') {
+    $androidProject = Join-Path $repoRoot 'src/Salryn.App.Android/Salryn.App.Android.csproj'
+    Invoke-Gate 'android-boundary' 'SOURCE' {
+        param($r)
+        if (-not (Test-Path -LiteralPath $androidProject)) { throw 'Required Android application missing.' }
+        # Recurse the entire project graph, not only direct Android references.
+        $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        Assert-PortableProject $androidProject $seen
+        foreach ($path in $seen) {
+            if ($path -match 'Salryn\.(Api\.Local|Desktop\.WebView|App\.WinForms)') { throw "Forbidden host dependency: $path" }
         }
-
-        $sw = [System.Diagnostics.Stopwatch]::StartNew()
-        $lockFile = Join-Path $dir "package-lock.json"
-        if (-not (Test-Path (Join-Path $dir "node_modules"))) {
-            if (Test-Path $lockFile) { & npm --prefix $dir ci } else { & npm --prefix $dir install }
-            if ($LASTEXITCODE -ne 0) {
-                $sw.Stop()
-                Add-GateResult -Gate $w.Gate -Command "npm ci/install" -Status "FAIL" -ExitCode $LASTEXITCODE -DurationSeconds $sw.Elapsed.TotalSeconds -Notes "Dependency install failed."
-                continue
-            }
-        }
-
-        $testOut = (& npm --prefix $dir test 2>&1) | Out-String
-        $testExit = $LASTEXITCODE
-        $passedCount = 0
-        if ($testOut -match 'Tests\s+(\d+)\s+passed') {
-            $passedCount = [int]$Matches[1]
-        }
-
-        $buildExit = 0
-        if ($testExit -eq 0) {
-            & npm --prefix $dir run build | Out-Null
-            $buildExit = $LASTEXITCODE
-        }
-        $sw.Stop()
-
-        $ok = ($testExit -eq 0) -and ($buildExit -eq 0) -and ($passedCount -gt 0)
-        $notes = if ($passedCount -le 0) { "ZERO-TEST FALSE-GREEN BLOCKED: Vitest passed count was 0." } else { "Vitest passed=$passedCount; buildExit=$buildExit." }
-        Add-GateResult -Gate $w.Gate -Command "npm --prefix $($w.RelPath) test && npm run build" -Status ($(if ($ok) { "PASS" } else { "FAIL" })) -ExitCode $(if ($testExit -ne 0) { $testExit } else { $buildExit }) -Executed $passedCount -Passed $passedCount -Failed $(if ($ok) { 0 } else { 1 }) -DurationSeconds $sw.Elapsed.TotalSeconds -Notes $notes
     }
-}
-
-# 5. Android Forbidden-Dependency & Compile Gate
-if (-not $SkipAndroid) {
-    $androidProj = Join-Path $repoRoot "src\Salryn.App.Android\Salryn.App.Android.csproj"
-    if (-not (Test-Path $androidProj)) {
-        $status = if ($RequireAndroid) { "FAIL" } else { "NOT RUN" }
-        Add-GateResult -Gate "android-compile" -Command "n/a" -Status $status -ExitCode $(if ($status -eq "FAIL") { 1 } else { 0 }) -Notes "src/Salryn.App.Android not present on this commit."
-    } else {
-        $projContent = Get-Content -Path $androidProj -Raw
-        $forbidden = @("Salryn.App.WinForms", "Salryn.Desktop.WebView", "Salryn.Api.Local") | Where-Object { $projContent -match [regex]::Escape($_) }
-        if ($forbidden.Count -gt 0) {
-            Add-GateResult -Gate "android-boundary" -Command "inspect Salryn.App.Android.csproj" -Status "FAIL" -ExitCode 1 -Notes ("Forbidden desktop/host references detected: " + ($forbidden -join ", "))
-        } else {
-            Add-GateResult -Gate "android-boundary" -Command "inspect Salryn.App.Android.csproj" -Status "PASS" -ExitCode 0 -Executed 1 -Passed 1 -Notes "Zero forbidden desktop/host references."
-        }
-
-        $workloads = (& dotnet workload list 2>&1) | Out-String
-        if ($workloads -match '\bandroid\b' -and $env:ANDROID_HOME -and (Test-Path $env:ANDROID_HOME)) {
-            $sw = [System.Diagnostics.Stopwatch]::StartNew()
-            & dotnet build $androidProj -c $Configuration --nologo
-            $aExit = $LASTEXITCODE
-            $sw.Stop()
-            Add-GateResult -Gate "android-compile" -Command "dotnet build src/Salryn.App.Android/Salryn.App.Android.csproj -c $Configuration" -Status ($(if ($aExit -eq 0) { "PASS" } else { "FAIL" })) -ExitCode $aExit -Executed 1 -Passed $(if ($aExit -eq 0) { 1 } else { 0 }) -Failed $(if ($aExit -ne 0) { 1 } else { 0 }) -DurationSeconds $sw.Elapsed.TotalSeconds
-        } else {
-            $status = if ($RequireAndroid) { "FAIL" } else { "NOT RUN" }
-            Add-GateResult -Gate "android-compile" -Command "dotnet build src/Salryn.App.Android" -Status $status -ExitCode $(if ($status -eq "FAIL") { 1 } else { 0 }) -Notes "Android workload or ANDROID_HOME not configured on host."
+    Invoke-Gate 'android-apk' 'BUILD' {
+        param($r)
+        $apkDir = Join-Path $runDir 'android-package'
+        # Unique empty output directory fences earlier build artifacts.
+        Invoke-RecordedCommand 'android-publish' 'dotnet' @('publish',$androidProject,'-c',$Configuration,'-r','android-arm64','-p:AndroidPackageFormats=apk','-p:AndroidKeyStore=false','--output',$apkDir,'--nologo')
+        $apks = @(Get-ProducedApks $apkDir)
+        foreach ($apk in $apks) {
+            $artifacts.Add([pscustomobject]@{ path = $apk.FullName; bytes = $apk.Length; sha256 = (Get-FileHash -LiteralPath $apk.FullName -Algorithm SHA256).Hash; runId = $runId; commitSha = $initial.head; signing = 'TEST_ONLY' })
         }
     }
 }
 
-# 6. Artifact SHA-256 Manifest Helper (for Issue #15 I8)
-$artifactsRoot = Join-Path $repoRoot "artifacts"
-$artifactManifest = New-Object System.Collections.Generic.List[object]
-if (Test-Path $artifactsRoot) {
-    $deliverables = Get-ChildItem -Path $artifactsRoot -Recurse -File -Include "*.exe", "*.apk", "*.aab", "*.zip" -ErrorAction SilentlyContinue | Sort-Object FullName
-    $shaLines = New-Object System.Collections.Generic.List[string]
-    foreach ($f in $deliverables) {
-        $hash = (Get-FileHash -Path $f.FullName -Algorithm SHA256).Hash
-        $rel = $f.FullName.Substring($repoRoot.Length + 1).Replace('\', '/')
-        $artifactManifest.Add([pscustomobject][ordered]@{
-            path   = $rel
-            bytes  = $f.Length
-            sha256 = $hash
-        }) | Out-Null
-        $shaLines.Add("$hash  $rel") | Out-Null
-    }
-    if ($shaLines.Count -gt 0) {
-        $shaLines | Set-Content -Path (Join-Path $OutputDir "sha256-manifest.txt") -Encoding UTF8
-    }
-}
-
-# 7. Emit Structured JSON + Markdown Verification Reports
+Invoke-Gate 'source-identity-final' 'SOURCE' { param($r) Assert-SourceUnchanged $initial (Get-SourceIdentity $repoRoot) }
+$status = Get-OverallStatus $results.ToArray()
 $summary = [ordered]@{
-    generatedAtUtc = (Get-Date).ToUniversalTime().ToString("O")
-    repository     = "Kirjane/Dev-Salryn-Cafe"
-    branch         = $branchName
-    commitSha      = $headSha
-    configuration  = $Configuration
-    os             = [System.Runtime.InteropServices.RuntimeInformation]::OSDescription
-    dotnetVersion  = ((& dotnet --version 2>$null) | Select-Object -First 1)
-    overallStatus  = if ($overallFailed) { "FAIL" } else { "PASS" }
-    gates          = $results
-    artifacts      = $artifactManifest
+    runId = $runId; generatedAtUtc = (Get-Date).ToUniversalTime().ToString('O')
+    repository = 'Kirjane/Dev-Salryn-Cafe'; commitSha = $initial.head; treeSha = $initial.tree
+    mode = $Mode; configuration = $Configuration; os = [Runtime.InteropServices.RuntimeInformation]::OSDescription
+    overallStatus = $status; releaseReadiness = 'NOT EVALUATED: scoped checks are not full C1-C11/live E2E/installer/hardware acceptance'
+    fixturePolicy = 'Synthetic/disposable only; source fixture identities are bound by commit/tree; no production data permitted'
+    gates = $results.ToArray(); commands = @($commands | Select-Object * -ExcludeProperty output); artifacts = $artifacts.ToArray()
 }
-
-$jsonPath = Join-Path $OutputDir "verification-summary.json"
-$summary | ConvertTo-Json -Depth 6 | Set-Content -Path $jsonPath -Encoding UTF8
-
-$mdLines = New-Object System.Collections.Generic.List[string]
-$mdLines.Add("# Salryn Cafe Verification Summary")
-$mdLines.Add("")
-$mdLines.Add("- **Commit SHA:** ``$headSha`` (``$branchName``)")
-$mdLines.Add("- **Configuration:** ``$Configuration`` | **OS:** $($summary.os) | **.NET:** ``$($summary.dotnetVersion)``")
-$mdLines.Add("- **Overall Status:** **$($summary.overallStatus)**")
-$mdLines.Add("")
-$mdLines.Add("| Gate | Status | Exit | Executed | Passed | Failed | Duration (s) | Notes |")
-$mdLines.Add("|---|---:|---:|---:|---:|---:|---:|---|")
-foreach ($r in $results) {
-    $mdLines.Add("| $($r.gate) | **$($r.status)** | $($r.exitCode) | $($r.executed) | $($r.passed) | $($r.failed) | $($r.durationSeconds) | $($r.notes) |")
-}
-$mdPath = Join-Path $OutputDir "verification-summary.md"
-$mdLines | Set-Content -Path $mdPath -Encoding UTF8
-
-Write-Host "`nVerification summary written to: $jsonPath"
-if ($overallFailed) {
-    Write-Error "One or more verification gates FAILED. See $mdPath."
-    exit 1
-}
+$summary | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $runDir 'verification-summary.json') -Encoding utf8
+Write-Host "Verification $status ($Mode) at $($initial.head): $runDir"
+if ($status -ne 'PASS') { exit 1 }
 exit 0
