@@ -1,0 +1,42 @@
+name: Salryn Cafe Android Build and Mobile Tests
+on:
+  pull_request:
+    branches: [main, 'forge/**']
+  push:
+    branches: ['forge/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: salryn-cafe-android-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  android-gate:
+    name: Required mobile suites and newly produced test-signed APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install .NET Android workload
+        run: dotnet workload install android
+      - name: Run required Android inventory, mobile tests and APK publish
+        shell: pwsh
+        run: ./scripts/verify-candidate.ps1 -Configuration Release -Mode Android
+      - name: Retain Android evidence and run-bound packages
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-android-${{ github.sha }}
+          path: artifacts/verification/
+          if-no-files-found: error
+          retention-days: 14
