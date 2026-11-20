@@ -1,9 +1,11 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import { describe, expect, it, vi } from "vitest";
 import { createMockCafeClient } from "./mockCafeClient";
 import { WorkstationApp } from "./WorkstationApp";
+
+const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 describe("Salryn Cafe UX-B — Cashier, Orders & Kitchen Workstation (MOCKED_UI)", () => {
   it("supports modifier selection, Cash tender, and server-authoritative receipt commitment", async () => {
@@ -12,18 +14,14 @@ describe("Salryn Cafe UX-B — Cashier, Orders & Kitchen Workstation (MOCKED_UI)
 
     expect(screen.getByText("MOCKED_UI")).toBeInTheDocument();
 
-    // Open Spanish Latte modifier dialog
     await user.click(screen.getByRole("button", { name: /Spanish Latte/i }));
     const dialog = screen.getByRole("dialog", { name: "Configure Spanish Latte" });
 
-    // Select Oat Milk (+₱35.00)
     await user.selectOptions(within(dialog).getByLabelText(/Milk Choice/i), "milk-oat");
     await user.click(within(dialog).getByRole("button", { name: "Add to Ticket" }));
 
-    // Server-authoritative total: ₱165.00 + ₱35.00 = ₱200.00
     expect(screen.getAllByText("₱200.00").length).toBeGreaterThanOrEqual(1);
 
-    // Complete Cash sale
     await user.click(screen.getByRole("button", { name: /Complete Sale \(Cash Only\)/i }));
     expect(await screen.findByText(/Committed Receipt · CY-1044/i)).toBeInTheDocument();
   });
@@ -36,7 +34,6 @@ describe("Salryn Cafe UX-B — Cashier, Orders & Kitchen Workstation (MOCKED_UI)
     const optionValues = Array.from(tenderSelect.options).map((o) => o.value);
     expect(optionValues).toEqual(["CASH", "AR", "PARTIAL_CASH_AR"]);
 
-    // Add House Cold Brew (₱220.00, no modifiers)
     await user.click(screen.getByRole("button", { name: /House Cold Brew/i }));
     await user.selectOptions(tenderSelect, "PARTIAL_CASH_AR");
 
@@ -47,7 +44,7 @@ describe("Salryn Cafe UX-B — Cashier, Orders & Kitchen Workstation (MOCKED_UI)
     expect(await screen.findByText(/Committed Receipt · CY-1044/i)).toBeInTheDocument();
   });
 
-  it("reuses the EXACT same durable operationId on retry after Unknown-Outcome failure without double-charging", async () => {
+  it("reuses the EXACT same RFC-4122 Guid operationId on retry after Unknown-Outcome failure and locks edits until Retry/Discard", async () => {
     const user = userEvent.setup();
     const client = createMockCafeClient({ simulateNextCheckoutUnknownOutcome: true });
 
@@ -56,21 +53,21 @@ describe("Salryn Cafe UX-B — Cashier, Orders & Kitchen Workstation (MOCKED_UI)
     await user.click(screen.getByRole("button", { name: /House Cold Brew/i }));
     await user.click(screen.getByRole("button", { name: /Complete Sale/i }));
 
-    // Unknown-outcome recovery panel appears with the exact operationId
-    const recoveryHeading = await screen.findByText(/Unknown Checkout Outcome · Operation sale-/i);
-    expect(recoveryHeading).toBeInTheDocument();
+    expect(await screen.findByText(/Unknown Checkout Outcome · Operation/i)).toBeInTheDocument();
+    // Edits are locked while unknownOutcome is active
+    expect(screen.getByLabelText("Tender Mode")).toBeDisabled();
+    expect(screen.getByLabelText("Discount Policy")).toBeDisabled();
 
-    // Retry with the same operationId
     await user.click(screen.getByRole("button", { name: /Retry & Verify Same Operation ID/i }));
-
     expect(await screen.findByText(/Idempotent Recovery \(No Duplicate Charge\)/i)).toBeInTheDocument();
 
     const submittedIds = client.getSubmittedOperationIds();
     expect(submittedIds).toHaveLength(2);
+    expect(submittedIds[0]).toMatch(UUID_V4_REGEX);
     expect(submittedIds[0]).toBe(submittedIds[1]);
   });
 
-  it("blocks rapid double-submit via synchronous ref-based in-flight guard", async () => {
+  it("blocks rapid synchronous double-submit via ref-based in-flight guard (single act tick)", async () => {
     const user = userEvent.setup();
     const client = createMockCafeClient({ delayMs: 80 });
     const submitSpy = vi.spyOn(client, "submitSale");
@@ -80,9 +77,11 @@ describe("Salryn Cafe UX-B — Cashier, Orders & Kitchen Workstation (MOCKED_UI)
     await user.click(screen.getByRole("button", { name: /House Cold Brew/i }));
     const submitBtn = screen.getByRole("button", { name: /Complete Sale/i });
 
-    // Fire two synchronous clicks before React re-renders disabled state
-    fireEvent.click(submitBtn);
-    fireEvent.click(submitBtn);
+    // Both clicks run synchronously BEFORE React flushes disabled state — proves inFlightRef guard.
+    act(() => {
+      submitBtn.click();
+      submitBtn.click();
+    });
 
     await waitFor(() => {
       expect(screen.getByText(/Committed Receipt · CY-1044/i)).toBeInTheDocument();
@@ -90,23 +89,27 @@ describe("Salryn Cafe UX-B — Cashier, Orders & Kitchen Workstation (MOCKED_UI)
     expect(submitSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("locks checkout when terminal is REVOKED or offline lease is expired", () => {
+  it("locks Checkout, Audited Refund, and Blind Shift Close when terminal is REVOKED", () => {
     render(<WorkstationApp initialTrustState="REVOKED" />);
     expect(screen.getByRole("alert")).toHaveTextContent(/Terminal Revoked — Checkout Locked/i);
     expect(screen.getByRole("button", { name: /Complete Sale/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Audited Refund/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Blind Shift Close/i })).toBeDisabled();
   });
 
-  it("supports Blind Shift Close without exposing expected totals before submission", async () => {
+  it("supports Blind Shift Close without exposing expected totals (text or placeholder) before submission", async () => {
     const user = userEvent.setup();
     render(<WorkstationApp />);
 
     await user.click(screen.getByRole("button", { name: "Blind Shift Close" }));
     const dialog = screen.getByRole("dialog", { name: "Blind Shift Close" });
+    const countInput = within(dialog).getByRole("textbox", { name: "Counted Drawer Cash (PHP)" });
 
-    // Expected total (₱18,450.00) must NOT be visible before submit
     expect(within(dialog).queryByText(/18,450\.00/)).not.toBeInTheDocument();
+    expect(countInput).not.toHaveAttribute("placeholder", expect.stringMatching(/18450/));
+    expect(countInput).toHaveAttribute("placeholder", "0.00");
 
-    await user.type(within(dialog).getByRole("textbox", { name: "Counted Drawer Cash (PHP)" }), "18400");
+    await user.type(countInput, "18400");
     await user.click(within(dialog).getByRole("button", { name: "Submit Blind Count" }));
 
     expect(await within(dialog).findByText(/Shift Variance Computed by Server/i)).toBeInTheDocument();
@@ -117,7 +120,6 @@ describe("Salryn Cafe UX-B — Cashier, Orders & Kitchen Workstation (MOCKED_UI)
     const user = userEvent.setup();
     render(<WorkstationApp />);
 
-    // Navigate to Orders
     await user.click(screen.getByRole("button", { name: /Orders & Lifecycle/i }));
     expect(screen.getByRole("table", { name: "Cafe Order Lifecycle" })).toBeInTheDocument();
 
@@ -125,7 +127,6 @@ describe("Salryn Cafe UX-B — Cashier, Orders & Kitchen Workstation (MOCKED_UI)
     await user.click(startPrepBtns[0]);
     expect(await screen.findByText(/Order CY-1043 → PREPARING/i)).toBeInTheDocument();
 
-    // Navigate to Kitchen Display
     await user.click(screen.getByRole("button", { name: /Kitchen & Barista/i }));
     expect(screen.getByText(/KT-201 · Table 3/i)).toBeInTheDocument();
 

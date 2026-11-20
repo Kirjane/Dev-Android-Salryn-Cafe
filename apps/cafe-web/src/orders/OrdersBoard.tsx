@@ -1,6 +1,7 @@
 import { Printer, XCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
+  Alert,
   Button,
   Card,
   CardBody,
@@ -54,8 +55,9 @@ export function OrdersBoard({ client, orders, onOrderUpdated }: OrdersBoardProps
   );
 
   async function advanceOrder(order: OrderRecord, nextStatus: OrderStatus) {
-    const updated = await transitionOp.execute((operationId) =>
-      client.transitionOrder({ operationId, orderId: order.id, nextStatus }),
+    const updated = await transitionOp.execute(
+      (operationId) => client.transitionOrder({ operationId, orderId: order.id, nextStatus }),
+      `${order.id}:${nextStatus}`,
     );
     if (updated) {
       onOrderUpdated(updated);
@@ -81,6 +83,16 @@ export function OrdersBoard({ client, orders, onOrderUpdated }: OrdersBoardProps
       />
       <CardBody>
         <div style={{ display: "grid", gap: 14 }}>
+          {transitionOp.error ? (
+            <Alert tone="danger" title="Order Transition Failed" description={transitionOp.error} />
+          ) : null}
+          {transitionOp.unknownOutcome ? (
+            <Alert
+              tone="warning"
+              title={`Unknown Order Outcome · ${transitionOp.unknownOutcome.operationId}`}
+              description={transitionOp.unknownOutcome.message}
+            />
+          ) : null}
           <div role="group" aria-label="Filter orders by channel" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {(["ALL", "DINE_IN", "TAKEOUT", "DELIVERY"] as const).map((ch) => (
               <Button

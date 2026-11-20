@@ -100,6 +100,7 @@ export function CashierWorkstation({
   const reprintOp = useDurableOperation("reprint");
 
   const stationBlocked = trustState === "OFFLINE_LEASE_EXPIRED" || trustState === "REVOKED";
+  const editsLocked = Boolean(checkoutOp.unknownOutcome) || checkoutOp.inFlight;
 
   const quote = useMemo(() => client.quoteCart(cart, discount), [client, cart, discount]);
 
@@ -124,6 +125,7 @@ export function CashierWorkstation({
   }, []);
 
   function openItem(item: CafeMenuItem) {
+    if (editsLocked) return;
     if (item.modifierGroups.length === 0) {
       addLineToCart(item, [], "");
       return;
@@ -228,6 +230,7 @@ export function CashierWorkstation({
   }
 
   async function handleRefundSubmit() {
+    if (stationBlocked) return;
     const res = await refundOp.execute((operationId) =>
       client.submitRefund({
         operationId,
@@ -244,6 +247,7 @@ export function CashierWorkstation({
   }
 
   async function handleBlindCloseSubmit() {
+    if (stationBlocked) return;
     const res = await blindCloseOp.execute((operationId) =>
       client.submitBlindClose({
         operationId,
@@ -267,10 +271,19 @@ export function CashierWorkstation({
           ) : null}
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          <Button variant="secondary" leftIcon={<RotateCcw size={16} />} onClick={() => setRefundOpen(true)}>
+          <Button
+            variant="secondary"
+            leftIcon={<RotateCcw size={16} />}
+            disabled={stationBlocked}
+            onClick={() => setRefundOpen(true)}
+          >
             Audited Refund
           </Button>
-          <Button variant="secondary" onClick={() => { setBlindCloseResult(null); setBlindCloseOpen(true); }}>
+          <Button
+            variant="secondary"
+            disabled={stationBlocked}
+            onClick={() => { setBlindCloseResult(null); setBlindCloseOpen(true); }}
+          >
             Blind Shift Close
           </Button>
         </div>
@@ -308,6 +321,13 @@ export function CashierWorkstation({
                 onClick={() => void handleCheckoutSubmit()}
               >
                 Retry &amp; Verify Same Operation ID
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={checkoutOp.inFlight}
+                onClick={() => checkoutOp.resetIntent()}
+              >
+                Discard Pending Intent
               </Button>
             </div>
           </CardBody>
@@ -476,6 +496,7 @@ export function CashierWorkstation({
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <FormField label="Discount Policy">
                   <SelectInput
+                    disabled={editsLocked}
                     value={discount}
                     onChange={(e) => {
                       checkoutOp.resetIntent();
@@ -491,6 +512,7 @@ export function CashierWorkstation({
 
                 <FormField label="Tender Mode">
                   <SelectInput
+                    disabled={editsLocked}
                     value={tenderMode}
                     onChange={(e) => {
                       checkoutOp.resetIntent();
@@ -726,7 +748,7 @@ export function CashierWorkstation({
             <FormField label="Counted Drawer Cash (PHP)" required hint="Expected cash is revealed only after submission.">
               <TextInput
                 inputMode="decimal"
-                placeholder="18450.00"
+                placeholder="0.00"
                 value={blindCountPhp}
                 onChange={(e) => setBlindCountPhp(e.target.value)}
               />

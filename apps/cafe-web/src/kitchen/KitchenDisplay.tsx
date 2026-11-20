@@ -1,6 +1,7 @@
 import { Bluetooth, CheckCircle2, Clock, Printer, RotateCcw } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
+  Alert,
   Button,
   Card,
   CardBody,
@@ -44,8 +45,9 @@ export function KitchenDisplay({ client, tickets, onTicketUpdated }: KitchenDisp
   );
 
   async function handleBump(ticket: KitchenTicket, nextStatus: KitchenTicketStatus) {
-    const updated = await bumpOp.execute((operationId) =>
-      client.bumpKitchenTicket({ operationId, ticketId: ticket.id, nextStatus }),
+    const updated = await bumpOp.execute(
+      (operationId) => client.bumpKitchenTicket({ operationId, ticketId: ticket.id, nextStatus }),
+      `${ticket.id}:${nextStatus}`,
     );
     if (updated) {
       onTicketUpdated(updated);
@@ -64,6 +66,14 @@ export function KitchenDisplay({ client, tickets, onTicketUpdated }: KitchenDisp
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
+      {bumpOp.error ? <Alert tone="danger" title="Kitchen Ticket Action Failed" description={bumpOp.error} /> : null}
+      {bumpOp.unknownOutcome ? (
+        <Alert
+          tone="warning"
+          title={`Unknown Kitchen Outcome · ${bumpOp.unknownOutcome.operationId}`}
+          description={bumpOp.unknownOutcome.message}
+        />
+      ) : null}
       <Card>
         <CardHeader
           title="Kitchen & Barista Ticket Queue"

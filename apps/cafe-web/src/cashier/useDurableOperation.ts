@@ -1,14 +1,14 @@
 import { useCallback, useRef, useState } from "react";
 
-let operationCounter = 0;
-
-function createOperationId(prefix: string): string {
-  operationCounter += 1;
-  const randomPart =
-    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID().slice(0, 8)
-      : Math.random().toString(36).slice(2, 10);
-  return `${prefix}-${operationCounter}-${randomPart}`;
+function createGuidOperationId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }
 
 export class UnknownOutcomeError extends Error {
@@ -29,11 +29,13 @@ export type DurableOperationState = {
 };
 
 /**
- * Enforces durable client operationId reuse across retries and a synchronous ref-based in-flight guard.
+ * Enforces RFC-4122 Guid operationId reuse ONLY on UnknownOutcomeError retries of the same intentKey,
+ * clears operationId on deterministic rejections, and enforces a synchronous ref-based in-flight guard.
  */
-export function useDurableOperation(prefix: string) {
+export function useDurableOperation(_prefix: string) {
   const inFlightRef = useRef(false);
   const intentOperationIdRef = useRef<string | null>(null);
+  const intentKeyRef = useRef<string | undefined>(undefined);
   const [state, setState] = useState<DurableOperationState>({
     pendingOperationId: null,
     inFlight: false,
@@ -43,6 +45,7 @@ export function useDurableOperation(prefix: string) {
 
   const resetIntent = useCallback(() => {
     intentOperationIdRef.current = null;
+    intentKeyRef.current = undefined;
     setState({
       pendingOperationId: null,
       inFlight: false,
@@ -52,13 +55,17 @@ export function useDurableOperation(prefix: string) {
   }, []);
 
   const execute = useCallback(
-    async <T,>(runner: (operationId: string) => Promise<T>): Promise<T | null> => {
-      // Synchronous guard blocks rapid double-click / double-Enter before React re-renders.
+    async <T,>(runner: (operationId: string) => Promise<T>, intentKey?: string): Promise<T | null> => {
       if (inFlightRef.current) {
         return null;
       }
 
-      const operationId = intentOperationIdRef.current ?? createOperationId(prefix);
+      if (intentKey !== undefined && intentKeyRef.current !== intentKey) {
+        intentOperationIdRef.current = null;
+        intentKeyRef.current = intentKey;
+      }
+
+      const operationId = intentOperationIdRef.current ?? createGuidOperationId();
       intentOperationIdRef.current = operationId;
       inFlightRef.current = true;
 
@@ -71,8 +78,8 @@ export function useDurableOperation(prefix: string) {
 
       try {
         const result = await runner(operationId);
-        // Committed cleanly -> clear intent so next distinct user action gets a new operationId.
         intentOperationIdRef.current = null;
+        intentKeyRef.current = undefined;
         setState({
           pendingOperationId: null,
           inFlight: false,
@@ -82,7 +89,7 @@ export function useDurableOperation(prefix: string) {
         return result;
       } catch (err) {
         if (err instanceof UnknownOutcomeError) {
-          // Keep the EXACT same operationId for safe idempotent retry/reconciliation.
+          // Preserve exact Guid operationId for safe idempotent retry of the identical payload.
           setState({
             pendingOperationId: operationId,
             inFlight: false,
@@ -92,10 +99,12 @@ export function useDurableOperation(prefix: string) {
           return null;
         }
 
-        // Validation/domain rejection keeps intent clean or allows correction while preserving ID if retried.
+        // Deterministic rejection: clear operationId so corrected payload never collides with 409.
+        intentOperationIdRef.current = null;
+        intentKeyRef.current = undefined;
         const message = err instanceof Error ? err.message : "Operation failed.";
         setState({
-          pendingOperationId: operationId,
+          pendingOperationId: null,
           inFlight: false,
           unknownOutcome: null,
           error: message,
@@ -105,7 +114,7 @@ export function useDurableOperation(prefix: string) {
         inFlightRef.current = false;
       }
     },
-    [prefix],
+    [],
   );
 
   return {
