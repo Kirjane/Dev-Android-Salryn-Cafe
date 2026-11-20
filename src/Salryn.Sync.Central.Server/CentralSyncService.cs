@@ -820,6 +820,12 @@ public sealed class CentralSyncService
         {
             if (allowRevokedForQuarantinePush)
             {
+                // P1 #1 fix: even for revoked-device quarantine push, never accept an expired bearer token
+                if (expiresAt <= now)
+                {
+                    return ServiceOutcome<AuthenticatedDeviceContext>.Fail(401, "ERR_DEVICE_TOKEN_EXPIRED", "Expired token cannot submit quarantine batches; provide fresh asymmetric proof or admin recovery.");
+                }
+
                 return ServiceOutcome<AuthenticatedDeviceContext>.Ok(
                     new AuthenticatedDeviceContext(tokenDeviceId, tokenTenantId, tokenStoreId, tokenProductId, deviceRole, deviceStatus, publicKeySpki));
             }
@@ -935,6 +941,22 @@ public sealed class CentralSyncService
             // Revoked device fencing: strictly quarantine, NEVER mutate live ledger or change feed
             if (string.Equals(device.Status, "Revoked", StringComparison.Ordinal))
             {
+                using (SqliteCommand capCmd = conn.CreateCommand())
+                {
+                    capCmd.CommandText = "SELECT COUNT(*) FROM sync_revoked_quarantine WHERE device_id = $deviceId;";
+                    capCmd.Parameters.AddWithValue("$deviceId", device.DeviceId.ToString("D"));
+                    long existingQuarantineCount = Convert.ToInt64(capCmd.ExecuteScalar());
+                    if (existingQuarantineCount + request.Operations.Count > _options.MaxQuarantinePerDevice)
+                    {
+                        RollbackRaw(conn);
+                        return ServiceOutcome<PushOperationsResponse>.Fail(
+                            429,
+                            "ERR_QUARANTINE_CAP_REACHED",
+                            $"Revoked device quarantine cap ({_options.MaxQuarantinePerDevice}) exceeded.",
+                            state.ServerEpoch);
+                    }
+                }
+
                 List<Guid> quarantinedIds = [];
                 foreach (SyncOperationEnvelopeV1 env in request.Operations)
                 {
@@ -986,15 +1008,17 @@ public sealed class CentralSyncService
 
             foreach (SyncOperationEnvelopeV1 env in request.Operations)
             {
-                // Check idempotent replay or hash conflict
+                // Check idempotent replay or hash conflict (scoped strictly by tenant_id + store_id + operation_id)
                 using (SqliteCommand existingCmd = conn.CreateCommand())
                 {
                     existingCmd.CommandText = """
                         SELECT operation_hash, received_sequence, received_at_utc, status,
                                result_code, result_json, resolved_at_utc
                         FROM sync_inbox_operations
-                        WHERE operation_id = $opId;
+                        WHERE tenant_id = $tenantId AND store_id = $storeId AND operation_id = $opId;
                         """;
+                    existingCmd.Parameters.AddWithValue("$tenantId", device.TenantId.ToString("D"));
+                    existingCmd.Parameters.AddWithValue("$storeId", device.StoreId.ToString("D"));
                     existingCmd.Parameters.AddWithValue("$opId", env.OperationId.ToString("D"));
                     using SqliteDataReader reader = existingCmd.ExecuteReader();
                     if (reader.Read())
@@ -1019,7 +1043,7 @@ public sealed class CentralSyncService
                             reader.GetString(5),
                             DateTimeOffset.Parse(reader.GetString(6)));
 
-                        long? existingFeedSeq = ReadChangeFeedSequenceForOperation(conn, env.OperationId);
+                        long? existingFeedSeq = ReadChangeFeedSequenceForOperation(conn, device.TenantId, device.StoreId, env.OperationId);
                         results.Add(new PushOperationResultDto(env.OperationId, true, cached, existingFeedSeq));
                         continue;
                     }
@@ -1465,10 +1489,12 @@ public sealed class CentralSyncService
         return Convert.ToInt64(cmd.ExecuteScalar());
     }
 
-    private static long? ReadChangeFeedSequenceForOperation(SqliteConnection conn, Guid operationId)
+    private static long? ReadChangeFeedSequenceForOperation(SqliteConnection conn, Guid tenantId, Guid storeId, Guid operationId)
     {
         using SqliteCommand cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT server_sequence FROM sync_change_feed WHERE source_operation_id = $opId;";
+        cmd.CommandText = "SELECT server_sequence FROM sync_change_feed WHERE tenant_id = $tenantId AND store_id = $storeId AND source_operation_id = $opId;";
+        cmd.Parameters.AddWithValue("$tenantId", tenantId.ToString("D"));
+        cmd.Parameters.AddWithValue("$storeId", storeId.ToString("D"));
         cmd.Parameters.AddWithValue("$opId", operationId.ToString("D"));
         object? val = cmd.ExecuteScalar();
         return val is null or DBNull ? null : Convert.ToInt64(val);
