@@ -17,7 +17,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
-    setupFiles: ["./src/cashier/testSetup.ts"],
+    setupFiles: ["./src/cashier/testSetup.ts", "./src/backoffice/testSetup.ts"],
     css: true,
   },
 });
