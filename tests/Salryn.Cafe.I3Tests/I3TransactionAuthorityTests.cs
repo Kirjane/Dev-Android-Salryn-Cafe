@@ -227,6 +227,76 @@ public sealed class I3TransactionAuthorityTests
     }
 
     [Fact]
+    public async Task CafeMutationIdempotencyGuard_ConflictingBodyAndHeader_FailsBeforeMutation()
+    {
+        using I3TestDatabaseFixture fx = new();
+        CafeMutationIdempotencyGuard guard = new(fx.ConnectionFactory);
+        DefaultHttpContext http = new();
+        http.Request.Headers["Idempotency-Key"] = Guid.NewGuid().ToString("D");
+        int calls = 0;
+
+        IResult result = await guard.ExecuteSyncAsync(
+            http, "POST /api/menu/categories", fx.AdminUserId, Guid.NewGuid(),
+            new { name = "Coffee" },
+            _ =>
+            {
+                calls++;
+                return new IdempotentExecutionOutcome(200, new { ok = true });
+            });
+
+        Assert.Equal(StatusCodes.Status400BadRequest,
+            Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
+        Assert.Equal(0, calls);
+    }
+
+    [Fact]
+    public async Task CafeMutationIdempotencyGuard_ConflictingHeaders_FailBeforeMutation()
+    {
+        using I3TestDatabaseFixture fx = new();
+        CafeMutationIdempotencyGuard guard = new(fx.ConnectionFactory);
+        DefaultHttpContext http = new();
+        http.Request.Headers["Idempotency-Key"] = Guid.NewGuid().ToString("D");
+        http.Request.Headers["X-Operation-Id"] = Guid.NewGuid().ToString("D");
+        int calls = 0;
+
+        IResult result = await guard.ExecuteSyncAsync(
+            http, "POST /api/menu/categories", fx.AdminUserId, null,
+            new { name = "Coffee" },
+            _ =>
+            {
+                calls++;
+                return new IdempotentExecutionOutcome(200, new { ok = true });
+            });
+
+        Assert.Equal(StatusCodes.Status400BadRequest,
+            Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
+        Assert.Equal(0, calls);
+    }
+
+    [Fact]
+    public async Task CafeMutationIdempotencyGuard_InvalidHeaderDoesNotFallBackToBody()
+    {
+        using I3TestDatabaseFixture fx = new();
+        CafeMutationIdempotencyGuard guard = new(fx.ConnectionFactory);
+        DefaultHttpContext http = new();
+        http.Request.Headers["Idempotency-Key"] = "invalid-operation";
+        int calls = 0;
+
+        IResult result = await guard.ExecuteSyncAsync(
+            http, "POST /api/menu/categories", fx.AdminUserId, Guid.NewGuid(),
+            new { name = "Coffee" },
+            _ =>
+            {
+                calls++;
+                return new IdempotentExecutionOutcome(200, new { ok = true });
+            });
+
+        Assert.Equal(StatusCodes.Status400BadRequest,
+            Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
+        Assert.Equal(0, calls);
+    }
+
+    [Fact]
     public async Task CafeMutationIdempotencyGuard_SameOperationIdSamePayload_ReplaysWithoutReexecuting()
     {
         using I3TestDatabaseFixture fx = new();
