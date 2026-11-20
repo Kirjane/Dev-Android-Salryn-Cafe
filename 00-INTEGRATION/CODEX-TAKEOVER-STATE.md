@@ -3,6 +3,68 @@
 Authority: Kirch Ivan Balite, Issue #27 comment `7048261423` (2026-11-21).
 Role: primary Maintainer; bounded preservation/harness writer. No live Swarm.
 
+## Latest checkpoint (2026-11-21)
+
+Candidate source at `59ebdcde85653307ec5aa99ff94684ec69d33382` now contains
+history-preserving merges of PR24/I1, PR25/I3, PR23/I6A and repaired PR26/I7.
+No remote writes or main promotion have occurred during takeover.
+
+Windows scoped runner:
+`pwsh -NoProfile -File scripts/verify-candidate.ps1 -Mode Windows` on exact
+`59ebdcde` completed **FAIL, exit 1**, clean initial/final source identity.
+Artifacts: `artifacts/verification/f397257291fc40ba953bd644fbf55e35/` includes
+machine JSON, raw logs, command/environment identities, TRX and Vitest JSON.
+Solution build succeeded; all five xUnit suites passed (31+9+17+13+8 = 78 tests),
+both frontend suites/builds passed (**MOCKED_UI**; counts in machine report).
+CoreSmoke failed at inherited `LanM8ReactRemoteReadOnlyShellRuntimeChecks.cs:53`,
+which requires obsolete literal `http://127.0.0.1:5299` in API source. It has not
+proved a live Cafe defect. Bounded test-only repair is assigned in new isolated
+`codex-legacy-qa`, branch `codex/cafe-legacy-verification`, base `59ebdcde`;
+owned paths `tests/Salryn.Tests/**`, `tools/Salryn.Tools.CoreSmoke/**`, 3-cycle cap.
+No assertion removal/weakening or production edits authorized in that lane.
+
+Independent reviews and completed repairs:
+
+- Adapter `bf28d49f` + journal test delta `cc3d0d63`: independent scoped PASS;
+  6 adapter tests independently rerun. Added populated event corruption rejection.
+- Integration `1a35431e` wired canonical Cafe catalog and pending semantics and
+  added silent-install PrepareToInstall guard. Review found status/bootstrap WAL
+  mutation and non-resumable interrupted fresh installs; repaired in `c6e9c057`.
+- Reviewer then reproduced hot rollback journal recovery before lineage rejection.
+  `a0f476a2e9b791188f5cdd8d589845edfe2371dd` now performs read-only preflight
+  before writable open, and validates again before WAL. Independent new-fixture
+  proof: DB bytes and journal bytes unchanged; journal retained; SQLite Error8
+  rejection; shell exit0; scoped PASS. Script is in restricted recovery root as
+  `a0f476a2-hotjournal-proof.ps1`. I2 now has 9 passing tests including atomic fresh
+  rollback/retry and unknown-db byte parity. Earlier mixed-source combined run
+  was diagnostic only; later exact-SHA runs supersede it.
+- CI worker `9b351f72` repaired required suite inventories, source binding,
+  platform modes/counts/raw logs/run-produced APK provenance. Review found its
+  expected-negative tests leaked LASTEXITCODE=1. Final `fc0998b5` adds explicit
+  success exit; independent workflow-equivalent wrapper passed 39 assertions,
+  exit0 (**MOCKED_RUNNER**, not application or live GitHub CI proof). Merged into
+  candidate as `59ebdcde`.
+
+Android branch: original source checkpoint full SHA
+`0438c7244abef1e0b670f7cfb1b0b342fb0eaf1c`; reviewed candidate `59ebdcde` merged
+into it as `26bf422651610ccceae13aebfdbbe292ef3239f1` without conflict. Temporary
+Android specialist owns only App.Android/Mobile.Foundation/Mobile.Runtime/I6BTests
+for a bounded 3-cycle compile/test/correctness slice. Preview UI, self-asserted
+lease issuer key, constant boot count and seeded production menu are identified
+as unfinished/unaccepted; no APK/full-cashier acceptance claim exists.
+
+Actual portable factory journal initialized at ignored `.forge/state/journal.db`;
+`HOST-COMPOSITION-01` packet registered PLANNED, hash chain verified and SQLite
+online backup saved. Original persona strings are only schema vocabulary, not
+reactivated workers. The next host mission is not accepted or completed.
+
+Immediate next: close CoreSmoke regression, then host composition/atomic mutation
+idempotency/RBAC/pairing, native Android completion, live UI and full C1–C11 proof
+coverage. Root now pins imported skill/vendor checkout bytes with `.gitattributes`
+because Windows autocrlf otherwise invalidates the exact-byte manifest in a new
+checkout. Validate the adapter from a fresh disposable checkout after this doc
+change. Native hook trust/execution and effective host cap remain NOT RUN.
+
 ## Observed starting state
 
 - Candidate `b803910502dee3b1e5fc7c1b15603427d8e3c9b6`, clean at intake,
