@@ -28,6 +28,13 @@ internal sealed class CafeMutationIdempotencyEndpointFilter : IEndpointFilter
             return await next(context).ConfigureAwait(false);
         }
 
+        // A cached replay must not bypass the local-operator transport boundary.
+        // Individual endpoint permission guards still govern each protected action.
+        if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult deniedTransport)
+        {
+            return deniedTransport;
+        }
+
         // Let unauthenticated requests fall through to endpoint auth guards (401/403) without recording idempotency.
         LocalApiSessionService? sessions = httpContext.RequestServices.GetService<LocalApiSessionService>();
         LocalApiSession? session = null;
