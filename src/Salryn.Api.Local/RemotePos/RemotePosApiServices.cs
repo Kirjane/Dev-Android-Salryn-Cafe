@@ -93,7 +93,7 @@ public sealed class RemotePosApiServices
             lanServices,
             runtimeGate,
             composition.Authentication,
-            composition.UserReadRepository,
+            composition.UserPermissionReadRepository,
             capacityPolicy);
 
         RemotePosPairingGateService pairingGate = new(lanServices, capacityPolicy, lanEntitlements);

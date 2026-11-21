@@ -108,20 +108,20 @@ public sealed class RemotePosOperatorSessionService
     private readonly LanRemoteTransportApiServices _lanServices;
     private readonly RemotePosRuntimeGate _runtimeGate;
     private readonly IAuthenticationService _authentication;
-    private readonly IUserReadRepository _userReadRepository;
+    private readonly IUserPermissionReadRepository _userPermissionReadRepository;
     private readonly RemotePosCapacityPolicy _capacityPolicy;
 
     public RemotePosOperatorSessionService(
         LanRemoteTransportApiServices lanServices,
         RemotePosRuntimeGate runtimeGate,
         IAuthenticationService authentication,
-        IUserReadRepository userReadRepository,
+        IUserPermissionReadRepository userPermissionReadRepository,
         RemotePosCapacityPolicy capacityPolicy)
     {
         _lanServices = lanServices ?? throw new ArgumentNullException(nameof(lanServices));
         _runtimeGate = runtimeGate ?? throw new ArgumentNullException(nameof(runtimeGate));
         _authentication = authentication ?? throw new ArgumentNullException(nameof(authentication));
-        _userReadRepository = userReadRepository ?? throw new ArgumentNullException(nameof(userReadRepository));
+        _userPermissionReadRepository = userPermissionReadRepository ?? throw new ArgumentNullException(nameof(userPermissionReadRepository));
         _capacityPolicy = capacityPolicy ?? throw new ArgumentNullException(nameof(capacityPolicy));
     }
 
@@ -336,14 +336,32 @@ public sealed class RemotePosOperatorSessionService
                 "Remote POS session origin does not match the current request.");
         }
 
-        Result<UserReadModel?> userResult = await _userReadRepository
-            .FindByIdAsync(session.UserId, cancellationToken)
+        return await ValidateCurrentOperatorAsync(session, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task<RemotePosSessionValidation> ValidateCurrentOperatorAsync(
+        RemotePosOperatorSession session, CancellationToken cancellationToken = default)
+    {
+        Result<UserPermissionReadModel?> userResult = await _userPermissionReadRepository
+            .FindByUserIdAsync(session.UserId, cancellationToken)
             .ConfigureAwait(false);
 
         if (userResult.IsFailure || userResult.Value is null || userResult.Value.Status != UserStatus.Active)
         {
             return Invalid(RemotePosSessionState.UserInactive, "RemotePos.UserInactive",
                 "Remote operator user is no longer active.");
+        }
+
+        var current = userResult.Value;
+        if (current.RoleId != session.RoleId ||
+            !string.Equals(current.RoleName, session.RoleName, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(current.Username, session.Username, StringComparison.OrdinalIgnoreCase) ||
+            !IsRemotePosLoginRoleAllowed(current.RoleName) ||
+            !new HashSet<string>(session.Permissions, StringComparer.OrdinalIgnoreCase).SetEquals(current.Permissions))
+        {
+            session.RevokedAtUtc = DateTimeOffset.UtcNow;
+            return Invalid(RemotePosSessionState.SessionRevoked, "RemotePos.OperatorAuthorityChanged",
+                "Remote operator authority changed; sign in again.");
         }
 
         return new RemotePosSessionValidation(true, RemotePosSessionState.Active, "RemotePos.SessionOk",
