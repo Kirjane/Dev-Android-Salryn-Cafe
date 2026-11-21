@@ -14,6 +14,9 @@ namespace Salryn.Api.Local.Services;
 public sealed class CafeMutationIdempotencyGuard
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    internal const string CanonicalCompletionMetadata = "Salryn.Cafe.CanonicalOrderCompletion";
+    private static readonly object OutcomeScopeKey = new();
+    private sealed record OutcomeScope(Guid OperationId, string EndpointKey, Guid ActorUserId, string RequestHash);
 
     private readonly SqliteConnectionFactory _connectionFactory;
     private readonly object _gateSync = new();
@@ -132,9 +135,15 @@ public sealed class CafeMutationIdempotencyGuard
                 existing = FindRecord(operationId);
                 if (existing is not null)
                     return BuildReplayOrConflictResult(httpContext, existing, endpointKey, requestHash);
-                return BuildFencedResult(operationId, endpointKey, actorUserId, requestHash);
+                // Only the canonical completion endpoint may reconstruct an outcome.
+                // Its coordinator independently checks immutable operation evidence and
+                // serializes posting in the same SQLite transaction. Other callbacks
+                // remain fenced until they supply an equivalent reviewed recovery path.
+                if (!CanRecoverCanonicalCompletion(httpContext, operationId, endpointKey, actorUserId, requestHash))
+                    return BuildFencedResult(operationId, endpointKey, actorUserId, requestHash);
             }
 
+            httpContext.Items[OutcomeScopeKey] = new OutcomeScope(operationId, endpointKey, actorUserId, requestHash);
             IdempotentExecutionOutcome outcome = await executeAsync(operationId).ConfigureAwait(false);
             string responseJson = JsonSerializer.Serialize(outcome.Body, JsonOptions);
 
@@ -170,6 +179,7 @@ public sealed class CafeMutationIdempotencyGuard
         }
         finally
         {
+            httpContext.Items.Remove(OutcomeScopeKey);
             gate.Semaphore.Release();
             ReturnGate(operationId, gate);
         }
@@ -192,6 +202,45 @@ public sealed class CafeMutationIdempotencyGuard
             canonicalPayload,
             opId => Task.FromResult(execute(opId)),
             cancellationToken);
+    }
+
+    internal void PersistAtomicOutcome(HttpContext httpContext, Guid operationId,
+        SqliteConnection connection, SqliteTransaction transaction, IdempotentExecutionOutcome outcome)
+    {
+        if (!httpContext.Items.TryGetValue(OutcomeScopeKey, out var value) || value is not OutcomeScope scope ||
+            scope.OperationId != operationId || transaction.Connection != connection ||
+            !string.Equals(Path.GetFullPath(connection.DataSource), Path.GetFullPath(_connectionFactory.DatabasePath),
+                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ||
+            outcome.StatusCode is < 200 or >= 300)
+            throw new InvalidOperationException("Atomic outcome requires the current operation's canonical transaction.");
+        string json = JsonSerializer.Serialize(outcome.Body, JsonOptions);
+        if (!TryInsertRecord(connection, transaction, operationId, scope.EndpointKey, scope.ActorUserId,
+                scope.RequestHash, outcome.StatusCode, json))
+        {
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "SELECT endpoint_key,actor_user_id,request_hash,status_code,response_json FROM cafe_mutation_idempotency WHERE operation_id=$op;";
+            command.Parameters.AddWithValue("$op",operationId.ToString("D"));
+            using var reader = command.ExecuteReader();
+            if (!reader.Read() || reader.GetString(0)!=scope.EndpointKey || reader.GetString(1)!=scope.ActorUserId.ToString("D") ||
+                reader.GetString(2)!=scope.RequestHash || reader.GetInt32(3)!=outcome.StatusCode || reader.GetString(4)!=json)
+                throw new InvalidOperationException("Immutable operation outcome conflicts with transaction result.");
+        }
+    }
+
+    private bool CanRecoverCanonicalCompletion(HttpContext context, Guid operationId, string endpointKey, Guid actor, string hash)
+    {
+        if (endpointKey != "POST /api/cafe/orders/{orderId:guid}/complete" ||
+            context.GetEndpoint()?.Metadata.GetOrderedMetadata<string>().Contains(CanonicalCompletionMetadata) != true)
+            return false;
+        using var connection = OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1 FROM cafe_mutation_execution_fences WHERE operation_id=$op AND endpoint_key=$endpoint AND actor_user_id=$actor AND request_hash=$hash;";
+        command.Parameters.AddWithValue("$op",operationId.ToString("D"));
+        command.Parameters.AddWithValue("$endpoint",endpointKey);
+        command.Parameters.AddWithValue("$actor",actor.ToString("D"));
+        command.Parameters.AddWithValue("$hash",hash);
+        return command.ExecuteScalar() is not null;
     }
 
     private bool TryClaimExecution(Guid operationId, string endpointKey, Guid actorUserId, string requestHash)
@@ -305,7 +354,14 @@ public sealed class CafeMutationIdempotencyGuard
         string responseJson)
     {
         using SqliteConnection connection = OpenConnection();
+        return TryInsertRecord(connection, null, operationId, endpointKey, actorUserId, requestHash, statusCode, responseJson);
+    }
+
+    private static bool TryInsertRecord(SqliteConnection connection, SqliteTransaction? transaction,
+        Guid operationId, string endpointKey, Guid actorUserId, string requestHash, int statusCode, string responseJson)
+    {
         using SqliteCommand cmd = connection.CreateCommand();
+        cmd.Transaction = transaction;
         cmd.CommandText = """
             INSERT OR IGNORE INTO cafe_mutation_idempotency (
                 operation_id,

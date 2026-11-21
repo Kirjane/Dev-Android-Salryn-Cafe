@@ -901,6 +901,7 @@ public sealed class SqliteSaleWriteRepository :
 
         HashSet<Guid> saleItemIds = new();
         long itemTotal = 0;
+        long allocatedDiscountTotal = 0;
 
         foreach (SaleItem item in items)
         {
@@ -918,7 +919,11 @@ public sealed class SqliteSaleWriteRepository :
                     "Sale item IDs must be unique within the sale write request."));
             }
 
-            itemTotal = checked(itemTotal + item.LineTotal.Cents);
+            // C5 stores frozen gross subtotal and allocated item discounts. Legacy
+            // checkout keeps net-line subtotal and separate header discount semantics.
+            itemTotal = checked(itemTotal + item.LineTotal.Cents +
+                (grossSubtotalBeforeAllocatedDiscounts ? item.Discount.Cents : 0));
+            allocatedDiscountTotal = checked(allocatedDiscountTotal + item.Discount.Cents);
         }
 
         if (itemTotal != sale.Subtotal.Cents)
@@ -926,6 +931,13 @@ public sealed class SqliteSaleWriteRepository :
             return Result.Fail(Error.Validation(
                 "Sales.SubtotalMismatch",
                 "Sale subtotal must equal the sum of sale item line totals."));
+        }
+
+        if (grossSubtotalBeforeAllocatedDiscounts && allocatedDiscountTotal != sale.Discount.Cents)
+        {
+            return Result.Fail(Error.Validation(
+                "Sales.AllocatedDiscountMismatch",
+                "C5 allocated item discounts must reconcile to the sale discount."));
         }
 
         HashSet<Guid> paymentIds = new();
