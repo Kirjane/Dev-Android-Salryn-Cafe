@@ -173,7 +173,8 @@ public sealed class HttpSyncOutboxTransport : IP0OutboxTransport
                 outstanding.Count != envelopes.Count ||
                 outstanding.Contains(Guid.Empty) ||
                 dto.Results.Count != envelopes.Count ||
-                dto.Results.Any(r => !outstanding.Remove(r.OperationId)) ||
+                dto.Results.Any(r => r is null || !outstanding.Remove(r.OperationId) ||
+                    (r.Resolution is not null && r.Resolution.OperationId != r.OperationId)) ||
                 outstanding.Count != 0)
             {
                 return new MobilePushOutcome(
@@ -183,10 +184,15 @@ public sealed class HttpSyncOutboxTransport : IP0OutboxTransport
                     "Central response did not acknowledge exactly the submitted operation IDs; local outbox remains pending.");
             }
 
+            Guid[] applied = dto.Results
+                .Where(r => r.Resolution?.IsApplied == true)
+                .Select(r => r.OperationId).ToArray();
+            bool allApplied = applied.Length == envelopes.Count;
             return new MobilePushOutcome(
-                true, false, false, dto.ServerEpoch,
-                dto.Results.Select(r => r.OperationId).ToArray(),
-                Array.Empty<Guid>(), null, null);
+                allApplied, false, false, dto.ServerEpoch,
+                applied, Array.Empty<Guid>(),
+                allApplied ? null : "ERR_SYNC_NOT_APPLIED",
+                allApplied ? null : "Central received operations without applying all business effects; retain unapplied outbox evidence.");
         }
 
         if (resp.StatusCode == HttpStatusCode.Forbidden)
@@ -322,7 +328,7 @@ public sealed class HttpSyncOutboxTransport : IP0OutboxTransport
     private sealed record ChallengeDto(string ChallengeId, string NonceBase64, DateTimeOffset ExpiresAtUtc);
     private sealed record TokenDto(string AccessToken, DateTimeOffset AccessTokenExpiresAtUtc, long ServerEpoch, MobileSignedOfflineLease OfflineLease);
     private sealed record BootstrapDto(string ProductId, long ServerEpoch, long HeadSequence, SyncBootstrapSnapshotV1 Snapshot);
-    private sealed record PushResultItemDto(Guid OperationId, bool IsDuplicateReplay);
+    private sealed record PushResultItemDto(Guid OperationId, bool IsDuplicateReplay, SyncOperationFinalResolutionV1? Resolution);
     private sealed record PushRespDto(Guid CentralInstanceId, long ServerEpoch, long HeadSequence, IReadOnlyList<PushResultItemDto> Results);
     private sealed record FencedDto(string? ErrorCode, string? ErrorMessage, long ServerEpoch, IReadOnlyList<Guid>? QuarantinedOperationIds);
     private sealed record PullRespDto(string ProductId, long ServerEpoch, SyncChangeFeedPageV1 Page);

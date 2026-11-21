@@ -56,7 +56,7 @@ public sealed class MobilePushReceiptBoundaryTests
     }
 
     [Fact]
-    public async Task Push_AcceptsExactReceiptSetWithoutClaimingBusinessProjection()
+    public async Task Push_RequiresBusinessResolutionEvenForExactReceiptSet()
     {
         Guid device = Guid.NewGuid(), tenant = Guid.NewGuid(), store = Guid.NewGuid();
         SyncOperationEnvelopeV1 first = Envelope(device, store, Guid.NewGuid(), 1);
@@ -64,11 +64,9 @@ public sealed class MobilePushReceiptBoundaryTests
         using HttpClient http = Client(Reply(second.OperationId, first.OperationId));
         MobilePushOutcome outcome = await Transport(http, device, tenant, store).PushBatchAsync([first, second]);
 
-        Assert.True(outcome.IsSuccess);
-        Assert.Null(outcome.ErrorCode);
-        Assert.Equal(2, outcome.AppliedOperationIds.Count);
-        Assert.Contains(first.OperationId, outcome.AppliedOperationIds);
-        Assert.Contains(second.OperationId, outcome.AppliedOperationIds);
+        Assert.False(outcome.IsSuccess);
+        Assert.Equal("ERR_SYNC_NOT_APPLIED", outcome.ErrorCode);
+        Assert.Empty(outcome.AppliedOperationIds);
         // No canonical sales or projections are asserted by this HTTP-only fixture.
     }
 
@@ -85,6 +83,60 @@ public sealed class MobilePushReceiptBoundaryTests
         Assert.False(result.Acknowledged);
         Assert.Contains("ERR_SYNC_ACK_MISMATCH", result.Message);
     }
+
+    [Theory]
+    [InlineData("NeedsReview")]
+    [InlineData("Rejected")]
+    [InlineData("Received")]
+    [InlineData("applied")]
+    public async Task Push_NonAppliedResolutionRetainsPendingEvidenceAfterRestart(string status)
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"salryn-ack-{Guid.NewGuid():N}.db");
+        P0LocalStore local = new(path);
+        await local.InitializeAsync();
+        await local.WriteProofOperationAsync(Guid.NewGuid(), Salryn.Core.ValueObjects.Money.FromCents(100), false);
+        P0OutboxItem item = Assert.Single(await local.GetPendingAsync());
+        Guid device = Guid.NewGuid(), tenant = Guid.NewGuid(), store = Guid.NewGuid();
+        using HttpClient http = Client(ResolutionReply((item.OperationId, status)));
+        P0DispatchSummary result = await new P0OutboxDispatcher(local, Transport(http, device, tenant, store)).DispatchPendingAsync();
+        Assert.Equal(0, result.Acknowledged);
+        P0LocalStore restarted = new(path);
+        P0OutboxItem retained = Assert.Single(await restarted.GetPendingAsync());
+        Assert.Equal(item.OperationId, retained.OperationId);
+        Assert.Null(retained.AcknowledgedAtUtc);
+        Assert.Equal(new P0StoreCounts(1, 1, 1), await restarted.ReadCountsAsync());
+    }
+
+    [Fact]
+    public async Task Push_MixedResolutionsOnlyExposeBusinessAppliedIds()
+    {
+        Guid device = Guid.NewGuid(), tenant = Guid.NewGuid(), store = Guid.NewGuid();
+        var first = Envelope(device, store, Guid.NewGuid(), 1);
+        var second = Envelope(device, store, Guid.NewGuid(), 2);
+        using HttpClient http = Client(ResolutionReply((first.OperationId, "Applied"), (second.OperationId, "NeedsReview")));
+        var outcome = await Transport(http, device, tenant, store).PushBatchAsync([first, second]);
+        Assert.False(outcome.IsSuccess);
+        Assert.Equal(first.OperationId, Assert.Single(outcome.AppliedOperationIds));
+    }
+
+    [Fact]
+    public async Task Push_ExplicitAppliedResolutionAllowsAcknowledgment()
+    {
+        Guid device = Guid.NewGuid(), tenant = Guid.NewGuid(), store = Guid.NewGuid();
+        var envelope = Envelope(device, store, Guid.NewGuid(), 1);
+        using HttpClient http = Client(ResolutionReply((envelope.OperationId, "Applied")));
+        var outcome = await Transport(http, device, tenant, store).PushBatchAsync([envelope]);
+        Assert.True(outcome.IsSuccess);
+        Assert.Equal(envelope.OperationId, Assert.Single(outcome.AppliedOperationIds));
+    }
+
+    private static string ResolutionReply(params (Guid Id, string Status)[] items) =>
+        JsonSerializer.Serialize(new Salryn.Sync.Central.Server.PushOperationsResponse(
+            Guid.NewGuid(), 1, 3,
+            items.Select(x => new Salryn.Sync.Central.Server.PushOperationResultDto(
+                x.Id, false,
+                new SyncOperationFinalResolutionV1(x.Id, 1, DateTimeOffset.UtcNow, x.Status,
+                    "DOMAIN_PROCESSOR_UNAVAILABLE", "{}", DateTimeOffset.UtcNow), null)).ToArray()));
 
     private static SyncOperationEnvelopeV1 Envelope(Guid device, Guid store, Guid operation, long sequence) =>
         SyncProtocolV1.CreateEnvelope(
