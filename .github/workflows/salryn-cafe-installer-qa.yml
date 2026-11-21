@@ -11,6 +11,7 @@ jobs:
   windows-installer-acceptance:
     name: Windows Installer Acceptance (Elevated Disposable Runner)
     runs-on: windows-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout source
         uses: actions/checkout@v4

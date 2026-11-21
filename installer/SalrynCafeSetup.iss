@@ -120,12 +120,12 @@ begin
   begin
     if IsProtectedRetailInstallPath(WizardDirValue) then
     begin
-      MsgBox(
+      SuppressibleMsgBox(
         'Salryn Cafe cannot be installed inside the protected Salryn General Merchandise folder:' + #13#10 +
         ExpandConstant('{autopf}\Kirjane Information Technology Services') + #13#10 + #13#10 +
         'Please use the independent Salryn Cafe folder:' + #13#10 +
         ExpandConstant('{autopf}\Kirjane Information Technology Services - Cafe'),
-        mbError, MB_OK);
+        mbError, MB_OK, IDOK);
       Result := False;
     end;
   end;
@@ -171,10 +171,10 @@ begin
   Bootstrapper := ExpandConstant('{tmp}\MicrosoftEdgeWebview2Setup.exe');
   if not FileExists(Bootstrapper) then
   begin
-    MsgBox(
+    SuppressibleMsgBox(
       'Salryn Cafe setup could not find the Microsoft Edge WebView2 Runtime bootstrapper.' + #13#10 +
       'Re-download Salryn-Cafe-Setup.exe from Kirjane Information Technology Services and try again.',
-      mbError, MB_OK);
+      mbError, MB_OK, IDOK);
     Result := False;
     Exit;
   end;
@@ -184,20 +184,20 @@ begin
 
   if not Exec(Bootstrapper, '/silent /install', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
   begin
-    MsgBox(
+    SuppressibleMsgBox(
       'Salryn Cafe could not start the WebView2 Runtime installer.' + #13#10 +
       'Check your internet connection and run Salryn-Cafe-Setup.exe again as administrator.',
-      mbError, MB_OK);
+      mbError, MB_OK, IDOK);
     Result := False;
     Exit;
   end;
 
   if ResultCode <> 0 then
   begin
-    MsgBox(
+    SuppressibleMsgBox(
       'Microsoft Edge WebView2 Runtime installation failed (exit code ' + IntToStr(ResultCode) + ').' + #13#10 +
       'Salryn Cafe needs WebView2 to display the app window.',
-      mbError, MB_OK);
+      mbError, MB_OK, IDOK);
     Result := False;
     Exit;
   end;
@@ -209,10 +209,10 @@ begin
 
   if not IsWebView2RuntimeInstalled then
   begin
-    MsgBox(
+    SuppressibleMsgBox(
       'WebView2 Runtime setup finished, but Salryn Cafe could not confirm the runtime is installed.' + #13#10 +
       'Reboot this PC, then open Salryn Cafe from the Start Menu or desktop shortcut.',
-      mbError, MB_OK);
+      mbError, MB_OK, IDOK);
     Result := False;
     Exit;
   end;
