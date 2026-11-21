@@ -23,7 +23,7 @@ test.describe("MOCKED_UI Keyboard, Navigation, Accessibility & UX Defect Verific
     const navLabels = [
       "POS Checkout",
       "Sales & Receipts",
-      "Utang Ledger",
+      "Accounts Receivable",
       "Dashboard",
       "Reports",
       "Product Catalog",
@@ -127,7 +127,7 @@ test.describe("MOCKED_UI Keyboard, Navigation, Accessibility & UX Defect Verific
     expect(requestUrl.searchParams.get("to")).toBe("2026-04-19T23:59:59.9999999+08:00");
   });
 
-  test("UX-001 & UX-002 FIXED: Utang mode disables Cash tendered and never shows false 'Insufficient cash' warning", async ({
+  test("UX-001 & UX-002 FIXED: Utang mode hides Cash tendered and never shows false 'Insufficient cash' warning", async ({
     page,
   }) => {
     await installMockSalrynApi(page, { persona: "admin", hasOpenShift: true, u1Entitled: true });
@@ -137,11 +137,11 @@ test.describe("MOCKED_UI Keyboard, Navigation, Accessibility & UX Defect Verific
     await page.getByRole("button", { name: "Add" }).first().click();
     await expect(page.getByText("PHP 285.00").first()).toBeVisible();
 
-    const paymentSelect = page.getByLabel("Sale payment");
+    const paymentSelect = page.getByLabel("Payment method");
     await paymentSelect.selectOption("Utang");
 
-    // In Utang mode with 0 cash tendered, Cash tendered is disabled and no false 'Insufficient cash' warning is shown
-    await expect(page.getByLabel("Cash tendered")).toBeDisabled();
+    // In Utang mode, Cash tendered is absent and no false 'Insufficient cash' warning is shown
+    await expect(page.getByLabel("Cash tendered")).toHaveCount(0);
     await expect(page.getByText("Insufficient cash")).toHaveCount(0);
     await expect(page.getByText("Utang credit balance")).toBeVisible();
   });
@@ -219,7 +219,7 @@ test.describe("MOCKED_UI Keyboard, Navigation, Accessibility & UX Defect Verific
 
     // Browser back returns to owner-reports
     await page.goBack();
-    await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Reports", exact: true })).toBeVisible();
     await expect(page).toHaveURL(/page=owner-reports/);
   });
 
@@ -227,7 +227,7 @@ test.describe("MOCKED_UI Keyboard, Navigation, Accessibility & UX Defect Verific
     await page.setViewportSize({ width: 390, height: 844 });
     await installMockSalrynApi(page, { persona: "admin", u1Entitled: true });
     await page.goto("/?page=owner-reports");
-    await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Reports", exact: true })).toBeVisible();
     await expect(page.getByText("Sales trend", { exact: true })).toBeVisible();
     await expect(page.locator("aside")).toBeHidden();
     await page.screenshot({ path: testInfo.outputPath("mobile-reports-drawer-closed.png"), fullPage: true });
