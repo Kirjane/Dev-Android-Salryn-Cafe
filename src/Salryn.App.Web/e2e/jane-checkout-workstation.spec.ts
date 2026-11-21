@@ -27,7 +27,7 @@ for (const viewport of desktopViewports) {
 
     const payment = paymentCard(page);
     const review = payment.getByRole("button", { name: "Review Checkout" });
-    await expect(payment.getByLabel("Sale payment")).toBeVisible();
+    await expect(payment.getByLabel("Payment method")).toBeVisible();
     await expect(review).toBeVisible();
     await expect(review).toBeDisabled(); // Empty cart: visible, but not ready.
     await expect(page.getByRole("heading", { name: "Payment mode" })).toHaveCount(0);
@@ -57,11 +57,11 @@ test("@jane-layout U1 payment modes stay inside the payment card and preserve te
   await page.goto("/?page=checkout");
   await page.getByRole("button", { name: "Add", exact: true }).first().click();
   const payment = paymentCard(page);
-  const mode = payment.getByLabel("Sale payment");
+  const mode = payment.getByLabel("Payment method");
   const tender = payment.getByLabel("Cash tendered");
 
   await mode.selectOption("Utang");
-  await expect(tender).toBeDisabled();
+  await expect(tender).toHaveCount(0);
   await expect(payment.getByLabel("Customer")).toBeVisible();
   await expect(payment.getByLabel("Due date")).toBeVisible();
   await expect(payment.getByText("Utang credit balance")).toBeVisible();
@@ -82,7 +82,7 @@ test("@jane-layout U1 payment modes stay inside the payment card and preserve te
 test("@jane-layout no U1 entitlement means no credit-sale choices", async ({ page }) => {
   await installMockSalrynApi(page, { persona: "admin", hasOpenShift: true, u1Entitled: false });
   await page.goto("/?page=checkout");
-  const mode = paymentCard(page).getByLabel("Sale payment");
+  const mode = paymentCard(page).getByLabel("Payment method");
   await expect(mode.locator('option[value="Cash"]')).toHaveCount(1);
   await expect(mode.locator('option[value="Utang"]')).toHaveCount(0);
   await expect(mode.locator('option[value="CashUtang"]')).toHaveCount(0);
@@ -107,7 +107,7 @@ for (const viewport of [{ width: 1024, height: 768 }, { width: 390, height: 844 
     await installMockSalrynApi(page, { persona: "admin", hasOpenShift: true, u1Entitled: true });
     await page.goto("/?page=checkout");
     await page.getByRole("button", { name: "Add", exact: true }).first().click();
-    await expect(paymentCard(page).getByLabel("Sale payment")).toBeVisible();
+    await expect(paymentCard(page).getByLabel("Payment method")).toBeVisible();
     const review = paymentCard(page).getByRole("button", { name: "Review Checkout" });
     await review.scrollIntoViewIfNeeded();
     await expect(review).toBeVisible();
