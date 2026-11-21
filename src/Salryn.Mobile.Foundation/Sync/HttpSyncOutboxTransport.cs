@@ -60,14 +60,17 @@ public sealed class HttpSyncOutboxTransport : IP0OutboxTransport
 
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
     private readonly HttpClient _http;
+    private readonly Func<Guid, SyncOperationEnvelopeV1?>? _durableEnvelopeProvider;
     private readonly Func<string?> _bearerTokenProvider;
     private readonly Func<(Guid DeviceId, Guid TenantId, Guid StoreId, long KnownEpoch)> _scopeProvider;
 
     public HttpSyncOutboxTransport(
         HttpClient httpClient,
         Func<string?> bearerTokenProvider,
-        Func<(Guid DeviceId, Guid TenantId, Guid StoreId, long KnownEpoch)> scopeProvider)
+        Func<(Guid DeviceId, Guid TenantId, Guid StoreId, long KnownEpoch)> scopeProvider,
+        Func<Guid, SyncOperationEnvelopeV1?>? durableEnvelopeProvider = null)
     {
+        _durableEnvelopeProvider = durableEnvelopeProvider;
         _http = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         if (_http.BaseAddress is not null &&
             !string.Equals(_http.BaseAddress.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
@@ -248,24 +251,16 @@ public sealed class HttpSyncOutboxTransport : IP0OutboxTransport
     public async Task<P0TransportResult> SendAsync(P0OutboxItem item, CancellationToken cancellationToken = default)
     {
         (Guid deviceId, _, Guid storeId, _) = _scopeProvider();
-        string payloadJson = JsonSerializer.Serialize(new
+        // Transport must replay the immutable envelope already committed by the canonical
+        // SqliteSyncOutboxStore, including actor, timestamp, payload and allocated sequence.
+        // P0 rows alone contain no authoritative actor or device-local operation identity.
+        SyncOperationEnvelopeV1? env = _durableEnvelopeProvider?.Invoke(item.OperationId);
+        if (env is null || env.OperationId != item.OperationId || env.DeviceId != deviceId ||
+            env.StoreId != storeId || env.AggregateId != item.BusinessId ||
+            !SyncProtocolV1.Validate(env).IsValid)
         {
-            businessId = item.BusinessId,
-            attemptCount = item.AttemptCount
-        }, JsonOpts);
-
-        SyncOperationEnvelopeV1 env = SyncProtocolV1.CreateEnvelope(
-            deviceId: deviceId,
-            storeId: storeId,
-            actorUserId: deviceId,
-            localSequence: Math.Max(1, item.AttemptCount + 1),
-            operationType: "mobile.p0.operation.v1",
-            schemaVersion: 1,
-            aggregateId: item.BusinessId,
-            baseVersion: null,
-            occurredAtLocal: DateTimeOffset.UtcNow,
-            payloadJson: payloadJson,
-            operationId: item.OperationId);
+            return P0TransportResult.Fail("ERR_SYNC_DURABLE_ENVELOPE_REQUIRED: A matching canonical persisted envelope is required before sending.");
+        }
 
         MobilePushOutcome outcome = await PushBatchAsync([env], cancellationToken).ConfigureAwait(false);
         return outcome.IsSuccess

@@ -78,6 +78,9 @@ public sealed class MobilePushReceiptBoundaryTests
         HttpSyncOutboxTransport transport = Transport(http, device, tenant, store);
         P0OutboxItem item = new(Guid.NewGuid(), Guid.NewGuid(), P0LocalStore.Pending, 0, null, null);
 
+        transport = new(http, () => "synthetic-token", () => (device, tenant, store, 1L),
+            id => SyncProtocolV1.CreateEnvelope(device, store, device, 1, "mobile.p0.operation.v1", 1,
+                item.BusinessId, null, DateTimeOffset.UtcNow, "{}", id));
         P0TransportResult result = await transport.SendAsync(item);
 
         Assert.False(result.Acknowledged);
@@ -98,7 +101,10 @@ public sealed class MobilePushReceiptBoundaryTests
         P0OutboxItem item = Assert.Single(await local.GetPendingAsync());
         Guid device = Guid.NewGuid(), tenant = Guid.NewGuid(), store = Guid.NewGuid();
         using HttpClient http = Client(ResolutionReply((item.OperationId, status)));
-        P0DispatchSummary result = await new P0OutboxDispatcher(local, Transport(http, device, tenant, store)).DispatchPendingAsync();
+        var transport = new HttpSyncOutboxTransport(http, () => "synthetic-token", () => (device, tenant, store, 1L),
+            id => SyncProtocolV1.CreateEnvelope(device, store, device, 1, "mobile.p0.operation.v1", 1,
+                item.BusinessId, null, DateTimeOffset.UtcNow, "{}", id));
+        P0DispatchSummary result = await new P0OutboxDispatcher(local, transport).DispatchPendingAsync();
         Assert.Equal(0, result.Acknowledged);
         P0LocalStore restarted = new(path);
         P0OutboxItem retained = Assert.Single(await restarted.GetPendingAsync());
@@ -137,6 +143,17 @@ public sealed class MobilePushReceiptBoundaryTests
                 x.Id, false,
                 new SyncOperationFinalResolutionV1(x.Id, 1, DateTimeOffset.UtcNow, x.Status,
                     "DOMAIN_PROCESSOR_UNAVAILABLE", "{}", DateTimeOffset.UtcNow), null)).ToArray()));
+
+    [Fact]
+    public async Task LegacySend_WithoutPersistedEnvelopeFailsBeforeNetwork()
+    {
+        Guid device = Guid.NewGuid(), tenant = Guid.NewGuid(), store = Guid.NewGuid();
+        using HttpClient http = Client("not-a-receipt");
+        var item = new P0OutboxItem(Guid.NewGuid(), Guid.NewGuid(), P0LocalStore.Pending, 0, null, null);
+        var outcome = await Transport(http, device, tenant, store).SendAsync(item);
+        Assert.False(outcome.Acknowledged);
+        Assert.Contains("ERR_SYNC_DURABLE_ENVELOPE_REQUIRED", outcome.Message);
+    }
 
     private static SyncOperationEnvelopeV1 Envelope(Guid device, Guid store, Guid operation, long sequence) =>
         SyncProtocolV1.CreateEnvelope(
