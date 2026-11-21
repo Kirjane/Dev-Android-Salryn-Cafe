@@ -28,7 +28,8 @@ public sealed class SqliteCafeOrderCompletionCoordinator : SqliteRepositoryBase
     }
 
     public Result<CafeOrderCompletionResult> Complete(
-        CafeOrderCompletionMutation mutation)
+        CafeOrderCompletionMutation mutation,
+        Action<SqliteConnection, SqliteTransaction, CafeOrderCompletionResult>? persistOutcome = null)
     {
         string? validation = ValidateMutation(mutation);
         if (validation is not null)
@@ -74,6 +75,7 @@ public sealed class SqliteCafeOrderCompletionCoordinator : SqliteRepositoryBase
                 TryReplay(connection, transaction, mutation);
             if (replay is not null)
             {
+                if (replay.IsSuccess) persistOutcome?.Invoke(connection, transaction, replay.Value);
                 transaction.Commit();
                 return replay;
             }
@@ -554,15 +556,13 @@ public sealed class SqliteCafeOrderCompletionCoordinator : SqliteRepositoryBase
                     orderJson,
                     mutation.CompletionOperationId));
 
+            var committed = new CafeOrderCompletionResult(
+                mutation.OrderId, resultingVersion, saleId, receipt.ReceiptNumber, false);
+            // Outcome, canonical ledgers, lifecycle and outbox share this commit.
+            // A response persistence fault rolls the entire operation back.
+            persistOutcome?.Invoke(connection, transaction, committed);
             transaction.Commit();
-
-            return Result<CafeOrderCompletionResult>.Success(
-                new CafeOrderCompletionResult(
-                    mutation.OrderId,
-                    resultingVersion,
-                    saleId,
-                    receipt.ReceiptNumber,
-                    false));
+            return Result<CafeOrderCompletionResult>.Success(committed);
         }
         catch (OrderCompletionValidationException ex)
         {
@@ -632,6 +632,16 @@ public sealed class SqliteCafeOrderCompletionCoordinator : SqliteRepositoryBase
                 Error.Conflict(
                     "CafeOrder.CompletionOperationConflict",
                     "Completion OperationId is already bound to a different SaleCommitted operation."));
+        }
+
+        SyncOutboxItem? completionEvidence = _outbox.Find(connection, transaction, mutation.CompletionOperationId);
+        if (completionEvidence is null || completionEvidence.Envelope.DeviceId != mutation.DeviceId ||
+            completionEvidence.Envelope.StoreId != mutation.StoreId || completionEvidence.Envelope.ActorUserId != mutation.ActorUserId ||
+            completionEvidence.Envelope.AggregateId != mutation.OrderId || completionEvidence.Envelope.BaseVersion != mutation.ExpectedVersion)
+        {
+            return Result<CafeOrderCompletionResult>.Fail(Error.Conflict(
+                "CafeOrder.CompletionReplayAuthorityConflict",
+                "Completion retry must match the original operator, device, store, order and version."));
         }
 
         SyncOutboxItem? saleOutbox =

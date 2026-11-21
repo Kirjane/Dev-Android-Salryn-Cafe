@@ -1,4 +1,5 @@
 using Salryn.Api.Local.Auth;
+using Salryn.Api.Local.Services;
 using Salryn.Composition.Local;
 using Salryn.Core.Common;
 using Salryn.Core.Deployment;
@@ -422,10 +423,13 @@ internal static class LocalCafeOrderEndpoints
                 Fees = fees
             };
 
-            return ToResult(
-                composition.CafeOrderCompletion.Complete(
-                    mutation));
-        });
+            var guard = httpContext.RequestServices.GetRequiredService<CafeMutationIdempotencyGuard>();
+            var result = composition.CafeOrderCompletion.Complete(mutation,
+                (connection, transaction, committed) => guard.PersistAtomicOutcome(
+                    httpContext, mutation.CompletionOperationId, connection, transaction,
+                    new IdempotentExecutionOutcome(200, committed with { Idempotent = false })));
+            return result.IsSuccess ? Results.Ok(result.Value with { Idempotent = false }) : ToError(result.ErrorDetail);
+        }).WithMetadata(CafeMutationIdempotencyGuard.CanonicalCompletionMetadata);
 
         return app;
     }
