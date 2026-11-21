@@ -125,7 +125,7 @@ public sealed class CafeCentralConnection
     private void AssertNoRetainedOperations()
     {
         using var connection=composition.ConnectionFactory.CreateConnection();connection.Open();using var command=connection.CreateCommand();
-        command.CommandText="SELECT (SELECT COUNT(*) FROM sync_outbox)+(SELECT COUNT(*) FROM cafe_orders)+(SELECT COUNT(*) FROM sales)+(SELECT COUNT(*) FROM cash_movements)+(SELECT COUNT(*) FROM cashier_sessions)+(SELECT COUNT(*) FROM payments)+(SELECT COUNT(*) FROM accounts_receivable_entries)+(SELECT COUNT(*) FROM stock_movements)+(SELECT COUNT(*) FROM cafe_bookings)+(SELECT COUNT(*) FROM cafe_deliveries)+(SELECT COUNT(*) FROM cafe_incidents)+(SELECT COUNT(*) FROM cafe_attendance_events)+(SELECT COUNT(*) FROM ingredient_stock_movements);";
+        command.CommandText="SELECT (SELECT COUNT(*) FROM sync_outbox)+(SELECT COUNT(*) FROM cafe_orders)+(SELECT COUNT(*) FROM sales)+(SELECT COUNT(*) FROM cash_movements)+(SELECT COUNT(*) FROM cashier_sessions)+(SELECT COUNT(*) FROM payments)+(SELECT COUNT(*) FROM accounts_receivable_entries)+(SELECT COUNT(*) FROM stock_movements)+(SELECT COUNT(*) FROM cafe_bookings)+(SELECT COUNT(*) FROM cafe_delivery_fulfillments)+(SELECT COUNT(*) FROM cafe_incidents)+(SELECT COUNT(*) FROM cafe_attendance_events)+(SELECT COUNT(*) FROM ingredient_stock_movements);";
         if(Convert.ToInt64(command.ExecuteScalar())!=0)throw new InvalidOperationException("Bind Central device before opening any drawer or creating operations; existing identities are preserved.");
     }
     private void BindApprovedTerminal(CafeCentralConfiguration config)
@@ -135,7 +135,7 @@ public sealed class CafeCentralConnection
         string? current=command.ExecuteScalar() as string;
         if(current!=config.DeviceId!.Value.ToString("D"))
         {
-            command.CommandText="SELECT (SELECT COUNT(*) FROM sync_outbox)+(SELECT COUNT(*) FROM cafe_orders)+(SELECT COUNT(*) FROM sales)+(SELECT COUNT(*) FROM cash_movements)+(SELECT COUNT(*) FROM cashier_sessions)+(SELECT COUNT(*) FROM payments)+(SELECT COUNT(*) FROM accounts_receivable_entries)+(SELECT COUNT(*) FROM stock_movements)+(SELECT COUNT(*) FROM cafe_bookings)+(SELECT COUNT(*) FROM cafe_deliveries)+(SELECT COUNT(*) FROM cafe_incidents)+(SELECT COUNT(*) FROM cafe_attendance_events)+(SELECT COUNT(*) FROM ingredient_stock_movements);";
+            command.CommandText="SELECT (SELECT COUNT(*) FROM sync_outbox)+(SELECT COUNT(*) FROM cafe_orders)+(SELECT COUNT(*) FROM sales)+(SELECT COUNT(*) FROM cash_movements)+(SELECT COUNT(*) FROM cashier_sessions)+(SELECT COUNT(*) FROM payments)+(SELECT COUNT(*) FROM accounts_receivable_entries)+(SELECT COUNT(*) FROM stock_movements)+(SELECT COUNT(*) FROM cafe_bookings)+(SELECT COUNT(*) FROM cafe_delivery_fulfillments)+(SELECT COUNT(*) FROM cafe_incidents)+(SELECT COUNT(*) FROM cafe_attendance_events)+(SELECT COUNT(*) FROM ingredient_stock_movements);";
             if(Convert.ToInt64(command.ExecuteScalar())!=0)throw new InvalidOperationException("Existing operation identities prevent device rebinding.");
             command.CommandText="UPDATE deployment_identity SET terminal_id=$device,updated_at=$at WHERE store_id=$store;";
             command.Parameters.AddWithValue("$device",config.DeviceId.Value.ToString("D"));command.Parameters.AddWithValue("$at",DateTimeOffset.UtcNow.ToString("O"));
