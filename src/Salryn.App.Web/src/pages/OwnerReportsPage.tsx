@@ -1,6 +1,7 @@
 import { CafeManagementReportsPanel } from "./CafeManagementReportsPanel";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { ApiError } from "../api/http";
 import {
   analyticsExportUrl,
   fetchAnalyticsOverview,
@@ -69,6 +70,10 @@ function presetRange(preset: Preset) {
   ];
 }
 
+function isForbidden(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 403;
+}
+
 function Metric({
   label,
   value,
@@ -81,32 +86,40 @@ function Metric({
   onOpen?: () => void;
 }) {
   const delta = prior == null || value == null ? null : value - prior;
+  const content = (
+    <>
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+      <p className="mt-2 text-2xl font-bold tabular-nums text-slate-950">
+        {peso(value)}
+      </p>
+      {delta != null ? (
+        <p
+          className={`mt-1 text-xs font-medium tabular-nums ${
+            delta >= 0 ? "text-emerald-700" : "text-rose-700"
+          }`}
+        >
+          {delta >= 0 ? "+" : ""}
+          {peso(delta)} vs equal prior period
+        </p>
+      ) : null}
+    </>
+  );
   return (
     <Card>
       <CardBody>
-        <button
-          type="button"
-          className="w-full text-left"
-          onClick={onOpen}
-          disabled={!onOpen}
-        >
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            {label}
-          </p>
-          <p className="mt-2 text-2xl font-bold tabular-nums text-slate-950">
-            {peso(value)}
-          </p>
-          {delta != null ? (
-            <p
-              className={`mt-1 text-xs font-medium tabular-nums ${
-                delta >= 0 ? "text-emerald-700" : "text-rose-700"
-              }`}
-            >
-              {delta >= 0 ? "+" : ""}
-              {peso(delta)} vs equal prior period
-            </p>
-          ) : null}
-        </button>
+        {onOpen ? (
+          <button
+            type="button"
+            className="w-full text-left"
+            onClick={onOpen}
+          >
+            {content}
+          </button>
+        ) : (
+          <div className="w-full text-left">{content}</div>
+        )}
       </CardBody>
     </Card>
   );
@@ -141,10 +154,12 @@ function SummaryStat({
 function Bars({
   title,
   rows,
+  error,
   onSelect,
 }: {
   title: string;
   rows: { label: string; value: number }[];
+  error?: string;
   onSelect?: (label: string) => void;
 }) {
   const max = Math.max(1, ...rows.map((row) => row.value));
@@ -154,7 +169,11 @@ function Bars({
         <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardBody>
-        {rows.length === 0 ? (
+        {error ? (
+          <Alert tone="danger" title="Category classification unavailable">
+            {error}
+          </Alert>
+        ) : rows.length === 0 ? (
           <p className="text-sm text-slate-500">
             No completed sales in this period.
           </p>
@@ -431,14 +450,49 @@ export function OwnerReportsPage({
                 />
                 <SummaryStat
                   label="AR outstanding"
-                  value={ar.data ? peso(ar.data.outstandingCents) : "Entitlement required"}
-                  note={ar.data ? "Open receivable stock at the report boundary." : "Requires Receivables.View and signed U1 entitlement."}
-                  tone={ar.data && ar.data.outstandingCents > 0 ? "warning" : "neutral"}
+                  value={
+                    ar.data
+                      ? peso(ar.data.outstandingCents)
+                      : ar.isLoading
+                        ? "Loading..."
+                        : isForbidden(ar.error)
+                          ? "Entitlement required"
+                          : "Unavailable"
+                  }
+                  note={
+                    ar.data
+                      ? "Open receivable stock at the report boundary."
+                      : ar.isLoading
+                        ? "Loading Accounts Receivable summary..."
+                        : isForbidden(ar.error)
+                          ? "Requires Receivables.View and signed U1 entitlement."
+                          : (ar.error as Error | null)?.message || "Failed to load AR analytics."
+                  }
+                  tone={
+                    ar.data && ar.data.outstandingCents > 0
+                      ? "warning"
+                      : ar.isError && !isForbidden(ar.error)
+                        ? "warning"
+                        : "neutral"
+                  }
                 />
                 <SummaryStat
                   label="AR collections"
-                  value={ar.data ? peso(ar.data.collectionsInPeriodCents) : "Entitlement required"}
-                  note="Collections received during the selected period; not sales cash."
+                  value={
+                    ar.data
+                      ? peso(ar.data.collectionsInPeriodCents)
+                      : ar.isLoading
+                        ? "Loading..."
+                        : isForbidden(ar.error)
+                          ? "Entitlement required"
+                          : "Unavailable"
+                  }
+                  note={
+                    ar.isError && !isForbidden(ar.error)
+                      ? ((ar.error as Error | null)?.message || "Failed to load AR collections.")
+                      : "Collections received during the selected period; not sales cash."
+                  }
+                  tone={ar.isError && !isForbidden(ar.error) ? "warning" : "neutral"}
                 />
               </div>
             </CardBody>
@@ -504,10 +558,16 @@ export function OwnerReportsPage({
                 <CardTitle>Sales trend</CardTitle>
               </CardHeader>
               <CardBody>
-                <SalesTrendChart
-                  points={trend.data?.points ?? []}
-                  onSelectDay={(day) => onOpenSales?.(day, day)}
-                />
+                {trend.isError ? (
+                  <Alert tone="danger" title="Sales trend unavailable">
+                    {(trend.error as Error).message}
+                  </Alert>
+                ) : (
+                  <SalesTrendChart
+                    points={trend.data?.points ?? []}
+                    onSelectDay={(day) => onOpenSales?.(day, day)}
+                  />
+                )}
               </CardBody>
             </Card>
 
@@ -516,7 +576,13 @@ export function OwnerReportsPage({
                 <CardTitle>Payment Mix Breakdown</CardTitle>
               </CardHeader>
               <CardBody>
-                <PaymentMixChart rows={mix.data?.rows ?? []} />
+                {mix.isError ? (
+                  <Alert tone="danger" title="Payment mix unavailable">
+                    {(mix.error as Error).message}
+                  </Alert>
+                ) : (
+                  <PaymentMixChart rows={mix.data?.rows ?? []} />
+                )}
               </CardBody>
             </Card>
 
@@ -525,10 +591,16 @@ export function OwnerReportsPage({
                 <CardTitle>Sales vs Void Audit Activity</CardTitle>
               </CardHeader>
               <CardBody>
-                <SalesVsVoidChart
-                  points={trend.data?.points ?? []}
-                  onSelectDay={(day) => onOpenSales?.(day, day)}
-                />
+                {trend.isError ? (
+                  <Alert tone="danger" title="Sales vs void activity unavailable">
+                    {(trend.error as Error).message}
+                  </Alert>
+                ) : (
+                  <SalesVsVoidChart
+                    points={trend.data?.points ?? []}
+                    onSelectDay={(day) => onOpenSales?.(day, day)}
+                  />
+                )}
               </CardBody>
             </Card>
 
@@ -537,12 +609,19 @@ export function OwnerReportsPage({
                 <CardTitle>Top Products by Revenue</CardTitle>
               </CardHeader>
               <CardBody>
-                <TopProductsChart products={top.data?.products ?? []} />
+                {top.isError ? (
+                  <Alert tone="danger" title="Top products unavailable">
+                    {(top.error as Error).message}
+                  </Alert>
+                ) : (
+                  <TopProductsChart products={top.data?.products ?? []} />
+                )}
               </CardBody>
             </Card>
 
             <Bars
               title="Current category classification"
+              error={top.isError ? (top.error as Error).message : undefined}
               rows={(top.data?.categories ?? []).map((r) => ({
                 label: r.currentCategory,
                 value: r.lineRevenueCents,
@@ -557,10 +636,16 @@ export function OwnerReportsPage({
         </>
       ) : null}
       {ar.isError ? (
-        <Alert tone="warning" title="AR analytics unavailable">
-          AR requires both Receivables.View and the signed U1 entitlement. No
-          zero value is inferred.
-        </Alert>
+        isForbidden(ar.error) ? (
+          <Alert tone="warning" title="AR analytics unavailable">
+            AR requires both Receivables.View and the signed U1 entitlement. No
+            zero value is inferred.
+          </Alert>
+        ) : (
+          <Alert tone="danger" title="AR analytics failed to load">
+            {(ar.error as Error).message}
+          </Alert>
+        )
       ) : ar.data ? (
         <Card>
           <CardHeader>
@@ -580,10 +665,14 @@ export function OwnerReportsPage({
           </CardBody>
         </Card>
       ) : null}
-      {!canViewPayables || ap.isError ? (
+      {!canViewPayables || (ap.isError && isForbidden(ap.error)) ? (
         <Alert tone="warning" title="AP analytics unavailable">
           Accounts Payable aging requires Payables.View. No zero value is
           inferred.
+        </Alert>
+      ) : ap.isError ? (
+        <Alert tone="danger" title="AP analytics failed to load">
+          {(ap.error as Error).message}
         </Alert>
       ) : ap.data ? (
         <Card>

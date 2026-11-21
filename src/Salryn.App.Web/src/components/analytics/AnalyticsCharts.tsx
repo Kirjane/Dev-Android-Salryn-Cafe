@@ -95,6 +95,8 @@ export function SalesTrendChart({ points, onSelectDay }: SalesTrendChartProps) {
 
       <div className="w-full overflow-x-auto">
         <svg
+          role="img"
+          aria-label={`Sales trend chart across ${points.length} store day${points.length === 1 ? "" : "s"} comparing total sales, cash on sales, and utang originated`}
           viewBox={`0 0 ${svgWidth} ${svgHeight}`}
           className="h-auto w-full select-none"
           style={{ minWidth: "520px" }}
@@ -364,6 +366,8 @@ export function SalesVsVoidChart({ points, onSelectDay }: SalesVsVoidChartProps)
 
       <div className="w-full overflow-x-auto">
         <svg
+          role="img"
+          aria-label={`Sales vs void audit activity chart across ${points.length} store day${points.length === 1 ? "" : "s"}`}
           viewBox={`0 0 ${svgWidth} ${svgHeight}`}
           className="h-auto w-full select-none"
           style={{ minWidth: "480px" }}
@@ -513,7 +517,13 @@ export function PaymentMixChart({ rows }: PaymentMixChartProps) {
     <div className="flex flex-col sm:flex-row items-center justify-around gap-6">
       {/* Donut SVG */}
       <div className="relative flex-shrink-0">
-        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <svg
+          role="img"
+          aria-label={`Payment mix breakdown donut chart totaling ${peso(total)} across ${rows.length} payment channel${rows.length === 1 ? "" : "s"}`}
+          width={size}
+          height={size}
+          viewBox={`0 0 ${size} ${size}`}
+        >
           {slices.map((slice) => (
             <path
               key={slice.index}

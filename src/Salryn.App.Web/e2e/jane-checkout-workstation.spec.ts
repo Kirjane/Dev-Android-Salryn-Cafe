@@ -146,25 +146,41 @@ test("@jane-layout locked Cafe tender policy: Cash, Utang, Cash+Utang pass and n
   await expect(page.getByText("Cash sale committed")).toBeVisible();
   await page.getByRole("button", { name: "New Sale (F5)" }).click();
 
-  // Positive Utang sale
+  // Positive Utang sale with due date & note, then New Sale (F5) must reset tender and Utang fields
   await page.getByRole("button", { name: "Add", exact: true }).first().click();
   await mode.selectOption("Utang");
   await payment.getByLabel("Customer (Required for Utang)").selectOption({ index: 1 });
+  await payment.getByLabel("Due date").fill("2026-05-01");
+  await payment.getByLabel("Utang note").fill("Prior customer utang");
   await payment.getByRole("button", { name: "Review Checkout" }).click();
   await page.getByRole("button", { name: "Confirm Sale" }).click();
   await expect(page.getByRole("heading", { name: "Sale Completed" })).toBeVisible();
   await expect(page.getByText("Utang credit sale committed")).toBeVisible();
   await page.getByRole("button", { name: "New Sale (F5)" }).click();
 
-  // Positive Cash + Utang sale
+  await expect(mode).toHaveValue("Cash");
+  await expect(payment.getByLabel("Customer (Required for Utang)")).toHaveCount(0);
+  await mode.selectOption("Utang");
+  await expect(payment.getByLabel("Customer (Required for Utang)")).toHaveValue("");
+  await expect(payment.getByLabel("Due date")).toHaveValue("");
+  await expect(payment.getByLabel("Utang note")).toHaveValue("");
+  await mode.selectOption("Cash");
+
+  // Positive Cash + Utang sale, then New Sale (F5) resets back to Cash with empty fields
   await page.getByRole("button", { name: "Add", exact: true }).first().click();
   await mode.selectOption("CashUtang");
   await payment.getByLabel("Cash tendered").fill("100");
   await payment.getByLabel("Customer (Required for Utang)").selectOption({ index: 1 });
+  await payment.getByLabel("Due date").fill("2026-05-02");
+  await payment.getByLabel("Utang note").fill("Partial utang note");
   await payment.getByRole("button", { name: "Review Checkout" }).click();
   await page.getByRole("button", { name: "Confirm Sale" }).click();
   await expect(page.getByRole("heading", { name: "Sale Completed" })).toBeVisible();
   await expect(page.getByText("Cash + Utang sale committed")).toBeVisible();
+  await page.getByRole("button", { name: "New Sale (F5)" }).click();
+  await expect(mode).toHaveValue("Cash");
+  await expect(payment.getByLabel("Cash tendered")).toHaveValue("");
+  await expect(payment.getByLabel("Customer (Required for Utang)")).toHaveCount(0);
 
   // Negative API boundary check for Checkout & Receivables collections
   for (const method of ["GCash", "Maya", "Debit"]) {
@@ -280,4 +296,32 @@ test("@jane-layout reports hierarchy renders single H1, single Reports.View pill
     return Boolean(h1.compareDocumentPosition(h2) & Node.DOCUMENT_POSITION_FOLLOWING);
   });
   expect(orderOk).toBe(true);
+});
+
+test("@jane-layout owner reports distinguishes 500 failure from 403 entitlement error", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await installMockSalrynApi(page, { persona: "admin", u1Entitled: true });
+  await page.route("**/api/owner-analytics/ar-aging*", async (route) => {
+    await route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ message: "Simulated AR aging query failure." }),
+    });
+  });
+  await page.goto("/?page=owner-reports");
+
+  const snapshot = page.locator("section").filter({
+    has: page.getByRole("heading", { name: "Financial snapshot" }),
+  });
+  await expect(page.getByText("AR analytics failed to load")).toBeVisible();
+  await expect(page.getByText("Simulated AR aging query failure.").first()).toBeVisible();
+  await expect(snapshot.getByText("Entitlement required")).toHaveCount(0);
+  await expect(snapshot.getByText("Unavailable", { exact: true })).toHaveCount(2);
+
+  await page.unroute("**/api/owner-analytics/ar-aging*");
+  await installMockSalrynApi(page, { persona: "admin", u1Entitled: false, arAgingForbidden: true });
+  await page.goto("/?page=owner-reports");
+
+  await expect(snapshot.getByText("Entitlement required")).toHaveCount(2);
+  await expect(page.getByText("AR analytics unavailable")).toBeVisible();
 });

@@ -337,7 +337,23 @@ export function CheckoutPage() {
     }).filter((line) => line.quantity > 0));
   }
 
-  function clearCart() { checkoutRequestIdRef.current = null; setCartLines([]); setCashAmount(""); setCheckoutResult(null); setCompletedSale(null); setPrintResult(null); setBarcodeStatus(null); setShowConfirmCheckout(false); setAttemptState(initialAttemptState); setBackendMessage(null); }
+  function clearCart() {
+    checkoutRequestIdRef.current = null;
+    setCartLines([]);
+    setCashAmount("");
+    setPaymentMode("Cash");
+    setCustomerId("");
+    setDueDate("");
+    setUtangNote("");
+    setShowAddCustomer(false);
+    setCheckoutResult(null);
+    setCompletedSale(null);
+    setPrintResult(null);
+    setBarcodeStatus(null);
+    setShowConfirmCheckout(false);
+    setAttemptState(initialAttemptState);
+    setBackendMessage(null);
+  }
   async function startNewSale() { clearCart(); await refreshShiftAndProducts(); }
   async function refreshShiftAndProducts() { setBackendMessage(null); await Promise.all([sessionQuery.refetch(), shiftQuery.refetch(), productsQuery.refetch(), unitsQuery.refetch()]); setLastRefreshAt(new Date().toISOString()); }
   async function handleOpenShift() { setBackendMessage(null); setIsOpeningShift(true); try { await openHostShift({ openingCashCents: toCents(openingCash) }); setBackendMessage(null); notify.success("Shift opened", "Checkout is ready for sales."); await Promise.all([shiftQuery.refetch(), productsQuery.refetch(), unitsQuery.refetch()]); setLastRefreshAt(new Date().toISOString()); } catch (error) { const description = describeCheckoutBackendError(error); setBackendMessage(description); notify.error("Shift was not opened", safeNotificationDescription(new Error(description), "Review the opening cash and try again.")); } finally { setIsOpeningShift(false); } }
@@ -406,14 +422,22 @@ export function CheckoutPage() {
         note: utangNote.trim() || undefined,
       });
       const receiptMetadata = result.checkout as CheckoutReceiptMetadata;
+      const serverTotalCents = result.checkout.totalCents ?? subtotalCents;
+      const amountPaidCents = paymentMode === "Utang" ? 0 : cashCents;
+      const balanceDueCents =
+        paymentMode === "Cash"
+          ? 0
+          : paymentMode === "Utang"
+            ? serverTotalCents
+            : Math.max(0, serverTotalCents - cashCents);
       setCheckoutResult(result);
       checkoutRequestIdRef.current = null;
       setCompletedSale({
         receiptNumber: result.checkout.receiptNumber,
         saleId: result.checkout.saleId,
         totalCents: result.checkout.totalCents,
-        amountPaidCents: paymentMode === "Utang" ? 0 : cashCents,
-        balanceDueCents: activeUtangCents,
+        amountPaidCents,
+        balanceDueCents,
         paymentMode,
         changeCents: result.checkout.changeCents,
         fileReceiptStatus: receiptMetadata.fileReceiptStatus ?? null,
