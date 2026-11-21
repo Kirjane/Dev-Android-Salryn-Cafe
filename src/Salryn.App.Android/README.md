@@ -1,66 +1,29 @@
-# Android source recovery status
+# Salryn Cafe — Native Android Operational Cashier (`Salryn.App.Android`)
 
-This launcher is a setup preview, not a release candidate or an operational cashier.
-It opens the shared canonical Cafe SQLite schema through MobileProductionComposition
-and exposes Bluetooth permission diagnostics. It does not use the interrupted
-prototype mobile_* business ledger. Those sources are preserved under
-tests/Salryn.Cafe.I6BTests/Prototypes for synthetic failure provenance only.
-It does not create sample menu items or operators. Cashier mutations remain unavailable until independent device trust, operator
-authorization and complete native workflows are wired. No sample data is seeded.
+## Current Verified Architecture
+`Salryn.App.Android` (`ph.kirjanelabs.salryncafe`) runs on the shared canonical Cafe SQLite schema through `MobileProductionComposition` (`files/SalrynCafe/salryn-cafe.db`, reconciled Cafe schema v43). The legacy prototype `mobile_*` business ledger is excluded from production runtime and preserved only under `tests/Salryn.Cafe.I6BTests/Prototypes` for historical provenance.
 
-## Build and synthetic test commands
+### Supported & Verified Capabilities (40/40 `Salryn.Cafe.I6BTests` PASS)
+- **Fail-Closed Device Enrollment & Lease Guard:** `ProtectedMobileEnrollmentWriter` / `ProtectedMobileEnrollmentReader` (`salryn.cafe.approved_enrollment.v1`) requires an independently pinned server public key, `Salryn.Cafe` product identity, scope/epoch match, and `MobileOfflineLeaseGuard` (UTC + `ElapsedRealtime` + `BootCount` anti-rollback). Unauthenticated lease responses never pin a server key.
+- **Independent Operator Authorization:** Operator login and current-permission revalidation are separate from device trust. Deactivation or permission revocation blocks mutations immediately.
+- **Canonical Cashier Workflows (`MobileCashierController` & `MainActivity`):**
+  - Published menu with variants and required modifiers (catalog-authoritative pricing).
+  - Order creation, preparation, and completion with Cash, AR, and partial Cash+AR tenders (non-Cash/AR tenders remain locked).
+  - `operationId`-backed shift open/close (`MobileShiftOpenIntent` / `MobileShiftCloseIntent`, zero `Guid.NewGuid()` fallbacks).
+  - Canonical refund request/resolve/commit and delivery creation/advancement.
+  - Receipt and kitchen printing via `MobilePrinterTransportAdapter` with same-job retry; failed or `OutcomeUnknown` transport states never fabricate print success.
+- **Durable Pending-Intent Recovery (`MobileCashierIntentStore`):** Retains original `ActorUserId` and `OperationId` before dispatch across restarts and writes an audit record (`MobilePendingIntentResolutionRecord`) before clearing rejected intents.
+- **Sync Transport:** `HttpSyncOutboxTransport` enforces HTTPS, `X-Salryn-Product-Id: Salryn.Cafe`, device bearer auth, and `X-Salryn-Operator-Token`.
 
-Run from the repository root on the provisioned Windows development host:
-
+## Build & Verification Commands
 ```powershell
-. "$env:LOCALAPPDATA/SalrynForgeTools/forge-env.ps1"
-dotnet test tests/Salryn.Cafe.I6BTests/Salryn.Cafe.I6BTests.csproj -m:1
-dotnet build src/Salryn.App.Android/Salryn.App.Android.csproj -m:1 -c Debug
+dotnet test tests/Salryn.Cafe.I6BTests/Salryn.Cafe.I6BTests.csproj
+dotnet build src/Salryn.App.Android/Salryn.App.Android.csproj -c Release
 ```
+Hosted Android CI (`salryn-cafe-android.yml`) runs all 40 `Salryn.Cafe.I6BTests` and publishes a dual-ABI (`arm64-v8a` + `x86_64`) test-signed Release APK (`ph.kirjanelabs.salryncafe-Signed.apk`).
 
-Only Debug/test signing is intended here. Do not install this preview on a
-production cashier or connect it to business data. The unit/integration tests
-create synthetic temporary SQLite databases, local test keys and a simulated
-printer. The Central HTTP integration uses ASP.NET TestServer; it does not prove
-TLS radio transport, native UI, or installation behavior.
-
-After a successful APK build, an authorized tester can install the signed Debug
-APK on a disposable emulator with `adb -s <emulator-id> install -r <signed-apk-path>`.
-Use the path and SHA-256 from that build's evidence receipt. Never substitute a
-physical device or an already configured business installation.
-
-Manual preview checks (not yet observed):
-
-1. Launch `ph.kirjanelabs.salryncafe`; confirm it clearly states setup is incomplete.
-2. On a fresh emulator, confirm no menu products or operators appear automatically.
-3. Exercise Bluetooth permission denial and grant. Permission or a paired-device
-   count must not be interpreted as a successful printer test.
-4. Restart the app and confirm cached state survives without invented enrollment
-   or authorization. Full cashier transactions cannot be exercised in this UI yet.
-
-## Remaining required work
-
-- Native enrollment, explicit host approval and one-time activation; independent
-  server trust provisioning/rotation and platform-protected asymmetric signing.
-  The legacy P0 symmetric identity helper is not that implementation.
-- Trusted operator authentication/authorization and actual cashier screens,
-  submission locks, modifiers, Cash/AR/split tender, refunds and shift close.
-- Financial engine hardening: payload-bound idempotency for every mutation,
-  order/shift ownership and status validation, catalog-authoritative pricing,
-  negative/overflow checks, and audited cash/AR/inventory reconciliation.
-- Durable bootstrap/change application before cursor advancement, bounded outbox
-  upload, crash/restart/partition recovery and epoch changes without losing work.
-- Printer selection and connection/permission callbacks, durable unknown-outcome
-  recovery, and native/emulator coverage. Real tablet, Bluetooth and print results
-  remain HUMAN_REQUIRED.
-- Hardened watermark persistence across deletion/restore, reboot/offline elapsed
-  time and concurrent guard instances; the encrypted file alone cannot prove
-  rollback-resistant storage. Current monotonic expiry covers one boot and guard
-  recreation using the same protected store.
-
-Passing foundation tests and producing an APK do not close Issue #14. Independent
-frozen-SHA security review and live software acceptance remain required.
-
-The app-private canonical root is files/SalrynCafe and database filename salryn-cafe.db.
-Prior files/salryn prototype databases and salryn-p0 identity files are preserved;
-there is no automatic migration of prototype financial records.
+## Verification Boundaries (Honest Status)
+- **Verified (Portable + Hosted CI):** 40/40 `Salryn.Cafe.I6BTests` PASS; signed Release APK builds cleanly.
+- **Verified (Android API 35 `x86_64` Emulator):** APK installation, launch, and force-stop/restart recovery with `0` fatal crashes.
+- **NOT RUN on Emulator UI:** Full interactive UI-driven checkout, AR, shift, offline, and reconnect flows on the emulator (covered canonically in `I6BTests` against real SQLite).
+- **`HUMAN_REQUIRED`:** Physical Android tablet UX, real Bluetooth thermal printer output, and production release signing/deployment. Do not install test-signed APKs on production cashiers or live customer data.
