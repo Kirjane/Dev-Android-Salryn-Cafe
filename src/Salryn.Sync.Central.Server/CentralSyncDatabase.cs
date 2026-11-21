@@ -59,9 +59,15 @@ public sealed class CentralSyncDatabase
         cmd.ExecuteNonQuery();
     }
 
-    public void Initialize()
+    public void Initialize() => Initialize(beforeAuthorityBind: null);
+
+    public void Initialize(Action? beforeAuthorityBind)
     {
         bool freshDomain = false;
+        string pendingInitPath = _options.DatabasePath + ".canonical-init-pending";
+        string expectedPendingMarker = $"{_options.CanonicalTenantId:D}|{_options.CanonicalStoreId:D}";
+        bool resumingInterruptedFreshInit = false;
+
         if (_options.EnableCanonicalDomainProcessing)
         {
             if (_options.CanonicalTenantId == Guid.Empty || _options.CanonicalStoreId == Guid.Empty)
@@ -69,9 +75,19 @@ public sealed class CentralSyncDatabase
             var factory = new SqliteConnectionFactory(_options.DatabasePath);
             var runner = new MigrationRunner(factory, CafeMigrationCatalog.CreateCanonicalCafeMigrations());
             freshDomain = runner.ClassifyDatabase().Kind == SchemaLineageKind.Fresh;
+            if (freshDomain)
+            {
+                File.WriteAllText(pendingInitPath, expectedPendingMarker);
+            }
+            else if (File.Exists(pendingInitPath) &&
+                     string.Equals(File.ReadAllText(pendingInitPath).Trim(), expectedPendingMarker, StringComparison.Ordinal))
+            {
+                resumingInterruptedFreshInit = true;
+            }
             // Existing transport-only/unknown/retail DBs fail closed; never bypass lineage.
             runner.RunPendingMigrations();
             new DatabaseSeeder(factory).SeedDefaultData();
+            beforeAuthorityBind?.Invoke();
         }
         using SqliteConnection connection = OpenConnection();
         using SqliteTransaction transaction = connection.BeginTransaction();
@@ -91,12 +107,30 @@ public sealed class CentralSyncDatabase
                     singleton_id INTEGER PRIMARY KEY CHECK(singleton_id=1), tenant_id TEXT NOT NULL, store_id TEXT NOT NULL);
                 """;
             scope.ExecuteNonQuery();
-            if (freshDomain)
+
+            bool canBindFreshDeploymentStore = freshDomain;
+            if (!canBindFreshDeploymentStore && resumingInterruptedFreshInit)
+            {
+                scope.CommandText = "SELECT COUNT(*) FROM sync_canonical_domain_scope;";
+                long scopeCount = Convert.ToInt64(scope.ExecuteScalar());
+                scope.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sync_server_state';";
+                long stateTableExists = Convert.ToInt64(scope.ExecuteScalar());
+                long stateCount = 0;
+                if (stateTableExists == 1)
+                {
+                    scope.CommandText = "SELECT COUNT(*) FROM sync_server_state;";
+                    stateCount = Convert.ToInt64(scope.ExecuteScalar());
+                }
+                canBindFreshDeploymentStore = scopeCount == 0 && stateCount == 0;
+            }
+
+            if (canBindFreshDeploymentStore)
             {
                 scope.CommandText = "UPDATE deployment_identity SET store_id=$store;";
                 scope.Parameters.AddWithValue("$store", _options.CanonicalStoreId.ToString("D"));
                 scope.ExecuteNonQuery();
             }
+            scope.Parameters.Clear();
             scope.CommandText = "SELECT store_id FROM deployment_identity LIMIT 1;";
             if (!string.Equals(Convert.ToString(scope.ExecuteScalar()), _options.CanonicalStoreId.ToString("D"), StringComparison.Ordinal))
                 throw new InvalidOperationException("Canonical deployment store does not match configured authority.");
@@ -376,6 +410,10 @@ public sealed class CentralSyncDatabase
         }
 
         transaction.Commit();
+        if (_options.EnableCanonicalDomainProcessing && File.Exists(pendingInitPath))
+        {
+            File.Delete(pendingInitPath);
+        }
     }
 
     public CentralServerStateSnapshot ReadServerState(SqliteConnection connection, SqliteTransaction? transaction = null)

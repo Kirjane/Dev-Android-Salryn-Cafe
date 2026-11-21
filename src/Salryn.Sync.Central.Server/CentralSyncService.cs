@@ -848,8 +848,6 @@ public sealed partial class CentralSyncService
 
     // ==================== SYNC: BOOTSTRAP, PUSH, PULL ====================
 
-    // The central DB has no canonical Cafe domain projection tables/readers yet.
-    // Returning an empty snapshot with a nonzero cursor would permanently skip business facts.
     public ServiceOutcome<BootstrapResponseDto> GetBootstrap(AuthenticatedDeviceContext device, Guid requestedStoreId)
     {
         if (requestedStoreId != device.StoreId)
@@ -857,10 +855,165 @@ public sealed partial class CentralSyncService
             return ServiceOutcome<BootstrapResponseDto>.Fail(403, "ERR_TENANT_SCOPE_VIOLATION", "Cannot bootstrap another store.");
         }
 
-        return ServiceOutcome<BootstrapResponseDto>.Fail(
-            503,
-            "ERR_BOOTSTRAP_DOMAIN_SNAPSHOT_UNAVAILABLE",
-            "Central Cafe domain projections are not implemented. Do not advance the bootstrap cursor.");
+        if (!_options.EnableCanonicalDomainProcessing)
+        {
+            return ServiceOutcome<BootstrapResponseDto>.Fail(
+                503,
+                "ERR_BOOTSTRAP_DOMAIN_SNAPSHOT_UNAVAILABLE",
+                "Central Cafe domain projections are not implemented. Do not advance the bootstrap cursor.");
+        }
+
+        if (device.TenantId != _options.CanonicalTenantId || device.StoreId != _options.CanonicalStoreId)
+        {
+            return ServiceOutcome<BootstrapResponseDto>.Fail(
+                403,
+                "ERR_CANONICAL_AUTHORITY_SCOPE",
+                "Device is outside the canonical domain authority scope.");
+        }
+
+        using SqliteConnection conn = _db.OpenConnection();
+        using SqliteTransaction tx = conn.BeginTransaction();
+        CentralServerStateSnapshot state = _db.ReadServerState(conn, tx);
+
+        List<SyncBootstrapRoleV1> roles = [];
+        using (SqliteCommand cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "SELECT id, name, is_system_role FROM roles ORDER BY id;";
+            using SqliteDataReader r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                roles.Add(new SyncBootstrapRoleV1(Guid.Parse(r.GetString(0)), r.GetString(1), r.GetInt32(2) != 0));
+            }
+        }
+
+        List<SyncBootstrapUserV1> users = [];
+        using (SqliteCommand cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "SELECT id, username, display_name, role_id, status FROM users ORDER BY id;";
+            using SqliteDataReader r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                users.Add(new SyncBootstrapUserV1(
+                    Guid.Parse(r.GetString(0)), r.GetString(1), r.GetString(2), Guid.Parse(r.GetString(3)), r.GetInt32(4)));
+            }
+        }
+
+        List<SyncBootstrapUnitV1> units = [];
+        using (SqliteCommand cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "SELECT id, name, abbreviation, allows_decimal_quantity, is_active FROM units ORDER BY id;";
+            using SqliteDataReader r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                units.Add(new SyncBootstrapUnitV1(
+                    Guid.Parse(r.GetString(0)), r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2), r.GetInt32(3) != 0, r.GetInt32(4) != 0));
+            }
+        }
+
+        List<SyncBootstrapProductV1> products = [];
+        using (SqliteCommand cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = """
+                SELECT id, sku, barcode, name, description, unit_id, cost_price_cents, selling_price_cents,
+                       wholesale_price_cents, stock_on_hand_x1000, reorder_level_x1000, track_stock,
+                       allow_discount, is_active, tax_classification
+                FROM products ORDER BY id;
+                """;
+            using SqliteDataReader r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                products.Add(new SyncBootstrapProductV1(
+                    Guid.Parse(r.GetString(0)),
+                    r.IsDBNull(1) ? null : r.GetString(1),
+                    r.IsDBNull(2) ? null : r.GetString(2),
+                    r.GetString(3),
+                    r.IsDBNull(4) ? null : r.GetString(4),
+                    Guid.Parse(r.GetString(5)),
+                    r.IsDBNull(6) ? null : r.GetInt64(6),
+                    r.GetInt64(7),
+                    r.IsDBNull(8) ? null : r.GetInt64(8),
+                    r.GetInt64(9),
+                    r.GetInt64(10),
+                    r.GetInt32(11) != 0,
+                    r.GetInt32(12) != 0,
+                    r.GetInt32(13) != 0,
+                    r.GetInt32(14)));
+            }
+        }
+
+        List<SyncBootstrapCashierSessionV1> sessions = [];
+        using (SqliteCommand cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = """
+                SELECT s.id, s.user_id, s.opened_at, s.opening_cash_cents, s.expected_cash_cents, s.status, s.notes,
+                       COALESCE((SELECT SUM(m.delta_cents) FROM cash_movements m WHERE m.cashier_session_id = s.id), 0)
+                FROM cashier_sessions s ORDER BY s.id;
+                """;
+            using SqliteDataReader r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                sessions.Add(new SyncBootstrapCashierSessionV1(
+                    Guid.Parse(r.GetString(0)),
+                    Guid.Parse(r.GetString(1)),
+                    DateTimeOffset.Parse(r.GetString(2)),
+                    r.GetInt64(3),
+                    r.GetInt64(4),
+                    r.GetInt32(5),
+                    r.IsDBNull(6) ? null : r.GetString(6),
+                    r.GetInt64(7)));
+            }
+        }
+
+        List<SyncBootstrapCustomerV1> customers = [];
+        using (SqliteCommand cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = """
+                SELECT c.id, c.full_name, c.phone, c.address, c.note, c.credit_limit_cents, c.is_active,
+                       c.created_by_user_id, c.created_at, c.updated_at,
+                       COALESCE((SELECT SUM(e.debit_cents - e.credit_cents) FROM accounts_receivable_entries e WHERE e.customer_id = c.id), 0)
+                FROM customers c ORDER BY c.id;
+                """;
+            using SqliteDataReader r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                customers.Add(new SyncBootstrapCustomerV1(
+                    Guid.Parse(r.GetString(0)),
+                    r.GetString(1),
+                    r.IsDBNull(2) ? null : r.GetString(2),
+                    r.IsDBNull(3) ? null : r.GetString(3),
+                    r.IsDBNull(4) ? null : r.GetString(4),
+                    r.IsDBNull(5) ? null : r.GetInt64(5),
+                    r.GetInt32(6) != 0,
+                    Guid.Parse(r.GetString(7)),
+                    DateTimeOffset.Parse(r.GetString(8)),
+                    DateTimeOffset.Parse(r.GetString(9)),
+                    r.GetInt64(10)));
+            }
+        }
+
+        SyncBootstrapSnapshotV1 snapshot = SyncBootstrapSnapshotProtocolV1.Create(
+            state.CentralInstanceId,
+            device.StoreId,
+            state.HeadSequence,
+            roles,
+            users,
+            units,
+            products,
+            sessions,
+            customers);
+
+        return ServiceOutcome<BootstrapResponseDto>.Ok(
+            new BootstrapResponseDto(
+                CentralServerOptions.CanonicalProductId,
+                state.ServerEpoch,
+                state.HeadSequence,
+                snapshot));
     }
 
     public ServiceOutcome<PushOperationsResponse> PushOperations(
