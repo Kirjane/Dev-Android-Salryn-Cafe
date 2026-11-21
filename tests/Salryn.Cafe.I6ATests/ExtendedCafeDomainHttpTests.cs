@@ -162,6 +162,9 @@ public sealed class ExtendedCafeDomainHttpTests
         var prereqEnvelopes = allEnvelopes.Where(env => env.LocalSequence < saleEnvelope.LocalSequence).ToArray();
         var postSaleEnvelopes = allEnvelopes.Where(env => env.LocalSequence > saleEnvelope.LocalSequence).ToArray();
         Assert.NotEmpty(prereqEnvelopes);
+        Assert.NotEmpty(postSaleEnvelopes);
+        Assert.Contains(postSaleEnvelopes, env => env.OperationType == CafeOrderOperationContract.OrderCompletedV1);
+        Assert.Contains(postSaleEnvelopes, env => env.OperationType == IngredientConsumptionCommittedV1Contract.OperationType);
 
         using var initialLogin = await device.Http.PostAsJsonAsync(
             "/api/sync/v1/operators/login",
@@ -230,7 +233,7 @@ public sealed class ExtendedCafeDomainHttpTests
         Assert.Equal(authorized ? 1L : 0L, target.ScalarLong("SELECT COUNT(*) FROM sales;"));
         Assert.Equal(authorized ? 1L : 0L, target.ScalarLong("SELECT COUNT(*) FROM cafe_booking_sale_links;"));
 
-        if (authorized && postSaleEnvelopes.Length > 0)
+        if (authorized)
         {
             using var postPush = await device.Http.PostAsJsonAsync(
                 "/api/sync/v1/push",
@@ -238,6 +241,35 @@ public sealed class ExtendedCafeDomainHttpTests
             Assert.Equal(HttpStatusCode.OK, postPush.StatusCode);
             var postBody = (await postPush.Content.ReadFromJsonAsync<PushOperationsResponse>())!;
             Assert.All(postBody.Results, row => Assert.True(row.Resolution.IsApplied, row.Resolution.ResultCode));
+            Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM cafe_orders WHERE order_id=$id AND state=$state;", ("$id", orderId.ToString("D")), ("$state", CafeOrderStates.Completed)));
+            Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM cafe_order_sale_links;"));
+            Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM sale_ingredient_consumption_decisions;"));
+            Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed WHERE change_type=$type;", ("$type", AppliedBusinessChangeContract.OrderCompletedV1AppliedV1)));
+            Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed WHERE change_type=$type;", ("$type", AppliedBusinessChangeContract.IngredientConsumptionCommittedV1AppliedV1)));
+
+            long feedBeforeMismatch = target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed;");
+            var mismatchedEnvelope = SyncProtocolV1.CreateEnvelope(
+                deviceId: device.DeviceId,
+                storeId: host.StoreId,
+                actorUserId: C4ProofIds.ActorUserId,
+                localSequence: allEnvelopes.Max(env => env.LocalSequence) + 1,
+                operationType: SaleCommittedV3Contract.OperationType,
+                schemaVersion: SaleCommittedV3Contract.SchemaVersion,
+                aggregateId: Guid.NewGuid(),
+                baseVersion: null,
+                occurredAtLocal: saleEnvelope.OccurredAtLocal,
+                payloadJson: saleEnvelope.PayloadJson);
+            using var mismatchPush = await device.Http.PostAsJsonAsync(
+                "/api/sync/v1/push",
+                new PushOperationsRequest(1, [mismatchedEnvelope]));
+            Assert.Equal(HttpStatusCode.OK, mismatchPush.StatusCode);
+            var mismatchResult = Assert.Single((await mismatchPush.Content.ReadFromJsonAsync<PushOperationsResponse>())!.Results);
+            Assert.Equal("Rejected", mismatchResult.Resolution.Status);
+            Assert.Equal("SaleCommittedV3.EnvelopeAuthorityMismatch", mismatchResult.Resolution.ResultCode);
+            Assert.Null(mismatchResult.ChangeFeedSequence);
+            Assert.Equal(feedBeforeMismatch, target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed;"));
+            Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM sales;"));
+            Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM cafe_booking_sale_links;"));
         }
     }
 }

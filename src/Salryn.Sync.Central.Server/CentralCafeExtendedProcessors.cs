@@ -68,6 +68,13 @@ internal static partial class CentralCanonicalDomainProcessor
             var parsed = SaleCommittedV3CanonicalJson.Parse(envelope.PayloadJson);
             if (!parsed.IsValid || parsed.Payload is null) return Reject(parsed.ErrorCode ?? "SaleCommittedV3.PayloadInvalid");
             var payload = parsed.Payload;
+            SaleCommittedV1Sale sale = payload.SaleEvidence.Sale;
+            if (envelope.OperationId == Guid.Empty ||
+                envelope.AggregateId != sale.Id ||
+                envelope.StoreId == Guid.Empty ||
+                envelope.ActorUserId != sale.CashierUserId ||
+                envelope.BaseVersion.HasValue)
+                return Reject("SaleCommittedV3.EnvelopeAuthorityMismatch");
             if (!Allowed("Sales.Create", "Orders.Complete", "Booking.Fulfill") ||
                 (RequiresCreditSalePermission(payload.SaleEvidence) && !Allowed("Receivables.CreateCreditSale")) ||
                 (payload.SaleEvidence.Sale.DiscountCents > 0 && !Allowed("Sales.DiscountApply")) ||
