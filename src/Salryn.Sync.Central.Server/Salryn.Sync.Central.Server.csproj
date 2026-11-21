@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Salryn.Sync.Contracts\Salryn.Sync.Contracts.csproj" />
+    <ProjectReference Include="..\Salryn.Persistence.Sqlite\Salryn.Persistence.Sqlite.csproj" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.8" />
   </ItemGroup>
 

@@ -8,6 +8,7 @@ public static class CentralSyncEndpoints
     public const string ProductIdHeader = "X-Salryn-Product-Id";
     public const string TenantIdHeader = "X-Salryn-Tenant-Id";
     public const string StoreIdHeader = "X-Salryn-Store-Id";
+    public const string OperatorTokenHeader = "X-Salryn-Operator-Token";
     public const string DeviceIdHeader = "X-Salryn-Device-Id";
 
     private static readonly ConcurrentDictionary<string, Queue<DateTimeOffset>> DeviceRateBuckets = new(StringComparer.Ordinal);
@@ -179,6 +180,19 @@ public static class CentralSyncEndpoints
             return ToResult(service.ExchangeToken(req));
         });
 
+        api.MapPost("/operators/login", async (HttpContext http, OperatorLoginRequest req, CentralSyncService service) =>
+        {
+            var device=AuthenticateDevice(http,service,allowRevokedForQuarantinePush:false);
+            if(device.Value is null) return ToResult(device);
+            return ToResult(await service.LoginOperatorAsync(device.Value,req,http.RequestAborted));
+        });
+        api.MapPost("/operators/logout", (HttpContext http,CentralSyncService service) =>
+        {
+            var device=AuthenticateDevice(http,service,allowRevokedForQuarantinePush:false);
+            if(device.Value is null) return ToResult(device);
+            return ToResult(service.LogoutOperator(device.Value,http.Request.Headers[OperatorTokenHeader].ToString()));
+        });
+
         // --- Sync Bootstrap, Push & Pull ---
         api.MapGet("/bootstrap", (HttpContext http, Guid storeId, CentralSyncService service) =>
         {
@@ -197,7 +211,7 @@ public static class CentralSyncEndpoints
             {
                 return ToResult(auth);
             }
-            return ToResult(service.PushOperations(auth.Value, req));
+            return ToResult(service.PushOperations(auth.Value, req, http.Request.Headers[OperatorTokenHeader].ToString()));
         });
 
         api.MapGet("/pull", (HttpContext http, Guid storeId, long afterSequence, int? limit, long knownEpoch, CentralSyncService service) =>
