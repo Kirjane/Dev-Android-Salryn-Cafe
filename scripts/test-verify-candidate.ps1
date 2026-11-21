@@ -40,6 +40,30 @@ Assert-Throws { Assert-SourceUnchanged @{head='a';tree='x'} @{head='b';tree='x';
 Assert-Throws { Assert-SourceUnchanged @{head='a';tree='x'} @{head='a';tree='y';dirty=$false} } 'Tree drift rejected.'
 Assert-Throws { Assert-SourceUnchanged @{head='a';tree='x'} @{head='a';tree='x';dirty=$true} } 'Dirty final source rejected.'
 
+# R1 CoreSmoke verification profile resolution & fail-closed boundaries
+Assert ((Resolve-CoreSmokeVerificationProfile -Configuration 'Debug' -RequestedProfile 'Auto') -eq 'DebugSynthetic') 'Auto+Debug resolves to DebugSynthetic.'
+Assert ((Resolve-CoreSmokeVerificationProfile -Configuration 'Release' -RequestedProfile 'Auto') -eq 'ReleaseUnlicensed') 'Auto+Release without fixture resolves to ReleaseUnlicensed.'
+Assert-Throws { Resolve-CoreSmokeVerificationProfile -Configuration 'Release' -RequestedProfile 'DebugSynthetic' } 'DebugSynthetic forbidden under Release.'
+Assert-Throws { Resolve-CoreSmokeVerificationProfile -Configuration 'Debug' -RequestedProfile 'ReleaseUnlicensed' } 'ReleaseUnlicensed forbidden under Debug.'
+Assert-Throws { Resolve-CoreSmokeVerificationProfile -Configuration 'Debug' -RequestedProfile 'ReleaseEntitled' } 'ReleaseEntitled forbidden under Debug.'
+Assert-Throws { Resolve-CoreSmokeVerificationProfile -Configuration 'Release' -RequestedProfile 'ReleaseEntitled' -LicenseFixturePath '' } 'ReleaseEntitled without fixture fails closed (BLOCKED_EXTERNAL).'
+$tempLicenseFixture = Join-Path ([IO.Path]::GetTempPath()) ('salryn-lic-fixture-' + [guid]::NewGuid().ToString('N') + '.json')
+'{"synthetic":"fixture-path-check-only"}' | Set-Content -LiteralPath $tempLicenseFixture
+try {
+    Assert ((Resolve-CoreSmokeVerificationProfile -Configuration 'Release' -RequestedProfile 'Auto' -LicenseFixturePath $tempLicenseFixture) -eq 'ReleaseEntitled') 'Auto+Release with fixture resolves to ReleaseEntitled.'
+    Assert ((Resolve-CoreSmokeVerificationProfile -Configuration 'Release' -RequestedProfile 'ReleaseEntitled' -LicenseFixturePath $tempLicenseFixture) -eq 'ReleaseEntitled') 'Explicit ReleaseEntitled with existing fixture resolves.'
+} finally {
+    Remove-Item -LiteralPath $tempLicenseFixture -Force -ErrorAction SilentlyContinue
+}
+$tempEventPath = Join-Path ([IO.Path]::GetTempPath()) ('salryn-gh-evt-' + [guid]::NewGuid().ToString('N') + '.json')
+'{"pull_request":{"head":{"sha":"0123456789abcdef0123456789abcdef01234567"}}}' | Set-Content -LiteralPath $tempEventPath
+try {
+    Assert ((Get-PrHeadSha -FallbackSha 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' -EventPath $tempEventPath) -eq '0123456789abcdef0123456789abcdef01234567') 'PR head SHA extracted from GitHub event JSON.'
+    Assert ((Get-PrHeadSha -FallbackSha 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' -EventPath '') -eq 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb') 'Fallback SHA returned outside PR event.'
+} finally {
+    Remove-Item -LiteralPath $tempEventPath -Force -ErrorAction SilentlyContinue
+}
+
 $fixture = Join-Path ([IO.Path]::GetTempPath()) ('salryn-ci-gate-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $fixture | Out-Null
 $script:repoRoot = $fixture
@@ -130,6 +154,8 @@ $summaryFile = Get-ChildItem -LiteralPath (Join-Path $fixture 'artifacts/verific
 $summary = Get-Content -LiteralPath $summaryFile.FullName -Raw | ConvertFrom-Json
 Assert ($summary.overallStatus -eq 'PASS' -and $summary.mode -eq 'Android') 'Scoped synthetic report reflects completed gates.'
 Assert ($summary.commitSha -eq (Get-SourceIdentity $fixture).head) 'Report binds exact fixture commit.'
+Assert ($summary.prHeadSha -eq $summary.commitSha) 'Report records prHeadSha.'
+Assert ($summary.coreSmokeProfile -eq 'NOT_APPLICABLE' -and $summary.releaseEntitledVerdict -eq 'NOT_APPLICABLE') 'Android summary explicitly marks CoreSmoke profile NOT_APPLICABLE.'
 Assert ($summary.artifacts.Count -eq 1 -and $summary.artifacts[0].runId -eq $summary.runId) 'Only run-produced package included.'
 Assert ($summary.commands.Count -eq 3 -and @($summary.commands | Where-Object { -not (Test-Path -LiteralPath $_.log) }).Count -eq 0) 'All actual orchestration command logs retained.'
 

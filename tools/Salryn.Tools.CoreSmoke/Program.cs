@@ -6,10 +6,28 @@ namespace Salryn.Tools.CoreSmoke;
 public static class Program
 {
     // Kirch: Executes the Host/client boundary smoke checks that dotnet test only compiles today.
-    public static void Main(string[] args)
+    public static int Main(string[] args)
     {
-        CoreSmokeOptions options = CoreSmokeOptions.Parse(args);
-        Console.WriteLine("CoreSmoke profile: " + options.Profile);
+        bool isDebugBuild =
+#if DEBUG
+            true;
+#else
+            false;
+#endif
+        CoreSmokeOptions options;
+        try
+        {
+            options = CoreSmokeOptions.Parse(args, isDebugBuild);
+            options.ValidateExecutionProfile(isDebugBuild);
+        }
+        catch (BlockedExternalException ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            CoreSmokeDevelopmentDatabaseIsolation.Cleanup();
+            return 2;
+        }
+
+        Console.WriteLine($"CoreSmoke profile: {options.Profile} | verification-profile: {options.VerificationProfile}");
         if (options.Only is not null)
         {
             string? priorManifest = Environment.GetEnvironmentVariable("SALRYN_CANONICAL_LICENSE_PROOF_MANIFEST");
@@ -28,7 +46,7 @@ public static class Program
             }
             Console.WriteLine("SALRYN Core smoke checks passed.");
             CoreSmokeDevelopmentDatabaseIsolation.Cleanup();
-            return;
+            return 0;
         }
 
         Phase61BStoreDeploymentCompileChecks.Run();
@@ -120,12 +138,25 @@ public static class Program
                 "Preserved via --profile legacy-retail; Cafe has independent inventory/purchasing proofs.");
         }
         V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();
-        V2HostOperatorCheckoutApiChecks.RunAsync().GetAwaiter().GetResult();
+        if (options.VerificationProfile == CoreSmokeOptions.ReleaseUnlicensed)
+        {
+            V2HostOperatorCheckoutApiChecks.RunReleaseUnlicensedBoundaryAsync().GetAwaiter().GetResult();
+            Console.WriteLine(
+                "NOT RUN (ReleaseUnlicensed): licensed checkout/AR runtime mutations require --verification-profile ReleaseEntitled with an authorized signed QA license fixture.");
+        }
+        else
+        {
+            V2HostOperatorCheckoutApiChecks.RunAsync().GetAwaiter().GetResult();
+        }
         V2ReactCheckoutSourceChecks.Run();
         V2LanBindTruthChecks.Run();
         V2LanClientPairingPersistenceChecks.Run();
         V2TerminalLifecycleUxChecks.Run();
         V2HostLanControlUxChecks.Run();
+        CafeLoopbackBoundaryChecks.Run();
+        CoreSmokeProfileChecks.Run();
+        if (options.IncludesRetailProcurement)
+        {
         RmoBirM3OfficialReadinessChecks.Run();
         RmoBirM4OfficialSetupChecks.Run();
         RmoBirM5OfficialNumberingChecks.Run();
@@ -341,8 +372,22 @@ public static class Program
         LanM16QaBRemotePosPairingGateChecks.Run();
         LanM16RcBEntryBoundaryChecks.Run();
         J21Rmo242023ElectronicJournalPersistenceRuntimeDocumentationSealChecks.Run();
-        Console.WriteLine("SALRYN Core smoke checks passed.");
+        }
+        else
+        {
+            Console.WriteLine(
+                "NOT RUN (legacy-retail BIR/v26/retail-shell checks): RmoBir*, PreCrystal*, NativePdf*, LocalLicensing* retail, PreI*, Pos*, J21*, LanM*. " +
+                "Preserved via --profile legacy-retail; Cafe validates reconciled v1-43 schema & Cafe domain behavior via Salryn.Cafe.* xUnit suites and proof tools.");
+        }
+        string completionNote = options.VerificationProfile switch
+        {
+            CoreSmokeOptions.ReleaseUnlicensed => "profile=" + options.Profile + " verification=ReleaseUnlicensed; Release License.FeatureDenied verified, ReleaseEntitled checkout NOT RUN",
+            CoreSmokeOptions.DebugSynthetic => "profile=" + options.Profile + " verification=DebugSynthetic; synthetic dev license, NOT Release entitlement acceptance",
+            _ => "profile=" + options.Profile + " verification=ReleaseEntitled; authorized signed license fixture verified"
+        };
+        Console.WriteLine($"SALRYN Core smoke checks passed. ({completionNote})");
         CoreSmokeDevelopmentDatabaseIsolation.Cleanup();
+        return 0;
     }
 
     private static void RunOnly(string checkName)
@@ -420,6 +465,9 @@ public static class Program
                 return;
             case "v2-host-checkout":
                 V2HostOperatorCheckoutApiChecks.RunAsync().GetAwaiter().GetResult();
+                return;
+            case "v2-host-checkout-release-unlicensed":
+                V2HostOperatorCheckoutApiChecks.RunReleaseUnlicensedBoundaryAsync().GetAwaiter().GetResult();
                 return;
             case "v2-react-checkout":
                 V2ReactCheckoutSourceChecks.Run();

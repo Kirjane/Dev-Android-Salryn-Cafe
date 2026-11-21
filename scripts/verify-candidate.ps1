@@ -10,6 +10,7 @@
 param(
     [ValidateSet('Auto', 'Windows', 'Portable', 'Android')][string]$Mode = 'Auto',
     [string]$Configuration = 'Release',
+    [ValidateSet('Auto', 'ReleaseUnlicensed', 'DebugSynthetic', 'ReleaseEntitled')][string]$CoreSmokeProfile = 'Auto',
     [string]$OutputDir = '',
     # Compatibility flags never turn missing required gates into successful checks.
     [switch]$EnableWindowsTargeting,
@@ -19,6 +20,46 @@ param(
     [switch]$SkipAndroid
 )
 $ErrorActionPreference = 'Stop'
+
+function Resolve-CoreSmokeVerificationProfile {
+    param(
+        [string]$Configuration,
+        [string]$RequestedProfile = 'Auto',
+        [string]$LicenseFixturePath = ''
+    )
+    $isDebug = $Configuration -ieq 'Debug'
+    $resolved = if ($RequestedProfile -eq 'Auto') {
+        if ($isDebug) { 'DebugSynthetic' }
+        elseif (-not [string]::IsNullOrWhiteSpace($LicenseFixturePath)) { 'ReleaseEntitled' }
+        else { 'ReleaseUnlicensed' }
+    } else { $RequestedProfile }
+
+    if ($resolved -eq 'DebugSynthetic' -and -not $isDebug) {
+        throw 'DebugSynthetic CoreSmoke profile is forbidden under Release configuration.'
+    }
+    if ($resolved -in @('ReleaseUnlicensed', 'ReleaseEntitled') -and $isDebug) {
+        throw "$resolved CoreSmoke profile requires Release configuration."
+    }
+    if ($resolved -eq 'ReleaseEntitled') {
+        if ([string]::IsNullOrWhiteSpace($LicenseFixturePath) -or -not (Test-Path -LiteralPath $LicenseFixturePath -PathType Leaf)) {
+            throw 'BLOCKED_EXTERNAL (NOT RUN): ReleaseEntitled requires an authorized signed QA license fixture in SALRYN_QA_RELEASE_LICENSE_PATH.'
+        }
+    }
+    return $resolved
+}
+
+function Get-PrHeadSha {
+    param([string]$FallbackSha, [string]$EventPath = $env:GITHUB_EVENT_PATH)
+    if (-not [string]::IsNullOrWhiteSpace($EventPath) -and (Test-Path -LiteralPath $EventPath -PathType Leaf)) {
+        try {
+            $evt = Get-Content -LiteralPath $EventPath -Raw | ConvertFrom-Json
+            if ($evt.pull_request -and $evt.pull_request.head -and $evt.pull_request.head.sha -match '^[0-9a-f]{40}$') {
+                return $evt.pull_request.head.sha
+            }
+        } catch { }
+    }
+    return $FallbackSha
+}
 
 function Get-SourceIdentity {
     param([string]$Root)
@@ -162,14 +203,40 @@ $artifacts = [System.Collections.Generic.List[object]]::new()
 $forgeEnv = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'SalrynForgeTools/forge-env.ps1' } else { $null }
 if ($forgeEnv -and (Test-Path -LiteralPath $forgeEnv)) { . $forgeEnv }
 
+$script:resolvedCoreSmokeProfile = if ($Mode -eq 'Windows') { 'UNRESOLVED' } else { 'NOT_APPLICABLE' }
+$script:releaseEntitledVerdict = if ($Mode -eq 'Windows') { 'NOT_EVALUATED' } else { 'NOT_APPLICABLE' }
+
 Invoke-Gate 'toolchain-dotnet' 'SOURCE' { param($r) Invoke-RecordedCommand 'dotnet-version' 'dotnet' @('--info') }
 if ($Mode -eq 'Windows') {
     Invoke-Gate 'solution-build' 'BUILD' { param($r) Invoke-RecordedCommand 'solution-build' 'dotnet' @('build', 'Salryn.sln', '-c', $Configuration, '--nologo') }
     Invoke-Gate 'core-smoke' 'RUNTIME' {
         param($r)
-        $record = Invoke-RecordedCommand 'core-smoke' 'dotnet' @('run','--project','tools/Salryn.Tools.CoreSmoke/Salryn.Tools.CoreSmoke.csproj','-c',$Configuration,'--no-build')
+        $licenseFixturePath = $env:SALRYN_QA_RELEASE_LICENSE_PATH
+        try {
+            $script:resolvedCoreSmokeProfile = Resolve-CoreSmokeVerificationProfile -Configuration $Configuration -RequestedProfile $CoreSmokeProfile -LicenseFixturePath $licenseFixturePath
+        } catch {
+            if ($_.Exception.Message -match 'BLOCKED_EXTERNAL') {
+                $script:resolvedCoreSmokeProfile = 'ReleaseEntitled'
+                $script:releaseEntitledVerdict = 'BLOCKED_EXTERNAL (NOT RUN: missing authorized signed Release QA license fixture)'
+            }
+            throw
+        }
+        $smokeArgs = @('run','--project','tools/Salryn.Tools.CoreSmoke/Salryn.Tools.CoreSmoke.csproj','-c',$Configuration,'--no-build','--','--profile','cafe','--verification-profile',$script:resolvedCoreSmokeProfile)
+        if ($script:resolvedCoreSmokeProfile -eq 'ReleaseEntitled') {
+            $smokeArgs += @('--license-fixture', $licenseFixturePath)
+        }
+        $record = Invoke-RecordedCommand 'core-smoke' 'dotnet' $smokeArgs
         if ($record.output -notmatch 'SALRYN Core smoke checks passed\.') { throw 'Missing CoreSmoke completion marker.' }
-        $r.notes = 'Completion marker observed. Harness does not emit measured assertion counts; no test count inferred.'
+        if ($script:resolvedCoreSmokeProfile -eq 'ReleaseUnlicensed') {
+            $script:releaseEntitledVerdict = 'BLOCKED_EXTERNAL (NOT RUN: no signed Release QA license fixture in SALRYN_QA_RELEASE_LICENSE_PATH)'
+            $r.notes = 'ReleaseUnlicensed CoreSmoke passed (asserted 401 anonymous + 403 License.FeatureDenied on Release binaries with zero writes; ReleaseEntitled checkout remains BLOCKED_EXTERNAL / NOT RUN).'
+        } elseif ($script:resolvedCoreSmokeProfile -eq 'ReleaseEntitled') {
+            $script:releaseEntitledVerdict = 'PASS'
+            $r.notes = 'ReleaseEntitled CoreSmoke passed against authorized signed QA license fixture.'
+        } else {
+            $script:releaseEntitledVerdict = 'NOT_APPLICABLE_DEBUG'
+            $r.notes = 'DebugSynthetic CoreSmoke passed (synthetic Debug license mode; asserted 403 Auth.PermissionDenied RBAC and Cafe checkout boundaries; not Release entitlement proof).'
+        }
     }
 }
 
@@ -237,8 +304,9 @@ Invoke-Gate 'source-identity-final' 'SOURCE' { param($r) Assert-SourceUnchanged 
 $status = Get-OverallStatus $results.ToArray()
 $summary = [ordered]@{
     runId = $runId; generatedAtUtc = (Get-Date).ToUniversalTime().ToString('O')
-    repository = 'Kirjane/Dev-Salryn-Cafe'; commitSha = $initial.head; treeSha = $initial.tree
-    mode = $Mode; configuration = $Configuration; os = [Runtime.InteropServices.RuntimeInformation]::OSDescription
+    repository = 'Kirjane/Dev-Salryn-Cafe'; commitSha = $initial.head; prHeadSha = (Get-PrHeadSha $initial.head); treeSha = $initial.tree
+    mode = $Mode; configuration = $Configuration; coreSmokeProfile = $script:resolvedCoreSmokeProfile; releaseEntitledVerdict = $script:releaseEntitledVerdict
+    os = [Runtime.InteropServices.RuntimeInformation]::OSDescription
     overallStatus = $status; releaseReadiness = 'NOT EVALUATED: scoped checks are not full C1-C11/live E2E/installer/hardware acceptance'
     fixturePolicy = 'Synthetic/disposable only; source fixture identities are bound by commit/tree; no production data permitted'
     gates = $results.ToArray(); commands = @($commands | Select-Object * -ExcludeProperty output); artifacts = $artifacts.ToArray()

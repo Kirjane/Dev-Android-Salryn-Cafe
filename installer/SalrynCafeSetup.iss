@@ -26,6 +26,13 @@
 #ifndef MySourceRevision
   #define MySourceRevision ""
 #endif
+#if MySourceRevision != ""
+  #define MyVersionInfoDesc "Salryn Cafe Setup (" + MyAppVersion + " rev " + MySourceRevision + ")"
+  #define MyAppComments     "Salryn Cafe source revision " + MySourceRevision
+#else
+  #define MyVersionInfoDesc "Salryn Cafe Setup (" + MyAppVersion + ")"
+  #define MyAppComments     "Salryn Cafe"
+#endif
 ; Independent static AppId for Salryn Cafe — MUST NEVER match Retail Salryn POS GUID.
 #define MyAppGuid      "8F4C2E19-6B3A-4D7E-9A51-3C8E7F2B4D60"
 #define WebView2ClientId "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
@@ -34,6 +41,10 @@
 AppId={{{#MyAppGuid}}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
+AppComments={#MyAppComments}
+VersionInfoDescription={#MyVersionInfoDesc}
+VersionInfoProductName={#MyAppName}
+VersionInfoProductVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL=https://github.com/Kirjane/Dev-Salryn-Cafe
 AppSupportURL=mailto:salryn.info@gmail.com

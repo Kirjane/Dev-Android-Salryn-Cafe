@@ -8,11 +8,17 @@
     <Nullable>enable</Nullable>
     <ApplicationId>ph.kirjanelabs.salryncafe</ApplicationId>
     <ApplicationTitle>Salryn Cafe</ApplicationTitle>
-    <ApplicationVersion>1</ApplicationVersion>
-    <ApplicationDisplayVersion>1.0.0-rc1</ApplicationDisplayVersion>
+    <ApplicationVersion Condition="'$(CafeVersionCode)' == ''">1</ApplicationVersion>
+    <ApplicationVersion Condition="'$(CafeVersionCode)' != ''">$(CafeVersionCode)</ApplicationVersion>
+    <ApplicationDisplayVersion Condition="'$(CafeVersionName)' == ''">1.0.0-rc1</ApplicationDisplayVersion>
+    <ApplicationDisplayVersion Condition="'$(CafeVersionName)' != ''">$(CafeVersionName)</ApplicationDisplayVersion>
     <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
     <AndroidPackageFormat>apk</AndroidPackageFormat>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(CafeBuildProvenancePath)' != '' and Exists('$(CafeBuildProvenancePath)')">
+    <AndroidAsset Include="$(CafeBuildProvenancePath)" Link="build-provenance.json" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Salryn.Core\Salryn.Core.csproj" />

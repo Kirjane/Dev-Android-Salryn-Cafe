@@ -1,3 +1,13 @@
+# Salryn Cafe matched QA staging workflow (Draft prerelease ONLY).
+#
+# Release-tier separation:
+#   1. InternalDebugSynthetic : Debug binaries, synthetic dev license mode, ephemeral test keystore allowed.
+#   2. ControlledQA           : Release binaries, requires green verification-summary.json AND persistent
+#                               non-production QA keystore secrets (fails closed with BLOCKED_SIGNING_MATERIAL
+#                               if missing; never falls back to ephemeral signing).
+#   3. ReleaseCandidate       : BLOCKED from autonomous workflow staging; requires formal GitHub Kirion-Nox
+#                               approval, ReleaseEntitled PASS, and Technical Authority authorization.
+#   4. Production             : PROHIBITED from autonomous workflows.
 name: Salryn Cafe matched QA staging
 on:
   workflow_call:
@@ -5,8 +15,12 @@ on:
       source_sha:
         required: true
         type: string
-      profile:
+      release_tier:
         required: true
+        type: string
+      android_version_code:
+        required: false
+        default: '2'
         type: string
   workflow_dispatch:
     inputs:
@@ -14,12 +28,17 @@ on:
         description: Frozen full 40-character commit SHA on codex/wave-b-integrator
         required: true
         type: string
-      profile:
-        description: Release requires an authorized QA license; Debug is synthetic-only
+      release_tier:
+        description: ControlledQA (Release + persistent QA key) or InternalDebugSynthetic (Debug internal only)
         required: true
-        default: ReleaseEntitled
+        default: ControlledQA
         type: choice
-        options: [ReleaseEntitled, DebugSynthetic]
+        options: [ControlledQA, InternalDebugSynthetic]
+      android_version_code:
+        description: Monotonic Android versionCode integer (>= 1) for in-place QA upgrades
+        required: false
+        default: '2'
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -34,15 +53,28 @@ jobs:
         with:
           ref: ${{ inputs.source_sha }}
           fetch-depth: 0
-      - name: Validate frozen source and staging branch ancestry
+      - name: Validate frozen source, clean tree, tier and branch ancestry
         shell: pwsh
         env:
           EXPECTED_SHA: ${{ inputs.source_sha }}
+          RELEASE_TIER: ${{ inputs.release_tier }}
+          ANDROID_VERSION_CODE: ${{ inputs.android_version_code }}
         run: |
-          if ($env:EXPECTED_SHA -notmatch '^[0-9a-f]{40}$') { throw 'Full commit SHA required' }
-          if ((git rev-parse HEAD).Trim() -ne $env:EXPECTED_SHA) { throw 'Checkout SHA mismatch' }
+          $ErrorActionPreference = 'Stop'
+          if ($env:EXPECTED_SHA -notmatch '^[0-9a-f]{40}$') { throw 'Full 40-char commit SHA required.' }
+          if ((git rev-parse HEAD).Trim() -cne $env:EXPECTED_SHA) { throw 'Checkout SHA mismatch.' }
+          if (-not [string]::IsNullOrWhiteSpace((git status --porcelain=v1 --untracked-files=all | Out-String))) {
+            throw 'Working tree must be clean.'
+          }
           git merge-base --is-ancestor HEAD origin/codex/wave-b-integrator
-          if ($LASTEXITCODE -ne 0) { throw 'Source is not preserved staging-branch history' }
+          if ($LASTEXITCODE -ne 0) { throw 'Source is not preserved staging-branch history.' }
+          if ($env:RELEASE_TIER -notin @('ControlledQA', 'InternalDebugSynthetic')) {
+            throw "Unsupported or blocked release_tier '$env:RELEASE_TIER'."
+          }
+          $vc = 0
+          if (-not [int]::TryParse($env:ANDROID_VERSION_CODE, [ref]$vc) -or $vc -lt 1) {
+            throw "android_version_code must be an integer >= 1 (got '$env:ANDROID_VERSION_CODE')."
+          }
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
@@ -55,79 +87,204 @@ jobs:
           java-version: '17'
       - uses: android-actions/setup-android@v4
         with:
-          packages: platform-tools
-      - name: Build and execute code-controlled Cafe suites
+          packages: platform-tools build-tools;36.0.0
+      - name: Verify ControlledQA persistent signing material (fail closed)
+        if: ${{ inputs.release_tier == 'ControlledQA' }}
         shell: pwsh
+        env:
+          QA_KS_B64: ${{ secrets.SALRYN_CAFE_QA_KEYSTORE_B64 }}
+          QA_KS_PASS: ${{ secrets.SALRYN_CAFE_QA_KEYSTORE_PASS }}
+          QA_KEY_ALIAS: ${{ secrets.SALRYN_CAFE_QA_KEY_ALIAS }}
+          QA_KEY_PASS: ${{ secrets.SALRYN_CAFE_QA_KEY_PASS }}
+          QA_SIGNER_SHA256: ${{ secrets.SALRYN_CAFE_QA_SIGNER_SHA256 }}
         run: |
-          $ErrorActionPreference='Stop'
-          $configuration=if('${{ inputs.profile }}' -eq 'DebugSynthetic'){'Debug'}else{'Release'}
-          foreach($name in @('Salryn.Cafe.Tests','Salryn.Cafe.I2Tests','Salryn.Cafe.I3Tests','Salryn.Cafe.I4Tests','Salryn.Cafe.I6ATests','Salryn.Cafe.I6BTests')) {
-            dotnet test "tests/$name/$name.csproj" -c $configuration -m:1 --logger "trx;LogFileName=$name.trx" --results-directory artifacts/qa-evidence
-            if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:QA_KS_B64) -or
+              [string]::IsNullOrWhiteSpace($env:QA_KS_PASS) -or
+              [string]::IsNullOrWhiteSpace($env:QA_KEY_ALIAS) -or
+              [string]::IsNullOrWhiteSpace($env:QA_KEY_PASS) -or
+              $env:QA_SIGNER_SHA256 -notmatch '^[0-9a-fA-F]{64}$') {
+            throw 'BLOCKED_SIGNING_MATERIAL: ControlledQA requires persistent non-production QA Android signing secrets (SALRYN_CAFE_QA_KEYSTORE_B64, SALRYN_CAFE_QA_KEYSTORE_PASS, SALRYN_CAFE_QA_KEY_ALIAS, SALRYN_CAFE_QA_KEY_PASS, SALRYN_CAFE_QA_SIGNER_SHA256). Ephemeral fallback is forbidden.'
           }
-          foreach($folder in @('src/Salryn.App.Web','apps/cafe-web')) {
-            Push-Location $folder
-            npm ci --ignore-scripts --no-audit --no-fund
-            if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
-            npm run build
-            if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
-            Pop-Location
-          }
-      - name: Publish matched Windows Host, Desktop and Central
+      - name: Run fail-closed verification gates and Cafe suites
         shell: pwsh
+        env:
+          RELEASE_TIER: ${{ inputs.release_tier }}
         run: |
-          $configuration=if('${{ inputs.profile }}' -eq 'DebugSynthetic'){'Debug'}else{'Release'}
-          $staging=Join-Path $PWD 'artifacts/installer/staging/SalrynCafe'
-          New-Item -ItemType Directory -Force $staging,artifacts/qa-package,artifacts/central | Out-Null
-          foreach($project in @('Salryn.Desktop.WebView','Salryn.Api.Local')) {
-            dotnet publish "src/$project/$project.csproj" -c $configuration -r win-x64 --self-contained false -o $staging
-            if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
-          }
-          New-Item -ItemType Directory -Force "$staging/wwwroot","$staging/cafe-dist","$staging/assets/branding" | Out-Null
-          Copy-Item src/Salryn.App.Web/dist/* "$staging/wwwroot/" -Recurse
-          Copy-Item apps/cafe-web/dist/* "$staging/cafe-dist/" -Recurse
-          Copy-Item assets/branding/* "$staging/assets/branding/" -Recurse
-          foreach($file in @('Salryn.Api.Local.exe','Salryn.Desktop.WebView.exe','cafe-dist/index.html')) {
-            if(-not(Test-Path (Join-Path $staging $file))){throw "Missing installed payload $file"}
-          }
-          dotnet publish src/Salryn.Sync.Central.Server/Salryn.Sync.Central.Server.csproj -c $configuration -r win-x64 --self-contained false -o artifacts/central
-          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
-          Compress-Archive artifacts/central/* artifacts/qa-package/Salryn-Cafe-Central-QA.zip
-          $iscc='C:/Program Files (x86)/Inno Setup 6/ISCC.exe'
-          if(-not(Test-Path $iscc)){choco install innosetup -y --no-progress; if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}}
-          & $iscc '/DMyAppVersion=1.0.0-qa' '/DMySourceRevision=${{ inputs.source_sha }}' installer/SalrynCafeSetup.iss
-          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
-          Copy-Item artifacts/installer/setup/Salryn-Cafe-Setup.exe artifacts/qa-package/
-      - name: Publish standalone test-signed Android APK
+          $ErrorActionPreference = 'Stop'
+          $configuration = if ($env:RELEASE_TIER -eq 'InternalDebugSynthetic') { 'Debug' } else { 'Release' }
+          $verifyOut = Join-Path $env:RUNNER_TEMP 'verify-out'
+          New-Item -ItemType Directory -Force -Path $verifyOut | Out-Null
+          ./scripts/test-verify-candidate.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/test-stage-qa-release.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/verify-candidate.ps1 -Mode Windows -Configuration $configuration -OutputDir $verifyOut
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $summaryFile = Get-ChildItem -LiteralPath $verifyOut -Recurse -Filter 'verification-summary.json' | Select-Object -First 1
+          if (-not $summaryFile) { throw 'Missing verification-summary.json after verify-candidate.ps1.' }
+          "VERIFICATION_SUMMARY_PATH=$($summaryFile.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          dotnet test tests/Salryn.Cafe.I6BTests/Salryn.Cafe.I6BTests.csproj -c $configuration -m:1 --logger 'trx;LogFileName=Salryn.Cafe.I6BTests.trx' --results-directory (Join-Path $verifyOut 'extra-trx')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location src/Salryn.App.Web
+          npm ci --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+      - name: Publish matched Windows Host, Desktop and Central with provenance
         shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ inputs.source_sha }}
+          RELEASE_TIER: ${{ inputs.release_tier }}
+          ANDROID_VERSION_CODE: ${{ inputs.android_version_code }}
         run: |
+          $ErrorActionPreference = 'Stop'
+          $profile = if ($env:RELEASE_TIER -eq 'InternalDebugSynthetic') { 'DebugSynthetic' } else { 'ReleaseEntitled' }
+          $configuration = if ($profile -eq 'DebugSynthetic') { 'Debug' } else { 'Release' }
+          $work = Join-Path $env:RUNNER_TEMP 'qa-work'
+          $staging = Join-Path $work 'installer-staging'
+          $setupOut = Join-Path $work 'installer-setup'
+          $centralOut = Join-Path $work 'central'
+          $pkgOut = Join-Path $work 'qa-package'
+          New-Item -ItemType Directory -Force -Path $staging, $setupOut, $centralOut, $pkgOut | Out-Null
+          "QA_PACKAGE_DIR=$pkgOut" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "QA_WORK_DIR=$work" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          $provJson = ([ordered]@{
+            sourceSha = $env:EXPECTED_SHA
+            profile = $profile
+            releaseTier = $env:RELEASE_TIER
+            configuration = $configuration
+            packageId = 'ph.kirjanelabs.salryncafe'
+            versionCode = [int]$env:ANDROID_VERSION_CODE
+            versionName = '1.0.0-qa'
+            builtAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+          } | ConvertTo-Json -Depth 4)
+          $provPath = Join-Path $work 'build-provenance.json'
+          [IO.File]::WriteAllText($provPath, $provJson)
+
+          foreach ($project in @('Salryn.Desktop.WebView', 'Salryn.Api.Local')) {
+            dotnet publish "src/$project/$project.csproj" -c $configuration -r win-x64 --self-contained false "-p:SourceRevisionId=$($env:EXPECTED_SHA)" -o $staging
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          New-Item -ItemType Directory -Force -Path "$staging/wwwroot", "$staging/cafe-dist", "$staging/assets/branding" | Out-Null
+          Copy-Item src/Salryn.App.Web/dist/* "$staging/wwwroot/" -Recurse -Force
+          Copy-Item apps/cafe-web/dist/* "$staging/cafe-dist/" -Recurse -Force
+          Copy-Item assets/branding/* "$staging/assets/branding/" -Recurse -Force
+          Copy-Item -LiteralPath $provPath -Destination (Join-Path $staging 'build-provenance.json') -Force
+          foreach ($file in @('Salryn.Api.Local.exe', 'Salryn.Desktop.WebView.exe', 'cafe-dist/index.html', 'build-provenance.json')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $staging $file))) { throw "Missing installed payload $file" }
+          }
+
+          dotnet publish src/Salryn.Sync.Central.Server/Salryn.Sync.Central.Server.csproj -c $configuration -r win-x64 --self-contained false "-p:SourceRevisionId=$($env:EXPECTED_SHA)" -o $centralOut
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item -LiteralPath $provPath -Destination (Join-Path $centralOut 'build-provenance.json') -Force
+          $deployRef = Join-Path $centralOut 'deploy-reference'
+          New-Item -ItemType Directory -Force -Path $deployRef | Out-Null
+          foreach ($tmpl in @('README.md', '.env.example', 'salryn-cafe-central.service', 'docker-compose.yml', 'Dockerfile')) {
+            $srcTmpl = Join-Path 'deploy/central' $tmpl
+            if (Test-Path -LiteralPath $srcTmpl -PathType Leaf) {
+              Copy-Item -LiteralPath $srcTmpl -Destination (Join-Path $deployRef $tmpl) -Force
+            }
+          }
+          Compress-Archive -Path "$centralOut\*" -DestinationPath (Join-Path $pkgOut 'Salryn-Cafe-Central-QA.zip') -Force
+
+          $iscc = 'C:/Program Files (x86)/Inno Setup 6/ISCC.exe'
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
+          & $iscc '/DMyAppVersion=1.0.0-qa' "/DMySourceRevision=$($env:EXPECTED_SHA)" "/DStagingDir=$staging" "/DSetupOutputDir=$setupOut" installer/SalrynCafeSetup.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item -LiteralPath (Join-Path $setupOut 'Salryn-Cafe-Setup.exe') -Destination (Join-Path $pkgOut 'Salryn-Cafe-Setup.exe') -Force
+      - name: Publish signed Android APK (persistent QA key for ControlledQA)
+        shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ inputs.source_sha }}
+          RELEASE_TIER: ${{ inputs.release_tier }}
+          ANDROID_VERSION_CODE: ${{ inputs.android_version_code }}
+          QA_KS_B64: ${{ secrets.SALRYN_CAFE_QA_KEYSTORE_B64 }}
+          QA_KS_PASS: ${{ secrets.SALRYN_CAFE_QA_KEYSTORE_PASS }}
+          QA_KEY_ALIAS: ${{ secrets.SALRYN_CAFE_QA_KEY_ALIAS }}
+          QA_KEY_PASS: ${{ secrets.SALRYN_CAFE_QA_KEY_PASS }}
+          QA_SIGNER_SHA256: ${{ secrets.SALRYN_CAFE_QA_SIGNER_SHA256 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
           dotnet workload install android
-          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
-          $configuration=if('${{ inputs.profile }}' -eq 'DebugSynthetic'){'Debug'}else{'Release'}
-          $key=Join-Path $env:RUNNER_TEMP 'salryn-cafe-qa.keystore'
-          $password=[Guid]::NewGuid().ToString('N')
-          Write-Output "::add-mask::$password"
-          keytool -genkeypair -keystore $key -storepass $password -keypass $password -alias qa -keyalg RSA -keysize 2048 -validity 30 -dname 'CN=Salryn Cafe QA Test Only'
-          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
-          dotnet publish src/Salryn.App.Android/Salryn.App.Android.csproj -c $configuration -p:RuntimeIdentifiers='android-arm64%3Bandroid-x64' -p:EmbedAssembliesIntoApk=true -p:AndroidKeyStore=true "-p:AndroidSigningKeyStore=$key" '-p:AndroidSigningKeyAlias=qa' "-p:AndroidSigningStorePass=$password" "-p:AndroidSigningKeyPass=$password" -o artifacts/android
-          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
-          $apk=@(Get-ChildItem artifacts/android -Recurse -Filter '*-Signed.apk')
-          if($apk.Count -ne 1){throw 'Expected exactly one new signed APK'}
-          Copy-Item $apk[0].FullName artifacts/qa-package/Salryn-Cafe-QA.apk
-      - name: Bind manifest and checksum evidence to exact source
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $configuration = if ($env:RELEASE_TIER -eq 'InternalDebugSynthetic') { 'Debug' } else { 'Release' }
+          $key = Join-Path $env:RUNNER_TEMP 'salryn-cafe-qa.keystore'
+          if ($env:RELEASE_TIER -eq 'ControlledQA') {
+            [IO.File]::WriteAllBytes($key, [Convert]::FromBase64String($env:QA_KS_B64))
+            $storePass = $env:QA_KS_PASS
+            $keyAlias = $env:QA_KEY_ALIAS
+            $keyPass = $env:QA_KEY_PASS
+          } else {
+            $storePass = [Guid]::NewGuid().ToString('N')
+            $keyPass = $storePass
+            $keyAlias = 'qa-internal-ephemeral'
+            Write-Output "::add-mask::$storePass"
+            keytool -genkeypair -keystore $key -storepass $storePass -keypass $keyPass -alias $keyAlias -keyalg RSA -keysize 2048 -validity 30 -dname 'CN=Salryn Cafe Internal Debug Synthetic Only'
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          $androidOut = Join-Path $env:QA_WORK_DIR 'android-out'
+          $provPath = Join-Path $env:QA_WORK_DIR 'build-provenance.json'
+          # Clear Android obj cache so CafeVersionCode/CafeVersionName changes always regenerate AndroidManifest.xml.
+          Remove-Item -LiteralPath "src/Salryn.App.Android/obj/$configuration" -Recurse -Force -ErrorAction SilentlyContinue
+          # Do NOT pass global -p:RuntimeIdentifiers (causes NETSDK1083 on net10.0 ProjectReferences).
+          dotnet publish src/Salryn.App.Android/Salryn.App.Android.csproj `
+            -c $configuration `
+            -p:AndroidPackageFormat=apk `
+            -p:EmbedAssembliesIntoApk=true `
+            "-p:CafeVersionCode=$($env:ANDROID_VERSION_CODE)" `
+            -p:CafeVersionName=1.0.0-qa `
+            "-p:SourceRevisionId=$($env:EXPECTED_SHA)" `
+            "-p:CafeBuildProvenancePath=$provPath" `
+            -p:AndroidKeyStore=true `
+            "-p:AndroidSigningKeyStore=$key" `
+            "-p:AndroidSigningKeyAlias=$keyAlias" `
+            "-p:AndroidSigningStorePass=$storePass" `
+            "-p:AndroidSigningKeyPass=$keyPass" `
+            -o $androidOut
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $apk = @(Get-ChildItem -LiteralPath $androidOut -Recurse -Filter '*-Signed.apk')
+          if ($apk.Count -ne 1) { throw "Expected exactly one signed APK, found $($apk.Count)." }
+          Copy-Item -LiteralPath $apk[0].FullName -Destination (Join-Path $env:QA_PACKAGE_DIR 'Salryn-Cafe-QA.apk') -Force
+          Remove-Item -LiteralPath $key -Force -ErrorAction SilentlyContinue
+      - name: Bind and verify manifest and checksum evidence (fail closed)
         shell: pwsh
-        run: ./scripts/stage-qa-release.ps1 -SourceSha '${{ inputs.source_sha }}' -PackageDirectory artifacts/qa-package -Profile '${{ inputs.profile }}' -RunUrl '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+        env:
+          EXPECTED_SHA: ${{ inputs.source_sha }}
+          RELEASE_TIER: ${{ inputs.release_tier }}
+          QA_SIGNER_SHA256: ${{ secrets.SALRYN_CAFE_QA_SIGNER_SHA256 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $profile = if ($env:RELEASE_TIER -eq 'InternalDebugSynthetic') { 'DebugSynthetic' } else { 'ReleaseEntitled' }
+          $signingMode = if ($env:RELEASE_TIER -eq 'ControlledQA') { 'PERSISTENT_QA_KEY' } else { 'EPHEMERAL_INTERNAL_ONLY' }
+          $argsList = @(
+            '-SourceSha', $env:EXPECTED_SHA,
+            '-PackageDirectory', $env:QA_PACKAGE_DIR,
+            '-Profile', $profile,
+            '-ReleaseTier', $env:RELEASE_TIER,
+            '-SigningMode', $signingMode,
+            '-RunUrl', "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+            '-RequireCiProvenance',
+            '-RequireApksignerVerify'
+          )
+          if ($env:RELEASE_TIER -eq 'ControlledQA') {
+            $argsList += @('-ExpectedSignerSha256', $env:QA_SIGNER_SHA256, '-VerificationSummaryPath', $env:VERIFICATION_SUMMARY_PATH)
+          }
+          & ./scripts/stage-qa-release.ps1 @argsList
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:
           name: matched-qa-${{ inputs.source_sha }}
-          path: artifacts/qa-package/
+          path: ${{ env.QA_PACKAGE_DIR }}
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: qa-executable-evidence-${{ inputs.source_sha }}
-          path: artifacts/qa-evidence/
+          path: ${{ runner.temp }}/verify-out
           if-no-files-found: warn
   draft-staging:
     needs: build
@@ -143,8 +300,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ inputs.source_sha }}
-          PROFILE: ${{ inputs.profile }}
+          RELEASE_TIER: ${{ inputs.release_tier }}
         run: |
           tag="qa-${SOURCE_SHA:0:12}-${GITHUB_RUN_ID}"
-          printf '%s\n' "QA STAGING ONLY - NOT PRODUCTION OR RELEASE-CANDIDATE ACCEPTANCE." "Profile: $PROFILE. Read QA-SETUP-PAIRING.md and manifest before installation." "Formal review and Human QA are separate open gates." > notes.txt
-          gh release create "$tag" qa-package/* --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "Salryn Cafe QA ${SOURCE_SHA:0:12}" --notes-file notes.txt --draft --prerelease
+          printf '%s\n' \
+            "QA STAGING ONLY - NOT PRODUCTION OR RELEASE-CANDIDATE ACCEPTANCE." \
+            "Release Tier: $RELEASE_TIER. Read QA-SETUP-PAIRING.md and QA-RELEASE-MANIFEST.json before installation." \
+            "Formal Kirion-Nox review, ReleaseEntitled license verification, and Human QA are separate open gates." > notes.txt
+          gh release create "$tag" qa-package/* --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "Salryn Cafe QA (${RELEASE_TIER}) ${SOURCE_SHA:0:12}" --notes-file notes.txt --draft --prerelease

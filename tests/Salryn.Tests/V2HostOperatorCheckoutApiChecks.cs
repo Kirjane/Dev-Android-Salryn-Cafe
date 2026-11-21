@@ -33,6 +33,101 @@ public static class V2HostOperatorCheckoutApiChecks
         await RunRuntimeChecksAsync(projectRoot).ConfigureAwait(false);
     }
 
+    public static async Task RunReleaseUnlicensedBoundaryAsync()
+    {
+        string projectRoot = FindProjectRoot(Directory.GetCurrentDirectory());
+        RunSourceGuards(projectRoot);
+#if DEBUG
+        throw new InvalidOperationException(
+            "RunReleaseUnlicensedBoundaryAsync requires a Release build where #if DEBUG development license mode is compiled out.");
+#else
+        SalrynLocalComposition composition = SalrynLocalComposition.CreateDevelopment(projectRoot);
+        await composition.InitializeDatabaseAsync().ConfigureAwait(false);
+
+        AuthenticatedUserReadModel operatorUser = await EnsureCheckoutOperatorAsync(composition)
+            .ConfigureAwait(false);
+        ProductLookupReadModel product = await EnsureCheckoutProductAsync(composition, operatorUser.UserId)
+            .ConfigureAwait(false);
+        string dbPath = composition.DbPaths.DatabasePath;
+
+        long salesBefore = CountAllRows(dbPath, "sales");
+        long paymentsBefore = CountAllRows(dbPath, "payments");
+        long drawerEventsBefore = CountAllRows(dbPath, "cash_drawer_events");
+
+        InMemoryLocalApiSessionStore sessionStore = new();
+        await using WebApplication app = await LocalApiApplicationFactory
+            .CreateAsync(
+                new[] { "--dev" },
+                new LocalApiApplicationOptions
+                {
+                    Url = "http://127.0.0.1:0",
+                    Composition = composition,
+                    InitializeDatabase = false,
+                    SessionStore = sessionStore,
+                    EnableStaticWebAssets = false,
+                    WriteDevelopmentDatabasePath = false
+                })
+            .ConfigureAwait(false);
+
+        await app.StartAsync().ConfigureAwait(false);
+        try
+        {
+            Uri baseAddress = ResolveStartedBaseAddress(app);
+            HostOperatorCheckoutRequest validRequest = BuildCheckoutRequest(
+                new[] { new HostOperatorCheckoutLineRequest(product.Id, CheckoutLineQuantityX1000) },
+                BuildCashPayment(product.SellingPrice.Cents));
+
+            using HttpClient anonymous = CreateClient(baseAddress);
+            await AssertCheckoutStatusAsync(
+                anonymous,
+                validRequest,
+                HttpStatusCode.Unauthorized,
+                "ReleaseUnlicensed checkout without session must return 401 before license guard.").ConfigureAwait(false);
+
+            using HttpClient noPermission = CreateClient(
+                baseAddress,
+                sessionStore.Create(new AuthenticatedUserReadModel(
+                    Guid.NewGuid(),
+                    "v2-checkout-denied-unlicensed",
+                    "V2 Checkout Denied Unlicensed",
+                    "Manager",
+                    UserStatus.Active,
+                    new[] { DefaultSeedData.Permissions.ProductsView })));
+            await AssertCheckoutErrorAsync(
+                noPermission,
+                validRequest,
+                HttpStatusCode.Forbidden,
+                "License.FeatureDenied",
+                "ReleaseUnlicensed authenticated checkout must fail closed with License.FeatureDenied (Pos) before RBAC.",
+                expectedRequiredFeature: "Pos").ConfigureAwait(false);
+
+            using HttpClient operatorClient = CreateClient(baseAddress, sessionStore.Create(operatorUser));
+            await AssertCheckoutErrorAsync(
+                operatorClient,
+                validRequest,
+                HttpStatusCode.Forbidden,
+                "License.FeatureDenied",
+                "ReleaseUnlicensed operator checkout must fail closed with License.FeatureDenied (Pos).",
+                expectedRequiredFeature: "Pos").ConfigureAwait(false);
+
+            if (CountAllRows(dbPath, "sales") != salesBefore ||
+                CountAllRows(dbPath, "payments") != paymentsBefore ||
+                CountAllRows(dbPath, "cash_drawer_events") != drawerEventsBefore)
+            {
+                throw new InvalidOperationException(
+                    "ReleaseUnlicensed denied checkout must not persist any sales, payments, or cash_drawer_events rows.");
+            }
+
+            Console.WriteLine(
+                "V2 host checkout ReleaseUnlicensed boundary: PASS (anonymous=401, unlicensed=403 License.FeatureDenied [Pos], zero writes; NOT licensed checkout acceptance).");
+        }
+        finally
+        {
+            await app.StopAsync().ConfigureAwait(false);
+        }
+#endif
+    }
+
     private static void RunSourceGuards(string projectRoot)
     {
         string apiRoot = Path.Combine(projectRoot, "src", "Salryn.Api.Local");
@@ -132,11 +227,12 @@ public static class V2HostOperatorCheckoutApiChecks
                     "Manager",
                     UserStatus.Active,
                     new[] { DefaultSeedData.Permissions.ProductsView })));
-            await AssertCheckoutStatusAsync(
+            await AssertCheckoutErrorAsync(
                 noPermission,
                 emptyCartRequest,
                 HttpStatusCode.Forbidden,
-                "Checkout without Sales.Create must return 403.").ConfigureAwait(false);
+                "Auth.PermissionDenied",
+                "Checkout without Sales.Create must return 403 Auth.PermissionDenied (not License.FeatureDenied).").ConfigureAwait(false);
 
             using HttpClient operatorClient = CreateClient(baseAddress, sessionStore.Create(operatorUser));
             await EnsureNoOpenShiftAsync(operatorClient).ConfigureAwait(false);
@@ -919,6 +1015,48 @@ public static class V2HostOperatorCheckoutApiChecks
             string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
             throw new InvalidOperationException(
                 $"{message} Expected {(int)expectedStatus}, got {(int)response.StatusCode}. Body: {body}");
+        }
+    }
+
+    private static async Task AssertCheckoutErrorAsync(
+        HttpClient client,
+        HostOperatorCheckoutRequest request,
+        HttpStatusCode expectedStatus,
+        string expectedCode,
+        string message,
+        string? expectedRequiredFeature = null)
+    {
+        using HttpResponseMessage response = await client
+            .PostAsJsonAsync("/api/checkout", request)
+            .ConfigureAwait(false);
+
+        string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        if (response.StatusCode != expectedStatus)
+        {
+            throw new InvalidOperationException(
+                $"{message} Expected HTTP {(int)expectedStatus} ({expectedCode}), got {(int)response.StatusCode}. Body: {body}");
+        }
+
+        using JsonDocument doc = JsonDocument.Parse(body);
+        string? actualCode = doc.RootElement.TryGetProperty("code", out JsonElement codeEl)
+            ? codeEl.GetString()
+            : null;
+        if (!string.Equals(actualCode, expectedCode, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"{message} Expected error code '{expectedCode}', got '{actualCode ?? "<missing>"}'. Body: {body}");
+        }
+
+        if (expectedRequiredFeature is not null)
+        {
+            string? actualFeature = doc.RootElement.TryGetProperty("requiredFeature", out JsonElement featureEl)
+                ? featureEl.GetString()
+                : null;
+            if (!string.Equals(actualFeature, expectedRequiredFeature, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"{message} Expected requiredFeature '{expectedRequiredFeature}', got '{actualFeature ?? "<missing>"}'. Body: {body}");
+            }
         }
     }
 
