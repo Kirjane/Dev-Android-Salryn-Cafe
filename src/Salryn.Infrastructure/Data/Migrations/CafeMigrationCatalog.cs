@@ -1,8 +1,8 @@
 namespace Salryn.Infrastructure.Data.Migrations;
 
 /// <summary>
-/// Canonical Salryn Cafe migration catalog (v1-v41, Issue #4 / ADR-I2).
-/// Combines shared v1-v22 + Kernel v23 + shared v24 + Yza Cafe v25-v39 + v40 lineage/Kernel-parity + v41 idempotency/device-trust.
+/// Canonical Salryn Cafe migration catalog (v1-v43, Issue #4 / ADR-I2).
+/// Combines shared v1-v22 + Kernel v23 + shared v24 + Yza Cafe v25-v39 + v40 lineage/Kernel-parity + v41 idempotency/device-trust + v42 operator binding + v43 execution fencing.
 /// </summary>
 public static class CafeMigrationCatalog
 {

@@ -44,4 +44,31 @@ public sealed class RemoteCheckoutOperatorMigrationTests
         command.CommandText = "SELECT operator_user_id FROM remote_pos_checkout_requests WHERE client_request_id='bound';";
         Assert.Equal("actorA", command.ExecuteScalar());
     }
+    [Fact]
+    public void RetainedV42UpgradePreservesOutcomesAndAddsExecutionFence()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "cafe-fence-upgrade-" + Guid.NewGuid().ToString("N"));
+        var paths = DbPaths.CreateDevelopment(root);
+        paths.EnsureDirectories();
+        var factory = new SqliteConnectionFactory(paths);
+        var migrations = CafeMigrationCatalog.CreateCanonicalCafeMigrations();
+        new MigrationRunner(factory, migrations.Where(x => x.Version <= 42).ToArray()).RunPendingMigrations();
+        using var connection = factory.CreateConnection();
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "INSERT INTO cafe_mutation_idempotency VALUES('legacy','POST /synthetic','actor','hash',200,'retained-response','now');";
+        command.ExecuteNonQuery();
+        new MigrationRunner(factory, migrations).RunPendingMigrations();
+        command.CommandText = "SELECT response_json FROM cafe_mutation_idempotency WHERE operation_id='legacy';";
+        Assert.Equal("retained-response", command.ExecuteScalar());
+        command.CommandText = "SELECT COUNT(*) FROM cafe_mutation_execution_fences;";
+        Assert.Equal(0L, Convert.ToInt64(command.ExecuteScalar()));
+        command.CommandText = "INSERT INTO cafe_mutation_execution_fences VALUES('op','endpoint','actor','hash','now');";
+        command.ExecuteNonQuery();
+        command.CommandText = "UPDATE cafe_mutation_execution_fences SET request_hash='changed' WHERE operation_id='op';";
+        Assert.Throws<SqliteException>(() => command.ExecuteNonQuery());
+        Assert.Equal(SchemaLineageKind.SalrynCafe, new MigrationRunner(factory, migrations).ClassifyDatabase().Kind);
+        Assert.Equal(0, new MigrationRunner(factory, migrations).GetPendingMigrationCount());
+    }
+
 }
