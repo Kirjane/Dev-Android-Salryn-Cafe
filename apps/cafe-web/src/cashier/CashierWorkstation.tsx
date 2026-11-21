@@ -1,12 +1,13 @@
 import {
-  AlertTriangle,
   Coffee,
+  PauseCircle,
+  PlayCircle,
   Printer,
-  RefreshCw,
-  RotateCcw,
   Search,
+  Send,
   ShoppingBag,
   Trash2,
+  XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -23,95 +24,88 @@ import {
   TextInput,
   useToast,
 } from "@salryn/cafe-ui";
-import {
-  MOCK_AR_ACCOUNTS,
-  MOCK_MENU_ITEMS,
-  type CafeWorkstationClient,
-} from "./mockCafeClient";
-import {
-  formatPhp,
-  UX_B_DATA_SOURCE,
-  type BlindCloseResult,
-  type CafeMenuItem,
-  type CartLine,
-  type CommittedReceipt,
-  type DiscountKind,
-  type ModifierOption,
-  type ServiceChannel,
-  type StationTrustState,
-  type TenderMode,
+import { formatPhp, parsePhpToCents } from "../api/hostClient";
+import type {
+  CafeOrderDetail,
+  CafePrintStation,
+  CustomerAccount,
+  DraftLine,
+  MenuItem,
+  MenuPublication,
+  MenuVariant,
+  ServiceMode,
+  TenderMode,
+  WorkstationApi,
 } from "./types";
-import { useDurableOperation } from "./useDurableOperation";
 
 export type CashierWorkstationProps = {
-  client: CafeWorkstationClient;
-  trustState: StationTrustState;
-  onCommittedSale?: (receipt: CommittedReceipt) => void;
-};
-
-const CHANNEL_LABELS: Record<ServiceChannel, string> = {
-  DINE_IN: "Dine-In",
-  TAKEOUT: "Takeout",
-  DELIVERY: "Delivery",
-};
-
-const TENDER_LABELS: Record<TenderMode, string> = {
-  CASH: "Cash Only",
-  AR: "AR Account",
-  PARTIAL_CASH_AR: "Partial Cash + AR",
+  api: WorkstationApi;
+  menu: MenuPublication | null;
+  customers: CustomerAccount[];
+  printStations: CafePrintStation[];
+  permissions: string[];
+  activeOrder: CafeOrderDetail | null;
+  lastCompletion: { orderId: string; saleId: string; receiptNumber: string } | null;
+  blocked: boolean;
+  onDispatchIntent: (path: string, body: Record<string, unknown>) => Promise<boolean>;
+  onClearActiveOrder: () => void;
 };
 
 export function CashierWorkstation({
-  client,
-  trustState,
-  onCommittedSale,
+  api,
+  menu,
+  customers,
+  printStations,
+  permissions,
+  activeOrder,
+  lastCompletion,
+  blocked,
+  onDispatchIntent,
+  onClearActiveOrder,
 }: CashierWorkstationProps) {
   const { notify } = useToast();
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const [category, setCategory] = useState<string>("All");
+  const [categoryId, setCategoryId] = useState<string>("ALL");
   const [search, setSearch] = useState("");
-  const [channel, setChannel] = useState<ServiceChannel>("DINE_IN");
-  const [tableOrRef, setTableOrRef] = useState("Table 1");
-  const [discount, setDiscount] = useState<DiscountKind>("NONE");
-  const [tenderMode, setTenderMode] = useState<TenderMode>("CASH");
-  const [cashTenderedPhp, setCashTenderedPhp] = useState("");
-  const [arChargePhp, setArChargePhp] = useState("");
-  const [arCustomerId, setArCustomerId] = useState(MOCK_AR_ACCOUNTS[0].id);
+  const [serviceMode, setServiceMode] = useState<ServiceMode>("Takeout");
+  const [serviceReference, setServiceReference] = useState("");
+  const [draftLines, setDraftLines] = useState<DraftLine[]>([]);
 
-  const [cart, setCart] = useState<CartLine[]>([]);
-  const [configuringItem, setConfiguringItem] = useState<CafeMenuItem | null>(null);
-  const [selectedModsByGroup, setSelectedModsByGroup] = useState<Record<string, ModifierOption>>({});
+  const [configuringItem, setConfiguringItem] = useState<MenuItem | null>(null);
+  const [selectedVariantId, setSelectedVariantId] = useState<string>("");
+  const [selectedOptionIds, setSelectedOptionIds] = useState<string[]>([]);
   const [lineNote, setLineNote] = useState("");
+  const [dialogError, setDialogError] = useState<string | null>(null);
 
-  const [lastReceipt, setLastReceipt] = useState<CommittedReceipt | null>(null);
-  const [refundOpen, setRefundOpen] = useState(false);
-  const [refundReceiptNum, setRefundReceiptNum] = useState("CY-1041");
-  const [refundAmountPhp, setRefundAmountPhp] = useState("165.00");
-  const [refundReason, setRefundReason] = useState("");
+  const [tenderMode, setTenderMode] = useState<TenderMode>("Cash");
+  const [cashPhp, setCashPhp] = useState("0");
+  const [customerId, setCustomerId] = useState("");
+  const [discountPhp, setDiscountPhp] = useState("");
+  const [discountReason, setDiscountReason] = useState("");
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
-  const [blindCloseOpen, setBlindCloseOpen] = useState(false);
-  const [blindCountPhp, setBlindCountPhp] = useState("");
-  const [blindCloseResult, setBlindCloseResult] = useState<BlindCloseResult | null>(null);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [printingReceipt, setPrintingReceipt] = useState(false);
+  const printLockRef = useRef(false);
+  const pendingPrintOpsRef = useRef<Record<string, string>>({});
 
-  const checkoutOp = useDurableOperation("sale");
-  const refundOp = useDurableOperation("refund");
-  const blindCloseOp = useDurableOperation("blindclose");
-  const reprintOp = useDurableOperation("reprint");
+  useEffect(() => {
+    setTenderMode("Cash");
+    setCashPhp("0");
+    setCustomerId("");
+    setDiscountPhp("");
+    setDiscountReason("");
+    setCheckoutError(null);
+  }, [activeOrder?.order.orderId]);
 
-  const stationBlocked = trustState === "OFFLINE_LEASE_EXPIRED" || trustState === "REVOKED";
-  const editsLocked = Boolean(checkoutOp.unknownOutcome) || checkoutOp.inFlight;
+  const permitted = (perm: string) => permissions.includes(perm);
 
-  const quote = useMemo(() => client.quoteCart(cart, discount), [client, cart, discount]);
-
-  const filteredMenu = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return MOCK_MENU_ITEMS.filter((item) => {
-      if (category !== "All" && item.category !== category) return false;
-      if (!q) return true;
-      return item.name.toLowerCase().includes(q) || item.sku.toLowerCase().includes(q);
-    });
-  }, [category, search]);
+  const receiptStation = useMemo(
+    () => printStations.find((s) => s.isActive && s.stationKind === "Receipt") ?? null,
+    [printStations],
+  );
 
   useEffect(() => {
     function handleHotkeys(event: KeyboardEvent) {
@@ -124,649 +118,874 @@ export function CashierWorkstation({
     return () => window.removeEventListener("keydown", handleHotkeys);
   }, []);
 
-  function openItem(item: CafeMenuItem) {
-    if (editsLocked) return;
-    if (item.modifierGroups.length === 0) {
-      addLineToCart(item, [], "");
+  const categories = useMemo(
+    () => [...(menu?.categories ?? [])].sort((a, b) => a.displayOrder - b.displayOrder),
+    [menu],
+  );
+
+  const filteredItems = useMemo(() => {
+    if (!menu) return [];
+    const q = search.trim().toLowerCase();
+    return [...menu.items]
+      .sort((a, b) => a.displayOrder - b.displayOrder)
+      .filter((item) => {
+        if (categoryId !== "ALL" && item.categoryId !== categoryId) return false;
+        if (!q) return true;
+        return (
+          item.name.toLowerCase().includes(q) ||
+          (item.sku ?? "").toLowerCase().includes(q)
+        );
+      });
+  }, [menu, categoryId, search]);
+
+  const itemVariants = useMemo<MenuVariant[]>(() => {
+    if (!menu || !configuringItem) return [];
+    return menu.variants
+      .filter((v) => v.productId === configuringItem.productId)
+      .sort((a, b) => a.displayOrder - b.displayOrder);
+  }, [menu, configuringItem]);
+
+  const applicableGroups = useMemo(() => {
+    if (!menu || !configuringItem) return [];
+    const ownerIds = new Set<string>([configuringItem.productId]);
+    if (selectedVariantId) ownerIds.add(selectedVariantId);
+    const linkedIds = new Set<string>();
+    for (const link of menu.itemModifierGroups) {
+      if (ownerIds.has(link.ownerId)) linkedIds.add(link.groupId);
+    }
+    for (const link of menu.variantModifierGroups) {
+      if (ownerIds.has(link.ownerId)) linkedIds.add(link.groupId);
+    }
+    return menu.modifierGroups
+      .filter((g) => linkedIds.has(g.groupId))
+      .sort((a, b) => a.displayOrder - b.displayOrder);
+  }, [menu, configuringItem, selectedVariantId]);
+
+  const serverTotalCents = useMemo(
+    () => activeOrder?.currentRevision.lines.reduce((sum, l) => sum + l.lineTotalCents, 0) ?? 0,
+    [activeOrder],
+  );
+
+  const draftEstimatedCents = useMemo(
+    () => draftLines.reduce((sum, l) => sum + l.unitPriceCents * l.quantity, 0),
+    [draftLines],
+  );
+
+  function openMenuItem(item: MenuItem) {
+    if (blocked || activeOrder || item.isTemporarilyUnavailable) return;
+    if (!menu) return;
+
+    const variants = menu.variants.filter((v) => v.productId === item.productId && !v.isTemporarilyUnavailable);
+    const hasGroups =
+      menu.itemModifierGroups.some((l) => l.ownerId === item.productId) ||
+      variants.some((v) => menu.variantModifierGroups.some((l) => l.ownerId === v.variantId));
+
+    if (variants.length === 0 && !hasGroups) {
+      setDraftLines((prev) => [
+        ...prev,
+        {
+          orderLineId: crypto.randomUUID(),
+          productId: item.productId,
+          productName: item.name,
+          variantId: null,
+          variantName: null,
+          modifierOptionIds: [],
+          modifierLabels: [],
+          quantity: 1,
+          unitPriceCents: item.sellingPriceCents,
+          note: null,
+        },
+      ]);
       return;
     }
-    const defaults: Record<string, ModifierOption> = {};
-    for (const group of item.modifierGroups) {
-      if (group.options.length > 0) {
-        defaults[group.id] = group.options[0];
+
+    setConfiguringItem(item);
+    setSelectedVariantId("");
+    setSelectedOptionIds([]);
+    setLineNote("");
+    setDialogError(null);
+  }
+
+  function toggleModifierOption(groupId: string, optionId: string, maxSelections: number) {
+    if (!menu) return;
+    setSelectedOptionIds((prev) => {
+      if (prev.includes(optionId)) {
+        return prev.filter((id) => id !== optionId);
+      }
+      const groupOptionIds = new Set(
+        menu.modifierOptions.filter((o) => o.groupId === groupId).map((o) => o.optionId),
+      );
+      const activeInGroup = prev.filter((id) => groupOptionIds.has(id));
+      if (maxSelections === 1) {
+        return [...prev.filter((id) => !groupOptionIds.has(id)), optionId];
+      }
+      if (maxSelections > 0 && activeInGroup.length >= maxSelections) {
+        return prev;
+      }
+      return [...prev, optionId];
+    });
+  }
+
+  function handleConfirmConfiguredItem() {
+    if (!menu || !configuringItem) return;
+    for (const group of applicableGroups) {
+      const groupOptionIds = new Set(
+        menu.modifierOptions.filter((o) => o.groupId === group.groupId).map((o) => o.optionId),
+      );
+      const count = selectedOptionIds.filter((id) => groupOptionIds.has(id)).length;
+      const minReq = group.isRequired ? Math.max(1, group.minSelections) : group.minSelections;
+      if (count < minReq) {
+        setDialogError(`${group.name} requires at least ${minReq} selection(s).`);
+        return;
+      }
+      if (group.maxSelections > 0 && count > group.maxSelections) {
+        setDialogError(`${group.name} allows at most ${group.maxSelections} selection(s).`);
+        return;
       }
     }
-    setSelectedModsByGroup(defaults);
-    setLineNote("");
-    setConfiguringItem(item);
-  }
 
-  function addLineToCart(item: CafeMenuItem, modifiers: ModifierOption[], note: string) {
-    checkoutOp.resetIntent();
-    setCart((prev) => [
+    const chosenVariant = selectedVariantId
+      ? menu.variants.find((v) => v.variantId === selectedVariantId) ?? null
+      : null;
+    const chosenOptions = menu.modifierOptions.filter((o) => selectedOptionIds.includes(o.optionId));
+    const basePrice = chosenVariant ? chosenVariant.sellingPriceCents : configuringItem.sellingPriceCents;
+    const modsDelta = chosenOptions.reduce((sum, o) => sum + o.priceDeltaCents, 0);
+
+    setDraftLines((prev) => [
       ...prev,
       {
-        lineId: `${item.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        item,
+        orderLineId: crypto.randomUUID(),
+        productId: configuringItem.productId,
+        productName: configuringItem.name,
+        variantId: chosenVariant?.variantId ?? null,
+        variantName: chosenVariant?.name ?? null,
+        modifierOptionIds: chosenOptions.map((o) => o.optionId),
+        modifierLabels: chosenOptions.map((o) => o.name),
         quantity: 1,
-        selectedModifiers: modifiers,
-        note: note.trim() || undefined,
+        unitPriceCents: basePrice + modsDelta,
+        note: lineNote.trim() || null,
       },
     ]);
+    setConfiguringItem(null);
   }
 
-  function updateQty(lineId: string, delta: number) {
-    checkoutOp.resetIntent();
-    setCart((prev) =>
+  function adjustDraftQty(orderLineId: string, delta: number) {
+    setDraftLines((prev) =>
       prev
-        .map((line) => (line.lineId === lineId ? { ...line, quantity: line.quantity + delta } : line))
+        .map((line) => (line.orderLineId === orderLineId ? { ...line, quantity: line.quantity + delta } : line))
         .filter((line) => line.quantity > 0),
     );
   }
 
-  function parsePhpToCents(raw: string): number {
-    const num = Number(raw);
-    if (!Number.isFinite(num) || num < 0) return 0;
-    return Math.round(num * 100);
-  }
-
-  async function handleCheckoutSubmit() {
-    if (stationBlocked) return;
-
-    const cashCents =
-      tenderMode === "AR"
-        ? 0
-        : cashTenderedPhp.trim()
-          ? parsePhpToCents(cashTenderedPhp)
-          : tenderMode === "CASH"
-            ? quote.totalDueCents
-            : 0;
-
-    const arCents =
-      tenderMode === "CASH"
-        ? 0
-        : tenderMode === "AR"
-          ? quote.totalDueCents
-          : parsePhpToCents(arChargePhp);
-
-    const committed = await checkoutOp.execute((operationId) =>
-      client.submitSale({
-        operationId,
-        channel,
-        tableOrRef,
-        discount,
-        tenderMode,
-        cashTenderedCents: cashCents,
-        arChargeCents: arCents,
-        arCustomerId: tenderMode === "CASH" ? undefined : arCustomerId,
-        lines: cart,
-      }),
-    );
-
-    if (committed) {
-      setLastReceipt(committed);
-      setCart([]);
-      setCashTenderedPhp("");
-      setArChargePhp("");
-      onCommittedSale?.(committed);
-      notify(
-        "success",
-        committed.replayedIdempotently
-          ? `Recovered receipt ${committed.receiptNumber}`
-          : `Sale committed · ${committed.receiptNumber}`,
-        `Kitchen ticket ${committed.kitchenTicketNumber} queued (${formatPhp(committed.totalDueCents)}).`,
-      );
+  async function handleSaveOrderRevision() {
+    if (draftLines.length === 0 || blocked) return;
+    const orderId = crypto.randomUUID();
+    const ok = await onDispatchIntent("/api/cafe/orders/revision", {
+      operationId: crypto.randomUUID(),
+      orderId,
+      expectedVersion: 0,
+      serviceMode,
+      serviceReference: serviceReference.trim() || null,
+      lines: draftLines.map((line, index) => ({
+        orderLineId: line.orderLineId,
+        productId: line.productId,
+        variantId: line.variantId,
+        modifierOptionIds: line.modifierOptionIds,
+        quantityX1000: line.quantity * 1000,
+        note: line.note,
+        displayOrder: index,
+      })),
+    });
+    if (ok) {
+      setDraftLines([]);
     }
   }
 
-  async function handleReprintReceipt() {
-    if (!lastReceipt) return;
-    const res = await reprintOp.execute((operationId) =>
-      client.reprintDocument({ operationId, kind: "RECEIPT", reference: lastReceipt.receiptNumber }),
-    );
-    if (res?.printed) {
-      notify("info", `Reprint sent · ${res.reference}`, "Thermal receipt job queued.");
+  async function handleCompletePayment() {
+    if (!activeOrder || blocked) return;
+    setCheckoutError(null);
+    try {
+      const orderDiscountCents = discountPhp.trim() ? parsePhpToCents(discountPhp) : 0;
+      if (orderDiscountCents > serverTotalCents) {
+        throw new Error("Order discount cannot exceed order subtotal.");
+      }
+      const netDueCents = serverTotalCents - orderDiscountCents;
+
+      let cashCents = 0;
+      if (tenderMode !== "AccountsReceivable") {
+        cashCents = parsePhpToCents(cashPhp);
+      }
+
+      if (tenderMode === "Partial" && (cashCents <= 0 || cashCents >= netDueCents)) {
+        throw new Error("Partial cash must be positive and below the order total.");
+      }
+      if (tenderMode !== "Cash" && !customerId) {
+        throw new Error("Select an active AR customer account.");
+      }
+
+      const payments: Array<{ method: "Cash" | "AccountsReceivable"; amountCents: number }> = [];
+      if (cashCents > 0) {
+        payments.push({ method: "Cash", amountCents: cashCents });
+      }
+      if (tenderMode !== "Cash") {
+        payments.push({ method: "AccountsReceivable", amountCents: netDueCents - cashCents });
+      }
+
+      await onDispatchIntent(`/api/cafe/orders/${activeOrder.order.orderId}/complete`, {
+        completionOperationId: crypto.randomUUID(),
+        saleCommittedOperationId: crypto.randomUUID(),
+        financialDecisionOperationId: crypto.randomUUID(),
+        financialDecisionId: crypto.randomUUID(),
+        expectedVersion: activeOrder.order.orderVersion,
+        customerId: tenderMode === "Cash" ? null : customerId,
+        orderDiscountCents,
+        discountReason: orderDiscountCents > 0 ? discountReason.trim() || "Cashier discount" : null,
+        payments,
+      });
+    } catch (error) {
+      setCheckoutError(error instanceof Error ? error.message : "Invalid checkout parameters.");
     }
   }
 
-  async function handleRefundSubmit() {
-    if (stationBlocked) return;
-    const res = await refundOp.execute((operationId) =>
-      client.submitRefund({
+  async function handlePrintReceipt(saleId: string) {
+    if (!receiptStation || printLockRef.current) return;
+    printLockRef.current = true;
+    setPrintingReceipt(true);
+    const operationId = pendingPrintOpsRef.current[saleId] ?? crypto.randomUUID();
+    pendingPrintOpsRef.current[saleId] = operationId;
+    try {
+      await api.printReceipt({
         operationId,
-        receiptNumber: refundReceiptNum,
-        refundedCents: parsePhpToCents(refundAmountPhp),
-        reason: refundReason,
-      }),
-    );
-    if (res) {
-      setRefundOpen(false);
-      setRefundReason("");
-      notify("warning", `Refund recorded · ${res.receiptNumber}`, `${formatPhp(res.refundedCents)} (${res.operationId})`);
-    }
-  }
-
-  async function handleBlindCloseSubmit() {
-    if (stationBlocked) return;
-    const res = await blindCloseOp.execute((operationId) =>
-      client.submitBlindClose({
-        operationId,
-        countedCashCents: parsePhpToCents(blindCountPhp),
-      }),
-    );
-    if (res) {
-      setBlindCloseResult(res);
-      notify("info", "Blind shift close submitted", `Variance: ${formatPhp(res.varianceCents)}`);
+        stationId: receiptStation.stationId,
+        saleId,
+        copyKind: "Original",
+      });
+      delete pendingPrintOpsRef.current[saleId];
+      notify("info", `Receipt print sent · ${receiptStation.name}`);
+    } catch (error) {
+      notify("danger", "Receipt print failed", error instanceof Error ? error.message : "Printer error.");
+    } finally {
+      printLockRef.current = false;
+      setPrintingReceipt(false);
     }
   }
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-          <StatusBadge tone="copper">{UX_B_DATA_SOURCE}</StatusBadge>
-          <StatusBadge tone="neutral">Cash / AR / Partial Cash+AR Only</StatusBadge>
-          {checkoutOp.pendingOperationId ? (
-            <StatusBadge tone="info">Intent ID: {checkoutOp.pendingOperationId}</StatusBadge>
-          ) : null}
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          <Button
-            variant="secondary"
-            leftIcon={<RotateCcw size={16} />}
-            disabled={stationBlocked}
-            onClick={() => setRefundOpen(true)}
-          >
-            Audited Refund
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={stationBlocked}
-            onClick={() => { setBlindCloseResult(null); setBlindCloseOpen(true); }}
-          >
-            Blind Shift Close
-          </Button>
-        </div>
-      </div>
-
-      {trustState === "OFFLINE_LEASE_VALID" ? (
-        <Alert
-          tone="warning"
-          title="Offline Lease Active (Local Queue Mode)"
-          description="Station is operating offline under a valid signed lease. Committed sales are fenced with durable operation IDs for central sync."
-        />
-      ) : null}
-
-      {stationBlocked ? (
-        <Alert
-          tone="danger"
-          title={trustState === "REVOKED" ? "Terminal Revoked — Checkout Locked" : "Offline Lease Expired — Renewal Required"}
-          description="New checkout mutations are blocked until device trust is restored with the Salryn Cafe Host or Central authority."
-        />
-      ) : null}
-
-      {checkoutOp.unknownOutcome ? (
-        <Card>
-          <CardBody>
-            <Alert
-              tone="warning"
-              title={`Unknown Checkout Outcome · Operation ${checkoutOp.unknownOutcome.operationId}`}
-              description={checkoutOp.unknownOutcome.message}
-            />
-            <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 10 }}>
-              <Button
-                variant="accent"
-                leftIcon={<RefreshCw size={16} />}
-                loading={checkoutOp.inFlight}
-                onClick={() => void handleCheckoutSubmit()}
-              >
-                Retry &amp; Verify Same Operation ID
-              </Button>
-              <Button
-                variant="secondary"
-                disabled={checkoutOp.inFlight}
-                onClick={() => checkoutOp.resetIntent()}
-              >
-                Discard Pending Intent
-              </Button>
-            </div>
-          </CardBody>
-        </Card>
-      ) : null}
-
-      {checkoutOp.error ? (
-        <Alert tone="danger" title="Checkout Rejected" description={checkoutOp.error} />
-      ) : null}
-
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.4fr) minmax(320px, 1fr)", gap: 16, alignItems: "start" }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 310px), 1fr))",
+          gap: 16,
+          alignItems: "start",
+        }}
+      >
         <Card>
           <CardHeader
-            title="Cafe Menu & Modifiers"
-            subtitle="Touch-first >= 48px tiles. Press F2 to focus menu search."
+            title="Published Cafe Menu"
+            subtitle={menu ? `Publication v${menu.revisionNumber} · Press F2 to search` : "No published menu available"}
+            action={<StatusBadge tone="copper">Cash / AR / Partial Cash+AR</StatusBadge>}
           />
           <CardBody>
-            <div style={{ display: "grid", gap: 12 }}>
-              <FormField label="Search Cafe Menu (F2)">
-                <input
-                  ref={searchInputRef}
-                  className="salryn-input salryn-focusable"
-                  placeholder="Spanish Latte, Ensaymada, ESP-01..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </FormField>
+            {!menu ? (
+              <Alert
+                tone="warning"
+                title="No Published Menu"
+                description="Publish a Cafe Menu catalog revision on the Host before ringing up orders."
+              />
+            ) : (
+              <div style={{ display: "grid", gap: 12 }}>
+                <FormField label="Search Cafe Menu (F2)">
+                  <input
+                    ref={searchInputRef}
+                    className="salryn-input salryn-focusable"
+                    placeholder="Spanish Latte, Ensaymada, SKU..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </FormField>
 
-              <div role="group" aria-label="Menu categories" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {["All", "Espresso", "Cold Brew & Tea", "Pastries", "All-Day Meals"].map((cat) => (
+                <div role="group" aria-label="Menu categories" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                   <Button
-                    key={cat}
                     size="sm"
-                    variant={category === cat ? "primary" : "secondary"}
-                    aria-pressed={category === cat}
-                    onClick={() => setCategory(cat)}
+                    variant={categoryId === "ALL" ? "primary" : "secondary"}
+                    aria-pressed={categoryId === "ALL"}
+                    onClick={() => setCategoryId("ALL")}
                   >
-                    {cat}
+                    All
                   </Button>
-                ))}
-              </div>
+                  {categories.map((cat) => (
+                    <Button
+                      key={cat.categoryId}
+                      size="sm"
+                      variant={categoryId === cat.categoryId ? "primary" : "secondary"}
+                      aria-pressed={categoryId === cat.categoryId}
+                      onClick={() => setCategoryId(cat.categoryId)}
+                    >
+                      {cat.name}
+                    </Button>
+                  ))}
+                </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(175px, 1fr))", gap: 10 }}>
-                {filteredMenu.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => openItem(item)}
-                    className="salryn-btn salryn-btn--secondary salryn-focusable"
-                    style={{
-                      minHeight: 84,
-                      flexDirection: "column",
-                      alignItems: "flex-start",
-                      justifyContent: "space-between",
-                      padding: 12,
-                      textAlign: "left",
-                    }}
-                  >
-                    <span style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700 }}>
-                      <Coffee aria-hidden="true" size={15} />
-                      {item.name}
-                    </span>
-                    <span className="salryn-tabular" style={{ fontSize: "0.875rem", color: "var(--salryn-dark-copper)" }}>
-                      {formatPhp(item.basePriceCents)}
-                      {item.modifierGroups.length > 0 ? " · Modifiers" : ""}
-                    </span>
-                  </button>
-                ))}
-                {filteredMenu.length === 0 ? (
-                  <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 8, color: "var(--salryn-mocha)" }}>
-                    <Search aria-hidden="true" size={16} />
-                    <span>No cafe items match "{search}".</span>
-                  </div>
-                ) : null}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(165px, 1fr))", gap: 10 }}>
+                  {filteredItems.map((item) => (
+                    <button
+                      key={item.productId}
+                      type="button"
+                      disabled={blocked || Boolean(activeOrder) || item.isTemporarilyUnavailable}
+                      onClick={() => openMenuItem(item)}
+                      className="salryn-btn salryn-btn--secondary salryn-focusable"
+                      style={{
+                        minHeight: 84,
+                        flexDirection: "column",
+                        alignItems: "flex-start",
+                        justifyContent: "space-between",
+                        padding: 12,
+                        textAlign: "left",
+                      }}
+                    >
+                      <span style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700 }}>
+                        <Coffee aria-hidden="true" size={15} />
+                        {item.name}
+                      </span>
+                      <span className="salryn-tabular" style={{ fontSize: "0.875rem", color: "var(--salryn-dark-copper)" }}>
+                        {item.isTemporarilyUnavailable ? "86'd / Unavailable" : formatPhp(item.sellingPriceCents)}
+                      </span>
+                    </button>
+                  ))}
+                  {filteredItems.length === 0 ? (
+                    <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 8, color: "var(--salryn-mocha)" }}>
+                      <Search aria-hidden="true" size={16} />
+                      <span>No cafe items match &ldquo;{search}&rdquo;.</span>
+                    </div>
+                  ) : null}
+                </div>
               </div>
-            </div>
+            )}
           </CardBody>
         </Card>
 
         <Card>
-          <CardHeader
-            title="Current Cafe Ticket"
-            subtitle="Server-authoritative totals (Cash, AR, or Partial Cash + AR)."
-            action={<StatusBadge tone="info">{cart.reduce((s, l) => s + l.quantity, 0)} items</StatusBadge>}
-          />
-          <CardBody>
-            <div style={{ display: "grid", gap: 12 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <FormField label="Service Channel">
-                  <SelectInput
-                    value={channel}
-                    onChange={(e) => {
-                      const next = e.target.value as ServiceChannel;
-                      setChannel(next);
-                      setTableOrRef(next === "DINE_IN" ? "Table 1" : next === "TAKEOUT" ? "Walk-in" : "Rider Ref");
+          {!activeOrder ? (
+            <>
+              <CardHeader
+                title="New Order Ticket"
+                subtitle="Save order revision to Host SQLite before sending to preparation."
+                action={<StatusBadge tone="info">{draftLines.reduce((s, l) => s + l.quantity, 0)} items</StatusBadge>}
+              />
+              <CardBody>
+                <div style={{ display: "grid", gap: 12 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
+                    <FormField label="Service mode">
+                      <SelectInput
+                        value={serviceMode}
+                        onChange={(e) => setServiceMode(e.target.value as ServiceMode)}
+                      >
+                        <option value="Takeout">Takeout</option>
+                        <option value="DineIn">DineIn</option>
+                        <option value="Delivery">Delivery</option>
+                      </SelectInput>
+                    </FormField>
+                    <FormField label="Table / reference">
+                      <TextInput
+                        placeholder={serviceMode === "DineIn" ? "Table 1" : "Walk-in / Tag"}
+                        value={serviceReference}
+                        onChange={(e) => setServiceReference(e.target.value)}
+                      />
+                    </FormField>
+                  </div>
+
+                  {draftLines.length === 0 ? (
+                    <div
+                      style={{
+                        padding: "18px 12px",
+                        textAlign: "center",
+                        color: "var(--salryn-mocha)",
+                        border: "1px dashed var(--salryn-border-strong)",
+                        borderRadius: 10,
+                      }}
+                    >
+                      <ShoppingBag aria-hidden="true" size={20} style={{ marginBottom: 6 }} />
+                      <div>Tap a menu item on the left to start an order.</div>
+                    </div>
+                  ) : (
+                    <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 8 }}>
+                      {draftLines.map((line) => (
+                        <li
+                          key={line.orderLineId}
+                          style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: 10,
+                            borderRadius: 8,
+                            background: "var(--salryn-surface-subtle)",
+                            border: "1px solid var(--salryn-border)",
+                          }}
+                        >
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 700 }}>
+                              {line.productName}
+                              {line.variantName ? ` (${line.variantName})` : ""}
+                            </div>
+                            {line.modifierLabels.length > 0 ? (
+                              <div style={{ fontSize: "0.75rem", color: "var(--salryn-mocha)" }}>
+                                {line.modifierLabels.join(", ")}
+                              </div>
+                            ) : null}
+                            {line.note ? (
+                              <div style={{ fontSize: "0.75rem", color: "var(--salryn-dark-copper)" }}>
+                                Note: {line.note}
+                              </div>
+                            ) : null}
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              aria-label={`Decrease ${line.productName}`}
+                              onClick={() => adjustDraftQty(line.orderLineId, -1)}
+                            >
+                              −
+                            </Button>
+                            <span className="salryn-tabular" style={{ minWidth: 20, textAlign: "center", fontWeight: 700 }}>
+                              {line.quantity}
+                            </span>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              aria-label={`Increase ${line.productName}`}
+                              onClick={() => adjustDraftQty(line.orderLineId, 1)}
+                            >
+                              +
+                            </Button>
+                            <span className="salryn-tabular" style={{ minWidth: 72, textAlign: "right", fontWeight: 700 }}>
+                              {formatPhp(line.unitPriceCents * line.quantity)}
+                            </span>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  <div
+                    className="salryn-tabular"
+                    style={{
+                      padding: 12,
+                      borderRadius: 10,
+                      background: "var(--salryn-surface-subtle)",
+                      border: "1px solid var(--salryn-border-strong)",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      fontWeight: 800,
                     }}
                   >
-                    {(Object.keys(CHANNEL_LABELS) as ServiceChannel[]).map((ch) => (
-                      <option key={ch} value={ch}>
-                        {CHANNEL_LABELS[ch]}
-                      </option>
-                    ))}
-                  </SelectInput>
-                </FormField>
-
-                <FormField label={channel === "DINE_IN" ? "Table Number" : channel === "DELIVERY" ? "Delivery Ref" : "Customer / Tag"}>
-                  <TextInput value={tableOrRef} onChange={(e) => setTableOrRef(e.target.value)} />
-                </FormField>
-              </div>
-
-              {cart.length === 0 ? (
-                <div style={{ padding: "18px 12px", textAlign: "center", color: "var(--salryn-mocha)", border: "1px dashed var(--salryn-border-strong)", borderRadius: 10 }}>
-                  <ShoppingBag aria-hidden="true" size={20} style={{ marginBottom: 6 }} />
-                  <div>Tap any cafe item to start an order.</div>
+                    <span>Estimated Subtotal</span>
+                    <span>{formatPhp(draftEstimatedCents)}</span>
+                  </div>
                 </div>
-              ) : (
-                <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 8 }}>
-                  {cart.map((line) => {
-                    const modSum = line.selectedModifiers.reduce((a, m) => a + m.priceDeltaCents, 0);
-                    const lineTotal = (line.item.basePriceCents + modSum) * line.quantity;
-                    return (
+              </CardBody>
+              <CardFooter>
+                <Button
+                  variant="ghost"
+                  leftIcon={<Trash2 size={16} />}
+                  disabled={draftLines.length === 0 || blocked}
+                  onClick={() => setDraftLines([])}
+                >
+                  Clear Draft
+                </Button>
+                <Button
+                  variant="primary"
+                  size="lg"
+                  disabled={blocked || draftLines.length === 0 || !permitted("Orders.Create")}
+                  onClick={() => void handleSaveOrderRevision()}
+                >
+                  Save order
+                </Button>
+              </CardFooter>
+            </>
+          ) : (
+            <>
+              <CardHeader
+                title={`Current order · ${activeOrder.order.state}`}
+                subtitle={`${activeOrder.order.serviceMode} · ${activeOrder.order.serviceReference || "Walk-in"} · v${activeOrder.order.orderVersion}`}
+                action={<StatusBadge tone="copper">Server Authoritative</StatusBadge>}
+              />
+              <CardBody>
+                <div style={{ display: "grid", gap: 12 }}>
+                  <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 8 }}>
+                    {activeOrder.currentRevision.lines.map((line) => (
                       <li
-                        key={line.lineId}
+                        key={line.orderLineId}
                         style={{
                           display: "flex",
                           justifyContent: "space-between",
-                          alignItems: "center",
                           gap: 8,
                           padding: 10,
                           borderRadius: 8,
                           background: "var(--salryn-surface-subtle)",
-                          border: "1px solid var(--salryn-border)",
                         }}
                       >
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 700 }}>{line.item.name}</div>
-                          {line.selectedModifiers.length > 0 ? (
+                        <div>
+                          <div style={{ fontWeight: 700 }}>
+                            {Math.max(1, Math.round(line.quantityX1000 / 1000))}× {line.productNameSnapshot}
+                            {line.variantNameSnapshot ? ` (${line.variantNameSnapshot})` : ""}
+                          </div>
+                          {line.modifierSelections.length > 0 ? (
                             <div style={{ fontSize: "0.75rem", color: "var(--salryn-mocha)" }}>
-                              {line.selectedModifiers.map((m) => m.label).join(", ")}
+                              {line.modifierSelections.map((m) => m.optionNameSnapshot).join(", ")}
                             </div>
                           ) : null}
                           {line.note ? (
-                            <div style={{ fontSize: "0.75rem", color: "var(--salryn-dark-copper)" }}>Note: {line.note}</div>
+                            <div style={{ fontSize: "0.75rem", color: "var(--salryn-dark-copper)" }}>
+                              Note: {line.note}
+                            </div>
                           ) : null}
                         </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <Button size="sm" variant="secondary" aria-label={`Decrease ${line.item.name}`} onClick={() => updateQty(line.lineId, -1)}>
-                            −
-                          </Button>
-                          <span className="salryn-tabular" style={{ minWidth: 20, textAlign: "center", fontWeight: 700 }}>
-                            {line.quantity}
-                          </span>
-                          <Button size="sm" variant="secondary" aria-label={`Increase ${line.item.name}`} onClick={() => updateQty(line.lineId, 1)}>
-                            +
-                          </Button>
-                          <span className="salryn-tabular" style={{ minWidth: 72, textAlign: "right", fontWeight: 700 }}>
-                            {formatPhp(lineTotal)}
-                          </span>
-                        </div>
+                        <span className="salryn-tabular" style={{ fontWeight: 700 }}>
+                          {formatPhp(line.lineTotalCents)}
+                        </span>
                       </li>
-                    );
-                  })}
-                </ul>
-              )}
+                    ))}
+                  </ul>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <FormField label="Discount Policy">
-                  <SelectInput
-                    disabled={editsLocked}
-                    value={discount}
-                    onChange={(e) => {
-                      checkoutOp.resetIntent();
-                      setDiscount(e.target.value as DiscountKind);
+                  <div
+                    className="salryn-tabular"
+                    style={{
+                      padding: 12,
+                      borderRadius: 10,
+                      background: "var(--salryn-surface-subtle)",
+                      border: "1px solid var(--salryn-border-strong)",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      fontSize: "1.125rem",
+                      fontWeight: 800,
                     }}
                   >
-                    <option value="NONE">No Discount</option>
-                    <option value="SENIOR_CITIZEN">Senior Citizen (20%)</option>
-                    <option value="PWD">PWD (20%)</option>
-                    <option value="PROMO_10">Cafe Promo (10%)</option>
-                  </SelectInput>
-                </FormField>
+                    <span>Confirmed order total</span>
+                    <span>{formatPhp(serverTotalCents)}</span>
+                  </div>
 
-                <FormField label="Tender Mode">
-                  <SelectInput
-                    disabled={editsLocked}
-                    value={tenderMode}
-                    onChange={(e) => {
-                      checkoutOp.resetIntent();
-                      setTenderMode(e.target.value as TenderMode);
-                    }}
+                  {activeOrder.order.state === "Ready" ? (
+                    <div style={{ display: "grid", gap: 12, paddingTop: 6, borderTop: "1px solid var(--salryn-border)" }}>
+                      {checkoutError ? (
+                        <Alert tone="danger" title="Checkout Validation" description={checkoutError} />
+                      ) : null}
+                      <FormField label="Tender">
+                        <SelectInput
+                          value={tenderMode}
+                          onChange={(e) => setTenderMode(e.target.value as TenderMode)}
+                        >
+                          <option value="Cash">Cash</option>
+                          <option value="AccountsReceivable" disabled={!permitted("Receivables.CreateCreditSale")}>
+                            Accounts Receivable
+                          </option>
+                          <option value="Partial" disabled={!permitted("Receivables.CreateCreditSale")}>
+                            Partial Cash + AR
+                          </option>
+                        </SelectInput>
+                      </FormField>
+
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
+                        <FormField label="Order discount (PHP)">
+                          <TextInput
+                            inputMode="decimal"
+                            placeholder="0.00"
+                            value={discountPhp}
+                            onChange={(e) => setDiscountPhp(e.target.value)}
+                          />
+                        </FormField>
+                        {discountPhp.trim() ? (
+                          <FormField label="Discount reason">
+                            <TextInput
+                              placeholder="Senior / Promo"
+                              value={discountReason}
+                              onChange={(e) => setDiscountReason(e.target.value)}
+                            />
+                          </FormField>
+                        ) : null}
+                      </div>
+
+                      {tenderMode !== "AccountsReceivable" ? (
+                        <FormField label="Cash amount (PHP)">
+                          <TextInput
+                            inputMode="decimal"
+                            value={cashPhp}
+                            onChange={(e) => setCashPhp(e.target.value)}
+                          />
+                        </FormField>
+                      ) : null}
+
+                      {tenderMode !== "Cash" ? (
+                        <FormField label="Customer" required>
+                          <SelectInput value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+                            <option value="">Choose customer</option>
+                            {customers.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.fullName}
+                              </option>
+                            ))}
+                          </SelectInput>
+                        </FormField>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {activeOrder.order.state === "Completed" && lastCompletion && lastCompletion.orderId === activeOrder.order.orderId ? (
+                    <Alert
+                      tone="success"
+                      title={`Payment confirmed · Receipt ${lastCompletion.receiptNumber}`}
+                      description={`Sale ID: ${lastCompletion.saleId}`}
+                    />
+                  ) : null}
+                </div>
+              </CardBody>
+              <CardFooter>
+                {activeOrder.order.state === "Open" ? (
+                  <>
+                    <Button
+                      variant="accent"
+                      leftIcon={<Send size={15} />}
+                      disabled={blocked || !permitted("Preparation.Manage")}
+                      onClick={() =>
+                        void onDispatchIntent(`/api/cafe/orders/${activeOrder.order.orderId}/submit`, {
+                          operationId: crypto.randomUUID(),
+                          expectedVersion: activeOrder.order.orderVersion,
+                        })
+                      }
+                    >
+                      Send to preparation
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      leftIcon={<PauseCircle size={15} />}
+                      disabled={blocked || !permitted("Orders.Manage")}
+                      onClick={() =>
+                        void onDispatchIntent(`/api/cafe/orders/${activeOrder.order.orderId}/park`, {
+                          operationId: crypto.randomUUID(),
+                          expectedVersion: activeOrder.order.orderVersion,
+                        })
+                      }
+                    >
+                      Park order
+                    </Button>
+                    {permitted("Orders.Cancel") ? (
+                      <Button
+                        variant="danger"
+                        leftIcon={<XCircle size={15} />}
+                        disabled={blocked}
+                        onClick={() => {
+                          setCancelReason("");
+                          setCancelOpen(true);
+                        }}
+                      >
+                        Cancel order
+                      </Button>
+                    ) : null}
+                  </>
+                ) : null}
+
+                {activeOrder.order.state === "Parked" ? (
+                  <Button
+                    variant="accent"
+                    leftIcon={<PlayCircle size={15} />}
+                    disabled={blocked || !permitted("Orders.Manage")}
+                    onClick={() =>
+                      void onDispatchIntent(`/api/cafe/orders/${activeOrder.order.orderId}/resume`, {
+                        operationId: crypto.randomUUID(),
+                        expectedVersion: activeOrder.order.orderVersion,
+                      })
+                    }
                   >
-                    {(Object.keys(TENDER_LABELS) as TenderMode[]).map((mode) => (
-                      <option key={mode} value={mode}>
-                        {TENDER_LABELS[mode]}
-                      </option>
-                    ))}
-                  </SelectInput>
-                </FormField>
-              </div>
-
-              {tenderMode !== "CASH" ? (
-                <FormField label="Approved AR Account" required>
-                  <SelectInput value={arCustomerId} onChange={(e) => setArCustomerId(e.target.value)}>
-                    {MOCK_AR_ACCOUNTS.map((acct) => (
-                      <option key={acct.id} value={acct.id}>
-                        {acct.name} (Bal: {formatPhp(acct.currentBalanceCents)})
-                      </option>
-                    ))}
-                  </SelectInput>
-                </FormField>
-              ) : null}
-
-              <div style={{ display: "grid", gridTemplateColumns: tenderMode === "PARTIAL_CASH_AR" ? "1fr 1fr" : "1fr", gap: 10 }}>
-                {tenderMode !== "AR" ? (
-                  <FormField label="Cash Tendered (PHP)" hint={tenderMode === "CASH" ? "Leave blank for exact cash." : "Cash portion."}>
-                    <TextInput
-                      inputMode="decimal"
-                      placeholder={(quote.totalDueCents / 100).toFixed(2)}
-                      value={cashTenderedPhp}
-                      onChange={(e) => setCashTenderedPhp(e.target.value)}
-                    />
-                  </FormField>
+                    Resume order
+                  </Button>
                 ) : null}
 
-                {tenderMode === "PARTIAL_CASH_AR" ? (
-                  <FormField label="AR Portion (PHP)" required>
-                    <TextInput
-                      inputMode="decimal"
-                      placeholder="100.00"
-                      value={arChargePhp}
-                      onChange={(e) => setArChargePhp(e.target.value)}
-                    />
-                  </FormField>
+                {(activeOrder.order.state === "Submitted" || activeOrder.order.state === "Preparing") && permitted("Preparation.Manage") ? (
+                  <Button
+                    variant="accent"
+                    disabled={blocked}
+                    onClick={() =>
+                      void onDispatchIntent(`/api/cafe/orders/${activeOrder.order.orderId}/preparation`, {
+                        operationId: crypto.randomUUID(),
+                        expectedVersion: activeOrder.order.orderVersion,
+                        targetState: activeOrder.order.state === "Submitted" ? "Preparing" : "Ready",
+                      })
+                    }
+                  >
+                    {activeOrder.order.state === "Submitted" ? "Mark preparing" : "Mark ready"}
+                  </Button>
                 ) : null}
-              </div>
 
-              <div
-                className="salryn-tabular"
-                style={{
-                  padding: 12,
-                  borderRadius: 10,
-                  background: "var(--salryn-surface-subtle)",
-                  border: "1px solid var(--salryn-border-strong)",
-                  display: "grid",
-                  gap: 4,
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.875rem" }}>
-                  <span>Subtotal</span>
-                  <span>{formatPhp(quote.subtotalCents)}</span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.875rem", color: "var(--salryn-mocha)" }}>
-                  <span>Discount</span>
-                  <span>−{formatPhp(quote.discountCents)}</span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1.125rem", fontWeight: 800, marginTop: 4 }}>
-                  <span>Server Total Due</span>
-                  <span>{formatPhp(quote.totalDueCents)}</span>
-                </div>
-              </div>
-            </div>
-          </CardBody>
-          <CardFooter>
-            <Button
-              variant="ghost"
-              leftIcon={<Trash2 size={16} />}
-              disabled={cart.length === 0 || checkoutOp.inFlight}
-              onClick={() => {
-                setCart([]);
-                checkoutOp.resetIntent();
-              }}
-            >
-              Clear
-            </Button>
-            <Button
-              variant="primary"
-              size="lg"
-              loading={checkoutOp.inFlight}
-              disabled={cart.length === 0 || stationBlocked}
-              onClick={() => void handleCheckoutSubmit()}
-            >
-              Complete Sale ({TENDER_LABELS[tenderMode]})
-            </Button>
-          </CardFooter>
+                {activeOrder.order.state === "Ready" ? (
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    disabled={
+                      blocked ||
+                      !permitted("Orders.Complete") ||
+                      !permitted("Sales.Create") ||
+                      (tenderMode !== "Cash" && !customerId)
+                    }
+                    onClick={() => void handleCompletePayment()}
+                  >
+                    Complete payment
+                  </Button>
+                ) : null}
+
+                {activeOrder.order.state === "Completed" && activeOrder.order.completedSaleId && receiptStation && permitted("Printing.Print") ? (
+                  <Button
+                    variant="secondary"
+                    leftIcon={<Printer size={15} />}
+                    loading={printingReceipt}
+                    onClick={() => void handlePrintReceipt(activeOrder.order.completedSaleId!)}
+                  >
+                    Print Receipt
+                  </Button>
+                ) : null}
+
+                <Button variant="ghost" disabled={blocked} onClick={onClearActiveOrder}>
+                  Start another order
+                </Button>
+              </CardFooter>
+            </>
+          )}
         </Card>
       </div>
-
-      {lastReceipt ? (
-        <Card>
-          <CardHeader
-            title={`Committed Receipt · ${lastReceipt.receiptNumber}`}
-            subtitle={`Operation ID: ${lastReceipt.operationId} · Kitchen Ticket: ${lastReceipt.kitchenTicketNumber}`}
-            action={
-              <Button
-                variant="secondary"
-                leftIcon={<Printer size={16} />}
-                loading={reprintOp.inFlight}
-                onClick={() => void handleReprintReceipt()}
-              >
-                Reprint Receipt
-              </Button>
-            }
-          />
-          <CardBody>
-            <div className="salryn-tabular" style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
-              <span>Total: <strong>{formatPhp(lastReceipt.totalDueCents)}</strong></span>
-              <span>Cash: <strong>{formatPhp(lastReceipt.cashTenderedCents)}</strong></span>
-              <span>AR: <strong>{formatPhp(lastReceipt.arChargeCents)}</strong></span>
-              <span>Change: <strong>{formatPhp(lastReceipt.changeCents)}</strong></span>
-              {lastReceipt.replayedIdempotently ? (
-                <StatusBadge tone="info">Idempotent Recovery (No Duplicate Charge)</StatusBadge>
-              ) : null}
-            </div>
-          </CardBody>
-        </Card>
-      ) : null}
 
       <Dialog
         open={Boolean(configuringItem)}
         title={configuringItem ? `Configure ${configuringItem.name}` : "Configure Item"}
-        description="Select cafe modifiers before adding to the ticket."
+        description="Choose variant and modifier options defined by the published Host menu."
         onClose={() => setConfiguringItem(null)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setConfiguringItem(null)}>
               Cancel
             </Button>
-            <Button
-              variant="primary"
-              onClick={() => {
-                if (!configuringItem) return;
-                addLineToCart(configuringItem, Object.values(selectedModsByGroup), lineNote);
-                setConfiguringItem(null);
-              }}
-            >
+            <Button variant="primary" onClick={handleConfirmConfiguredItem}>
               Add to Ticket
             </Button>
           </>
         }
       >
-        {configuringItem ? (
+        {configuringItem && menu ? (
           <div style={{ display: "grid", gap: 14 }}>
-            {configuringItem.modifierGroups.map((group) => (
-              <FormField key={group.id} label={group.name} required={group.required}>
+            {dialogError ? <Alert tone="danger" title="Selection Required" description={dialogError} /> : null}
+            {itemVariants.length > 0 ? (
+              <FormField label="Variant">
                 <SelectInput
-                  value={selectedModsByGroup[group.id]?.id ?? ""}
+                  value={selectedVariantId}
                   onChange={(e) => {
-                    const opt = group.options.find((o) => o.id === e.target.value);
-                    if (opt) setSelectedModsByGroup((prev) => ({ ...prev, [group.id]: opt }));
+                    const nextVarId = e.target.value;
+                    setSelectedVariantId(nextVarId);
+                    const ownerIds = new Set<string>([configuringItem.productId]);
+                    if (nextVarId) ownerIds.add(nextVarId);
+                    const validGroupIds = new Set<string>();
+                    for (const l of menu.itemModifierGroups) {
+                      if (ownerIds.has(l.ownerId)) validGroupIds.add(l.groupId);
+                    }
+                    for (const l of menu.variantModifierGroups) {
+                      if (ownerIds.has(l.ownerId)) validGroupIds.add(l.groupId);
+                    }
+                    const validOptionIds = new Set(
+                      menu.modifierOptions.filter((o) => validGroupIds.has(o.groupId)).map((o) => o.optionId),
+                    );
+                    setSelectedOptionIds((prev) => prev.filter((id) => validOptionIds.has(id)));
                   }}
                 >
-                  {group.options.map((opt) => (
-                    <option key={opt.id} value={opt.id}>
-                      {opt.label} {opt.priceDeltaCents > 0 ? `(+${formatPhp(opt.priceDeltaCents)})` : ""}
+                  <option value="">Standard ({formatPhp(configuringItem.sellingPriceCents)})</option>
+                  {itemVariants.map((v) => (
+                    <option key={v.variantId} value={v.variantId} disabled={v.isTemporarilyUnavailable}>
+                      {v.name} ({formatPhp(v.sellingPriceCents)})
                     </option>
                   ))}
                 </SelectInput>
               </FormField>
-            ))}
+            ) : null}
+
+            {applicableGroups.map((group) => {
+              const opts = menu.modifierOptions
+                .filter((o) => o.groupId === group.groupId)
+                .sort((a, b) => a.displayOrder - b.displayOrder);
+              return (
+                <fieldset
+                  key={group.groupId}
+                  style={{
+                    border: "1px solid var(--salryn-border-strong)",
+                    borderRadius: 8,
+                    padding: 12,
+                    display: "grid",
+                    gap: 8,
+                  }}
+                >
+                  <legend style={{ fontWeight: 700, padding: "0 6px" }}>
+                    {group.name} · choose {group.minSelections}–{group.maxSelections || "any"}
+                  </legend>
+                  {opts.map((opt) => (
+                    <label key={opt.optionId} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedOptionIds.includes(opt.optionId)}
+                        onChange={() => toggleModifierOption(group.groupId, opt.optionId, group.maxSelections)}
+                      />
+                      <span>
+                        {opt.name}
+                        {opt.priceDeltaCents > 0 ? ` (+${formatPhp(opt.priceDeltaCents)})` : ""}
+                      </span>
+                    </label>
+                  ))}
+                </fieldset>
+              );
+            })}
+
             <FormField label="Barista / Kitchen Note">
-              <TextInput placeholder="Less ice, extra hot..." value={lineNote} onChange={(e) => setLineNote(e.target.value)} />
+              <TextInput
+                placeholder="Less ice, extra hot..."
+                value={lineNote}
+                onChange={(e) => setLineNote(e.target.value)}
+              />
             </FormField>
           </div>
         ) : null}
       </Dialog>
 
       <Dialog
-        open={refundOpen}
-        title="Audited Refund"
-        description="Refunds require a reason and carry a durable operation ID."
-        onClose={() => setRefundOpen(false)}
+        open={cancelOpen}
+        title="Cancel Current Order?"
+        description="Audited cancellation requires a brief reason."
+        onClose={() => setCancelOpen(false)}
         footer={
           <>
-            <Button variant="secondary" onClick={() => setRefundOpen(false)}>
-              Cancel
+            <Button variant="secondary" onClick={() => setCancelOpen(false)}>
+              Back
             </Button>
-            <Button variant="danger" loading={refundOp.inFlight} onClick={() => void handleRefundSubmit()}>
-              Submit Refund
+            <Button
+              variant="danger"
+              onClick={() => {
+                if (!activeOrder || !cancelReason.trim()) {
+                  notify("warning", "Audit reason required");
+                  return;
+                }
+                const reason = cancelReason.trim();
+                setCancelOpen(false);
+                void onDispatchIntent(`/api/cafe/orders/${activeOrder.order.orderId}/cancel`, {
+                  operationId: crypto.randomUUID(),
+                  expectedVersion: activeOrder.order.orderVersion,
+                  reason,
+                });
+              }}
+            >
+              Confirm Cancellation
             </Button>
           </>
         }
       >
-        <div style={{ display: "grid", gap: 12 }}>
-          {refundOp.error ? <Alert tone="danger" title="Refund Error" description={refundOp.error} /> : null}
-          <FormField label="Receipt Number" required>
-            <TextInput value={refundReceiptNum} onChange={(e) => setRefundReceiptNum(e.target.value)} />
-          </FormField>
-          <FormField label="Refund Amount (PHP)" required>
-            <TextInput inputMode="decimal" value={refundAmountPhp} onChange={(e) => setRefundAmountPhp(e.target.value)} />
-          </FormField>
-          <FormField label="Audit Reason" required>
-            <TextInput placeholder="Wrong beverage prepared" value={refundReason} onChange={(e) => setRefundReason(e.target.value)} />
-          </FormField>
-        </div>
-      </Dialog>
-
-      <Dialog
-        open={blindCloseOpen}
-        title="Blind Shift Close"
-        description="Enter your counted drawer cash without seeing expected totals beforehand."
-        onClose={() => setBlindCloseOpen(false)}
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setBlindCloseOpen(false)}>
-              Close
-            </Button>
-            {!blindCloseResult ? (
-              <Button variant="primary" loading={blindCloseOp.inFlight} onClick={() => void handleBlindCloseSubmit()}>
-                Submit Blind Count
-              </Button>
-            ) : null}
-          </>
-        }
-      >
-        <div style={{ display: "grid", gap: 12 }}>
-          {blindCloseOp.error ? <Alert tone="danger" title="Blind Close Failed" description={blindCloseOp.error} /> : null}
-          {!blindCloseResult ? (
-            <FormField label="Counted Drawer Cash (PHP)" required hint="Expected cash is revealed only after submission.">
-              <TextInput
-                inputMode="decimal"
-                placeholder="0.00"
-                value={blindCountPhp}
-                onChange={(e) => setBlindCountPhp(e.target.value)}
-              />
-            </FormField>
-          ) : (
-            <div className="salryn-tabular" style={{ display: "grid", gap: 6 }}>
-              <Alert
-                tone={blindCloseResult.varianceCents === 0 ? "success" : "warning"}
-                title="Shift Variance Computed by Server"
-                description={`Counted: ${formatPhp(blindCloseResult.countedCashCents)} · Expected: ${formatPhp(blindCloseResult.expectedCashCents)} · Variance: ${formatPhp(blindCloseResult.varianceCents)}`}
-              />
-              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.8125rem", color: "var(--salryn-mocha)" }}>
-                <AlertTriangle aria-hidden="true" size={14} />
-                <span>Operation ID: {blindCloseResult.operationId}</span>
-              </div>
-            </div>
-          )}
-        </div>
+        <FormField label="Cancellation Reason" required>
+          <TextInput value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} />
+        </FormField>
       </Dialog>
     </div>
   );

@@ -1,136 +1,306 @@
-export const UX_B_DATA_SOURCE = "MOCKED_UI" as const;
+export type ServiceMode = "DineIn" | "Takeout" | "Delivery";
+export type TenderMode = "Cash" | "AccountsReceivable" | "Partial";
+export type HostOrderState = "Open" | "Parked" | "Submitted" | "Preparing" | "Ready" | "Completed" | "Cancelled" | string;
 
-export type TenderMode = "CASH" | "AR" | "PARTIAL_CASH_AR";
-export type ServiceChannel = "DINE_IN" | "TAKEOUT" | "DELIVERY";
-export type DiscountKind = "NONE" | "SENIOR_CITIZEN" | "PWD" | "PROMO_10";
-export type StationTrustState =
-  | "PAIRED_ONLINE"
-  | "OFFLINE_LEASE_VALID"
-  | "OFFLINE_LEASE_EXPIRED"
-  | "REVOKED";
+export type SessionUser = {
+  userId: string;
+  username: string;
+  displayName: string;
+  roleName?: string;
+  permissions: string[];
+};
 
-export type KitchenStation = "BARISTA" | "HOT_KITCHEN" | "PASTRY";
-export type OrderStatus = "OPEN" | "PREPARING" | "READY" | "SERVED" | "VOIDED";
-export type KitchenTicketStatus = "QUEUED" | "IN_PROGRESS" | "READY" | "RECALLED";
+export type HostSession = {
+  isAuthenticated: boolean;
+  user?: SessionUser;
+};
 
-export type ModifierOption = {
-  id: string;
-  label: string;
+export type MenuCategory = {
+  categoryId: string;
+  name: string;
+  displayOrder: number;
+};
+
+export type MenuItem = {
+  productId: string;
+  categoryId: string | null;
+  name: string;
+  description: string | null;
+  unitId: string;
+  unitName: string | null;
+  sku: string | null;
+  barcode: string | null;
+  sellingPriceCents: number;
+  costPriceCents: number | null;
+  isTemporarilyUnavailable: boolean;
+  displayOrder: number;
+};
+
+export type MenuVariant = {
+  variantId: string;
+  productId: string;
+  name: string;
+  sku: string | null;
+  barcode: string | null;
+  sellingPriceCents: number;
+  costPriceCents: number | null;
+  isTemporarilyUnavailable: boolean;
+  displayOrder: number;
+};
+
+export type MenuModifierGroup = {
+  groupId: string;
+  name: string;
+  isRequired: boolean;
+  minSelections: number;
+  maxSelections: number;
+  displayOrder: number;
+};
+
+export type MenuModifierOption = {
+  optionId: string;
+  groupId: string;
+  name: string;
   priceDeltaCents: number;
+  displayOrder: number;
 };
 
-export type ModifierGroup = {
-  id: string;
-  name: string;
-  required: boolean;
-  options: ModifierOption[];
+export type MenuModifierLink = {
+  ownerId: string;
+  groupId: string;
+  displayOrder: number;
 };
 
-export type CafeMenuItem = {
-  id: string;
-  sku: string;
-  name: string;
-  category: "Espresso" | "Cold Brew & Tea" | "Pastries" | "All-Day Meals";
-  station: KitchenStation;
-  basePriceCents: number;
-  modifierGroups: ModifierGroup[];
+export type MenuPublication = {
+  revisionId: string;
+  storeId: string;
+  revisionNumber: number;
+  publishedAtUtc: string;
+  categories: MenuCategory[];
+  items: MenuItem[];
+  variants: MenuVariant[];
+  modifierGroups: MenuModifierGroup[];
+  modifierOptions: MenuModifierOption[];
+  itemModifierGroups: MenuModifierLink[];
+  variantModifierGroups: MenuModifierLink[];
 };
 
-export type ArCustomerAccount = {
-  id: string;
-  name: string;
-  creditLimitCents: number;
-  currentBalanceCents: number;
-};
-
-export type CartLine = {
-  lineId: string;
-  item: CafeMenuItem;
+export type DraftLine = {
+  orderLineId: string;
+  productId: string;
+  productName: string;
+  variantId: string | null;
+  variantName: string | null;
+  modifierOptionIds: string[];
+  modifierLabels: string[];
   quantity: number;
-  selectedModifiers: ModifierOption[];
-  note?: string;
+  unitPriceCents: number;
+  note: string | null;
 };
 
-export type ServerQuoteResponse = {
-  dataSource: typeof UX_B_DATA_SOURCE;
-  subtotalCents: number;
-  discountCents: number;
-  totalDueCents: number;
+export type CafeOrderLineSnapshot = {
+  orderLineId: string;
+  productId: string;
+  productNameSnapshot: string;
+  unitNameSnapshot: string;
+  quantityX1000: number;
+  variantId: string | null;
+  variantNameSnapshot: string | null;
+  modifierSelections: Array<{ optionId: string; optionNameSnapshot: string; priceDeltaCents: number }>;
+  note: string | null;
+  calculatedUnitPriceCents: number;
+  lineTotalCents: number;
+  displayOrder: number;
 };
 
-export type CheckoutIntent = {
-  operationId: string;
-  channel: ServiceChannel;
-  tableOrRef: string;
-  discount: DiscountKind;
-  tenderMode: TenderMode;
-  cashTenderedCents: number;
-  arChargeCents: number;
-  arCustomerId?: string;
-  lines: CartLine[];
+export type CafeOrderSummary = {
+  orderId: string;
+  storeId: string;
+  orderVersion: number;
+  currentRevisionId: string;
+  menuPublicationRevisionId: string;
+  state: HostOrderState;
+  serviceMode: ServiceMode;
+  serviceReference: string | null;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+  completedSaleId: string | null;
+  cancellationReason: string | null;
 };
 
-export type CommittedReceipt = {
-  dataSource: typeof UX_B_DATA_SOURCE;
-  operationId: string;
+export type CafeOrderDetail = {
+  order: CafeOrderSummary;
+  currentRevision: {
+    revisionId: string;
+    revisionNumber: number;
+    orderVersion: number;
+    serviceMode: ServiceMode;
+    serviceReference: string | null;
+    lines: CafeOrderLineSnapshot[];
+  };
+};
+
+export type CafeOrderMutationResult = {
+  orderId: string;
+  revisionId?: string;
+  orderVersion: number;
+  state: HostOrderState;
+  idempotent?: boolean;
+};
+
+export type CafeOrderCompletionResult = {
+  orderId: string;
+  saleId: string;
   receiptNumber: string;
-  kitchenTicketNumber: string;
-  channel: ServiceChannel;
-  tableOrRef: string;
-  tenderMode: TenderMode;
-  totalDueCents: number;
-  cashTenderedCents: number;
-  changeCents: number;
-  arChargeCents: number;
-  replayedIdempotently: boolean;
-  committedAtIso: string;
+  idempotent?: boolean;
 };
 
-export type OrderRecord = {
+export type CustomerAccount = {
   id: string;
-  receiptNumber: string;
-  channel: ServiceChannel;
-  tableOrRef: string;
-  summary: string;
-  totalDueCents: number;
-  tenderMode: TenderMode;
-  status: OrderStatus;
-  createdAtLabel: string;
+  fullName: string;
+  isActive: boolean;
+  outstandingBalanceCents: number;
 };
 
-export type KitchenTicket = {
-  id: string;
-  ticketNumber: string;
-  receiptNumber: string;
-  station: KitchenStation;
-  channel: ServiceChannel;
-  tableOrRef: string;
-  items: { name: string; quantity: number; modifiers: string[]; note?: string }[];
-  status: KitchenTicketStatus;
-  elapsedMinutes: number;
+export type HostShiftInfo = {
+  shiftState: "Open" | "Closed" | "None" | string;
+  shiftId?: string | null;
+  openedAtUtc?: string | null;
+  openingCashCents?: number | null;
+  message?: string | null;
+  expectedCashCents?: number | null;
+  countedCashCents?: number | null;
+  varianceCents?: number | null;
+  coverageStatus?: string | null;
+  reviewStatus?: string | null;
 };
 
-export type BlindCloseResult = {
-  dataSource: typeof UX_B_DATA_SOURCE;
+export type HostShiftOperationResult = {
+  code: string;
+  message: string;
+  shift: HostShiftInfo | null;
+};
+
+export type CafePrintStation = {
+  stationId: string;
+  name: string;
+  stationKind: "Receipt" | "Kitchen" | string;
+  routeKey: string | null;
+  isActive: boolean;
+};
+
+export type CafePrintJobResult = {
+  job: {
+    jobId: string;
+    stationId: string;
+    status: string;
+    copyKind: string;
+  };
+};
+
+export type CentralEnrollRequest = {
+  configuration: {
+    httpsOrigin: string;
+    tenantId: string;
+    storeId: string;
+    pinnedServerKey: string;
+  };
+  joinCode: string;
+  deviceName: string;
+};
+
+export type CentralSyncResult = {
+  applied: number;
+  pending: number;
+};
+
+export type OrderRevisionPayload = {
   operationId: string;
-  countedCashCents: number;
-  expectedCashCents: number;
-  varianceCents: number;
-  closedAtIso: string;
+  orderId: string;
+  expectedVersion: number;
+  serviceMode: ServiceMode;
+  serviceReference: string | null;
+  lines: Array<{
+    orderLineId: string;
+    productId: string;
+    variantId: string | null;
+    modifierOptionIds: string[];
+    quantityX1000: number;
+    note: string | null;
+    displayOrder: number;
+  }>;
 };
 
-export type RefundResult = {
-  dataSource: typeof UX_B_DATA_SOURCE;
-  operationId: string;
-  receiptNumber: string;
-  refundedCents: number;
+export type CompleteOrderPayload = {
+  completionOperationId: string;
+  saleCommittedOperationId: string;
+  financialDecisionOperationId: string;
+  financialDecisionId: string;
+  expectedVersion: number;
+  customerId: string | null;
+  orderDiscountCents?: number;
+  discountReason?: string | null;
+  payments: Array<{ method: "Cash" | "AccountsReceivable"; amountCents: number }>;
+};
+
+export type PendingHostIntent = {
+  storeId: string;
+  actor: string;
+  path: string;
+  body: Record<string, unknown>;
+  rejection?: string;
+};
+
+export type RejectedIntentRecord = {
+  request: PendingHostIntent;
   reason: string;
+  archivedAtUtc: string;
 };
 
-export function formatPhp(cents: number): string {
-  const sign = cents < 0 ? "-" : "";
-  return `${sign}₱${(Math.abs(cents) / 100).toLocaleString("en-PH", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+export interface WorkstationApi {
+  getSession(): Promise<HostSession>;
+  login(username: string, password: string): Promise<HostSession>;
+  logout(): Promise<void>;
+  getPublishedMenu(): Promise<MenuPublication | null>;
+  getOrders(): Promise<CafeOrderSummary[]>;
+  getOrderDetail(orderId: string): Promise<CafeOrderDetail>;
+  getCustomers(): Promise<CustomerAccount[]>;
+  getShift(): Promise<HostShiftOperationResult>;
+  openShift(openingCashCents: number): Promise<HostShiftOperationResult>;
+  getPrintStations(): Promise<CafePrintStation[]>;
+  printReceipt(req: {
+    operationId: string;
+    stationId: string;
+    saleId: string;
+    copyKind: "Original" | "Reprint";
+  }): Promise<CafePrintJobResult>;
+  printKitchenTicket(req: {
+    operationId: string;
+    stationId: string;
+    orderId: string;
+    orderRevisionId: string;
+    copyKind: "Original" | "Reprint";
+  }): Promise<CafePrintJobResult>;
+  enrollCentral(req: CentralEnrollRequest): Promise<{ deviceId: string; status: string }>;
+  synchronizeCentral(password: string): Promise<CentralSyncResult>;
+  saveOrderRevision(payload: OrderRevisionPayload): Promise<CafeOrderMutationResult>;
+  submitOrder(orderId: string, payload: { operationId: string; expectedVersion: number }): Promise<CafeOrderMutationResult>;
+  setPreparationStatus(
+    orderId: string,
+    payload: { operationId: string; expectedVersion: number; targetState: "Preparing" | "Ready" },
+  ): Promise<CafeOrderMutationResult>;
+  parkOrder(orderId: string, payload: { operationId: string; expectedVersion: number }): Promise<CafeOrderMutationResult>;
+  resumeOrder(orderId: string, payload: { operationId: string; expectedVersion: number }): Promise<CafeOrderMutationResult>;
+  cancelOrder(
+    orderId: string,
+    payload: { operationId: string; expectedVersion: number; reason: string },
+  ): Promise<CafeOrderMutationResult>;
+  completeOrder(orderId: string, payload: CompleteOrderPayload): Promise<CafeOrderCompletionResult>;
+  closeShift(payload: {
+    countedCashCents: number;
+    physicalCountConfirmed: true;
+    clientRequestId: string;
+    note: string;
+  }): Promise<HostShiftOperationResult>;
+  sendRawIntent(path: string, body: Record<string, unknown>): Promise<Record<string, unknown>>;
 }

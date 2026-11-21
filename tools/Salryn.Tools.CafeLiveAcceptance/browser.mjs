@@ -10,8 +10,9 @@ const page = await context.newPage();
 let assertions=0;
 const errors=[];
 const completions=[];
-page.on("request", request => {
-  if(request.method() === "POST" && /\/api\/cafe\/orders\/[^/]+\/complete$/.test(request.url())) {
+page.on("response", response => {
+  const request = response.request();
+  if(response.status() === 200 && request.method() === "POST" && /\/api\/cafe\/orders\/[^/]+\/complete$/.test(request.url())) {
     const body=request.postDataJSON();
     if(body.payments?.length) completions.push({path:new URL(request.url()).pathname,body});
   }
@@ -23,8 +24,8 @@ try {
   assertions++;
   await page.goto(`${url}/cafe/`);
   await expect(page.getByRole("heading", {name:"Cafe workstation",exact:true})).toBeVisible(); assertions++;
-  await page.getByLabel("Username",{exact:true}).fill("c4-proof");
-  await page.getByLabel("Password",{exact:true}).fill(process.env.CAFE_QA_PASSWORD);
+  await page.getByLabel(/Username/i).fill("c4-proof");
+  await page.getByLabel(/Password/i).fill(process.env.CAFE_QA_PASSWORD);
   await page.getByRole("button",{name:"Sign in",exact:true}).click();
   await expect(page.getByRole("button",{name:"Sign out",exact:true})).toBeVisible(); assertions++;
   if(process.env.CAFE_QA_REPLAY === "1") {
@@ -41,8 +42,10 @@ try {
     process.exit(0);
   }
   for (const tender of ["Cash","AccountsReceivable","Partial"]) {
-    await page.getByLabel("Menu item",{exact:true}).selectOption({label:"C4 Coffee · ₱5.00"});
-    await page.getByRole("button",{name:"Add item",exact:true}).click();
+    await page.getByRole("button",{name:/C4 Coffee/i}).click();
+    const cfgDialog = page.getByRole("dialog",{name:"Configure C4 Coffee"});
+    await expect(cfgDialog).toBeVisible();
+    await cfgDialog.getByRole("button",{name:"Add to Ticket",exact:true}).click();
     await page.getByLabel("Table / reference",{exact:true}).fill(`QA ${tender}`);
     await page.getByRole("button",{name:"Save order",exact:true}).click();
     await expect(page.getByRole("heading",{name:"Current order · Open",exact:true})).toBeVisible(); assertions++;
@@ -57,14 +60,14 @@ try {
       await page.getByLabel("Cash amount (PHP)",{exact:true}).fill("0.00");
       await page.getByRole("button",{name:"Complete payment",exact:true}).click();
       await expect(page.getByRole("button",{name:"Archive rejected request",exact:true})).toBeVisible(); assertions++;
-      await page.getByLabel("Reason to archive rejected request",{exact:true}).fill("Synthetic rejected zero cash; correcting tender");
+      await page.getByLabel(/Reason to archive rejected request/i).fill("Synthetic rejected zero cash; correcting tender");
       await page.getByRole("button",{name:"Archive rejected request",exact:true}).click();
       await expect(page.getByRole("heading",{name:"Action needs confirmation",exact:true})).toHaveCount(0); assertions++;
     }
     if (tender !== "AccountsReceivable") await page.getByLabel("Cash amount (PHP)",{exact:true}).fill(tender === "Cash" ? "5.00" : "2.50");
-    if (tender !== "Cash") await page.getByLabel("Customer",{exact:true}).selectOption({label:"Synthetic Cafe Account"});
+    if (tender !== "Cash") await page.getByLabel(/Customer/i).selectOption({label:"Synthetic Cafe Account"});
     await page.getByRole("button",{name:"Complete payment",exact:true}).click();
-    await expect(page.getByRole("heading",{name:"Current order · Completed",exact:true})).toBeVisible(); assertions++;
+    await expect(page.getByText(/Payment confirmed · Receipt/i)).toBeVisible(); assertions++;
     await page.getByRole("button",{name:"Start another order",exact:true}).click();
   }
   writeFileSync(`${process.env.CAFE_QA_ROOT}/completion-requests.json`,JSON.stringify(completions,null,2));
