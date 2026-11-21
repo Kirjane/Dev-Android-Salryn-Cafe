@@ -1,0 +1,114 @@
+name: Salryn Cafe Windows Installer Acceptance
+
+on:
+  pull_request:
+    branches:
+      - forge/candidate-salryn-cafe
+      - main
+  workflow_dispatch:
+
+jobs:
+  windows-installer-acceptance:
+    name: Windows Installer Acceptance (Elevated Disposable Runner)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Build Salryn.App.Web production bundle
+        shell: pwsh
+        run: |
+          Push-Location src/Salryn.App.Web
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+          Pop-Location
+
+      - name: Publish Windows Host (Release) and stage installer assets
+        shell: pwsh
+        run: |
+          $staging = Join-Path $PWD "artifacts/installer/staging/SalrynCafe"
+          New-Item -ItemType Directory -Force -Path $staging | Out-Null
+          dotnet publish src/Salryn.Desktop.WebView/Salryn.Desktop.WebView.csproj -c Release -o $staging --nologo -v minimal
+          New-Item -ItemType Directory -Force -Path "$staging/assets/branding" | Out-Null
+          Copy-Item "assets/branding/*" "$staging/assets/branding/" -Recurse -Force
+          New-Item -ItemType Directory -Force -Path "$staging/wwwroot" | Out-Null
+          Copy-Item "src/Salryn.App.Web/dist/*" "$staging/wwwroot/" -Recurse -Force
+
+      - name: Compile Salryn-Cafe-Setup.exe with Inno Setup 6
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          $sha = git rev-parse HEAD
+          & $iscc "/DMySourceRevision=$sha" "installer/SalrynCafeSetup.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $setup = Get-Item "artifacts/installer/setup/Salryn-Cafe-Setup.exe"
+          $hash = (Get-FileHash $setup.FullName -Algorithm SHA256).Hash
+          Write-Output "SETUP_BYTES=$($setup.Length)"
+          Write-Output "SETUP_SHA256=$hash"
+
+      - name: Verify Retail Folder Protection, Fresh Install, Upgrade, and Uninstall
+        shell: pwsh
+        run: |
+          $setup = (Resolve-Path "artifacts/installer/setup/Salryn-Cafe-Setup.exe").Path
+          $logDir = Join-Path $PWD "artifacts/installer/qa-logs"
+          New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+
+          # 1. Retail folder protection guard MUST fail closed even under /VERYSILENT
+          $retailDir = "C:\Program Files\Kirjane Information Technology Services"
+          $pRetail = Start-Process -FilePath $setup -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=`"$retailDir`" /LOG=`"$logDir\retail-guard.log`"" -Wait -PassThru
+          Write-Output "RETAIL_GUARD_EXIT=$($pRetail.ExitCode)"
+          if ($pRetail.ExitCode -eq 0) { throw "Retail folder protection failed: installer allowed install into protected retail path!" }
+          if (Test-Path "$retailDir\Salryn.Desktop.WebView.exe") { throw "Protected retail directory was modified!" }
+
+          # 2. Fresh silent install into independent Cafe directory
+          $cafeDir = "C:\Program Files\Kirjane Information Technology Services - Cafe"
+          $pInstall = Start-Process -FilePath $setup -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=`"$logDir\fresh-install.log`"" -Wait -PassThru
+          Write-Output "FRESH_INSTALL_EXIT=$($pInstall.ExitCode)"
+          if ($pInstall.ExitCode -ne 0) { throw "Fresh install failed with exit $($pInstall.ExitCode)" }
+          if (-not (Test-Path "$cafeDir\Salryn.Desktop.WebView.exe")) { throw "Missing Salryn.Desktop.WebView.exe after fresh install" }
+          if (-not (Test-Path "$cafeDir\wwwroot\index.html")) { throw "Missing wwwroot/index.html after fresh install" }
+          if (-not (Test-Path "C:\ProgramData\SalrynCafe\data")) { throw "Missing C:\ProgramData\SalrynCafe\data after fresh install" }
+
+          # Place synthetic marker file in C:\ProgramData\SalrynCafe\data to prove preservation across upgrade & uninstall
+          Set-Content -Path "C:\ProgramData\SalrynCafe\data\preservation-marker.txt" -Value "preserve-me"
+
+          # 3. Upgrade install over existing Cafe installation
+          $pUpgrade = Start-Process -FilePath $setup -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=`"$logDir\upgrade-install.log`"" -Wait -PassThru
+          Write-Output "UPGRADE_INSTALL_EXIT=$($pUpgrade.ExitCode)"
+          if ($pUpgrade.ExitCode -ne 0) { throw "Upgrade install failed with exit $($pUpgrade.ExitCode)" }
+          if ((Get-Content "C:\ProgramData\SalrynCafe\data\preservation-marker.txt" -Raw).Trim() -ne "preserve-me") {
+            throw "Cafe data was not preserved across upgrade!"
+          }
+
+          # 4. Silent uninstall removes app binaries while preserving C:\ProgramData\SalrynCafe
+          $unins = "$cafeDir\unins000.exe"
+          if (-not (Test-Path $unins)) { throw "Missing unins000.exe" }
+          $pUnins = Start-Process -FilePath $unins -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=`"$logDir\uninstall.log`"" -Wait -PassThru
+          Write-Output "UNINSTALL_EXIT=$($pUnins.ExitCode)"
+          if ($pUnins.ExitCode -ne 0) { throw "Uninstall failed with exit $($pUnins.ExitCode)" }
+          Start-Sleep -Seconds 2
+          if (Test-Path "$cafeDir\Salryn.Desktop.WebView.exe") { throw "App binary survived uninstall!" }
+          if ((Get-Content "C:\ProgramData\SalrynCafe\data\preservation-marker.txt" -Raw).Trim() -ne "preserve-me") {
+            throw "C:\ProgramData\SalrynCafe data was not preserved across uninstall!"
+          }
+          Write-Output "PASS: Windows Installer Acceptance (Retail Guard + Fresh Install + Upgrade + Uninstall + Data Preservation)"
+
+      - name: Upload installer and QA logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer-acceptance-${{ github.sha }}
+          path: |
+            artifacts/installer/setup/Salryn-Cafe-Setup.exe
+            artifacts/installer/qa-logs/
