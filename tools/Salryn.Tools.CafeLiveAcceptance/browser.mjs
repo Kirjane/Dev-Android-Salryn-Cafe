@@ -70,6 +70,19 @@ try {
     await expect(page.getByText(/Payment confirmed · Receipt/i)).toBeVisible(); assertions++;
     await page.getByRole("button",{name:"Start another order",exact:true}).click();
   }
+  await page.getByRole("button",{name:"Back Office & Reports",exact:true}).click();
+  await expect(page.getByText("Daily Sales",{exact:true})).toBeVisible(); assertions++;
+  await expect(page.getByText("₱15.00").first()).toBeVisible(); assertions++;
+  await page.getByRole("button",{name:"Cash, Expense, AR & Refunds",exact:true}).click();
+  await expect(page.getByRole("table",{name:"Customer AR Balances"})).toContainText("₱7.50"); assertions++;
+  await expect(page.getByRole("heading",{name:"C5 Audited Refunds & Reversals",exact:true})).toBeVisible(); assertions++;
+  await page.getByRole("button",{name:"Host Backup & License",exact:true}).click();
+  await expect(page.getByRole("button",{name:/Create Verified Backup/i})).toBeVisible(); assertions++;
+  await page.getByRole("button",{name:"Central Owner Portal",exact:true}).click();
+  await expect(page.getByText(/Local Windows Host Only/i)).toBeVisible(); assertions++;
+  await page.getByRole("button",{name:"Windows Host Console",exact:true}).click();
+  await page.getByRole("button",{name:"POS Workstation",exact:true}).click();
+  await expect(page.getByRole("heading",{name:"Cafe workstation",exact:true})).toBeVisible(); assertions++;
   writeFileSync(`${process.env.CAFE_QA_ROOT}/completion-requests.json`,JSON.stringify(completions,null,2));
   await page.screenshot({path:`${process.env.CAFE_QA_ROOT}/live-cafe-desktop.png`,fullPage:true});
   await page.setViewportSize({width:320,height:900});

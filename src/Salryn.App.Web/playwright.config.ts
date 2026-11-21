@@ -1,7 +1,12 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * Salryn POS Playwright harness — two strictly separated tiers.
+ * LEGACY_HOST_SHELL — Legacy inherited POS Playwright harness (superseded for Salryn Cafe
+ * release acceptance by `/cafe/` suites in `apps/cafe-web/e2e/` and `tools/Salryn.Tools.CafeLiveAcceptance/`).
+ * Preserved intact with explicit LEGACY_HOST_SHELL classification; do not treat mocked-ui
+ * baseline checks on this legacy shell as live Cafe acceptance.
+ *
+ * Two strictly separated tiers:
  *
  *  - Project `mocked-ui`       : synthetic `/api/*` fixtures only (MOCKED_UI). Used by
  *                                `npm run test:e2e`, `npm run test:visual`, `npm run test:visual:update`.
@@ -57,6 +62,7 @@ export default defineConfig({
   projects: [
     {
       name: "mocked-ui",
+      metadata: { classification: "LEGACY_HOST_SHELL" },
       testIgnore: /integrated-host.*\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],

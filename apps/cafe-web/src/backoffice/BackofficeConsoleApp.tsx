@@ -646,7 +646,7 @@ function BackofficeConsoleInner({
                 />
                 <MetricCard
                   label="Outstanding AR"
-                  value={formatPhp(reports.receivables?.outstandingCents ?? arRows.reduce((s, r) => s + r.outstandingBalanceCents, 0))}
+                  value={formatPhp(reports.receivables?.outstandingCents ?? arRows.reduce((s, r) => s + r.balanceCents, 0))}
                   detail={`Collections ${formatPhp(reports.receivables?.collectionsCents ?? 0)}`}
                 />
               </div>
@@ -924,7 +924,7 @@ function BackofficeConsoleInner({
                     <SelectInput value={selectedCustomerId} onChange={(e) => setSelectedCustomerId(e.target.value)}>
                       {arRows.map((row) => (
                         <option key={row.customer.id} value={row.customer.id}>
-                          {row.customer.fullName} (Bal: {formatPhp(row.outstandingBalanceCents)})
+                          {row.customer.fullName} (Bal: {formatPhp(row.balanceCents)})
                         </option>
                       ))}
                     </SelectInput>
@@ -969,8 +969,8 @@ function BackofficeConsoleInner({
                   columns={[
                     { key: "name", header: "Customer", render: (r) => <strong>{r.customer.fullName}</strong> },
                     { key: "phone", header: "Phone", render: (r) => r.customer.phone ?? "—" },
-                    { key: "balance", header: "Outstanding Balance", align: "right", tabular: true, render: (r) => formatPhp(r.outstandingBalanceCents) },
-                    { key: "overdue", header: "Overdue", align: "right", tabular: true, render: (r) => formatPhp(r.overdueBalanceCents) },
+                    { key: "balance", header: "Outstanding Balance", align: "right", tabular: true, render: (r) => formatPhp(r.balanceCents) },
+                    { key: "due", header: "Oldest Due Date", align: "right", render: (r) => r.oldestDueDate ?? "—" },
                   ]}
                 />
               </div>

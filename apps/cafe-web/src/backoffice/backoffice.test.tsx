@@ -102,8 +102,8 @@ function createFakeBackofficeHarness() {
     getReceivableCustomers: async () => [
       {
         customer: { id: "cust-1", fullName: "Ana Santos", phone: "09171234567", creditLimitCents: 500000, isActive: true },
-        outstandingBalanceCents: arOutstanding,
-        overdueBalanceCents: 0,
+        balanceCents: arOutstanding,
+        oldestDueDate: null,
       },
     ],
     collectArCash,

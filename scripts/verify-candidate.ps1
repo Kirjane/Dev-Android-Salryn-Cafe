@@ -258,6 +258,9 @@ if ($Mode -ne 'Android') {
             $r.notes = 'MOCKED_UI unless suite explicitly proves a live backend. Vitest JSON retained.'
         }
         Invoke-Gate "web-build:$name" 'BUILD' { param($r) Invoke-RecordedCommand "$name-build" 'npm' @('run','build') $dir }
+        if ($relative -eq 'apps/cafe-web') {
+            Invoke-Gate "web-e2e:$name" 'TEST' { param($r) Invoke-RecordedCommand "$name-e2e" 'npm' @('run','test:e2e') $dir }
+        }
     }
 }
 

@@ -80,9 +80,9 @@ export type ArCustomerRow = {
     creditLimitCents: number | null;
     isActive: boolean;
   };
-  outstandingBalanceCents: number;
-  overdueBalanceCents: number;
-  lastActivityAtUtc?: string | null;
+  balanceCents: number;
+  oldestDueDate?: string | null;
+  lastTransactionAt?: string | null;
 };
 
 export type CashMovementRow = {
