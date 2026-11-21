@@ -1,19 +1,21 @@
-# Safe checkpoint update — 2026-11-21
+# Antigravity Forge Resumption Update — 2026-11-21
 
-User requested a credit-conservation checkpoint. Engineering stopped; mission ENGINEERING_ACTIVE / release BLOCKED. The historical matrix below remains preserved; this update supersedes its stale current-state claims.
+Mission `FORGE-SALRYN-CAFE-SOFTWARE-COMPLETE` resumed in `codex-wave-b` (`codex/wave-b-integrator`, Draft PR #34 targeting `forge/candidate-salryn-cafe`) from `4f0db62ffb5b94b995ffb716ec0756840ca9355e`. This summary supersedes the earlier stale `376cee48` / `77ed22b3` checkpoint rows; the historical baseline table below `---` is preserved for provenance.
 
-| Objective | Current verdict | Actual evidence / remaining work |
+| Objective | Current verdict | Actual observed evidence / remaining work |
 |---|---|---|
-| Gate 3 V1/V2 AR matrix | PASS | 77ed22b3 published; 4/4 focused HTTP tests and I6A34/34, zero skipped. Valid synthetic customers, V1 Credit, ledger/stock/feed/replay assertions. Independent scoped six-test PASS. |
-| Combined Cafe suites | PASS for earlier tested slices; NOT RUN for checkpoint WIP | Initial Debug182/182. Later Release206/206 (31+22+50+13+35+55), exit0 per suite. Runs span source changes; NOT exact-final-checkpoint acceptance. |
-| Formal Kirion-Nox review | NOT RUN / prior CHANGES_REQUESTED remains | Requested on frozen77ed22b3 via PR34 comment7058864309 and reviewer request. No formal approval observed. b19f9b97 independent bounded source+8 HTTP tests PASS; not formal Nox. |
-| Live React–Host | PARTIAL execution evidence | b19f9b97/1edfcd97 main source:15 browser assertions +6 HTTP remount/replay assertions +5 SQLite totals, exit0, zero mocks. Cash/AR/partial and rejected-payment recovery. Debug development license only. Same-process new Host mount, not OS-process crash. Latest store/receipt hardening not rerun. Shift/device/full RBAC browser acceptance remains incomplete. |
-| Android emulator | NOT RUN for complete lifecycle | Current standalone Debug APK built/installed; real sign-in/setup rendered and UI extraction fixed. TLS synthetic fixture recovery ongoing. Full enrollment/offline/payment/restart/reconnect/ack not completed. Latest shared shift/permission/ingredient changes not native-built. |
-| C1–C11 / recovery | NOT RUN for complete parity | See C1-C11-CROSS-SYSTEM-COVERAGE-20261121.md. Host missing Cafe route mapping fixed at b19f9b97. C8/C9/C10/V3 processors and C6 shift synchronization now unverified checkpoint WIP. Local shift5/5 before latest overlap change; Central/projection tests not run. |
-| Release CoreSmoke | FAIL / BLOCKED_EXTERNAL | Authorized Release license fixture absent; licensing guards untouched. No new Release CoreSmoke PASS. |
-| Physical/prod | HUMAN_REQUIRED | No hardware, candidate/main merge, production deployment or live business-data migration. |
+| F0 Forge machinery | PASS (`MANUAL_AGENT_EXECUTION_WITH_SKILLS`) | `scripts/forge/test_codex_adapter.py` 6/6 OK; `scripts/forge/qualify_antigravity_forge.py` exit 0 (DAG waves, SQLite WAL path leases `.forge/state/leases.db`, `FactoryJournal` `.forge/state/journal.db` hash chain + tamper check + backup, `SelfHealingController` budgets, `NoxReviewEngine` separation). `post_turn_auto_continuation: UNSUPPORTED_BY_HOST`. |
+| Combined Cafe xUnit suites (`-c Release`) | PASS | **246/246 PASS** (`Salryn.Cafe.Tests` 31/31 + `I2Tests` 22/22 + `I3Tests` 63/63 + `I4Tests` 13/13 + `I6ATests` 54/54 incl. new `BookingBoundSaleCommittedV3` HTTP proofs + `I6BTests` 63/63; Windows non-Android subset `183/183`; exit 0; `.trx` artifacts in `C:\Users\arane\SalrynForgeRecovery\20261121-wave-b\f2-f4-verification\`). |
+| Domain Proof Tools (`-c Release`) | PASS | `MenuCatalogProof` PASS, `CafePrintProof` PASS, `CafeReportingProof` PASS (96 assertions), `MobileProductionProof` PASS (21 assertions); exit 0. |
+| Web Frontend & Playwright (`MOCKED_UI`) | PARTIAL (Functional PASS; 11 stale PNG baselines) | `packages/salryn-cafe-ui` `12/12 PASS`; `apps/cafe-web` `14/14 PASS` + `vite build` OK; `src/Salryn.App.Web` `vite build` OK. Playwright `--project=mocked-ui`: functional suites (`jane-checkout-workstation`, `mocked-ui-interactions-and-defects`, `w4-integrated-cash-drawer`, `w5-lpi-runtime-regressions`) **40/40 PASS** after two selector/fixture fixes; `mocked-ui-visual-baseline.spec.ts` **5/16 PASS, 11 failed** with **0 selector/runtime failures** (inspected actual/diff PNGs `07`, `09`, `16`, `29`, `38`: mismatches come from expanded sidebar nav & updated Checkout/Receivables layout vs older baselines; no PNGs/tolerances modified). Marked `MOCKED_UI`. |
+| Live React–Host E2E | PASS (`DEBUG_DEVELOPMENT_LICENSE` scope) | `Salryn.Tools.CafeLiveAcceptance` (`-c Debug`) exit 0: live React/Host cashier journeys, `PASS HTTP restart replay: 6 assertions`, and 5 persisted SQLite assertions. Debug development license only; not Release license acceptance. |
+| CoreSmoke (Debug vs Release) | Debug targeted PASS / Release `FAIL (BLOCKED_EXTERNAL)` | Patched `V2HostOperatorCheckoutApiChecks` (Cash/AR tender rejection for GCash/Maya/Debit), `V2LanBindTruthChecks` (`https://`), and `LanM8ReactRemoteReadOnlyShellRuntimeChecks` (exclude `test-results`/`playwright-report`). Debug `--only v2-host-checkout` and `--only v2-lan-bind-truth` both PASS (exit 0). Release CoreSmoke intentionally fails at `V2HostOperatorCheckoutApiChecks.cs:148` (`403 License.FeatureDenied`) due to `#if !DEBUG` signed-license guard without a synthetic Release license fixture. |
+| Android APK & Boundary | PASS (APK build + I6B units) / Emulator E2E `HUMAN_REQUIRED` | `Salryn.App.Android` `-c Release -p:AndroidPackageFormat=apk` built `ph.kirjanelabs.salryncafe-Signed.apk` (18,083,995 bytes, exit 0); `Salryn.Cafe.I6BTests` 63/63 PASS. Live physical tablet UI & Bluetooth printing remain `HUMAN_REQUIRED`. |
+| C1–C11 cross-system coverage | PASS (source + HTTP proof updated) | See updated `C1-C11-CROSS-SYSTEM-COVERAGE-20261121.md`: `SaleCommittedV3` + C6 shift + C8 delivery + C9 booking + C10 attendance/incident HTTP proofs all verified in `I6ATests` (`54/54`). |
+| Frozen-SHA Review & QA Release | PENDING (Next Steps) | Frozen-SHA nonauthor `antigravity-nox` / `antigravity-aegis` reviews, matched QA release staging, and Draft PR `#34` receipt pending commit & tag/dispatch. |
+| Physical / Production / Vercel | `HUMAN_REQUIRED` / PROTECTED | No merge to `forge/candidate-salryn-cafe` or `main`, no production deployment, no Vercel deploy, no Retail/prod data access. |
 
-Resume instructions and exact limitations: CODEX-RESUME-CHECKPOINT-20261121.md. Do not treat checkpoint commit as accepted code.
+Historical provenance checkpoint preserved below (`376cee48` / `ff3b5883`).
 
 ---
 

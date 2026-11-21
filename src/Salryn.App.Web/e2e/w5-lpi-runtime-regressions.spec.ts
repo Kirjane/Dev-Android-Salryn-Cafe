@@ -437,7 +437,7 @@ test.describe("W5 LPI runtime contract regressions", () => {
     await expect(page.getByRole("heading", { name: "Accounts Payable", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Intake Supplier Invoice", exact: true })).toBeVisible();
     await expect(page.getByText("APV-202611-0001")).toBeVisible();
-    await expect(page.getByText("SI-APEX-001")).toBeVisible();
+    await expect(page.getByText("SI-APEX-001").first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Review variance", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Prepare payment", exact: true })).toBeVisible();
 
@@ -459,7 +459,7 @@ test.describe("W5 LPI runtime contract regressions", () => {
     // Manager with read-only View permissions (no request, manage, adjust, approve, or payment permissions)
     await installMockSalrynApi(page, {
       persona: "manager",
-      customPermissions: ["Procurement.View", "Receiving.View", "Payables.View"],
+      customPermissions: ["Procurement.View", "Receiving.View", "Inventory.View", "Payables.View"],
       u1Entitled: true,
     });
     await registerLpiRoutes(page);

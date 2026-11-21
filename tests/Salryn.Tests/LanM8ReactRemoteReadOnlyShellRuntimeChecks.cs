@@ -62,7 +62,10 @@ public static class LanM8ReactRemoteReadOnlyShellRuntimeChecks
     {
         foreach (string file in Directory.EnumerateFiles(webRoot, "*.*", SearchOption.AllDirectories))
         {
-            if (file.Contains("node_modules", StringComparison.OrdinalIgnoreCase) || file.Contains("dist", StringComparison.OrdinalIgnoreCase))
+            if (file.Contains("node_modules", StringComparison.OrdinalIgnoreCase)
+                || file.Contains("dist", StringComparison.OrdinalIgnoreCase)
+                || file.Contains("test-results", StringComparison.OrdinalIgnoreCase)
+                || file.Contains("playwright-report", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }

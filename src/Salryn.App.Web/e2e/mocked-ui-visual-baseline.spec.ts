@@ -151,7 +151,7 @@ test.describe("MOCKED_UI Visual Baseline & Screen Inventory @visual", () => {
   }) => {
     await installMockSalrynApi(page, { persona: "admin", u1Entitled: true });
     await page.goto("/");
-    await sidebarNavButton(page, "Utang Ledger").click();
+    await sidebarNavButton(page, "Accounts Receivable").click();
     await expect(page.getByRole("heading", { name: "Utang Ledger" })).toBeVisible();
     await expect(page.getByText("Maria Clara Dela Cruz")).toBeVisible();
     await page.getByText("Maria Clara Dela Cruz").click();
@@ -163,7 +163,7 @@ test.describe("MOCKED_UI Visual Baseline & Screen Inventory @visual", () => {
     await installMockSalrynApi(page, { persona: "admin", u1Entitled: true });
     await page.goto("/");
     await sidebarNavButton(page, "Reports").click();
-    await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Reports", exact: true })).toBeVisible();
     await expect(page.getByText("Accounts Receivable aging")).toBeVisible();
     await expectBaseline(page, "17-owner-reports-analytics.png");
 
@@ -254,10 +254,10 @@ test.describe("MOCKED_UI Visual Baseline & Screen Inventory @visual", () => {
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
     await expectBaseline(page, "30-persona-manager-shell.png");
 
-    // 31: Admin without U1 entitlement does not see Utang Ledger in sidebar
+    // 31: Admin without U1 entitlement does not see Accounts Receivable in sidebar
     await installMockSalrynApi(page, { persona: "admin", u1Entitled: false });
     await page.goto("/?page=dashboard");
-    await expect(sidebarNavButton(page, "Utang Ledger")).toHaveCount(0);
+    await expect(sidebarNavButton(page, "Accounts Receivable")).toHaveCount(0);
     await expectBaseline(page, "31-persona-no-u1-shell.png");
   });
 
@@ -280,7 +280,7 @@ test.describe("MOCKED_UI Visual Baseline & Screen Inventory @visual", () => {
     // 34: 1920x1080 Owner Reports
     await page.setViewportSize({ width: 1920, height: 1080 });
     await sidebarNavButton(page, "Reports").click();
-    await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Reports", exact: true })).toBeVisible();
     await expectBaseline(page, "34-responsive-1920x1080-owner-reports.png");
 
     // 35: 390x844 Mobile Owner Reports (collapsed sidebar hides cleanly on < 768px; header toggle opens slide-over nav)

@@ -1,10 +1,25 @@
 # Salryn Cafe — Operation Forge V2 Engineering Rules
 
+## Antigravity agentic software factory resumption (Technical Authority, 2026-11-21)
+
+Technical Authority (`Kirch Ivan Balite`) explicitly authorizes resuming
+automated engineering for mission `FORGE-SALRYN-CAFE-SOFTWARE-COMPLETE` in
+Antigravity using the project-scoped Kirion Forge skills/modules and bounded
+subagents (`invoke_subagent`; maximum 1 coordinator + 2 temporary bounded agents
+until orchestration policy is qualified and reconciled; never reactivate the
+superseded persistent Antigravity Swarm). This supersedes the *intent* of the
+earlier Codex-only execution restriction while keeping every existing worktree,
+commit history, product/financial/security/licensing boundary, frozen-SHA
+nonauthor review requirement, and no-`main`/no-production restriction intact.
+See `00-INTEGRATION/ANTIGRAVITY-CONTINUATION-20261121.md` and
+`00-INTEGRATION/FORGE-DRIFT-AUDIT-B20261121.md`.
+
 ## Codex takeover execution override (Technical Authority, 2026-11-21)
 
 [Issue #27 directive](https://github.com/Kirjane/Dev-Salryn-Cafe/issues/27#issuecomment-7048261423)
 supersedes the persistent Swarm execution model below. Default: one primary Codex
-agent; at most three total concurrent agents for bounded independent review or
+agent (or authorized Antigravity coordinator per the resumption directive above);
+at most three total concurrent agents for bounded independent review or
 technically justified disjoint work. Do not reactivate the Antigravity Swarm.
 Temporary reviewers return authority when done. Preserve every existing worktree.
 All product, history, financial, evidence and no-main/no-production boundaries remain.

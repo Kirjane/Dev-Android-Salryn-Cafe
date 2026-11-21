@@ -63,7 +63,7 @@ public static class V2LanBindTruthChecks
         AssertContains(resolver, "SalrynHostCommandLoopbackRules.IsForbiddenBindAddress", "LAN URL resolver must reject wildcard/forbidden persisted bind addresses.");
         AssertContains(resolver, "LocalApiNetworkInterfaceValidator.IsAssignedToLocalInterface(bindAddress)", "LAN URL resolver must not add stale persisted LAN bind addresses to Kestrel URLs.");
         AssertContains(resolver, "return urls;", "LAN URL resolver must degrade to loopback-only instead of throwing on stale persisted bind.");
-        AssertContains(resolver, "urls.Add($\"http://{bindAddress}:{port}\")", "LAN URL resolver must only add explicit LAN URL after safety checks.");
+        AssertContains(resolver, "urls.Add($\"https://{bindAddress}:{lanPort}\")", "LAN URL resolver must only add explicit HTTPS LAN URL after safety checks.");
         AssertNotContains(resolver, "0.0.0.0", "LAN URL resolver must not introduce wildcard bind.");
 
         AssertContains(runtimeStatus, "ApiLoopbackOnly", "Runtime status must classify loopback-only API state.");
@@ -200,12 +200,17 @@ public static class V2LanBindTruthChecks
                 await qaApp.StartAsync().ConfigureAwait(false);
                 try
                 {
-                    Require(qaApp.Urls.Any(url => url.Contains(lanIp, StringComparison.OrdinalIgnoreCase)),
-                        "Explicit internal-QA mode must restore the persisted LAN listener.");
-                    using HttpClient lanClient = new() { BaseAddress = new Uri($"http://{lanIp}:{port}") };
+                    string lanUrl = qaApp.Urls.First(url => url.Contains(lanIp, StringComparison.OrdinalIgnoreCase));
+                    Require(lanUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase),
+                        "Explicit internal-QA mode must restore the persisted LAN listener over HTTPS.");
+                    using HttpClientHandler tlsHandler = new()
+                    {
+                        ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+                    };
+                    using HttpClient lanClient = new(tlsHandler) { BaseAddress = new Uri(lanUrl) };
                     using HttpResponseMessage lanHealth = await lanClient.GetAsync("/health").ConfigureAwait(false);
                     Require(lanHealth.StatusCode == HttpStatusCode.OK,
-                        "Internal-QA mode must make the LAN endpoint reachable for reversible testing.");
+                        "Internal-QA mode must make the HTTPS LAN endpoint reachable for reversible testing.");
                 }
                 finally
                 {
