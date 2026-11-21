@@ -4,11 +4,14 @@ using Salryn.Api.Local;
 using Salryn.Api.Local.Auth;
 using Salryn.Api.Local.Contracts;
 using Salryn.Api.Local.Services;
+using Salryn.Api.Local.RemotePos;
 using Salryn.Core.Common;
 using Salryn.Core.Models;
 using Salryn.Core.Security;
 using Salryn.Core.Services;
 using Salryn.Infrastructure.Data.Services;
+using Salryn.Infrastructure.Data.Repositories.System;
+using Salryn.Core.ReadModels;
 using Xunit;
 
 namespace Salryn.Cafe.I3Tests;
@@ -202,6 +205,142 @@ public sealed class I3TransactionAuthorityTests
     }
 
     [Fact]
+    public async Task HostCheckoutRequestStore_RejectsIncompleteAndMismatchedCompletionWithoutMutating()
+    {
+        using I3TestDatabaseFixture fx = new();
+        HostCheckoutRequestStore store = new(fx.ConnectionFactory);
+        string requestId = Guid.NewGuid().ToString("D");
+        HostCheckoutRequestRecord pending = await store.GetOrCreatePendingAsync(
+            fx.AdminUserId, requestId, "SHA256-SYNTHETIC", "POS-I3-HOST-001");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.MarkCompletedAsync(pending, null, 15000, 0, "Not authoritative"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.MarkCompletedAsync(pending with { RequestHash = "TAMPERED" },
+                Guid.NewGuid().ToString("D"), 15000, 0, "Not authoritative"));
+
+        HostCheckoutRequestRecord actual = Assert.IsType<HostCheckoutRequestRecord>(
+            await store.FindAsync(fx.AdminUserId, requestId));
+        Assert.Equal(HostCheckoutRequestStore.Pending, actual.State);
+        Assert.Null(actual.SaleId);
+        Assert.Null(actual.TotalCents);
+        Assert.Null(actual.ChangeCents);
+        Assert.Equal(0, fx.CountSales());
+    }
+
+    [Fact]
+    public async Task RemoteCheckoutRequestStore_RejectsIncompleteAndMismatchedCompletionWithoutMutating()
+    {
+        using I3TestDatabaseFixture fx = new();
+        RemoteCheckoutOperatorBindingTests.EnsureOperatorColumn(fx);
+        RemotePosCheckoutRequestStore store = new(fx.ConnectionFactory);
+        Guid terminalId = Guid.NewGuid();
+        string requestId = Guid.NewGuid().ToString("D");
+        RemotePosCheckoutRequestRecord pending = await store.GetOrCreatePendingAsync(
+            fx.StoreId, terminalId, fx.AdminUserId, requestId, "SHA256-SYNTHETIC", "POS-I3-REMOTE-001");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.MarkCompletedAsync(pending, null, 15000, 0, "Not authoritative"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.MarkCompletedAsync(pending with { RequestHash = "TAMPERED" },
+                Guid.NewGuid().ToString("D"), 15000, 0, "Not authoritative"));
+
+        RemotePosCheckoutRequestRecord actual = Assert.IsType<RemotePosCheckoutRequestRecord>(
+            await store.FindAsync(fx.StoreId, terminalId, requestId));
+        Assert.Equal(RemotePosCheckoutRequestStore.Pending, actual.State);
+        Assert.Null(actual.SaleId);
+        Assert.Null(actual.TotalCents);
+        Assert.Null(actual.ChangeCents);
+        Assert.Equal(0, fx.CountSales());
+    }
+
+    [Theory]
+    [InlineData(false, StatusCodes.Status401Unauthorized)]
+    [InlineData(true, StatusCodes.Status403Forbidden)]
+    public async Task CafeMutationFilter_RevokedOperatorOrPermission_BlocksCachedReplay(
+        bool revokePermission, int expectedStatus)
+    {
+        using I3TestDatabaseFixture fx = new();
+        SqliteUserPermissionReadRepository permissionReader = new(fx.ConnectionFactory);
+        Result<UserPermissionReadModel?> profileResult =
+            await permissionReader.FindByUserIdAsync(fx.AdminUserId);
+        Assert.True(profileResult.IsSuccess);
+        UserPermissionReadModel profile = Assert.IsType<UserPermissionReadModel>(profileResult.Value);
+        Assert.Equal(UserStatus.Active, profile.Status);
+        Assert.NotEmpty(profile.Permissions);
+
+        InMemoryLocalApiSessionStore sessionStore = new();
+        LocalApiSession session = sessionStore.Create(new AuthenticatedUserReadModel(
+            profile.UserId, profile.Username, profile.DisplayName, profile.RoleName,
+            profile.Status, profile.Permissions)
+        {
+            RoleId = profile.RoleId
+        });
+        LocalApiSessionService sessionService = new(fx.Composition.Authentication, sessionStore);
+        using ServiceProvider services = new ServiceCollection()
+            .AddSingleton(sessionService)
+            .AddSingleton(fx.Composition)
+            .AddSingleton(new CafeMutationIdempotencyGuard(fx.ConnectionFactory))
+            .BuildServiceProvider();
+
+        Guid operationId = Guid.NewGuid();
+        DefaultHttpContext Request()
+        {
+            DefaultHttpContext http = new();
+            http.RequestServices = services;
+            http.Request.Method = HttpMethods.Post;
+            http.Request.Path = "/api/cafe/orders/revision";
+            http.Request.Headers["Idempotency-Key"] = operationId.ToString("D");
+            http.Request.Headers["Cookie"] =
+                LocalApiSessionService.SessionCookieName + "=" + session.SessionId;
+            return http;
+        }
+
+        int executions = 0;
+        EndpointFilterDelegate next = _ =>
+        {
+            executions++;
+            return ValueTask.FromResult<object?>(Results.Ok(new { committed = true }));
+        };
+        CafeMutationIdempotencyEndpointFilter filter = new();
+
+        DefaultHttpContext first = Request();
+        object? committed = await filter.InvokeAsync(
+            EndpointFilterInvocationContext.Create(first), next);
+        Assert.Equal(StatusCodes.Status200OK,
+            Assert.IsAssignableFrom<IStatusCodeHttpResult>(committed).StatusCode);
+        Assert.Equal(1, executions);
+
+        using (var connection = fx.ConnectionFactory.CreateConnection())
+        {
+            connection.Open();
+            using var cmd = connection.CreateCommand();
+            if (revokePermission)
+            {
+                cmd.CommandText = "DELETE FROM role_permissions WHERE role_id = $role AND permission = $permission;";
+                cmd.Parameters.AddWithValue("$role", profile.RoleId.ToString("D"));
+                cmd.Parameters.AddWithValue("$permission", profile.Permissions[0]);
+            }
+            else
+            {
+                cmd.CommandText = "UPDATE users SET status = 0 WHERE id = $user;";
+                cmd.Parameters.AddWithValue("$user", profile.UserId.ToString("D"));
+            }
+
+            Assert.Equal(1, cmd.ExecuteNonQuery());
+        }
+
+        DefaultHttpContext second = Request();
+        object? denied = await filter.InvokeAsync(
+            EndpointFilterInvocationContext.Create(second), next);
+        Assert.Equal(expectedStatus,
+            Assert.IsAssignableFrom<IStatusCodeHttpResult>(denied).StatusCode);
+        Assert.Equal(1, executions);
+        Assert.False(second.Response.Headers.ContainsKey("X-Idempotency-Replayed"));
+        Assert.Null(sessionService.GetRequiredSession(session.SessionId));
+    }
+
+    [Fact]
     public async Task CafeMutationIdempotencyGuard_MissingOperationId_Returns400()
     {
         using I3TestDatabaseFixture fx = new();
@@ -224,6 +363,76 @@ public sealed class I3TransactionAuthorityTests
         Assert.Equal(0, calls);
         IStatusCodeHttpResult statusResult = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
         Assert.Equal(StatusCodes.Status400BadRequest, statusResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task CafeMutationIdempotencyGuard_ConflictingBodyAndHeader_FailsBeforeMutation()
+    {
+        using I3TestDatabaseFixture fx = new();
+        CafeMutationIdempotencyGuard guard = new(fx.ConnectionFactory);
+        DefaultHttpContext http = new();
+        http.Request.Headers["Idempotency-Key"] = Guid.NewGuid().ToString("D");
+        int calls = 0;
+
+        IResult result = await guard.ExecuteSyncAsync(
+            http, "POST /api/menu/categories", fx.AdminUserId, Guid.NewGuid(),
+            new { name = "Coffee" },
+            _ =>
+            {
+                calls++;
+                return new IdempotentExecutionOutcome(200, new { ok = true });
+            });
+
+        Assert.Equal(StatusCodes.Status400BadRequest,
+            Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
+        Assert.Equal(0, calls);
+    }
+
+    [Fact]
+    public async Task CafeMutationIdempotencyGuard_ConflictingHeaders_FailBeforeMutation()
+    {
+        using I3TestDatabaseFixture fx = new();
+        CafeMutationIdempotencyGuard guard = new(fx.ConnectionFactory);
+        DefaultHttpContext http = new();
+        http.Request.Headers["Idempotency-Key"] = Guid.NewGuid().ToString("D");
+        http.Request.Headers["X-Operation-Id"] = Guid.NewGuid().ToString("D");
+        int calls = 0;
+
+        IResult result = await guard.ExecuteSyncAsync(
+            http, "POST /api/menu/categories", fx.AdminUserId, null,
+            new { name = "Coffee" },
+            _ =>
+            {
+                calls++;
+                return new IdempotentExecutionOutcome(200, new { ok = true });
+            });
+
+        Assert.Equal(StatusCodes.Status400BadRequest,
+            Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
+        Assert.Equal(0, calls);
+    }
+
+    [Fact]
+    public async Task CafeMutationIdempotencyGuard_InvalidHeaderDoesNotFallBackToBody()
+    {
+        using I3TestDatabaseFixture fx = new();
+        CafeMutationIdempotencyGuard guard = new(fx.ConnectionFactory);
+        DefaultHttpContext http = new();
+        http.Request.Headers["Idempotency-Key"] = "invalid-operation";
+        int calls = 0;
+
+        IResult result = await guard.ExecuteSyncAsync(
+            http, "POST /api/menu/categories", fx.AdminUserId, Guid.NewGuid(),
+            new { name = "Coffee" },
+            _ =>
+            {
+                calls++;
+                return new IdempotentExecutionOutcome(200, new { ok = true });
+            });
+
+        Assert.Equal(StatusCodes.Status400BadRequest,
+            Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
+        Assert.Equal(0, calls);
     }
 
     [Fact]

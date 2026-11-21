@@ -13,7 +13,8 @@ public sealed record RemotePosCheckoutRequestRecord(
     string? SaleId,
     long? TotalCents,
     long? ChangeCents,
-    string Message);
+    string Message,
+    Guid? OperatorUserId = null);
 
 public sealed class RemotePosCheckoutRequestStore
 {
@@ -38,7 +39,7 @@ public sealed class RemotePosCheckoutRequestStore
         await using SqliteCommand command = connection.CreateCommand();
         command.CommandText =
             """
-            SELECT request_hash, state, receipt_no, sale_id, total_cents, change_cents, message
+            SELECT request_hash, state, receipt_no, sale_id, total_cents, change_cents, message, operator_user_id
             FROM remote_pos_checkout_requests
             WHERE store_id = $store AND terminal_id = $terminal AND client_request_id = $request;
             """;
@@ -62,17 +63,25 @@ public sealed class RemotePosCheckoutRequestStore
             reader.IsDBNull(3) ? null : reader.GetString(3),
             reader.IsDBNull(4) ? null : reader.GetInt64(4),
             reader.IsDBNull(5) ? null : reader.GetInt64(5),
-            reader.GetString(6));
+            reader.GetString(6),
+            !reader.IsDBNull(7) && Guid.TryParse(reader.GetString(7), out Guid actor) && actor != Guid.Empty
+                ? actor : null);
     }
 
     public async Task<RemotePosCheckoutRequestRecord> GetOrCreatePendingAsync(
         Guid storeId,
         Guid terminalId,
+        Guid operatorUserId,
         string clientRequestId,
         string requestHash,
         string receiptNumber,
         CancellationToken cancellationToken = default)
     {
+        if (operatorUserId == Guid.Empty)
+        {
+            throw new ArgumentException("A checkout request must bind its original operator.", nameof(operatorUserId));
+        }
+
         string now = DateTimeOffset.UtcNow.ToString("O");
         await using SqliteConnection connection = _connectionFactory.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -81,15 +90,16 @@ public sealed class RemotePosCheckoutRequestStore
             """
             INSERT OR IGNORE INTO remote_pos_checkout_requests
                 (store_id, terminal_id, client_request_id, request_hash, state, receipt_no,
-                 sale_id, total_cents, change_cents, message, created_at_utc, updated_at_utc)
+                 sale_id, total_cents, change_cents, message, created_at_utc, updated_at_utc, operator_user_id)
             VALUES
                 ($store, $terminal, $request, $hash, 'Pending', $receipt,
-                 NULL, NULL, NULL, 'Checkout is being confirmed by the host.', $now, $now);
+                 NULL, NULL, NULL, 'Checkout is being confirmed by the host.', $now, $now, $operator);
             """;
         command.Parameters.AddWithValue("$store", storeId.ToString("D"));
         command.Parameters.AddWithValue("$terminal", terminalId.ToString("D"));
         command.Parameters.AddWithValue("$request", clientRequestId);
         command.Parameters.AddWithValue("$hash", requestHash);
+        command.Parameters.AddWithValue("$operator", operatorUserId.ToString("D"));
         command.Parameters.AddWithValue("$receipt", receiptNumber);
         command.Parameters.AddWithValue("$now", now);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -106,6 +116,16 @@ public sealed class RemotePosCheckoutRequestStore
         string message,
         CancellationToken cancellationToken = default)
     {
+        if (record.OperatorUserId is null || record.OperatorUserId == Guid.Empty ||
+            !Guid.TryParse(saleId, out Guid completedSaleId) ||
+            completedSaleId == Guid.Empty ||
+            totalCents is null or < 0 ||
+            changeCents is null or < 0)
+        {
+            throw new InvalidOperationException(
+                "Completed remote checkout requires authoritative sale identity and nonnegative confirmed totals.");
+        }
+
         await using SqliteConnection connection = _connectionFactory.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using SqliteCommand command = connection.CreateCommand();
@@ -114,9 +134,10 @@ public sealed class RemotePosCheckoutRequestStore
             UPDATE remote_pos_checkout_requests
             SET state = 'Completed', sale_id = $sale, total_cents = $total,
                 change_cents = $change, message = $message, updated_at_utc = $now
-            WHERE store_id = $store AND terminal_id = $terminal AND client_request_id = $request;
+            WHERE store_id = $store AND terminal_id = $terminal AND client_request_id = $request
+              AND request_hash = $hash AND receipt_no = $receipt AND operator_user_id = $operator;
             """;
-        command.Parameters.AddWithValue("$sale", (object?)saleId ?? DBNull.Value);
+        command.Parameters.AddWithValue("$sale", saleId);
         command.Parameters.AddWithValue("$total", (object?)totalCents ?? DBNull.Value);
         command.Parameters.AddWithValue("$change", (object?)changeCents ?? DBNull.Value);
         command.Parameters.AddWithValue("$message", message);
@@ -124,6 +145,13 @@ public sealed class RemotePosCheckoutRequestStore
         command.Parameters.AddWithValue("$store", record.StoreId.ToString("D"));
         command.Parameters.AddWithValue("$terminal", record.TerminalId.ToString("D"));
         command.Parameters.AddWithValue("$request", record.ClientRequestId);
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        command.Parameters.AddWithValue("$hash", record.RequestHash);
+        command.Parameters.AddWithValue("$operator", record.OperatorUserId.Value.ToString("D"));
+        command.Parameters.AddWithValue("$receipt", record.ReceiptNumber);
+        if (await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
+        {
+            throw new InvalidOperationException(
+                "Remote checkout completion could not match its immutable pending request.");
+        }
     }
 }

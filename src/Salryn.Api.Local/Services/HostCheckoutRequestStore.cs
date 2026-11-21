@@ -100,6 +100,15 @@ public sealed class HostCheckoutRequestStore
         string message,
         CancellationToken cancellationToken = default)
     {
+        if (!Guid.TryParse(saleId, out Guid completedSaleId) ||
+            completedSaleId == Guid.Empty ||
+            totalCents is null or < 0 ||
+            changeCents is null or < 0)
+        {
+            throw new InvalidOperationException(
+                "Completed checkout requires an authoritative sale identity and nonnegative confirmed totals.");
+        }
+
         await using SqliteConnection connection = _connectionFactory.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using SqliteCommand command = connection.CreateCommand();
@@ -108,15 +117,22 @@ public sealed class HostCheckoutRequestStore
             UPDATE host_checkout_requests
             SET state = 'Completed', sale_id = $sale, total_cents = $total,
                 change_cents = $change, message = $message, updated_at_utc = $now
-            WHERE user_id = $user AND client_request_id = $request;
+            WHERE user_id = $user AND client_request_id = $request
+              AND request_hash = $hash AND receipt_no = $receipt;
             """;
-        command.Parameters.AddWithValue("$sale", (object?)saleId ?? DBNull.Value);
+        command.Parameters.AddWithValue("$sale", saleId);
         command.Parameters.AddWithValue("$total", (object?)totalCents ?? DBNull.Value);
         command.Parameters.AddWithValue("$change", (object?)changeCents ?? DBNull.Value);
         command.Parameters.AddWithValue("$message", message);
         command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
         command.Parameters.AddWithValue("$user", record.UserId.ToString("D"));
         command.Parameters.AddWithValue("$request", record.ClientRequestId);
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        command.Parameters.AddWithValue("$hash", record.RequestHash);
+        command.Parameters.AddWithValue("$receipt", record.ReceiptNumber);
+        if (await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
+        {
+            throw new InvalidOperationException(
+                "Checkout completion could not match the immutable pending request authority.");
+        }
     }
 }
