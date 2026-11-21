@@ -158,7 +158,7 @@ jobs:
             configuration = $configuration
             packageId = 'ph.kirjanelabs.salryncafe'
             versionCode = [int]$env:ANDROID_VERSION_CODE
-            versionName = '1.0.0-qa'
+            versionName = "1.0.0-qa.$($env:ANDROID_VERSION_CODE)"
             builtAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
           } | ConvertTo-Json -Depth 4)
           $provPath = Join-Path $work 'build-provenance.json'
@@ -212,43 +212,46 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $configuration = if ($env:RELEASE_TIER -eq 'InternalDebugSynthetic') { 'Debug' } else { 'Release' }
           $key = Join-Path $env:RUNNER_TEMP 'salryn-cafe-qa.keystore'
-          if ($env:RELEASE_TIER -eq 'ControlledQA') {
-            [IO.File]::WriteAllBytes($key, [Convert]::FromBase64String($env:QA_KS_B64))
-            $storePass = $env:QA_KS_PASS
-            $keyAlias = $env:QA_KEY_ALIAS
-            $keyPass = $env:QA_KEY_PASS
-          } else {
-            $storePass = [Guid]::NewGuid().ToString('N')
-            $keyPass = $storePass
-            $keyAlias = 'qa-internal-ephemeral'
-            Write-Output "::add-mask::$storePass"
-            keytool -genkeypair -keystore $key -storepass $storePass -keypass $keyPass -alias $keyAlias -keyalg RSA -keysize 2048 -validity 30 -dname 'CN=Salryn Cafe Internal Debug Synthetic Only'
+          try {
+            if ($env:RELEASE_TIER -eq 'ControlledQA') {
+              [IO.File]::WriteAllBytes($key, [Convert]::FromBase64String($env:QA_KS_B64))
+              $storePass = $env:QA_KS_PASS
+              $keyAlias = $env:QA_KEY_ALIAS
+              $keyPass = $env:QA_KEY_PASS
+            } else {
+              $storePass = [Guid]::NewGuid().ToString('N')
+              $keyPass = $storePass
+              $keyAlias = 'qa-internal-ephemeral'
+              Write-Output "::add-mask::$storePass"
+              keytool -genkeypair -keystore $key -storepass $storePass -keypass $keyPass -alias $keyAlias -keyalg RSA -keysize 2048 -validity 30 -dname 'CN=Salryn Cafe Internal Debug Synthetic Only'
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            }
+            $androidOut = Join-Path $env:QA_WORK_DIR 'android-out'
+            $provPath = Join-Path $env:QA_WORK_DIR 'build-provenance.json'
+            # Clear Android obj cache so CafeVersionCode/CafeVersionName changes always regenerate AndroidManifest.xml.
+            Remove-Item -LiteralPath "src/Salryn.App.Android/obj/$configuration" -Recurse -Force -ErrorAction SilentlyContinue
+            # Do NOT pass global -p:RuntimeIdentifiers (causes NETSDK1083 on net10.0 ProjectReferences).
+            dotnet publish src/Salryn.App.Android/Salryn.App.Android.csproj `
+              -c $configuration `
+              -p:AndroidPackageFormat=apk `
+              -p:EmbedAssembliesIntoApk=true `
+              "-p:CafeVersionCode=$($env:ANDROID_VERSION_CODE)" `
+              "-p:CafeVersionName=1.0.0-qa.$($env:ANDROID_VERSION_CODE)" `
+              "-p:SourceRevisionId=$($env:EXPECTED_SHA)" `
+              "-p:CafeBuildProvenancePath=$provPath" `
+              -p:AndroidKeyStore=true `
+              "-p:AndroidSigningKeyStore=$key" `
+              "-p:AndroidSigningKeyAlias=$keyAlias" `
+              "-p:AndroidSigningStorePass=$storePass" `
+              "-p:AndroidSigningKeyPass=$keyPass" `
+              -o $androidOut
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $apk = @(Get-ChildItem -LiteralPath $androidOut -Recurse -Filter '*-Signed.apk')
+            if ($apk.Count -ne 1) { throw "Expected exactly one signed APK, found $($apk.Count)." }
+            Copy-Item -LiteralPath $apk[0].FullName -Destination (Join-Path $env:QA_PACKAGE_DIR 'Salryn-Cafe-QA.apk') -Force
+          } finally {
+            Remove-Item -LiteralPath $key -Force -ErrorAction SilentlyContinue
           }
-          $androidOut = Join-Path $env:QA_WORK_DIR 'android-out'
-          $provPath = Join-Path $env:QA_WORK_DIR 'build-provenance.json'
-          # Clear Android obj cache so CafeVersionCode/CafeVersionName changes always regenerate AndroidManifest.xml.
-          Remove-Item -LiteralPath "src/Salryn.App.Android/obj/$configuration" -Recurse -Force -ErrorAction SilentlyContinue
-          # Do NOT pass global -p:RuntimeIdentifiers (causes NETSDK1083 on net10.0 ProjectReferences).
-          dotnet publish src/Salryn.App.Android/Salryn.App.Android.csproj `
-            -c $configuration `
-            -p:AndroidPackageFormat=apk `
-            -p:EmbedAssembliesIntoApk=true `
-            "-p:CafeVersionCode=$($env:ANDROID_VERSION_CODE)" `
-            -p:CafeVersionName=1.0.0-qa `
-            "-p:SourceRevisionId=$($env:EXPECTED_SHA)" `
-            "-p:CafeBuildProvenancePath=$provPath" `
-            -p:AndroidKeyStore=true `
-            "-p:AndroidSigningKeyStore=$key" `
-            "-p:AndroidSigningKeyAlias=$keyAlias" `
-            "-p:AndroidSigningStorePass=$storePass" `
-            "-p:AndroidSigningKeyPass=$keyPass" `
-            -o $androidOut
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $apk = @(Get-ChildItem -LiteralPath $androidOut -Recurse -Filter '*-Signed.apk')
-          if ($apk.Count -ne 1) { throw "Expected exactly one signed APK, found $($apk.Count)." }
-          Copy-Item -LiteralPath $apk[0].FullName -Destination (Join-Path $env:QA_PACKAGE_DIR 'Salryn-Cafe-QA.apk') -Force
-          Remove-Item -LiteralPath $key -Force -ErrorAction SilentlyContinue
       - name: Bind and verify manifest and checksum evidence (fail closed)
         shell: pwsh
         env:

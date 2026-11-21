@@ -4,8 +4,9 @@
 .DESCRIPTION
     Validates clean Git source identity, release tier policy, CI provenance, package
     directory hygiene, embedded source SHA and profile consistency across Windows Setup,
-    Android APK, and Central Server ZIP, persistent QA Android signing identity, and
-    post-write manifest/checksum integrity. Never authorizes production or RC promotion.
+    Android APK, and Central Server ZIP, persistent QA Android signing identity via
+    apksigner/aapt2, and post-write manifest/checksum integrity. Never authorizes
+    production or RC promotion.
 #>
 [CmdletBinding()]
 param(
@@ -20,6 +21,7 @@ param(
     [string]$VerificationSummaryPath = '',
     [string]$FormalNoxApprovedSha = '',
     [switch]$RequireApksignerVerify,
+    [switch]$AllowSyntheticFixturesForUnitTestOnly,
     [string]$RepoRoot = ''
 )
 $ErrorActionPreference = 'Stop'
@@ -96,11 +98,21 @@ function Assert-TierAndVerificationPolicy {
     if ($summary.overallStatus -cne 'PASS') {
         throw "ReleaseTier '$Tier' blocked: verification-summary.json overallStatus is '$($summary.overallStatus)' (must be 'PASS')."
     }
+    if ($summary.configuration -cne 'Release') {
+        throw "ReleaseTier '$Tier' blocked: verification-summary.json configuration is '$($summary.configuration)' (must be 'Release')."
+    }
+    if ($summary.mode -cne 'Windows') {
+        throw "ReleaseTier '$Tier' blocked: verification-summary.json mode is '$($summary.mode)' (must be 'Windows')."
+    }
     $summaryShaMatches = ($summary.commitSha -ceq $SourceSha) -or ($summary.prHeadSha -ceq $SourceSha)
     if (-not $summaryShaMatches) {
         throw "Verification summary SHA mismatch: expected $SourceSha, summary had commitSha='$($summary.commitSha)' prHeadSha='$($summary.prHeadSha)'."
     }
-    $failedGates = @($summary.gates | Where-Object { $_.status -notin @('PASS', 'BUILD_OK', 'RUNTIME_OBSERVED', 'SOURCE_CHECKED') })
+    $allGates = @($summary.gates)
+    if ($allGates.Count -eq 0) {
+        throw "ReleaseTier '$Tier' blocked: verification-summary.json gates array cannot be empty."
+    }
+    $failedGates = @($allGates | Where-Object { $_.status -notin @('PASS', 'BUILD_OK', 'RUNTIME_OBSERVED', 'SOURCE_CHECKED') })
     if ($failedGates.Count -gt 0) {
         $names = ($failedGates | ForEach-Object { $_.gate }) -join ', '
         throw "Verification summary contains non-passing gates: $names"
@@ -147,7 +159,11 @@ function Assert-PackageDirectoryHygiene {
 }
 
 function Test-InstallerProvenance {
-    param([string]$ExePath, [string]$SourceSha)
+    param(
+        [string]$ExePath,
+        [string]$SourceSha,
+        [bool]$AllowSyntheticFixtures = $false
+    )
     $bytes = [IO.File]::ReadAllBytes($ExePath)
     $isPe = ($bytes.Length -ge 2 -and $bytes[0] -eq 0x4D -and $bytes[1] -eq 0x5A)
     if ($isPe) {
@@ -161,22 +177,31 @@ function Test-InstallerProvenance {
         }
         return [pscustomobject]@{ verified = $true; method = 'PE_FILE_DESCRIPTION'; detail = $desc }
     }
-    # Synthetic non-PE test fixture fallback: must explicitly embed Salryn Cafe + exact SHA.
+    if (-not $AllowSyntheticFixtures) {
+        throw "Windows installer '$ExePath' is not a valid PE executable (missing MZ header); synthetic non-PE fixtures are forbidden outside explicit unit tests."
+    }
     $ascii = [System.Text.Encoding]::UTF8.GetString($bytes)
     $utf16 = [System.Text.Encoding]::Unicode.GetString($bytes)
     $hasSha = ($ascii.Contains($SourceSha)) -or ($utf16.Contains($SourceSha))
     $hasName = ($ascii.Contains('Salryn Cafe')) -or ($utf16.Contains('Salryn Cafe'))
     if (-not ($hasSha -and $hasName)) {
-        throw "Installer artifact does not embed exact source SHA $SourceSha and 'Salryn Cafe' identity."
+        throw "Synthetic installer fixture does not embed exact source SHA $SourceSha and 'Salryn Cafe' identity."
     }
-    return [pscustomobject]@{ verified = $true; method = 'SYNTHETIC_MARKER'; detail = "Embedded $SourceSha" }
+    return [pscustomobject]@{ verified = $false; method = 'SYNTHETIC_UNIT_TEST_MARKER'; detail = "Embedded $SourceSha" }
 }
 
 function Find-AndroidBuildTool {
     param([string[]]$CandidateNames)
     $cmd = Get-Command @CandidateNames -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($cmd) { return $cmd.Source }
-    foreach ($sdkRoot in @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT, (Join-Path $env:LOCALAPPDATA 'SalrynForgeTools\android-sdk'))) {
+    $sdkCandidates = @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT)
+    if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+        $sdkCandidates += @(
+            (Join-Path $env:LOCALAPPDATA 'SalrynForgeTools\android-sdk'),
+            (Join-Path $env:LOCALAPPDATA 'Android\Sdk')
+        )
+    }
+    foreach ($sdkRoot in $sdkCandidates) {
         if ([string]::IsNullOrWhiteSpace($sdkRoot)) { continue }
         $bt = Join-Path $sdkRoot 'build-tools'
         if (Test-Path -LiteralPath $bt -PathType Container) {
@@ -214,8 +239,10 @@ function Test-AndroidApkProvenance {
         [string]$ApkPath,
         [string]$SourceSha,
         [string]$Profile,
+        [string]$Tier,
         [string]$ExpectedSignerSha256,
-        [bool]$RequireApksignerVerify
+        [bool]$RequireApksignerVerify,
+        [bool]$AllowSyntheticFixtures = $false
     )
     $zip = [System.IO.Compression.ZipFile]::OpenRead($ApkPath)
     try {
@@ -254,44 +281,57 @@ function Test-AndroidApkProvenance {
     }
 
     $observedSigner = ''
-    $apksigner = Find-ApksignerExecutable
-    if (-not [string]::IsNullOrWhiteSpace($ExpectedSignerSha256)) {
-        $expectedLower = $ExpectedSignerSha256.ToLowerInvariant()
-        if ($apksigner -and ($RequireApksignerVerify -or ($prov.signingVerificationMode -ne 'SYNTHETIC_UNIT_TEST'))) {
-            $observedSigner = Get-ApkSignerSha256 -ApkPath $ApkPath -ApksignerPath $apksigner
-            if ($observedSigner -cne $expectedLower) {
-                throw "Android APK signer SHA-256 mismatch: expected $expectedLower, observed $observedSigner."
+    $strictRealVerify = (-not $AllowSyntheticFixtures)
+    $mustVerifySignature = $strictRealVerify -and ($RequireApksignerVerify -or ($Tier -in @('ControlledQA', 'ReleaseCandidate')) -or (-not [string]::IsNullOrWhiteSpace($ExpectedSignerSha256)))
+
+    if ($strictRealVerify) {
+        # Never trust untrusted JSON fields inside the APK to bypass apksigner or aapt2.
+        $apksigner = Find-ApksignerExecutable
+        if ($mustVerifySignature) {
+            if (-not $apksigner) {
+                throw "apksigner executable is required for tier '$Tier' (fail closed; cannot trust unverified APK JSON)."
             }
-        } elseif ($RequireApksignerVerify) {
-            throw 'apksigner tool not found while -RequireApksignerVerify was requested.'
-        } else {
+            $observedSigner = Get-ApkSignerSha256 -ApkPath $ApkPath -ApksignerPath $apksigner
+            if (-not [string]::IsNullOrWhiteSpace($ExpectedSignerSha256)) {
+                $expectedLower = $ExpectedSignerSha256.ToLowerInvariant()
+                if ($observedSigner -cne $expectedLower) {
+                    throw "Android APK signer SHA-256 mismatch: expected $expectedLower, observed $observedSigner."
+                }
+            }
+        } elseif ($apksigner) {
+            $observedSigner = Get-ApkSignerSha256 -ApkPath $ApkPath -ApksignerPath $apksigner
+        }
+
+        $aapt2 = Find-Aapt2Executable
+        if (-not $aapt2 -and ($Tier -in @('ControlledQA', 'ReleaseCandidate'))) {
+            throw "aapt2 executable is required for tier '$Tier' to verify APK manifest packageId and versionCode."
+        }
+        if ($aapt2) {
+            $badging = (& $aapt2 dump badging $ApkPath 2>&1 | Out-String)
+            if ($LASTEXITCODE -ne 0) { throw "aapt2 dump badging failed for ${ApkPath}: $badging" }
+            if ($badging -notmatch "package:\s+name='([^']+)'\s+versionCode='(\d+)'") {
+                throw "aapt2 badging did not emit package name and versionCode for $ApkPath."
+            }
+            if ($Matches[1] -cne [string]$prov.packageId) {
+                throw "APK manifest packageId '$($Matches[1])' does not match provenance '$($prov.packageId)'."
+            }
+            if ([int]$Matches[2] -ne $vc) {
+                throw "APK manifest versionCode '$($Matches[2])' does not match provenance versionCode '$vc'."
+            }
+        }
+    } else {
+        if (-not [string]::IsNullOrWhiteSpace($ExpectedSignerSha256)) {
+            $expectedLower = $ExpectedSignerSha256.ToLowerInvariant()
             $provSigner = [string]$prov.signerSha256
             if ([string]::IsNullOrWhiteSpace($provSigner) -or $provSigner.ToLowerInvariant() -cne $expectedLower) {
-                throw "Android APK signer SHA-256 mismatch in provenance: expected $expectedLower, got '$provSigner'."
+                throw "Synthetic APK fixture signer SHA-256 mismatch: expected $expectedLower, got '$provSigner'."
             }
             $observedSigner = $provSigner.ToLowerInvariant()
-        }
-    } elseif ($apksigner -and $prov.signingVerificationMode -ne 'SYNTHETIC_UNIT_TEST') {
-        $observedSigner = Get-ApkSignerSha256 -ApkPath $ApkPath -ApksignerPath $apksigner
-    }
-
-    $aapt2 = Find-Aapt2Executable
-    if ($aapt2 -and $prov.signingVerificationMode -ne 'SYNTHETIC_UNIT_TEST') {
-        $badging = (& $aapt2 dump badging $ApkPath 2>&1 | Out-String)
-        if ($LASTEXITCODE -ne 0) { throw "aapt2 dump badging failed for ${ApkPath}: $badging" }
-        if ($badging -notmatch "package:\s+name='([^']+)'\s+versionCode='(\d+)'") {
-            throw "aapt2 badging did not emit package name and versionCode for $ApkPath."
-        }
-        if ($Matches[1] -cne [string]$prov.packageId) {
-            throw "APK manifest packageId '$($Matches[1])' does not match provenance '$($prov.packageId)'."
-        }
-        if ([int]$Matches[2] -ne $vc) {
-            throw "APK manifest versionCode '$($Matches[2])' does not match provenance versionCode '$vc'."
         }
     }
 
     return [pscustomobject]@{
-        verified = $true
+        verified = $strictRealVerify
         packageId = [string]$prov.packageId
         versionCode = $vc
         versionName = [string]$prov.versionName
@@ -316,7 +356,10 @@ function Test-CentralZipProvenance {
                 throw "Central QA zip missing required file: $req"
             }
         }
-        $secretFiles = @($names | Where-Object { $_ -match '(^|/)\.env$|\.(keystore|jks|pfx|p12|key|pem)$' })
+        $secretFiles = @($names | Where-Object {
+            (($_ -match '(^|/)\.env(\.[^/]+)?$') -and ($_ -notmatch '(^|/)\.env\.example$')) -or
+            ($_ -match '(^|/)[^/]*credentials[^/]*\.json$|\.(keystore|jks|pfx|p12|key|pem)$')
+        })
         if ($secretFiles.Count -gt 0) {
             throw "Central QA zip contains forbidden secret/key material: $($secretFiles -join ', ')"
         }
@@ -401,8 +444,8 @@ $root = (Resolve-Path -LiteralPath $PackageDirectory).Path
 $required = @('Salryn-Cafe-Setup.exe', 'Salryn-Cafe-QA.apk', 'Salryn-Cafe-Central-QA.zip')
 Assert-PackageDirectoryHygiene -Root $root -RequiredFiles $required
 
-$installerCheck = Test-InstallerProvenance -ExePath (Join-Path $root 'Salryn-Cafe-Setup.exe') -SourceSha $SourceSha
-$apkCheck = Test-AndroidApkProvenance -ApkPath (Join-Path $root 'Salryn-Cafe-QA.apk') -SourceSha $SourceSha -Profile $Profile -ExpectedSignerSha256 $ExpectedSignerSha256 -RequireApksignerVerify:$RequireApksignerVerify
+$installerCheck = Test-InstallerProvenance -ExePath (Join-Path $root 'Salryn-Cafe-Setup.exe') -SourceSha $SourceSha -AllowSyntheticFixtures:$AllowSyntheticFixturesForUnitTestOnly
+$apkCheck = Test-AndroidApkProvenance -ApkPath (Join-Path $root 'Salryn-Cafe-QA.apk') -SourceSha $SourceSha -Profile $Profile -Tier $effectiveTier -ExpectedSignerSha256 $ExpectedSignerSha256 -RequireApksignerVerify:$RequireApksignerVerify -AllowSyntheticFixtures:$AllowSyntheticFixturesForUnitTestOnly
 $centralCheck = Test-CentralZipProvenance -ZipPath (Join-Path $root 'Salryn-Cafe-Central-QA.zip') -SourceSha $SourceSha -Profile $Profile
 
 $files = foreach ($name in $required) {
@@ -425,12 +468,12 @@ $manifest = [ordered]@{
     sourceSha = $SourceSha
     createdAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
     workflowRunUrl = $RunUrl
-    classification = 'QA_STAGING_ONLY'
+    classification = if ($AllowSyntheticFixturesForUnitTestOnly) { 'SYNTHETIC_UNIT_TEST_ONLY' } else { 'QA_STAGING_ONLY' }
     releaseTier = $effectiveTier
     releaseCandidateAccepted = $false
     productionAuthorized = $false
     profile = $Profile
-    provenanceVerified = $true
+    provenanceVerified = (-not $AllowSyntheticFixturesForUnitTestOnly)
     installerProvenance = $installerCheck.method
     androidPackageId = $apkCheck.packageId
     androidVersionCode = $apkCheck.versionCode
