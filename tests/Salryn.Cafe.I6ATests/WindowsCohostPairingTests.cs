@@ -164,6 +164,7 @@ public sealed class WindowsCohostPairingTests
     private sealed class MemorySecrets:IDeviceSecretStore
     {
         private readonly Dictionary<string,byte[]> values=[];
+        public IReadOnlyDictionary<string,byte[]> Values=>values;
         public Task<byte[]?> ReadAsync(string key,CancellationToken ct=default)=>Task.FromResult(values.TryGetValue(key,out var value)?value.ToArray():null);
         public Task WriteAsync(string key,byte[] value,CancellationToken ct=default){values[key]=value.ToArray();return Task.CompletedTask;}
     }
