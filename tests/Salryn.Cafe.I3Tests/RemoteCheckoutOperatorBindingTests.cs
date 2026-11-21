@@ -118,4 +118,3 @@ public sealed class RemoteCheckoutOperatorBindingTests
         IssuedAtUtc = DateTimeOffset.UtcNow, ExpiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(1)
     };
 }
-
