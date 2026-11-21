@@ -6,6 +6,10 @@ public sealed class CentralServerOptions
     public const int CentralSchemaVersion = 3;
 
     public string DatabasePath { get; set; } = Path.Combine(AppContext.BaseDirectory, "data", "salryn-cafe-central.db");
+    // Explicit single-tenant/store canonical authority; transport-only remains default.
+    public bool EnableCanonicalDomainProcessing { get; set; }
+    public Guid CanonicalTenantId { get; set; }
+    public Guid CanonicalStoreId { get; set; }
     public bool RequireHttps { get; set; } = true;
     public bool TrustForwardedProto { get; set; } = true;
     public HashSet<string> TrustedProxyAddresses { get; set; } = new(StringComparer.OrdinalIgnoreCase)

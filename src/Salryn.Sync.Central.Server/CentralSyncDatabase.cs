@@ -1,4 +1,7 @@
 using Microsoft.Data.Sqlite;
+using Salryn.Infrastructure.Data;
+using Salryn.Infrastructure.Data.Migrations;
+using Salryn.Infrastructure.Data.Seeding;
 
 namespace Salryn.Sync.Central.Server;
 
@@ -56,10 +59,90 @@ public sealed class CentralSyncDatabase
         cmd.ExecuteNonQuery();
     }
 
-    public void Initialize()
+    public void Initialize() => Initialize(beforeAuthorityBind: null);
+
+    public void Initialize(Action? beforeAuthorityBind)
     {
+        bool freshDomain = false;
+        string pendingInitPath = _options.DatabasePath + ".canonical-init-pending";
+        string expectedPendingMarker = $"{_options.CanonicalTenantId:D}|{_options.CanonicalStoreId:D}";
+        bool resumingInterruptedFreshInit = false;
+
+        if (_options.EnableCanonicalDomainProcessing)
+        {
+            if (_options.CanonicalTenantId == Guid.Empty || _options.CanonicalStoreId == Guid.Empty)
+                throw new InvalidOperationException("Explicit canonical tenant/store authority is required.");
+            var factory = new SqliteConnectionFactory(_options.DatabasePath);
+            var runner = new MigrationRunner(factory, CafeMigrationCatalog.CreateCanonicalCafeMigrations());
+            freshDomain = runner.ClassifyDatabase().Kind == SchemaLineageKind.Fresh;
+            if (freshDomain)
+            {
+                File.WriteAllText(pendingInitPath, expectedPendingMarker);
+            }
+            else if (File.Exists(pendingInitPath) &&
+                     string.Equals(File.ReadAllText(pendingInitPath).Trim(), expectedPendingMarker, StringComparison.Ordinal))
+            {
+                resumingInterruptedFreshInit = true;
+            }
+            // Existing transport-only/unknown/retail DBs fail closed; never bypass lineage.
+            runner.RunPendingMigrations();
+            new DatabaseSeeder(factory).SeedDefaultData();
+            beforeAuthorityBind?.Invoke();
+        }
         using SqliteConnection connection = OpenConnection();
         using SqliteTransaction transaction = connection.BeginTransaction();
+        if (_options.EnableCanonicalDomainProcessing)
+        {
+            using var scope = connection.CreateCommand();
+            scope.Transaction = transaction;
+            scope.CommandText = """
+                CREATE TABLE IF NOT EXISTS sync_operator_sessions (
+                    token_hash TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, store_id TEXT NOT NULL,
+                    device_id TEXT NOT NULL, user_id TEXT NOT NULL, server_epoch INTEGER NOT NULL,
+                    authority_hash TEXT NOT NULL, expires_at_utc TEXT NOT NULL, revoked_at_utc TEXT NULL);
+                CREATE TABLE IF NOT EXISTS sync_operator_login_limits (
+                    device_id TEXT NOT NULL, username_hash TEXT NOT NULL, failed_attempts INTEGER NOT NULL,
+                    lockout_until_utc TEXT NULL, PRIMARY KEY(device_id, username_hash));
+                CREATE TABLE IF NOT EXISTS sync_canonical_domain_scope (
+                    singleton_id INTEGER PRIMARY KEY CHECK(singleton_id=1), tenant_id TEXT NOT NULL, store_id TEXT NOT NULL);
+                """;
+            scope.ExecuteNonQuery();
+
+            bool canBindFreshDeploymentStore = freshDomain;
+            if (!canBindFreshDeploymentStore && resumingInterruptedFreshInit)
+            {
+                scope.CommandText = "SELECT COUNT(*) FROM sync_canonical_domain_scope;";
+                long scopeCount = Convert.ToInt64(scope.ExecuteScalar());
+                scope.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sync_server_state';";
+                long stateTableExists = Convert.ToInt64(scope.ExecuteScalar());
+                long stateCount = 0;
+                if (stateTableExists == 1)
+                {
+                    scope.CommandText = "SELECT COUNT(*) FROM sync_server_state;";
+                    stateCount = Convert.ToInt64(scope.ExecuteScalar());
+                }
+                canBindFreshDeploymentStore = scopeCount == 0 && stateCount == 0;
+            }
+
+            if (canBindFreshDeploymentStore)
+            {
+                scope.CommandText = "UPDATE deployment_identity SET store_id=$store;";
+                scope.Parameters.AddWithValue("$store", _options.CanonicalStoreId.ToString("D"));
+                scope.ExecuteNonQuery();
+            }
+            scope.Parameters.Clear();
+            scope.CommandText = "SELECT store_id FROM deployment_identity LIMIT 1;";
+            if (!string.Equals(Convert.ToString(scope.ExecuteScalar()), _options.CanonicalStoreId.ToString("D"), StringComparison.Ordinal))
+                throw new InvalidOperationException("Canonical deployment store does not match configured authority.");
+            scope.Parameters.Clear();
+            scope.CommandText = "INSERT OR IGNORE INTO sync_canonical_domain_scope VALUES(1,$tenant,$store);";
+            scope.Parameters.AddWithValue("$tenant", _options.CanonicalTenantId.ToString("D"));
+            scope.Parameters.AddWithValue("$store", _options.CanonicalStoreId.ToString("D"));
+            scope.ExecuteNonQuery();
+            scope.CommandText = "SELECT COUNT(*) FROM sync_canonical_domain_scope WHERE singleton_id=1 AND tenant_id=$tenant AND store_id=$store;";
+            if (Convert.ToInt64(scope.ExecuteScalar()) != 1)
+                throw new InvalidOperationException("Canonical tenant/store scope is already bound to another authority.");
+        }
 
         using (SqliteCommand cmd = connection.CreateCommand())
         {
@@ -327,6 +410,10 @@ public sealed class CentralSyncDatabase
         }
 
         transaction.Commit();
+        if (_options.EnableCanonicalDomainProcessing && File.Exists(pendingInitPath))
+        {
+            File.Delete(pendingInitPath);
+        }
     }
 
     public CentralServerStateSnapshot ReadServerState(SqliteConnection connection, SqliteTransaction? transaction = null)

@@ -26,7 +26,7 @@ public sealed record AuthenticatedDeviceContext(
     string Status,
     string PublicKeySpki);
 
-public sealed class CentralSyncService
+public sealed partial class CentralSyncService
 {
     private static readonly HashSet<string> AllowedDeviceRoles = new(StringComparer.Ordinal)
     {
@@ -848,8 +848,6 @@ public sealed class CentralSyncService
 
     // ==================== SYNC: BOOTSTRAP, PUSH, PULL ====================
 
-    // The central DB has no canonical Cafe domain projection tables/readers yet.
-    // Returning an empty snapshot with a nonzero cursor would permanently skip business facts.
     public ServiceOutcome<BootstrapResponseDto> GetBootstrap(AuthenticatedDeviceContext device, Guid requestedStoreId)
     {
         if (requestedStoreId != device.StoreId)
@@ -857,15 +855,171 @@ public sealed class CentralSyncService
             return ServiceOutcome<BootstrapResponseDto>.Fail(403, "ERR_TENANT_SCOPE_VIOLATION", "Cannot bootstrap another store.");
         }
 
-        return ServiceOutcome<BootstrapResponseDto>.Fail(
-            503,
-            "ERR_BOOTSTRAP_DOMAIN_SNAPSHOT_UNAVAILABLE",
-            "Central Cafe domain projections are not implemented. Do not advance the bootstrap cursor.");
+        if (!_options.EnableCanonicalDomainProcessing)
+        {
+            return ServiceOutcome<BootstrapResponseDto>.Fail(
+                503,
+                "ERR_BOOTSTRAP_DOMAIN_SNAPSHOT_UNAVAILABLE",
+                "Central Cafe domain projections are not implemented. Do not advance the bootstrap cursor.");
+        }
+
+        if (device.TenantId != _options.CanonicalTenantId || device.StoreId != _options.CanonicalStoreId)
+        {
+            return ServiceOutcome<BootstrapResponseDto>.Fail(
+                403,
+                "ERR_CANONICAL_AUTHORITY_SCOPE",
+                "Device is outside the canonical domain authority scope.");
+        }
+
+        using SqliteConnection conn = _db.OpenConnection();
+        using SqliteTransaction tx = conn.BeginTransaction();
+        CentralServerStateSnapshot state = _db.ReadServerState(conn, tx);
+
+        List<SyncBootstrapRoleV1> roles = [];
+        using (SqliteCommand cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "SELECT id, name, is_system_role FROM roles ORDER BY id;";
+            using SqliteDataReader r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                roles.Add(new SyncBootstrapRoleV1(Guid.Parse(r.GetString(0)), r.GetString(1), r.GetInt32(2) != 0));
+            }
+        }
+
+        List<SyncBootstrapUserV1> users = [];
+        using (SqliteCommand cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "SELECT id, username, display_name, role_id, status FROM users ORDER BY id;";
+            using SqliteDataReader r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                users.Add(new SyncBootstrapUserV1(
+                    Guid.Parse(r.GetString(0)), r.GetString(1), r.GetString(2), Guid.Parse(r.GetString(3)), r.GetInt32(4)));
+            }
+        }
+
+        List<SyncBootstrapUnitV1> units = [];
+        using (SqliteCommand cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "SELECT id, name, abbreviation, allows_decimal_quantity, is_active FROM units ORDER BY id;";
+            using SqliteDataReader r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                units.Add(new SyncBootstrapUnitV1(
+                    Guid.Parse(r.GetString(0)), r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2), r.GetInt32(3) != 0, r.GetInt32(4) != 0));
+            }
+        }
+
+        List<SyncBootstrapProductV1> products = [];
+        using (SqliteCommand cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = """
+                SELECT id, sku, barcode, name, description, unit_id, cost_price_cents, selling_price_cents,
+                       wholesale_price_cents, stock_on_hand_x1000, reorder_level_x1000, track_stock,
+                       allow_discount, is_active, tax_classification
+                FROM products ORDER BY id;
+                """;
+            using SqliteDataReader r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                products.Add(new SyncBootstrapProductV1(
+                    Guid.Parse(r.GetString(0)),
+                    r.IsDBNull(1) ? null : r.GetString(1),
+                    r.IsDBNull(2) ? null : r.GetString(2),
+                    r.GetString(3),
+                    r.IsDBNull(4) ? null : r.GetString(4),
+                    Guid.Parse(r.GetString(5)),
+                    r.IsDBNull(6) ? null : r.GetInt64(6),
+                    r.GetInt64(7),
+                    r.IsDBNull(8) ? null : r.GetInt64(8),
+                    r.GetInt64(9),
+                    r.GetInt64(10),
+                    r.GetInt32(11) != 0,
+                    r.GetInt32(12) != 0,
+                    r.GetInt32(13) != 0,
+                    r.GetInt32(14)));
+            }
+        }
+
+        List<SyncBootstrapCashierSessionV1> sessions = [];
+        using (SqliteCommand cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = """
+                SELECT s.id, s.user_id, s.opened_at, s.opening_cash_cents, s.expected_cash_cents, s.status, s.notes,
+                       COALESCE((SELECT SUM(m.delta_cents) FROM cash_movements m WHERE m.cashier_session_id = s.id), 0)
+                FROM cashier_sessions s ORDER BY s.id;
+                """;
+            using SqliteDataReader r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                sessions.Add(new SyncBootstrapCashierSessionV1(
+                    Guid.Parse(r.GetString(0)),
+                    Guid.Parse(r.GetString(1)),
+                    DateTimeOffset.Parse(r.GetString(2)),
+                    r.GetInt64(3),
+                    r.GetInt64(4),
+                    r.GetInt32(5),
+                    r.IsDBNull(6) ? null : r.GetString(6),
+                    r.GetInt64(7)));
+            }
+        }
+
+        List<SyncBootstrapCustomerV1> customers = [];
+        using (SqliteCommand cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = """
+                SELECT c.id, c.full_name, c.phone, c.address, c.note, c.credit_limit_cents, c.is_active,
+                       c.created_by_user_id, c.created_at, c.updated_at,
+                       COALESCE((SELECT SUM(e.debit_cents - e.credit_cents) FROM accounts_receivable_entries e WHERE e.customer_id = c.id), 0)
+                FROM customers c ORDER BY c.id;
+                """;
+            using SqliteDataReader r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                customers.Add(new SyncBootstrapCustomerV1(
+                    Guid.Parse(r.GetString(0)),
+                    r.GetString(1),
+                    r.IsDBNull(2) ? null : r.GetString(2),
+                    r.IsDBNull(3) ? null : r.GetString(3),
+                    r.IsDBNull(4) ? null : r.GetString(4),
+                    r.IsDBNull(5) ? null : r.GetInt64(5),
+                    r.GetInt32(6) != 0,
+                    Guid.Parse(r.GetString(7)),
+                    DateTimeOffset.Parse(r.GetString(8)),
+                    DateTimeOffset.Parse(r.GetString(9)),
+                    r.GetInt64(10)));
+            }
+        }
+
+        SyncBootstrapSnapshotV1 snapshot = SyncBootstrapSnapshotProtocolV1.Create(
+            state.CentralInstanceId,
+            device.StoreId,
+            state.HeadSequence,
+            roles,
+            users,
+            units,
+            products,
+            sessions,
+            customers);
+
+        return ServiceOutcome<BootstrapResponseDto>.Ok(
+            new BootstrapResponseDto(
+                CentralServerOptions.CanonicalProductId,
+                state.ServerEpoch,
+                state.HeadSequence,
+                snapshot));
     }
 
     public ServiceOutcome<PushOperationsResponse> PushOperations(
         AuthenticatedDeviceContext device,
-        PushOperationsRequest request)
+        PushOperationsRequest request,
+        string? operatorToken = null)
     {
         if (request.Operations is null || request.Operations.Count == 0)
         {
@@ -901,27 +1055,24 @@ public sealed class CentralSyncService
         DateTimeOffset now = _time.GetUtcNow();
         using SqliteConnection conn = _db.OpenConnection();
         // Immediate transaction ensures deterministic serialization of sequence numbers
-        using (SqliteCommand beginCmd = conn.CreateCommand())
-        {
-            beginCmd.CommandText = "BEGIN IMMEDIATE;";
-            beginCmd.ExecuteNonQuery();
-        }
+        using SqliteTransaction transaction = conn.BeginTransaction(deferred: false);
 
         try
         {
-            CentralServerStateSnapshot state = _db.ReadServerState(conn);
+            CentralServerStateSnapshot state = _db.ReadServerState(conn, transaction);
 
             // Revoked device fencing: strictly quarantine, NEVER mutate live ledger or change feed
             if (string.Equals(device.Status, "Revoked", StringComparison.Ordinal))
             {
                 using (SqliteCommand capCmd = conn.CreateCommand())
                 {
+                    capCmd.Transaction = transaction;
                     capCmd.CommandText = "SELECT COUNT(*) FROM sync_revoked_quarantine WHERE device_id = $deviceId;";
                     capCmd.Parameters.AddWithValue("$deviceId", device.DeviceId.ToString("D"));
                     long existingQuarantineCount = Convert.ToInt64(capCmd.ExecuteScalar());
                     if (existingQuarantineCount + request.Operations.Count > _options.MaxQuarantinePerDevice)
                     {
-                        RollbackRaw(conn);
+                        transaction.Rollback();
                         return ServiceOutcome<PushOperationsResponse>.Fail(
                             429,
                             "ERR_QUARANTINE_CAP_REACHED",
@@ -956,7 +1107,7 @@ public sealed class CentralSyncService
                     quarantinedIds.Add(env.OperationId);
                 }
 
-                CommitRaw(conn);
+                transaction.Commit();
                 return ServiceOutcome<PushOperationsResponse>.FencedRevoked(
                     new RevokedFencedResponseDto(
                         "DEVICE_REVOKED_FENCED",
@@ -968,12 +1119,24 @@ public sealed class CentralSyncService
             // Epoch check (e.g., after central DB restore)
             if (request.KnownEpoch != state.ServerEpoch)
             {
-                RollbackRaw(conn);
+                transaction.Rollback();
                 return ServiceOutcome<PushOperationsResponse>.Fail(
                     409,
                     "EPOCH_MISMATCH_REBOOTSTRAP_REQUIRED",
                     $"Client epoch {request.KnownEpoch} does not match server epoch {state.ServerEpoch}. Re-bootstrap required.",
                     state.ServerEpoch);
+            }
+
+            if (_options.EnableCanonicalDomainProcessing)
+            {
+                string? operatorError = ValidateOperatorToken(conn, transaction, device, operatorToken,
+                    state.ServerEpoch, request.Operations.Select(x => x.ActorUserId), now);
+                if (operatorError is not null)
+                {
+                    transaction.Rollback();
+                    return ServiceOutcome<PushOperationsResponse>.Fail(403, operatorError,
+                        "Current operator authorization is required for the original queued actor; retain pending operations.", state.ServerEpoch);
+                }
             }
 
             // Explicitly recognize supported Cafe operation families, but do not report
@@ -983,7 +1146,7 @@ public sealed class CentralSyncService
             {
                 if (!CentralDomainAdmission.IsRecognized(env.OperationType, env.SchemaVersion))
                 {
-                    RollbackRaw(conn);
+                    transaction.Rollback();
                     return ServiceOutcome<PushOperationsResponse>.Fail(
                         422,
                         "ERR_UNSUPPORTED_OPERATION_TYPE",
@@ -992,7 +1155,7 @@ public sealed class CentralSyncService
                 }
             }
 
-            long nextReceivedSeq = ReadMaxReceivedSequence(conn);
+            long nextReceivedSeq = ReadMaxReceivedSequence(conn, transaction);
             List<PushOperationResultDto> results = [];
 
             foreach (SyncOperationEnvelopeV1 env in request.Operations)
@@ -1000,6 +1163,7 @@ public sealed class CentralSyncService
                 // Check idempotent replay or hash conflict (scoped strictly by tenant_id + store_id + operation_id)
                 using (SqliteCommand existingCmd = conn.CreateCommand())
                 {
+                    existingCmd.Transaction = transaction;
                     existingCmd.CommandText = """
                         SELECT operation_hash, received_sequence, received_at_utc, status,
                                result_code, result_json, resolved_at_utc
@@ -1015,7 +1179,7 @@ public sealed class CentralSyncService
                         string existingHash = reader.GetString(0);
                         if (!CentralCrypto.FixedTimeEqualsAscii(existingHash, env.OperationHash))
                         {
-                            RollbackRaw(conn);
+                            transaction.Rollback();
                             return ServiceOutcome<PushOperationsResponse>.Fail(
                                 409,
                                 "OPERATION_HASH_CONFLICT",
@@ -1032,7 +1196,7 @@ public sealed class CentralSyncService
                             reader.GetString(5),
                             DateTimeOffset.Parse(reader.GetString(6)));
 
-                        long? existingFeedSeq = ReadChangeFeedSequenceForOperation(conn, device.TenantId, device.StoreId, env.OperationId);
+                        long? existingFeedSeq = ReadChangeFeedSequenceForOperation(conn, device.TenantId, device.StoreId, env.OperationId, transaction);
                         results.Add(new PushOperationResultDto(env.OperationId, true, cached, existingFeedSeq));
                         continue;
                     }
@@ -1042,6 +1206,7 @@ public sealed class CentralSyncService
                 // may not reuse the same sequence even when operation IDs differ.
                 using (SqliteCommand sequenceCmd = conn.CreateCommand())
                 {
+                    sequenceCmd.Transaction = transaction;
                     sequenceCmd.CommandText = """
                         SELECT operation_id FROM sync_inbox_operations
                         WHERE tenant_id = $tenantId AND store_id = $storeId
@@ -1054,7 +1219,7 @@ public sealed class CentralSyncService
                     sequenceCmd.Parameters.AddWithValue("$localSequence", env.LocalSequence);
                     if (sequenceCmd.ExecuteScalar() is not null)
                     {
-                        RollbackRaw(conn);
+                        transaction.Rollback();
                         return ServiceOutcome<PushOperationsResponse>.Fail(
                             409,
                             "ERR_DEVICE_LOCAL_SEQUENCE_CONFLICT",
@@ -1065,19 +1230,23 @@ public sealed class CentralSyncService
 
                 // Admit financial evidence durably, but never manufacture domain application.
                 // Pending evidence cannot enter the applied change-feed before domain processing.
+                CentralDomainResult domain = CentralCanonicalDomainProcessor.Apply(conn, transaction, _options, device, env);
+                long? appliedFeedSequence = domain.Status == SaleCommittedV1Contract.Applied
+                    ? AppendCanonicalChange(conn, transaction, device, env, state, domain.ChangeType!, now) : null;
                 nextReceivedSeq++;
                 string resultJson = JsonSerializer.Serialize(new
                 {
-                    applied = false,
-                    needsReview = true,
+                    applied = domain.Status == SaleCommittedV1Contract.Applied,
+                    needsReview = domain.Status == SaleCommittedV1Contract.NeedsReview,
                     operationId = env.OperationId,
                     operationType = env.OperationType,
                     serverEpoch = state.ServerEpoch,
-                    reason = "DOMAIN_PROCESSOR_UNAVAILABLE"
+                    reason = domain.Code
                 });
 
                 using (SqliteCommand insertInbox = conn.CreateCommand())
                 {
+                    insertInbox.Transaction = transaction;
                     insertInbox.CommandText = """
                         INSERT INTO sync_inbox_operations (
                             operation_id, tenant_id, store_id, device_id, actor_user_id, local_sequence,
@@ -1103,8 +1272,8 @@ public sealed class CentralSyncService
                     insertInbox.Parameters.AddWithValue("$opHash", env.OperationHash);
                     insertInbox.Parameters.AddWithValue("$envJson", JsonSerializer.Serialize(env));
                     insertInbox.Parameters.AddWithValue("$recSeq", nextReceivedSeq);
-                    insertInbox.Parameters.AddWithValue("$status", SaleCommittedV1Contract.NeedsReview);
-                    insertInbox.Parameters.AddWithValue("$resCode", "DOMAIN_PROCESSOR_UNAVAILABLE");
+                    insertInbox.Parameters.AddWithValue("$status", domain.Status);
+                    insertInbox.Parameters.AddWithValue("$resCode", domain.Code);
                     insertInbox.Parameters.AddWithValue("$resJson", resultJson);
                     insertInbox.Parameters.AddWithValue("$now", now.ToString("O"));
                     insertInbox.ExecuteNonQuery();
@@ -1114,17 +1283,18 @@ public sealed class CentralSyncService
                     env.OperationId,
                     nextReceivedSeq,
                     now,
-                    SaleCommittedV1Contract.NeedsReview,
-                    "DOMAIN_PROCESSOR_UNAVAILABLE",
+                    domain.Status,
+                    domain.Code,
                     resultJson,
                     now);
 
-                results.Add(new PushOperationResultDto(env.OperationId, false, resolution, null));
+                results.Add(new PushOperationResultDto(env.OperationId, false, resolution, appliedFeedSequence));
             }
 
-            long headSeq = ReadMaxFeedSequence(conn);
+            long headSeq = ReadMaxFeedSequence(conn, transaction);
             using (SqliteCommand updateHead = conn.CreateCommand())
             {
+                    updateHead.Transaction = transaction;
                 updateHead.CommandText = "UPDATE sync_server_state SET head_sequence = $head, updated_at_utc = $now WHERE singleton_id = 1;";
                 updateHead.Parameters.AddWithValue("$head", headSeq);
                 updateHead.Parameters.AddWithValue("$now", now.ToString("O"));
@@ -1133,20 +1303,21 @@ public sealed class CentralSyncService
 
             using (SqliteCommand touch = conn.CreateCommand())
             {
+                    touch.Transaction = transaction;
                 touch.CommandText = "UPDATE sync_device_registry SET last_seen_at_utc = $now WHERE device_id = $deviceId;";
                 touch.Parameters.AddWithValue("$now", now.ToString("O"));
                 touch.Parameters.AddWithValue("$deviceId", device.DeviceId.ToString("D"));
                 touch.ExecuteNonQuery();
             }
 
-            CommitRaw(conn);
+            transaction.Commit();
 
             return ServiceOutcome<PushOperationsResponse>.Ok(
                 new PushOperationsResponse(state.CentralInstanceId, state.ServerEpoch, headSeq, results));
         }
         catch
         {
-            RollbackRaw(conn);
+            transaction.Rollback();
             throw;
         }
     }
@@ -1448,23 +1619,52 @@ public sealed class CentralSyncService
             reader.IsDBNull(13) ? null : DateTimeOffset.Parse(reader.GetString(13)));
     }
 
-    private static long ReadMaxReceivedSequence(SqliteConnection conn)
+    private static long AppendCanonicalChange(SqliteConnection connection, SqliteTransaction transaction,
+        AuthenticatedDeviceContext device, SyncOperationEnvelopeV1 envelope, CentralServerStateSnapshot state,
+        string changeType, DateTimeOffset now)
+    {
+        long sequence = ReadMaxFeedSequence(connection, transaction) + 1;
+        var change = AppliedBusinessChangeProtocolV1.Create(state.CentralInstanceId, sequence,
+            envelope.OperationId, envelope.DeviceId, envelope.LocalSequence, envelope.StoreId,
+            changeType, 1, envelope.AggregateId, envelope.PayloadJson, now);
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO sync_change_feed(server_sequence,change_id,tenant_id,store_id,source_operation_id,
+                origin_device_id,origin_local_sequence,change_type,schema_version,aggregate_id,payload_json,payload_hash,change_hash,created_at_utc)
+            VALUES($seq,$change,$tenant,$store,$op,$device,$local,$type,$schema,$aggregate,$payload,$payloadHash,$changeHash,$at);
+            """;
+        foreach (var pair in new (string Name,object Value)[] {
+            ("$seq",sequence),("$change",change.ChangeId.ToString("D")),("$tenant",device.TenantId.ToString("D")),
+            ("$store",envelope.StoreId.ToString("D")),("$op",envelope.OperationId.ToString("D")),
+            ("$device",envelope.DeviceId.ToString("D")),("$local",envelope.LocalSequence),("$type",changeType),
+            ("$schema",change.SchemaVersion),("$aggregate",envelope.AggregateId.ToString("D")),("$payload",change.PayloadJson),
+            ("$payloadHash",change.PayloadHash),("$changeHash",change.ChangeHash),("$at",now.ToString("O")) })
+            command.Parameters.AddWithValue(pair.Name,pair.Value);
+        command.ExecuteNonQuery();
+        return sequence;
+    }
+
+    private static long ReadMaxReceivedSequence(SqliteConnection conn, SqliteTransaction? transaction = null)
     {
         using SqliteCommand cmd = conn.CreateCommand();
+        cmd.Transaction = transaction;
         cmd.CommandText = "SELECT COALESCE(MAX(received_sequence), 0) FROM sync_inbox_operations;";
         return Convert.ToInt64(cmd.ExecuteScalar());
     }
 
-    private static long ReadMaxFeedSequence(SqliteConnection conn)
+    private static long ReadMaxFeedSequence(SqliteConnection conn, SqliteTransaction? transaction = null)
     {
         using SqliteCommand cmd = conn.CreateCommand();
+        cmd.Transaction = transaction;
         cmd.CommandText = "SELECT COALESCE(MAX(server_sequence), 0) FROM sync_change_feed;";
         return Convert.ToInt64(cmd.ExecuteScalar());
     }
 
-    private static long? ReadChangeFeedSequenceForOperation(SqliteConnection conn, Guid tenantId, Guid storeId, Guid operationId)
+    private static long? ReadChangeFeedSequenceForOperation(SqliteConnection conn, Guid tenantId, Guid storeId, Guid operationId, SqliteTransaction? transaction = null)
     {
         using SqliteCommand cmd = conn.CreateCommand();
+        cmd.Transaction = transaction;
         cmd.CommandText = "SELECT server_sequence FROM sync_change_feed WHERE tenant_id = $tenantId AND store_id = $storeId AND source_operation_id = $opId;";
         cmd.Parameters.AddWithValue("$tenantId", tenantId.ToString("D"));
         cmd.Parameters.AddWithValue("$storeId", storeId.ToString("D"));
