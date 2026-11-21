@@ -1,0 +1,84 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="7b1c9a7e-a046-4d8e-a903-e5709142076a" name="arane@CBMSDEVLIVEPLUS 2026-11-21 09:06:38" runUser="CBMSDEVLIVEPLUS\arane" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-11-21T09:06:38.4112104+08:00" queuing="2026-11-21T09:06:38.4112109+08:00" start="2026-11-21T09:06:33.7771264+08:00" finish="2026-11-21T09:06:38.5835915+08:00" />
+  <TestSettings name="default" id="c0c1171f-42bc-4e08-8feb-1073a583b64a">
+    <Deployment runDeploymentRoot="arane_CBMSDEVLIVEPLUS_2026-11-21_09_06_38" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="9f48a75b-c855-4bd8-a440-b6fffe38704c" testId="8d12af8d-348d-5b1b-d9bc-e94d74c526a9" testName="Salryn.Cafe.I2Tests.RemoteCheckoutOperatorMigrationTests.OperatorBindingIsAdditiveAndImmutable(retainedV41: False)" computerName="CBMSDEVLIVEPLUS" duration="00:00:00.1935213" startTime="2026-11-21T09:06:38.2778476+08:00" endTime="2026-11-21T09:06:38.4570407+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9f48a75b-c855-4bd8-a440-b6fffe38704c">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.True() Failure&#xD;
+Expected: True&#xD;
+Actual:   False</Message>
+          <StackTrace>   at Salryn.Cafe.I2Tests.RemoteCheckoutOperatorMigrationTests.OperatorBindingIsAdditiveAndImmutable(Boolean retainedV41) in C:\Users\arane\.gemini\antigravity\scratch\Dev-Salryn-Cafe-wt\codex-wave-b\tests\Salryn.Cafe.I2Tests\RemoteCheckoutOperatorMigrationTests.cs:line 32&#xD;
+   at InvokeStub_RemoteCheckoutOperatorMigrationTests.OperatorBindingIsAdditiveAndImmutable(Object, Span`1)&#xD;
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="753dee18-526e-4a33-a8e5-038c73ac2559" testId="2d80c2f8-ea96-580e-107e-a74d67437b42" testName="Salryn.Cafe.I2Tests.RemoteCheckoutOperatorMigrationTests.OperatorBindingIsAdditiveAndImmutable(retainedV41: True)" computerName="CBMSDEVLIVEPLUS" duration="00:00:01.3899208" startTime="2026-11-21T09:06:36.8826257+08:00" endTime="2026-11-21T09:06:38.2629064+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="753dee18-526e-4a33-a8e5-038c73ac2559">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.True() Failure&#xD;
+Expected: True&#xD;
+Actual:   False</Message>
+          <StackTrace>   at Salryn.Cafe.I2Tests.RemoteCheckoutOperatorMigrationTests.OperatorBindingIsAdditiveAndImmutable(Boolean retainedV41) in C:\Users\arane\.gemini\antigravity\scratch\Dev-Salryn-Cafe-wt\codex-wave-b\tests\Salryn.Cafe.I2Tests\RemoteCheckoutOperatorMigrationTests.cs:line 32&#xD;
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)&#xD;
+   at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="Salryn.Cafe.I2Tests.RemoteCheckoutOperatorMigrationTests.OperatorBindingIsAdditiveAndImmutable(retainedV41: False)" storage="c:\users\arane\.gemini\antigravity\scratch\dev-salryn-cafe-wt\codex-wave-b\tests\salryn.cafe.i2tests\bin\release\net10.0\salryn.cafe.i2tests.dll" id="8d12af8d-348d-5b1b-d9bc-e94d74c526a9">
+      <Execution id="9f48a75b-c855-4bd8-a440-b6fffe38704c" />
+      <TestMethod codeBase="C:\Users\arane\.gemini\antigravity\scratch\Dev-Salryn-Cafe-wt\codex-wave-b\tests\Salryn.Cafe.I2Tests\bin\Release\net10.0\Salryn.Cafe.I2Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Salryn.Cafe.I2Tests.RemoteCheckoutOperatorMigrationTests" name="OperatorBindingIsAdditiveAndImmutable" />
+    </UnitTest>
+    <UnitTest name="Salryn.Cafe.I2Tests.RemoteCheckoutOperatorMigrationTests.OperatorBindingIsAdditiveAndImmutable(retainedV41: True)" storage="c:\users\arane\.gemini\antigravity\scratch\dev-salryn-cafe-wt\codex-wave-b\tests\salryn.cafe.i2tests\bin\release\net10.0\salryn.cafe.i2tests.dll" id="2d80c2f8-ea96-580e-107e-a74d67437b42">
+      <Execution id="753dee18-526e-4a33-a8e5-038c73ac2559" />
+      <TestMethod codeBase="C:\Users\arane\.gemini\antigravity\scratch\Dev-Salryn-Cafe-wt\codex-wave-b\tests\Salryn.Cafe.I2Tests\bin\Release\net10.0\Salryn.Cafe.I2Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Salryn.Cafe.I2Tests.RemoteCheckoutOperatorMigrationTests" name="OperatorBindingIsAdditiveAndImmutable" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="8d12af8d-348d-5b1b-d9bc-e94d74c526a9" executionId="9f48a75b-c855-4bd8-a440-b6fffe38704c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="2d80c2f8-ea96-580e-107e-a74d67437b42" executionId="753dee18-526e-4a33-a8e5-038c73ac2559" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="2" executed="2" passed="0" failed="2" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.0.2+dd36e86129 (64-bit .NET 10.0.12)&#xD;
+[xUnit.net 00:00:01.20]   Discovering: Salryn.Cafe.I2Tests&#xD;
+[xUnit.net 00:00:01.24]   Discovered:  Salryn.Cafe.I2Tests&#xD;
+[xUnit.net 00:00:01.27]   Starting:    Salryn.Cafe.I2Tests&#xD;
+[xUnit.net 00:00:02.69]       Assert.True() Failure&#xD;
+[xUnit.net 00:00:02.69]       Expected: True&#xD;
+[xUnit.net 00:00:02.69]       Actual:   False&#xD;
+[xUnit.net 00:00:02.69]       Stack Trace:&#xD;
+[xUnit.net 00:00:02.69]         C:\Users\arane\.gemini\antigravity\scratch\Dev-Salryn-Cafe-wt\codex-wave-b\tests\Salryn.Cafe.I2Tests\RemoteCheckoutOperatorMigrationTests.cs(32,0): at Salryn.Cafe.I2Tests.RemoteCheckoutOperatorMigrationTests.OperatorBindingIsAdditiveAndImmutable(Boolean retainedV41)&#xD;
+[xUnit.net 00:00:02.69]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)&#xD;
+[xUnit.net 00:00:02.69]            at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)&#xD;
+[xUnit.net 00:00:02.88]       Assert.True() Failure&#xD;
+[xUnit.net 00:00:02.88]       Expected: True&#xD;
+[xUnit.net 00:00:02.88]       Actual:   False&#xD;
+[xUnit.net 00:00:02.88]       Stack Trace:&#xD;
+[xUnit.net 00:00:02.88]         C:\Users\arane\.gemini\antigravity\scratch\Dev-Salryn-Cafe-wt\codex-wave-b\tests\Salryn.Cafe.I2Tests\RemoteCheckoutOperatorMigrationTests.cs(32,0): at Salryn.Cafe.I2Tests.RemoteCheckoutOperatorMigrationTests.OperatorBindingIsAdditiveAndImmutable(Boolean retainedV41)&#xD;
+[xUnit.net 00:00:02.88]            at InvokeStub_RemoteCheckoutOperatorMigrationTests.OperatorBindingIsAdditiveAndImmutable(Object, Span`1)&#xD;
+[xUnit.net 00:00:02.88]            at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)&#xD;
+[xUnit.net 00:00:02.89]   Finished:    Salryn.Cafe.I2Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="CBMSDEVLIVEPLUS" outcome="Error" timestamp="2026-11-21T09:06:38.2655771+08:00">
+        <Text>[xUnit.net 00:00:02.69]     Salryn.Cafe.I2Tests.RemoteCheckoutOperatorMigrationTests.OperatorBindingIsAdditiveAndImmutable(retainedV41: True) [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="CBMSDEVLIVEPLUS" outcome="Error" timestamp="2026-11-21T09:06:38.4576939+08:00">
+        <Text>[xUnit.net 00:00:02.88]     Salryn.Cafe.I2Tests.RemoteCheckoutOperatorMigrationTests.OperatorBindingIsAdditiveAndImmutable(retainedV41: False) [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

@@ -6,7 +6,7 @@ namespace Salryn.Infrastructure.Data.Migrations;
 /// </summary>
 public static class CafeMigrationCatalog
 {
-    public const int CurrentCafeSchemaVersion = 41;
+    public const int CurrentCafeSchemaVersion = 42;
 
     public static IReadOnlyList<IDatabaseMigration> CreateCanonicalCafeMigrations()
     {
@@ -52,7 +52,8 @@ public static class CafeMigrationCatalog
             new CafeBookingSchemaMigration(),
             new CafeAttendanceIncidentSchemaMigration(),
             new CafeLineageAdoptionAndKernelParityMigration(),
-            new CafeMutationIdempotencyAndDeviceTrustMigration()
+            new CafeMutationIdempotencyAndDeviceTrustMigration(),
+            new CafeRemoteCheckoutOperatorBindingMigration()
         };
     }
 

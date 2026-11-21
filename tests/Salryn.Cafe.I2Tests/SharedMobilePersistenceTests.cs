@@ -19,7 +19,7 @@ public sealed class SharedMobilePersistenceTests
             await composition.InitializeDatabaseAsync();
             var readiness = composition.InspectReadiness();
             Assert.True(readiness.IsReady, "Canonical Cafe schema must satisfy mobile readiness.");
-            Assert.Equal(41, readiness.MaxMigrationVersion);
+            Assert.Equal(Salryn.Infrastructure.Data.Migrations.CafeMigrationCatalog.CurrentCafeSchemaVersion, readiness.MaxMigrationVersion);
             Assert.Equal("Salryn.Persistence.Sqlite", typeof(SqliteConnectionFactory).Assembly.GetName().Name);
             Assert.Equal(typeof(SqliteConnectionFactory).Assembly, typeof(DbPaths).Assembly);
             Assert.DoesNotContain(readiness.Tables, t => t.StartsWith("mobile_"));

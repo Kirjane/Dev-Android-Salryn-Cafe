@@ -130,7 +130,7 @@ public sealed class SchemaLineageReconciliationTests : IDisposable
         Assert.True(File.Exists(restored.Value.SafetyBackupPath));
         var runner = new MigrationRunner(liveFactory, CafeMigrationCatalog.CreateCanonicalCafeMigrations());
         Assert.Equal(SchemaLineageKind.SalrynCafe, runner.ClassifyDatabase().Kind);
-        Assert.Equal(41, runner.ClassifyDatabase().MaxAppliedVersion);
+        Assert.Equal(Salryn.Infrastructure.Data.Migrations.CafeMigrationCatalog.CurrentCafeSchemaVersion, runner.ClassifyDatabase().MaxAppliedVersion);
         Assert.Equal(0, runner.GetPendingMigrationCount());
     }
 
@@ -202,8 +202,8 @@ public sealed class SchemaLineageReconciliationTests : IDisposable
         var verified = backups.VerifyBackup(backup.Value);
         Assert.True(verified.IsSuccess, verified.IsFailure ? verified.Error : "");
         Assert.True(verified.Value.IsRestorable);
-        Assert.Equal(41, verified.Value.SupportedMigrationVersion);
-        Assert.Equal(41, verified.Value.BackupMigrationVersion);
+        Assert.Equal(Salryn.Infrastructure.Data.Migrations.CafeMigrationCatalog.CurrentCafeSchemaVersion, verified.Value.SupportedMigrationVersion);
+        Assert.Equal(Salryn.Infrastructure.Data.Migrations.CafeMigrationCatalog.CurrentCafeSchemaVersion, verified.Value.BackupMigrationVersion);
 
         var (retailPaths, retailFactory) = CreateTempDb("retail-backup-service");
         new MigrationRunner(retailFactory, CafeMigrationCatalog.CreateLegacyRetailKernelV32Migrations()).RunPendingMigrations();
@@ -258,7 +258,7 @@ public sealed class SchemaLineageReconciliationTests : IDisposable
         var result = initialization.InitializeDatabase();
         Assert.True(result.IsSuccess, result.IsFailure ? result.Error : "");
         Assert.Equal(SchemaLineageKind.SalrynCafe, runner.ClassifyDatabase().Kind);
-        Assert.Equal(41, runner.ClassifyDatabase().MaxAppliedVersion);
+        Assert.Equal(Salryn.Infrastructure.Data.Migrations.CafeMigrationCatalog.CurrentCafeSchemaVersion, runner.ClassifyDatabase().MaxAppliedVersion);
         Assert.Equal(0, runner.GetPendingMigrationCount());
         Assert.True(initialization.InitializeDatabase().IsSuccess);
     }
@@ -277,7 +277,7 @@ public sealed class SchemaLineageReconciliationTests : IDisposable
         SchemaLineageClassification after = runner.ClassifyDatabase();
         Assert.Equal(SchemaLineageKind.SalrynCafe, after.Kind);
         Assert.Equal("Salryn.Cafe", after.ProductId);
-        Assert.Equal(41, after.MaxAppliedVersion);
+        Assert.Equal(Salryn.Infrastructure.Data.Migrations.CafeMigrationCatalog.CurrentCafeSchemaVersion, after.MaxAppliedVersion);
 
         using SqliteConnection conn = factory.CreateConnection();
         conn.Open();
@@ -400,7 +400,7 @@ public sealed class SchemaLineageReconciliationTests : IDisposable
         Assert.Equal(0, cafeRunner.GetPendingMigrationCount());
         SchemaLineageClassification postUpgrade = cafeRunner.ClassifyDatabase();
         Assert.Equal(SchemaLineageKind.SalrynCafe, postUpgrade.Kind);
-        Assert.Equal(41, postUpgrade.MaxAppliedVersion);
+        Assert.Equal(Salryn.Infrastructure.Data.Migrations.CafeMigrationCatalog.CurrentCafeSchemaVersion, postUpgrade.MaxAppliedVersion);
 
         using SqliteConnection verifyConn = factory.CreateConnection();
         verifyConn.Open();

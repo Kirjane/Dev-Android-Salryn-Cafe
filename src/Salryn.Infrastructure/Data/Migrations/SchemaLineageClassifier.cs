@@ -44,7 +44,7 @@ public sealed class UnknownSchemaLineageException : InvalidOperationException
 public static class SchemaLineageClassifier
 {
     public const string SalrynCafeProductId = "Salryn.Cafe";
-    public const int MaxSupportedCafeSchemaVersion = 41;
+    public const int MaxSupportedCafeSchemaVersion = CafeMigrationCatalog.CurrentCafeSchemaVersion;
 
     private static readonly string[] RetailOnlyTables =
     {
