@@ -8,19 +8,19 @@ public static class Program
     // Kirch: Executes the Host/client boundary smoke checks that dotnet test only compiles today.
     public static void Main(string[] args)
     {
-        if (args.Length >= 2 &&
-            string.Equals(args[0], "--only", StringComparison.OrdinalIgnoreCase))
+        CoreSmokeOptions options = CoreSmokeOptions.Parse(args);
+        Console.WriteLine("CoreSmoke profile: " + options.Profile);
+        if (options.Only is not null)
         {
             string? priorManifest = Environment.GetEnvironmentVariable("SALRYN_CANONICAL_LICENSE_PROOF_MANIFEST");
-            int manifestIndex = Array.FindIndex(args, value => string.Equals(value, "--proof-manifest", StringComparison.OrdinalIgnoreCase));
-            if (manifestIndex >= 0)
+            if (options.ProofManifest is not null)
             {
-                if (manifestIndex + 1 >= args.Length) throw new InvalidOperationException("--proof-manifest requires a path.");
-                Environment.SetEnvironmentVariable("SALRYN_CANONICAL_LICENSE_PROOF_MANIFEST", Path.GetFullPath(args[manifestIndex + 1]));
+                Environment.SetEnvironmentVariable("SALRYN_CANONICAL_LICENSE_PROOF_MANIFEST", options.ProofManifest);
             }
             try
             {
-                RunOnly(args[1]);
+                options.RequireCompatibleCheck(options.Only);
+                RunOnly(options.Only);
             }
             finally
             {
@@ -108,9 +108,17 @@ public static class Program
         U1AccountsReceivableLedgerChecks.RunAsync().GetAwaiter().GetResult();
         OwnerAnalyticsW0W3RuntimeChecks.Run();
         W4CashDrawerReconciliationChecks.Run();
-        LpiProcureToPayRuntimeChecks.RunAsync().GetAwaiter().GetResult();
-        LpiP1IntegrityReproductionChecks.RunAsync().GetAwaiter().GetResult();
-        R3A1APrPoAuthorityChecks.RunAsync().GetAwaiter().GetResult();
+        if (options.IncludesRetailProcurement)
+        {
+            LpiProcureToPayRuntimeChecks.RunAsync().GetAwaiter().GetResult();
+            LpiP1IntegrityReproductionChecks.RunAsync().GetAwaiter().GetResult();
+            R3A1APrPoAuthorityChecks.RunAsync().GetAwaiter().GetResult();
+        }
+        else
+        {
+            Console.WriteLine("NOT RUN (retail profile): lpi-procure-to-pay, lpi-p1-integrity, r3-a1a-pr-po-authority. " +
+                "Preserved via --profile legacy-retail; Cafe has independent inventory/purchasing proofs.");
+        }
         V2HostOperatorShiftApiChecks.RunAsync().GetAwaiter().GetResult();
         V2HostOperatorCheckoutApiChecks.RunAsync().GetAwaiter().GetResult();
         V2ReactCheckoutSourceChecks.Run();
@@ -341,6 +349,9 @@ public static class Program
     {
         switch (checkName.ToLowerInvariant())
         {
+            case "runner-profile-boundary":
+                CoreSmokeProfileChecks.Run();
+                return;
             case "cafe-loopback-boundary":
                 CafeLoopbackBoundaryChecks.Run();
                 return;
