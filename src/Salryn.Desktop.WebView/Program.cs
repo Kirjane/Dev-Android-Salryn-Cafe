@@ -35,6 +35,16 @@ internal static class Program
             return;
         }
 
+        if (!DevHostConfig.TryValidateInstalledBundle(null, out string? missingBundleMessage))
+        {
+            MessageBox.Show(
+                missingBundleMessage,
+                DevHostConfig.ProductDisplayName,
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+            return;
+        }
+
         var apiManager = new LocalApiProcessManager();
 
         bool apiReady;
@@ -52,7 +62,8 @@ internal static class Program
 
         if (!apiReady)
         {
-            string apiMessage = DevHostConfig.IsInstalledLayout()
+            bool installedPackage = DevHostConfig.IsInstalledPackageContext();
+            string apiMessage = installedPackage
                 ? "Salryn Cafe could not start or verify its local service (ProductId=Salryn.Cafe).\n\n" +
                   "Close any other Salryn Cafe windows, then open Salryn Cafe again from the Start Menu or desktop shortcut.\n" +
                   "If the problem continues, re-run Salryn-Cafe-Setup.exe or contact salryn.info@gmail.com."
@@ -61,7 +72,7 @@ internal static class Program
                   "dotnet run --project .\\src\\Salryn.Api.Local\\Salryn.Api.Local.csproj -- --dev\n\n" +
                   "Open the web view anyway?";
 
-            if (DevHostConfig.IsInstalledLayout())
+            if (installedPackage)
             {
                 MessageBox.Show(
                     apiMessage,
@@ -90,7 +101,7 @@ internal static class Program
         if (configurationRejection is not null)
         {
             MessageBox.Show(
-                configurationRejection + "\n\nFalling back to " + DevHostConfig.DefaultViteUrl + ".",
+                configurationRejection + "\n\nFalling back to " + webUrl + ".",
                 DevHostConfig.ProductDisplayName,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);

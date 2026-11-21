@@ -55,23 +55,107 @@ internal static class DevHostConfig
     }
 
     /// <summary>
+    /// True when running from inside a source checkout containing Salryn.sln.
+    /// </summary>
+    public static bool IsRepositoryLayout(string? baseDirectory = null)
+    {
+        return FindRepositoryRoot(baseDirectory ?? AppContext.BaseDirectory) is not null;
+    }
+
+    internal static string? FindRepositoryRoot(string startPath)
+    {
+        if (string.IsNullOrWhiteSpace(startPath) || !Directory.Exists(startPath))
+        {
+            return null;
+        }
+
+        DirectoryInfo? current = new(startPath);
+        while (current is not null)
+        {
+            if (File.Exists(Path.Combine(current.FullName, "Salryn.sln")))
+            {
+                return current.FullName;
+            }
+
+            current = current.Parent;
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// True when this process was installed beside Salryn.Api.Local.exe (installer layout).
     /// </summary>
-    public static bool IsInstalledLayout()
+    public static bool IsInstalledLayout(string? baseDirectory = null)
     {
-        string apiExe = Path.Combine(AppContext.BaseDirectory, "Salryn.Api.Local.exe");
+        string dir = baseDirectory ?? AppContext.BaseDirectory;
+        string apiExe = Path.Combine(dir, "Salryn.Api.Local.exe");
         return File.Exists(apiExe);
     }
 
     /// <summary>
-    /// Resolves the frontend URL to load.
-    /// Priority: validated SALRYN_CAFE_WEB_URL override; otherwise API origin for installed layout,
-    /// or the Vite dev server for repository/dev layout.
+    /// True when executing in an installed package folder rather than a developer source checkout.
+    /// An incomplete installation missing Salryn.Api.Local.exe or cafe-dist/index.html must fail closed
+    /// instead of falling back to Vite dev mode (:5173).
     /// </summary>
-    public static string ResolveWebUrl(out string? configurationRejection)
+    public static bool IsInstalledPackageContext(string? baseDirectory = null)
+    {
+        string dir = baseDirectory ?? AppContext.BaseDirectory;
+        if (IsInstalledLayout(dir))
+        {
+            return true;
+        }
+
+        if (File.Exists(Path.Combine(dir, "unins000.exe")))
+        {
+            return true;
+        }
+
+        return !IsRepositoryLayout(dir);
+    }
+
+    public static bool TryValidateInstalledBundle(string? baseDirectory, out string? failureReason)
+    {
+        string dir = baseDirectory ?? AppContext.BaseDirectory;
+        if (!IsInstalledPackageContext(dir))
+        {
+            failureReason = null;
+            return true;
+        }
+
+        List<string> missing = [];
+        if (!File.Exists(Path.Combine(dir, "Salryn.Api.Local.exe")))
+        {
+            missing.Add("Salryn.Api.Local.exe");
+        }
+
+        if (!File.Exists(Path.Combine(dir, "cafe-dist", "index.html")))
+        {
+            missing.Add(Path.Combine("cafe-dist", "index.html"));
+        }
+
+        if (missing.Count == 0)
+        {
+            failureReason = null;
+            return true;
+        }
+
+        failureReason =
+            "Salryn Cafe installation is incomplete and cannot start (missing: " +
+            string.Join(", ", missing) +
+            "). Re-run Salryn-Cafe-Setup.exe to repair the installation.";
+        return false;
+    }
+
+    /// <summary>
+    /// Resolves the frontend URL to load.
+    /// Priority: validated SALRYN_CAFE_WEB_URL override; otherwise API origin /cafe/ for installed
+    /// layout/package context, or the Vite dev server for repository/dev layout.
+    /// </summary>
+    public static string ResolveWebUrl(out string? configurationRejection, string? baseDirectory = null)
     {
         string? configured = Environment.GetEnvironmentVariable(WebUrlEnvironmentVariable);
-        string fallback = IsInstalledLayout() ? DefaultInstalledWebUrl : DefaultViteUrl;
+        string fallback = IsInstalledPackageContext(baseDirectory) ? DefaultInstalledWebUrl : DefaultViteUrl;
 
         if (LocalWebOriginPolicy.TryResolveConfiguredWebUrl(configured, fallback, out string resolved, out string? rejection))
         {

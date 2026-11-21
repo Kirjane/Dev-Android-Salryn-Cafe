@@ -62,19 +62,26 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Pop-Location
 
-      - name: Publish Windows Host (Release) and stage installer assets
+      - name: Publish Windows Host + Desktop (Release) and stage installer assets
         shell: pwsh
         run: |
+          $sha = (git rev-parse HEAD).Trim()
           $staging = Join-Path $PWD "artifacts/installer/staging/SalrynCafe"
           New-Item -ItemType Directory -Force -Path $staging | Out-Null
-          dotnet publish src/Salryn.Desktop.WebView/Salryn.Desktop.WebView.csproj -c Release -o $staging --nologo -v minimal
-          New-Item -ItemType Directory -Force -Path "$staging/assets/branding" | Out-Null
+          dotnet publish src/Salryn.Api.Local/Salryn.Api.Local.csproj -c Release -r win-x64 --self-contained false "-p:SourceRevisionId=$sha" -o $staging --nologo -v minimal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet publish src/Salryn.Desktop.WebView/Salryn.Desktop.WebView.csproj -c Release -r win-x64 --self-contained false "-p:SourceRevisionId=$sha" -o $staging --nologo -v minimal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force -Path "$staging/assets/branding", "$staging/assets/brand" | Out-Null
           Copy-Item "assets/branding/*" "$staging/assets/branding/" -Recurse -Force
+          if (Test-Path "assets/brand") { Copy-Item "assets/brand/*" "$staging/assets/brand/" -Recurse -Force }
           New-Item -ItemType Directory -Force -Path "$staging/wwwroot" | Out-Null
           Copy-Item "src/Salryn.App.Web/dist/*" "$staging/wwwroot/" -Recurse -Force
           New-Item -ItemType Directory -Force -Path "$staging/cafe-dist" | Out-Null
           Copy-Item "apps/cafe-web/dist/*" "$staging/cafe-dist/" -Recurse -Force
-          if (-not (Test-Path "$staging/cafe-dist/index.html")) { throw "Live Cafe bundle was not staged" }
+          foreach ($requiredFile in @('Salryn.Api.Local.exe', 'Salryn.Desktop.WebView.exe', 'cafe-dist/index.html')) {
+            if (-not (Test-Path (Join-Path $staging $requiredFile))) { throw "Required installed payload missing: $requiredFile" }
+          }
 
       - name: Compile Salryn-Cafe-Setup.exe with Inno Setup 6
         shell: pwsh
@@ -109,8 +116,39 @@ jobs:
           Write-Output "FRESH_INSTALL_EXIT=$($pInstall.ExitCode)"
           if ($pInstall.ExitCode -ne 0) { throw "Fresh install failed with exit $($pInstall.ExitCode)" }
           if (-not (Test-Path "$cafeDir\Salryn.Desktop.WebView.exe")) { throw "Missing Salryn.Desktop.WebView.exe after fresh install" }
+          if (-not (Test-Path "$cafeDir\Salryn.Api.Local.exe")) { throw "Missing Salryn.Api.Local.exe after fresh install" }
+          if (-not (Test-Path "$cafeDir\cafe-dist\index.html")) { throw "Missing cafe-dist/index.html after fresh install" }
           if (-not (Test-Path "$cafeDir\wwwroot\index.html")) { throw "Missing wwwroot/index.html after fresh install" }
           if (-not (Test-Path "C:\ProgramData\SalrynCafe\data")) { throw "Missing C:\ProgramData\SalrynCafe\data after fresh install" }
+
+          # 2b. Boot installed Desktop + Local API and verify ProductId=Salryn.Cafe and real /cafe/ bundle response
+          $desktopProc = Start-Process -FilePath "$cafeDir\Salryn.Desktop.WebView.exe" -WorkingDirectory $cafeDir -PassThru
+          try {
+            $healthy = $false
+            for ($attempt = 0; $attempt -lt 60; $attempt++) {
+              Start-Sleep -Milliseconds 500
+              try {
+                $health = Invoke-RestMethod -Uri "http://127.0.0.1:5399/health" -TimeoutSec 2
+                if ($health.productId -eq "Salryn.Cafe" -and $health.status -eq "ok") {
+                  $healthy = $true
+                  break
+                }
+              } catch { }
+            }
+            if (-not $healthy) { throw "Installed Salryn.Api.Local did not respond healthy as Salryn.Cafe on 127.0.0.1:5399." }
+            $cafeDistDiag = Invoke-RestMethod -Uri "http://127.0.0.1:5399/api/system/cafe-dist" -TimeoutSec 5
+            if (-not $cafeDistDiag.resolved -or -not $cafeDistDiag.indexHtmlExists) {
+              throw "Installed host did not resolve cafe-dist/index.html: $($cafeDistDiag | ConvertTo-Json -Compress)"
+            }
+            $cafeResp = Invoke-WebRequest -Uri "http://127.0.0.1:5399/cafe/" -UseBasicParsing -TimeoutSec 5
+            if ($cafeResp.StatusCode -ne 200 -or $cafeResp.Content -notmatch "Salryn Cafe") {
+              throw "Unexpected /cafe/ response from installed host (status=$($cafeResp.StatusCode))."
+            }
+            Write-Output "INSTALLED_STARTUP_PASS=1"
+          } finally {
+            Get-Process -Name "Salryn.Desktop.WebView", "Salryn.Api.Local" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 1
+          }
 
           # Place synthetic marker file in C:\ProgramData\SalrynCafe\data to prove preservation across upgrade & uninstall
           Set-Content -Path "C:\ProgramData\SalrynCafe\data\preservation-marker.txt" -Value "preserve-me"

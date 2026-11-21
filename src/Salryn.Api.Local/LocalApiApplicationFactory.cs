@@ -259,13 +259,60 @@ public static class LocalApiApplicationFactory
         if (options.EnableStaticWebAssets && cafeDist is not null)
         {
             var cafeProvider = new PhysicalFileProvider(cafeDist);
-            app.UseStaticFiles(new StaticFileOptions { FileProvider = cafeProvider, RequestPath = "/cafe" });
-            app.MapGet("/cafe/", (HttpContext context) =>
+            app.Map("/cafe", cafeBranch =>
             {
-                WebDistDiagnostics.ApplyIndexHtmlNoCacheHeaders(context.Response);
-                return Results.File(Path.Combine(cafeDist, "index.html"), "text/html");
+                cafeBranch.UseStaticFiles(new StaticFileOptions
+                {
+                    FileProvider = cafeProvider,
+                    OnPrepareResponse = context =>
+                    {
+                        if (string.Equals(context.File.Name, "index.html", StringComparison.OrdinalIgnoreCase))
+                        {
+                            WebDistDiagnostics.ApplyIndexHtmlNoCacheHeaders(context.Context.Response);
+                        }
+                    }
+                });
+                cafeBranch.Run(async context =>
+                {
+                    if (!HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method))
+                    {
+                        context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+                        return;
+                    }
+
+                    string subpath = context.Request.Path.Value ?? string.Empty;
+                    if (subpath.StartsWith("/assets/", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(subpath, "/assets", StringComparison.OrdinalIgnoreCase))
+                    {
+                        context.Response.StatusCode = StatusCodes.Status404NotFound;
+                        return;
+                    }
+
+                    WebDistDiagnostics.ApplyIndexHtmlNoCacheHeaders(context.Response);
+                    context.Response.ContentType = "text/html; charset=utf-8";
+                    await context.Response.SendFileAsync(Path.Combine(cafeDist, "index.html"), context.RequestAborted)
+                        .ConfigureAwait(false);
+                });
             });
         }
+
+        app.MapGet("/api/system/cafe-dist", (HttpContext httpContext) =>
+        {
+            if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult localOnly)
+            {
+                return localOnly;
+            }
+
+            string? indexFile = cafeDist is null ? null : Path.Combine(cafeDist, "index.html");
+            return Results.Ok(new
+            {
+                resolved = options.EnableStaticWebAssets && cafeDist is not null,
+                staticAssetsEnabled = options.EnableStaticWebAssets,
+                indexHtmlExists = indexFile is not null && File.Exists(indexFile),
+                path = cafeDist,
+                mountPath = "/cafe/"
+            });
+        });
 
         app.MapGet("/api/system/web-dist", (HttpContext httpContext) =>
         {

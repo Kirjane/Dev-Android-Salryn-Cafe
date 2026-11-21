@@ -2,7 +2,9 @@ param(
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
     [string]$AppVersion = "1.0.0-rc1",
-    [string]$IsccPath = ""
+    [string]$IsccPath = "",
+    [switch]$SkipWebBuild,
+    [switch]$IncludeLegacyRootShell
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,6 +29,44 @@ if (-not $IsccPath -or -not (Test-Path $IsccPath)) {
     throw "Inno Setup 6 compiler (ISCC.exe) not found. Install Inno Setup 6 or pass -IsccPath."
 }
 
+function Invoke-WebDistBuild {
+    param([string]$RelativeDir)
+    $dir = Join-Path $repoRoot $RelativeDir
+    if (-not (Test-Path (Join-Path $dir "package.json"))) {
+        throw "Frontend package.json not found under $dir"
+    }
+    Push-Location $dir
+    try {
+        if (-not (Test-Path (Join-Path $dir "node_modules"))) {
+            Write-Host "[Salryn Cafe Installer] Restoring npm dependencies in $RelativeDir..."
+            npm ci --ignore-scripts --no-audit --no-fund
+            if ($LASTEXITCODE -ne 0) { throw "npm ci failed in $RelativeDir ($LASTEXITCODE)" }
+        }
+        Write-Host "[Salryn Cafe Installer] Building frontend bundle in $RelativeDir..."
+        npm run build
+        if ($LASTEXITCODE -ne 0) { throw "npm run build failed in $RelativeDir ($LASTEXITCODE)" }
+    } finally {
+        Pop-Location
+    }
+}
+
+if (-not $SkipWebBuild) {
+    Invoke-WebDistBuild "apps\cafe-web"
+    if ($IncludeLegacyRootShell) {
+        Invoke-WebDistBuild "src\Salryn.App.Web"
+    }
+}
+
+$cafeDistSrc = Join-Path $repoRoot "apps\cafe-web\dist"
+if (-not (Test-Path (Join-Path $cafeDistSrc "index.html"))) {
+    throw "Required live Cafe frontend bundle missing at $cafeDistSrc\index.html"
+}
+
+$rev = (& git -C $repoRoot rev-parse HEAD 2>$null | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $rev -notmatch '^[0-9a-f]{40}$') {
+    throw "Unable to resolve full 40-character Git HEAD SHA for installer provenance."
+}
+
 if (Test-Path $stagingDir) {
     Remove-Item -Recurse -Force $stagingDir
 }
@@ -34,13 +74,27 @@ New-Item -ItemType Directory -Force -Path $stagingDir, $outputDir | Out-Null
 
 Write-Host "[Salryn Cafe Installer] Publishing Salryn.Api.Local ($Configuration / $Runtime)..."
 dotnet publish (Join-Path $repoRoot "src\Salryn.Api.Local\Salryn.Api.Local.csproj") `
-    -c $Configuration -r $Runtime --self-contained false -o $stagingDir --nologo
+    -c $Configuration -r $Runtime --self-contained false "-p:SourceRevisionId=$rev" -o $stagingDir --nologo
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish Salryn.Api.Local failed ($LASTEXITCODE)" }
 
 Write-Host "[Salryn Cafe Installer] Publishing Salryn.Desktop.WebView ($Configuration / $Runtime)..."
 dotnet publish (Join-Path $repoRoot "src\Salryn.Desktop.WebView\Salryn.Desktop.WebView.csproj") `
-    -c $Configuration -r $Runtime --self-contained false -o $stagingDir --nologo
+    -c $Configuration -r $Runtime --self-contained false "-p:SourceRevisionId=$rev" -o $stagingDir --nologo
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish Salryn.Desktop.WebView failed ($LASTEXITCODE)" }
+
+$cafeDistDst = Join-Path $stagingDir "cafe-dist"
+New-Item -ItemType Directory -Force -Path $cafeDistDst | Out-Null
+Copy-Item -Path (Join-Path $cafeDistSrc "*") -Destination $cafeDistDst -Recurse -Force
+
+if ($IncludeLegacyRootShell) {
+    $legacyDistSrc = Join-Path $repoRoot "src\Salryn.App.Web\dist"
+    if (-not (Test-Path (Join-Path $legacyDistSrc "index.html"))) {
+        throw "Legacy host shell dist missing at $legacyDistSrc\index.html"
+    }
+    $legacyDistDst = Join-Path $stagingDir "wwwroot"
+    New-Item -ItemType Directory -Force -Path $legacyDistDst | Out-Null
+    Copy-Item -Path (Join-Path $legacyDistSrc "*") -Destination $legacyDistDst -Recurse -Force
+}
 
 $brandSrc = Join-Path $repoRoot "assets\brand"
 if (Test-Path $brandSrc) {
@@ -56,8 +110,27 @@ if (Test-Path $iconSrc) {
     Copy-Item -Path $iconSrc -Destination $iconDst -Force
 }
 
-$rev = (git -C $repoRoot rev-parse --short HEAD 2>$null)
-if (-not $rev) { $rev = "unknown" }
+$provenance = ([ordered]@{
+    productId = "Salryn.Cafe"
+    sourceSha = $rev
+    configuration = $Configuration
+    runtime = $Runtime
+    appVersion = $AppVersion
+    builtAtUtc = [DateTimeOffset]::UtcNow.ToString("O")
+} | ConvertTo-Json -Depth 4)
+[IO.File]::WriteAllText((Join-Path $stagingDir "build-provenance.json"), $provenance)
+
+foreach ($requiredRel in @(
+    "Salryn.Api.Local.exe",
+    "Salryn.Desktop.WebView.exe",
+    "cafe-dist\index.html",
+    "assets\branding\salryn-icon.ico",
+    "build-provenance.json"
+)) {
+    if (-not (Test-Path -LiteralPath (Join-Path $stagingDir $requiredRel) -PathType Leaf)) {
+        throw "Incomplete installer staging directory: missing $requiredRel"
+    }
+}
 
 Write-Host "[Salryn Cafe Installer] Compiling SalrynCafeSetup.iss via $IsccPath..."
 & $IsccPath `
@@ -76,4 +149,5 @@ if (-not (Test-Path $setupExe)) {
 $hash = (Get-FileHash -Path $setupExe -Algorithm SHA256).Hash
 $size = (Get-Item $setupExe).Length
 Write-Host "[Salryn Cafe Installer] PASS: $setupExe ($size bytes)"
+Write-Host "[Salryn Cafe Installer] Source SHA: $rev"
 Write-Host "[Salryn Cafe Installer] SHA-256: $hash"

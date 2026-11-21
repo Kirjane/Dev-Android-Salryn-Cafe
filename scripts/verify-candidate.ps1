@@ -240,21 +240,6 @@ if ($Mode -eq 'Windows') {
     }
 }
 
-foreach ($relative in (Get-RequiredSuitePaths $Mode)) {
-    $project = Join-Path $repoRoot $relative
-    $name = [IO.Path]::GetFileNameWithoutExtension($project)
-    Invoke-Gate "xunit:$name" 'TEST' {
-        param($r)
-        if (-not (Test-Path -LiteralPath $project -PathType Leaf)) { throw "Required suite missing: $relative" }
-        if ($Mode -ne 'Windows') { Assert-PortableProject $project ([System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)) }
-        $record = Invoke-RecordedCommand "xunit-$name" 'dotnet' @('test',$project,'-c',$Configuration,'--nologo','--logger',"trx;LogFileName=$name.trx",'--results-directory',$trxDir)
-        $c = Read-TrxCounts (Join-Path $trxDir "$name.trx")
-        Assert-NonzeroTests $record.exitCode $c.executed $c.passed $c.failed
-        $r.executed = $c.executed; $r.passed = $c.passed; $r.failed = $c.failed
-        $r.notes = "TRX=$name.trx total=$($c.total) skipped=$($c.notExecuted); disposable synthetic fixtures required by suites."
-    }
-}
-
 if ($Mode -ne 'Android') {
     foreach ($relative in @('packages/salryn-cafe-ui','apps/cafe-web')) {
         $dir = Join-Path $repoRoot $relative
@@ -273,6 +258,21 @@ if ($Mode -ne 'Android') {
             $r.notes = 'MOCKED_UI unless suite explicitly proves a live backend. Vitest JSON retained.'
         }
         Invoke-Gate "web-build:$name" 'BUILD' { param($r) Invoke-RecordedCommand "$name-build" 'npm' @('run','build') $dir }
+    }
+}
+
+foreach ($relative in (Get-RequiredSuitePaths $Mode)) {
+    $project = Join-Path $repoRoot $relative
+    $name = [IO.Path]::GetFileNameWithoutExtension($project)
+    Invoke-Gate "xunit:$name" 'TEST' {
+        param($r)
+        if (-not (Test-Path -LiteralPath $project -PathType Leaf)) { throw "Required suite missing: $relative" }
+        if ($Mode -ne 'Windows') { Assert-PortableProject $project ([System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)) }
+        $record = Invoke-RecordedCommand "xunit-$name" 'dotnet' @('test',$project,'-c',$Configuration,'--nologo','--logger',"trx;LogFileName=$name.trx",'--results-directory',$trxDir)
+        $c = Read-TrxCounts (Join-Path $trxDir "$name.trx")
+        Assert-NonzeroTests $record.exitCode $c.executed $c.passed $c.failed
+        $r.executed = $c.executed; $r.passed = $c.passed; $r.failed = $c.failed
+        $r.notes = "TRX=$name.trx total=$($c.total) skipped=$($c.notExecuted); disposable synthetic fixtures required by suites."
     }
 }
 
