@@ -1,6 +1,6 @@
 # Cafe cross-system coverage — Post-Audit Recovery (R0–R5) Update
 
-Verified code/package baseline: `b6494d98b45a946e4a162af1452e30a3c0a2a097` (extending `5197d742` / `4f0db62f` across `codex/wave-b-integrator`).
+Verified code/package baseline: `330250fd8e68695e94fae427aa1b35088615d50c` (extending `5197d742` / `4f0db62f` across `codex/wave-b-integrator`).
 
 This is an honest source + runtime capability inventory, not a parity fabrication or physical release signoff. `NeedsReview` is retained exception evidence, not canonical application. Android compilation/unit boundaries and physical device/emulator UX remain distinct.
 
@@ -20,9 +20,9 @@ This is an honest source + runtime capability inventory, not a parity fabricatio
 
 ## Observed boundaries and recovery evidence
 
-- **Post-Audit Recovery verified HTTP, web & native coverage at `b6494d98b45a946e4a162af1452e30a3c0a2a097` (`verify-candidate.ps1 -Configuration Release` `Windows` / `Portable` / `Android` ALL PASS):**
+- **Post-Audit Recovery verified HTTP, web & native coverage at `330250fd8e68695e94fae427aa1b35088615d50c` (`verify-candidate.ps1 -Configuration Release` `Windows` / `Portable` / `Android` ALL PASS):**
   - Combined Release xUnit suites: **260/260 PASS** (`Salryn.Cafe.Tests` `37` + `I2Tests` `22` + `I3Tests` `65` + `I4Tests` `13` + `I6ATests` `58` + `I6BTests` `65`).
-  - Frontend & E2E: `packages/salryn-cafe-ui` Vitest `12/12 PASS`; `apps/cafe-web` Vitest `11/11 PASS` + Vite production build; `apps/cafe-web/e2e/run-cafe-e2e.mjs` `11/11` Playwright checks PASS (zero-mock `dist`, `/cafe/`, `/cafe/central` surface isolation, `/cafe/backoffice`, `320px–1440px`, `axe-core` WCAG AA); `Salryn.Tools.CafeLiveAcceptance` (`-c Debug`) live Workstation + Backoffice Reports (`₱15.00`) + AR Balances (`₱7.50`) + restart replay (`6` HTTP assertions) + `5` SQLite assertions PASS. Legacy `src/Salryn.App.Web/playwright.config.ts` explicitly labeled `LEGACY_HOST_SHELL`.
-  - Packaging: `Build-SalrynCafeInstaller.ps1 -Configuration Release` built `Salryn-Cafe-Setup.exe` (`9,961,824` bytes, bundling `Salryn.Api.Local.exe` + `cafe-dist/*` + `assets/brand/*`), `Android` Release APK `ph.kirjanelabs.salryncafe-Signed.apk` built cleanly.
+  - Frontend & E2E: `packages/salryn-cafe-ui` Vitest `12/12 PASS`; `apps/cafe-web` Vitest `11/11 PASS` + Vite production build (incl. `localStorage` C5 `operationId` & unknown-outcome retention, `ERR_NETWORK_UNKNOWN` fetch catch, Central `Pending`/`AllowedDeviceRoles`/`AllowedQuarantineReviewStatuses` alignment, `Takeout`/`DineIn` only, numeric `CafePrinterStationKind` matching, and store-scoped `ReadRefundableSales`); `apps/cafe-web/e2e/run-cafe-e2e.mjs` `11/11` Playwright checks PASS (zero-mock `dist`, `/cafe/`, `/cafe/central` surface isolation, `/cafe/backoffice`, `320px–1440px`, `axe-core` WCAG AA); `Salryn.Tools.CafeLiveAcceptance` (`-c Debug`) live Workstation + Backoffice Reports (`₱15.00`) + AR Balances (`₱7.50`) + restart replay (`6` HTTP assertions) + `5` SQLite assertions PASS. Legacy `src/Salryn.App.Web/playwright.config.ts` explicitly labeled `LEGACY_HOST_SHELL`.
+  - Packaging: `Build-SalrynCafeInstaller.ps1 -Configuration Release` built `Salryn-Cafe-Setup.exe` (`9,963,129` bytes, SHA-256 `D6DFF423F5C3B39ACF7FE8C8E41035A5C1C047A7E3C54C9B67EABF34698BB4EB`, bundling `Salryn.Api.Local.exe` + `cafe-dist/*` + `assets/brand/*`), `Android` Release APK `ph.kirjanelabs.salryncafe-Signed.apk` (`18,141,339` bytes) built cleanly.
 - **Auth & bootstrap boundary:** Fresh-device bootstrap exports roles/users/units/products/permissions/sessions/customers plus authenticated menu and recipe publication reads (`ApplyPublication`). Operator login binds device + store authority and permission fingerprints (`CanonicalDomainTransactionTests`).
 - **Remaining non-software / external gates:** Release signed license provisioning (`CoreSmoke ReleaseEntitled` -> `BLOCKED_EXTERNAL`), formal GitHub `Kirion-Nox` review on Draft PR `#34`, physical tablet interactive UX, real Bluetooth printing, and client Windows coexistence remain `HUMAN_REQUIRED`.
