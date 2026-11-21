@@ -35,6 +35,10 @@ public sealed record MobileDeliveryCreateIntent(Guid OperationId, Guid DeliveryI
     string? Landmark, string? Instructions, long DeliveryFeeCents, string? CourierReference);
 public sealed record MobileDeliveryAdvanceIntent(Guid OperationId, Guid DeliveryId, int ExpectedVersion,
     DateTimeOffset OccurredAtUtc, string TargetStatus, string? Reason);
+public sealed record MobileRefundableSaleItem(Guid SaleItemId, string ProductName, long RemainingQuantityX1000, long UnitPriceCents, bool TrackStock);
+public sealed record MobileRefundableSaleSummary(Guid SaleId, string ReceiptNumber, long TotalCents, long CashNetCents, long ArCents,
+    IReadOnlyList<MobileRefundableSaleItem> Items);
+public sealed record MobileRefundSummary(Guid RefundId, Guid SaleId, string? ReceiptNumber, int Version, string State, string Reason, long? TotalRefundCents);
 
 /// <summary>Native presentation boundary over the single canonical Cafe authority.
 /// No financial tables, prices, stock calculations, or operator substitutions live here.
@@ -200,6 +204,103 @@ public sealed class MobileCashierController(MobileProductionComposition runtime,
                     intent.OperationId, binding.DeviceId, intent.RefundId, intent.SaleId, binding.StoreId,
                     intent.ExpectedVersion, actor.UserId, intent.CashierSessionId, intent.OccurredAtUtc, intent.Settlements))), ct);
 
+    public Task<Result<IReadOnlyList<MobileRefundableSaleSummary>>> ListRefundableSalesAsync(CancellationToken ct = default) =>
+        ExecuteAnyAsync([SalrynPermissions.SalesRefundRequest, SalrynPermissions.SalesRefundApprove], (binding, _, _) =>
+        {
+            using var connection = runtime.ConnectionFactory.CreateConnection();
+            connection.Open();
+            using var salesCmd = connection.CreateCommand();
+            salesCmd.CommandText = """
+                SELECT s.id, s.receipt_no, s.total_cents,
+                       COALESCE((SELECT SUM(p.amount_cents) FROM payments p WHERE p.sale_id = s.id AND p.method = $cash), 0),
+                       COALESCE((SELECT SUM(p.amount_cents) FROM payments p WHERE p.sale_id = s.id AND p.method = $ar), 0),
+                       s.change_cents
+                FROM sales s
+                WHERE s.status = $completed
+                  AND EXISTS (SELECT 1 FROM deployment_identity di WHERE di.store_id = $store)
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM cafe_order_sale_links osl
+                      INNER JOIN cafe_orders co ON co.order_id = osl.order_id
+                      WHERE osl.sale_id = s.id AND co.store_id != $store
+                  )
+                ORDER BY s.created_at DESC
+                LIMIT 25;
+                """;
+            salesCmd.Parameters.AddWithValue("$cash", Convert.ToInt32(PaymentMethod.Cash));
+            salesCmd.Parameters.AddWithValue("$ar", Convert.ToInt32(PaymentMethod.AccountsReceivable));
+            salesCmd.Parameters.AddWithValue("$completed", Convert.ToInt32(SaleStatus.Completed));
+            salesCmd.Parameters.AddWithValue("$store", binding.StoreId.ToString("D"));
+            List<MobileRefundableSaleSummary> result = [];
+            List<(Guid SaleId, string Receipt, long Total, long CashNet, long Ar)> sales = [];
+            using (var r = salesCmd.ExecuteReader())
+            {
+                while (r.Read())
+                {
+                    long cashNet = Math.Max(0, r.GetInt64(3) - r.GetInt64(5));
+                    sales.Add((Guid.Parse(r.GetString(0)), r.GetString(1), r.GetInt64(2), cashNet, r.GetInt64(4)));
+                }
+            }
+            foreach (var s in sales)
+            {
+                using var lineCmd = connection.CreateCommand();
+                lineCmd.CommandText = """
+                    SELECT si.id, si.product_name_snapshot, si.qty_x1000, si.unit_price_cents, COALESCE(p.track_stock, 0),
+                           COALESCE((SELECT SUM(rl.refund_quantity_x1000)
+                                     FROM cafe_sale_refund_lines rl
+                                     INNER JOIN cafe_sale_refunds r ON r.refund_id = rl.refund_id
+                                     WHERE rl.sale_item_id = si.id AND r.state != 'Rejected'), 0)
+                    FROM sale_items si
+                    INNER JOIN products p ON p.id = si.product_id
+                    WHERE si.sale_id = $sale;
+                    """;
+                lineCmd.Parameters.AddWithValue("$sale", s.SaleId.ToString("D"));
+                List<MobileRefundableSaleItem> items = [];
+                using var lr = lineCmd.ExecuteReader();
+                while (lr.Read())
+                {
+                    long remaining = Math.Max(0, lr.GetInt64(2) - lr.GetInt64(5));
+                    if (remaining > 0)
+                        items.Add(new(Guid.Parse(lr.GetString(0)), lr.GetString(1), remaining, lr.GetInt64(3), lr.GetInt64(4) == 1));
+                }
+                if (items.Count > 0)
+                    result.Add(new(s.SaleId, s.Receipt, s.Total, s.CashNet, s.Ar, items));
+            }
+            return Task.FromResult(Result<IReadOnlyList<MobileRefundableSaleSummary>>.Success(result));
+        }, ct);
+
+    public Task<Result<IReadOnlyList<MobileRefundSummary>>> ListRefundsAsync(CancellationToken ct = default) =>
+        ExecuteAnyAsync([SalrynPermissions.SalesRefundRequest, SalrynPermissions.SalesRefundApprove], (binding, _, _) =>
+        {
+            using var connection = runtime.ConnectionFactory.CreateConnection();
+            connection.Open();
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = """
+                SELECT r.refund_id, r.sale_id, s.receipt_no, r.current_version, r.state, r.reason,
+                       COALESCE(r.total_refund_cents, (SELECT SUM(rl.refund_amount_cents) FROM cafe_sale_refund_lines rl WHERE rl.refund_id = r.refund_id))
+                FROM cafe_sale_refunds r
+                LEFT JOIN sales s ON s.id = r.sale_id
+                WHERE r.store_id = $store
+                ORDER BY r.requested_at_utc DESC
+                LIMIT 50;
+                """;
+            cmd.Parameters.AddWithValue("$store", binding.StoreId.ToString("D"));
+            List<MobileRefundSummary> rows = [];
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                rows.Add(new(
+                    Guid.Parse(reader.GetString(0)),
+                    Guid.Parse(reader.GetString(1)),
+                    reader.IsDBNull(2) ? null : reader.GetString(2),
+                    reader.GetInt32(3),
+                    reader.GetString(4),
+                    reader.GetString(5),
+                    reader.IsDBNull(6) ? null : reader.GetInt64(6)));
+            }
+            return Task.FromResult(Result<IReadOnlyList<MobileRefundSummary>>.Success(rows));
+        }, ct);
+
     public Task<Result<CafeRefundDetail>> FindRefundAsync(Guid refundId, CancellationToken ct = default) =>
         ExecuteAsync(SalrynPermissions.SalesViewHistory, (binding, _, _) =>
         {
@@ -271,7 +372,11 @@ public sealed class MobileCashierController(MobileProductionComposition runtime,
                     intent.OperationId, binding.DeviceId, intent.DeliveryId, binding.StoreId,
                     intent.ExpectedVersion, actor.UserId, intent.OccurredAtUtc, intent.TargetStatus, intent.Reason))), ct);
 
-    private async Task<Result<T>> ExecuteAsync<T>(string permission,
+    private Task<Result<T>> ExecuteAsync<T>(string permission,
+        Func<MobileEnrollmentBinding, UserPermissionReadModel, CancellationToken, Task<Result<T>>> action, CancellationToken ct) =>
+        ExecuteAnyAsync([permission], action, ct);
+
+    private async Task<Result<T>> ExecuteAnyAsync<T>(IReadOnlyList<string> anyPermissions,
         Func<MobileEnrollmentBinding, UserPermissionReadModel, CancellationToken, Task<Result<T>>> action, CancellationToken ct)
     {
         // Acquisition is immediate: two taps cannot queue two intents before UI disable.
@@ -287,7 +392,7 @@ public sealed class MobileCashierController(MobileProductionComposition runtime,
                 _operator = null;
                 return Fail<T>("Mobile.OperatorRevoked", "Operator authorization changed. Sign in again.");
             }
-            if (!actor.Permissions.Contains(permission, StringComparer.Ordinal))
+            if (!anyPermissions.Any(p => actor.Permissions.Contains(p, StringComparer.Ordinal)))
                 return Fail<T>("Mobile.PermissionDenied", "Your current operator account cannot perform this action.");
             var device = await deviceGuard.AuthorizeAsync(ct).ConfigureAwait(false);
             if (device.IsFailure) return Result<T>.Fail(device.ErrorDetail);

@@ -6,10 +6,13 @@ namespace Salryn.Mobile.Foundation.Cashier;
 public sealed record MobilePendingCashierIntent(string Kind, MobileOrderDraft? Draft = null,
     MobileOrderAction? Action = null, string? TargetState = null, MobileCheckoutIntent? Checkout = null,
     Guid ActorUserId = default, MobileShiftOpenIntent? ShiftOpen = null, MobileShiftCloseIntent? ShiftClose = null,
+    MobileRefundRequestIntent? RefundRequest = null, MobileRefundResolutionIntent? RefundResolution = null,
+    MobileRefundCommitIntent? RefundCommit = null,
     string? LastErrorCode = null, string? LastErrorMessage = null, int AttemptCount = 0)
 {
     public Guid OperationId => Draft?.OperationId ?? Action?.OperationId ?? Checkout?.OperationId
-        ?? ShiftOpen?.OperationId ?? ShiftClose?.OperationId ?? Guid.Empty;
+        ?? ShiftOpen?.OperationId ?? ShiftClose?.OperationId ?? RefundRequest?.OperationId
+        ?? RefundResolution?.OperationId ?? RefundCommit?.OperationId ?? Guid.Empty;
 
     internal MobilePendingCashierIntent WithoutDiagnostics() =>
         this with { LastErrorCode = null, LastErrorMessage = null, AttemptCount = 0 };

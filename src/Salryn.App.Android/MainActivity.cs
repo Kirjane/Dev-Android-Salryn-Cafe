@@ -31,6 +31,8 @@ public sealed class MainActivity : Activity
     private MenuPublicationSnapshot? _menu;
     private CafeOrderDetail? _order;
     private Guid _draftOrderId = Guid.NewGuid();
+    private string _serviceMode = CafeOrderServiceModes.Takeout;
+    private string _serviceReference = string.Empty;
     private Guid? _lastSaleId;
     private string? _lastReceiptNumber;
     private Guid? _lastPrintJobId;
@@ -115,8 +117,9 @@ public sealed class MainActivity : Activity
     private async Task CashierPageAsync()
     {
         Page("Salryn Cafe · Cashier"); Label("Operator: " + _cashier!.CurrentOperator?.DisplayName); Status();
-        Button("Sign out", () => { _cashier.SignOut(); _order = null; _lines.Clear(); _menu = null; LoginPage(); return Task.CompletedTask; });
+        Button("Sign out", () => { _cashier.SignOut(); _order = null; _lines.Clear(); _menu = null; _serviceMode = CafeOrderServiceModes.Takeout; _serviceReference = string.Empty; LoginPage(); return Task.CompletedTask; });
         Button("Refresh menu and orders", CashierPageAsync);
+        Button("Audited Refunds (C5)", RefundsPageAsync);
         Button("Device setup and synchronization", SetupPageAsync);
         var pending = await _intents!.ReadAsync();
         if (pending is not null)
@@ -160,20 +163,37 @@ public sealed class MainActivity : Activity
         foreach (var item in _menu.Items.OrderBy(x => x.DisplayOrder))
             if (item.IsTemporarilyUnavailable) Label(item.Name + " · unavailable");
             else Button(item.Name + " · PHP " + Money(item.SellingPriceCents), () => { ItemDialog(item); return Task.CompletedTask; });
-        Label(_order is null ? "New takeout order" : "Current order · " + _order.Order.State, true);
+        Label(_order is null ? $"New {_serviceMode} order" : $"Current order ({_serviceMode}) · " + _order.Order.State, true);
+        EditText serviceRef = Input("Table / Buzzer / Order Ref");
+        serviceRef.Text = _serviceReference;
+        if (_order is null || _order.Order.State == CafeOrderStates.Open)
+        {
+            string activeMode = _serviceMode;
+            Button($"Service mode: {activeMode} (tap for {(activeMode == CafeOrderServiceModes.DineIn ? CafeOrderServiceModes.Takeout : CafeOrderServiceModes.DineIn)})",
+                () =>
+                {
+                    _serviceReference = serviceRef.Text?.Trim() ?? string.Empty;
+                    _serviceMode = activeMode == CafeOrderServiceModes.DineIn ? CafeOrderServiceModes.Takeout : CafeOrderServiceModes.DineIn;
+                    return CashierPageAsync();
+                });
+        }
         foreach (var line in _lines) Label($"{line.QuantityX1000 / 1000m:0.###} × {_menu.Items.FirstOrDefault(x => x.ProductId == line.ProductId)?.Name ?? "Saved item"}");
         if (_order is not null) Label("Confirmed total: PHP " + Money(_order.CurrentRevision.Lines.Sum(x => x.LineTotalCents)));
         if (_order is null || _order.Order.State == CafeOrderStates.Open)
-            Button("Save order", () => DispatchAsync(Intent("SaveOrder", draft: new(Guid.NewGuid(), _order?.Order.OrderId ?? _draftOrderId,
-                _order?.Order.OrderVersion ?? 0, DateTimeOffset.UtcNow, _order?.Order.ServiceMode ?? CafeOrderServiceModes.Takeout,
-                _order?.Order.ServiceReference, _lines.ToArray()))));
+            Button("Save order", () =>
+            {
+                _serviceReference = serviceRef.Text?.Trim() ?? string.Empty;
+                return DispatchAsync(Intent("SaveOrder", draft: new(Guid.NewGuid(), _order?.Order.OrderId ?? _draftOrderId,
+                    _order?.Order.OrderVersion ?? 0, DateTimeOffset.UtcNow, _serviceMode,
+                    string.IsNullOrWhiteSpace(_serviceReference) ? null : _serviceReference, _lines.ToArray())));
+            });
         if (_order?.Order.State == CafeOrderStates.Open) Button("Send to preparation", () => DispatchAsync(Intent("SubmitPreparation", action: OrderAction())));
         if (_order?.Order.State == CafeOrderStates.Submitted) Button("Mark preparing", () => DispatchAsync(Intent("PreparationStatus", action: OrderAction(), target: CafeOrderStates.Preparing)));
         if (_order?.Order.State == CafeOrderStates.Preparing) Button("Mark ready", () => DispatchAsync(Intent("PreparationStatus", action: OrderAction(), target: CafeOrderStates.Ready)));
         if (_order?.Order.State == CafeOrderStates.Ready) Button("Checkout · Cash / Accounts Receivable", CheckoutDialogAsync);
         if (_order is not null && (_order.Order.State == CafeOrderStates.Submitted || _order.Order.State == CafeOrderStates.Preparing))
             Button("Print kitchen ticket", () => PrintKitchenTicketAsync(_order));
-        Button("Start another takeout order", async () => { _order = null; _lines.Clear(); _draftOrderId = Guid.NewGuid(); await CashierPageAsync(); });
+        Button("Start another order", async () => { _order = null; _lines.Clear(); _draftOrderId = Guid.NewGuid(); _serviceMode = CafeOrderServiceModes.Takeout; _serviceReference = string.Empty; await CashierPageAsync(); });
         if (_lastSaleId is not null)
         {
             Label($"Last sale · receipt {_lastReceiptNumber}", true);
@@ -274,14 +294,17 @@ public sealed class MainActivity : Activity
 
     private MobilePendingCashierIntent Intent(string kind, MobileOrderDraft? draft = null, MobileOrderAction? action = null,
         string? target = null, MobileCheckoutIntent? checkout = null, MobileShiftOpenIntent? shiftOpen = null,
-        MobileShiftCloseIntent? shiftClose = null) =>
-        new(kind, draft, action, target, checkout, _cashier!.CurrentOperator!.UserId, shiftOpen, shiftClose);
+        MobileShiftCloseIntent? shiftClose = null, MobileRefundRequestIntent? refundRequest = null,
+        MobileRefundResolutionIntent? refundResolution = null, MobileRefundCommitIntent? refundCommit = null) =>
+        new(kind, draft, action, target, checkout, _cashier!.CurrentOperator!.UserId, shiftOpen, shiftClose,
+            refundRequest, refundResolution, refundCommit);
 
     private async Task DispatchAsync(MobilePendingCashierIntent intent)
     {
         if (_cashier!.CurrentOperator?.UserId != intent.ActorUserId) { Message("Sign in as the original operator to reconcile the saved action."); return; }
         await _intents!.SaveBeforeDispatchAsync(intent);
         Guid? orderId = null;
+        bool openRefunds = false;
         switch (intent.Kind)
         {
             case "ShiftOpen" when intent.ShiftOpen is not null:
@@ -337,9 +360,37 @@ public sealed class MainActivity : Activity
                 _lastPrintJobId = null;
                 _lastPrintStatus = "Not yet printed";
                 _message = "Sale committed · receipt " + sale.Value.ReceiptNumber + ". Printing and central application require separate confirmation."; break;
+            case "RefundRequest" when intent.RefundRequest is not null:
+                var refReq = await _cashier.RequestRefundAsync(intent.RefundRequest);
+                if (refReq.IsFailure)
+                {
+                    await _intents.RecordAttemptFailureAsync(intent.OperationId, refReq.ErrorDetail.Code, refReq.ErrorDetail.Message);
+                    Message(refReq.ErrorDetail.Message + " Saved refund request retained."); return;
+                }
+                openRefunds = true;
+                _message = $"Refund {refReq.Value.State} created."; break;
+            case "RefundResolution" when intent.RefundResolution is not null:
+                var refRes = await _cashier.ResolveRefundAsync(intent.RefundResolution);
+                if (refRes.IsFailure)
+                {
+                    await _intents.RecordAttemptFailureAsync(intent.OperationId, refRes.ErrorDetail.Code, refRes.ErrorDetail.Message);
+                    Message(refRes.ErrorDetail.Message + " Saved refund resolution retained."); return;
+                }
+                openRefunds = true;
+                _message = $"Refund {refRes.Value.State} (v{refRes.Value.Version})."; break;
+            case "RefundCommit" when intent.RefundCommit is not null:
+                var refCommit = await _cashier.CommitRefundAsync(intent.RefundCommit);
+                if (refCommit.IsFailure)
+                {
+                    await _intents.RecordAttemptFailureAsync(intent.OperationId, refCommit.ErrorDetail.Code, refCommit.ErrorDetail.Message);
+                    Message(refCommit.ErrorDetail.Message + " Saved refund commit retained."); return;
+                }
+                openRefunds = true;
+                _message = $"Refund committed · PHP {Money(refCommit.Value.TotalRefundCents)}."; break;
             default: throw new InvalidOperationException("Unsupported saved action. Preserve it for recovery.");
         }
         await _intents.ClearConfirmedAsync(intent.OperationId);
+        if (openRefunds) { await RefundsPageAsync(); return; }
         if (orderId is { } id)
         {
             var found = await _cashier.FindOrderAsync(id);
@@ -401,8 +452,136 @@ public sealed class MainActivity : Activity
     }
     private void Load(CafeOrderDetail order)
     {
-        _order = order; _lines.Clear(); _lines.AddRange(order.CurrentRevision.Lines.Select(x => new CafeOrderLineMutation(x.OrderLineId,
+        _order = order; _serviceMode = order.Order.ServiceMode; _serviceReference = order.Order.ServiceReference ?? string.Empty;
+        _lines.Clear(); _lines.AddRange(order.CurrentRevision.Lines.Select(x => new CafeOrderLineMutation(x.OrderLineId,
             x.ProductId, x.VariantId, x.ModifierSelections.Select(m => m.OptionId).ToArray(), x.QuantityX1000, x.Note, x.DisplayOrder)));
+    }
+
+    private async Task RefundsPageAsync()
+    {
+        Page("Salryn Cafe · Audited Refunds (C5)"); Status();
+        Button("Back to Cashier", CashierPageAsync);
+        var pending = await _intents!.ReadAsync();
+        if (pending is not null)
+        {
+            Label($"Pending action: {pending.Kind} · Op {pending.OperationId:D}", true);
+            if (!string.IsNullOrWhiteSpace(pending.LastErrorMessage))
+                Label($"Last rejection ({pending.AttemptCount} attempts): [{pending.LastErrorCode}] {pending.LastErrorMessage}");
+            Button("Retry saved action", () => DispatchAsync(pending));
+            EditText dismissReason = Input("Reason to dismiss rejected action (audit logged)");
+            Button("Dismiss rejected action (audit logged)", async () =>
+            {
+                if (string.IsNullOrWhiteSpace(dismissReason.Text)) { Message("Enter a reason before dismissing a rejected action."); return; }
+                await _intents.ResolveRejectedAsync(pending.OperationId, _cashier!.CurrentOperator!.UserId, dismissReason.Text!, DateTimeOffset.UtcNow);
+                Message($"Rejected action {pending.OperationId:D} dismissed and recorded in resolution history.");
+                await RefundsPageAsync();
+            });
+        }
+
+        Label("Refundable Completed Sales", true);
+        var sales = await _cashier!.ListRefundableSalesAsync();
+        if (sales.IsFailure)
+        {
+            Label(sales.ErrorDetail.Message);
+        }
+        else if (sales.Value.Count == 0)
+        {
+            Label("No refundable completed sales found.");
+        }
+        else
+        {
+            foreach (var sale in sales.Value)
+            {
+                Button($"{sale.ReceiptNumber} · PHP {Money(sale.TotalCents)} (Cash {Money(sale.CashNetCents)} / AR {Money(sale.ArCents)})",
+                    () => { RequestRefundDialog(sale); return Task.CompletedTask; });
+            }
+        }
+
+        Label("Existing Refund Requests", true);
+        var refunds = await _cashier.ListRefundsAsync();
+        if (refunds.IsFailure) { Label(refunds.ErrorDetail.Message); return; }
+        if (refunds.Value.Count == 0) Label("No refund requests recorded.");
+        foreach (var refund in refunds.Value)
+        {
+            Label($"{refund.ReceiptNumber ?? refund.SaleId.ToString("N")[..8]} · {refund.State} · PHP {(refund.TotalRefundCents is { } t ? Money(t) : "0.00")} · {refund.Reason}");
+            if (refund.State == "Requested")
+            {
+                Button($"Approve refund {refund.ReceiptNumber}", () => DispatchAsync(Intent("RefundResolution",
+                    refundResolution: new(Guid.NewGuid(), refund.RefundId, refund.SaleId, refund.Version, DateTimeOffset.UtcNow, true, "Approved on Android POS"))));
+                Button($"Reject refund {refund.ReceiptNumber}", () => DispatchAsync(Intent("RefundResolution",
+                    refundResolution: new(Guid.NewGuid(), refund.RefundId, refund.SaleId, refund.Version, DateTimeOffset.UtcNow, false, "Rejected on Android POS"))));
+            }
+            else if (refund.State == "Approved")
+            {
+                Button($"Commit refund {refund.ReceiptNumber} (Cash / AR)", () => { CommitRefundDialog(refund); return Task.CompletedTask; });
+            }
+        }
+    }
+
+    private void RequestRefundDialog(MobileRefundableSaleSummary sale)
+    {
+        LinearLayout form = new(this) { Orientation = Orientation.Vertical };
+        Spinner itemSpinner = new(this) { ContentDescription = "Sale line" };
+        itemSpinner.Adapter = new ArrayAdapter<string>(this, global::Android.Resource.Layout.SimpleSpinnerDropDownItem,
+            sale.Items.Select(i => $"{i.ProductName} (Rem {i.RemainingQuantityX1000 / 1000m:0.###})").ToArray());
+        Spinner dispSpinner = new(this) { ContentDescription = "Stock disposition" };
+        string[] dispositions = [CafeRefundStockDispositions.Restock, CafeRefundStockDispositions.DamagedNonRestockable, CafeRefundStockDispositions.ServiceNoStock];
+        dispSpinner.Adapter = new ArrayAdapter<string>(this, global::Android.Resource.Layout.SimpleSpinnerDropDownItem, dispositions);
+        if (sale.Items.Count > 0) dispSpinner.SetSelection(sale.Items[0].TrackStock ? 0 : 2);
+        itemSpinner.ItemSelected += (_, args) =>
+        {
+            if (args.Position >= 0 && args.Position < sale.Items.Count)
+                dispSpinner.SetSelection(sale.Items[args.Position].TrackStock ? 0 : 2);
+        };
+        EditText qtyInput = InputText(form, "Refund quantity", MoneyInput, "1");
+        EditText reasonInput = InputText(form, "Refund reason", InputTypes.ClassText, "");
+        form.AddView(itemSpinner); form.AddView(dispSpinner);
+        Guid reqOpId = Guid.NewGuid(), refundId = Guid.NewGuid(), lineId = Guid.NewGuid();
+        ScrollView scroll = new(this); scroll.AddView(form);
+        new AlertDialog.Builder(this)!.SetTitle($"Request Refund · {sale.ReceiptNumber}")!.SetView(scroll)!
+            .SetNegativeButton("Cancel", (_, _) => { })!
+            .SetPositiveButton("Request Refund", (_, _) => _ = RunUiAsync(async () =>
+            {
+                var item = sale.Items[Math.Max(0, itemSpinner.SelectedItemPosition)];
+                decimal qty = decimal.Parse(qtyInput.Text ?? "", CultureInfo.InvariantCulture);
+                if (qty <= 0 || qty * 1000 != decimal.Truncate(qty * 1000)) { Message("Use a positive refund quantity."); return; }
+                string disposition = dispositions[Math.Max(0, dispSpinner.SelectedItemPosition)];
+                string cleanReason = string.IsNullOrWhiteSpace(reasonInput.Text) ? "Customer refund" : reasonInput.Text.Trim();
+                await DispatchAsync(Intent("RefundRequest", refundRequest: new(reqOpId, refundId, sale.SaleId, 0, DateTimeOffset.UtcNow,
+                    cleanReason, [new(lineId, item.SaleItemId, checked((long)(qty * 1000)), disposition, null)])));
+            }))!.Show();
+    }
+
+    private void CommitRefundDialog(MobileRefundSummary refund)
+    {
+        LinearLayout form = new(this) { Orientation = Orientation.Vertical };
+        string defaultAmount = refund.TotalRefundCents is { } total ? Money(total) : "0.00";
+        EditText cashInput = InputText(form, "Cash Refund (PHP)", MoneyInput, defaultAmount);
+        EditText arInput = InputText(form, "Accounts Receivable Reversal (PHP)", MoneyInput, "0.00");
+        Guid commitOpId = Guid.NewGuid();
+        ScrollView scroll = new(this); scroll.AddView(form);
+        new AlertDialog.Builder(this)!.SetTitle($"Commit Refund · {refund.ReceiptNumber}")!.SetView(scroll)!
+            .SetNegativeButton("Cancel", (_, _) => { })!
+            .SetPositiveButton("Commit Cash / AR", (_, _) => _ = RunUiAsync(async () =>
+            {
+                if (_cashier?.CurrentOperator is not { } actor) { Message("Sign in with an authorized operator account first."); return; }
+                var session = await _runtime!.CashierSessions.FindOpenSessionByUserIdAsync(actor.UserId);
+                if (session.IsFailure || session.Value is null) { Message("Open a cashier shift before committing a refund."); return; }
+                long cashCents = Cents(cashInput.Text), arCents = Cents(arInput.Text);
+                List<CafeRefundSettlementMutation> settlements = [];
+                if (cashCents > 0) settlements.Add(new(Guid.NewGuid(), CafeRefundSettlementMethods.Cash, cashCents));
+                if (arCents > 0) settlements.Add(new(Guid.NewGuid(), CafeRefundSettlementMethods.AccountsReceivable, arCents));
+                await DispatchAsync(Intent("RefundCommit", refundCommit: new(commitOpId, refund.RefundId, refund.SaleId, refund.Version,
+                    session.Value.Id, DateTimeOffset.UtcNow, settlements)));
+            }))!.Show();
+    }
+
+    private EditText InputText(LinearLayout parent, string hint, InputTypes type, string initialValue)
+    {
+        parent.AddView(new TextView(this) { Text = hint, TextSize = 15 });
+        EditText edit = new(this) { Hint = hint, InputType = type, ContentDescription = hint, Text = initialValue };
+        edit.SetTextColor(Espresso); edit.SetMinHeight(Dp(48)); parent.AddView(edit);
+        return edit;
     }
     private MobileOrderAction OrderAction() => new(Guid.NewGuid(), _order!.Order.OrderId, _order.Order.OrderVersion, DateTimeOffset.UtcNow);
     private void Page(string title)

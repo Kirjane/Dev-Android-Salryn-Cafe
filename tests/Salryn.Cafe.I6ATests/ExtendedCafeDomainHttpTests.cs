@@ -16,6 +16,7 @@ public sealed class ExtendedCafeDomainHttpTests
     [InlineData("delivery", true)] [InlineData("delivery", false)]
     [InlineData("booking", true)] [InlineData("booking", false)]
     [InlineData("attendance", true)] [InlineData("attendance", false)]
+    [InlineData("incident", true)] [InlineData("incident", false)]
     public async Task ExistingCanonicalCafeParticipants_ApplyOrDenyOverRealHttp_AndReplayExactlyOnce(string family, bool authorized)
     {
         string root=Path.Combine(Path.GetTempPath(),"central-extended-"+Guid.NewGuid().ToString("N"));
@@ -45,11 +46,17 @@ public sealed class ExtendedCafeDomainHttpTests
             Assert.True(created.IsSuccess,created.IsFailure?created.ErrorDetail.Message:null);
             table="cafe_bookings";permission="Booking.Manage";
         }
-        else
+        else if(family=="attendance")
         {
             var created=new SqliteCafeAttendanceIncidentService(source.Factory).RecordAttendance(new(operation,Guid.NewGuid(),host.StoreId,C4ProofIds.ActorUserId,C4ProofIds.ActorUserId,device.DeviceId,"ClockIn",now));
             Assert.True(created.IsSuccess,created.IsFailure?created.ErrorDetail.Message:null);
             table="cafe_attendance_events";permission="Attendance.Record";
+        }
+        else
+        {
+            var created=new SqliteCafeAttendanceIncidentService(source.Factory).CreateIncident(new(operation,Guid.NewGuid(),Guid.NewGuid(),host.StoreId,C4ProofIds.ActorUserId,device.DeviceId,C4ProofIds.ActorUserId,now,"Grinder jam","Burr motor tripped","Equipment","Medium",now));
+            Assert.True(created.IsSuccess,created.IsFailure?created.ErrorDetail.Message:null);
+            table="cafe_incidents";permission="Incident.Record";
         }
         if(!authorized) target.Execute("DELETE FROM role_permissions WHERE permission=$permission;",("$permission",permission));
         using var loginResponse=await device.Http.PostAsJsonAsync("/api/sync/v1/operators/login",new OperatorLoginRequest("c4-proof",CanonicalDomainTransactionTests.Password));
@@ -271,5 +278,120 @@ public sealed class ExtendedCafeDomainHttpTests
             Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM sales;"));
             Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM cafe_booking_sale_links;"));
         }
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SaleRefundRequestApproveCommit_AppliesOrDeniesOverRealHttp_AndReplaysExactlyOnce(bool authorized)
+    {
+        string root = Path.Combine(Path.GetTempPath(), "central-refund-" + Guid.NewGuid().ToString("N"));
+        var source = C4ProofDatabase.Create(Path.Combine(root, "source"));
+        var target = C4ProofDatabase.Create(Path.Combine(root, "central"));
+        target.Execute("UPDATE users SET password_hash=$hash WHERE id=$id;",
+            ("$hash", SalrynPasswordHasher.HashPassword(CanonicalDomainTransactionTests.Password).Value),
+            ("$id", C4ProofIds.ActorUserId.ToString("D")));
+
+        using var host = new CentralSyncTestHost(target.Paths.DatabasePath, canonical: true, canonicalStore: C4ProofIds.StoreId);
+        using var admin = host.CreateHttpsClient();
+        string adminToken = await host.LoginAsAdminAsync(admin);
+        using var device = await host.EnrollApproveAndAuthenticateDeviceAsync(admin, adminToken, "Refund C5 Cashier");
+
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        Guid orderId = Guid.NewGuid();
+        Guid saleOpId = Guid.NewGuid();
+        var saved = source.Orders.SaveRevision(new(Guid.NewGuid(), device.DeviceId, orderId, host.StoreId, 0, C4ProofIds.ActorUserId,
+            now, CafeOrderServiceModes.DineIn, "T4", [new(Guid.NewGuid(), C4ProofIds.ProductId, null, [], 1000, null, 0)]));
+        Assert.True(saved.IsSuccess);
+        Assert.True(source.Orders.SubmitPreparation(new(Guid.NewGuid(), device.DeviceId, orderId, host.StoreId, 1, C4ProofIds.ActorUserId, now.AddSeconds(1))).IsSuccess);
+        Assert.True(source.Orders.SetPreparationStatus(new(Guid.NewGuid(), device.DeviceId, orderId, host.StoreId, 2, C4ProofIds.ActorUserId, now.AddSeconds(2), CafeOrderStates.Preparing)).IsSuccess);
+        Assert.True(source.Orders.SetPreparationStatus(new(Guid.NewGuid(), device.DeviceId, orderId, host.StoreId, 3, C4ProofIds.ActorUserId, now.AddSeconds(3), CafeOrderStates.Ready)).IsSuccess);
+        var completed = source.Completion.Complete(new(Guid.NewGuid(), saleOpId, device.DeviceId, orderId, host.StoreId, 4, C4ProofIds.ActorUserId,
+            now.AddSeconds(4), [new(PaymentMethod.Cash, 500)])
+        {
+            FinancialDecisionOperationId = Guid.NewGuid(),
+            FinancialDecisionId = Guid.NewGuid()
+        });
+        Assert.True(completed.IsSuccess, completed.IsFailure ? completed.ErrorDetail.Message : null);
+
+        Guid saleId = completed.Value.SaleId;
+        Guid saleItemId;
+        Guid cashierSessionId;
+        using (var conn = source.Factory.CreateConnection())
+        {
+            conn.Open();
+            using var itemCmd = conn.CreateCommand();
+            itemCmd.CommandText = "SELECT id FROM sale_items WHERE sale_id=$s LIMIT 1;";
+            itemCmd.Parameters.AddWithValue("$s", saleId.ToString("D"));
+            saleItemId = Guid.Parse((string)itemCmd.ExecuteScalar()!);
+            using var sessCmd = conn.CreateCommand();
+            sessCmd.CommandText = "SELECT id FROM cashier_sessions WHERE status=1 LIMIT 1;";
+            cashierSessionId = Guid.Parse((string)sessCmd.ExecuteScalar()!);
+        }
+
+        Guid refundId = Guid.NewGuid();
+        Guid reqOpId = Guid.NewGuid(), resolveOpId = Guid.NewGuid(), commitOpId = Guid.NewGuid();
+        var refundSvc = new SqliteCafeRefundService(source.Factory);
+        var requested = refundSvc.Request(new(reqOpId, device.DeviceId, refundId, saleId, host.StoreId, 0, C4ProofIds.ActorUserId,
+            now.AddSeconds(5), "Wrong drink", [new(Guid.NewGuid(), saleItemId, 1000, CafeRefundStockDispositions.Restock, null)]));
+        Assert.True(requested.IsSuccess, requested.IsFailure ? requested.ErrorDetail.Message : null);
+        var approved = refundSvc.Resolve(new(resolveOpId, device.DeviceId, refundId, saleId, host.StoreId, 1, C4ProofIds.ActorUserId,
+            now.AddSeconds(6), true, "Approved by lead"));
+        Assert.True(approved.IsSuccess, approved.IsFailure ? approved.ErrorDetail.Message : null);
+        var committed = refundSvc.Commit(new(commitOpId, device.DeviceId, refundId, saleId, host.StoreId, 2, C4ProofIds.ActorUserId,
+            cashierSessionId, now.AddSeconds(7), [new(Guid.NewGuid(), CafeRefundSettlementMethods.Cash, 500)]));
+        Assert.True(committed.IsSuccess, committed.IsFailure ? committed.ErrorDetail.Message : null);
+
+        var allEnvelopes = new SqliteSyncOutboxStore(source.Factory).ReadPending(device.DeviceId)
+            .Select(r => r.Envelope)
+            .OrderBy(e => e.LocalSequence)
+            .ToArray();
+        var prereq = allEnvelopes.Where(e => e.OperationId != commitOpId && e.OperationId != resolveOpId).ToArray();
+        var approveAndCommit = allEnvelopes.Where(e => e.OperationId == resolveOpId || e.OperationId == commitOpId).ToArray();
+
+        if (!authorized)
+        {
+            target.Execute("DELETE FROM role_permissions WHERE permission='Sales.RefundApprove';");
+        }
+
+        using var loginResp = await device.Http.PostAsJsonAsync("/api/sync/v1/operators/login",
+            new OperatorLoginRequest("c4-proof", CanonicalDomainTransactionTests.Password));
+        Assert.Equal(HttpStatusCode.OK, loginResp.StatusCode);
+        var login = (await loginResp.Content.ReadFromJsonAsync<OperatorLoginResponse>())!;
+        device.Http.DefaultRequestHeaders.Add(CentralSyncEndpoints.OperatorTokenHeader, login.OperatorToken);
+
+        using var prereqPush = await device.Http.PostAsJsonAsync("/api/sync/v1/push", new PushOperationsRequest(1, prereq));
+        Assert.Equal(HttpStatusCode.OK, prereqPush.StatusCode);
+        var prereqBody = (await prereqPush.Content.ReadFromJsonAsync<PushOperationsResponse>())!;
+        Assert.All(prereqBody.Results, r => Assert.True(r.Resolution.IsApplied, r.Resolution.ResultCode));
+
+        using var finalPush = await device.Http.PostAsJsonAsync("/api/sync/v1/push", new PushOperationsRequest(1, approveAndCommit));
+        Assert.Equal(HttpStatusCode.OK, finalPush.StatusCode);
+        var finalBody = (await finalPush.Content.ReadFromJsonAsync<PushOperationsResponse>())!;
+        if (authorized)
+        {
+            Assert.All(finalBody.Results, r => Assert.True(r.Resolution.IsApplied, r.Resolution.ResultCode));
+            Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM cafe_sale_refunds WHERE refund_id=$r AND state='Committed';", ("$r", refundId.ToString("D"))));
+            Assert.Equal(500L, target.ScalarLong("SELECT COALESCE(SUM(-delta_cents), 0) FROM cash_movements WHERE delta_cents < 0;"));
+        }
+        else
+        {
+            Assert.All(finalBody.Results, r =>
+            {
+                Assert.False(r.Resolution.IsApplied);
+                Assert.True(r.Resolution.IsNeedsReview);
+                Assert.Equal("NeedsReview", r.Resolution.Status);
+                Assert.Equal("CafeRefundSync.PermissionRequired", r.Resolution.ResultCode);
+                Assert.Null(r.ChangeFeedSequence);
+            });
+            Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM cafe_sale_refunds WHERE refund_id=$r AND state='Requested';", ("$r", refundId.ToString("D"))));
+            Assert.Equal(0L, target.ScalarLong("SELECT COUNT(*) FROM cash_movements WHERE delta_cents < 0;"));
+        }
+
+        long feedAfter = target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed;");
+        using var replayPush = await device.Http.PostAsJsonAsync("/api/sync/v1/push", new PushOperationsRequest(1, approveAndCommit));
+        Assert.Equal(HttpStatusCode.OK, replayPush.StatusCode);
+        Assert.All((await replayPush.Content.ReadFromJsonAsync<PushOperationsResponse>())!.Results, r => Assert.True(r.IsDuplicateReplay));
+        Assert.Equal(feedAfter, target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed;"));
     }
 }
