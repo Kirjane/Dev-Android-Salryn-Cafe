@@ -27,7 +27,7 @@
   #define MySourceRevision ""
 #endif
 #if MySourceRevision != ""
-  #define MyVersionInfoDesc "Salryn Cafe Setup (" + MyAppVersion + " rev " + MySourceRevision + ")"
+  #define MyVersionInfoDesc "Salryn Cafe " + MySourceRevision
   #define MyAppComments     "Salryn Cafe source revision " + MySourceRevision
 #else
   #define MyVersionInfoDesc "Salryn Cafe Setup (" + MyAppVersion + ")"
