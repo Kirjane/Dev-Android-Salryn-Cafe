@@ -85,7 +85,7 @@ public sealed class LocalLanControlService
             Message: "Local LAN control is operator-only on the POS host. Remote clients cannot change LAN configuration, approvals, or terminal trust.",
             RemotePosRuntimeEnabled: _remotePosRuntimeGate.IsEnabled,
             HostLocalUrl: _hostUrls.LocalUrl,
-            HostLanUrl: BuildHostLanUrl(config),
+            HostLanUrl: BuildHostLanUrl(config, runtimeStatus),
             Safety: "Host control is local-only",
             RemotePosLimits: limits);
     }
@@ -485,7 +485,9 @@ public sealed class LocalLanControlService
         };
     }
 
-    private string BuildHostLanUrl(LanRemoteTransportConfig config)
+    private string BuildHostLanUrl(
+        LanRemoteTransportConfig config,
+        LocalLanControlRuntimeStatusResponse runtimeStatus)
     {
         if (!config.RemoteTransportEnabled
             || config.BindMode != LanRemoteTransportBindMode.ExplicitLanAddress)
@@ -494,12 +496,24 @@ public sealed class LocalLanControlService
         }
 
         string? ip = LocalApiLanBindNormalizer.TryNormalizeOrNull(config.BindAddress);
-        if (ip is null || ip.StartsWith("127.", StringComparison.Ordinal))
+        if (ip is null
+            || ip.StartsWith("127.", StringComparison.Ordinal)
+            || runtimeStatus.ConfiguredBindMalformed)
         {
             return "Not enabled (configured bind needs repair)";
         }
 
-        return _hostUrls.BuildLanUrl(ip);
+        if (!runtimeStatus.BindIpOnHost)
+        {
+            return "Not active (configured bind address is not assigned to this host)";
+        }
+
+        if (!runtimeStatus.ClientUrlReady)
+        {
+            return "Not active (restart required for HTTPS LAN listener)";
+        }
+
+        return _hostUrls.BuildLanUrl(ip, config);
     }
 
     private static Error SanitizeError(Error error)

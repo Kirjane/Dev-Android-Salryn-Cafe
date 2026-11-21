@@ -55,6 +55,8 @@ public sealed class LocalApiLanBindStartupOptions
 
     public static string BuildLocalUrl(int? port)
     {
-        return port is > 0 ? $"http://127.0.0.1:{port.Value}" : "http://127.0.0.1:5299";
+        return port is > 0
+            ? $"http://127.0.0.1:{port.Value}"
+            : Salryn.Infrastructure.Paths.SalrynProductIdentity.ResolveLoopbackApiBaseUrl();
     }
 }

@@ -15,7 +15,8 @@ namespace Salryn.Tests;
 /// </summary>
 public static class PreILanReachabilityAndTerminalCopyRepairChecks
 {
-    private const int Port = 5299;
+    private const int LoopbackPort = 5399;
+    private const int LanHttpsPort = 5400;
 
     public static void Run()
     {
@@ -28,7 +29,7 @@ public static class PreILanReachabilityAndTerminalCopyRepairChecks
         string hostIp = FindAssignedLanIpv4();
         LanRemoteTransportConfig enabled = CreateConfig(hostIp, enabled: true);
 
-        LocalApiLanRuntimeStatusService loopbackOnly = CreateRuntime("http://127.0.0.1:5299");
+        LocalApiLanRuntimeStatusService loopbackOnly = CreateRuntime($"http://127.0.0.1:{LoopbackPort}");
         var restart = loopbackOnly.Build(enabled);
         RequireEqual("LoopbackOnly", restart.ReadinessState, "Saved LAN bind without a matching listener must not be ready.");
         RequireTrue(restart.RestartRequired, "Saved LAN bind without a matching listener must require restart.");
@@ -38,20 +39,27 @@ public static class PreILanReachabilityAndTerminalCopyRepairChecks
             "Assigned Host PC address must be detected independently of active LAN listeners.");
 
         LocalApiLanRuntimeStatusService wrongPort = CreateRuntime(
-            "http://127.0.0.1:5299",
-            $"http://{hostIp}:5300");
+            $"http://127.0.0.1:{LoopbackPort}",
+            $"https://{hostIp}:5401");
         var portMismatch = wrongPort.Build(enabled);
         RequireTrue(portMismatch.RestartRequired && !portMismatch.ClientUrlReady,
             "Listener host and port must both match before terminal copy becomes ready.");
 
+        LocalApiLanRuntimeStatusService cleartextHttp = CreateRuntime(
+            $"http://127.0.0.1:{LoopbackPort}",
+            $"http://{hostIp}:{LanHttpsPort}");
+        var schemeMismatch = cleartextHttp.Build(enabled);
+        RequireTrue(schemeMismatch.RestartRequired && !schemeMismatch.ClientUrlReady && schemeMismatch.ClientUrl is null,
+            "Cleartext HTTP LAN listener must never report Ready or advertise a terminal link.");
+
         LocalApiLanRuntimeStatusService reachable = CreateRuntime(
-            "http://127.0.0.1:5299",
-            $"http://{hostIp}:5299");
+            $"http://127.0.0.1:{LoopbackPort}",
+            $"https://{hostIp}:{LanHttpsPort}");
         var ready = reachable.Build(enabled);
-        RequireEqual("Ready", ready.ReadinessState, "Matching running listener must report Ready.");
-        RequireTrue(!ready.RestartRequired, "Matching running listener must not require restart.");
-        RequireTrue(ready.ClientUrlReady, "Matching running listener must expose a copy-ready terminal link.");
-        RequireEqual($"http://{hostIp}:5299/remote-client", ready.ClientUrl, "Ready terminal link must use the actual matching bind.");
+        RequireEqual("Ready", ready.ReadinessState, "Matching running HTTPS listener must report Ready.");
+        RequireTrue(!ready.RestartRequired, "Matching running HTTPS listener must not require restart.");
+        RequireTrue(ready.ClientUrlReady, "Matching running HTTPS listener must expose a copy-ready terminal link.");
+        RequireEqual($"https://{hostIp}:{LanHttpsPort}/remote-client", ready.ClientUrl, "Ready terminal link must use the actual matching HTTPS bind.");
 
         var disabled = reachable.Build(CreateConfig(hostIp, enabled: false));
         RequireEqual("Disabled", disabled.ReadinessState, "Disabled LAN transport must remain disabled even when a listener is present.");
@@ -123,14 +131,14 @@ public static class PreILanReachabilityAndTerminalCopyRepairChecks
         ServiceProvider services = new ServiceCollection()
             .AddSingleton<IServer>(server)
             .BuildServiceProvider();
-        return new LocalApiLanRuntimeStatusService(services, new LocalApiHostControlUrls($"http://127.0.0.1:{Port}"));
+        return new LocalApiLanRuntimeStatusService(services, new LocalApiHostControlUrls($"http://127.0.0.1:{LoopbackPort}"));
     }
 
     private static LanRemoteTransportConfig CreateConfig(string hostIp, bool enabled) => new(
         RemoteTransportEnabled: enabled,
         BindMode: enabled ? LanRemoteTransportBindMode.ExplicitLanAddress : LanRemoteTransportBindMode.LoopbackOnly,
         BindAddress: hostIp,
-        Port: Port,
+        Port: LanHttpsPort,
         RequirePairedTerminal: true,
         RequireActiveTerminal: true,
         RejectUnknownTerminals: true,

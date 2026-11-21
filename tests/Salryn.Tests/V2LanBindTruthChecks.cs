@@ -69,14 +69,18 @@ public static class V2LanBindTruthChecks
         AssertContains(runtimeStatus, "ApiLoopbackOnly", "Runtime status must classify loopback-only API state.");
         AssertContains(runtimeStatus, "ClientUrlReady", "Runtime status must expose client URL readiness.");
         AssertContains(runtimeStatus, "BuildClientUrl", "Runtime status must build client URL through host URL helper.");
+        AssertContains(runtimeStatus, "LocalApiLanUrlResolver.ResolveLanHttpsPort(config)", "Runtime status must resolve actual LAN HTTPS port via LocalApiLanUrlResolver.");
+        AssertContains(runtimeStatus, "Uri.UriSchemeHttps", "Runtime status must require an active HTTPS listener before reporting Ready.");
         AssertContains(runtimeStatus, "ConfiguredBindMalformed", "Runtime status must detect malformed configured bind.");
         AssertContains(runtimeStatus, "ConfiguredBindAddressRepairSuggestion", "Runtime status must expose repair suggestion.");
         AssertContains(runtimeStatus, "DetectedLanListenIps", "Runtime status must expose detected LAN listener IPs.");
         AssertContains(runtimeStatus, "DetectedHostIpv4Addresses", "Runtime status must separately expose assigned Host PC addresses.");
         AssertContains(hostUrls, "BuildClientUrl", "Host control URLs must build remote client URL.");
         AssertContains(hostUrls, "/remote-client", "Client URL must target remote client entry.");
+        AssertContains(hostUrls, "https://{ip}:{resolvedPort}", "Host control URLs must advertise HTTPS LAN endpoints.");
         AssertContains(hostUrls, "LocalApiLanBindNormalizer", "Host URL helper must refuse double-scheme URL construction.");
         AssertNotContains(hostUrls, "http://{bindAddress.Trim()}:{Port}", "Host URL helper must not blindly prefix raw bind text.");
+        AssertNotContains(hostUrls, "http://{ip}:{Port}", "Host URL helper must not advertise cleartext HTTP LAN URLs.");
 
         AssertContains(normalizer, "NormalizeConfiguredLanBindInput", "Bind normalizer must exist.");
         AssertContains(normalizer, "WasRepaired", "Bind normalizer must report repairable URL inputs.");

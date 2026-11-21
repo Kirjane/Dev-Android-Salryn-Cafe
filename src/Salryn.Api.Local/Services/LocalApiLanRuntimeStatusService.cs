@@ -24,7 +24,7 @@ public sealed class LocalApiLanRuntimeStatusService
         IReadOnlyList<string> actualListenUrls = ReadActualListenUrls();
         IReadOnlyList<string> detectedLanListenIps = DetectLanListenIps(actualListenUrls);
         IReadOnlyList<string> detectedHostIpv4Addresses = DetectHostIpv4Addresses();
-        int port = _hostUrls.Port;
+        int port = LocalApiLanUrlResolver.ResolveLanHttpsPort(config);
         string hostLocalUrl = _hostUrls.LocalUrl;
         bool lanTransportEnabled = config.RemoteTransportEnabled
             && config.BindMode == LanRemoteTransportBindMode.ExplicitLanAddress;
@@ -147,7 +147,7 @@ public sealed class LocalApiLanRuntimeStatusService
         else
         {
             readinessState = "Ready";
-            clientUrl = _hostUrls.BuildClientUrl(configuredBindAddress);
+            clientUrl = _hostUrls.BuildClientUrl(configuredBindAddress, config);
             clientUrlReady = true;
         }
 
@@ -201,7 +201,8 @@ public sealed class LocalApiLanRuntimeStatusService
         List<string> ips = new();
         foreach (string url in actualListenUrls)
         {
-            if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri))
+            if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)
+                || !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -243,7 +244,8 @@ public sealed class LocalApiLanRuntimeStatusService
             return false;
         }
 
-        return uri.Port == port
+        return string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            && uri.Port == port
             && string.Equals(uri.Host, host, StringComparison.OrdinalIgnoreCase);
     }
 

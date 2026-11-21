@@ -1,6 +1,11 @@
 using System.Net;
+using System.Net.Sockets;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.DependencyInjection;
 using Salryn.Api.Local;
 using Salryn.Api.Local.Services;
 using Salryn.Composition.Local;
@@ -24,8 +29,261 @@ public sealed class LocalApiIdentityAndInstallerTests
         var protectedPortConfig = defaultConfig with { Port = 5387 };
         Assert.Equal(5400, LocalApiLanUrlResolver.ResolveLanHttpsPort(protectedPortConfig));
 
+        var loopbackPortConfig = defaultConfig with { Port = 5399 };
+        Assert.Equal(5400, LocalApiLanUrlResolver.ResolveLanHttpsPort(loopbackPortConfig));
+
         var customPortConfig = defaultConfig with { Port = 5444 };
         Assert.Equal(5444, LocalApiLanUrlResolver.ResolveLanHttpsPort(customPortConfig));
+    }
+
+    [Fact]
+    public void HostControlUrls_SeparatesLoopback5399FromAdvertisedLanHttps5400_AndHonorsValidPortOverrides()
+    {
+        var urls = new LocalApiHostControlUrls("http://127.0.0.1:5399");
+        Assert.Equal("http://127.0.0.1:5399", urls.LocalUrl);
+        Assert.Equal(5399, urls.LoopbackPort);
+        Assert.Equal(5400, urls.DefaultLanHttpsPort);
+        Assert.Equal(5400, urls.Port);
+
+        var defaultUrls = new LocalApiHostControlUrls();
+        Assert.Equal("http://127.0.0.1:5399", defaultUrls.LocalUrl);
+        Assert.Equal(5399, defaultUrls.LoopbackPort);
+        Assert.Equal(5400, defaultUrls.Port);
+
+        Assert.Equal("https://192.168.1.25:5400", urls.BuildLanUrl("192.168.1.25"));
+        Assert.Equal("https://192.168.1.25:5400/remote-client", urls.BuildClientUrl("192.168.1.25"));
+
+        // Legacy retail ports (5299, 5387) and Cafe loopback port (5399) normalize to 5400
+        var baseConfig = LanRemoteTransportConfig.CreateDefault();
+        foreach (int rejectedPort in new[] { 5299, 5387, 5399, 0, -1 })
+        {
+            var cfg = baseConfig with { Port = rejectedPort };
+            Assert.Equal("https://192.168.1.25:5400", urls.BuildLanUrl("192.168.1.25", cfg));
+            Assert.Equal("https://192.168.1.25:5400/remote-client", urls.BuildClientUrl("192.168.1.25", cfg));
+        }
+
+        // Valid custom LAN HTTPS port override is preserved
+        var overrideCfg = baseConfig with { Port = 5444 };
+        Assert.Equal("https://192.168.1.25:5444", urls.BuildLanUrl("192.168.1.25", overrideCfg));
+        Assert.Equal("https://192.168.1.25:5444/remote-client", urls.BuildClientUrl("192.168.1.25", overrideCfg));
+
+        // Scheme-prefixed input is normalized to bare IPv4 + HTTPS LAN port (never double-prefixed)
+        Assert.Equal("https://192.168.1.25:5400", urls.BuildLanUrl("http://192.168.1.25:5299/remote-client"));
+        Assert.Equal("https://192.168.1.25:5400/remote-client", urls.BuildClientUrl("http://192.168.1.25:5299"));
+
+        // Loopback, wildcard, and non-IPv4 bind strings are rejected
+        Assert.Throws<ArgumentException>(() => urls.BuildLanUrl("127.0.0.1"));
+        Assert.Throws<ArgumentException>(() => urls.BuildLanUrl("0.0.0.0"));
+        Assert.Throws<ArgumentException>(() => urls.BuildLanUrl("not-an-ipv4-address"));
+        Assert.Throws<ArgumentException>(() => urls.BuildClientUrl(""));
+    }
+
+    [Fact]
+    public void LanRuntimeStatus_AdvertisesRemoteClientOnlyWhenMatchingHttpsListenerIsActive()
+    {
+        string? hostIp = FindAssignedLanIpv4OrNull();
+        if (hostIp is null)
+        {
+            // No non-loopback NIC on runner; verify disabled and unassigned-IP cases deterministically.
+            LocalApiLanRuntimeStatusService noNicSvc = CreateRuntimeStatusService("http://127.0.0.1:5399");
+            var unassignedStatus = noNicSvc.Build(CreateLanConfig("198.51.100.42", enabled: true));
+            Assert.Equal("BindIpNotOnHost", unassignedStatus.ReadinessState);
+            Assert.False(unassignedStatus.ClientUrlReady);
+            Assert.Null(unassignedStatus.ClientUrl);
+            return;
+        }
+
+        LanRemoteTransportConfig enabledDefault = CreateLanConfig(hostIp, enabled: true, port: 5299);
+
+        // 1. Loopback-only / Restart-required
+        var loopbackOnly = CreateRuntimeStatusService("http://127.0.0.1:5399").Build(enabledDefault);
+        Assert.Equal("LoopbackOnly", loopbackOnly.ReadinessState);
+        Assert.Equal("ApiLoopbackOnly", loopbackOnly.Problem);
+        Assert.True(loopbackOnly.RestartRequired);
+        Assert.False(loopbackOnly.ClientUrlReady);
+        Assert.Null(loopbackOnly.ClientUrl);
+        Assert.Equal(5400, loopbackOnly.Port);
+        Assert.Equal("http://127.0.0.1:5399", loopbackOnly.HostLocalUrl);
+
+        // 2. Negative: Cleartext HTTP listener on configured LAN IP:5400 MUST NEVER report Ready
+        var cleartextHttp = CreateRuntimeStatusService(
+            "http://127.0.0.1:5399",
+            $"http://{hostIp}:5400").Build(enabledDefault);
+        Assert.Equal("LoopbackOnly", cleartextHttp.ReadinessState);
+        Assert.True(cleartextHttp.RestartRequired);
+        Assert.False(cleartextHttp.ClientUrlReady);
+        Assert.Null(cleartextHttp.ClientUrl);
+        Assert.Empty(cleartextHttp.DetectedLanListenIps ?? []);
+
+        // 3. Negative: Wrong-port HTTPS listeners (:5299, :5399, :5401) MUST NEVER report Ready
+        foreach (int wrongPort in new[] { 5299, 5399, 5401 })
+        {
+            var wrongPortStatus = CreateRuntimeStatusService(
+                "http://127.0.0.1:5399",
+                $"https://{hostIp}:{wrongPort}").Build(enabledDefault);
+            Assert.Equal("LoopbackOnly", wrongPortStatus.ReadinessState);
+            Assert.True(wrongPortStatus.RestartRequired);
+            Assert.False(wrongPortStatus.ClientUrlReady);
+            Assert.Null(wrongPortStatus.ClientUrl);
+        }
+
+        // 4. Negative: Wrong-interface / unassigned IP (TEST-NET-2 198.51.100.42)
+        var wrongInterface = CreateRuntimeStatusService(
+            "http://127.0.0.1:5399",
+            $"https://{hostIp}:5400").Build(CreateLanConfig("198.51.100.42", enabled: true));
+        Assert.Equal("BindIpNotOnHost", wrongInterface.ReadinessState);
+        Assert.Equal("BindIpNotOnHost", wrongInterface.Problem);
+        Assert.False(wrongInterface.BindIpOnHost);
+        Assert.False(wrongInterface.ClientUrlReady);
+        Assert.Null(wrongInterface.ClientUrl);
+
+        // 5. Positive: Active HTTPS listener on default 5400
+        var readyDefault = CreateRuntimeStatusService(
+            "http://127.0.0.1:5399",
+            $"https://{hostIp}:5400").Build(enabledDefault);
+        Assert.Equal("Ready", readyDefault.ReadinessState);
+        Assert.False(readyDefault.RestartRequired);
+        Assert.True(readyDefault.ClientUrlReady);
+        Assert.Equal(5400, readyDefault.Port);
+        Assert.Equal($"https://{hostIp}:5400/remote-client", readyDefault.ClientUrl);
+        Assert.Equal("http://127.0.0.1:5399", readyDefault.HostLocalUrl);
+
+        // 6. Positive & Negative: Custom LAN HTTPS port override (5444)
+        LanRemoteTransportConfig customPortConfig = CreateLanConfig(hostIp, enabled: true, port: 5444);
+        var overrideMismatch = CreateRuntimeStatusService(
+            "http://127.0.0.1:5399",
+            $"https://{hostIp}:5400").Build(customPortConfig);
+        Assert.Equal("LoopbackOnly", overrideMismatch.ReadinessState);
+        Assert.True(overrideMismatch.RestartRequired);
+        Assert.False(overrideMismatch.ClientUrlReady);
+        Assert.Null(overrideMismatch.ClientUrl);
+        Assert.Equal(5444, overrideMismatch.Port);
+
+        var overrideReady = CreateRuntimeStatusService(
+            "http://127.0.0.1:5399",
+            $"https://{hostIp}:5444").Build(customPortConfig);
+        Assert.Equal("Ready", overrideReady.ReadinessState);
+        Assert.False(overrideReady.RestartRequired);
+        Assert.True(overrideReady.ClientUrlReady);
+        Assert.Equal(5444, overrideReady.Port);
+        Assert.Equal($"https://{hostIp}:5444/remote-client", overrideReady.ClientUrl);
+
+        // 7. Disabled config even when HTTPS listener is present
+        var disabledStatus = CreateRuntimeStatusService(
+            "http://127.0.0.1:5399",
+            $"https://{hostIp}:5400").Build(CreateLanConfig(hostIp, enabled: false));
+        Assert.Equal("Disabled", disabledStatus.ReadinessState);
+        Assert.Equal("LanTransportDisabled", disabledStatus.Problem);
+        Assert.False(disabledStatus.ClientUrlReady);
+        Assert.Null(disabledStatus.ClientUrl);
+
+        // 8. Misconfigured (malformed URL stored in BindAddress) even when HTTPS listener is active
+        var malformedConfig = CreateLanConfig($"http://{hostIp}:5299/remote-client", enabled: true);
+        var malformedStatus = CreateRuntimeStatusService(
+            "http://127.0.0.1:5399",
+            $"https://{hostIp}:5400").Build(malformedConfig);
+        Assert.Equal("Misconfigured", malformedStatus.ReadinessState);
+        Assert.Equal("ConfiguredBindMalformed", malformedStatus.Problem);
+        Assert.True(malformedStatus.ConfiguredBindMalformed);
+        Assert.Equal(hostIp, malformedStatus.ConfiguredBindAddressRepairSuggestion);
+        Assert.False(malformedStatus.ClientUrlReady);
+        Assert.Null(malformedStatus.ClientUrl);
+    }
+
+    [Fact]
+    public async Task LanControlService_AdvertisesHostLanUrlOnlyWhenHttpsListenerIsActiveAndReady()
+    {
+        string? hostIp = FindAssignedLanIpv4OrNull();
+        if (hostIp is null)
+        {
+            return;
+        }
+
+        string tempRoot = Path.Combine(Path.GetTempPath(), "salryn-cafe-r3a-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            DbPaths dbPaths = DbPaths.CreateDevelopment(tempRoot);
+            SalrynLocalComposition composition = SalrynLocalComposition.Create(dbPaths);
+            await composition.InitializeDatabaseAsync();
+
+            var lanServices = Salryn.Api.Local.Composition.LanRemoteTransportApiComposition.Create(composition);
+            var runtimeGate = new Salryn.Api.Local.RemotePos.RemotePosRuntimeGate();
+            var remotePosServices = Salryn.Api.Local.RemotePos.RemotePosApiServices.Create(composition, lanServices, runtimeGate);
+            var hostUrls = new LocalApiHostControlUrls("http://127.0.0.1:5399");
+            var actor = new Salryn.Core.TerminalRegistry.TerminalRegistryActorContext(
+                Guid.NewGuid(),
+                ["StoreTerminal.View", "StoreTerminal.Manage", "Settings.Manage"]);
+
+            // 1. Default disabled state
+            var svcLoopback = new LocalLanControlService(
+                lanServices, runtimeGate, remotePosServices, hostUrls,
+                CreateRuntimeStatusService("http://127.0.0.1:5399"));
+            var disabledStatus = await svcLoopback.GetStatusAsync(actor);
+            Assert.Equal("http://127.0.0.1:5399", disabledStatus.HostLocalUrl);
+            Assert.Equal("Not enabled", disabledStatus.HostLanUrl);
+
+            // 2. Enable LAN in config while Kestrel is still loopback-only -> HostLanUrl must NOT advertise Ready URL
+            var enableRes = await svcLoopback.SetRemoteTransportAsync(enable: true, bindAddress: hostIp, actor);
+            Assert.True(enableRes.IsSuccess);
+            Assert.Equal("Not active (restart required for HTTPS LAN listener)", enableRes.Value.HostLanUrl);
+
+            // 3. Cleartext HTTP listener on LAN IP:5400 -> still not active
+            var svcCleartext = new LocalLanControlService(
+                lanServices, runtimeGate, remotePosServices, hostUrls,
+                CreateRuntimeStatusService("http://127.0.0.1:5399", $"http://{hostIp}:5400"));
+            var cleartextStatus = await svcCleartext.GetStatusAsync(actor);
+            Assert.Equal("Not active (restart required for HTTPS LAN listener)", cleartextStatus.HostLanUrl);
+
+            // 4. Active HTTPS listener on LAN IP:5400 -> advertises https://<hostIp>:5400
+            var svcHttpsReady = new LocalLanControlService(
+                lanServices, runtimeGate, remotePosServices, hostUrls,
+                CreateRuntimeStatusService("http://127.0.0.1:5399", $"https://{hostIp}:5400"));
+            var readyStatus = await svcHttpsReady.GetStatusAsync(actor);
+            Assert.Equal($"https://{hostIp}:5400", readyStatus.HostLanUrl);
+            var readyRuntime = await svcHttpsReady.GetRuntimeStatusAsync();
+            Assert.Equal("Ready", readyRuntime.ReadinessState);
+            Assert.Equal($"https://{hostIp}:5400/remote-client", readyRuntime.ClientUrl);
+
+            // 5. Custom LAN HTTPS port override (5444) persisted -> requires https://<hostIp>:5444 listener
+            await lanServices.Config.SaveAsync(new LanRemoteTransportConfigUpdateRequest(
+                RemoteTransportEnabled: true,
+                BindMode: LanRemoteTransportBindMode.ExplicitLanAddress,
+                BindAddress: hostIp,
+                Port: 5444,
+                RequirePairedTerminal: true,
+                RequireActiveTerminal: true,
+                RejectUnknownTerminals: true,
+                AllowOfficialCommandsRemotely: false,
+                AllowAdminCommandsRemotely: false,
+                UpdatedByUserId: actor.ActorUserId));
+            var mismatch5400 = await svcHttpsReady.GetStatusAsync(actor);
+            Assert.Equal("Not active (restart required for HTTPS LAN listener)", mismatch5400.HostLanUrl);
+
+            var svcHttps5444 = new LocalLanControlService(
+                lanServices, runtimeGate, remotePosServices, hostUrls,
+                CreateRuntimeStatusService("http://127.0.0.1:5399", $"https://{hostIp}:5444"));
+            var ready5444 = await svcHttps5444.GetStatusAsync(actor);
+            Assert.Equal($"https://{hostIp}:5444", ready5444.HostLanUrl);
+            var runtime5444 = await svcHttps5444.GetRuntimeStatusAsync();
+            Assert.Equal("Ready", runtime5444.ReadinessState);
+            Assert.Equal(5444, runtime5444.Port);
+            Assert.Equal($"https://{hostIp}:5444/remote-client", runtime5444.ClientUrl);
+        }
+        finally
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            try
+            {
+                if (Directory.Exists(tempRoot))
+                {
+                    Directory.Delete(tempRoot, recursive: true);
+                }
+            }
+            catch (IOException)
+            {
+            }
+        }
     }
 
     [Fact]
@@ -139,5 +397,60 @@ public sealed class LocalApiIdentityAndInstallerTests
             dir = dir.Parent;
         }
         throw new InvalidOperationException("Could not locate repository root containing Salryn.sln.");
+    }
+
+    private static LocalApiLanRuntimeStatusService CreateRuntimeStatusService(params string[] listenUrls)
+    {
+        FakeServer server = new(listenUrls);
+        ServiceProvider services = new ServiceCollection()
+            .AddSingleton<IServer>(server)
+            .BuildServiceProvider();
+        return new LocalApiLanRuntimeStatusService(services, new LocalApiHostControlUrls("http://127.0.0.1:5399"));
+    }
+
+    private static LanRemoteTransportConfig CreateLanConfig(string bindAddress, bool enabled, int port = 5299) => new(
+        RemoteTransportEnabled: enabled,
+        BindMode: enabled ? LanRemoteTransportBindMode.ExplicitLanAddress : LanRemoteTransportBindMode.LoopbackOnly,
+        BindAddress: bindAddress,
+        Port: port,
+        RequirePairedTerminal: true,
+        RequireActiveTerminal: true,
+        RejectUnknownTerminals: true,
+        AllowOfficialCommandsRemotely: false,
+        AllowAdminCommandsRemotely: false,
+        UpdatedAtUtc: DateTimeOffset.UtcNow,
+        UpdatedByUserId: null);
+
+    private static string? FindAssignedLanIpv4OrNull()
+    {
+        return Dns.GetHostAddresses(Dns.GetHostName())
+            .Where(address => address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(address))
+            .Select(address => address.ToString())
+            .FirstOrDefault(LocalApiNetworkInterfaceValidator.IsAssignedToLocalInterface);
+    }
+
+    private sealed class FakeServer : IServer
+    {
+        public FakeServer(IEnumerable<string> urls)
+        {
+            ServerAddressesFeature addresses = new();
+            foreach (string url in urls)
+            {
+                addresses.Addresses.Add(url);
+            }
+
+            Features.Set<IServerAddressesFeature>(addresses);
+        }
+
+        public IFeatureCollection Features { get; } = new FeatureCollection();
+
+        public Task StartAsync<TContext>(IHttpApplication<TContext> application, CancellationToken cancellationToken)
+            where TContext : notnull => Task.CompletedTask;
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public void Dispose()
+        {
+        }
     }
 }
