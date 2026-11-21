@@ -31,6 +31,7 @@ public sealed class SalrynLocalComposition
         SqliteCafeOrderStore cafeOrders,
         SqliteCafeOrderCompletionCoordinator cafeOrderCompletion,
         ICafeCashService cafeCash,
+        ICafeRefundService cafeRefunds,
         ICafePrintService cafePrint,
         ICafeDeliveryService cafeDelivery,
         ICafeBookingService cafeBooking,
@@ -62,6 +63,7 @@ public sealed class SalrynLocalComposition
         CafeOrders = cafeOrders;
         CafeOrderCompletion = cafeOrderCompletion;
         CafeCash = cafeCash;
+        CafeRefunds = cafeRefunds;
         CafePrint = cafePrint;
         CafeDelivery = cafeDelivery;
         CafeBooking = cafeBooking;
@@ -104,6 +106,8 @@ public sealed class SalrynLocalComposition
     public SqliteCafeOrderCompletionCoordinator CafeOrderCompletion { get; }
 
     public ICafeCashService CafeCash { get; }
+
+    public ICafeRefundService CafeRefunds { get; }
 
     public ICafePrintService CafePrint { get; }
 
@@ -198,6 +202,7 @@ public sealed class SalrynLocalComposition
             new SqliteCafeOrderStore(connectionFactory),
             new SqliteCafeOrderCompletionCoordinator(connectionFactory),
             new SqliteCafeCashService(connectionFactory),
+            new SqliteCafeRefundService(connectionFactory),
             new SqliteCafePrintService(connectionFactory),
             new SqliteCafeDeliveryService(connectionFactory),
             new SqliteCafeBookingService(connectionFactory),

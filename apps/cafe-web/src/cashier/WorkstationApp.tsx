@@ -51,9 +51,18 @@ import type {
 export type WorkstationAppProps = {
   api?: WorkstationApi;
   initialNav?: string;
+  onOpenBackoffice?: () => void;
 };
 
-function WorkstationInner({ api, initialNav = "cashier" }: { api: WorkstationApi; initialNav?: string }) {
+function WorkstationInner({
+  api,
+  initialNav = "cashier",
+  onOpenBackoffice,
+}: {
+  api: WorkstationApi;
+  initialNav?: string;
+  onOpenBackoffice?: () => void;
+}) {
   const { notify } = useToast();
   const [activeNav, setActiveNav] = useState(initialNav);
   const [session, setSession] = useState<HostSession>({ isAuthenticated: false });
@@ -420,6 +429,11 @@ function WorkstationInner({ api, initialNav = "cashier" }: { api: WorkstationApi
               </span>
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {onOpenBackoffice ? (
+                <Button size="sm" variant="secondary" onClick={onOpenBackoffice}>
+                  Back Office &amp; Reports
+                </Button>
+              ) : null}
               <Button
                 size="sm"
                 variant="secondary"
@@ -764,12 +778,12 @@ function WorkstationInner({ api, initialNav = "cashier" }: { api: WorkstationApi
   );
 }
 
-export function WorkstationApp({ api, initialNav }: WorkstationAppProps) {
+export function WorkstationApp({ api, initialNav, onOpenBackoffice }: WorkstationAppProps) {
   const resolvedApi = useMemo(() => api ?? createLiveHostApi(), [api]);
   return (
     <ErrorBoundary>
       <ToastProvider>
-        <WorkstationInner api={resolvedApi} initialNav={initialNav} />
+        <WorkstationInner api={resolvedApi} initialNav={initialNav} onOpenBackoffice={onOpenBackoffice} />
       </ToastProvider>
     </ErrorBoundary>
   );

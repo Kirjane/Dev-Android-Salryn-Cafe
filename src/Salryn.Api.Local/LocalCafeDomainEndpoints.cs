@@ -35,6 +35,7 @@ public static class LocalCafeDomainEndpoints
         cafeGroup.MapLocalCafeInventoryEndpoints();
         cafeGroup.MapLocalCafeOrderEndpoints();
         cafeGroup.MapLocalCafeCashEndpoints();
+        cafeGroup.MapLocalCafeRefundEndpoints();
         cafeGroup.MapLocalCafePrintEndpoints();
         cafeGroup.MapLocalCafeDeliveryEndpoints();
         cafeGroup.MapLocalCafeBookingEndpoints();
