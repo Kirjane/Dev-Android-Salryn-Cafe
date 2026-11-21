@@ -52,16 +52,22 @@ public sealed class WindowsCohostPairingTests
         var sale=await coordinator.CommitAsync(new(original.OperationId,device,central.StoreId,package.Value,original.OccurredAtLocal));
         Assert.True(sale.IsSuccess,sale.IsFailure?sale.ErrorDetail.Message:null);
         var synced=await connector.ConnectAsync(C4ProofIds.ActorUserId,"c4-proof",CanonicalDomainTransactionTests.Password);
-        Assert.Equal(2,synced.Applied);Assert.Equal(0,synced.Pending);
+        // One shift-open plus the committed sale and its separate recipe-ingredient consumption envelope.
+        Assert.Equal(3,synced.Applied);Assert.Equal(0,synced.Pending);
+        Assert.Equal(1L,target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed WHERE change_type=$type;",("$type",AppliedBusinessChangeContract.CafeShiftOpenedAppliedV1)));
+        Assert.Equal(1L,target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed WHERE change_type=$type;",("$type",AppliedBusinessChangeContract.SaleCommittedV1AppliedV1)));
+        Assert.Equal(1L,target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed WHERE change_type=$type;",("$type",AppliedBusinessChangeContract.IngredientConsumptionCommittedV1AppliedV1)));
         Assert.Equal(1L,target.ScalarLong("SELECT COUNT(*) FROM sales;"));Assert.Equal(500L,target.ScalarLong("SELECT SUM(total_cents) FROM sales;"));
-        Assert.Equal(1L,target.ScalarLong("SELECT COUNT(*) FROM cashier_sessions;"));Assert.Equal(2L,target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed;"));
+        Assert.Equal(1L,target.ScalarLong("SELECT COUNT(*) FROM cashier_sessions;"));Assert.Equal(3L,target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed;"));
         Assert.Equal(9000L,target.ScalarLong("SELECT stock_on_hand_x1000 FROM products WHERE sku='C4-PRODUCT';"));
         Assert.True(shift.Close(Guid.NewGuid(),device,central.StoreId,C4ProofIds.ActorUserId,opened.Value,500,DateTimeOffset.UtcNow.AddSeconds(1)).IsSuccess);
         var closed=await connector.ConnectAsync(C4ProofIds.ActorUserId,"c4-proof",CanonicalDomainTransactionTests.Password);
         Assert.Equal(1,closed.Applied);Assert.Equal(0,closed.Pending);
         var replay=await connector.ConnectAsync(C4ProofIds.ActorUserId,"c4-proof",CanonicalDomainTransactionTests.Password);
         Assert.Equal(0,replay.Applied);Assert.Equal(0,replay.Pending);
-        Assert.Equal(1L,target.ScalarLong("SELECT COUNT(*) FROM sales;"));Assert.Equal(3L,target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed;"));
+        Assert.Equal(1L,target.ScalarLong("SELECT COUNT(*) FROM sales;"));Assert.Equal(4L,target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed;"));
+        Assert.Equal(4L,target.ScalarLong("SELECT COUNT(DISTINCT source_operation_id) FROM sync_change_feed;"));
+        Assert.Equal(1L,target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed WHERE change_type=$type;",("$type",AppliedBusinessChangeContract.CafeShiftClosedAppliedV1)));
         Assert.Equal(1L,target.ScalarLong("SELECT COUNT(*) FROM cashier_sessions WHERE status=2 AND counted_cash_cents=500;"));
     }
     private sealed class MemorySecrets:IDeviceSecretStore
