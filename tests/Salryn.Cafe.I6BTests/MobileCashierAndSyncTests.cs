@@ -193,7 +193,7 @@ public sealed class MobileCashierAndSyncTests
     }
 
     [Fact]
-    public async Task LiveE2E_MobileHttpSyncOutboxTransport_WithCentralServer_SyncsAndFencesRevokedDevice()
+    public async Task HttpIntegration_CentralNeedsReviewRetainsPrototypeOutboxAndFencesRevokedDevice()
     {
         string centralDbPath = TempDbPath();
         string mobileDbPath = TempDbPath();
@@ -285,9 +285,16 @@ public sealed class MobileCashierAndSyncTests
         Assert.Equal(1, engine.GetPendingOutboxCount());
 
         MobileSyncCycleResult sync1 = await engine.SyncNowAsync(transport);
-        Assert.True(sync1.IsSuccess);
-        Assert.Equal(1, sync1.PushedCount);
-        Assert.Equal(0, engine.GetPendingOutboxCount());
+        Assert.False(sync1.IsSuccess);
+        Assert.Equal("ERR_SYNC_NOT_APPLIED", sync1.ErrorCode);
+        Assert.Equal(0, sync1.PushedCount);
+        Assert.Equal(1, engine.GetPendingOutboxCount());
+        // A transport receipt must not retire financial delivery evidence. Retry is
+        // the same durable envelope; Central replays NeedsReview without applying it.
+        var retry = await engine.SyncNowAsync(transport);
+        Assert.False(retry.IsSuccess);
+        Assert.Equal("ERR_SYNC_NOT_APPLIED", retry.ErrorCode);
+        Assert.Equal(1, engine.GetPendingOutboxCount());
 
         // Perform a second offline sale, then Admin REVOKES the tablet -> Sync fences outbox & locks tablet!
         var ord2 = await engine.CreateOrderAsync(cashier, "Takeout", [new MobileOrderLineInput(Guid.CreateVersion7(), "Latte", 1, 14500)]);
@@ -302,7 +309,7 @@ public sealed class MobileCashierAndSyncTests
         MobileSyncCycleResult fencedSync = await engine.SyncNowAsync(transport);
         Assert.False(fencedSync.IsSuccess);
         Assert.True(fencedSync.IsRevokedFenced);
-        Assert.Equal(1, fencedSync.QuarantinedCount);
+        Assert.Equal(2, fencedSync.QuarantinedCount);
         Assert.Equal("DEVICE_REVOKED_FENCED", fencedSync.ErrorCode);
 
         // Local cashier is now LOCKED from further offline mutations!

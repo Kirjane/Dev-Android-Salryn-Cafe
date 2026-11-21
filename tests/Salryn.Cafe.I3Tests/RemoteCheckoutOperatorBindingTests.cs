@@ -88,18 +88,14 @@ public sealed class RemoteCheckoutOperatorBindingTests
         Assert.Equal(0, fx.CountSales());
     }
 
-    // S2 consumer contract against disposable fixtures only. The Integrator owns
-    // the actual additive migration and its retained-upgrade proofs.
+    // Verify the actual canonical migration; tests must not repair missing production schema.
     internal static void EnsureOperatorColumn(I3TestDatabaseFixture fx)
     {
         using var connection = fx.ConnectionFactory.CreateConnection();
         connection.Open();
         using var probe = connection.CreateCommand();
         probe.CommandText = "SELECT COUNT(*) FROM pragma_table_info('remote_pos_checkout_requests') WHERE name = 'operator_user_id';";
-        if (Convert.ToInt64(probe.ExecuteScalar()) != 0) return;
-        using var alter = connection.CreateCommand();
-        alter.CommandText = "ALTER TABLE remote_pos_checkout_requests ADD COLUMN operator_user_id TEXT NULL;";
-        alter.ExecuteNonQuery();
+        Assert.Equal(1L, Convert.ToInt64(probe.ExecuteScalar()));
     }
 
     private static RemotePosCheckoutService CreateService(I3TestDatabaseFixture fx)
