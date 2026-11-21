@@ -27,6 +27,7 @@ public sealed class MobilePushReceiptBoundaryTests
         Assert.False(outcome.IsSuccess);
         Assert.Equal("ERR_SYNC_ACK_MISMATCH", outcome.ErrorCode);
         Assert.Empty(outcome.AppliedOperationIds);
+        Assert.Empty(outcome.Resolutions);
     }
 
     [Fact]
@@ -53,6 +54,7 @@ public sealed class MobilePushReceiptBoundaryTests
         Assert.False(outcome.IsSuccess);
         Assert.Equal("ERR_SYNC_ACK_MISMATCH", outcome.ErrorCode);
         Assert.Empty(outcome.AppliedOperationIds);
+        Assert.Empty(outcome.Resolutions);
     }
 
     [Fact]
@@ -67,6 +69,7 @@ public sealed class MobilePushReceiptBoundaryTests
         Assert.False(outcome.IsSuccess);
         Assert.Equal("ERR_SYNC_NOT_APPLIED", outcome.ErrorCode);
         Assert.Empty(outcome.AppliedOperationIds);
+        Assert.Empty(outcome.Resolutions);
         // No canonical sales or projections are asserted by this HTTP-only fixture.
     }
 
@@ -134,6 +137,7 @@ public sealed class MobilePushReceiptBoundaryTests
         var outcome = await Transport(http, device, tenant, store).PushBatchAsync([envelope]);
         Assert.True(outcome.IsSuccess);
         Assert.Equal(envelope.OperationId, Assert.Single(outcome.AppliedOperationIds));
+        Assert.Equal(envelope.OperationId, Assert.Single(outcome.Resolutions).OperationId);
     }
 
     private static string ResolutionReply(params (Guid Id, string Status)[] items) =>

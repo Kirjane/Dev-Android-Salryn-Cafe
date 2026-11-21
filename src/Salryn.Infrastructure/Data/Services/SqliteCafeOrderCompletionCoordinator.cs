@@ -71,6 +71,15 @@ public sealed class SqliteCafeOrderCompletionCoordinator : SqliteRepositoryBase
                         "C9-linked Sale completion requires Booking.Fulfill authority."));
             }
 
+            // Recheck credit authority before both posting and replaying a retained operation.
+            if (mutation.Payments.Any(payment => payment.Method == PaymentMethod.AccountsReceivable && payment.AmountCents > 0)
+                && !HasPermission(connection, transaction, mutation.ActorUserId, SalrynPermissions.ReceivablesCreateCreditSale))
+            {
+                transaction.Rollback();
+                return Result<CafeOrderCompletionResult>.Fail(Error.Forbidden(
+                    "CafeFinancial.CreditSalePermissionRequired", "Credit sales require Receivables.CreateCreditSale."));
+            }
+
             Result<CafeOrderCompletionResult>? replay =
                 TryReplay(connection, transaction, mutation);
             if (replay is not null)

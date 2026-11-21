@@ -204,6 +204,17 @@ public static class CentralSyncEndpoints
             return ToResult(service.GetBootstrap(auth.Value, storeId));
         });
 
+        api.MapGet("/cafe/menu/publication", (HttpContext http, Guid storeId, CentralSyncService service) =>
+        {
+            var auth = AuthenticateDevice(http, service, allowRevokedForQuarantinePush: false);
+            return auth.Value is null ? ToResult(auth) : ToResult(service.GetMenuPublication(auth.Value, storeId));
+        });
+        api.MapGet("/cafe/recipes/publication", (HttpContext http, Guid storeId, CentralSyncService service) =>
+        {
+            var auth = AuthenticateDevice(http, service, allowRevokedForQuarantinePush: false);
+            return auth.Value is null ? ToResult(auth) : ToResult(service.GetRecipePublication(auth.Value, storeId));
+        });
+
         api.MapPost("/push", (HttpContext http, PushOperationsRequest req, CentralSyncService service) =>
         {
             ServiceOutcome<AuthenticatedDeviceContext> auth = AuthenticateDevice(http, service, allowRevokedForQuarantinePush: true);

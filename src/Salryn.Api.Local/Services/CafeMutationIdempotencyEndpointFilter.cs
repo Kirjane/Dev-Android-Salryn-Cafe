@@ -1,4 +1,6 @@
+using System.Collections;
 using System.Reflection;
+using Salryn.Core.Services.Licensing;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -83,6 +85,28 @@ internal sealed class CafeMutationIdempotencyEndpointFilter : IEndpointFilter
                     new { code = "Auth.OperatorPermissionsChanged", error = "Operator permissions changed; sign in again." },
                     statusCode: StatusCodes.Status403Forbidden);
             }
+        }
+
+        // Canonical order completion must retain checkout's license boundary before
+        // either a new financial write or a cached financial response is returned.
+        if (session is not null && httpContext.GetEndpoint()?.Metadata.GetOrderedMetadata<string>()
+                .Contains(CafeMutationIdempotencyGuard.CanonicalCompletionMetadata) == true)
+        {
+            var licensing = httpContext.RequestServices.GetRequiredService<ILocalLicenseEnforcementService>();
+            if (await ApiLicenseGuard.RequireLicensedFeatureAsync(licensing, LicenseFeatures.Pos, httpContext.RequestAborted)
+                    .ConfigureAwait(false) is IResult licenseDenied)
+                return licenseDenied;
+            bool hasAr = context.Arguments.Where(arg => arg is not null && !IsFrameworkArgument(arg))
+                .Select(arg => arg!.GetType().GetProperty("Payments")?.GetValue(arg)).OfType<IEnumerable>()
+                .SelectMany(payments => payments.Cast<object>())
+                .Any(payment => Enum.TryParse<PaymentMethod>(payment.GetType().GetProperty("Method")?.GetValue(payment)?.ToString(),
+                    true, out var method) && method == PaymentMethod.AccountsReceivable);
+            if (hasAr && LocalApiPermissionGuards.RequirePermission(httpContext, sessions!, LocalApiPermissions.ReceivablesCreateCreditSale)
+                    is IResult creditDenied)
+                return creditDenied;
+            if (hasAr && await ApiLicenseGuard.RequireLicensedFeatureAsync(licensing, LicenseFeatures.ReceivablesUtangLedger,
+                    httpContext.RequestAborted).ConfigureAwait(false) is IResult arLicenseDenied)
+                return arLicenseDenied;
         }
 
         Guid actorUserId = session?.UserId ?? Guid.Empty;

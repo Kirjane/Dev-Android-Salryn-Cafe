@@ -848,6 +848,38 @@ public sealed partial class CentralSyncService
 
     // ==================== SYNC: BOOTSTRAP, PUSH, PULL ====================
 
+    public ServiceOutcome<Salryn.Core.Models.MenuPublicationSnapshot> GetMenuPublication(AuthenticatedDeviceContext device, Guid storeId)
+    {
+        if (!_options.EnableCanonicalDomainProcessing)
+            return ServiceOutcome<Salryn.Core.Models.MenuPublicationSnapshot>.Fail(503, "ERR_BOOTSTRAP_DOMAIN_SNAPSHOT_UNAVAILABLE", "Canonical Cafe publications are unavailable.");
+        if (storeId != device.StoreId || device.StoreId != _options.CanonicalStoreId || device.TenantId != _options.CanonicalTenantId)
+            return ServiceOutcome<Salryn.Core.Models.MenuPublicationSnapshot>.Fail(403, "ERR_CANONICAL_AUTHORITY_SCOPE", "Publication is outside the approved device scope.");
+        var store = new Salryn.Infrastructure.Data.Repositories.Menu.SqliteMenuCatalogStore(
+            new Salryn.Infrastructure.Data.SqliteConnectionFactory(_options.DatabasePath));
+        var result = store.GetCurrentPublication();
+        if (result.IsFailure || result.Value is null)
+            return ServiceOutcome<Salryn.Core.Models.MenuPublicationSnapshot>.Fail(503, "ERR_MENU_PUBLICATION_UNAVAILABLE", "Publish a Cafe menu before bootstrapping a cashier.");
+        if (result.Value.StoreId != storeId)
+            return ServiceOutcome<Salryn.Core.Models.MenuPublicationSnapshot>.Fail(403, "ERR_CANONICAL_AUTHORITY_SCOPE", "Publication store does not match device authority.");
+        return ServiceOutcome<Salryn.Core.Models.MenuPublicationSnapshot>.Ok(result.Value);
+    }
+
+    public ServiceOutcome<Salryn.Core.Models.RecipeBookPublicationSnapshot> GetRecipePublication(AuthenticatedDeviceContext device, Guid storeId)
+    {
+        if (!_options.EnableCanonicalDomainProcessing)
+            return ServiceOutcome<Salryn.Core.Models.RecipeBookPublicationSnapshot>.Fail(503, "ERR_BOOTSTRAP_DOMAIN_SNAPSHOT_UNAVAILABLE", "Canonical Cafe publications are unavailable.");
+        if (storeId != device.StoreId || device.StoreId != _options.CanonicalStoreId || device.TenantId != _options.CanonicalTenantId)
+            return ServiceOutcome<Salryn.Core.Models.RecipeBookPublicationSnapshot>.Fail(403, "ERR_CANONICAL_AUTHORITY_SCOPE", "Publication is outside the approved device scope.");
+        var store = new Salryn.Infrastructure.Data.Repositories.Ingredients.SqliteIngredientRecipeStore(
+            new Salryn.Infrastructure.Data.SqliteConnectionFactory(_options.DatabasePath));
+        var result = store.GetCurrentPublication();
+        if (result.IsFailure || result.Value is null)
+            return ServiceOutcome<Salryn.Core.Models.RecipeBookPublicationSnapshot>.Fail(503, "ERR_RECIPE_PUBLICATION_UNAVAILABLE", "Publish Cafe recipes before bootstrapping a cashier.");
+        if (result.Value.StoreId != storeId)
+            return ServiceOutcome<Salryn.Core.Models.RecipeBookPublicationSnapshot>.Fail(403, "ERR_CANONICAL_AUTHORITY_SCOPE", "Publication store does not match device authority.");
+        return ServiceOutcome<Salryn.Core.Models.RecipeBookPublicationSnapshot>.Ok(result.Value);
+    }
+
     public ServiceOutcome<BootstrapResponseDto> GetBootstrap(AuthenticatedDeviceContext device, Guid requestedStoreId)
     {
         if (requestedStoreId != device.StoreId)

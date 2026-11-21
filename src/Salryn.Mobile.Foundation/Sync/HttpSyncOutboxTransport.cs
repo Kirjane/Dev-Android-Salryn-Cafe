@@ -18,7 +18,11 @@ public sealed record MobilePushOutcome(
     IReadOnlyList<Guid> AppliedOperationIds,
     IReadOnlyList<Guid> QuarantinedOperationIds,
     string? ErrorCode,
-    string? ErrorMessage);
+    string? ErrorMessage)
+{
+    // Exact validated Central receipts; IDs alone cannot retire durable client evidence.
+    public IReadOnlyList<SyncOperationFinalResolutionV1> Resolutions { get; init; } = [];
+}
 
 public sealed record MobilePullOutcome(
     bool IsSuccess,
@@ -204,7 +208,10 @@ public sealed class HttpSyncOutboxTransport : IP0OutboxTransport
                 allApplied, false, false, dto.ServerEpoch,
                 applied, Array.Empty<Guid>(),
                 allApplied ? null : "ERR_SYNC_NOT_APPLIED",
-                allApplied ? null : "Central received operations without applying all business effects; retain unapplied outbox evidence.");
+                allApplied ? null : "Central received operations without applying all business effects; retain unapplied outbox evidence.")
+            {
+                Resolutions = dto.Results.Where(r => r.Resolution is not null).Select(r => r.Resolution!).ToArray()
+            };
         }
 
         if (resp.StatusCode == HttpStatusCode.Forbidden)

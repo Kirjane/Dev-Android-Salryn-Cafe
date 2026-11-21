@@ -250,6 +250,22 @@ public static class LocalApiApplicationFactory
             });
         }
 
+        // The Cafe workstation is served from its own bundle under /cafe/.
+        // Keep API requests on this Host origin and its existing authorization boundary.
+        string? cafeDist = new[] { Path.Combine(AppContext.BaseDirectory, "cafe-dist") }
+            .Concat(WebDistCandidateRoots().Select(root => Path.Combine(root, "apps", "cafe-web", "dist")))
+            .FirstOrDefault(path => File.Exists(Path.Combine(path, "index.html")));
+        if (options.EnableStaticWebAssets && cafeDist is not null)
+        {
+            var cafeProvider = new PhysicalFileProvider(cafeDist);
+            app.UseStaticFiles(new StaticFileOptions { FileProvider = cafeProvider, RequestPath = "/cafe" });
+            app.MapGet("/cafe/", (HttpContext context) =>
+            {
+                WebDistDiagnostics.ApplyIndexHtmlNoCacheHeaders(context.Response);
+                return Results.File(Path.Combine(cafeDist, "index.html"), "text/html");
+            });
+        }
+
         app.MapGet("/api/system/web-dist", (HttpContext httpContext) =>
         {
             if (LocalApiLocalAccessGuard.RequireLoopbackOperatorRequest(httpContext) is IResult localOnly)
@@ -431,8 +447,7 @@ public static class LocalApiApplicationFactory
         app.MapLocalHostShiftEndpoints();
         app.MapLocalHostCheckoutEndpoints();
         app.MapLocalAccountsReceivableEndpoints();
-        app.MapLocalProcureToPayEndpoints();
-        app.MapLocalCustomerOrdersAndQuotationsEndpoints();
+        app.MapLocalCafeDomainEndpoints();
         app.MapLocalReceiptPrinterEndpoints();
         app.MapLocalUserAdminEndpoints();
         app.MapRemoteReadOnlyEndpoints();

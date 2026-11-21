@@ -1,9 +1,9 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { WorkstationApp } from "./WorkstationApp";
+import { LiveCafeWorkstation } from "./LiveCafeWorkstation";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <WorkstationApp />
+    <LiveCafeWorkstation />
   </StrictMode>,
 );
