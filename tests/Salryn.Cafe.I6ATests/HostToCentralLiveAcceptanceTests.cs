@@ -122,4 +122,78 @@ public sealed class HostToCentralLiveAcceptanceTests
             Assert.NotEqual(Guid.Empty, tenantId);
         }
     }
+
+    [Fact]
+    public async Task LiveHttpsHostToCentral_ConflictingPayloadReuseIsRejectedAndStaleEpochIsFenced()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "live-host-central-conflict-" + Guid.NewGuid().ToString("N"));
+        C4ProofDatabase target = C4ProofDatabase.Create(root);
+        target.Execute(
+            "UPDATE users SET password_hash=$hash WHERE id=$id;",
+            ("$hash", SalrynPasswordHasher.HashPassword(CanonicalDomainTransactionTests.Password).Value),
+            ("$id", C4ProofIds.ActorUserId.ToString("D")));
+
+        using var host = new CentralSyncTestHost(target.Paths.DatabasePath, canonical: true, canonicalStore: C4ProofIds.StoreId);
+        using HttpClient admin = host.CreateHttpsClient();
+        string adminToken = await host.LoginAsAdminAsync(admin);
+        using EnrolledDeviceClient device = await host.EnrollApproveAndAuthenticateDeviceAsync(
+            admin, adminToken, "Live Conflict & Epoch Terminal");
+
+        var context = new AuthenticatedDeviceContext(
+            device.DeviceId, host.TenantId, host.StoreId, "Salryn.Cafe", "OfflineAndroidCashier", "Active", "synthetic");
+        SyncOperationEnvelopeV1 original = CanonicalDomainTransactionTests.SaleEnvelope(context);
+
+        HttpResponseMessage loginResp = await device.Http.PostAsJsonAsync(
+            "/api/sync/v1/operators/login",
+            new OperatorLoginRequest("c4-proof", CanonicalDomainTransactionTests.Password));
+        Assert.Equal(HttpStatusCode.OK, loginResp.StatusCode);
+        OperatorLoginResponse login = (await loginResp.Content.ReadFromJsonAsync<OperatorLoginResponse>())!;
+        device.Http.DefaultRequestHeaders.Add(CentralSyncEndpoints.OperatorTokenHeader, login.OperatorToken);
+
+        // 1. Original canonical sale succeeds
+        HttpResponseMessage first = await device.Http.PostAsJsonAsync(
+            "/api/sync/v1/push",
+            new PushOperationsRequest(1, [original]));
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM sales;"));
+
+        // 2. Reusing the exact same OperationId with an altered payload MUST be rejected
+        SyncOperationEnvelopeV1 tampered = original with { PayloadJson = original.PayloadJson.Replace("500", "999", StringComparison.Ordinal) };
+        HttpResponseMessage conflict = await device.Http.PostAsJsonAsync(
+            "/api/sync/v1/push",
+            new PushOperationsRequest(1, [tampered]));
+        if (conflict.StatusCode == HttpStatusCode.OK)
+        {
+            PushOperationsResponse conflictBody = (await conflict.Content.ReadFromJsonAsync<PushOperationsResponse>())!;
+            Assert.False(Assert.Single(conflictBody.Results).Resolution.IsApplied);
+        }
+        else
+        {
+            Assert.True(
+                conflict.StatusCode is HttpStatusCode.Conflict or HttpStatusCode.BadRequest,
+                $"Expected 409/400 tampered payload rejection, got {(int)conflict.StatusCode}");
+        }
+        Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM sales;"));
+        Assert.Equal(500L, target.ScalarLong("SELECT SUM(total_cents) FROM sales;"));
+
+        // 3. Stale epoch push is fenced after server epoch advances
+        target.Execute("UPDATE sync_server_state SET server_epoch = server_epoch + 1;");
+        SyncOperationEnvelopeV1 nextOp = SyncProtocolV1.CreateEnvelope(
+            deviceId: device.DeviceId,
+            storeId: host.StoreId,
+            actorUserId: C4ProofIds.ActorUserId,
+            localSequence: 2,
+            operationType: CafeDeliverySyncContract.DeliveryConfiguredV1,
+            schemaVersion: 1,
+            aggregateId: Guid.NewGuid(),
+            baseVersion: null,
+            occurredAtLocal: DateTimeOffset.UtcNow,
+            payloadJson: "{\"delivery\":\"stale-epoch\"}");
+        HttpResponseMessage fenced = await device.Http.PostAsJsonAsync(
+            "/api/sync/v1/push",
+            new PushOperationsRequest(1, [nextOp]));
+        Assert.True(
+            fenced.StatusCode is HttpStatusCode.Conflict or HttpStatusCode.Forbidden,
+            $"Expected 409/403 epoch fence, got {(int)fenced.StatusCode}");
+    }
 }
