@@ -269,6 +269,134 @@ public sealed class HostToCentralLiveAcceptanceTests
         Assert.True(Assert.Single(thirdBody.Results).IsDuplicateReplay);
         Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM sales;"));
         Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed;"));
+
+        // 5. Nox 6003491961 Finding A: immutable transition audit retained the prior failure.
+        AssertSingleNeedsReviewTransition(target, saleEnvelope, firstResult.Resolution, device.DeviceId, expectedFeedSeq: 1L);
+        host.Dispose();
+        AssertTransitionAuditImmutableAfterDisposal(target, saleEnvelope);
+    }
+
+    [Fact]
+    public async Task NoxFindingB_ConcurrentReplayAfterPrerequisiteRestored_AppliesExactlyOnce()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "nox-b-concurrent-" + Guid.NewGuid().ToString("N"));
+        C4ProofDatabase target = C4ProofDatabase.Create(root);
+        target.Execute(
+            "UPDATE users SET password_hash=$hash WHERE id=$id;",
+            ("$hash", SalrynPasswordHasher.HashPassword(CanonicalDomainTransactionTests.Password).Value),
+            ("$id", C4ProofIds.ActorUserId.ToString("D")));
+        target.Execute("DELETE FROM cashier_sessions WHERE id=$id;", ("$id", C4ProofIds.CashierSessionId.ToString("D")));
+
+        var host = new CentralSyncTestHost(target.Paths.DatabasePath, canonical: true, canonicalStore: C4ProofIds.StoreId);
+        using HttpClient admin = host.CreateHttpsClient();
+        string adminToken = await host.LoginAsAdminAsync(admin);
+        using EnrolledDeviceClient device = await host.EnrollApproveAndAuthenticateDeviceAsync(
+            admin, adminToken, "Nox B Concurrent Replay Terminal");
+        var context = new AuthenticatedDeviceContext(
+            device.DeviceId, host.TenantId, host.StoreId, "Salryn.Cafe", "OfflineAndroidCashier", "Active", "synthetic");
+        SyncOperationEnvelopeV1 saleEnvelope = CanonicalDomainTransactionTests.SaleEnvelope(context);
+
+        HttpResponseMessage loginResp = await device.Http.PostAsJsonAsync(
+            "/api/sync/v1/operators/login",
+            new OperatorLoginRequest("c4-proof", CanonicalDomainTransactionTests.Password));
+        Assert.Equal(HttpStatusCode.OK, loginResp.StatusCode);
+        OperatorLoginResponse login = (await loginResp.Content.ReadFromJsonAsync<OperatorLoginResponse>())!;
+        device.Http.DefaultRequestHeaders.Add(CentralSyncEndpoints.OperatorTokenHeader, login.OperatorToken);
+
+        HttpResponseMessage first = await device.Http.PostAsJsonAsync("/api/sync/v1/push", new PushOperationsRequest(1, [saleEnvelope]));
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        PushOperationResultDto firstResult = Assert.Single((await first.Content.ReadFromJsonAsync<PushOperationsResponse>())!.Results);
+        Assert.Equal(SaleCommittedV1Contract.NeedsReview, firstResult.Resolution.Status);
+
+        target.Execute(
+            """
+            INSERT INTO cashier_sessions (id, user_id, opened_at, opening_cash_cents, status)
+            VALUES ($id, $userId, '2026-09-22T03:00:00Z', 10000, 1);
+            """,
+            ("$id", C4ProofIds.CashierSessionId.ToString("D")),
+            ("$userId", C4ProofIds.ActorUserId.ToString("D")));
+
+        // Overlapping authenticated retries of the same immutable operation, released together.
+        const int Parallel = 8;
+        using var gate = new SemaphoreSlim(0, Parallel);
+        Task<HttpResponseMessage>[] inflight = Enumerable.Range(0, Parallel).Select(async _ =>
+        {
+            await gate.WaitAsync();
+            return await device.Http.PostAsJsonAsync("/api/sync/v1/push", new PushOperationsRequest(1, [saleEnvelope]));
+        }).ToArray();
+        gate.Release(Parallel);
+        HttpResponseMessage[] responses = await Task.WhenAll(inflight);
+
+        List<PushOperationResultDto> results = [];
+        foreach (HttpResponseMessage r in responses)
+        {
+            Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+            results.Add(Assert.Single((await r.Content.ReadFromJsonAsync<PushOperationsResponse>())!.Results));
+        }
+
+        // Exactly one request performed the transition; all others observe the cached Applied result.
+        Assert.Single(results, r => !r.IsDuplicateReplay);
+        Assert.All(results, r =>
+        {
+            Assert.True(r.Resolution.IsApplied, r.Resolution.ResultCode);
+            Assert.Equal(firstResult.Resolution.ReceivedSequence, r.Resolution.ReceivedSequence);
+            Assert.Equal(1L, r.ChangeFeedSequence);
+        });
+        Assert.Single(results.Select(r => r.Resolution.ResultCode).Distinct());
+
+        Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM sales;"));
+        Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed;"));
+        Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM sync_inbox_operations;"));
+        AssertSingleNeedsReviewTransition(target, saleEnvelope, firstResult.Resolution, device.DeviceId, expectedFeedSeq: 1L);
+        long stockAfterBurst = target.ScalarLong("SELECT COUNT(*) FROM stock_movements;");
+
+        // Subsequent sequential replay: consistent cached response, no further financial/feed/audit effect.
+        HttpResponseMessage after = await device.Http.PostAsJsonAsync("/api/sync/v1/push", new PushOperationsRequest(1, [saleEnvelope]));
+        PushOperationResultDto afterResult = Assert.Single((await after.Content.ReadFromJsonAsync<PushOperationsResponse>())!.Results);
+        Assert.True(afterResult.IsDuplicateReplay);
+        Assert.True(afterResult.Resolution.IsApplied);
+        Assert.Equal(firstResult.Resolution.ReceivedSequence, afterResult.Resolution.ReceivedSequence);
+        Assert.Equal(1L, afterResult.ChangeFeedSequence);
+        Assert.Equal(stockAfterBurst, target.ScalarLong("SELECT COUNT(*) FROM stock_movements;"));
+        Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM sales;"));
+
+        // Host disposal (process-level restart of the Central app): durable state retained.
+        host.Dispose();
+        Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM sales;"));
+        Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed;"));
+        AssertTransitionAuditImmutableAfterDisposal(target, saleEnvelope);
+    }
+
+    private static void AssertSingleNeedsReviewTransition(
+        C4ProofDatabase target, SyncOperationEnvelopeV1 env, SyncOperationFinalResolutionV1 original, Guid deviceId, long expectedFeedSeq)
+    {
+        string op = env.OperationId.ToString("D");
+        Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM sync_inbox_status_transitions;"));
+        Assert.Equal(1L, target.ScalarLong(
+            """
+            SELECT COUNT(*) FROM sync_inbox_status_transitions
+            WHERE operation_id=$op AND operation_hash=$hash AND received_sequence=$seq
+              AND previous_status='NeedsReview' AND previous_result_code=$prevCode
+              AND new_status='Applied' AND resolving_device_id=$dev AND resolving_actor_user_id=$actor
+              AND resolution_source='AuthenticatedDeviceReplay' AND change_feed_sequence=$feed
+              AND length(transition_id)=36 AND length(transitioned_at_utc) > 0;
+            """,
+            ("$op", op), ("$hash", env.OperationHash), ("$seq", original.ReceivedSequence),
+            ("$prevCode", original.ResultCode), ("$dev", deviceId.ToString("D")),
+            ("$actor", env.ActorUserId.ToString("D")), ("$feed", expectedFeedSeq)));
+        // Inbox receipt retains its original received sequence.
+        Assert.Equal(original.ReceivedSequence, target.ScalarLong(
+            "SELECT received_sequence FROM sync_inbox_operations WHERE operation_id=$op;", ("$op", op)));
+    }
+
+    private static void AssertTransitionAuditImmutableAfterDisposal(C4ProofDatabase target, SyncOperationEnvelopeV1 env)
+    {
+        Assert.Equal(1L, target.ScalarLong(
+            "SELECT COUNT(*) FROM sync_inbox_status_transitions WHERE operation_id=$op AND previous_status='NeedsReview';",
+            ("$op", env.OperationId.ToString("D"))));
+        Assert.ThrowsAny<Exception>(() => target.Execute("UPDATE sync_inbox_status_transitions SET new_status='Rejected';"));
+        Assert.ThrowsAny<Exception>(() => target.Execute("DELETE FROM sync_inbox_status_transitions;"));
+        Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM sync_inbox_status_transitions WHERE new_status='Applied';"));
     }
 
     [Fact]

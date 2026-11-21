@@ -189,6 +189,41 @@ public sealed class CentralSyncDatabase
                 CREATE INDEX IF NOT EXISTS ix_sync_inbox_store_device_seq
                     ON sync_inbox_operations (tenant_id, store_id, device_id, local_sequence);
 
+                -- Append-only audit of inbox status transitions (Nox review 6003491961 Finding A).
+                -- The inbox row holds the current resolution; this table retains every prior
+                -- status/reason so a NeedsReview -> Applied/Rejected resolution is never lost.
+                CREATE TABLE IF NOT EXISTS sync_inbox_status_transitions (
+                    transition_id TEXT NOT NULL PRIMARY KEY,
+                    tenant_id TEXT NOT NULL,
+                    store_id TEXT NOT NULL,
+                    operation_id TEXT NOT NULL,
+                    operation_hash TEXT NOT NULL,
+                    received_sequence INTEGER NOT NULL,
+                    previous_status TEXT NOT NULL,
+                    previous_result_code TEXT NOT NULL,
+                    previous_result_json TEXT NOT NULL,
+                    previous_resolved_at_utc TEXT NOT NULL,
+                    new_status TEXT NOT NULL,
+                    new_result_code TEXT NOT NULL,
+                    resolving_device_id TEXT NOT NULL,
+                    resolving_actor_user_id TEXT NOT NULL,
+                    resolution_source TEXT NOT NULL,
+                    change_feed_sequence INTEGER NULL,
+                    transitioned_at_utc TEXT NOT NULL,
+                    UNIQUE (tenant_id, store_id, operation_id, previous_status, new_status)
+                );
+
+                CREATE INDEX IF NOT EXISTS ix_sync_inbox_status_transitions_op
+                    ON sync_inbox_status_transitions (tenant_id, store_id, operation_id);
+
+                CREATE TRIGGER IF NOT EXISTS trg_sync_inbox_status_transitions_no_update
+                    BEFORE UPDATE ON sync_inbox_status_transitions
+                    BEGIN SELECT RAISE(ABORT, 'sync_inbox_status_transitions is append-only'); END;
+
+                CREATE TRIGGER IF NOT EXISTS trg_sync_inbox_status_transitions_no_delete
+                    BEFORE DELETE ON sync_inbox_status_transitions
+                    BEGIN SELECT RAISE(ABORT, 'sync_inbox_status_transitions is append-only'); END;
+
                 CREATE TABLE IF NOT EXISTS sync_change_feed (
                     server_sequence INTEGER PRIMARY KEY AUTOINCREMENT,
                     change_id TEXT NOT NULL UNIQUE,

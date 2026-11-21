@@ -1229,7 +1229,46 @@ public sealed partial class CentralSyncService
                                     updateInbox.Parameters.AddWithValue("$tenantId", device.TenantId.ToString("D"));
                                     updateInbox.Parameters.AddWithValue("$storeId", device.StoreId.ToString("D"));
                                     updateInbox.Parameters.AddWithValue("$opId", env.OperationId.ToString("D"));
-                                    updateInbox.ExecuteNonQuery();
+                                    if (updateInbox.ExecuteNonQuery() != 1)
+                                        throw new InvalidOperationException("NeedsReview inbox row vanished during transition.");
+                                }
+
+                                // Same IMMEDIATE transaction as the financial apply + feed append:
+                                // the audit row commits atomically with the resolution or not at all.
+                                using (SqliteCommand audit = conn.CreateCommand())
+                                {
+                                    audit.Transaction = transaction;
+                                    audit.CommandText = """
+                                        INSERT INTO sync_inbox_status_transitions (
+                                            transition_id, tenant_id, store_id, operation_id, operation_hash,
+                                            received_sequence, previous_status, previous_result_code,
+                                            previous_result_json, previous_resolved_at_utc, new_status,
+                                            new_result_code, resolving_device_id, resolving_actor_user_id,
+                                            resolution_source, change_feed_sequence, transitioned_at_utc)
+                                        VALUES (
+                                            $tid, $tenantId, $storeId, $opId, $opHash,
+                                            $recvSeq, $prevStatus, $prevCode,
+                                            $prevJson, $prevResolvedAt, $newStatus,
+                                            $newCode, $deviceId, $actorId,
+                                            'AuthenticatedDeviceReplay', $feedSeq, $now);
+                                        """;
+                                    audit.Parameters.AddWithValue("$tid", Guid.CreateVersion7().ToString("D"));
+                                    audit.Parameters.AddWithValue("$tenantId", device.TenantId.ToString("D"));
+                                    audit.Parameters.AddWithValue("$storeId", device.StoreId.ToString("D"));
+                                    audit.Parameters.AddWithValue("$opId", env.OperationId.ToString("D"));
+                                    audit.Parameters.AddWithValue("$opHash", existingHash);
+                                    audit.Parameters.AddWithValue("$recvSeq", existingReceivedSeq);
+                                    audit.Parameters.AddWithValue("$prevStatus", existingStatus);
+                                    audit.Parameters.AddWithValue("$prevCode", existingResultCode);
+                                    audit.Parameters.AddWithValue("$prevJson", existingResultJson);
+                                    audit.Parameters.AddWithValue("$prevResolvedAt", existingResolvedAt.ToString("O"));
+                                    audit.Parameters.AddWithValue("$newStatus", retried.Status);
+                                    audit.Parameters.AddWithValue("$newCode", retried.Code);
+                                    audit.Parameters.AddWithValue("$deviceId", device.DeviceId.ToString("D"));
+                                    audit.Parameters.AddWithValue("$actorId", env.ActorUserId.ToString("D"));
+                                    audit.Parameters.AddWithValue("$feedSeq", (object?)retriedFeedSeq ?? DBNull.Value);
+                                    audit.Parameters.AddWithValue("$now", now.ToString("O"));
+                                    audit.ExecuteNonQuery();
                                 }
 
                                 SyncOperationFinalResolutionV1 resolved = new(
