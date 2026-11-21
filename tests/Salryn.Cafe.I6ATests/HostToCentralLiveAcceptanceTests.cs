@@ -400,7 +400,22 @@ public sealed class HostToCentralLiveAcceptanceTests
     }
 
     [Fact]
-    public async Task NoxP1_CreditSaleV2_RejectedWhenCreditSalePermissionRevokedEvenWithSalesCreate()
+    public Task NoxP1_CreditSaleV2_RejectedWhenCreditSalePermissionRevokedEvenWithSalesCreate()
+        => VerifyCreditSalePermissionAsync(version: 2, authorized: false);
+
+    [Fact]
+    public Task NoxGate3_CreditSaleV1_RejectedWhenCreditSalePermissionRevokedEvenWithSalesCreate()
+        => VerifyCreditSalePermissionAsync(version: 1, authorized: false);
+
+    [Fact]
+    public Task NoxGate3_CreditSaleV1_AuthorizedPositive_AppliesWithCreditSalePermission()
+        => VerifyCreditSalePermissionAsync(version: 1, authorized: true);
+
+    [Fact]
+    public Task NoxGate3_CreditSaleV2_AuthorizedPositive_AppliesWithCreditSalePermission()
+        => VerifyCreditSalePermissionAsync(version: 2, authorized: true);
+
+    private static async Task VerifyCreditSalePermissionAsync(int version, bool authorized)
     {
         string root = Path.Combine(Path.GetTempPath(), "nox-p1-creditsale-" + Guid.NewGuid().ToString("N"));
         C4ProofDatabase target = C4ProofDatabase.Create(root);
@@ -414,8 +429,9 @@ public sealed class HostToCentralLiveAcceptanceTests
         using EnrolledDeviceClient device = await host.EnrollApproveAndAuthenticateDeviceAsync(
             admin, adminToken, "Nox P1 Credit Sale Guard Terminal");
 
-        // Revoke Receivables.CreateCreditSale AFTER host initialization while keeping Sales.Create intact
-        target.Execute("DELETE FROM role_permissions WHERE permission='Receivables.CreateCreditSale';");
+        // Revoke credit authority after initialization while retaining Sales.Create.
+        if (!authorized)
+            target.Execute("DELETE FROM role_permissions WHERE permission='Receivables.CreateCreditSale';");
 
         HttpResponseMessage loginResp = await device.Http.PostAsJsonAsync(
             "/api/sync/v1/operators/login",
@@ -428,9 +444,16 @@ public sealed class HostToCentralLiveAcceptanceTests
             device.DeviceId, host.TenantId, host.StoreId, "Salryn.Cafe", "OfflineAndroidCashier", "Active", "synthetic");
         SyncOperationEnvelopeV1 baseSale = CanonicalDomainTransactionTests.SaleEnvelope(context);
         SaleCommittedV1 parsedBase = SaleCommittedV1CanonicalJson.Parse(baseSale.PayloadJson).Payload!;
+        Guid customerId = Guid.NewGuid();
+        target.Execute(
+            """
+            INSERT INTO customers(id, full_name, is_active, created_by_user_id, created_at, updated_at)
+            VALUES($id, 'Synthetic Gate 3 Customer', 1, $actor, '2026-11-21T00:00:00Z', '2026-11-21T00:00:00Z');
+            """,
+            ("$id", customerId.ToString("D")), ("$actor", C4ProofIds.ActorUserId.ToString("D")));
         SaleCommittedV1 arSaleEvidence = parsedBase with
         {
-            Sale = parsedBase.Sale with { CustomerId = Guid.NewGuid(), AmountPaidCents = parsedBase.Sale.TotalCents, BalanceDueCents = parsedBase.Sale.TotalCents },
+            Sale = parsedBase.Sale with { CustomerId = customerId, PaymentStatus = SaleCommittedV1Contract.PaymentStatusCredit, AmountPaidCents = parsedBase.Sale.TotalCents, BalanceDueCents = parsedBase.Sale.TotalCents },
             Payments = parsedBase.Payments
                 .Select(p => p with { Method = nameof(Salryn.Core.Models.PaymentMethod.AccountsReceivable) })
                 .ToArray()
@@ -486,12 +509,12 @@ public sealed class HostToCentralLiveAcceptanceTests
             storeId: host.StoreId,
             actorUserId: C4ProofIds.ActorUserId,
             localSequence: 1,
-            operationType: SaleCommittedV2Contract.OperationType,
-            schemaVersion: SaleCommittedV2Contract.SchemaVersion,
+            operationType: version == 1 ? SaleCommittedV1Contract.OperationType : SaleCommittedV2Contract.OperationType,
+            schemaVersion: version == 1 ? SaleCommittedV1Contract.SchemaVersion : SaleCommittedV2Contract.SchemaVersion,
             aggregateId: arSaleEvidence.Sale.Id,
             baseVersion: null,
             occurredAtLocal: now,
-            payloadJson: SaleCommittedV2CanonicalJson.Serialize(v2));
+            payloadJson: version == 1 ? SaleCommittedV1CanonicalJson.Serialize(arSaleEvidence) : SaleCommittedV2CanonicalJson.Serialize(v2));
 
         HttpResponseMessage push = await device.Http.PostAsJsonAsync(
             "/api/sync/v1/push",
@@ -499,10 +522,35 @@ public sealed class HostToCentralLiveAcceptanceTests
         Assert.Equal(HttpStatusCode.OK, push.StatusCode);
         PushOperationsResponse body = (await push.Content.ReadFromJsonAsync<PushOperationsResponse>())!;
         PushOperationResultDto result = Assert.Single(body.Results);
-        Assert.False(result.Resolution.IsApplied);
-        Assert.Equal(SaleCommittedV1Contract.Rejected, result.Resolution.Status);
-        Assert.Equal("ERR_CANONICAL_OPERATOR_AUTHORITY", result.Resolution.ResultCode);
-        Assert.Equal(0L, target.ScalarLong("SELECT COUNT(*) FROM sales;"));
-        Assert.Equal(0L, target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed;"));
+        Assert.Equal(authorized, result.Resolution.IsApplied);
+        Assert.Equal(authorized && version == 2 ? 1L : 0L,
+            target.ScalarLong("SELECT COUNT(*) FROM cafe_sale_financial_decisions;"));
+        if (!authorized)
+        {
+            Assert.Equal(SaleCommittedV1Contract.Rejected, result.Resolution.Status);
+            Assert.Equal("ERR_CANONICAL_OPERATOR_AUTHORITY", result.Resolution.ResultCode);
+            Assert.Null(result.ChangeFeedSequence);
+        }
+        else
+        {
+            Assert.Equal(1L, result.ChangeFeedSequence);
+            Assert.Equal(500L, target.ScalarLong("SELECT SUM(total_cents) FROM sales;"));
+            Assert.Equal(500L, target.ScalarLong("SELECT SUM(debit_cents) FROM accounts_receivable_entries;"));
+            Assert.Equal(500L, target.ScalarLong("SELECT SUM(balance_after_cents) FROM accounts_receivable_entries;"));
+            Assert.Equal(9000L, target.ScalarLong("SELECT stock_on_hand_x1000 FROM products WHERE sku='C4-PRODUCT';"));
+        }
+        foreach (string table in new[] { "sales", "payments", "accounts_receivable_entries", "stock_movements", "sync_change_feed" })
+            Assert.Equal(authorized ? 1L : 0L, target.ScalarLong($"SELECT COUNT(*) FROM {table};"));
+
+        // Replaying an accepted credit operation must preserve the ledger and stock exactly once.
+        if (authorized)
+        {
+            using HttpResponseMessage replay = await device.Http.PostAsJsonAsync(
+                "/api/sync/v1/push", new PushOperationsRequest(1, [envelope]));
+            Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+            Assert.True(Assert.Single((await replay.Content.ReadFromJsonAsync<PushOperationsResponse>())!.Results).IsDuplicateReplay);
+            foreach (string table in new[] { "sales", "payments", "accounts_receivable_entries", "stock_movements", "sync_change_feed" })
+                Assert.Equal(1L, target.ScalarLong($"SELECT COUNT(*) FROM {table};"));
+        }
     }
 }
