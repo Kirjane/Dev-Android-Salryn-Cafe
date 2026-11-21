@@ -153,7 +153,7 @@ internal static class C11AReportSourceCogsProof
 
         ProofAssert.That(
             fixture.ScalarLong(
-                "SELECT COALESCE(MAX(version),0) FROM schema_migrations;") == 41 &&
+                "SELECT COALESCE(MAX(version),0) FROM schema_migrations;") == 43 &&
             fixture.ScalarLong(
                 "SELECT COUNT(*) FROM schema_migrations WHERE version=40;") == 1 &&
             fixture.ScalarLong(
@@ -165,7 +165,7 @@ internal static class C11AReportSourceCogsProof
                     LOWER(name) LIKE 'cafe_report%'
                     OR LOWER(name) LIKE 'c11_report%');
                 """) == 0,
-            "C11 must remain on Cafe41 with report-owned persistence absent.");
+            "C11 must remain on reconciled Cafe43 with report-owned persistence absent.");
 
         Console.WriteLine(
             "C11A REPORT SOURCE / COGS METHOD GATE: PASS");

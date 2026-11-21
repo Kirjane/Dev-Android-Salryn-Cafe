@@ -35,8 +35,8 @@ static void RunMigrationPermissionFoundation(string root)
     Require(
         plan.Max(x => x.Version) ==
             SalrynDatabaseMigrationCatalog.SupportedMigrationVersion &&
-        SalrynDatabaseMigrationCatalog.SupportedMigrationVersion == 41,
-        "C7 regression must accept reconciled Cafe migration-41 production ceiling.");
+        SalrynDatabaseMigrationCatalog.SupportedMigrationVersion == 43,
+        "C7 regression must accept reconciled Cafe migration-43 production ceiling.");
     Require(plan.Any(x => x.Version == 23), "Cafe migration23 must be present.");
     Require(plan.Any(x => x.Version == 37), "C8 migration 37 must coexist with accepted C7 migration 36.");
     Require(plan.Any(x => x.Version == 38), "C9 migration 38 must coexist with accepted C7 migration 36.");

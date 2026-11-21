@@ -294,11 +294,12 @@ internal static class C11DApiReactSurfaceProof
             CafeMigrationCatalog.CreateCanonicalCafeMigrations();
 
         ProofAssert.That(
-            SalrynDatabaseMigrationCatalog.SupportedMigrationVersion == 41 &&
-            plan.Max(x => x.Version) == 41 &&
+            SalrynDatabaseMigrationCatalog.SupportedMigrationVersion == 43 &&
+            plan.Max(x => x.Version) == 43 &&
             plan.Any(x => x.Version == 23) &&
-            plan.Any(x => x.Version == 40) && plan.Any(x => x.Version == 41),
-            "C11 current surface must preserve Yza39 and reconciled Cafe40/41.");
+            plan.Any(x => x.Version == 40) && plan.Any(x => x.Version == 41) &&
+            plan.Any(x => x.Version == 42) && plan.Any(x => x.Version == 43),
+            "C11 current surface must preserve Yza39 and reconciled Cafe40-43.");
 
         ProofAssert.That(
             !sharedReadModel.Contains("Reports.Manage", StringComparison.Ordinal),

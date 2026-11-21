@@ -274,12 +274,12 @@ internal static class C11CSyncCompletenessMobileProof
 
         ProofAssert.That(
             readiness.IsReady &&
-            readiness.MaxMigrationVersion == 41 &&
+            readiness.MaxMigrationVersion == 43 &&
             readiness.Migration23Present &&
             readiness.RequiredSchemaPresent &&
             mobile.CafeManagementReports is not null &&
-            SalrynDatabaseMigrationCatalog.SupportedMigrationVersion == 41,
-            "MobileProductionComposition must expose shared C11 reporting authority at current migration 41.");
+            SalrynDatabaseMigrationCatalog.SupportedMigrationVersion == 43,
+            "MobileProductionComposition must expose shared C11 reporting authority at current migration 43.");
 
         using var connection =
             mobile.ConnectionFactory.CreateConnection();
