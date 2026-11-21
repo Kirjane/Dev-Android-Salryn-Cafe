@@ -408,6 +408,8 @@ public sealed class MobileProductionComposition
 
     public SqliteConnectionFactory ConnectionFactory { get; }
 
+    public MobileOperatorCredentialEnrollment OperatorCredentials => new(ConnectionFactory);
+
     public DatabaseInitializationOrchestrator DatabaseInitialization { get; }
 
     public IAuthenticationService Authentication { get; }

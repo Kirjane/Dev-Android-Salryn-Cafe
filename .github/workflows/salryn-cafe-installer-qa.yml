@@ -34,6 +34,16 @@ jobs:
           npm run build
           Pop-Location
 
+      - name: Build live Cafe workstation bundle
+        shell: pwsh
+        run: |
+          Push-Location apps/cafe-web
+          npm ci --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+
       - name: Publish Windows Host (Release) and stage installer assets
         shell: pwsh
         run: |
@@ -44,6 +54,9 @@ jobs:
           Copy-Item "assets/branding/*" "$staging/assets/branding/" -Recurse -Force
           New-Item -ItemType Directory -Force -Path "$staging/wwwroot" | Out-Null
           Copy-Item "src/Salryn.App.Web/dist/*" "$staging/wwwroot/" -Recurse -Force
+          New-Item -ItemType Directory -Force -Path "$staging/cafe-dist" | Out-Null
+          Copy-Item "apps/cafe-web/dist/*" "$staging/cafe-dist/" -Recurse -Force
+          if (-not (Test-Path "$staging/cafe-dist/index.html")) { throw "Live Cafe bundle was not staged" }
 
       - name: Compile Salryn-Cafe-Setup.exe with Inno Setup 6
         shell: pwsh
