@@ -112,13 +112,30 @@ public sealed class MobileOperatorCredentialEnrollmentTests
         Assert.Equal(Placeholder, fixture.Scalar("SELECT password_hash FROM users WHERE username='synthetic';"));
     }
 
+    [Fact]
+    public async Task RemoteCurrentPermissions_ReplaceSeededDefaultsWithoutGrantingRevokedCredit()
+    {
+        using var fixture=new CanonicalCashierFixture();
+        var(scope,login)=await Authority(fixture); SetPlaceholder(fixture);
+        login=login with {Permissions=login.Permissions!.Where(permission=>permission!="Receivables.CreateCreditSale").ToArray()};
+        Assert.True(fixture.Runtime.OperatorCredentials.EnrollAfterVerifiedLogin(scope,login,"synthetic",Password,fixture.Now).IsSuccess);
+        var user=(await fixture.Runtime.Authentication.LoginAsync(new LoginRequest("synthetic",Password))).Value;
+        Assert.DoesNotContain("Receivables.CreateCreditSale",user.Permissions);
+        Assert.Equal(login.Permissions!.Order(),user.Permissions.Order());
+    }
+
     private static void SetPlaceholder(CanonicalCashierFixture fixture) =>
         fixture.Execute("UPDATE users SET password_hash='" + Placeholder + "' WHERE username='synthetic';");
 
     private static async Task<(MobileApprovedCredentialScope Scope, MobileVerifiedOperatorLogin Login)> Authority(CanonicalCashierFixture fixture)
     {
         MobileEnrollmentBinding binding = (await new ProtectedMobileEnrollmentReader(fixture.Secrets).ReadAsync())!;
+        using var connection=fixture.Runtime.ConnectionFactory.CreateConnection(); connection.Open();
+        using var command=connection.CreateCommand(); command.CommandText="SELECT u.role_id,p.permission FROM users u JOIN role_permissions p ON p.role_id=u.role_id WHERE u.id=$user;";
+        command.Parameters.AddWithValue("$user",fixture.ActorId.ToString("D"));
+        using var reader=command.ExecuteReader(); Guid role=Guid.Empty; List<string> permissions=[];
+        while(reader.Read()) {role=Guid.Parse(reader.GetString(0));permissions.Add(reader.GetString(1));}
         return (new(binding.DeviceId, binding.TenantId, binding.StoreId, binding.ServerEpoch, true),
-            new(fixture.ActorId, binding.DeviceId, binding.TenantId, binding.StoreId, binding.ServerEpoch, fixture.Now.AddMinutes(10), true));
+            new(fixture.ActorId, binding.DeviceId, binding.TenantId, binding.StoreId, binding.ServerEpoch, fixture.Now.AddMinutes(10), true) {RoleId=role,Permissions=permissions});
     }
 }

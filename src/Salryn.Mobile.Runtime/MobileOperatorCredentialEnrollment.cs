@@ -10,7 +10,11 @@ public sealed record MobileApprovedCredentialScope(Guid DeviceId, Guid TenantId,
     long ServerEpoch, bool IsAuthorized);
 
 public sealed record MobileVerifiedOperatorLogin(Guid UserId, Guid DeviceId, Guid TenantId, Guid StoreId,
-    long ServerEpoch, DateTimeOffset ExpiresAtUtc, bool IsAuthenticated);
+    long ServerEpoch, DateTimeOffset ExpiresAtUtc, bool IsAuthenticated)
+{
+    public Guid RoleId { get; init; }
+    public IReadOnlyList<string>? Permissions { get; init; }
+}
 
 /// <summary>
 /// Persistence boundary, not an online authentication verifier. The trusted connection caller must
@@ -28,6 +32,9 @@ public sealed class MobileOperatorCredentialEnrollment(SqliteConnectionFactory f
         if (approved is null || verified is null || !approved.IsAuthorized || !verified.IsAuthenticated ||
             approved.DeviceId == Guid.Empty || approved.TenantId == Guid.Empty || approved.StoreId == Guid.Empty ||
             approved.ServerEpoch < 1 || verified.UserId == Guid.Empty || verified.ExpiresAtUtc <= nowUtc ||
+            verified.RoleId == Guid.Empty || verified.Permissions is null || verified.Permissions.Count == 0 ||
+            verified.Permissions.Any(permission => string.IsNullOrWhiteSpace(permission) || permission.Length > 128) ||
+            verified.Permissions.Distinct(StringComparer.Ordinal).Count() != verified.Permissions.Count ||
             approved.DeviceId != verified.DeviceId || approved.TenantId != verified.TenantId ||
             approved.StoreId != verified.StoreId || approved.ServerEpoch != verified.ServerEpoch)
             return Denied("Mobile.CredentialAuthorityMismatch", "Current approved device scope and successful Central operator authentication are required.");
@@ -47,11 +54,12 @@ public sealed class MobileOperatorCredentialEnrollment(SqliteConnectionFactory f
         query.Parameters.Clear();
         query.CommandText = """
             SELECT u.password_hash FROM users u
-            WHERE u.id=$user AND u.username=$username COLLATE NOCASE AND u.status=1
+            WHERE u.id=$user AND u.username=$username COLLATE NOCASE AND u.status=1 AND u.role_id=$role
               AND EXISTS(SELECT 1 FROM role_permissions p WHERE p.role_id=u.role_id);
             """;
         query.Parameters.AddWithValue("$user", verified.UserId.ToString("D"));
         query.Parameters.AddWithValue("$username", username.Trim());
+        query.Parameters.AddWithValue("$role", verified.RoleId.ToString("D"));
         string? priorHash = query.ExecuteScalar() as string;
         if (priorHash is null)
             return Denied("Mobile.CredentialOperatorUnavailable", "The authenticated operator must match an active synchronized user with current local permissions.");
@@ -72,6 +80,18 @@ public sealed class MobileOperatorCredentialEnrollment(SqliteConnectionFactory f
         }
         if (prior is null && priorHash != BootstrapPassword)
             return Denied("Mobile.CredentialAlreadyLocal", "Existing local credentials are preserved; only synchronized non-login placeholders may be enrolled.");
+
+        // Offline authority comes from the successful current Central login, not seeded role defaults.
+        query.Parameters.Clear();
+        query.CommandText = "DELETE FROM role_permissions WHERE role_id=$role;";
+        query.Parameters.AddWithValue("$role", verified.RoleId.ToString("D"));
+        query.ExecuteNonQuery();
+        foreach (string permission in verified.Permissions)
+        {
+            query.Parameters.Clear(); query.CommandText="INSERT INTO role_permissions(role_id,permission) VALUES($role,$permission);";
+            query.Parameters.AddWithValue("$role", verified.RoleId.ToString("D"));
+            query.Parameters.AddWithValue("$permission", permission); query.ExecuteNonQuery();
+        }
 
         Result<string> hash = SalrynPasswordHasher.HashPassword(password);
         if (hash.IsFailure) return Result.Fail(hash.ErrorDetail);

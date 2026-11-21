@@ -239,6 +239,9 @@ public sealed partial class SqliteSyncProjectionService
                         change);
                 }
 
+                if (IsCafeShiftAppliedChange(change))
+                    return ProjectCafeShift(context, storeId, localDeviceId, state, expectedSequence, change);
+
                 if (IsCafeInventoryAppliedChange(change))
                 {
                     return ProjectCafeInventory(

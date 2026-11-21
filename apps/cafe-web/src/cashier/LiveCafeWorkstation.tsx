@@ -3,14 +3,14 @@ import "./liveCafe.css";
 
 type Session = { isAuthenticated: boolean; user?: { userId: string; displayName: string; permissions: string[] } };
 type Item = { productId: string; name: string; sellingPriceCents: number; isTemporarilyUnavailable: boolean };
-type Menu = { items: Item[]; variants: {variantId: string; productId: string; name: string; isTemporarilyUnavailable: boolean}[];
+type Menu = { storeId: string; items: Item[]; variants: {variantId: string; productId: string; name: string; isTemporarilyUnavailable: boolean}[];
   modifierGroups: {groupId: string; name: string; minSelections: number; maxSelections: number}[];
   modifierOptions: {optionId: string; groupId: string; name: string}[];
   itemModifierGroups: {ownerId: string; groupId: string}[]; variantModifierGroups: {ownerId: string; groupId: string}[] };
 type Line = { orderLineId: string; productId: string; variantId: string | null; modifierOptionIds: string[]; quantityX1000: number; displayOrder: number };
 type Order = { orderId: string; orderVersion: number; state: string; serviceReference: string | null };
 type Detail = { order: Order; currentRevision: { lines: { lineTotalCents: number; productNameSnapshot: string }[] } };
-type Pending = { actor: string; path: string; body: object; rejection?: string };
+type Pending = { storeId: string; actor: string; path: string; body: object; rejection?: string };
 class HostError extends Error { constructor(message: string, readonly status: number, readonly code?: string) { super(message); } }
 const pendingKey = "salryn.cafe.host.pending.v1";
 const money = (cents: number) => new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(cents / 100);
@@ -63,14 +63,16 @@ export function LiveCafeWorkstation() {
   async function dispatch(path: string, body: object) {
     if (!session.user) throw new Error("Sign in before sending a request.");
     if (pending) throw new Error("Retry the retained request before creating another action.");
-    const intent = { actor: session.user.userId, path, body };
+    if (!menu?.storeId) throw new Error("A Host menu with store authority is required before submitting actions.");
+    const intent = { storeId:menu.storeId, actor: session.user.userId, path, body };
     localStorage.setItem(pendingKey, JSON.stringify(intent)); setPending(intent);
     await send(intent);
   }
   async function send(intent: Pending) {
     if (intent.actor !== session.user?.userId) throw new Error("The original operator must sign in to retry this request.");
-    let result: {orderId?: string; receiptNumber?: string};
-    try { result = await request<{orderId?: string; receiptNumber?: string}>(intent.path, intent.body); }
+    if (!menu?.storeId || intent.storeId !== menu.storeId) throw new Error("The retained request belongs to another Host store. Preserve it for administrator reconciliation.");
+    let result: {orderId?: string; saleId?: string; receiptNumber?: string};
+    try { result = await request<{orderId?: string; saleId?: string; receiptNumber?: string}>(intent.path, intent.body); }
     catch (error) {
       if (error instanceof HostError && (error.status === 400 ||
           (error.status === 409 && ["CafeOrder.ExpectedVersionConflict", "CafeOrder.NotReady", "CafeOrder.SubmittedRevisionConflict", "CafeOrder.AlreadyCompleted"].includes(error.code ?? "")))) {
@@ -79,6 +81,9 @@ export function LiveCafeWorkstation() {
       }
       throw error;
     }
+    if (/\/orders\/[^/]+\/complete$/.test(intent.path) &&
+        (!result.orderId || !result.saleId || !result.receiptNumber || !intent.path.includes(`/${result.orderId}/`)))
+      throw new Error("Host did not return matching sale and receipt evidence. The original payment request is retained.");
     localStorage.removeItem(pendingKey); setPending(null);
     if (result?.orderId) { setOrder(await request<Detail>(`/api/cafe/orders/${result.orderId}`)); setLines([]); }
     setMessage(result.receiptNumber ? `Payment confirmed. Receipt ${result.receiptNumber}.` : "Host confirmed the action."); await refresh();

@@ -3,15 +3,17 @@ using Salryn.Sync.Contracts;
 namespace Salryn.Sync.Central.Server;
 
 /// <summary>
-/// Transport admission only. NONE of these contracts is currently applied to a Cafe
-/// financial/domain projection by Central.Server; all recognized envelopes are retained
-/// as NeedsReview until the Integrator reconciles the single authoritative processor.
+/// Transport admission only. Canonical processor support and valid current authority
+/// determine whether an admitted operation is Applied, Rejected, or retained NeedsReview.
 /// </summary>
 internal static class CentralDomainAdmission
 {
     private static readonly HashSet<string> V1Types = new(StringComparer.Ordinal)
     {
         SaleCommittedV1Contract.OperationType,
+        CafeShiftSyncContract.Opened,
+        CafeShiftSyncContract.Closed,
+        BookingFulfillmentOrderBoundV1Contract.OperationType,
         CafeOrderOperationContract.OrderRevisionCommittedV1,
         CafeOrderOperationContract.OrderParkedV1,
         CafeOrderOperationContract.OrderResumedV1,

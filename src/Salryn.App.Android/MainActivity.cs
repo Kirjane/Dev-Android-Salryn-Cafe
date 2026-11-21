@@ -23,6 +23,7 @@ public sealed class MainActivity : Activity
     private MobileProductionComposition? _runtime;
     private MobileCashierController? _cashier;
     private MobileCashierIntentStore? _intents;
+    private AndroidCentralConnection? _central;
     private LinearLayout? _root;
     private TextView? _status;
     private readonly List<Button> _buttons = [];
@@ -51,7 +52,9 @@ public sealed class MainActivity : Activity
             AndroidKeyStoreSecretStore secrets = new(paths.ProtectedSecretRoot);
             _cashier = new(_runtime, new(new ProtectedMobileEnrollmentReader(secrets), secrets,
                 () => new(DateTimeOffset.UtcNow, SystemClock.ElapsedRealtime(), ReadBootCount())));
-            _intents = new(secrets); LoginPage();
+            _intents = new(secrets);
+            _central = new(secrets, () => new(DateTimeOffset.UtcNow, SystemClock.ElapsedRealtime(), ReadBootCount()));
+            LoginPage();
         }
         catch (Exception error)
         {
@@ -71,7 +74,42 @@ public sealed class MainActivity : Activity
             if (result.IsFailure) { Message(result.ErrorDetail.Message); return; }
             _message = "Signed in. Checking device approval and published menu…"; await CashierPageAsync();
         });
+        Button("Device setup and synchronization", SetupPageAsync);
         PrinterButton();
+    }
+
+    private async Task SetupPageAsync()
+    {
+        Page("Device setup and synchronization"); Status();
+        Label("Use the HTTPS origin, tenant/store IDs and server public key supplied independently by your administrator. Device approval is separate from operator sign in.");
+        AndroidCentralConfiguration? existing = await _central!.ReadConfigurationAsync();
+        EditText endpoint = Input("Approved Central HTTPS origin"), tenant = Input("Tenant ID"), store = Input("Store ID");
+        EditText pinnedKey = Input("Independently approved server public key (SPKI base64)");
+        endpoint.Text = existing?.HttpsUrl; tenant.Text = existing?.TenantId.ToString("D"); store.Text = existing?.StoreId.ToString("D"); pinnedKey.Text = existing?.PinnedServerKey;
+        EditText joinCode = Input("One-time join code"), name = Input("Device name");
+        if (existing?.DeviceId is { } deviceId) Label("Enrolled device: " + deviceId.ToString("D"));
+        Button("Request device enrollment", async () =>
+        {
+            var config = new AndroidCentralConfiguration(endpoint.Text?.Trim() ?? "", Guid.Parse(tenant.Text ?? ""), Guid.Parse(store.Text ?? ""), pinnedKey.Text?.Trim() ?? "");
+            Guid enrolled = await _central.EnrollAsync(config, joinCode.Text?.Trim() ?? "", name.Text?.Trim() ?? "");
+            joinCode.Text = "";
+            Message("Enrollment retained for device " + enrolled.ToString("D") + ". Ask the administrator to approve it, then bootstrap.");
+        });
+        Button("Connect and bootstrap approved device", async () => Message(await _central.BootstrapAsync(_runtime!)));
+        Label("Reconnect requires the currently signed-in operator's Central credentials. Pending actions retain their original actor and operation IDs.");
+        EditText username = Input("Central operator username"), password = Input("Central operator password", InputTypes.ClassText | InputTypes.TextVariationPassword);
+        Button("Enroll operator for offline sign in", async () =>
+        {
+            string enteredPassword = password.Text ?? ""; password.Text = "";
+            Message(await _central.EnrollOperatorAsync(_runtime!, username.Text ?? "", enteredPassword));
+        });
+        Button("Reconnect and synchronize pending operations", async () =>
+        {
+            if (_cashier!.CurrentOperator is not { } actor) { Message("Sign in locally before synchronizing that operator's pending actions."); return; }
+            string enteredPassword = password.Text ?? ""; password.Text = "";
+            Message(await _central.ReconnectAsync(_runtime!, username.Text ?? "", enteredPassword, actor.UserId));
+        });
+        Button("Back to operator sign in", () => { LoginPage(); return Task.CompletedTask; });
     }
 
     private async Task CashierPageAsync()
@@ -79,6 +117,7 @@ public sealed class MainActivity : Activity
         Page("Salryn Cafe · Cashier"); Label("Operator: " + _cashier!.CurrentOperator?.DisplayName); Status();
         Button("Sign out", () => { _cashier.SignOut(); _order = null; _lines.Clear(); _menu = null; LoginPage(); return Task.CompletedTask; });
         Button("Refresh menu and orders", CashierPageAsync);
+        Button("Device setup and synchronization", SetupPageAsync);
         var pending = await _intents!.ReadAsync();
         if (pending is not null)
         {
@@ -394,6 +433,7 @@ public sealed class MainActivity : Activity
     {
         if (_busy) return; _busy = true; foreach (var button in _buttons) button.Enabled = false;
         try { await action(); }
+        catch (InvalidOperationException error) { Message(error.Message); }
         catch (Exception error) when (error is FormatException or OverflowException) { Message("Enter a nonnegative amount with at most two decimal places."); }
         catch (Exception error) { global::Android.Util.Log.Warn("SalrynCafe", "Unconfirmed action: " + error.GetType().Name); Message("Action outcome is unconfirmed. Saved requests are preserved; retry the saved action after checking authorization."); }
         finally { _busy = false; foreach (var button in _buttons) button.Enabled = true; }

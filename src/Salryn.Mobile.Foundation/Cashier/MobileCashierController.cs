@@ -92,21 +92,20 @@ public sealed class MobileCashierController(MobileProductionComposition runtime,
         }, ct);
 
     public Task<Result<CashierSessionReadModel>> OpenShiftAsync(MobileShiftOpenIntent intent, CancellationToken ct = default) =>
-        ExecuteAsync(SalrynPermissions.ShiftOpenClose, async (_, actor, token) =>
+        ExecuteAsync(SalrynPermissions.ShiftOpenClose, async (binding, actor, token) =>
         {
             if (intent.OperationId == Guid.Empty) return Fail<CashierSessionReadModel>("Mobile.OperationIdRequired", "Retain a client operation ID before opening a shift.");
             if (intent.OpeningCashCents < 0) return Fail<CashierSessionReadModel>("Mobile.InvalidCash", "Opening cash cannot be negative.");
-            // A lost acknowledgement is recovered from the canonical open session,
-            // never by creating a second drawer or exposing expected closing cash.
-            var existing = await runtime.CashierSessions.FindOpenSessionByUserIdAsync(actor.UserId, token).ConfigureAwait(false);
-            if (existing.IsFailure) return Result<CashierSessionReadModel>.Fail(existing.ErrorDetail);
-            if (existing.Value is { } opened) return Result<CashierSessionReadModel>.Success(opened);
-            return await runtime.CashierSessions.OpenAsync(
-                new(actor.UserId, Money.FromCents(intent.OpeningCashCents), $"[op:{intent.OperationId:D}]"), token).ConfigureAwait(false);
+            var result = runtime.CafeShifts.Open(intent.OperationId, binding.DeviceId, binding.StoreId, actor.UserId,
+                intent.OpeningCashCents, intent.OccurredAtUtc);
+            if (result.IsFailure) return Result<CashierSessionReadModel>.Fail(result.ErrorDetail);
+            var session = await runtime.CashierSessions.FindByIdAsync(result.Value, token).ConfigureAwait(false);
+            return session.IsSuccess && session.Value is not null ? Result<CashierSessionReadModel>.Success(session.Value)
+                : Fail<CashierSessionReadModel>("Mobile.ShiftReadBackMissing", "Shift result was committed; retain the original operation to recover it.");
         }, ct);
 
     public Task<Result<CashierSessionReadModel>> CloseShiftAsync(MobileShiftCloseIntent intent, CancellationToken ct = default) =>
-        ExecuteAsync(SalrynPermissions.ShiftOpenClose, async (_, actor, token) =>
+        ExecuteAsync(SalrynPermissions.ShiftOpenClose, async (binding, actor, token) =>
         {
             if (intent.OperationId == Guid.Empty) return Fail<CashierSessionReadModel>("Mobile.OperationIdRequired", "Retain a client operation ID before closing a shift.");
             if (intent.CountedCashCents < 0) return Fail<CashierSessionReadModel>("Mobile.InvalidCash", "Counted cash cannot be negative.");
@@ -114,11 +113,12 @@ public sealed class MobileCashierController(MobileProductionComposition runtime,
             if (session.IsFailure) return Result<CashierSessionReadModel>.Fail(session.ErrorDetail);
             if (session.Value is not { } own || own.UserId != actor.UserId)
                 return Fail<CashierSessionReadModel>("Mobile.ShiftUnavailable", "This drawer is unavailable for the current operator.");
-            string opMarker = $"[op:{intent.OperationId:D}]";
-            if (own.Status == CashierSessionStatus.Closed && own.Notes is not null && own.Notes.Contains(opMarker, StringComparison.Ordinal))
-                return Result<CashierSessionReadModel>.Success(own);
-            return await runtime.CashierSessions.CloseAsync(
-                new(intent.SessionId, actor.UserId, Money.FromCents(intent.CountedCashCents), opMarker), token).ConfigureAwait(false);
+            var result = runtime.CafeShifts.Close(intent.OperationId, binding.DeviceId, binding.StoreId, actor.UserId,
+                intent.SessionId, intent.CountedCashCents, intent.OccurredAtUtc);
+            if (result.IsFailure) return Result<CashierSessionReadModel>.Fail(result.ErrorDetail);
+            var closed = await runtime.CashierSessions.FindByIdAsync(result.Value, token).ConfigureAwait(false);
+            return closed.IsSuccess && closed.Value is not null ? Result<CashierSessionReadModel>.Success(closed.Value)
+                : Fail<CashierSessionReadModel>("Mobile.ShiftReadBackMissing", "Shift result was committed; retain the original operation to recover it.");
         }, ct);
 
     public Task<Result<CafeOrderMutationResult>> SaveOrderAsync(MobileOrderDraft draft, CancellationToken ct = default) =>

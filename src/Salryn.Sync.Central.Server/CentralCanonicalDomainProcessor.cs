@@ -16,7 +16,7 @@ internal sealed record CentralDomainResult(string Status, string Code, string? C
 /// canonical writers inside the Server inbox/feed transaction, never a parallel ledger.
 /// Unsupported operation families remain explicitly NeedsReview.
 /// </summary>
-internal static class CentralCanonicalDomainProcessor
+internal static partial class CentralCanonicalDomainProcessor
 {
     internal static CentralDomainResult Apply(SqliteConnection connection, SqliteTransaction transaction,
         CentralServerOptions options, AuthenticatedDeviceContext device, SyncOperationEnvelopeV1 envelope)
@@ -56,7 +56,10 @@ internal static class CentralCanonicalDomainProcessor
         if (envelope.SchemaVersion == 1 && envelope.OperationType == IngredientConsumptionCommittedV1Contract.OperationType)
             return ApplyIngredientConsumption(connection, transaction, envelope);
 
-        return Review("DOMAIN_PROCESSOR_UNAVAILABLE");
+        if (envelope.SchemaVersion == 1 && CafeShiftSyncContract.IsSupported(envelope.OperationType))
+            return ApplyShift(connection, transaction, options, device, envelope);
+
+        return ApplyExtended(connection, transaction, envelope) ?? Review("DOMAIN_PROCESSOR_UNAVAILABLE");
     }
 
     private static CentralDomainResult ApplyCafeOrder(SqliteConnection connection, SqliteTransaction transaction,
@@ -106,6 +109,11 @@ internal static class CentralCanonicalDomainProcessor
         var policy = SaleCommittedV2EnvelopePolicy.ValidateForCentral(envelope, parsed.Payload, envelope.StoreId);
         if (!policy.IsValid) return Reject(policy.ErrorCode ?? "SaleCommittedV2.EnvelopeConflict");
         if (!HasOperatorPermission(connection, transaction, envelope.ActorUserId, "Sales.Create"))
+            return Reject("ERR_CANONICAL_OPERATOR_AUTHORITY");
+        if ((parsed.Payload.SaleEvidence.Sale.DiscountCents > 0 &&
+                !HasOperatorPermission(connection, transaction, envelope.ActorUserId, "Sales.DiscountApply")) ||
+            (parsed.Payload.Fees.Count > 0 &&
+                !HasOperatorPermission(connection, transaction, envelope.ActorUserId, "Sales.FeeApply")))
             return Reject("ERR_CANONICAL_OPERATOR_AUTHORITY");
         var mapping = SaleCommittedV2Mapper.ToCore(parsed.Payload);
         if (mapping.IsFailure) return Reject(mapping.ErrorDetail.Code);
@@ -350,6 +358,26 @@ internal static class CentralCanonicalDomainProcessor
         savepoint.CommandText = "RELEASE central_sale_apply;";
         savepoint.ExecuteNonQuery();
         return new(SaleCommittedV1Contract.Applied, "SaleCommittedV1.Applied", AppliedBusinessChangeContract.SaleCommittedV1AppliedV1);
+    }
+
+    private static CentralDomainResult ApplyShift(SqliteConnection connection, SqliteTransaction transaction,
+        CentralServerOptions options, AuthenticatedDeviceContext device, SyncOperationEnvelopeV1 envelope)
+    {
+        if (!HasOperatorPermission(connection, transaction, envelope.ActorUserId, "Shift.OpenClose"))
+            return new(SaleCommittedV1Contract.Rejected, "ERR_CANONICAL_OPERATOR_AUTHORITY");
+        using var savepoint = connection.CreateCommand(); savepoint.Transaction = transaction;
+        savepoint.CommandText = "SAVEPOINT central_shift_apply;"; savepoint.ExecuteNonQuery();
+        var applied = new SharedSqliteCafeShiftParticipant().ApplyCanonical(new(connection, transaction), envelope,
+            checkCentralPrerequisites: true, tenantId: device.TenantId);
+        if (applied.IsFailure)
+        {
+            savepoint.CommandText = "ROLLBACK TO central_shift_apply; RELEASE central_shift_apply;"; savepoint.ExecuteNonQuery();
+            bool invalid = applied.ErrorDetail.Code is "CafeShift.EnvelopeInvalid" or "ERR_CANONICAL_OPERATOR_AUTHORITY";
+            return new(invalid ? SaleCommittedV1Contract.Rejected : SaleCommittedV1Contract.NeedsReview, applied.ErrorDetail.Code);
+        }
+        savepoint.CommandText = "RELEASE central_shift_apply;"; savepoint.ExecuteNonQuery();
+        return new(SaleCommittedV1Contract.Applied, "CafeShift.Applied", envelope.OperationType == CafeShiftSyncContract.Opened
+            ? AppliedBusinessChangeContract.CafeShiftOpenedAppliedV1 : AppliedBusinessChangeContract.CafeShiftClosedAppliedV1);
     }
 
     private static string ChangeTypeForOrder(string operationType) => operationType switch

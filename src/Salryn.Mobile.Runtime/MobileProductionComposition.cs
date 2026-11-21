@@ -410,6 +410,8 @@ public sealed class MobileProductionComposition
 
     public MobileOperatorCredentialEnrollment OperatorCredentials => new(ConnectionFactory);
 
+    public SqliteCafeShiftStore CafeShifts => new(ConnectionFactory);
+
     public DatabaseInitializationOrchestrator DatabaseInitialization { get; }
 
     public IAuthenticationService Authentication { get; }

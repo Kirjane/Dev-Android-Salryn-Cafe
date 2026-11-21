@@ -2,6 +2,8 @@ namespace Salryn.Sync.Contracts;
 
 public static class AppliedBusinessChangeContract
 {
+    public const string CafeShiftOpenedAppliedV1 = "CafeShiftOpenedAppliedV1";
+    public const string CafeShiftClosedAppliedV1 = "CafeShiftClosedAppliedV1";
     public const string SaleCommittedV1AppliedV1 = "SaleCommittedV1AppliedV1";
     public const int SaleCommittedV1AppliedSchemaVersion = 1;
     public const string SaleCommittedV2AppliedV1 = "SaleCommittedV2AppliedV1";

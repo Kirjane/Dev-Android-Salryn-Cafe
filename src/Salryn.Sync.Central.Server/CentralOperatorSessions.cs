@@ -8,7 +8,11 @@ using Salryn.Infrastructure.Data.Repositories.System;
 namespace Salryn.Sync.Central.Server;
 
 public sealed record OperatorLoginRequest(string Username, string Password);
-public sealed record OperatorLoginResponse(string OperatorToken, Guid UserId, DateTimeOffset ExpiresAtUtc, long ServerEpoch);
+public sealed record OperatorLoginResponse(string OperatorToken, Guid UserId, DateTimeOffset ExpiresAtUtc, long ServerEpoch)
+{
+    public Guid RoleId { get; init; }
+    public IReadOnlyList<string> Permissions { get; init; } = [];
+}
 
 public sealed partial class CentralSyncService
 {
@@ -78,8 +82,14 @@ public sealed partial class CentralSyncService
         command.Parameters.AddWithValue("$authority",authority);
         command.Parameters.AddWithValue("$expires",expires.ToString("O"));
         command.ExecuteNonQuery();
+        command.Parameters.Clear();
+        command.CommandText = "SELECT u.role_id,p.permission FROM users u LEFT JOIN role_permissions p ON p.role_id=u.role_id WHERE u.id=$user AND u.status=1 ORDER BY p.permission;";
+        command.Parameters.AddWithValue("$user",user.ToString("D"));
+        Guid roleId=Guid.Empty; List<string> permissions=[];
+        using(var reader=command.ExecuteReader())
+            while(reader.Read()) { roleId=Guid.Parse(reader.GetString(0)); if(!reader.IsDBNull(1)) permissions.Add(reader.GetString(1)); }
         transaction.Commit();
-        return ServiceOutcome<OperatorLoginResponse>.Ok(new(token,user,expires,epoch));
+        return ServiceOutcome<OperatorLoginResponse>.Ok(new(token,user,expires,epoch) {RoleId=roleId,Permissions=permissions});
     }
 
     public ServiceOutcome<bool> LogoutOperator(AuthenticatedDeviceContext device,string? token)

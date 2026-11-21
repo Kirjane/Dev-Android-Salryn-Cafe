@@ -1,3 +1,22 @@
+# Safe checkpoint update — 2026-11-21
+
+User requested a credit-conservation checkpoint. Engineering stopped; mission ENGINEERING_ACTIVE / release BLOCKED. The historical matrix below remains preserved; this update supersedes its stale current-state claims.
+
+| Objective | Current verdict | Actual evidence / remaining work |
+|---|---|---|
+| Gate 3 V1/V2 AR matrix | PASS | 77ed22b3 published; 4/4 focused HTTP tests and I6A34/34, zero skipped. Valid synthetic customers, V1 Credit, ledger/stock/feed/replay assertions. Independent scoped six-test PASS. |
+| Combined Cafe suites | PASS for earlier tested slices; NOT RUN for checkpoint WIP | Initial Debug182/182. Later Release206/206 (31+22+50+13+35+55), exit0 per suite. Runs span source changes; NOT exact-final-checkpoint acceptance. |
+| Formal Kirion-Nox review | NOT RUN / prior CHANGES_REQUESTED remains | Requested on frozen77ed22b3 via PR34 comment7058864309 and reviewer request. No formal approval observed. b19f9b97 independent bounded source+8 HTTP tests PASS; not formal Nox. |
+| Live React–Host | PARTIAL execution evidence | b19f9b97/1edfcd97 main source:15 browser assertions +6 HTTP remount/replay assertions +5 SQLite totals, exit0, zero mocks. Cash/AR/partial and rejected-payment recovery. Debug development license only. Same-process new Host mount, not OS-process crash. Latest store/receipt hardening not rerun. Shift/device/full RBAC browser acceptance remains incomplete. |
+| Android emulator | NOT RUN for complete lifecycle | Current standalone Debug APK built/installed; real sign-in/setup rendered and UI extraction fixed. TLS synthetic fixture recovery ongoing. Full enrollment/offline/payment/restart/reconnect/ack not completed. Latest shared shift/permission/ingredient changes not native-built. |
+| C1–C11 / recovery | NOT RUN for complete parity | See C1-C11-CROSS-SYSTEM-COVERAGE-20261121.md. Host missing Cafe route mapping fixed at b19f9b97. C8/C9/C10/V3 processors and C6 shift synchronization now unverified checkpoint WIP. Local shift5/5 before latest overlap change; Central/projection tests not run. |
+| Release CoreSmoke | FAIL / BLOCKED_EXTERNAL | Authorized Release license fixture absent; licensing guards untouched. No new Release CoreSmoke PASS. |
+| Physical/prod | HUMAN_REQUIRED | No hardware, candidate/main merge, production deployment or live business-data migration. |
+
+Resume instructions and exact limitations: CODEX-RESUME-CHECKPOINT-20261121.md. Do not treat checkpoint commit as accepted code.
+
+---
+
 # Salryn Cafe — Authoritative Acceptance Matrix
 
 - **Baseline ID:** `FORGE-SALRYN-CAFE-MAINTAINER-DRIFT-B20261121`
