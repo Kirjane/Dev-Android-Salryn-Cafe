@@ -120,6 +120,44 @@ public sealed class CafeCentralConnection
         command.Parameters.AddWithValue("$instance",health.CentralInstanceId.ToString("D"));command.Parameters.AddWithValue("$epoch",health.ServerEpoch);
         command.Parameters.AddWithValue("$tenant",config.TenantId.ToString("D"));command.Parameters.AddWithValue("$store",config.StoreId.ToString("D"));
         if(health.ProductId!="Salryn.Cafe" || Convert.ToInt64(command.ExecuteScalar())!=1)throw new InvalidOperationException("Central must use this exact Windows local-disk canonical database and scope; remote/independent databases are unsupported by this profile.");
+
+        // Static instance/epoch/scope identifiers survive database copies. A committed,
+        // unpredictable local-file marker must be visible through the Central service
+        // before enrollment, terminal binding, or any outbox reconciliation.
+        Guid probeId=Guid.NewGuid();
+        string probeKey="salryn.cafe.cohost.probe."+probeId.ToString("D");
+        string probeValue=Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+        using(var insert=connection.CreateCommand())
+        {
+            insert.CommandText="INSERT INTO app_metadata(key,value,updated_at) VALUES($key,$value,$at);";
+            insert.Parameters.AddWithValue("$key",probeKey);
+            insert.Parameters.AddWithValue("$value",probeValue);
+            insert.Parameters.AddWithValue("$at",DateTimeOffset.UtcNow.ToString("O"));
+            if(insert.ExecuteNonQuery()!=1)throw new InvalidOperationException("Local cohost probe could not be persisted.");
+        }
+        try
+        {
+            using var response=await http.GetAsync("/api/sync/v1/cohost/probe?key="+probeId.ToString("D"),ct);
+            if(!response.IsSuccessStatusCode)
+                throw new InvalidOperationException("Central cannot verify this exact local canonical SQLite file.");
+            var returned=await response.Content.ReadFromJsonAsync<CohostProbe>(cancellationToken:ct);
+            if(returned?.Value is not { Length:64 } value ||
+                !CryptographicOperations.FixedTimeEquals(
+                    System.Text.Encoding.ASCII.GetBytes(value),
+                    System.Text.Encoding.ASCII.GetBytes(probeValue)))
+                throw new InvalidOperationException("Central cohost file probe mismatched; independent or copied databases are forbidden.");
+        }
+        finally
+        {
+            // Must run even on timeout, cancellation or an invalid/missing response.
+            // Never delete a marker changed by another actor.
+            using var cleanup=connection.CreateCommand();
+            cleanup.CommandText="DELETE FROM app_metadata WHERE key=$key AND value=$value;";
+            cleanup.Parameters.AddWithValue("$key",probeKey);
+            cleanup.Parameters.AddWithValue("$value",probeValue);
+            if(cleanup.ExecuteNonQuery()!=1)
+                throw new InvalidOperationException("Local cohost probe cleanup failed; reconciliation is required.");
+        }
         return health;
     }
     private void AssertNoRetainedOperations()
@@ -161,5 +199,6 @@ public sealed class CafeCentralConnection
     private static async Task RequireAsync(HttpResponseMessage response,CancellationToken ct){if(!response.IsSuccessStatusCode)throw new InvalidOperationException($"Central returned HTTP {(int)response.StatusCode}; retained setup is preserved.");await Task.CompletedTask;}
     private sealed record Enrollment(Guid DeviceId);
     private sealed record Health(string ProductId,Guid CentralInstanceId,long ServerEpoch);
+    private sealed record CohostProbe(string Value);
     private sealed record Operator(string OperatorToken,Guid UserId,DateTimeOffset ExpiresAtUtc,long ServerEpoch);
 }
