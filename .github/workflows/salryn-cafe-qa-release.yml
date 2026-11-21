@@ -16,7 +16,12 @@ on:
         required: true
         type: string
       release_tier:
-        required: true
+        required: false
+        default: ''
+        type: string
+      profile:
+        required: false
+        default: 'ReleaseEntitled'
         type: string
       android_version_code:
         required: false
@@ -57,7 +62,8 @@ jobs:
         shell: pwsh
         env:
           EXPECTED_SHA: ${{ inputs.source_sha }}
-          RELEASE_TIER: ${{ inputs.release_tier }}
+          INPUT_RELEASE_TIER: ${{ inputs.release_tier }}
+          INPUT_PROFILE: ${{ inputs.profile }}
           ANDROID_VERSION_CODE: ${{ inputs.android_version_code }}
         run: |
           $ErrorActionPreference = 'Stop'
@@ -68,9 +74,17 @@ jobs:
           }
           git merge-base --is-ancestor HEAD origin/codex/wave-b-integrator
           if ($LASTEXITCODE -ne 0) { throw 'Source is not preserved staging-branch history.' }
-          if ($env:RELEASE_TIER -notin @('ControlledQA', 'InternalDebugSynthetic')) {
-            throw "Unsupported or blocked release_tier '$env:RELEASE_TIER'."
+          $resolvedTier = if (-not [string]::IsNullOrWhiteSpace($env:INPUT_RELEASE_TIER)) {
+            $env:INPUT_RELEASE_TIER
+          } elseif ($env:INPUT_PROFILE -eq 'DebugSynthetic') {
+            'InternalDebugSynthetic'
+          } else {
+            'ControlledQA'
           }
+          if ($resolvedTier -notin @('ControlledQA', 'InternalDebugSynthetic')) {
+            throw "Unsupported or blocked release_tier '$resolvedTier'."
+          }
+          "EFFECTIVE_RELEASE_TIER=$resolvedTier" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           $vc = 0
           if (-not [int]::TryParse($env:ANDROID_VERSION_CODE, [ref]$vc) -or $vc -lt 1) {
             throw "android_version_code must be an integer >= 1 (got '$env:ANDROID_VERSION_CODE')."
@@ -89,7 +103,7 @@ jobs:
         with:
           packages: platform-tools build-tools;36.0.0
       - name: Verify ControlledQA persistent signing material (fail closed)
-        if: ${{ inputs.release_tier == 'ControlledQA' }}
+        if: ${{ env.EFFECTIVE_RELEASE_TIER == 'ControlledQA' }}
         shell: pwsh
         env:
           QA_KS_B64: ${{ secrets.SALRYN_CAFE_QA_KEYSTORE_B64 }}
@@ -109,7 +123,7 @@ jobs:
       - name: Run fail-closed verification gates and Cafe suites
         shell: pwsh
         env:
-          RELEASE_TIER: ${{ inputs.release_tier }}
+          RELEASE_TIER: ${{ env.EFFECTIVE_RELEASE_TIER }}
         run: |
           $ErrorActionPreference = 'Stop'
           $configuration = if ($env:RELEASE_TIER -eq 'InternalDebugSynthetic') { 'Debug' } else { 'Release' }
@@ -136,7 +150,7 @@ jobs:
         shell: pwsh
         env:
           EXPECTED_SHA: ${{ inputs.source_sha }}
-          RELEASE_TIER: ${{ inputs.release_tier }}
+          RELEASE_TIER: ${{ env.EFFECTIVE_RELEASE_TIER }}
           ANDROID_VERSION_CODE: ${{ inputs.android_version_code }}
         run: |
           $ErrorActionPreference = 'Stop'
@@ -199,7 +213,7 @@ jobs:
         shell: pwsh
         env:
           EXPECTED_SHA: ${{ inputs.source_sha }}
-          RELEASE_TIER: ${{ inputs.release_tier }}
+          RELEASE_TIER: ${{ env.EFFECTIVE_RELEASE_TIER }}
           ANDROID_VERSION_CODE: ${{ inputs.android_version_code }}
           QA_KS_B64: ${{ secrets.SALRYN_CAFE_QA_KEYSTORE_B64 }}
           QA_KS_PASS: ${{ secrets.SALRYN_CAFE_QA_KEYSTORE_PASS }}
@@ -256,7 +270,7 @@ jobs:
         shell: pwsh
         env:
           EXPECTED_SHA: ${{ inputs.source_sha }}
-          RELEASE_TIER: ${{ inputs.release_tier }}
+          RELEASE_TIER: ${{ env.EFFECTIVE_RELEASE_TIER }}
           QA_SIGNER_SHA256: ${{ secrets.SALRYN_CAFE_QA_SIGNER_SHA256 }}
         run: |
           $ErrorActionPreference = 'Stop'
@@ -303,7 +317,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ inputs.source_sha }}
-          RELEASE_TIER: ${{ inputs.release_tier }}
+          RELEASE_TIER: ${{ inputs.release_tier || (inputs.profile == 'DebugSynthetic' && 'InternalDebugSynthetic' || 'ControlledQA') }}
         run: |
           tag="qa-${SOURCE_SHA:0:12}-${GITHUB_RUN_ID}"
           printf '%s\n' \

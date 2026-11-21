@@ -148,7 +148,13 @@ function dotnet {
         default { throw 'Unexpected mocked command.' }
     }
 }
-& (Join-Path $fixtureScripts 'verify-candidate.ps1') -Mode Android
+$savedGhEventPath = $env:GITHUB_EVENT_PATH
+$env:GITHUB_EVENT_PATH = ''
+try {
+    & (Join-Path $fixtureScripts 'verify-candidate.ps1') -Mode Android
+} finally {
+    $env:GITHUB_EVENT_PATH = $savedGhEventPath
+}
 Assert ($LASTEXITCODE -eq 0) 'Actual runner completes synthetic orchestration.'
 $summaryFile = Get-ChildItem -LiteralPath (Join-Path $fixture 'artifacts/verification') -Recurse -Filter 'verification-summary.json' | Select-Object -First 1
 $summary = Get-Content -LiteralPath $summaryFile.FullName -Raw | ConvertFrom-Json
