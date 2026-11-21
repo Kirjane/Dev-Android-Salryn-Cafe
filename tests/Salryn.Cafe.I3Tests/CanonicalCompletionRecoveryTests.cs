@@ -156,7 +156,14 @@ public sealed class CanonicalCompletionRecoveryTests
         Assert.Equal(200,Assert.IsAssignableFrom<IStatusCodeHttpResult>(replay).StatusCode);
         Assert.Equal("true",replayContext.Response.Headers["X-Idempotency-Replayed"].ToString());
         query.CommandText="SELECT COUNT(*) FROM sales;";Assert.Equal(1L,Convert.ToInt64(query.ExecuteScalar()));
-        query.CommandText="SELECT COUNT(*) FROM sync_outbox;";Assert.Equal(before+3,Convert.ToInt64(query.ExecuteScalar()));
+        // Fixture has no recipe/ingredient lines, so Complete emits exactly SaleCommittedV2 + OrderCompletedV1.
+        query.CommandText="SELECT COUNT(*) FROM sync_outbox;";Assert.Equal(before+2,Convert.ToInt64(query.ExecuteScalar()));
+        query.CommandText="SELECT COUNT(*) FROM sync_outbox WHERE operation_id=$op;";
+        query.Parameters.AddWithValue("$op",mutation.SaleCommittedOperationId.ToString("D"));
+        Assert.Equal(1L,Convert.ToInt64(query.ExecuteScalar()));
+        query.Parameters["$op"].Value=mutation.CompletionOperationId.ToString("D");
+        Assert.Equal(1L,Convert.ToInt64(query.ExecuteScalar()));
+        query.Parameters.Clear();
         query.CommandText="SELECT response_json FROM cafe_mutation_idempotency;";
         using var outcome=System.Text.Json.JsonDocument.Parse((string)query.ExecuteScalar()!);
         Assert.False(outcome.RootElement.GetProperty("idempotent").GetBoolean());
