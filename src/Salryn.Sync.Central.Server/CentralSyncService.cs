@@ -848,6 +848,8 @@ public sealed class CentralSyncService
 
     // ==================== SYNC: BOOTSTRAP, PUSH, PULL ====================
 
+    // The central DB has no canonical Cafe domain projection tables/readers yet.
+    // Returning an empty snapshot with a nonzero cursor would permanently skip business facts.
     public ServiceOutcome<BootstrapResponseDto> GetBootstrap(AuthenticatedDeviceContext device, Guid requestedStoreId)
     {
         if (requestedStoreId != device.StoreId)
@@ -855,39 +857,10 @@ public sealed class CentralSyncService
             return ServiceOutcome<BootstrapResponseDto>.Fail(403, "ERR_TENANT_SCOPE_VIOLATION", "Cannot bootstrap another store.");
         }
 
-        using SqliteConnection conn = _db.OpenConnection();
-        CentralServerStateSnapshot state = _db.ReadServerState(conn);
-
-        long storeHeadSeq = 0;
-        using (SqliteCommand seqCmd = conn.CreateCommand())
-        {
-            seqCmd.CommandText = """
-                SELECT COALESCE(MAX(server_sequence), 0)
-                FROM sync_change_feed
-                WHERE tenant_id = $tenantId AND store_id = $storeId;
-                """;
-            seqCmd.Parameters.AddWithValue("$tenantId", device.TenantId.ToString("D"));
-            seqCmd.Parameters.AddWithValue("$storeId", device.StoreId.ToString("D"));
-            storeHeadSeq = Convert.ToInt64(seqCmd.ExecuteScalar());
-        }
-
-        SyncBootstrapSnapshotV1 snapshot = SyncBootstrapSnapshotProtocolV1.Create(
-            state.CentralInstanceId,
-            device.StoreId,
-            storeHeadSeq,
-            Array.Empty<SyncBootstrapRoleV1>(),
-            Array.Empty<SyncBootstrapUserV1>(),
-            Array.Empty<SyncBootstrapUnitV1>(),
-            Array.Empty<SyncBootstrapProductV1>(),
-            Array.Empty<SyncBootstrapCashierSessionV1>(),
-            Array.Empty<SyncBootstrapCustomerV1>());
-
-        return ServiceOutcome<BootstrapResponseDto>.Ok(
-            new BootstrapResponseDto(
-                CentralServerOptions.CanonicalProductId,
-                state.ServerEpoch,
-                storeHeadSeq,
-                snapshot));
+        return ServiceOutcome<BootstrapResponseDto>.Fail(
+            503,
+            "ERR_BOOTSTRAP_DOMAIN_SNAPSHOT_UNAVAILABLE",
+            "Central Cafe domain projections are not implemented. Do not advance the bootstrap cursor.");
     }
 
     public ServiceOutcome<PushOperationsResponse> PushOperations(
@@ -1003,6 +976,22 @@ public sealed class CentralSyncService
                     state.ServerEpoch);
             }
 
+            // Explicitly recognize supported Cafe operation families, but do not report
+            // financial application until a reconciled canonical domain processor exists.
+            // Reject an unsupported type/version atomically before admitting any batch member.
+            foreach (SyncOperationEnvelopeV1 env in request.Operations)
+            {
+                if (!CentralDomainAdmission.IsRecognized(env.OperationType, env.SchemaVersion))
+                {
+                    RollbackRaw(conn);
+                    return ServiceOutcome<PushOperationsResponse>.Fail(
+                        422,
+                        "ERR_UNSUPPORTED_OPERATION_TYPE",
+                        "Operation type/schema is not registered for central admission.",
+                        state.ServerEpoch);
+                }
+            }
+
             long nextReceivedSeq = ReadMaxReceivedSequence(conn);
             List<PushOperationResultDto> results = [];
 
@@ -1049,14 +1038,42 @@ public sealed class CentralSyncService
                     }
                 }
 
-                // New operation: assign received_sequence, insert inbox + change feed atomically
+                // LocalSequence belongs to the authenticated device; two different operations
+                // may not reuse the same sequence even when operation IDs differ.
+                using (SqliteCommand sequenceCmd = conn.CreateCommand())
+                {
+                    sequenceCmd.CommandText = """
+                        SELECT operation_id FROM sync_inbox_operations
+                        WHERE tenant_id = $tenantId AND store_id = $storeId
+                          AND device_id = $deviceId AND local_sequence = $localSequence
+                        LIMIT 1;
+                        """;
+                    sequenceCmd.Parameters.AddWithValue("$tenantId", device.TenantId.ToString("D"));
+                    sequenceCmd.Parameters.AddWithValue("$storeId", device.StoreId.ToString("D"));
+                    sequenceCmd.Parameters.AddWithValue("$deviceId", device.DeviceId.ToString("D"));
+                    sequenceCmd.Parameters.AddWithValue("$localSequence", env.LocalSequence);
+                    if (sequenceCmd.ExecuteScalar() is not null)
+                    {
+                        RollbackRaw(conn);
+                        return ServiceOutcome<PushOperationsResponse>.Fail(
+                            409,
+                            "ERR_DEVICE_LOCAL_SEQUENCE_CONFLICT",
+                            "Another operation already uses this device-local sequence.",
+                            state.ServerEpoch);
+                    }
+                }
+
+                // Admit financial evidence durably, but never manufacture domain application.
+                // Pending evidence cannot enter the applied change-feed before domain processing.
                 nextReceivedSeq++;
                 string resultJson = JsonSerializer.Serialize(new
                 {
-                    applied = true,
+                    applied = false,
+                    needsReview = true,
                     operationId = env.OperationId,
                     operationType = env.OperationType,
-                    serverEpoch = state.ServerEpoch
+                    serverEpoch = state.ServerEpoch,
+                    reason = "DOMAIN_PROCESSOR_UNAVAILABLE"
                 });
 
                 using (SqliteCommand insertInbox = conn.CreateCommand())
@@ -1086,67 +1103,23 @@ public sealed class CentralSyncService
                     insertInbox.Parameters.AddWithValue("$opHash", env.OperationHash);
                     insertInbox.Parameters.AddWithValue("$envJson", JsonSerializer.Serialize(env));
                     insertInbox.Parameters.AddWithValue("$recSeq", nextReceivedSeq);
-                    insertInbox.Parameters.AddWithValue("$status", SaleCommittedV1Contract.Applied);
-                    insertInbox.Parameters.AddWithValue("$resCode", "APPLIED");
+                    insertInbox.Parameters.AddWithValue("$status", SaleCommittedV1Contract.NeedsReview);
+                    insertInbox.Parameters.AddWithValue("$resCode", "DOMAIN_PROCESSOR_UNAVAILABLE");
                     insertInbox.Parameters.AddWithValue("$resJson", resultJson);
                     insertInbox.Parameters.AddWithValue("$now", now.ToString("O"));
                     insertInbox.ExecuteNonQuery();
-                }
-
-                // Append to sync_change_feed using canonical AppliedBusinessChangeProtocolV1 hash
-                long nextFeedSeq = ReadMaxFeedSequence(conn) + 1;
-                AppliedBusinessChangeV1 change = AppliedBusinessChangeProtocolV1.Create(
-                    state.CentralInstanceId,
-                    nextFeedSeq,
-                    env.OperationId,
-                    env.DeviceId,
-                    env.LocalSequence,
-                    env.StoreId,
-                    env.OperationType,
-                    env.SchemaVersion,
-                    env.AggregateId,
-                    env.PayloadJson,
-                    now);
-
-                using (SqliteCommand insertFeed = conn.CreateCommand())
-                {
-                    insertFeed.CommandText = """
-                        INSERT INTO sync_change_feed (
-                            server_sequence, change_id, tenant_id, store_id, source_operation_id,
-                            origin_device_id, origin_local_sequence, change_type, schema_version,
-                            aggregate_id, payload_json, payload_hash, change_hash, created_at_utc)
-                        VALUES (
-                            $seq, $changeId, $tenantId, $storeId, $opId,
-                            $deviceId, $localSeq, $changeType, $schemaVer,
-                            $aggId, $payloadJson, $payloadHash, $changeHash, $createdAt);
-                        """;
-                    insertFeed.Parameters.AddWithValue("$seq", change.ServerSequence);
-                    insertFeed.Parameters.AddWithValue("$changeId", change.ChangeId.ToString("D"));
-                    insertFeed.Parameters.AddWithValue("$tenantId", device.TenantId.ToString("D"));
-                    insertFeed.Parameters.AddWithValue("$storeId", change.StoreId.ToString("D"));
-                    insertFeed.Parameters.AddWithValue("$opId", change.SourceOperationId.ToString("D"));
-                    insertFeed.Parameters.AddWithValue("$deviceId", change.OriginDeviceId.ToString("D"));
-                    insertFeed.Parameters.AddWithValue("$localSeq", change.OriginLocalSequence);
-                    insertFeed.Parameters.AddWithValue("$changeType", change.ChangeType);
-                    insertFeed.Parameters.AddWithValue("$schemaVer", change.SchemaVersion);
-                    insertFeed.Parameters.AddWithValue("$aggId", change.AggregateId.ToString("D"));
-                    insertFeed.Parameters.AddWithValue("$payloadJson", change.PayloadJson);
-                    insertFeed.Parameters.AddWithValue("$payloadHash", change.PayloadHash);
-                    insertFeed.Parameters.AddWithValue("$changeHash", change.ChangeHash);
-                    insertFeed.Parameters.AddWithValue("$createdAt", change.CreatedAtUtc.ToString("O"));
-                    insertFeed.ExecuteNonQuery();
                 }
 
                 SyncOperationFinalResolutionV1 resolution = new(
                     env.OperationId,
                     nextReceivedSeq,
                     now,
-                    SaleCommittedV1Contract.Applied,
-                    "APPLIED",
+                    SaleCommittedV1Contract.NeedsReview,
+                    "DOMAIN_PROCESSOR_UNAVAILABLE",
                     resultJson,
                     now);
 
-                results.Add(new PushOperationResultDto(env.OperationId, false, resolution, change.ServerSequence));
+                results.Add(new PushOperationResultDto(env.OperationId, false, resolution, null));
             }
 
             long headSeq = ReadMaxFeedSequence(conn);

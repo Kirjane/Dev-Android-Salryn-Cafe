@@ -26,7 +26,7 @@ public sealed class CentralSyncE2ETests
             actorUserId: Guid.CreateVersion7(),
             localSequence: localSeq,
             operationType: opType,
-            schemaVersion: 1,
+            schemaVersion: opType == SaleCommittedV3Contract.OperationType ? SaleCommittedV3Contract.SchemaVersion : 1,
             aggregateId: Guid.CreateVersion7(),
             baseVersion: null,
             occurredAtLocal: DateTimeOffset.UtcNow,
@@ -35,7 +35,7 @@ public sealed class CentralSyncE2ETests
     }
 
     [Fact]
-    public async Task HttpsEnforcement_RejectsPlaintextHttp_AllowsForwardedHttpsAndDirectHttps()
+    public async Task HttpsEnforcement_RejectsUnverifiedForwarder_AllowsDirectHttps()
     {
         using CentralSyncTestHost host = new();
         using HttpClient plain = host.CreatePlainHttpClient();
@@ -45,18 +45,25 @@ public sealed class CentralSyncE2ETests
         ErrorResponseDto? err = await plainResp.Content.ReadFromJsonAsync<ErrorResponseDto>();
         Assert.Equal("ERR_HTTPS_REQUIRED", err?.ErrorCode);
 
-        // Simulate Cloudflare Tunnel / reverse proxy forwarding HTTPS
+        // TestServer has no verified proxy peer; the forged header must not bypass TLS.
         using HttpRequestMessage proxiedReq = new(HttpMethod.Get, "/api/sync/v1/health");
         proxiedReq.Headers.Add("X-Forwarded-Proto", "https");
         HttpResponseMessage proxiedResp = await plain.SendAsync(proxiedReq);
-        Assert.Equal(HttpStatusCode.OK, proxiedResp.StatusCode);
-        HealthResponseDto? health = await proxiedResp.Content.ReadFromJsonAsync<HealthResponseDto>();
+        Assert.Equal(HttpStatusCode.UpgradeRequired, proxiedResp.StatusCode);
+        Assert.Equal("ERR_HTTPS_REQUIRED",
+            (await proxiedResp.Content.ReadFromJsonAsync<ErrorResponseDto>())?.ErrorCode);
+
+        // The direct HTTPS branch remains functional.
+        using HttpClient direct = host.CreateHttpsClient();
+        HttpResponseMessage directResp = await direct.GetAsync("/api/sync/v1/health");
+        Assert.Equal(HttpStatusCode.OK, directResp.StatusCode);
+        HealthResponseDto? health = await directResp.Content.ReadFromJsonAsync<HealthResponseDto>();
         Assert.Equal(CentralServerOptions.CanonicalProductId, health?.ProductId);
         Assert.Equal(1, health?.ServerEpoch);
     }
 
     [Fact]
-    public async Task TwoClientSync_EnrollApprovePushPullAndBootstrap_ConvergesCleanly()
+    public async Task TwoClientSync_PreservesFinancialEvidenceWithoutFalseApplication()
     {
         using CentralSyncTestHost host = new();
         using HttpClient adminClient = host.CreateHttpsClient();
@@ -77,7 +84,7 @@ public sealed class CentralSyncE2ETests
             tabletA.DeviceId,
             host.StoreId,
             localSeq: 1,
-            opType: "cafe.sale.committed.v3",
+            opType: SaleCommittedV3Contract.OperationType,
             payloadJson: "{\"receipt\":\"CY-0001\",\"tender\":\"Cash\",\"totalCents\":24500}");
 
         HttpResponseMessage pushResp = await tabletA.Http.PostAsJsonAsync(
@@ -88,28 +95,27 @@ public sealed class CentralSyncE2ETests
         Assert.NotNull(pushBody);
         Assert.Single(pushBody!.Results);
         Assert.False(pushBody.Results[0].IsDuplicateReplay);
-        Assert.True(pushBody.Results[0].Resolution.IsApplied);
-        Assert.Equal(1, pushBody.Results[0].ChangeFeedSequence);
+        Assert.False(pushBody.Results[0].Resolution.IsApplied);
+        Assert.Equal(SaleCommittedV1Contract.NeedsReview, pushBody.Results[0].Resolution.Status);
+        Assert.Equal("DOMAIN_PROCESSOR_UNAVAILABLE", pushBody.Results[0].Resolution.ResultCode);
+        Assert.Null(pushBody.Results[0].ChangeFeedSequence);
+        Assert.Equal(0, pushBody.HeadSequence);
 
-        // Tablet B pulls from sequence 0 and receives Tablet A's committed sale
+        // Tablet B cannot observe unposted money as an applied change.
         HttpResponseMessage pullResp = await tabletB.Http.GetAsync(
             $"/api/sync/v1/pull?storeId={host.StoreId:D}&afterSequence=0&limit=50&knownEpoch=1");
         Assert.Equal(HttpStatusCode.OK, pullResp.StatusCode);
         PullChangesResponseDto? pullBody = await pullResp.Content.ReadFromJsonAsync<PullChangesResponseDto>();
         Assert.NotNull(pullBody);
-        Assert.Single(pullBody!.Page.Changes);
-        Assert.Equal(saleOp.OperationId, pullBody.Page.Changes[0].SourceOperationId);
-        Assert.Equal(tabletA.DeviceId, pullBody.Page.Changes[0].OriginDeviceId);
-        Assert.Equal(1, pullBody.Page.HighWatermarkServerSequence);
+        Assert.Empty(pullBody!.Page.Changes);
+        Assert.Equal(0, pullBody.Page.HighWatermarkServerSequence);
         Assert.False(pullBody.Page.HasMore);
 
-        // Bootstrap reflects current headSequence and epoch
+        // Empty domain projections cannot be mistaken for a recoverable snapshot.
         HttpResponseMessage bootResp = await tabletB.Http.GetAsync($"/api/sync/v1/bootstrap?storeId={host.StoreId:D}");
-        Assert.Equal(HttpStatusCode.OK, bootResp.StatusCode);
-        BootstrapResponseDto? boot = await bootResp.Content.ReadFromJsonAsync<BootstrapResponseDto>();
-        Assert.Equal(1, boot?.ServerEpoch);
-        Assert.Equal(1, boot?.HeadSequence);
-        Assert.Equal(1, boot?.Snapshot.BaselineServerSequence);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, bootResp.StatusCode);
+        Assert.Equal("ERR_BOOTSTRAP_DOMAIN_SNAPSHOT_UNAVAILABLE",
+            (await bootResp.Content.ReadFromJsonAsync<ErrorResponseDto>())?.ErrorCode);
     }
 
     [Fact]
@@ -122,7 +128,7 @@ public sealed class CentralSyncE2ETests
 
         Guid stableOpId = Guid.CreateVersion7();
         SyncOperationEnvelopeV1 original = MakeEnvelope(
-            tabletA.DeviceId, host.StoreId, 1, "cafe.order.created.v1",
+            tabletA.DeviceId, host.StoreId, 1, CafeOrderOperationContract.OrderRevisionCommittedV1,
             "{\"orderNo\":\"ORD-101\",\"items\":2}", stableOpId);
 
         // First push
@@ -131,6 +137,8 @@ public sealed class CentralSyncE2ETests
         Assert.Equal(HttpStatusCode.OK, r1.StatusCode);
         PushOperationsResponse b1 = (await r1.Content.ReadFromJsonAsync<PushOperationsResponse>())!;
         Assert.False(b1.Results[0].IsDuplicateReplay);
+        Assert.Equal(SaleCommittedV1Contract.NeedsReview, b1.Results[0].Resolution.Status);
+        Assert.Null(b1.Results[0].ChangeFeedSequence);
 
         // Duplicate retry (simulating lost HTTP response)
         HttpResponseMessage r2 = await tabletA.Http.PostAsJsonAsync(
@@ -139,11 +147,11 @@ public sealed class CentralSyncE2ETests
         PushOperationsResponse b2 = (await r2.Content.ReadFromJsonAsync<PushOperationsResponse>())!;
         Assert.True(b2.Results[0].IsDuplicateReplay);
         Assert.Equal(b1.Results[0].Resolution.ReceivedSequence, b2.Results[0].Resolution.ReceivedSequence);
-        Assert.Equal(1, b2.HeadSequence); // No duplicate feed entry!
+        Assert.Equal(0, b2.HeadSequence); // No domain processor; never publish a change.
 
         // Divergent payload with same OperationId -> 409 OPERATION_HASH_CONFLICT
         SyncOperationEnvelopeV1 tampered = MakeEnvelope(
-            tabletA.DeviceId, host.StoreId, 1, "cafe.order.created.v1",
+            tabletA.DeviceId, host.StoreId, 1, CafeOrderOperationContract.OrderRevisionCommittedV1,
             "{\"orderNo\":\"ORD-101\",\"items\":99}", stableOpId);
         HttpResponseMessage r3 = await tabletA.Http.PostAsJsonAsync(
             "/api/sync/v1/push", new PushOperationsRequest(1, [tampered]));
@@ -153,7 +161,7 @@ public sealed class CentralSyncE2ETests
     }
 
     [Fact]
-    public async Task PartitionAndReconnect_TwoClientsPushOfflineBatches_ConvergeViaPaginatedCursors()
+    public async Task PartitionAndReconnect_RetainsBothBatchesWithoutPublishingFinancialFacts()
     {
         using CentralSyncTestHost host = new();
         using HttpClient adminClient = host.CreateHttpsClient();
@@ -164,37 +172,50 @@ public sealed class CentralSyncE2ETests
         // Both devices accumulate offline outbox batches while partitioned
         SyncOperationEnvelopeV1[] batchA =
         [
-            MakeEnvelope(tabletA.DeviceId, host.StoreId, 1, "cafe.sale.committed.v3", "{\"n\":\"A1\"}"),
-            MakeEnvelope(tabletA.DeviceId, host.StoreId, 2, "cafe.sale.committed.v3", "{\"n\":\"A2\"}")
+            MakeEnvelope(tabletA.DeviceId, host.StoreId, 1, SaleCommittedV3Contract.OperationType, "{\"n\":\"A1\"}"),
+            MakeEnvelope(tabletA.DeviceId, host.StoreId, 2, SaleCommittedV3Contract.OperationType, "{\"n\":\"A2\"}")
         ];
         SyncOperationEnvelopeV1[] batchB =
         [
-            MakeEnvelope(tabletB.DeviceId, host.StoreId, 1, "cafe.cash.expense.v1", "{\"n\":\"B1\"}"),
-            MakeEnvelope(tabletB.DeviceId, host.StoreId, 2, "cafe.cash.expense.v1", "{\"n\":\"B2\"}")
+            MakeEnvelope(tabletB.DeviceId, host.StoreId, 1, CafeCashMovementSyncContract.OperationType, "{\"n\":\"B1\"}"),
+            MakeEnvelope(tabletB.DeviceId, host.StoreId, 2, CafeCashMovementSyncContract.OperationType, "{\"n\":\"B2\"}")
         ];
 
-        // Reconnect and push both batches
-        Assert.Equal(HttpStatusCode.OK, (await tabletA.Http.PostAsJsonAsync("/api/sync/v1/push", new PushOperationsRequest(1, batchA))).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await tabletB.Http.PostAsJsonAsync("/api/sync/v1/push", new PushOperationsRequest(1, batchB))).StatusCode);
-
-        // Tablet A pulls with limit=2 across two pages and sees all 4 ordered events
-        List<AppliedBusinessChangeV1> pulled = [];
-        long cursor = 0;
-        bool hasMore;
-        do
+        // Reconnect: both independent batches are durably received but NOT applied.
+        HttpResponseMessage aResp = await tabletA.Http.PostAsJsonAsync(
+            "/api/sync/v1/push", new PushOperationsRequest(1, batchA));
+        HttpResponseMessage bResp = await tabletB.Http.PostAsJsonAsync(
+            "/api/sync/v1/push", new PushOperationsRequest(1, batchB));
+        Assert.Equal(HttpStatusCode.OK, aResp.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, bResp.StatusCode);
+        PushOperationsResponse acceptedA = (await aResp.Content.ReadFromJsonAsync<PushOperationsResponse>())!;
+        PushOperationsResponse acceptedB = (await bResp.Content.ReadFromJsonAsync<PushOperationsResponse>())!;
+        Assert.Equal(2, acceptedA.Results.Count);
+        Assert.Equal(2, acceptedB.Results.Count);
+        Assert.All(acceptedA.Results.Concat(acceptedB.Results), r =>
         {
-            HttpResponseMessage pageResp = await tabletA.Http.GetAsync(
-                $"/api/sync/v1/pull?storeId={host.StoreId:D}&afterSequence={cursor}&limit=2&knownEpoch=1");
-            Assert.Equal(HttpStatusCode.OK, pageResp.StatusCode);
-            PullChangesResponseDto pageBody = (await pageResp.Content.ReadFromJsonAsync<PullChangesResponseDto>())!;
-            pulled.AddRange(pageBody.Page.Changes);
-            cursor = pageBody.Page.Changes.Last().ServerSequence;
-            hasMore = pageBody.Page.HasMore;
-        }
-        while (hasMore);
+            Assert.Equal(SaleCommittedV1Contract.NeedsReview, r.Resolution.Status);
+            Assert.Null(r.ChangeFeedSequence);
+        });
 
-        Assert.Equal(4, pulled.Count);
-        Assert.Equal([1L, 2L, 3L, 4L], pulled.Select(c => c.ServerSequence).ToArray());
+        // Durable inbox holds all four identities, while the applied feed remains empty.
+        CentralSyncDatabase db = host.Factory.Services.GetRequiredService<CentralSyncDatabase>();
+        using (Microsoft.Data.Sqlite.SqliteConnection conn = db.OpenConnection())
+        using (Microsoft.Data.Sqlite.SqliteCommand cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM sync_inbox_operations;";
+            Assert.Equal(4L, Convert.ToInt64(cmd.ExecuteScalar()));
+            cmd.CommandText = "SELECT COUNT(*) FROM sync_change_feed;";
+            Assert.Equal(0L, Convert.ToInt64(cmd.ExecuteScalar()));
+        }
+
+        HttpResponseMessage pullResp = await tabletA.Http.GetAsync(
+            $"/api/sync/v1/pull?storeId={host.StoreId:D}&afterSequence=0&limit=2&knownEpoch=1");
+        Assert.Equal(HttpStatusCode.OK, pullResp.StatusCode);
+        PullChangesResponseDto pull = (await pullResp.Content.ReadFromJsonAsync<PullChangesResponseDto>())!;
+        Assert.Empty(pull.Page.Changes);
+        Assert.Equal(0, pull.Page.HighWatermarkServerSequence);
+        Assert.False(pull.Page.HasMore);
     }
 
     [Fact]
@@ -229,7 +250,7 @@ public sealed class CentralSyncE2ETests
 
         // 3. Revoked device pushes offline sales -> 403 DEVICE_REVOKED_FENCED + quarantined!
         SyncOperationEnvelopeV1 offlineSale = MakeEnvelope(
-            tabletA.DeviceId, host.StoreId, 1, "cafe.sale.committed.v3", "{\"receipt\":\"OFF-99\",\"totalCents\":15000}");
+            tabletA.DeviceId, host.StoreId, 1, SaleCommittedV3Contract.OperationType, "{\"receipt\":\"OFF-99\",\"totalCents\":15000}");
         HttpResponseMessage pushResp = await tabletA.Http.PostAsJsonAsync(
             "/api/sync/v1/push",
             new PushOperationsRequest(1, [offlineSale]));
@@ -288,7 +309,7 @@ public sealed class CentralSyncE2ETests
         Assert.Equal(2, bumped?.NewEpoch);
 
         // Stale epoch on push -> 409 EPOCH_MISMATCH_REBOOTSTRAP_REQUIRED
-        SyncOperationEnvelopeV1 op = MakeEnvelope(tablet.DeviceId, host.StoreId, 1, "cafe.sale.committed.v3", "{\"x\":1}");
+        SyncOperationEnvelopeV1 op = MakeEnvelope(tablet.DeviceId, host.StoreId, 1, SaleCommittedV3Contract.OperationType, "{\"x\":1}");
         HttpResponseMessage stalePush = await tablet.Http.PostAsJsonAsync(
             "/api/sync/v1/push", new PushOperationsRequest(KnownEpoch: 1, [op]));
         Assert.Equal(HttpStatusCode.Conflict, stalePush.StatusCode);
@@ -301,14 +322,18 @@ public sealed class CentralSyncE2ETests
             $"/api/sync/v1/pull?storeId={host.StoreId:D}&afterSequence=0&limit=50&knownEpoch=1");
         Assert.Equal(HttpStatusCode.Conflict, stalePull.StatusCode);
 
-        // Client re-bootstraps, gets new ServerEpoch=2, and resumes pushing cleanly
+        // The failed bootstrap does not advance any cursor or invent domain state.
         HttpResponseMessage bootResp = await tablet.Http.GetAsync($"/api/sync/v1/bootstrap?storeId={host.StoreId:D}");
-        BootstrapResponseDto? boot = await bootResp.Content.ReadFromJsonAsync<BootstrapResponseDto>();
-        Assert.Equal(2, boot?.ServerEpoch);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, bootResp.StatusCode);
+        Assert.Equal("ERR_BOOTSTRAP_DOMAIN_SNAPSHOT_UNAVAILABLE",
+            (await bootResp.Content.ReadFromJsonAsync<ErrorResponseDto>())?.ErrorCode);
 
+        // Epoch=2 can be used by a currently trusted device to retain unapplied evidence.
         HttpResponseMessage okPush = await tablet.Http.PostAsJsonAsync(
-            "/api/sync/v1/push", new PushOperationsRequest(KnownEpoch: boot!.ServerEpoch, [op]));
+            "/api/sync/v1/push", new PushOperationsRequest(KnownEpoch: bumped!.NewEpoch, [op]));
         Assert.Equal(HttpStatusCode.OK, okPush.StatusCode);
+        PushOperationsResponse retained = (await okPush.Content.ReadFromJsonAsync<PushOperationsResponse>())!;
+        Assert.Equal(SaleCommittedV1Contract.NeedsReview, retained.Results[0].Resolution.Status);
     }
 
     [Fact]
@@ -339,7 +364,7 @@ public sealed class CentralSyncE2ETests
         Assert.Equal("ERR_TENANT_SCOPE_VIOLATION", (await crossStorePull.Content.ReadFromJsonAsync<ErrorResponseDto>())?.ErrorCode);
 
         // 4. Cross-store envelope push rejected
-        SyncOperationEnvelopeV1 foreignOp = MakeEnvelope(tablet.DeviceId, foreignStoreId, 1, "cafe.sale.committed.v3", "{}");
+        SyncOperationEnvelopeV1 foreignOp = MakeEnvelope(tablet.DeviceId, foreignStoreId, 1, SaleCommittedV3Contract.OperationType, "{}");
         HttpResponseMessage crossStorePush = await tablet.Http.PostAsJsonAsync(
             "/api/sync/v1/push", new PushOperationsRequest(1, [foreignOp]));
         Assert.Equal(HttpStatusCode.Forbidden, crossStorePush.StatusCode);
@@ -390,6 +415,11 @@ public sealed class CentralSyncE2ETests
         CentralServerOptions opts = new() { RequireHttps = true, TrustForwardedProto = true };
         Assert.False(CentralSyncEndpoints.IsHttpsRequest(spoofedCtx, opts));
 
+        // Missing peer address is not evidence of a trusted reverse proxy.
+        // A caller-controlled forwarded header must fail closed in this case.
+        spoofedCtx.Connection.RemoteIpAddress = null;
+        Assert.False(CentralSyncEndpoints.IsHttpsRequest(spoofedCtx, opts));
+
         // Loopback proxy IS trusted
         spoofedCtx.Connection.RemoteIpAddress = System.Net.IPAddress.Loopback;
         Assert.True(CentralSyncEndpoints.IsHttpsRequest(spoofedCtx, opts));
@@ -418,10 +448,114 @@ public sealed class CentralSyncE2ETests
             cmd.ExecuteNonQuery();
         }
 
-        SyncOperationEnvelopeV1 op = MakeEnvelope(tablet.DeviceId, host.StoreId, 1, "cafe.sale.committed.v3", "{\"x\":1}");
+        SyncOperationEnvelopeV1 op = MakeEnvelope(tablet.DeviceId, host.StoreId, 1, SaleCommittedV3Contract.OperationType, "{\"x\":1}");
         HttpResponseMessage expiredPush = await tablet.Http.PostAsJsonAsync(
             "/api/sync/v1/push", new PushOperationsRequest(1, [op]));
         Assert.Equal(HttpStatusCode.Unauthorized, expiredPush.StatusCode);
         Assert.Equal("ERR_DEVICE_TOKEN_EXPIRED", (await expiredPush.Content.ReadFromJsonAsync<ErrorResponseDto>())?.ErrorCode);
     }
+    [Fact]
+    public async Task UnsupportedOperation_FailsWholeBatchWithoutInboxOrAppliedFeed()
+    {
+        using CentralSyncTestHost host = new();
+        using HttpClient admin = host.CreateHttpsClient();
+        string adminToken = await host.LoginAsAdminAsync(admin);
+        using EnrolledDeviceClient tablet = await host.EnrollApproveAndAuthenticateDeviceAsync(admin, adminToken, "Unsupported-Tablet");
+
+        SyncOperationEnvelopeV1 known = MakeEnvelope(
+            tablet.DeviceId, host.StoreId, 1, SaleCommittedV3Contract.OperationType, "{\"invoice\":1}");
+        SyncOperationEnvelopeV1 unknown = MakeEnvelope(
+            tablet.DeviceId, host.StoreId, 2, "UnknownLedgerOperationV9", "{\"invoice\":2}");
+        HttpResponseMessage response = await tablet.Http.PostAsJsonAsync(
+            "/api/sync/v1/push", new PushOperationsRequest(1, [known, unknown]));
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Equal("ERR_UNSUPPORTED_OPERATION_TYPE",
+            (await response.Content.ReadFromJsonAsync<ErrorResponseDto>())?.ErrorCode);
+
+        CentralSyncDatabase db = host.Factory.Services.GetRequiredService<CentralSyncDatabase>();
+        using Microsoft.Data.Sqlite.SqliteConnection conn = db.OpenConnection();
+        using Microsoft.Data.Sqlite.SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM sync_inbox_operations;";
+        Assert.Equal(0L, Convert.ToInt64(cmd.ExecuteScalar()));
+        cmd.CommandText = "SELECT COUNT(*) FROM sync_change_feed;";
+        Assert.Equal(0L, Convert.ToInt64(cmd.ExecuteScalar()));
+    }
+
+    [Fact]
+    public async Task ConcurrentSameIdDivergence_AtMostOneDurableUnappliedReceipt()
+    {
+        using CentralSyncTestHost host = new();
+        using HttpClient admin = host.CreateHttpsClient();
+        string adminToken = await host.LoginAsAdminAsync(admin);
+        using EnrolledDeviceClient tablet = await host.EnrollApproveAndAuthenticateDeviceAsync(admin, adminToken, "Racing-Tablet");
+
+        Guid sharedId = Guid.CreateVersion7();
+        SyncOperationEnvelopeV1 a = MakeEnvelope(tablet.DeviceId, host.StoreId, 1,
+            SaleCommittedV3Contract.OperationType, "{\"total\":100}", sharedId);
+        SyncOperationEnvelopeV1 b = MakeEnvelope(tablet.DeviceId, host.StoreId, 1,
+            SaleCommittedV3Contract.OperationType, "{\"total\":200}", sharedId);
+        HttpResponseMessage[] responses = await Task.WhenAll(
+            tablet.Http.PostAsJsonAsync("/api/sync/v1/push", new PushOperationsRequest(1, [a])),
+            tablet.Http.PostAsJsonAsync("/api/sync/v1/push", new PushOperationsRequest(1, [b])));
+        Assert.Single(responses, r => r.StatusCode == HttpStatusCode.OK);
+        Assert.Single(responses, r => r.StatusCode == HttpStatusCode.Conflict);
+
+        CentralSyncDatabase db = host.Factory.Services.GetRequiredService<CentralSyncDatabase>();
+        using Microsoft.Data.Sqlite.SqliteConnection conn = db.OpenConnection();
+        using Microsoft.Data.Sqlite.SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM sync_inbox_operations WHERE operation_id = $id;";
+        cmd.Parameters.AddWithValue("$id", sharedId.ToString("D"));
+        Assert.Equal(1L, Convert.ToInt64(cmd.ExecuteScalar()));
+        cmd.CommandText = "SELECT COUNT(*) FROM sync_change_feed;";
+        Assert.Equal(0L, Convert.ToInt64(cmd.ExecuteScalar()));
+    }
+
+    [Fact]
+    public async Task DeviceSequenceCollision_DoesNotAdmitSecondFinancialFact()
+    {
+        using CentralSyncTestHost host = new();
+        using HttpClient admin = host.CreateHttpsClient();
+        string token = await host.LoginAsAdminAsync(admin);
+        using EnrolledDeviceClient tablet = await host.EnrollApproveAndAuthenticateDeviceAsync(admin, token, "Sequence-Tablet");
+        SyncOperationEnvelopeV1 a = MakeEnvelope(tablet.DeviceId, host.StoreId, 1,
+            SaleCommittedV3Contract.OperationType, "{\"amount\":1}");
+        SyncOperationEnvelopeV1 b = MakeEnvelope(tablet.DeviceId, host.StoreId, 1,
+            SaleCommittedV3Contract.OperationType, "{\"amount\":2}");
+        Assert.Equal(HttpStatusCode.OK,
+            (await tablet.Http.PostAsJsonAsync("/api/sync/v1/push", new PushOperationsRequest(1, [a]))).StatusCode);
+        HttpResponseMessage second = await tablet.Http.PostAsJsonAsync("/api/sync/v1/push", new PushOperationsRequest(1, [b]));
+        Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
+        Assert.Equal("ERR_DEVICE_LOCAL_SEQUENCE_CONFLICT",
+            (await second.Content.ReadFromJsonAsync<ErrorResponseDto>())?.ErrorCode);
+    }
+
+    [Fact]
+    public async Task StaleRestoreRefusesDestructiveOverwrite_AndPreservesAcknowledgedInbox()
+    {
+        using CentralSyncTestHost host = new();
+        using HttpClient admin = host.CreateHttpsClient();
+        string token = await host.LoginAsAdminAsync(admin);
+        using EnrolledDeviceClient tablet = await host.EnrollApproveAndAuthenticateDeviceAsync(admin, token, "Restore-Tablet");
+        CentralSyncDatabase db = host.Factory.Services.GetRequiredService<CentralSyncDatabase>();
+        string oldBackup = Path.Combine(host.TempDirectory, "stale-backup.db");
+        db.BackupTo(oldBackup);
+
+        SyncOperationEnvelopeV1 op = MakeEnvelope(tablet.DeviceId, host.StoreId, 1,
+            SaleCommittedV3Contract.OperationType, "{\"amount\":999}");
+        HttpResponseMessage push = await tablet.Http.PostAsJsonAsync(
+            "/api/sync/v1/push", new PushOperationsRequest(1, [op]));
+        Assert.Equal(HttpStatusCode.OK, push.StatusCode);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            CentralSyncDatabase.RestoreAndBumpEpoch(oldBackup, host.DatabasePath, "synthetic stale restore"));
+        using Microsoft.Data.Sqlite.SqliteConnection conn = db.OpenConnection();
+        Assert.Equal(1L, db.ReadServerState(conn).ServerEpoch);
+        using Microsoft.Data.Sqlite.SqliteCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT status FROM sync_inbox_operations WHERE operation_id = $id;";
+        cmd.Parameters.AddWithValue("$id", op.OperationId.ToString("D"));
+        Assert.Equal(SaleCommittedV1Contract.NeedsReview, (string?)cmd.ExecuteScalar());
+        cmd.CommandText = "SELECT COUNT(*) FROM sync_change_feed;";
+        Assert.Equal(0L, Convert.ToInt64(cmd.ExecuteScalar()));
+    }
+
 }
