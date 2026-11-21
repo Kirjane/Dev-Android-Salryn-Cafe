@@ -107,10 +107,13 @@ internal static class CentralCanonicalDomainProcessor
         if (!policy.IsValid) return Reject(policy.ErrorCode ?? "SaleCommittedV2.EnvelopeConflict");
         if (!HasOperatorPermission(connection, transaction, envelope.ActorUserId, "Sales.Create"))
             return Reject("ERR_CANONICAL_OPERATOR_AUTHORITY");
-        var prerequisites = CentralSaleCommittedPrerequisites.Validate(connection, transaction, parsed.Payload.SaleEvidence);
-        if (!prerequisites.CanApply) return Review(prerequisites.ConflictCode ?? "SaleCommittedV2.PrerequisiteMissing");
         var mapping = SaleCommittedV2Mapper.ToCore(parsed.Payload);
         if (mapping.IsFailure) return Reject(mapping.ErrorDetail.Code);
+        if ((RequiresCreditSalePermission(parsed.Payload.SaleEvidence) || mapping.Value.Sale.BalanceDue.Cents > 0) &&
+            !HasOperatorPermission(connection, transaction, envelope.ActorUserId, "Receivables.CreateCreditSale"))
+            return Reject("ERR_CANONICAL_OPERATOR_AUTHORITY");
+        var prerequisites = CentralSaleCommittedPrerequisites.Validate(connection, transaction, parsed.Payload.SaleEvidence);
+        if (!prerequisites.CanApply) return Review(prerequisites.ConflictCode ?? "SaleCommittedV2.PrerequisiteMissing");
         var financial = SaleCommittedV2Mapper.ToFinancialDecision(parsed.Payload, envelope.StoreId);
         if (financial.IsFailure) return Reject(financial.ErrorDetail.Code);
         using var savepoint = connection.CreateCommand();
@@ -294,6 +297,9 @@ internal static class CentralCanonicalDomainProcessor
         return new(SaleCommittedV1Contract.Applied, "IngredientConsumption.Applied", AppliedBusinessChangeContract.IngredientConsumptionCommittedV1AppliedV1);
     }
 
+    private static bool RequiresCreditSalePermission(SaleCommittedV1 sale) =>
+        sale.Payments.Any(p => string.Equals(p.Method, nameof(Salryn.Core.Models.PaymentMethod.AccountsReceivable), StringComparison.OrdinalIgnoreCase));
+
     private static bool HasOperatorPermission(SqliteConnection connection, SqliteTransaction transaction,
         Guid actorUserId, string permission)
     {
@@ -322,10 +328,13 @@ internal static class CentralCanonicalDomainProcessor
         actor.CommandText = "SELECT COUNT(*) FROM users u JOIN role_permissions p ON p.role_id=u.role_id WHERE u.id=$actor AND u.status=1 AND p.permission='Sales.Create';";
         actor.Parameters.AddWithValue("$actor",envelope.ActorUserId.ToString("D"));
         if (Convert.ToInt64(actor.ExecuteScalar()) == 0) return Reject("ERR_CANONICAL_OPERATOR_AUTHORITY");
-        var prerequisites = CentralSaleCommittedPrerequisites.Validate(connection, transaction, parsed.Payload);
-        if (!prerequisites.CanApply) return Review(prerequisites.ConflictCode ?? "SaleCommittedV1.PrerequisiteMissing");
         var mapping = SaleCommittedV1Mapper.ToCore(parsed.Payload);
         if (mapping.IsFailure) return Reject(mapping.ErrorDetail.Code);
+        if ((RequiresCreditSalePermission(parsed.Payload) || mapping.Value.Sale.BalanceDue.Cents > 0) &&
+            !HasOperatorPermission(connection, transaction, envelope.ActorUserId, "Receivables.CreateCreditSale"))
+            return Reject("ERR_CANONICAL_OPERATOR_AUTHORITY");
+        var prerequisites = CentralSaleCommittedPrerequisites.Validate(connection, transaction, parsed.Payload);
+        if (!prerequisites.CanApply) return Review(prerequisites.ConflictCode ?? "SaleCommittedV1.PrerequisiteMissing");
         using var savepoint = connection.CreateCommand();
         savepoint.Transaction = transaction;
         savepoint.CommandText = "SAVEPOINT central_sale_apply;";

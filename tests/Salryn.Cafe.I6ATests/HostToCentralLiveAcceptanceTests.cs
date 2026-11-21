@@ -196,4 +196,185 @@ public sealed class HostToCentralLiveAcceptanceTests
             fenced.StatusCode is HttpStatusCode.Conflict or HttpStatusCode.Forbidden,
             $"Expected 409/403 epoch fence, got {(int)fenced.StatusCode}");
     }
+
+    [Fact]
+    public async Task NoxP1_NeedsReviewMissingPrerequisite_ReprocessesAndAppliesWhenPrerequisiteArrives()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "nox-p1-needsreview-" + Guid.NewGuid().ToString("N"));
+        C4ProofDatabase target = C4ProofDatabase.Create(root);
+        target.Execute(
+            "UPDATE users SET password_hash=$hash WHERE id=$id;",
+            ("$hash", SalrynPasswordHasher.HashPassword(CanonicalDomainTransactionTests.Password).Value),
+            ("$id", C4ProofIds.ActorUserId.ToString("D")));
+
+        // Remove the prerequisite cashier session so the first push MUST return NeedsReview
+        target.Execute("DELETE FROM cashier_sessions WHERE id=$id;", ("$id", C4ProofIds.CashierSessionId.ToString("D")));
+
+        using var host = new CentralSyncTestHost(target.Paths.DatabasePath, canonical: true, canonicalStore: C4ProofIds.StoreId);
+        using HttpClient admin = host.CreateHttpsClient();
+        string adminToken = await host.LoginAsAdminAsync(admin);
+        using EnrolledDeviceClient device = await host.EnrollApproveAndAuthenticateDeviceAsync(
+            admin, adminToken, "Nox P1 NeedsReview Retry Terminal");
+
+        var context = new AuthenticatedDeviceContext(
+            device.DeviceId, host.TenantId, host.StoreId, "Salryn.Cafe", "OfflineAndroidCashier", "Active", "synthetic");
+        SyncOperationEnvelopeV1 saleEnvelope = CanonicalDomainTransactionTests.SaleEnvelope(context);
+
+        HttpResponseMessage loginResp = await device.Http.PostAsJsonAsync(
+            "/api/sync/v1/operators/login",
+            new OperatorLoginRequest("c4-proof", CanonicalDomainTransactionTests.Password));
+        Assert.Equal(HttpStatusCode.OK, loginResp.StatusCode);
+        OperatorLoginResponse login = (await loginResp.Content.ReadFromJsonAsync<OperatorLoginResponse>())!;
+        device.Http.DefaultRequestHeaders.Add(CentralSyncEndpoints.OperatorTokenHeader, login.OperatorToken);
+
+        // 1. First push -> NeedsReview (missing cashier session prerequisite)
+        HttpResponseMessage first = await device.Http.PostAsJsonAsync(
+            "/api/sync/v1/push",
+            new PushOperationsRequest(1, [saleEnvelope]));
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        PushOperationsResponse firstBody = (await first.Content.ReadFromJsonAsync<PushOperationsResponse>())!;
+        PushOperationResultDto firstResult = Assert.Single(firstBody.Results);
+        Assert.False(firstResult.Resolution.IsApplied);
+        Assert.Equal(SaleCommittedV1Contract.NeedsReview, firstResult.Resolution.Status);
+        Assert.Equal(0L, target.ScalarLong("SELECT COUNT(*) FROM sales;"));
+        Assert.Equal(0L, target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed;"));
+
+        // 2. Satisfy the missing prerequisite
+        target.Execute(
+            """
+            INSERT INTO cashier_sessions (id, user_id, opened_at, opening_cash_cents, status)
+            VALUES ($id, $userId, '2026-09-22T03:00:00Z', 10000, 1);
+            """,
+            ("$id", C4ProofIds.CashierSessionId.ToString("D")),
+            ("$userId", C4ProofIds.ActorUserId.ToString("D")));
+
+        // 3. Retry the exact same immutable operation -> MUST reprocess and transition to Applied!
+        HttpResponseMessage retry = await device.Http.PostAsJsonAsync(
+            "/api/sync/v1/push",
+            new PushOperationsRequest(1, [saleEnvelope]));
+        Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
+        PushOperationsResponse retryBody = (await retry.Content.ReadFromJsonAsync<PushOperationsResponse>())!;
+        PushOperationResultDto retryResult = Assert.Single(retryBody.Results);
+        Assert.True(retryResult.Resolution.IsApplied, retryResult.Resolution.ResultCode);
+        Assert.Equal(1L, retryResult.ChangeFeedSequence);
+        Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM sales;"));
+        Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed;"));
+
+        // 4. Subsequent replay returns cached Applied without duplicating
+        HttpResponseMessage third = await device.Http.PostAsJsonAsync(
+            "/api/sync/v1/push",
+            new PushOperationsRequest(1, [saleEnvelope]));
+        Assert.Equal(HttpStatusCode.OK, third.StatusCode);
+        PushOperationsResponse thirdBody = (await third.Content.ReadFromJsonAsync<PushOperationsResponse>())!;
+        Assert.True(Assert.Single(thirdBody.Results).IsDuplicateReplay);
+        Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM sales;"));
+        Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed;"));
+    }
+
+    [Fact]
+    public async Task NoxP1_CreditSaleV2_RejectedWhenCreditSalePermissionRevokedEvenWithSalesCreate()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "nox-p1-creditsale-" + Guid.NewGuid().ToString("N"));
+        C4ProofDatabase target = C4ProofDatabase.Create(root);
+        target.Execute(
+            "UPDATE users SET password_hash=$hash WHERE id=$id;",
+            ("$hash", SalrynPasswordHasher.HashPassword(CanonicalDomainTransactionTests.Password).Value),
+            ("$id", C4ProofIds.ActorUserId.ToString("D")));
+        using var host = new CentralSyncTestHost(target.Paths.DatabasePath, canonical: true, canonicalStore: C4ProofIds.StoreId);
+        using HttpClient admin = host.CreateHttpsClient();
+        string adminToken = await host.LoginAsAdminAsync(admin);
+        using EnrolledDeviceClient device = await host.EnrollApproveAndAuthenticateDeviceAsync(
+            admin, adminToken, "Nox P1 Credit Sale Guard Terminal");
+
+        // Revoke Receivables.CreateCreditSale AFTER host initialization while keeping Sales.Create intact
+        target.Execute("DELETE FROM role_permissions WHERE permission='Receivables.CreateCreditSale';");
+
+        HttpResponseMessage loginResp = await device.Http.PostAsJsonAsync(
+            "/api/sync/v1/operators/login",
+            new OperatorLoginRequest("c4-proof", CanonicalDomainTransactionTests.Password));
+        Assert.Equal(HttpStatusCode.OK, loginResp.StatusCode);
+        OperatorLoginResponse login = (await loginResp.Content.ReadFromJsonAsync<OperatorLoginResponse>())!;
+        device.Http.DefaultRequestHeaders.Add(CentralSyncEndpoints.OperatorTokenHeader, login.OperatorToken);
+
+        var context = new AuthenticatedDeviceContext(
+            device.DeviceId, host.TenantId, host.StoreId, "Salryn.Cafe", "OfflineAndroidCashier", "Active", "synthetic");
+        SyncOperationEnvelopeV1 baseSale = CanonicalDomainTransactionTests.SaleEnvelope(context);
+        SaleCommittedV1 parsedBase = SaleCommittedV1CanonicalJson.Parse(baseSale.PayloadJson).Payload!;
+        SaleCommittedV1 arSaleEvidence = parsedBase with
+        {
+            Sale = parsedBase.Sale with { CustomerId = Guid.NewGuid(), AmountPaidCents = parsedBase.Sale.TotalCents, BalanceDueCents = parsedBase.Sale.TotalCents },
+            Payments = parsedBase.Payments
+                .Select(p => p with { Method = nameof(Salryn.Core.Models.PaymentMethod.AccountsReceivable) })
+                .ToArray()
+        };
+        Guid financialOpId = Guid.NewGuid();
+        Guid financialDecisionId = Guid.NewGuid();
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        var lineDiscounts = arSaleEvidence.Items
+            .Select(i => new SaleCommittedV2LineDiscount(i.Id, 0, 0, 0))
+            .ToArray();
+        var decision = new Salryn.Core.Models.CafeSaleFinancialDecision(
+            financialDecisionId,
+            financialOpId,
+            host.StoreId,
+            null,
+            null,
+            null,
+            arSaleEvidence.Sale.Id,
+            C4ProofIds.CashierSessionId,
+            C4ProofIds.ActorUserId,
+            arSaleEvidence.Sale.SubtotalCents,
+            0,
+            0,
+            0,
+            0,
+            arSaleEvidence.Sale.TotalCents,
+            0,
+            arSaleEvidence.Sale.TotalCents,
+            arSaleEvidence.Sale.TotalCents,
+            0,
+            0,
+            string.Empty,
+            string.Empty,
+            now,
+            arSaleEvidence.Items.Select(i => new Salryn.Core.Models.CafeSaleFinancialLineDecision(i.Id, 0, 0)).ToArray(),
+            []);
+        string decisionHash = Salryn.Core.Services.CafeSaleFinancialCalculator.ComputeContentHash(decision);
+        SaleCommittedV2 v2 = new(
+            SaleEvidence: arSaleEvidence,
+            FinancialOperationId: financialOpId,
+            FinancialDecisionId: financialDecisionId,
+            OrderId: null,
+            OrderRevisionId: null,
+            ExpectedOrderVersion: null,
+            FinancialDecisionCreatedAtUtc: now,
+            FinancialDecisionHash: decisionHash,
+            DiscountReason: string.Empty,
+            FeeTotalCents: 0,
+            LineDiscounts: lineDiscounts,
+            Fees: []);
+        SyncOperationEnvelopeV1 envelope = SyncProtocolV1.CreateEnvelope(
+            deviceId: device.DeviceId,
+            storeId: host.StoreId,
+            actorUserId: C4ProofIds.ActorUserId,
+            localSequence: 1,
+            operationType: SaleCommittedV2Contract.OperationType,
+            schemaVersion: SaleCommittedV2Contract.SchemaVersion,
+            aggregateId: arSaleEvidence.Sale.Id,
+            baseVersion: null,
+            occurredAtLocal: now,
+            payloadJson: SaleCommittedV2CanonicalJson.Serialize(v2));
+
+        HttpResponseMessage push = await device.Http.PostAsJsonAsync(
+            "/api/sync/v1/push",
+            new PushOperationsRequest(1, [envelope]));
+        Assert.Equal(HttpStatusCode.OK, push.StatusCode);
+        PushOperationsResponse body = (await push.Content.ReadFromJsonAsync<PushOperationsResponse>())!;
+        PushOperationResultDto result = Assert.Single(body.Results);
+        Assert.False(result.Resolution.IsApplied);
+        Assert.Equal(SaleCommittedV1Contract.Rejected, result.Resolution.Status);
+        Assert.Equal("ERR_CANONICAL_OPERATOR_AUTHORITY", result.Resolution.ResultCode);
+        Assert.Equal(0L, target.ScalarLong("SELECT COUNT(*) FROM sales;"));
+        Assert.Equal(0L, target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed;"));
+    }
 }

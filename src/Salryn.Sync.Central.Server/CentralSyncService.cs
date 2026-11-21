@@ -1187,14 +1187,72 @@ public sealed partial class CentralSyncService
                                 state.ServerEpoch);
                         }
 
+                        long existingReceivedSeq = reader.GetInt64(1);
+                        DateTimeOffset existingReceivedAt = DateTimeOffset.Parse(reader.GetString(2));
+                        string existingStatus = reader.GetString(3);
+                        string existingResultCode = reader.GetString(4);
+                        string existingResultJson = reader.GetString(5);
+                        DateTimeOffset existingResolvedAt = DateTimeOffset.Parse(reader.GetString(6));
+                        reader.Close();
+
+                        if (existingStatus == SaleCommittedV1Contract.NeedsReview && _options.EnableCanonicalDomainProcessing)
+                        {
+                            CentralDomainResult retried = CentralCanonicalDomainProcessor.Apply(conn, transaction, _options, device, env);
+                            if (retried.Status != SaleCommittedV1Contract.NeedsReview)
+                            {
+                                long? retriedFeedSeq = retried.Status == SaleCommittedV1Contract.Applied
+                                    ? AppendCanonicalChange(conn, transaction, device, env, state, retried.ChangeType!, now) : null;
+                                string updatedResultJson = JsonSerializer.Serialize(new
+                                {
+                                    applied = retried.Status == SaleCommittedV1Contract.Applied,
+                                    needsReview = false,
+                                    resultCode = retried.Code,
+                                    operationType = env.OperationType,
+                                    schemaVersion = env.SchemaVersion
+                                });
+
+                                using (SqliteCommand updateInbox = conn.CreateCommand())
+                                {
+                                    updateInbox.Transaction = transaction;
+                                    updateInbox.CommandText = """
+                                        UPDATE sync_inbox_operations
+                                        SET status = $status,
+                                            result_code = $resultCode,
+                                            result_json = $resultJson,
+                                            resolved_at_utc = $resolvedAt
+                                        WHERE tenant_id = $tenantId AND store_id = $storeId AND operation_id = $opId;
+                                        """;
+                                    updateInbox.Parameters.AddWithValue("$status", retried.Status);
+                                    updateInbox.Parameters.AddWithValue("$resultCode", retried.Code);
+                                    updateInbox.Parameters.AddWithValue("$resultJson", updatedResultJson);
+                                    updateInbox.Parameters.AddWithValue("$resolvedAt", now.ToString("O"));
+                                    updateInbox.Parameters.AddWithValue("$tenantId", device.TenantId.ToString("D"));
+                                    updateInbox.Parameters.AddWithValue("$storeId", device.StoreId.ToString("D"));
+                                    updateInbox.Parameters.AddWithValue("$opId", env.OperationId.ToString("D"));
+                                    updateInbox.ExecuteNonQuery();
+                                }
+
+                                SyncOperationFinalResolutionV1 resolved = new(
+                                    env.OperationId,
+                                    existingReceivedSeq,
+                                    existingReceivedAt,
+                                    retried.Status,
+                                    retried.Code,
+                                    updatedResultJson,
+                                    now);
+                                results.Add(new PushOperationResultDto(env.OperationId, false, resolved, retriedFeedSeq));
+                                continue;
+                            }
+                        }
+
                         SyncOperationFinalResolutionV1 cached = new(
                             env.OperationId,
-                            reader.GetInt64(1),
-                            DateTimeOffset.Parse(reader.GetString(2)),
-                            reader.GetString(3),
-                            reader.GetString(4),
-                            reader.GetString(5),
-                            DateTimeOffset.Parse(reader.GetString(6)));
+                            existingReceivedSeq,
+                            existingReceivedAt,
+                            existingStatus,
+                            existingResultCode,
+                            existingResultJson,
+                            existingResolvedAt);
 
                         long? existingFeedSeq = ReadChangeFeedSequenceForOperation(conn, device.TenantId, device.StoreId, env.OperationId, transaction);
                         results.Add(new PushOperationResultDto(env.OperationId, true, cached, existingFeedSeq));
