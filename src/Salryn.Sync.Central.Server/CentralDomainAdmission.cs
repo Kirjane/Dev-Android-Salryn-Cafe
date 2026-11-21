@@ -49,3 +49,4 @@ internal static class CentralDomainAdmission
          string.Equals(operationType, SaleCommittedV2Contract.OperationType, StringComparison.Ordinal)) ||
         (schemaVersion == SaleCommittedV3Contract.SchemaVersion &&
          string.Equals(operationType, SaleCommittedV3Contract.OperationType, StringComparison.Ordinal));
+}
