@@ -258,8 +258,16 @@ if ($Mode -ne 'Android') {
             $r.notes = 'MOCKED_UI unless suite explicitly proves a live backend. Vitest JSON retained.'
         }
         Invoke-Gate "web-build:$name" 'BUILD' { param($r) Invoke-RecordedCommand "$name-build" 'npm' @('run','build') $dir }
-        if ($relative -eq 'apps/cafe-web') {
-            Invoke-Gate "web-e2e:$name" 'TEST' { param($r) Invoke-RecordedCommand "$name-e2e" 'npm' @('run','test:e2e') $dir }
+        if ($relative -eq 'apps/cafe-web' -and (Test-Path -LiteralPath (Join-Path $dir 'e2e/run-cafe-e2e.mjs'))) {
+            Invoke-Gate "web-e2e:$name" 'TEST' {
+                param($r)
+                $e2eJson = Join-Path $runDir "$name-playwright-e2e.json"
+                $rec = Invoke-RecordedCommand "$name-e2e" 'npm' @('run','test:e2e','--','--json',$e2eJson) $dir
+                $rep = Get-Content -LiteralPath $e2eJson -Raw | ConvertFrom-Json
+                Assert-NonzeroTests $rec.exitCode ([int]$rep.executed) ([int]$rep.passed) ([int]$rep.failed)
+                $r.executed = [int]$rep.executed; $r.passed = [int]$rep.passed; $r.failed = [int]$rep.failed
+                $r.notes = 'CAFE_WEB_DIST_E2E: Vite preview /cafe/, /cafe/central surface isolation, 320-1440px responsive, axe-core WCAG AA, zero dist mocks.'
+            }
         }
     }
 }

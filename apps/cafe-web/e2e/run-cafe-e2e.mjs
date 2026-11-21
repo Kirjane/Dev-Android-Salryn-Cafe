@@ -1,9 +1,20 @@
 import { createRequire } from "node:module";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+const jsonIdx = process.argv.indexOf("--json");
+const jsonOutputPath = jsonIdx >= 0 ? process.argv[jsonIdx + 1] : null;
+let executed = 0;
+let passed = 0;
+let failed = 0;
+
+function recordPass() {
+  executed += 1;
+  passed += 1;
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, "..");
@@ -24,6 +35,7 @@ function assertZeroMocksInDist() {
     }
   }
   console.log(`PASS dist zero-mock check across ${jsFiles.length} JS bundle(s).`);
+  recordPass();
 }
 
 function getFreePort() {
@@ -104,11 +116,13 @@ try {
     if (!logoInfo.complete || logoInfo.naturalWidth <= 0) {
       throw new Error(`Salryn Cafe logo failed to render cleanly: ${JSON.stringify(logoInfo)}`);
     }
+    recordPass();
 
     for (const width of [1440, 768, 320]) {
       await page.setViewportSize({ width, height: 900 });
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
       if (overflow) throw new Error(`Horizontal overflow detected on /cafe/ at width ${width}px.`);
+      recordPass();
     }
 
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -118,6 +132,7 @@ try {
     if (seriousWorkstation.length > 0) {
       throw new Error(`Workstation axe-core violations: ${JSON.stringify(seriousWorkstation.map((v) => v.id))}`);
     }
+    recordPass();
 
     // 2. Verify /cafe/central renders Central Owner Portal in strict surface isolation (zero local Host probes + gated Host Backup/License tab)
     hostCallsOnCentral.length = 0;
@@ -128,8 +143,10 @@ try {
     if (hostCallsOnCentral.length > 0) {
       throw new Error(`Central Owner Portal illegally probed host-only endpoints: ${hostCallsOnCentral.join(", ")}`);
     }
+    recordPass();
     await page.getByRole("button", { name: "Host Backup & License", exact: true }).click();
     await expect(page.getByText(/Local Windows Host Only/i)).toBeVisible();
+    recordPass();
 
     await page.addScriptTag({ content: axeSource });
     const axeCentral = await page.evaluate(async () => await window.axe.run(document));
@@ -137,18 +154,28 @@ try {
     if (seriousCentral.length > 0) {
       throw new Error(`Central Portal axe-core violations: ${JSON.stringify(seriousCentral.map((v) => v.id))}`);
     }
+    recordPass();
 
     // 3. Verify /cafe/backoffice Host sign-in gate & "Back to Workstation" SPA transition
     await page.goto(`${baseUrl}/backoffice`);
     await expect(page.getByRole("heading", { name: "Back-Office Sign In", exact: true })).toBeVisible();
+    recordPass();
     await page.getByRole("button", { name: "Back to Workstation", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Cafe workstation", exact: true })).toBeVisible();
+    recordPass();
 
     if (pageErrors.length > 0) {
       throw new Error(`Uncaught page errors: ${pageErrors.join("; ")}`);
     }
-    console.log("PASS /cafe/ Playwright E2E (zero mocks, /cafe/, /cafe/central surface isolation, /cafe/backoffice navigation, 320-1440px responsive, axe-core 0 critical/serious violations).");
+    console.log(`PASS /cafe/ Playwright E2E (${passed}/${executed} checks passed: zero mocks, /cafe/, /cafe/central surface isolation, /cafe/backoffice navigation, 320-1440px responsive, axe-core 0 critical/serious violations).`);
+  } catch (err) {
+    failed += 1;
+    executed = Math.max(executed, passed + failed);
+    throw err;
   } finally {
+    if (jsonOutputPath) {
+      writeFileSync(jsonOutputPath, JSON.stringify({ executed, passed, failed }, null, 2), "utf8");
+    }
     await browser.close();
   }
 } finally {
