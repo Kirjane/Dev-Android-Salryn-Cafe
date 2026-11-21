@@ -370,7 +370,7 @@ test.describe("W5 LPI runtime contract regressions", () => {
     });
   });
 
-  test("All eight procurement tabs render cleanly with zero errors, non-zero amounts, and modal stability", async ({ page }) => {
+  test("Procurement tabs and separate Accounts Payable page render without runtime errors", async ({ page }) => {
     test.setTimeout(60_000);
     const pageErrors: string[] = [];
     const consoleErrors: string[] = [];
@@ -432,17 +432,18 @@ test.describe("W5 LPI runtime contract regressions", () => {
     await expect(page.getByText("Main Store").first()).toBeVisible();
     await expect(page.getByText("Quarantine").first()).toBeVisible();
 
-    // 9. Accounts Payable tab
+    // 8. Dedicated Accounts Payable page (separate from Procurement tabs)
     await page.getByRole("button", { name: /Accounts Payable/ }).click();
-    await expect(page.getByRole("button", { name: "+ Intake Supplier Invoice" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Accounts Payable", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Intake Supplier Invoice", exact: true })).toBeVisible();
     await expect(page.getByText("APV-202611-0001")).toBeVisible();
     await expect(page.getByText("SI-APEX-001")).toBeVisible();
-    await expect(page.getByRole("button", { name: /Approve Variance/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Record Payment/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Review variance", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Prepare payment", exact: true })).toBeVisible();
 
     // 10. Refresh & reload durability
     await page.reload();
-    await expect(page.getByRole("heading", { name: "Logistics, Procurement & Inventory" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Accounts Payable", exact: true })).toBeVisible();
 
     // Ensure zero page crashes or unhandled exceptions
     await expect(page.getByText("This workspace could not be displayed")).toHaveCount(0);
@@ -470,8 +471,8 @@ test.describe("W5 LPI runtime contract regressions", () => {
     await page.getByRole("button", { name: /Suppliers/ }).click();
     await expect(page.getByRole("button", { name: "+ Add Supplier" })).toHaveCount(0);
 
-    // Requisitions tab: + Create Requisition must NOT be visible
-    await page.getByRole("button", { name: /Requisitions/ }).click();
+    // Requisitions tab itself is unavailable without Procurement.Request.
+    await expect(page.getByRole("button", { name: /Requisitions/ })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "+ Create Requisition" })).toHaveCount(0);
 
     // Receiving tab: Receive Goods dropdown must NOT be visible
@@ -483,11 +484,12 @@ test.describe("W5 LPI runtime contract regressions", () => {
     await expect(page.getByRole("button", { name: "+ Count Adjustment" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "+ Supplier Return" })).toHaveCount(0);
 
-    // Accounts Payable tab: mutation buttons must NOT be visible
+    // Dedicated Accounts Payable page: mutation buttons must NOT be visible
     await page.getByRole("button", { name: /Accounts Payable/ }).click();
-    await expect(page.getByRole("button", { name: "+ Intake Supplier Invoice" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /Approve Variance/i })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /Record Payment/i })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Accounts Payable", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Intake Supplier Invoice", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Review variance", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Prepare payment", exact: true })).toHaveCount(0);
 
     expect(pageErrors).toEqual([]);
   });
