@@ -193,7 +193,7 @@ public sealed class MobileCashierAndSyncTests
     }
 
     [Fact]
-    public async Task HttpIntegration_CentralNeedsReviewRetainsPrototypeOutboxAndFencesRevokedDevice()
+    public async Task HttpIntegration_CentralContainsCanonicalAndPrototypeOutboxesAndFencesRevocation()
     {
         string centralDbPath = TempDbPath();
         string mobileDbPath = TempDbPath();
@@ -262,6 +262,32 @@ public sealed class MobileCashierAndSyncTests
         activeToken = auth.AccessToken;
         activeEpoch = auth.ServerEpoch;
 
+        // Real Central HTTP admission of a canonical durable envelope. Admission is
+        // deliberately not domain application; both inbox and pending outbox survive retry.
+        var canonical = MobileProductionComposition.Create(Path.Combine(Path.GetDirectoryName(mobileDbPath)!, "canonical"));
+        await canonical.InitializeDatabaseAsync();
+        var envelope = canonical.SyncOutbox.Enqueue(new Salryn.Infrastructure.Data.Sync.SyncEnqueueRequest(
+            enrolled.DeviceId, storeId, Guid.NewGuid(), Salryn.Sync.Contracts.CafeOrderOperationContract.OrderParkedV1,
+            1, Guid.NewGuid(), null, DateTimeOffset.UtcNow, "{}", Guid.NewGuid()));
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            var received = await transport.PushBatchAsync([envelope]);
+            Assert.False(received.IsSuccess);
+            Assert.Equal("ERR_SYNC_NOT_APPLIED", received.ErrorCode);
+            Assert.Empty(received.AppliedOperationIds);
+        }
+        Assert.Single(canonical.SyncOutbox.ReadPending(enrolled.DeviceId));
+        var centralStore = factory.Services.GetRequiredService<CentralSyncDatabase>();
+        using (var connection = centralStore.OpenConnection())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT status FROM sync_inbox_operations WHERE operation_id=$id;";
+            command.Parameters.AddWithValue("$id", envelope.OperationId.ToString("D"));
+            Assert.Equal("NeedsReview", command.ExecuteScalar());
+            command.CommandText = "SELECT COUNT(*) FROM sync_change_feed;";
+            Assert.Equal(0L, Convert.ToInt64(command.ExecuteScalar()));
+        }
+
         // Configure MobileCashierEngine with Central's signed offline lease
         CafeMobileDatabase mobileDb = new(mobileDbPath);
         mobileDb.Initialize();
@@ -286,14 +312,14 @@ public sealed class MobileCashierAndSyncTests
 
         MobileSyncCycleResult sync1 = await engine.SyncNowAsync(transport);
         Assert.False(sync1.IsSuccess);
-        Assert.Equal("ERR_SYNC_NOT_APPLIED", sync1.ErrorCode);
+        Assert.Equal("ERR_UNSUPPORTED_OPERATION_TYPE", sync1.ErrorCode);
         Assert.Equal(0, sync1.PushedCount);
         Assert.Equal(1, engine.GetPendingOutboxCount());
         // A transport receipt must not retire financial delivery evidence. Retry is
         // the same durable envelope; Central replays NeedsReview without applying it.
         var retry = await engine.SyncNowAsync(transport);
         Assert.False(retry.IsSuccess);
-        Assert.Equal("ERR_SYNC_NOT_APPLIED", retry.ErrorCode);
+        Assert.Equal("ERR_UNSUPPORTED_OPERATION_TYPE", retry.ErrorCode);
         Assert.Equal(1, engine.GetPendingOutboxCount());
 
         // Perform a second offline sale, then Admin REVOKES the tablet -> Sync fences outbox & locks tablet!
