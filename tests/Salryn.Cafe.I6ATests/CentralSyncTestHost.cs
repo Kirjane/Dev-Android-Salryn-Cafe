@@ -21,9 +21,10 @@ internal sealed class CentralSyncTestHost : IDisposable
     public string AdminPassword { get; } = "CafeYza-Owner-Test!2026";
     public WebApplicationFactory<CentralSyncService> Factory { get; }
 
-    public CentralSyncTestHost(string? existingDbPath = null, bool canonical = false, Guid? canonicalStore = null)
+    public CentralSyncTestHost(string? existingDbPath = null, bool canonical = false, Guid? canonicalStore = null, Guid? canonicalTenant = null)
     {
         if (canonicalStore.HasValue) StoreId=canonicalStore.Value;
+        if (canonicalTenant.HasValue) TenantId=canonicalTenant.Value;
         TempDirectory = Path.Combine(Path.GetTempPath(), "salryn-cafe-i6a-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(TempDirectory);
         DatabasePath = existingDbPath ?? Path.Combine(TempDirectory, "central-sync.db");
