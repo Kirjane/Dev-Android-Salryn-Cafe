@@ -18,7 +18,6 @@ import {
   CardBody,
   CardHeader,
   CardTitle,
-  CommandBar,
   DataTable,
   ErrorState,
   LoadingState,
@@ -194,25 +193,29 @@ export function CafeManagementReportsPanel() {
   ];
 
   return (
-    <div className="flex min-h-0 flex-col gap-3">
-      <CommandBar
-        title="Cafe management reports"
-        subtitle="Store operations, historical COGS, and profitability visibility."
-        status={
-          cafe ? (
-            <StatusPill tone={cafe.profitability.authority === "Authoritative" ? "success" : "warning"}>
-              {cafe.profitability.authority}
-            </StatusPill>
-          ) : (
-            <StatusPill tone="info">Reports.View</StatusPill>
-          )
-        }
-        actions={
-          <Button variant="secondary" onClick={() => void query.refetch()} disabled={query.isFetching}>
-            {query.isFetching ? "Refreshing..." : "Refresh"}
-          </Button>
-        }
-      />
+    <Card>
+      <section aria-labelledby="cafe-management-reports-heading">
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 id="cafe-management-reports-heading" className="text-base font-semibold text-slate-950">
+                  Cafe management reports
+                </h2>
+                <StatusPill tone={cafe?.profitability.authority === "Authoritative" ? "success" : "warning"}>
+                  {cafe ? cafe.profitability.authority : "Authority pending"}
+                </StatusPill>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                Store operations, historical COGS, and profitability visibility.
+              </p>
+            </div>
+            <Button variant="secondary" onClick={() => void query.refetch()} disabled={query.isFetching}>
+              {query.isFetching ? "Refreshing..." : "Refresh"}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardBody className="flex min-h-0 flex-col gap-3">
 
       <div className="grid gap-2 sm:grid-cols-[180px_180px_auto] sm:items-end">
         <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -411,7 +414,7 @@ export function CafeManagementReportsPanel() {
             </div>
 
             <div className="border-t border-slate-200 pt-4">
-              <h2 className="text-base font-semibold text-slate-950">Legacy owner drilldown</h2>
+              <h3 className="text-base font-semibold text-slate-950">Legacy owner drilldown</h3>
               <p className="mb-3 text-xs text-slate-500">
                 Existing daily, weekly, monthly, product, cashier, category, and low-stock views are retained.
               </p>
@@ -451,6 +454,8 @@ export function CafeManagementReportsPanel() {
           </div>
         </div>
       ) : null}
-    </div>
+        </CardBody>
+      </section>
+    </Card>
   );
 }

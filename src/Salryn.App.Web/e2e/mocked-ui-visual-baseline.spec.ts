@@ -152,7 +152,8 @@ test.describe("MOCKED_UI Visual Baseline & Screen Inventory @visual", () => {
     await installMockSalrynApi(page, { persona: "admin", u1Entitled: true });
     await page.goto("/");
     await sidebarNavButton(page, "Accounts Receivable").click();
-    await expect(page.getByRole("heading", { name: "Utang Ledger" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Accounts Receivable" })).toBeVisible();
+    await expect(page.getByText(/Utang Ledger/i)).toBeVisible();
     await expect(page.getByText("Maria Clara Dela Cruz")).toBeVisible();
     await page.getByText("Maria Clara Dela Cruz").click();
     await expect(page.getByText("OR-20260418-0018 Weekly rice & oil stock utang")).toBeVisible();

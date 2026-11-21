@@ -281,6 +281,31 @@ export async function installMockSalrynApi(page: Page, options: MockSalrynScenar
     }
 
     if (path === "/api/checkout" && method === "POST") {
+      const body = req.postDataJSON() as {
+        payments?: Array<{ method?: string; amountCents?: number }>;
+      } | null;
+      const payments = Array.isArray(body?.payments) ? body.payments : [];
+      const invalidPayment = payments.find(
+        (payment) => payment?.method !== "Cash" && payment?.method !== "AccountsReceivable",
+      );
+      if (payments.length === 0 || invalidPayment) {
+        return route.fulfill({
+          status: 400,
+          contentType: "application/json",
+          body: JSON.stringify({
+            code: "Checkout.UnsupportedTenderMethod",
+            message: "Salryn Cafe accepts Cash and AccountsReceivable tenders only.",
+            checkout: {
+              status: "InvalidPayment",
+              receiptNumber: null,
+              saleId: null,
+              totalCents: null,
+              changeCents: null,
+              message: "Unsupported payment method. Only Cash and AccountsReceivable are allowed.",
+            },
+          }),
+        });
+      }
       return route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -444,6 +469,17 @@ export async function installMockSalrynApi(page: Page, options: MockSalrynScenar
     }
 
     if (path === "/api/receivables/collections" && method === "POST") {
+      const body = req.postDataJSON() as { method?: string } | null;
+      if (body?.method !== "Cash") {
+        return route.fulfill({
+          status: 400,
+          contentType: "application/json",
+          body: JSON.stringify({
+            code: "Receivables.UnsupportedCollectionMethod",
+            message: "Salryn Cafe collections accept Cash only.",
+          }),
+        });
+      }
       return route.fulfill({
         status: 200,
         contentType: "application/json",

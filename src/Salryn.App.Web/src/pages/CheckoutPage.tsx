@@ -14,9 +14,10 @@ import { formatDateTime, formatMoney, formatQuantity } from "../utils/format";
 import { safeNotificationDescription } from "../utils/notificationError";
 
 type CartLine = { product: ProductListItem; quantity: number };
+type CafePaymentMode = "Cash" | "Utang" | "CashUtang";
 type CheckoutAttemptState = { httpStatus: number | null; backendCode: string | null; checkoutStatus: string | null; receiptNumber: string | null; saleId: string | null };
 type CheckoutReceiptMetadata = CheckoutEnvelope["checkout"] & { receiptSnapshotSaved?: boolean; fileReceiptStatus?: string; fileReceiptPath?: string | null; fileReceiptError?: string | null };
-type CompletedSaleState = { receiptNumber: string | null; saleId: string | null; totalCents: number | null; amountPaidCents: number; balanceDueCents: number; paymentMode: "Cash" | "GCash" | "Maya" | "Debit" | "Utang" | "CashUtang" | "Split"; changeCents: number | null; fileReceiptStatus: string | null; fileReceiptPath: string | null; fileReceiptError: string | null };
+type CompletedSaleState = { receiptNumber: string | null; saleId: string | null; totalCents: number | null; amountPaidCents: number; balanceDueCents: number; paymentMode: CafePaymentMode; changeCents: number | null; fileReceiptStatus: string | null; fileReceiptPath: string | null; fileReceiptError: string | null };
 type StockState = { label: string; tone: "neutral" | "primary" | "success" | "warning" | "danger" | "info"; canAdd: boolean; helper: string };
 
 const initialAttemptState: CheckoutAttemptState = { httpStatus: null, backendCode: null, checkoutStatus: null, receiptNumber: null, saleId: null };
@@ -105,13 +106,7 @@ export function CheckoutPage() {
   const [productPage, setProductPage] = useState(1);
   const [cartLines, setCartLines] = useState<CartLine[]>([]);
   const [cashAmount, setCashAmount] = useState("");
-  const [paymentMode, setPaymentMode] = useState<"Cash" | "GCash" | "Maya" | "Debit" | "Utang" | "CashUtang" | "Split">("Cash");
-  const [digitalRef, setDigitalRef] = useState("");
-  const [splitCash, setSplitCash] = useState("");
-  const [splitGcash, setSplitGcash] = useState("");
-  const [splitMaya, setSplitMaya] = useState("");
-  const [splitDebit, setSplitDebit] = useState("");
-  const [splitUtang, setSplitUtang] = useState("");
+  const [paymentMode, setPaymentMode] = useState<CafePaymentMode>("Cash");
   const [customerId, setCustomerId] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [utangNote, setUtangNote] = useState("");
@@ -170,36 +165,19 @@ export function CheckoutPage() {
   const cashCents = toCents(cashAmount);
   const subtotalCents = Math.round(subtotal * 100);
 
-  const splitCashCents = toCents(splitCash);
-  const splitGcashCents = toCents(splitGcash);
-  const splitMayaCents = toCents(splitMaya);
-  const splitDebitCents = toCents(splitDebit);
-  const splitUtangCents = toCents(splitUtang);
-
-  const digitalCents =
-    paymentMode === "GCash" || paymentMode === "Maya" || paymentMode === "Debit"
-      ? subtotalCents
-      : paymentMode === "Split"
-        ? splitGcashCents + splitMayaCents + splitDebitCents
-        : 0;
-
   const activeUtangCents =
     paymentMode === "Utang"
       ? subtotalCents
       : paymentMode === "CashUtang"
         ? Math.max(0, subtotalCents - cashCents)
-        : paymentMode === "Split"
-          ? splitUtangCents
-          : 0;
+        : 0;
 
   const estimatedChangeCents =
     activeUtangCents > 0
       ? 0
       : paymentMode === "Cash"
         ? (cashCents >= subtotalCents ? cashCents - subtotalCents : 0)
-        : paymentMode === "Split"
-          ? Math.max(0, splitCashCents - Math.max(0, subtotalCents - digitalCents))
-          : 0;
+        : 0;
   const shift = shiftQuery.data?.shift;
   const shiftOpen = isOpenShift(shift?.shiftState);
   const operatorLabel = sessionQuery.data?.user?.displayName ?? sessionQuery.data?.user?.username ?? "Not signed in";
@@ -208,28 +186,23 @@ export function CheckoutPage() {
   const canGoPrevious = (productResponse?.pageNumber ?? productPage) > 1;
   const canGoNext = productResponse ? productResponse.pageNumber < productResponse.totalPages : false;
 
+  const isSupportedPaymentMode =
+    paymentMode === "Cash" || paymentMode === "Utang" || paymentMode === "CashUtang";
+
   const cartValidationMessage = useMemo(() => {
     if (completedSale) return "Start a new sale before submitting again.";
     if (!shiftOpen) return "No open shift.";
     if (cartLines.length === 0) return "No cart lines yet.";
+    if (!isSupportedPaymentMode) return "Unsupported payment mode. Only Cash, Utang, or Cash + Utang is allowed.";
     if (paymentMode === "Cash" && cashCents <= 0) return "Cash tender is missing.";
     if (paymentMode === "Cash" && cashCents < subtotalCents) return "Cash tender is below subtotal.";
     if ((paymentMode === "Utang" || paymentMode === "CashUtang") && !canCreateReceivable) return "Your role cannot create an Utang sale.";
     if (paymentMode === "Utang" && cashCents !== 0) return "Full Utang requires cash received to be zero.";
     if (paymentMode === "CashUtang" && (cashCents <= 0 || cashCents >= subtotalCents)) return "Cash + Utang requires a partial cash amount.";
-    if (paymentMode === "Split") {
-      const nonCash = splitGcashCents + splitMayaCents + splitDebitCents + splitUtangCents;
-      if (nonCash > subtotalCents) return "Non-cash payments exceed sale total.";
-      if (splitUtangCents > 0 && !canCreateReceivable) return "Your role cannot create an Utang sale.";
-      if (splitUtangCents > 0 && !customerId) return "Select a customer for the Utang balance.";
-      const cashNeeded = Math.max(0, subtotalCents - nonCash);
-      if (splitCashCents < cashNeeded) return `Remaining cash needed is ${fromCents(cashNeeded)}.`;
-      if (splitUtangCents > 0 && splitCashCents > cashNeeded) return "Utang sales cannot produce cash change.";
-    }
     if (activeUtangCents > 0 && !customerId) return "Select a customer for the Utang balance.";
     if (isSubmittingCheckout) return "Checkout is submitting.";
     return null;
-  }, [activeUtangCents, canCreateReceivable, cartLines.length, cashCents, completedSale, customerId, isSubmittingCheckout, paymentMode, shiftOpen, splitCashCents, splitDebitCents, splitGcashCents, splitMayaCents, splitUtangCents, subtotalCents]);
+  }, [activeUtangCents, canCreateReceivable, cartLines.length, cashCents, completedSale, customerId, isSubmittingCheckout, isSupportedPaymentMode, paymentMode, shiftOpen, subtotalCents]);
   const canReviewCheckout = cartValidationMessage === null && cartLines.length > 0;
 
   useEffect(() => {
@@ -364,7 +337,7 @@ export function CheckoutPage() {
     }).filter((line) => line.quantity > 0));
   }
 
-  function clearCart() { checkoutRequestIdRef.current = null; setCartLines([]); setCashAmount(""); setDigitalRef(""); setSplitCash(""); setSplitGcash(""); setSplitMaya(""); setSplitDebit(""); setSplitUtang(""); setCheckoutResult(null); setCompletedSale(null); setPrintResult(null); setBarcodeStatus(null); setShowConfirmCheckout(false); setAttemptState(initialAttemptState); setBackendMessage(null); }
+  function clearCart() { checkoutRequestIdRef.current = null; setCartLines([]); setCashAmount(""); setCheckoutResult(null); setCompletedSale(null); setPrintResult(null); setBarcodeStatus(null); setShowConfirmCheckout(false); setAttemptState(initialAttemptState); setBackendMessage(null); }
   async function startNewSale() { clearCart(); await refreshShiftAndProducts(); }
   async function refreshShiftAndProducts() { setBackendMessage(null); await Promise.all([sessionQuery.refetch(), shiftQuery.refetch(), productsQuery.refetch(), unitsQuery.refetch()]); setLastRefreshAt(new Date().toISOString()); }
   async function handleOpenShift() { setBackendMessage(null); setIsOpeningShift(true); try { await openHostShift({ openingCashCents: toCents(openingCash) }); setBackendMessage(null); notify.success("Shift opened", "Checkout is ready for sales."); await Promise.all([shiftQuery.refetch(), productsQuery.refetch(), unitsQuery.refetch()]); setLastRefreshAt(new Date().toISOString()); } catch (error) { const description = describeCheckoutBackendError(error); setBackendMessage(description); notify.error("Shift was not opened", safeNotificationDescription(new Error(description), "Review the opening cash and try again.")); } finally { setIsOpeningShift(false); } }
@@ -404,12 +377,6 @@ export function CheckoutPage() {
       let payments: CheckoutPaymentRequest[] = [];
       if (paymentMode === "Cash") {
         payments = [{ method: "Cash", amountCents: cashCents }];
-      } else if (paymentMode === "GCash") {
-        payments = [{ method: "GCash", amountCents: subtotalCents }];
-      } else if (paymentMode === "Maya") {
-        payments = [{ method: "Maya", amountCents: subtotalCents }];
-      } else if (paymentMode === "Debit") {
-        payments = [{ method: "Debit", amountCents: subtotalCents }];
       } else if (paymentMode === "Utang") {
         payments = [{ method: "AccountsReceivable", amountCents: subtotalCents }];
       } else if (paymentMode === "CashUtang") {
@@ -417,20 +384,16 @@ export function CheckoutPage() {
           ...(cashCents > 0 ? [{ method: "Cash" as const, amountCents: cashCents }] : []),
           { method: "AccountsReceivable" as const, amountCents: activeUtangCents },
         ];
-      } else if (paymentMode === "Split") {
-        payments = [
-          ...(splitCashCents > 0 ? [{ method: "Cash" as const, amountCents: splitCashCents }] : []),
-          ...(splitGcashCents > 0 ? [{ method: "GCash" as const, amountCents: splitGcashCents }] : []),
-          ...(splitMayaCents > 0 ? [{ method: "Maya" as const, amountCents: splitMayaCents }] : []),
-          ...(splitDebitCents > 0 ? [{ method: "Debit" as const, amountCents: splitDebitCents }] : []),
-          ...(splitUtangCents > 0 ? [{ method: "AccountsReceivable" as const, amountCents: splitUtangCents }] : []),
-        ];
+      } else {
+        throw new Error(`Unsupported payment mode "${String(paymentMode)}". Only Cash, Utang, or Cash + Utang is allowed.`);
       }
 
-      const noteWithRef = [
-        digitalRef.trim() ? `Ref: ${digitalRef.trim()}` : "",
-        utangNote.trim()
-      ].filter(Boolean).join(" | ");
+      if (
+        payments.length === 0 ||
+        payments.some((payment) => payment.method !== "Cash" && payment.method !== "AccountsReceivable")
+      ) {
+        throw new Error("Unsupported payment method. Only Cash and AccountsReceivable are allowed.");
+      }
 
       const result = await submitCheckout({
         clientRequestId,
@@ -440,7 +403,7 @@ export function CheckoutPage() {
         customerFullName: customer?.fullName,
         customerPhone: customer?.phone ?? undefined,
         dueDate: dueDate || undefined,
-        note: noteWithRef || undefined,
+        note: utangNote.trim() || undefined,
       });
       const receiptMetadata = result.checkout as CheckoutReceiptMetadata;
       setCheckoutResult(result);
@@ -449,7 +412,7 @@ export function CheckoutPage() {
         receiptNumber: result.checkout.receiptNumber,
         saleId: result.checkout.saleId,
         totalCents: result.checkout.totalCents,
-        amountPaidCents: paymentMode === "Cash" ? cashCents : paymentMode === "Split" ? (splitCashCents + digitalCents) : subtotalCents,
+        amountPaidCents: paymentMode === "Utang" ? 0 : cashCents,
         balanceDueCents: activeUtangCents,
         paymentMode,
         changeCents: result.checkout.changeCents,
@@ -499,25 +462,16 @@ export function CheckoutPage() {
   }
 
   const settlementStatusLabel =
-    paymentMode === "GCash"
-      ? "GCash full transfer"
-      : paymentMode === "Maya"
-        ? "Maya full transfer"
-        : paymentMode === "Debit"
-          ? "Debit card terminal"
-          : paymentMode === "Utang"
-            ? customerId ? "Credit sale ready" : "Select customer"
-            : paymentMode === "CashUtang"
-              ? cashCents <= 0 || cashCents >= subtotalCents ? "Enter partial cash" : !customerId ? "Select customer" : "Cash + Utang ready"
-              : paymentMode === "Split"
-                ? activeUtangCents > 0 && !customerId ? "Select customer for Utang" : "Mixed tender ready"
-                : cashCents <= 0 ? "Enter cash" : cashCents < subtotalCents ? "Insufficient cash" : "Ready";
+    paymentMode === "Utang"
+      ? customerId ? "Credit sale ready" : "Select customer"
+      : paymentMode === "CashUtang"
+        ? cashCents <= 0 || cashCents >= subtotalCents ? "Enter partial cash" : !customerId ? "Select customer" : "Cash + Utang ready"
+        : cashCents <= 0 ? "Enter cash" : cashCents < subtotalCents ? "Insufficient cash" : "Ready";
 
   const settlementIsDeficit =
     (paymentMode === "Cash" && cashCents < subtotalCents) ||
     (paymentMode === "CashUtang" && (cashCents <= 0 || cashCents >= subtotalCents || !customerId)) ||
-    (paymentMode === "Utang" && !customerId) ||
-    (paymentMode === "Split" && (activeUtangCents > 0 && !customerId));
+    (paymentMode === "Utang" && !customerId);
 
   return (
     <div className="min-w-0 space-y-3">
@@ -573,17 +527,9 @@ export function CheckoutPage() {
                 <StatusPill tone={paymentMode === "Cash" ? "success" : paymentMode === "Utang" ? "info" : "neutral"}>
                   {paymentMode === "Cash"
                     ? "Cash sale"
-                    : paymentMode === "GCash"
-                      ? "GCash"
-                      : paymentMode === "Maya"
-                        ? "Maya"
-                        : paymentMode === "Debit"
-                          ? "Debit card"
-                          : paymentMode === "Utang"
-                            ? "Full Utang"
-                            : paymentMode === "CashUtang"
-                              ? "Cash + Utang"
-                              : "Mixed Tender"}
+                    : paymentMode === "Utang"
+                      ? "Full Utang"
+                      : "Cash + Utang"}
                 </StatusPill>
               </div>
             </CardHeader>
@@ -607,50 +553,26 @@ export function CheckoutPage() {
                       className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm font-medium"
                       value={paymentMode}
                       onChange={(event) => {
-                        const mode = event.target.value as any;
+                        const mode = event.target.value;
+                        if (mode !== "Cash" && mode !== "Utang" && mode !== "CashUtang") {
+                          setBackendMessage(`Unsupported payment mode "${mode}". Only Cash, Utang, or Cash + Utang is allowed.`);
+                          notify.error("Unsupported payment mode", "Only Cash, Utang, or Cash + Utang is allowed.");
+                          return;
+                        }
                         setPaymentMode(mode);
                         if (mode === "Utang") setCashAmount("0");
                         if (mode === "Cash") setCashAmount(subtotal > 0 ? subtotal.toFixed(2) : "");
                       }}
                     >
                       <option value="Cash">💵 Cash</option>
-                      <option value="GCash">📱 GCash</option>
-                      <option value="Maya">💳 Maya</option>
-                      <option value="Debit">💳 Debit Card</option>
                       {canCreateReceivable ? (
                         <>
                           <option value="Utang">📋 Utang (Full AR)</option>
                           <option value="CashUtang">💵📋 Cash + Utang</option>
-                          <option value="Split">🔀 Split / Mixed Tender</option>
                         </>
-                      ) : (
-                        <option value="Split">🔀 Split / Mixed Tender</option>
-                      )}
+                      ) : null}
                     </select>
                   </div>
-
-                  {paymentMode === "GCash" || paymentMode === "Maya" || paymentMode === "Debit" ? (
-                    <div className="mt-3 space-y-2 rounded-md border border-slate-200 bg-white p-3">
-                      <div className="flex items-center justify-between text-xs text-slate-600">
-                        <span className="font-semibold uppercase">{paymentMode} transfer</span>
-                        <span className="font-bold text-slate-900">{formatMoney(subtotal)}</span>
-                      </div>
-                      <p className="text-[11px] text-slate-500">
-                        Verify customer transfer on your device before confirming. No physical cash drawer movement.
-                      </p>
-                      <div>
-                        <label htmlFor="checkout-digital-ref" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                          Reference / Transaction # (Optional)
-                        </label>
-                        <TextInput
-                          id="checkout-digital-ref"
-                          value={digitalRef}
-                          onChange={(e) => setDigitalRef(e.target.value)}
-                          placeholder="e.g. 1234567890"
-                        />
-                      </div>
-                    </div>
-                  ) : null}
 
                   {paymentMode === "Utang" || paymentMode === "CashUtang" ? (
                     <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
@@ -686,59 +608,6 @@ export function CheckoutPage() {
                       <div className="rounded-md border border-blue-200 bg-white p-3">
                         <p className="text-xs uppercase text-slate-500">Balance due (Utang)</p>
                         <p className="text-lg font-bold text-blue-800">{fromCents(activeUtangCents)}</p>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {paymentMode === "Split" ? (
-                    <div className="mt-3 space-y-2 rounded-md border border-slate-200 bg-white p-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Allocate payment channels</p>
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        <div>
-                          <label className="text-xs text-slate-500">💵 Cash Tendered</label>
-                          <TextInput value={splitCash} onChange={(e) => setSplitCash(e.target.value)} placeholder="0.00" inputMode="decimal" />
-                        </div>
-                        <div>
-                          <label className="text-xs text-slate-500">📱 GCash</label>
-                          <TextInput value={splitGcash} onChange={(e) => setSplitGcash(e.target.value)} placeholder="0.00" inputMode="decimal" />
-                        </div>
-                        <div>
-                          <label className="text-xs text-slate-500">💳 Maya</label>
-                          <TextInput value={splitMaya} onChange={(e) => setSplitMaya(e.target.value)} placeholder="0.00" inputMode="decimal" />
-                        </div>
-                        <div>
-                          <label className="text-xs text-slate-500">💳 Debit Card</label>
-                          <TextInput value={splitDebit} onChange={(e) => setSplitDebit(e.target.value)} placeholder="0.00" inputMode="decimal" />
-                        </div>
-                        {canCreateReceivable ? (
-                          <>
-                            <div className="sm:col-span-2">
-                              <label className="text-xs text-slate-500">📋 Utang / AR Amount</label>
-                              <TextInput value={splitUtang} onChange={(e) => setSplitUtang(e.target.value)} placeholder="0.00" inputMode="decimal" />
-                            </div>
-                            {splitUtangCents > 0 ? (
-                              <div className="sm:col-span-2">
-                                <label className="text-xs text-slate-500">Customer (Required)</label>
-                                <select
-                                  className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
-                                  value={customerId}
-                                  onChange={(e) => setCustomerId(e.target.value)}
-                                >
-                                  <option value="">Select customer</option>
-                                  {(customersQuery.data ?? []).filter((r) => r.customer.isActive).map((r) => (
-                                    <option key={r.customer.id} value={r.customer.id}>
-                                      {r.customer.fullName}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                            ) : null}
-                          </>
-                        ) : null}
-                      </div>
-                      <div>
-                        <label className="text-xs text-slate-500">Reference # (Optional)</label>
-                        <TextInput value={digitalRef} onChange={(e) => setDigitalRef(e.target.value)} placeholder="Digital payment reference" />
                       </div>
                     </div>
                   ) : null}
@@ -810,11 +679,6 @@ export function CheckoutPage() {
                   >
                     {activeUtangCents > 0 ? fromCents(activeUtangCents) : fromCents(estimatedChangeCents)}
                   </p>
-                  {paymentMode === "Split" ? (
-                    <p className="mt-1 text-xs text-slate-600">
-                      Total covered: {fromCents(splitCashCents + digitalCents + splitUtangCents - estimatedChangeCents)} of {formatMoney(subtotal)}
-                    </p>
-                  ) : null}
                 </div>
 
                 {cartValidationMessage ? (
@@ -845,12 +709,12 @@ export function CheckoutPage() {
 
       <details className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-card"><summary className="cursor-pointer text-sm font-semibold text-slate-900">Checkout diagnostics</summary><div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4"><p>Session: {sessionQuery.isLoading ? "Loading..." : sessionQuery.data?.isAuthenticated ? `Authenticated as ${operatorLabel}` : "Not authenticated"}</p><p>Shift status: {shift?.shiftState ?? "Unknown"}</p><p>Permission required: Sales.Create</p><p>Product source: local product catalog</p><p>Cart line count: {cartLines.length}</p><p>Cart item quantity: {formatQuantity(itemQuantityTotal)}</p><p>Cart total: {formatMoney(subtotal)}</p><p>Cash tendered: {fromCents(cashCents)}</p><p>Local validation: {cartValidationMessage ?? "Ready for review"}</p><p>Submit lock: {isSubmittingCheckout ? "Locked" : "Unlocked"}</p><p>Barcode status: {barcodeStatus ?? "NotAttempted"}</p><p>Fast Add: {showFastAdd ? "Open" : "Closed"}</p><p>Print status: {printResult?.status ?? "NotAttempted"}</p><p>Last checkout HTTP status: {attemptState.httpStatus ?? "—"}</p><p>Last backend code: {attemptState.backendCode ?? "—"}</p><p>Last checkout status: {attemptState.checkoutStatus ?? "—"}</p><p>Last receipt number: {attemptState.receiptNumber ?? "—"}</p><p>Last sale ID: {attemptState.saleId ?? "—"}</p><p>Last refresh: {lastRefreshAt ? formatDateTime(lastRefreshAt) : "—"}</p></div></details>
 
-      {showConfirmCheckout ? <Dialog title="Review Checkout" onClose={() => setShowConfirmCheckout(false)} footer={<><Button variant="secondary" onClick={() => setShowConfirmCheckout(false)} disabled={isSubmittingCheckout}>Cancel</Button><Button variant="success" onClick={() => void handleSubmitCheckout()} disabled={isSubmittingCheckout || !canReviewCheckout}>{isSubmittingCheckout ? "Committing..." : "Confirm Sale"}</Button></>}><div className="space-y-4 text-sm text-slate-700"><Alert tone="warning" title="Final review before sale commit">Sale commits only after Confirm Sale. Printing is attempted only after a committed sale and only when Print Receipt is clicked.</Alert><div className="grid gap-3 sm:grid-cols-2"><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Cart</p><p className="text-lg font-semibold text-slate-950">{cartLines.length} line(s) · {formatQuantity(itemQuantityTotal)} item(s)</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Total</p><p className="text-lg font-semibold text-slate-950">{formatMoney(subtotal)}</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Payment method</p><p className="text-lg font-semibold text-slate-950">{paymentMode === "Cash" ? "Cash" : paymentMode === "GCash" ? "GCash" : paymentMode === "Maya" ? "Maya" : paymentMode === "Debit" ? "Debit card" : paymentMode === "Utang" ? "Utang (Full)" : paymentMode === "CashUtang" ? "Cash + Utang" : "Mixed Tender"}</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">{activeUtangCents > 0 ? "Utang balance" : "Change"}</p><p className={`text-lg font-semibold ${activeUtangCents > 0 ? "text-blue-800" : "text-emerald-700"}`}>{activeUtangCents > 0 ? fromCents(activeUtangCents) : fromCents(estimatedChangeCents)}</p></div></div><div className="max-h-56 overflow-y-auto rounded-lg border border-slate-200">{cartLines.map((line) => <div key={line.product.id} className="flex justify-between gap-3 border-b border-slate-100 px-3 py-2 last:border-b-0"><div><p className="font-semibold text-slate-900">{line.product.name}</p><p className="text-xs text-slate-500">{formatQuantity(line.quantity)} × {formatMoney(line.product.sellingPrice)}</p></div><p className="font-semibold text-slate-900">{formatMoney(line.quantity * line.product.sellingPrice)}</p></div>)}</div></div></Dialog> : null}
+      {showConfirmCheckout ? <Dialog title="Review Checkout" onClose={() => setShowConfirmCheckout(false)} footer={<><Button variant="secondary" onClick={() => setShowConfirmCheckout(false)} disabled={isSubmittingCheckout}>Cancel</Button><Button variant="success" onClick={() => void handleSubmitCheckout()} disabled={isSubmittingCheckout || !canReviewCheckout}>{isSubmittingCheckout ? "Committing..." : "Confirm Sale"}</Button></>}><div className="space-y-4 text-sm text-slate-700"><Alert tone="warning" title="Final review before sale commit">Sale commits only after Confirm Sale. Printing is attempted only after a committed sale and only when Print Receipt is clicked.</Alert><div className="grid gap-3 sm:grid-cols-2"><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Cart</p><p className="text-lg font-semibold text-slate-950">{cartLines.length} line(s) · {formatQuantity(itemQuantityTotal)} item(s)</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Total</p><p className="text-lg font-semibold text-slate-950">{formatMoney(subtotal)}</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Payment method</p><p className="text-lg font-semibold text-slate-950">{paymentMode === "Cash" ? "Cash" : paymentMode === "Utang" ? "Utang (Full)" : "Cash + Utang"}</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">{activeUtangCents > 0 ? "Utang balance" : "Change"}</p><p className={`text-lg font-semibold ${activeUtangCents > 0 ? "text-blue-800" : "text-emerald-700"}`}>{activeUtangCents > 0 ? fromCents(activeUtangCents) : fromCents(estimatedChangeCents)}</p></div></div><div className="max-h-56 overflow-y-auto rounded-lg border border-slate-200">{cartLines.map((line) => <div key={line.product.id} className="flex justify-between gap-3 border-b border-slate-100 px-3 py-2 last:border-b-0"><div><p className="font-semibold text-slate-900">{line.product.name}</p><p className="text-xs text-slate-500">{formatQuantity(line.quantity)} × {formatMoney(line.product.sellingPrice)}</p></div><p className="font-semibold text-slate-900">{formatMoney(line.quantity * line.product.sellingPrice)}</p></div>)}</div></div></Dialog> : null}
       {showAddCustomer ? <Dialog title="Add Utang customer" onClose={() => setShowAddCustomer(false)} footer={<><Button variant="secondary" onClick={() => setShowAddCustomer(false)}>Cancel</Button><Button onClick={() => void handleAddCustomer()} disabled={!newCustomerName.trim()}>Add and select</Button></>}><div className="grid gap-3"><div><label htmlFor="checkout-new-customer-name" className="mb-1 block text-xs font-semibold uppercase text-slate-500">Full name</label><TextInput id="checkout-new-customer-name" value={newCustomerName} onChange={(event) => setNewCustomerName(event.target.value)} /></div><div><label htmlFor="checkout-new-customer-phone" className="mb-1 block text-xs font-semibold uppercase text-slate-500">Phone</label><TextInput id="checkout-new-customer-phone" value={newCustomerPhone} onChange={(event) => setNewCustomerPhone(event.target.value)} /></div></div></Dialog> : null}
 
       {showFastAdd ? <Dialog title="Fast Add Unknown Barcode" onClose={() => setShowFastAdd(false)} footer={<><Button variant="secondary" onClick={() => setShowFastAdd(false)} disabled={isFastAdding}>Cancel</Button><Button variant="success" onClick={() => void handleSubmitFastAdd()} disabled={isFastAdding || unitsQuery.isLoading}>{isFastAdding ? "Creating..." : "Create Product and Add to Cart"}</Button></>}><div className="space-y-4 text-sm text-slate-700"><Alert tone="warning" title="Explicit cashier confirmation required">This creates a minimal active product and optional initial stock entry for the preserved unknown barcode. It does not reduce stock; checkout remains the only sale stock-reducing operation.</Alert>{fastAddError ? <Alert tone="danger" title="Fast Add error">{fastAddError}</Alert> : null}{unitsQuery.isError ? <Alert tone="danger" title="Units unavailable">{describeCheckoutBackendError(unitsQuery.error)}</Alert> : null}<div className="grid gap-3 sm:grid-cols-2"><div><label htmlFor="fast-add-barcode" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Barcode</label><TextInput id="fast-add-barcode" value={fastAddBarcode} readOnly aria-readonly="true" /><p className="mt-1 text-xs text-slate-500">Preserved from the unknown scan/search input.</p></div><div><label htmlFor="fast-add-name" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Product name</label><TextInput id="fast-add-name" value={fastAddProductName} onChange={(event) => setFastAddProductName(event.target.value)} placeholder="Product name" /></div><div><label htmlFor="fast-add-unit" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Unit</label><select id="fast-add-unit" className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900" value={fastAddUnitId} onChange={(event) => setFastAddUnitId(event.target.value)}><option value="">Select unit</option>{(unitsQuery.data ?? []).map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select></div><div><label htmlFor="fast-add-price" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Selling price</label><TextInput id="fast-add-price" value={fastAddSellingPrice} onChange={(event) => setFastAddSellingPrice(event.target.value)} placeholder="0.00" inputMode="decimal" /></div><div><label htmlFor="fast-add-stock" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Initial stock quantity</label><TextInput id="fast-add-stock" value={fastAddInitialStock} onChange={(event) => setFastAddInitialStock(event.target.value)} placeholder="0" inputMode="decimal" /><p className="mt-1 text-xs text-slate-500">Must be zero or higher. Positive quantity creates an initial stock entry.</p></div></div><p className="rounded-md bg-slate-100 p-3 text-xs text-slate-600">Duplicate barcode is rejected by the local API. Product creation is explicit and uses the local product/inventory write path.</p></div></Dialog> : null}
 
-      {completedSale ? <Dialog title="Sale Completed" onClose={() => setCompletedSale(null)} footer={<><Button className="min-h-12" variant="secondary" onClick={() => void handlePrintCompletedReceipt()} disabled={!completedSale.saleId || isPrintingReceipt}>{isPrintingReceipt ? "Printing..." : "Print Receipt"}</Button><Button className="min-h-12" variant="success" onClick={() => void startNewSale()}>New Sale (F5)</Button></>}><div className="space-y-4 text-sm text-slate-700"><div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-center"><p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">{completedSale.paymentMode === "Cash" ? "Cash sale committed" : completedSale.paymentMode === "GCash" ? "GCash sale committed" : completedSale.paymentMode === "Maya" ? "Maya sale committed" : completedSale.paymentMode === "Debit" ? "Debit card sale committed" : completedSale.paymentMode === "Utang" ? "Utang credit sale committed" : completedSale.paymentMode === "CashUtang" ? "Cash + Utang sale committed" : "Mixed tender sale committed"}</p><p className="mt-2 text-2xl font-bold text-emerald-900">{completedSale.receiptNumber ?? "Receipt pending"}</p><p className="mt-1 text-xs text-emerald-800">Keep this receipt number for your store records.</p><details className="mt-3 rounded-md border border-emerald-100 bg-white/70 px-3 py-2 text-left text-xs text-emerald-900"><summary className="cursor-pointer font-medium text-emerald-800">Support details</summary><p className="mt-2">This checkout receipt number is the store reference for this sale (not an official government receipt).</p><p className="mt-1 font-mono">Sale ID: {completedSale.saleId ?? "—"}</p></details></div><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Total</p><p className="text-lg font-semibold text-slate-950">{fromCents(completedSale.totalCents)}</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Amount paid</p><p className="text-lg font-semibold text-slate-950">{fromCents(completedSale.amountPaidCents)}</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">{completedSale.balanceDueCents > 0 ? "Utang balance" : "Change"}</p><p className="text-lg font-semibold text-emerald-700">{completedSale.balanceDueCents > 0 ? fromCents(completedSale.balanceDueCents) : fromCents(completedSale.changeCents)}</p></div></div><Alert tone={completedSale.fileReceiptStatus === "Written" ? "success" : "warning"} title="Receipt file status">{completedSale.fileReceiptStatus === "Written" ? `Receipt file created${completedSale.fileReceiptPath ? `: ${completedSale.fileReceiptPath}` : "."}` : completedSale.fileReceiptStatus ? `Receipt file status: ${completedSale.fileReceiptStatus}${completedSale.fileReceiptError ? ` — ${completedSale.fileReceiptError}` : ""}` : "Receipt file status was not included in this checkout response."}</Alert><Alert tone="info" title="Saved under Sales & Receipts">The sale is saved under Sales & Receipts for receipt snapshot preview, detail review, and later reprint. Stay on Checkout to print or start a new sale.</Alert>{printResult ? <Alert tone={printTone(printResult.status)} title="Printer adapter status">{printResult.message}{printResult.errorMessage ? ` — ${printResult.errorMessage}` : ""} Source: {printResult.source}. Adapter: {printResult.adapterName}.</Alert> : <Alert tone="info" title="Printer adapter status">Printing is optional. Sale remains committed if printer is disabled, unavailable, or failed.</Alert>}<p className="text-xs text-slate-500">Print Receipt uses the persisted receipt snapshot/file source through the printer adapter. It does not start a new sale. New Sale remains a separate action.</p>{checkoutResult ? <p className="rounded-md bg-slate-100 p-3 text-slate-700">{checkoutResult.checkout.message}</p> : null}</div></Dialog> : null}
+      {completedSale ? <Dialog title="Sale Completed" onClose={() => setCompletedSale(null)} footer={<><Button className="min-h-12" variant="secondary" onClick={() => void handlePrintCompletedReceipt()} disabled={!completedSale.saleId || isPrintingReceipt}>{isPrintingReceipt ? "Printing..." : "Print Receipt"}</Button><Button className="min-h-12" variant="success" onClick={() => void startNewSale()}>New Sale (F5)</Button></>}><div className="space-y-4 text-sm text-slate-700"><div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-center"><p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">{completedSale.paymentMode === "Cash" ? "Cash sale committed" : completedSale.paymentMode === "Utang" ? "Utang credit sale committed" : "Cash + Utang sale committed"}</p><p className="mt-2 text-2xl font-bold text-emerald-900">{completedSale.receiptNumber ?? "Receipt pending"}</p><p className="mt-1 text-xs text-emerald-800">Keep this receipt number for your store records.</p><details className="mt-3 rounded-md border border-emerald-100 bg-white/70 px-3 py-2 text-left text-xs text-emerald-900"><summary className="cursor-pointer font-medium text-emerald-800">Support details</summary><p className="mt-2">This checkout receipt number is the store reference for this sale (not an official government receipt).</p><p className="mt-1 font-mono">Sale ID: {completedSale.saleId ?? "—"}</p></details></div><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Total</p><p className="text-lg font-semibold text-slate-950">{fromCents(completedSale.totalCents)}</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Amount paid</p><p className="text-lg font-semibold text-slate-950">{fromCents(completedSale.amountPaidCents)}</p></div><div className="rounded-lg border border-slate-200 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">{completedSale.balanceDueCents > 0 ? "Utang balance" : "Change"}</p><p className="text-lg font-semibold text-emerald-700">{completedSale.balanceDueCents > 0 ? fromCents(completedSale.balanceDueCents) : fromCents(completedSale.changeCents)}</p></div></div><Alert tone={completedSale.fileReceiptStatus === "Written" ? "success" : "warning"} title="Receipt file status">{completedSale.fileReceiptStatus === "Written" ? `Receipt file created${completedSale.fileReceiptPath ? `: ${completedSale.fileReceiptPath}` : "."}` : completedSale.fileReceiptStatus ? `Receipt file status: ${completedSale.fileReceiptStatus}${completedSale.fileReceiptError ? ` — ${completedSale.fileReceiptError}` : ""}` : "Receipt file status was not included in this checkout response."}</Alert><Alert tone="info" title="Saved under Sales & Receipts">The sale is saved under Sales & Receipts for receipt snapshot preview, detail review, and later reprint. Stay on Checkout to print or start a new sale.</Alert>{printResult ? <Alert tone={printTone(printResult.status)} title="Printer adapter status">{printResult.message}{printResult.errorMessage ? ` — ${printResult.errorMessage}` : ""} Source: {printResult.source}. Adapter: {printResult.adapterName}.</Alert> : <Alert tone="info" title="Printer adapter status">Printing is optional. Sale remains committed if printer is disabled, unavailable, or failed.</Alert>}<p className="text-xs text-slate-500">Print Receipt uses the persisted receipt snapshot/file source through the printer adapter. It does not start a new sale. New Sale remains a separate action.</p>{checkoutResult ? <p className="rounded-md bg-slate-100 p-3 text-slate-700">{checkoutResult.checkout.message}</p> : null}</div></Dialog> : null}
     </div>
   );
 }

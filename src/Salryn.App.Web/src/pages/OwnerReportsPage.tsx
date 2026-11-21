@@ -310,7 +310,6 @@ export function OwnerReportsPage({
 
   return (
     <div className="space-y-4">
-      <CafeManagementReportsPanel />
       <CommandBar
         title="Reports"
         subtitle="Owner analytics by store day in Asia/Manila; Read-only and bounded."
@@ -655,6 +654,7 @@ export function OwnerReportsPage({
           </CardBody>
         </Card>
       ) : null}
+      <CafeManagementReportsPanel />
     </div>
   );
 }

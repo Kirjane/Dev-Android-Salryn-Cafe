@@ -486,6 +486,7 @@ export function InventoryPage() {
             <div className="min-h-[5.25rem] shrink-0 rounded-lg border border-slate-200 bg-slate-50 p-3">
               <div className="flex flex-wrap gap-3">
                 <select
+                  aria-label="Filter by movement type"
                   className="w-auto min-w-0 flex-[1_1_12rem] rounded-lg border border-slate-300 px-3 py-2 text-sm"
                   value={movementType}
                   onChange={(event) => {

@@ -202,6 +202,7 @@ export function AuditPage() {
 
           <div className="flex flex-wrap gap-3">
             <TextInput
+              aria-label="Search logs"
               className="min-w-0 flex-[2_1_14rem]"
               placeholder="Search logs..."
               value={search}
@@ -211,6 +212,7 @@ export function AuditPage() {
               }}
             />
             <TextInput
+              aria-label="From date"
               className="min-w-0 flex-[1_1_11rem]"
               placeholder="From ISO/date"
               value={from}
@@ -220,6 +222,7 @@ export function AuditPage() {
               }}
             />
             <TextInput
+              aria-label="To date"
               className="min-w-0 flex-[1_1_11rem]"
               placeholder="To ISO/date"
               value={to}

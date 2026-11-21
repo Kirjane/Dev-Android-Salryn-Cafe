@@ -621,6 +621,7 @@ export function ProductsPage({ onOpenInventory }: ProductsPageProps = {}) {
             <div className="shrink-0 rounded-lg border border-slate-200 bg-slate-50 p-3">
               <div className="flex flex-wrap gap-3">
                 <TextInput
+                  aria-label="Search barcode or product name"
                   className="min-w-0 flex-[2_1_16rem]"
                   placeholder="Search barcode or product name..."
                   value={search}
@@ -628,6 +629,7 @@ export function ProductsPage({ onOpenInventory }: ProductsPageProps = {}) {
                   autoComplete="off"
                 />
                 <select
+                  aria-label="Filter by category"
                   className="min-h-9 w-auto min-w-0 flex-[1_1_10rem] rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                   value={categoryId}
                   onChange={(event) => {
@@ -643,6 +645,7 @@ export function ProductsPage({ onOpenInventory }: ProductsPageProps = {}) {
                   ))}
                 </select>
                 <select
+                  aria-label="Filter by brand"
                   className="min-h-9 w-auto min-w-0 flex-[1_1_10rem] rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                   value={brandId}
                   onChange={(event) => {
@@ -658,6 +661,7 @@ export function ProductsPage({ onOpenInventory }: ProductsPageProps = {}) {
                   ))}
                 </select>
                 <select
+                  aria-label="Filter by status"
                   className="min-h-9 w-auto min-w-0 flex-[1_1_9rem] rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                   value={statusFilter}
                   onChange={(event) => {

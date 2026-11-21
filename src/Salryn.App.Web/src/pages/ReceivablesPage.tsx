@@ -39,9 +39,7 @@ export function ReceivablesPage() {
   const [ledgerPage, setLedgerPage] = useState(1);
   const [selectedId, setSelectedId] = useState(incoming.get("customerId") ?? "");
   const [collectionAmount, setCollectionAmount] = useState("");
-  const [collectionMethod, setCollectionMethod] = useState<"Cash" | "GCash" | "Maya" | "Debit">("Cash");
-  const [collectionReference, setCollectionReference] = useState("");
-  const [nonCashConfirmed, setNonCashConfirmed] = useState(false);
+  const [collectionMethod, setCollectionMethod] = useState<"Cash">("Cash");
   const [collectionNote, setCollectionNote] = useState("");
   const [message, setMessage] = useState("");
   const [isCollecting, setIsCollecting] = useState(false);
@@ -72,25 +70,16 @@ export function ReceivablesPage() {
 
   async function collect() {
     if (isCollecting) return;
+    if (collectionMethod !== "Cash") {
+      setMessage("Only Cash collections are supported.");
+      notify.error("Unsupported collection method", "Only Cash collections are allowed.");
+      return;
+    }
     const amountCents = Math.round(Number(collectionAmount) * 100);
     if (!selectedId || !Number.isFinite(amountCents) || amountCents <= 0) {
       setMessage("Select a customer and enter a positive collection amount.");
       notify.warning("Collection amount required", "Select a customer and enter a valid positive collection amount.");
       return;
-    }
-    const isCash = collectionMethod === "Cash";
-    const trimmedReference = collectionReference.trim();
-    if (!isCash) {
-      if (!trimmedReference) {
-        setMessage(`Enter the ${collectionMethod} transaction reference number.`);
-        notify.warning("Reference required", `Enter the ${collectionMethod} transaction reference number before recording.`);
-        return;
-      }
-      if (!nonCashConfirmed) {
-        setMessage(`Confirm that you verified receipt of the ${collectionMethod} payment.`);
-        notify.warning("Operator confirmation required", `Confirm that you verified receipt of the ${collectionMethod} payment.`);
-        return;
-      }
     }
     setIsCollecting(true);
     try {
@@ -99,18 +88,14 @@ export function ReceivablesPage() {
       const result = await collectReceivable({
         customerId: selectedId,
         amountCents,
-        method: collectionMethod,
+        method: "Cash",
         note: collectionNote || undefined,
         clientRequestId,
-        referenceNumber: isCash ? undefined : trimmedReference,
-        nonCashConfirmed: !isCash && nonCashConfirmed,
       });
       collectionRequestIdRef.current = null;
       setCollectionAcknowledgment(result.plainTextAcknowledgment);
       setCollectionAcknowledgmentId(result.collection.id);
       setCollectionAmount("");
-      setCollectionReference("");
-      setNonCashConfirmed(false);
       setCollectionNote("");
       setMessage("Collection recorded. No new sale was created.");
       notify.success("Collection recorded", "Payment collected and credited to customer ledger. No new sale was created.");
@@ -174,8 +159,8 @@ export function ReceivablesPage() {
   return (
     <div className="space-y-4">
       <CommandBar
-        title="Utang Ledger"
-        subtitle="Accounts Receivable balances, collections, and immutable customer history."
+        title="Accounts Receivable"
+        subtitle="Utang Ledger — Customer balances, collections, and immutable history."
         status={<StatusPill tone="info">Signed U1 Ledger</StatusPill>}
       />
       {message ? <Alert tone={message.includes("failed") ? "danger" : "info"}>{message}</Alert> : null}
@@ -281,74 +266,80 @@ export function ReceivablesPage() {
               <p className="text-sm text-slate-500">Select a customer to inspect recurring Utang and collections.</p>
             ) : (
               <>
-                <div className="space-y-2">
-                  <div className="grid gap-2 sm:grid-cols-4">
-                    <select
-                      id="receivables-collection-method"
-                      aria-label="Collection payment method"
-                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-                      value={collectionMethod}
-                      onChange={(event) => {
-                        const next = event.target.value as "Cash" | "GCash" | "Maya" | "Debit";
-                        setCollectionMethod(next);
-                        if (next === "Cash") {
-                          setCollectionReference("");
-                          setNonCashConfirmed(false);
-                        }
-                      }}
+                <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="min-w-0">
+                      <label
+                        htmlFor="receivables-collection-method"
+                        className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                      >
+                        Method
+                      </label>
+                      <select
+                        id="receivables-collection-method"
+                        aria-label="Collection payment method"
+                        className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900"
+                        value={collectionMethod}
+                        onChange={(event) => {
+                          const next = event.target.value;
+                          if (next !== "Cash") {
+                            setMessage("Only Cash collections are supported.");
+                            notify.error("Unsupported collection method", "Only Cash collections are allowed.");
+                            return;
+                          }
+                          setCollectionMethod("Cash");
+                        }}
+                        disabled={isCollecting}
+                      >
+                        <option value="Cash">Cash</option>
+                      </select>
+                    </div>
+                    <div className="min-w-0">
+                      <label
+                        htmlFor="receivables-collection-amount"
+                        className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                      >
+                        Collection amount
+                      </label>
+                      <TextInput
+                        id="receivables-collection-amount"
+                        aria-label="Collection amount"
+                        className="h-10 w-full"
+                        value={collectionAmount}
+                        onChange={(event) => setCollectionAmount(event.target.value)}
+                        inputMode="decimal"
+                        placeholder="Collection amount"
+                        disabled={isCollecting}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                    <div className="min-w-0">
+                      <label
+                        htmlFor="receivables-collection-note"
+                        className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                      >
+                        Collection note
+                      </label>
+                      <TextInput
+                        id="receivables-collection-note"
+                        aria-label="Collection note"
+                        className="h-10 w-full"
+                        value={collectionNote}
+                        onChange={(event) => setCollectionNote(event.target.value)}
+                        placeholder="Optional collection note"
+                        disabled={isCollecting}
+                      />
+                    </div>
+                    <Button
+                      className="h-10 w-full whitespace-nowrap sm:w-auto"
+                      aria-label="Collect payment"
+                      onClick={() => void collect()}
                       disabled={isCollecting}
                     >
-                      <option value="Cash">Cash</option>
-                      <option value="GCash">GCash</option>
-                      <option value="Maya">Maya</option>
-                      <option value="Debit">Debit</option>
-                    </select>
-                    <TextInput
-                      id="receivables-collection-amount"
-                      aria-label="Collection amount"
-                      value={collectionAmount}
-                      onChange={(event) => setCollectionAmount(event.target.value)}
-                      inputMode="decimal"
-                      placeholder="Collection amount"
-                      disabled={isCollecting}
-                    />
-                    <TextInput
-                      id="receivables-collection-note"
-                      aria-label="Collection note"
-                      value={collectionNote}
-                      onChange={(event) => setCollectionNote(event.target.value)}
-                      placeholder="Optional collection note"
-                      disabled={isCollecting}
-                    />
-                    <Button onClick={() => void collect()} disabled={isCollecting}>
                       {isCollecting ? "Recording..." : "Collect payment"}
                     </Button>
                   </div>
-                  {collectionMethod !== "Cash" ? (
-                    <div className="grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2 sm:items-center">
-                      <TextInput
-                        id="receivables-collection-reference"
-                        aria-label="Transaction reference number"
-                        value={collectionReference}
-                        onChange={(event) => setCollectionReference(event.target.value)}
-                        placeholder={`Required ${collectionMethod} reference number`}
-                        disabled={isCollecting}
-                      />
-                      <label className="flex items-start gap-2 text-xs text-slate-700" htmlFor="receivables-collection-confirmed">
-                        <input
-                          id="receivables-collection-confirmed"
-                          type="checkbox"
-                          className="mt-0.5"
-                          checked={nonCashConfirmed}
-                          onChange={(event) => setNonCashConfirmed(event.target.checked)}
-                          disabled={isCollecting}
-                        />
-                        <span>
-                          Operator confirms {collectionMethod} payment was received/verified (operator confirmation only, not bank/gateway settlement proof).
-                        </span>
-                      </label>
-                    </div>
-                  ) : null}
                 </div>
                 {collectionAcknowledgment ? (
                   <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3">
