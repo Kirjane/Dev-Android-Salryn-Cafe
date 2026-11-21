@@ -10,6 +10,7 @@ public sealed class DesktopWebViewIsolationTests
     {
         Assert.Equal("Salryn.Cafe", DevHostConfig.ProductId);
         Assert.Equal("http://127.0.0.1:5399", DevHostConfig.ApiBaseUrl);
+        Assert.EndsWith("/cafe/", DevHostConfig.DefaultInstalledWebUrl);
         Assert.Equal(@"Global\Kirjane.SalrynCafe.Desktop", DevHostConfig.DesktopMutexName);
         Assert.EndsWith(
             Path.Combine("SalrynCafe", "WebView2"),

@@ -7,6 +7,18 @@ namespace Salryn.Sync.Central.Server;
 
 public sealed partial class CentralSyncService
 {
+    public ServiceOutcome<object> ReadCohostProbe(Guid key)
+    {
+        if(!_options.EnableCanonicalDomainProcessing || key==Guid.Empty)
+            return ServiceOutcome<object>.Fail(403,"ERR_COHOST_UNAVAILABLE","Canonical cohost proof is unavailable.");
+        using var c=_db.OpenConnection();using var q=c.CreateCommand();
+        q.CommandText="SELECT value FROM app_metadata WHERE key=$key;";
+        q.Parameters.AddWithValue("$key","salryn.cafe.cohost.probe."+key.ToString("D"));
+        return q.ExecuteScalar() is string value && value.Length==64
+            ? ServiceOutcome<object>.Ok(new{value})
+            : ServiceOutcome<object>.Fail(409,"ERR_COHOST_FILE_MISMATCH","No matching local-file probe exists.");
+    }
+
     public ServiceOutcome<CafeIngredientRecipeBootstrapV1> GetIngredientBootstrap(AuthenticatedDeviceContext device,
         Guid storeId, Guid centralInstanceId, long baselineServerSequence)
     {

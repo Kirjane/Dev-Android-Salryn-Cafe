@@ -153,6 +153,7 @@ public static class LocalApiApplicationFactory
         builder.Services.AddSingleton(sessionStore);
         builder.Services.AddSingleton(sessionService);
         ILocalLicenseService licenseService = options.LicenseService ?? new LocalLicenseService();
+        builder.Services.AddSingleton<CafeCentralConnection>();
         builder.Services.AddSingleton(licenseService);
         builder.Services.AddSingleton<ILocalLicenseEnforcementService>(
             new LocalLicenseEnforcementService(licenseService));
@@ -448,6 +449,7 @@ public static class LocalApiApplicationFactory
         app.MapLocalHostCheckoutEndpoints();
         app.MapLocalAccountsReceivableEndpoints();
         app.MapLocalCafeDomainEndpoints();
+        app.MapLocalCafeCentralSyncEndpoints();
         app.MapLocalReceiptPrinterEndpoints();
         app.MapLocalUserAdminEndpoints();
         app.MapRemoteReadOnlyEndpoints();

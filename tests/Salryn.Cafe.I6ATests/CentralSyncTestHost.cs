@@ -19,7 +19,7 @@ internal sealed class CentralSyncTestHost : IDisposable
     public Guid StoreId { get; } = Guid.CreateVersion7();
     public string AdminUsername { get; } = "owner@cafeyza.local";
     public string AdminPassword { get; } = "CafeYza-Owner-Test!2026";
-    public WebApplicationFactory<Program> Factory { get; }
+    public WebApplicationFactory<CentralSyncService> Factory { get; }
 
     public CentralSyncTestHost(string? existingDbPath = null, bool canonical = false, Guid? canonicalStore = null)
     {
@@ -28,7 +28,7 @@ internal sealed class CentralSyncTestHost : IDisposable
         Directory.CreateDirectory(TempDirectory);
         DatabasePath = existingDbPath ?? Path.Combine(TempDirectory, "central-sync.db");
 
-        Factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        Factory = new WebApplicationFactory<CentralSyncService>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Testing");
             builder.ConfigureServices(services =>

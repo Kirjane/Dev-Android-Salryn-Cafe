@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Salryn.Api.Local\Salryn.Api.Local.csproj" />
     <ProjectReference Include="..\..\src\Salryn.Sync.Central.Server\Salryn.Sync.Central.Server.csproj" />
     <ProjectReference Include="..\..\src\Salryn.Sync.Contracts\Salryn.Sync.Contracts.csproj" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />

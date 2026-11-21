@@ -42,8 +42,30 @@ public sealed class CanonicalSemanticCompletionTests
         Assert.Equal(1, target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed;"));
     }
 
+    [Theory]
+    [InlineData("Sales.DiscountApply")]
+    [InlineData("Sales.FeeApply")]
+    public async Task CanonicalSaleCommittedV2_RejectsRevokedFinancialPermissionWithoutAnyBusinessWrite(string permission)
+    {
+        var (target, service, context, _) = CreateCanonicalAuthority();
+        target.Execute("DELETE FROM role_permissions WHERE permission=$permission;", ("$permission", permission));
+        // Re-login deliberately: a fresh reduced-authority token must not substitute for operation-specific permission.
+        var login=await service.LoginOperatorAsync(context,new("c4-proof",OperatorPassword));
+        Assert.Equal(200,login.StatusCode);
+        var envelope=BuildSaleV2Envelope(context,localSequence:1);
+        var response=service.PushOperations(context,new(1,[envelope]),login.Value!.OperatorToken);
+        Assert.Equal(200,response.StatusCode);
+        var result=Assert.Single(response.Value!.Results);
+        Assert.Equal(SaleCommittedV1Contract.Rejected,result.Resolution.Status);
+        Assert.Equal("ERR_CANONICAL_OPERATOR_AUTHORITY",result.Resolution.ResultCode);
+        Assert.Null(result.ChangeFeedSequence);
+        foreach(string table in new[]{"sales","payments","stock_movements","accounts_receivable_entries","cafe_sale_financial_decisions","sync_change_feed"})
+            Assert.Equal(0L,target.ScalarLong($"SELECT COUNT(*) FROM {table};"));
+        Assert.Equal(10000L,target.ScalarLong("SELECT stock_on_hand_x1000 FROM products WHERE sku='C4-PRODUCT';"));
+    }
+
     [Fact]
-    public void UnsupportedOperationFamily_RemainsExplicitlyNeedsReviewWithoutChangeFeed()
+    public void MalformedSupportedDelivery_IsRejectedWithoutDomainOrChangeFeed()
     {
         var (target, service, context, token) = CreateCanonicalAuthority();
         SyncOperationEnvelopeV1 unsupported = SyncProtocolV1.CreateEnvelope(
@@ -62,8 +84,9 @@ public sealed class CanonicalSemanticCompletionTests
         Assert.Equal(200, push.StatusCode);
         var result = Assert.Single(push.Value!.Results);
         Assert.False(result.Resolution.IsApplied);
-        Assert.Equal(SaleCommittedV1Contract.NeedsReview, result.Resolution.Status);
-        Assert.Equal("DOMAIN_PROCESSOR_UNAVAILABLE", result.Resolution.ResultCode);
+        Assert.Equal(SaleCommittedV1Contract.Rejected, result.Resolution.Status);
+        Assert.Equal("CafeDeliverySync.PayloadInvalid", result.Resolution.ResultCode);
+        Assert.Equal(0, target.ScalarLong("SELECT COUNT(*) FROM cafe_delivery_fulfillments;"));
         Assert.Null(result.ChangeFeedSequence);
         Assert.Equal(0, target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed;"));
     }

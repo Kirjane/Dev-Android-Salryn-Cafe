@@ -28,3 +28,14 @@ Resume smallest queue:
 6. Release CoreSmoke authorized license fixture remains external; never bypass DEBUG/Release guards.
 
 No native Forge harness orchestration claimed. Manual execution with skills and bounded agents only. Both workers told to stop; shift worker stopped cleanly, Android worker hit usage limit. No new engineering should run without user resume.
+
+
+## Parallel QA handoff checkpoint (user stopped for token conservation)
+
+New source stabilized beyond ff46a753; pushed checkpoint is NOT QA release acceptance. Existing Windows solution restored then Release build PASS. I6A repaired43/43 plus2 new V2 permission denial tests PASS; origin financial verification2/2 PASS; Central permission restart2/2 PASS. Mobile63/63 PASS before later seeder and bootstrap changes; current credential19/19 PASS including reducedgrant restart. All evidence outsideGit qa-release. Current final combined tests NOT RUN.
+
+Implemented but final integrated qualification pending: desktop opens /cafe; Host explicitly packaged; Windows cohost connector+DPAPI; retained origin sale fact verification; monotonic successfuloperator expiry; zero/grant-role refresh; defaultseeder no longer regrants revoked establishedrole permissions; Android persists original bootstrapbundle for resumable setup; sameSHA draft prerelease workflow+31case docs.
+
+Known next blockers: Windows connector AssertCohost currently uses static instance+epoch identity and must complete random localfile probe challenge (Central endpoint already added, client probe NOT YET implemented). Do NOT claim exactsamefile proof or pairedready. Latest connector test9pass1fail inspect cohost-connector-final.log. ActualCentral Windows pairing test encountered ambiguous Program from two referenced executables; factory generic now changed to CentralSyncService to identify assembly, NOT rerun. Run WindowsCohostPairingTests first. Workflow not executed; artifacts/release not staged; formalNox still CHANGES_REQUESTED.
+
+User wants PowerShell command/output handoff now; no physicalQA automation. Workflow launch once source/tests corrected: existing salryn-cafe-installer-qa.yml supports matched_qa=true and profile=DebugSynthetic or ReleaseEntitled; delegates reusable matchedsameSHA workflow. DebugSynthetic only disposable synthetic; Release checks unchanged and authorized license missing. No main/candidate merge or production deploy.

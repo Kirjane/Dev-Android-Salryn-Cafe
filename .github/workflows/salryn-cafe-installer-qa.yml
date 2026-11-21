@@ -6,9 +6,27 @@ on:
       - forge/candidate-salryn-cafe
       - main
   workflow_dispatch:
+    inputs:
+      matched_qa:
+        description: Build a matched same-SHA Windows/Android QA draft prerelease
+        type: boolean
+        default: false
+      profile:
+        type: choice
+        default: ReleaseEntitled
+        options: [ReleaseEntitled, DebugSynthetic]
 
 jobs:
+  matched-qa:
+    if: github.event_name == 'workflow_dispatch' && inputs.matched_qa
+    permissions:
+      contents: write
+    uses: ./.github/workflows/salryn-cafe-qa-release.yml
+    with:
+      source_sha: ${{ github.sha }}
+      profile: ${{ inputs.profile }}
   windows-installer-acceptance:
+    if: github.event_name != 'workflow_dispatch' || !inputs.matched_qa
     name: Windows Installer Acceptance (Elevated Disposable Runner)
     runs-on: windows-latest
     timeout-minutes: 15

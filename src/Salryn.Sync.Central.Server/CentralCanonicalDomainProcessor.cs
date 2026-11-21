@@ -120,6 +120,9 @@ internal static partial class CentralCanonicalDomainProcessor
         if ((RequiresCreditSalePermission(parsed.Payload.SaleEvidence) || mapping.Value.Sale.BalanceDue.Cents > 0) &&
             !HasOperatorPermission(connection, transaction, envelope.ActorUserId, "Receivables.CreateCreditSale"))
             return Reject("ERR_CANONICAL_OPERATOR_AUTHORITY");
+        var origin=CanonicalOriginSaleVerifier.VerifyIfRetained(connection,transaction,envelope);
+        if(origin.IsFailure) return Review(origin.ErrorDetail.Code);
+        if(origin.Value) return new(SaleCommittedV1Contract.Applied,"SaleCommittedV2.Applied",AppliedBusinessChangeContract.SaleCommittedV2AppliedV1);
         var prerequisites = CentralSaleCommittedPrerequisites.Validate(connection, transaction, parsed.Payload.SaleEvidence);
         if (!prerequisites.CanApply) return Review(prerequisites.ConflictCode ?? "SaleCommittedV2.PrerequisiteMissing");
         var financial = SaleCommittedV2Mapper.ToFinancialDecision(parsed.Payload, envelope.StoreId);
@@ -341,6 +344,9 @@ internal static partial class CentralCanonicalDomainProcessor
         if ((RequiresCreditSalePermission(parsed.Payload) || mapping.Value.Sale.BalanceDue.Cents > 0) &&
             !HasOperatorPermission(connection, transaction, envelope.ActorUserId, "Receivables.CreateCreditSale"))
             return Reject("ERR_CANONICAL_OPERATOR_AUTHORITY");
+        var origin=CanonicalOriginSaleVerifier.VerifyIfRetained(connection,transaction,envelope);
+        if(origin.IsFailure) return Review(origin.ErrorDetail.Code);
+        if(origin.Value) return new(SaleCommittedV1Contract.Applied,"SaleCommittedV1.Applied",AppliedBusinessChangeContract.SaleCommittedV1AppliedV1);
         var prerequisites = CentralSaleCommittedPrerequisites.Validate(connection, transaction, parsed.Payload);
         if (!prerequisites.CanApply) return Review(prerequisites.ConflictCode ?? "SaleCommittedV1.PrerequisiteMissing");
         using var savepoint = connection.CreateCommand();

@@ -27,7 +27,8 @@ public sealed record LeaseValidationResult(
     string Code,
     string Message)
 {
-    public static LeaseValidationResult Allowed() => new(true, "LEASE_VALID", "Offline lease is valid.");
+    public DateTimeOffset? EffectiveNowUtc { get; init; }
+    public static LeaseValidationResult Allowed(DateTimeOffset now) => new(true, "LEASE_VALID", "Offline lease is valid.") {EffectiveNowUtc=now};
     public static LeaseValidationResult Denied(string code, string message) => new(false, code, message);
 }
 
@@ -212,7 +213,7 @@ public sealed class MobileOfflineLeaseGuard
             Encoding.UTF8.GetBytes(JsonSerializer.Serialize(updated)),
             ct).ConfigureAwait(false);
 
-        return LeaseValidationResult.Allowed();
+        return LeaseValidationResult.Allowed(nextHighWaterUtc);
     }
 
     private async Task<AntiRollbackWatermark?> ReadWatermarkAsync(CancellationToken ct)

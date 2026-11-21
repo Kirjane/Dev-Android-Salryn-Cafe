@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
+    <ProjectReference Include="..\Salryn.Mobile.Foundation\Salryn.Mobile.Foundation.csproj" />
     <ProjectReference Include="..\Salryn.Composition.Local\Salryn.Composition.Local.csproj" />
     <ProjectReference Include="..\Salryn.Core\Salryn.Core.csproj" />
     <ProjectReference Include="..\Salryn.Host.Local\Salryn.Host.Local.csproj" />

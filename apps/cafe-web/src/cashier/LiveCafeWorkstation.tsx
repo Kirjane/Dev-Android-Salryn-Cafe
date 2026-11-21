@@ -35,6 +35,7 @@ export function LiveCafeWorkstation() {
   const [itemId, setItemId] = useState(""), [variant, setVariant] = useState(""), [options, setOptions] = useState<string[]>([]);
   const [username, setUsername] = useState(""), [password, setPassword] = useState("");
   const [serviceMode, setServiceMode] = useState("Takeout"), [reference, setReference] = useState("");
+  const [centralOrigin,setCentralOrigin]=useState(""),[centralTenant,setCentralTenant]=useState(""),[centralStore,setCentralStore]=useState(""),[centralPin,setCentralPin]=useState(""),[joinCode,setJoinCode]=useState(""),[syncPassword,setSyncPassword]=useState("");
   const [tender, setTender] = useState("Cash"), [cash, setCash] = useState("0"), [customer, setCustomer] = useState("");
   const [customers, setCustomers] = useState<{id: string; fullName: string}[]>([]);
   const [counted, setCounted] = useState("0"), [message, setMessage] = useState("Connecting to the local Host…");
@@ -111,6 +112,17 @@ export function LiveCafeWorkstation() {
           })}>Archive rejected request</button></>}
       </section>}
       <button disabled={busy} onClick={() => void run(async () => { await refresh(); setMessage("Refreshed from Host."); })}>Refresh from Host</button>
+      <details><summary>Central pairing and synchronization</summary>
+        <p>Cohost QA profile: Central and this Host must use the same local canonical database. Pair before opening a drawer or creating orders.</p>
+        {permitted("StoreTerminal.Manage") && <><label>Approved Central HTTPS loopback origin<input value={centralOrigin} onChange={e=>setCentralOrigin(e.target.value)} /></label>
+        <label>Central tenant ID<input value={centralTenant} onChange={e=>setCentralTenant(e.target.value)} /></label>
+        <label>Central store ID<input value={centralStore} onChange={e=>setCentralStore(e.target.value)} /></label>
+        <label>Independent server signing public key<input value={centralPin} onChange={e=>setCentralPin(e.target.value)} /></label>
+        <label>One-time Central join code<input value={joinCode} onChange={e=>setJoinCode(e.target.value)} /></label>
+        <button disabled={busy} onClick={()=>void run(async()=>{await request("/api/cafe/central/enroll",{configuration:{httpsOrigin:centralOrigin,tenantId:centralTenant,storeId:centralStore,pinnedServerKey:centralPin},joinCode,deviceName:"Windows Cafe QA Host"});setJoinCode("");setMessage("Enrollment requested. Administrator must approve the exact Windows device before synchronization.");})}>Request Windows device enrollment</button></>}
+        <label>Current operator password for Central<input type="password" autoComplete="current-password" value={syncPassword} onChange={e=>setSyncPassword(e.target.value)} /></label>
+        <button disabled={busy||!syncPassword} onClick={()=>void run(async()=>{const supplied=syncPassword;setSyncPassword("");const result=await request<{applied:number;pending:number}>("/api/cafe/central/synchronize",{password:supplied});setMessage(`Central confirmed ${result.applied} operations; ${result.pending} remain pending.`);})}>Connect and synchronize Windows operations</button>
+      </details>
       <div className="workspace-grid"><section><h2>Published menu</h2>{!menu ? <p>No published menu is available.</p> : <>
         <label>Menu item<select aria-label="Menu item" value={itemId} onChange={e => {setItemId(e.target.value); setVariant(""); setOptions([]);}}><option value="">Choose an item</option>
           {menu.items.map(item => <option key={item.productId} value={item.productId} disabled={item.isTemporarilyUnavailable}>{item.name} · {money(item.sellingPriceCents)}</option>)}</select></label>

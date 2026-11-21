@@ -1,0 +1,150 @@
+name: Salryn Cafe matched QA staging
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        required: true
+        type: string
+      profile:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Frozen full 40-character commit SHA on codex/wave-b-integrator
+        required: true
+        type: string
+      profile:
+        description: Release requires an authorized QA license; Debug is synthetic-only
+        required: true
+        default: ReleaseEntitled
+        type: choice
+        options: [ReleaseEntitled, DebugSynthetic]
+permissions:
+  contents: read
+concurrency:
+  group: salryn-cafe-qa-${{ inputs.source_sha }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+      - name: Validate frozen source and staging branch ancestry
+        shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ inputs.source_sha }}
+        run: |
+          if ($env:EXPECTED_SHA -notmatch '^[0-9a-f]{40}$') { throw 'Full commit SHA required' }
+          if ((git rev-parse HEAD).Trim() -ne $env:EXPECTED_SHA) { throw 'Checkout SHA mismatch' }
+          git merge-base --is-ancestor HEAD origin/codex/wave-b-integrator
+          if ($LASTEXITCODE -ne 0) { throw 'Source is not preserved staging-branch history' }
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+      - name: Build and execute code-controlled Cafe suites
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $configuration=if('${{ inputs.profile }}' -eq 'DebugSynthetic'){'Debug'}else{'Release'}
+          foreach($name in @('Salryn.Cafe.Tests','Salryn.Cafe.I2Tests','Salryn.Cafe.I3Tests','Salryn.Cafe.I4Tests','Salryn.Cafe.I6ATests','Salryn.Cafe.I6BTests')) {
+            dotnet test "tests/$name/$name.csproj" -c $configuration -m:1 --logger "trx;LogFileName=$name.trx" --results-directory artifacts/qa-evidence
+            if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          }
+          foreach($folder in @('src/Salryn.App.Web','apps/cafe-web')) {
+            Push-Location $folder
+            npm ci --ignore-scripts --no-audit --no-fund
+            if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+            npm run build
+            if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+            Pop-Location
+          }
+      - name: Publish matched Windows Host, Desktop and Central
+        shell: pwsh
+        run: |
+          $configuration=if('${{ inputs.profile }}' -eq 'DebugSynthetic'){'Debug'}else{'Release'}
+          $staging=Join-Path $PWD 'artifacts/installer/staging/SalrynCafe'
+          New-Item -ItemType Directory -Force $staging,artifacts/qa-package,artifacts/central | Out-Null
+          foreach($project in @('Salryn.Desktop.WebView','Salryn.Api.Local')) {
+            dotnet publish "src/$project/$project.csproj" -c $configuration -r win-x64 --self-contained false -o $staging
+            if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          }
+          New-Item -ItemType Directory -Force "$staging/wwwroot","$staging/cafe-dist","$staging/assets/branding" | Out-Null
+          Copy-Item src/Salryn.App.Web/dist/* "$staging/wwwroot/" -Recurse
+          Copy-Item apps/cafe-web/dist/* "$staging/cafe-dist/" -Recurse
+          Copy-Item assets/branding/* "$staging/assets/branding/" -Recurse
+          foreach($file in @('Salryn.Api.Local.exe','Salryn.Desktop.WebView.exe','cafe-dist/index.html')) {
+            if(-not(Test-Path (Join-Path $staging $file))){throw "Missing installed payload $file"}
+          }
+          dotnet publish src/Salryn.Sync.Central.Server/Salryn.Sync.Central.Server.csproj -c $configuration -r win-x64 --self-contained false -o artifacts/central
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          Compress-Archive artifacts/central/* artifacts/qa-package/Salryn-Cafe-Central-QA.zip
+          $iscc='C:/Program Files (x86)/Inno Setup 6/ISCC.exe'
+          if(-not(Test-Path $iscc)){choco install innosetup -y --no-progress; if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}}
+          & $iscc '/DMyAppVersion=1.0.0-qa' '/DMySourceRevision=${{ inputs.source_sha }}' installer/SalrynCafeSetup.iss
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          Copy-Item artifacts/installer/setup/Salryn-Cafe-Setup.exe artifacts/qa-package/
+      - name: Publish standalone test-signed Android APK
+        shell: pwsh
+        run: |
+          dotnet workload install android
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $configuration=if('${{ inputs.profile }}' -eq 'DebugSynthetic'){'Debug'}else{'Release'}
+          $key=Join-Path $env:RUNNER_TEMP 'salryn-cafe-qa.keystore'
+          $password=[Guid]::NewGuid().ToString('N')
+          Write-Output "::add-mask::$password"
+          keytool -genkeypair -keystore $key -storepass $password -keypass $password -alias qa -keyalg RSA -keysize 2048 -validity 30 -dname 'CN=Salryn Cafe QA Test Only'
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          dotnet publish src/Salryn.App.Android/Salryn.App.Android.csproj -c $configuration -p:RuntimeIdentifiers='android-arm64%3Bandroid-x64' -p:EmbedAssembliesIntoApk=true -p:AndroidKeyStore=true "-p:AndroidSigningKeyStore=$key" '-p:AndroidSigningKeyAlias=qa' "-p:AndroidSigningStorePass=$password" "-p:AndroidSigningKeyPass=$password" -o artifacts/android
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $apk=@(Get-ChildItem artifacts/android -Recurse -Filter '*-Signed.apk')
+          if($apk.Count -ne 1){throw 'Expected exactly one new signed APK'}
+          Copy-Item $apk[0].FullName artifacts/qa-package/Salryn-Cafe-QA.apk
+      - name: Bind manifest and checksum evidence to exact source
+        shell: pwsh
+        run: ./scripts/stage-qa-release.ps1 -SourceSha '${{ inputs.source_sha }}' -PackageDirectory artifacts/qa-package -Profile '${{ inputs.profile }}' -RunUrl '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: matched-qa-${{ inputs.source_sha }}
+          path: artifacts/qa-package/
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-executable-evidence-${{ inputs.source_sha }}
+          path: artifacts/qa-evidence/
+          if-no-files-found: warn
+  draft-staging:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: matched-qa-${{ inputs.source_sha }}
+          path: qa-package
+      - name: Create a draft prerelease only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          PROFILE: ${{ inputs.profile }}
+        run: |
+          tag="qa-${SOURCE_SHA:0:12}-${GITHUB_RUN_ID}"
+          printf '%s\n' "QA STAGING ONLY - NOT PRODUCTION OR RELEASE-CANDIDATE ACCEPTANCE." "Profile: $PROFILE. Read QA-SETUP-PAIRING.md and manifest before installation." "Formal review and Human QA are separate open gates." > notes.txt
+          gh release create "$tag" qa-package/* --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "Salryn Cafe QA ${SOURCE_SHA:0:12}" --notes-file notes.txt --draft --prerelease

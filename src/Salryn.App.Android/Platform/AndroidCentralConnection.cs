@@ -58,14 +58,19 @@ public sealed class AndroidCentralConnection(IDeviceSecretStore secrets, Func<Mo
         AndroidCentralConfiguration config = await RequiredConfigurationAsync();
         using HttpClient http = CreateClient(config);
         string bearer = await AuthenticateAsync(config, http);
-        var transport = new HttpSyncOutboxTransport(http, () => bearer,
+        const string bundleKey="salryn.cafe.bootstrap.pending_bundle.v1";
+        BootstrapBundle? bundle=null;
+        byte[]? retained=await secrets.ReadAsync(bundleKey);
+        if(retained is not null) bundle=JsonSerializer.Deserialize<BootstrapBundle>(retained)
+            ?? throw new InvalidOperationException("Retained bootstrap bundle is corrupt; preserve setup for reconciliation.");
+        if(bundle is null)
+        {
+            var transport = new HttpSyncOutboxTransport(http, () => bearer,
             () => (config.DeviceId!.Value, config.TenantId, config.StoreId, 1));
         MobileBootstrapOutcome result = await transport.BootstrapAsync();
         if (IsRevoked(result.ErrorCode)) await FenceAsync(config);
         if (!result.IsSuccess || result.Snapshot is null) throw new InvalidOperationException(result.ErrorMessage ?? "Bootstrap failed.");
         if (result.Snapshot.StoreId != config.StoreId) throw new InvalidOperationException("Bootstrap store does not match approved device scope.");
-        var applied = runtime.SyncBootstrap.Apply(result.Snapshot);
-        if (!applied.IsSuccess) throw new InvalidOperationException(applied.ErrorMessage ?? "Bootstrap refused; existing data is preserved.");
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
         http.DefaultRequestHeaders.Add("X-Salryn-Tenant-Id", config.TenantId.ToString("D"));
         http.DefaultRequestHeaders.Add("X-Salryn-Store-Id", config.StoreId.ToString("D"));
@@ -75,22 +80,36 @@ public sealed class AndroidCentralConnection(IDeviceSecretStore secrets, Func<Mo
         await RequireSuccessAsync(ingredientResponse, config);
         CafeIngredientRecipeBootstrapV1 ingredients = (await ingredientResponse.Content.ReadFromJsonAsync<CafeIngredientRecipeBootstrapV1>())
             ?? throw new InvalidOperationException("Central ingredient bootstrap was empty.");
-        var ingredientsApplied = runtime.CafeIngredientBootstrap.Apply(ingredients);
-        if (ingredientsApplied.IsFailure) throw new InvalidOperationException(ingredientsApplied.ErrorDetail.Message);
         using HttpResponseMessage menuResponse = await http.GetAsync($"/api/sync/v1/cafe/menu/publication?storeId={config.StoreId:D}");
         await RequireSuccessAsync(menuResponse, config);
         MenuPublicationSnapshot menu = (await menuResponse.Content.ReadFromJsonAsync<MenuPublicationSnapshot>())
             ?? throw new InvalidOperationException("Central menu publication was empty.");
         if (menu.StoreId != config.StoreId) throw new InvalidOperationException("Menu publication store does not match approved scope.");
-        var menuApplied = runtime.MenuCatalog.ApplyPublication(menu);
-        if (menuApplied.IsFailure) throw new InvalidOperationException(menuApplied.ErrorDetail.Message);
         using HttpResponseMessage recipeResponse = await http.GetAsync($"/api/sync/v1/cafe/recipes/publication?storeId={config.StoreId:D}");
         await RequireSuccessAsync(recipeResponse, config);
         RecipeBookPublicationSnapshot recipes = (await recipeResponse.Content.ReadFromJsonAsync<RecipeBookPublicationSnapshot>())
             ?? throw new InvalidOperationException("Central recipe publication was empty.");
         if (recipes.StoreId != config.StoreId) throw new InvalidOperationException("Recipe publication store does not match approved scope.");
-        var recipesApplied = runtime.IngredientRecipes.ApplyPublication(recipes);
-        if (recipesApplied.IsFailure) throw new InvalidOperationException(recipesApplied.ErrorDetail.Message);
+            var approved=await new MobileCashierDeviceGuard(new ProtectedMobileEnrollmentReader(secrets),secrets,clock).AuthorizeAsync();
+            if(approved.IsFailure) throw new InvalidOperationException(approved.ErrorDetail.Message);
+            bundle=new(config.DeviceId!.Value,approved.Value.ServerEpoch,result.Snapshot,ingredients,menu,recipes);
+            await secrets.WriteAsync(bundleKey,JsonSerializer.SerializeToUtf8Bytes(bundle));
+        }
+        var binding=await new MobileCashierDeviceGuard(new ProtectedMobileEnrollmentReader(secrets),secrets,clock).AuthorizeAsync();
+        if(binding.IsFailure || bundle.DeviceId!=config.DeviceId || bundle.ServerEpoch!=binding.Value.ServerEpoch ||
+            bundle.Base.StoreId!=config.StoreId || bundle.Ingredients.StoreId!=config.StoreId ||
+            bundle.Ingredients.CentralInstanceId!=bundle.Base.CentralInstanceId ||
+            bundle.Ingredients.BaselineServerSequence!=bundle.Base.BaselineServerSequence)
+            throw new InvalidOperationException("Retained bootstrap bundle does not match current approved authority; preserve it for reconciliation.");
+        var applied=runtime.SyncBootstrap.Apply(bundle.Base);
+        if(!applied.IsSuccess) throw new InvalidOperationException(applied.ErrorMessage??"Base bootstrap refused; existing data preserved.");
+        var ingredientsApplied=runtime.CafeIngredientBootstrap.Apply(bundle.Ingredients);
+        if(ingredientsApplied.IsFailure) throw new InvalidOperationException(ingredientsApplied.ErrorDetail.Message);
+        var menuApplied=runtime.MenuCatalog.ApplyPublication(bundle.Menu);
+        if(menuApplied.IsFailure) throw new InvalidOperationException(menuApplied.ErrorDetail.Message);
+        var recipesApplied=runtime.IngredientRecipes.ApplyPublication(bundle.Recipes);
+        if(recipesApplied.IsFailure) throw new InvalidOperationException(recipesApplied.ErrorDetail.Message);
+        // Keep the exact bundle for interruption-safe idempotent setup retry. It is never silently replaced by a newer baseline.
         return "Base data, published Cafe menu and recipes persisted. Enroll the operator through Central login before offline sign in.";
     }
 
@@ -301,6 +320,8 @@ public sealed class AndroidCentralConnection(IDeviceSecretStore secrets, Func<Mo
         throw new InvalidOperationException(error?.ErrorMessage ?? $"Central request failed (HTTP {(int)response.StatusCode}).");
     }
     private static bool IsRevoked(string? code) => code is "DEVICE_REVOKED" or "DEVICE_REVOKED_FENCED";
+    private sealed record BootstrapBundle(Guid DeviceId,long ServerEpoch,SyncBootstrapSnapshotV1 Base,
+        CafeIngredientRecipeBootstrapV1 Ingredients,MenuPublicationSnapshot Menu,RecipeBookPublicationSnapshot Recipes);
     private sealed record EnrollResponse(Guid DeviceId);
     private sealed record OperatorResponse(string OperatorToken, Guid UserId, long ServerEpoch, DateTimeOffset ExpiresAtUtc,
         Guid RoleId, IReadOnlyList<string>? Permissions);

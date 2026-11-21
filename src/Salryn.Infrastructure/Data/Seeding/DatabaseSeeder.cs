@@ -32,8 +32,17 @@ public sealed class DatabaseSeeder
         var now = DateTimeOffset.UtcNow.ToString("O");
 
         SeedAppMetadata(connection, transaction, now);
+        // Defaults initialize newly created roles only. Restart must never resurrect
+        // grants explicitly revoked by an administrator or synchronized authority.
+        var newRoles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach(var role in DefaultSeedData.Roles)
+        {
+            using var check=connection.CreateCommand();check.Transaction=transaction;
+            check.CommandText="SELECT COUNT(*) FROM roles WHERE id=$id;";check.Parameters.AddWithValue("$id",role.Id);
+            if(Convert.ToInt64(check.ExecuteScalar())==0) newRoles.Add(role.Id);
+        }
         SeedRoles(connection, transaction, now);
-        SeedRolePermissions(connection, transaction, now);
+        SeedRolePermissions(connection, transaction, now, newRoles);
         SeedUnits(connection, transaction);
         SeedCategories(connection, transaction);
         SeedBrands(connection, transaction);
@@ -92,10 +101,11 @@ public sealed class DatabaseSeeder
     private static void SeedRolePermissions(
         SqliteConnection connection,
         SqliteTransaction transaction,
-        string now)
+        string now, HashSet<string> newlyCreatedRoles)
     {
         foreach (var rolePermission in DefaultSeedData.RolePermissions)
         {
+            if(!newlyCreatedRoles.Contains(rolePermission.RoleId)) continue;
             Execute(connection, transaction, """
                 INSERT OR IGNORE INTO role_permissions (id, role_id, permission, created_at)
                 VALUES ($id, $roleId, $permission, $createdAt);

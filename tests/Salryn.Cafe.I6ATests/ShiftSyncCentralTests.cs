@@ -44,7 +44,22 @@ public sealed class ShiftSyncCentralTests
         Assert.True(Assert.Single((await closed.Content.ReadFromJsonAsync<PushOperationsResponse>())!.Results).Resolution.IsApplied);
         using var late=await losingDevice.Http.PostAsJsonAsync("/api/sync/v1/push",new PushOperationsRequest(1,[losingOpen]));
         var lateResult=Assert.Single((await late.Content.ReadFromJsonAsync<PushOperationsResponse>())!.Results);
-        Assert.True(lateResult.Resolution.IsNeedsReview);Assert.Equal("CafeShift.OpenHistoryConflict",lateResult.Resolution.ResultCode);
+        // The immutable inbox retains its original reason while a retry still needs review.
+        Assert.True(lateResult.Resolution.IsNeedsReview);Assert.Equal("CafeShift.OpenSessionExists",lateResult.Resolution.ResultCode);
+        Assert.True(lateResult.IsDuplicateReplay);
+        // A fresh ID does not permit backdating a second drawer into the retained custody interval.
+        Guid backdatedId=Guid.NewGuid();
+        var losingPayload=CafeShiftSyncContract.Parse(losingOpen.OperationType,losingOpen.PayloadJson)!;
+        var backdatedPayload=losingPayload with {SessionId=CafeShiftSyncContract.SessionIdFor(backdatedId)};
+        var backdated=SyncProtocolV1.CreateEnvelope(losingDevice.DeviceId,C4ProofIds.StoreId,C4ProofIds.ActorUserId,
+            2,CafeShiftSyncContract.Opened,1,backdatedPayload.SessionId,null,losingOpen.OccurredAtLocal,
+            CafeShiftSyncContract.Serialize(backdatedPayload),backdatedId);
+        using var historical=await losingDevice.Http.PostAsJsonAsync("/api/sync/v1/push",new PushOperationsRequest(1,[backdated]));
+        Assert.Equal(HttpStatusCode.OK,historical.StatusCode);
+        var historicalResult=Assert.Single((await historical.Content.ReadFromJsonAsync<PushOperationsResponse>())!.Results);
+        Assert.True(historicalResult.Resolution.IsNeedsReview);
+        Assert.Equal("CafeShift.OpenHistoryConflict",historicalResult.Resolution.ResultCode);
+        Assert.Null(historicalResult.ChangeFeedSequence);
         Assert.Equal(1L,target.ScalarLong("SELECT COUNT(*) FROM cashier_sessions;"));
         Assert.Equal(0L,target.ScalarLong("SELECT COUNT(*) FROM cashier_sessions WHERE status=1;"));
     }

@@ -44,7 +44,7 @@ internal static class DevHostConfig
 
     public static string HealthUrl => ResolveApiBaseUrl() + "/health";
 
-    public static string DefaultInstalledWebUrl => ResolveApiBaseUrl() + "/";
+    public static string DefaultInstalledWebUrl => ResolveApiBaseUrl() + "/cafe/";
 
     public static string GetWebView2UserDataFolder()
     {

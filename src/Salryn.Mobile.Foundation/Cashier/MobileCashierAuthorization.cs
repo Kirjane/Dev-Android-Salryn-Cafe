@@ -91,8 +91,11 @@ public sealed record MobileClockSnapshot(DateTimeOffset UtcNow, long ElapsedReal
 public sealed class MobileCashierDeviceGuard(
     IMobileEnrollmentReader enrollment, IDeviceSecretStore secrets, Func<MobileClockSnapshot> clock)
 {
+    public DateTimeOffset CurrentUtcNow { get; private set; } = DateTimeOffset.MaxValue;
+
     public async Task<Result<MobileEnrollmentBinding>> AuthorizeAsync(CancellationToken ct = default)
     {
+        CurrentUtcNow = DateTimeOffset.MaxValue;
         MobileEnrollmentBinding? binding = await enrollment.ReadAsync(ct).ConfigureAwait(false);
         if (binding is null || binding.Lease is null)
             return Denied("Mobile.DeviceApprovalRequired", "Complete approved device pairing and bootstrap before taking orders.");
@@ -104,6 +107,7 @@ public sealed class MobileCashierDeviceGuard(
         LeaseValidationResult result = await guard.EvaluateAndAdvanceAsync(binding.Lease,
             binding.DeviceId, binding.TenantId, binding.StoreId, now.UtcNow,
             now.ElapsedRealtimeMs, now.BootCount, ct).ConfigureAwait(false);
+        if(result.IsAuthorized && result.EffectiveNowUtc is { } effective) CurrentUtcNow=effective;
         return result.IsAuthorized ? Result<MobileEnrollmentBinding>.Success(binding)
             : Denied(result.Code, result.Message);
     }

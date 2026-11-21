@@ -56,6 +56,15 @@ public static class CentralSyncEndpoints
             return await next(ctx);
         });
 
+        // Loopback-only random challenge proves this service reads the Host's actual
+        // local file, rather than a stale copied database carrying the same instance ID.
+        api.MapGet("/cohost/probe", (HttpContext http, Guid key, CentralSyncService service) =>
+        {
+            if(http.Connection.RemoteIpAddress is { } ip && !IPAddress.IsLoopback(ip))
+                return Results.StatusCode(403);
+            return ToResult(service.ReadCohostProbe(key));
+        });
+
         // --- Admin Auth ---
         api.MapPost("/admin/auth/login", (AdminLoginRequest req, CentralSyncService service) =>
             ToResult(service.AdminLogin(req)));

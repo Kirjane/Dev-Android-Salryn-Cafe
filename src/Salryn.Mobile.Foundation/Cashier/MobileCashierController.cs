@@ -291,6 +291,9 @@ public sealed class MobileCashierController(MobileProductionComposition runtime,
                 return Fail<T>("Mobile.PermissionDenied", "Your current operator account cannot perform this action.");
             var device = await deviceGuard.AuthorizeAsync(ct).ConfigureAwait(false);
             if (device.IsFailure) return Result<T>.Fail(device.ErrorDetail);
+            var offlineAuthority=runtime.OperatorCredentials.CheckOfflineAuthority(current.UserId,device.Value.DeviceId,
+                device.Value.TenantId,device.Value.StoreId,device.Value.ServerEpoch,deviceGuard.CurrentUtcNow);
+            if(offlineAuthority.IsFailure) return Result<T>.Fail(offlineAuthority.ErrorDetail);
             return await action(device.Value, actor, ct).ConfigureAwait(false);
         }
         finally { _gate.Release(); }

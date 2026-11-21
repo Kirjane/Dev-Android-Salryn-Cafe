@@ -36,7 +36,7 @@ public sealed class ExtendedCafeDomainHttpTests
             Assert.True(saved.IsSuccess,saved.IsFailure?saved.ErrorDetail.Message:null);
             var created=new SqliteCafeDeliveryService(source.Factory).Create(new(operation,device.DeviceId,Guid.NewGuid(),order,host.StoreId,C4ProofIds.ActorUserId,now,"Synthetic recipient",null,"Synthetic address",null,null,0,null));
             Assert.True(created.IsSuccess,created.IsFailure?created.ErrorDetail.Message:null);
-            table="cafe_deliveries";permission="Delivery.Manage";
+            table="cafe_delivery_fulfillments";permission="Delivery.Manage";
         }
         else if(family=="booking")
         {

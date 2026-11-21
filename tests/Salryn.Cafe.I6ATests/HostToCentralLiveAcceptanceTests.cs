@@ -11,7 +11,7 @@ namespace Salryn.Cafe.I6ATests;
 public sealed class HostToCentralLiveAcceptanceTests
 {
     [Fact]
-    public async Task LiveHttpsHostToCentral_SaleDuplicateUnsupportedBootstrapLogoutAndRestartPreserveExactOnceAuthority()
+    public async Task LiveHttpsHostToCentral_SaleDuplicateMalformedDeliveryBootstrapLogoutAndRestartPreserveExactOnceAuthority()
     {
         string root = Path.Combine(Path.GetTempPath(), "live-host-central-" + Guid.NewGuid().ToString("N"));
         C4ProofDatabase target = C4ProofDatabase.Create(root);
@@ -69,7 +69,7 @@ public sealed class HostToCentralLiveAcceptanceTests
             Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM sales;"));
             Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed;"));
 
-            // 4. Unsupported operation family -> explicit NeedsReview, never Applied
+            // 4. A malformed supported delivery is rejected; it must never produce domain/feed effects.
             SyncOperationEnvelopeV1 unsupported = SyncProtocolV1.CreateEnvelope(
                 deviceId: device.DeviceId,
                 storeId: host.StoreId,
@@ -88,8 +88,9 @@ public sealed class HostToCentralLiveAcceptanceTests
             PushOperationsResponse unsupBody = (await unsupResp.Content.ReadFromJsonAsync<PushOperationsResponse>())!;
             PushOperationResultDto unsupResult = Assert.Single(unsupBody.Results);
             Assert.False(unsupResult.Resolution.IsApplied);
-            Assert.Equal(SaleCommittedV1Contract.NeedsReview, unsupResult.Resolution.Status);
-            Assert.Equal("DOMAIN_PROCESSOR_UNAVAILABLE", unsupResult.Resolution.ResultCode);
+            Assert.Equal(SaleCommittedV1Contract.Rejected, unsupResult.Resolution.Status);
+            Assert.Equal("CafeDeliverySync.PayloadInvalid", unsupResult.Resolution.ResultCode);
+            Assert.Equal(0L, target.ScalarLong("SELECT COUNT(*) FROM cafe_delivery_fulfillments;"));
             Assert.Null(unsupResult.ChangeFeedSequence);
             Assert.Equal(1L, target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed;"));
 

@@ -61,7 +61,7 @@ public sealed class MobileOperatorCredentialEnrollmentTests
             case "wrong-store": login = login with { StoreId = Guid.NewGuid() }; break;
             case "wrong-epoch": login = login with { ServerEpoch = scope.ServerEpoch + 1 }; break;
             case "inactive": fixture.Execute("UPDATE users SET status=2 WHERE username='synthetic';"); break;
-            case "no-permissions": fixture.Execute("DELETE FROM role_permissions;"); break;
+            case "no-permissions": login = login with { Permissions = null }; break;
             case "wrong-username": username = "another-operator"; break;
         }
         Assert.True(fixture.Runtime.OperatorCredentials.EnrollAfterVerifiedLogin(scope, login, username, Password, fixture.Now).IsFailure);
@@ -122,6 +122,50 @@ public sealed class MobileOperatorCredentialEnrollmentTests
         var user=(await fixture.Runtime.Authentication.LoginAsync(new LoginRequest("synthetic",Password))).Value;
         Assert.DoesNotContain("Receivables.CreateCreditSale",user.Permissions);
         Assert.Equal(login.Permissions!.Order(),user.Permissions.Order());
+        var restarted=MobileProductionComposition.Create(fixture.Root);
+        await restarted.InitializeDatabaseAsync();
+        var after=(await restarted.Authentication.LoginAsync(new LoginRequest("synthetic",Password))).Value;
+        Assert.DoesNotContain("Receivables.CreateCreditSale",after.Permissions);
+        Assert.Equal(login.Permissions.Order(),after.Permissions.Order());
+    }
+
+    [Fact]
+    public async Task SuccessfulZeroPermissionRefresh_RemovesOldGrants_AndDoesNotExtendOnFailure()
+    {
+        using var f=new CanonicalCashierFixture();var(scope,login)=await Authority(f);SetPlaceholder(f);
+        Assert.True(f.Runtime.OperatorCredentials.EnrollAfterVerifiedLogin(scope,login,"synthetic",Password,f.Now).IsSuccess);
+        Assert.True(f.Runtime.OperatorCredentials.EnrollAfterVerifiedLogin(scope,login with{Permissions=[]},"synthetic",Password,f.Now).IsSuccess);
+        Assert.Equal(0L,f.Scalar("SELECT COUNT(*) FROM role_permissions WHERE role_id=(SELECT role_id FROM users WHERE username='synthetic');"));
+        Assert.True(f.Runtime.OperatorCredentials.EnrollAfterVerifiedLogin(scope,login with{IsAuthenticated=false,ExpiresAtUtc=f.Now.AddDays(1)},"synthetic",Password,f.Now).IsFailure);
+        Assert.True(f.Runtime.OperatorCredentials.CheckOfflineAuthority(f.ActorId,scope.DeviceId,scope.TenantId,scope.StoreId,scope.ServerEpoch,login.ExpiresAtUtc).IsFailure);
+        Assert.True(f.Runtime.OperatorCredentials.CheckOfflineAuthority(f.ActorId,scope.DeviceId,scope.TenantId,scope.StoreId,scope.ServerEpoch,f.Now).IsSuccess);
+    }
+
+    [Fact]
+    public async Task SuccessfulChangedRole_UsesOnlyCurrentRemotePermissions()
+    {
+        using var f=new CanonicalCashierFixture();var(scope,login)=await Authority(f);SetPlaceholder(f);
+        Assert.True(f.Runtime.OperatorCredentials.EnrollAfterVerifiedLogin(scope,login,"synthetic",Password,f.Now).IsSuccess);
+        Guid role=Guid.Parse(Salryn.Infrastructure.Data.Seeding.DefaultSeedData.CashierRoleId);
+        Assert.True(f.Runtime.OperatorCredentials.EnrollAfterVerifiedLogin(scope,login with{RoleId=role,Permissions=["Products.View"]},"synthetic",Password,f.Now).IsSuccess);
+        var user=(await f.Runtime.Authentication.LoginAsync(new LoginRequest("synthetic",Password))).Value;
+        Assert.Equal(role,user.RoleId);Assert.Equal(["Products.View"],user.Permissions);
+    }
+
+    [Fact]
+    public async Task FrozenWallClock_CannotExtendOperatorAuthorityBeyondMonotonicDeadline()
+    {
+        using var f=new CanonicalCashierFixture();var(scope,login)=await Authority(f);SetPlaceholder(f);
+        login=login with{ExpiresAtUtc=f.Now.AddSeconds(30)};
+        Assert.True(f.Runtime.OperatorCredentials.EnrollAfterVerifiedLogin(scope,login,"synthetic",Password,f.Now).IsSuccess);
+        long elapsed=10000;
+        var guard=new MobileCashierDeviceGuard(new ProtectedMobileEnrollmentReader(f.Secrets),f.Secrets,()=>new(f.Now,elapsed,1));
+        var controller=new MobileCashierController(f.Runtime,guard);
+        Assert.True((await controller.LoginAsync("synthetic",Password)).IsSuccess);
+        Assert.True((await controller.MenuAsync()).IsSuccess);
+        elapsed+=31000;
+        var denied=await controller.MenuAsync();
+        Assert.True(denied.IsFailure);Assert.Equal("Mobile.OperatorAuthorityExpired",denied.ErrorDetail.Code);
     }
 
     private static void SetPlaceholder(CanonicalCashierFixture fixture) =>

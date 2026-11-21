@@ -73,6 +73,9 @@ internal static partial class CentralCanonicalDomainProcessor
                 (payload.SaleEvidence.Sale.DiscountCents > 0 && !Allowed("Sales.DiscountApply")) ||
                 (payload.Fees.Count > 0 && !Allowed("Sales.FeeApply")))
                 return Reject("ERR_CANONICAL_OPERATOR_AUTHORITY");
+            var origin=CanonicalOriginSaleVerifier.VerifyIfRetained(connection,transaction,envelope);
+            if(origin.IsFailure) return new(SaleCommittedV1Contract.NeedsReview,origin.ErrorDetail.Code);
+            if(origin.Value) return new(SaleCommittedV1Contract.Applied,AppliedBusinessChangeContract.SaleCommittedV3AppliedV1,AppliedBusinessChangeContract.SaleCommittedV3AppliedV1);
             var prerequisites = CentralSaleCommittedPrerequisites.Validate(connection, transaction, payload.SaleEvidence);
             if (!prerequisites.CanApply) return new(SaleCommittedV1Contract.NeedsReview,
                 prerequisites.ConflictCode ?? "SaleCommittedV3.PrerequisiteMissing");
