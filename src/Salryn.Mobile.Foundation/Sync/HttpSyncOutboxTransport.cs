@@ -56,21 +56,25 @@ public sealed class HttpSyncOutboxTransport : IP0OutboxTransport
     public const string TenantIdHeader = "X-Salryn-Tenant-Id";
     public const string StoreIdHeader = "X-Salryn-Store-Id";
     public const string DeviceIdHeader = "X-Salryn-Device-Id";
+    public const string OperatorTokenHeader = "X-Salryn-Operator-Token";
     public const string CanonicalProductId = "Salryn.Cafe";
 
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
     private readonly HttpClient _http;
     private readonly Func<Guid, SyncOperationEnvelopeV1?>? _durableEnvelopeProvider;
     private readonly Func<string?> _bearerTokenProvider;
+    private readonly Func<string?>? _operatorTokenProvider;
     private readonly Func<(Guid DeviceId, Guid TenantId, Guid StoreId, long KnownEpoch)> _scopeProvider;
 
     public HttpSyncOutboxTransport(
         HttpClient httpClient,
         Func<string?> bearerTokenProvider,
         Func<(Guid DeviceId, Guid TenantId, Guid StoreId, long KnownEpoch)> scopeProvider,
-        Func<Guid, SyncOperationEnvelopeV1?>? durableEnvelopeProvider = null)
+        Func<Guid, SyncOperationEnvelopeV1?>? durableEnvelopeProvider = null,
+        Func<string?>? operatorTokenProvider = null)
     {
         _durableEnvelopeProvider = durableEnvelopeProvider;
+        _operatorTokenProvider = operatorTokenProvider;
         _http = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         if (_http.BaseAddress is not null &&
             !string.Equals(_http.BaseAddress.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
@@ -152,6 +156,11 @@ public sealed class HttpSyncOutboxTransport : IP0OutboxTransport
     {
         (Guid deviceId, Guid tenantId, Guid storeId, long knownEpoch) = _scopeProvider();
         using HttpRequestMessage req = CreateAuthenticatedDeviceRequest(HttpMethod.Post, "/api/sync/v1/push", deviceId, tenantId, storeId);
+        string? operatorToken = _operatorTokenProvider?.Invoke();
+        if (!string.IsNullOrWhiteSpace(operatorToken))
+        {
+            req.Headers.Add(OperatorTokenHeader, operatorToken);
+        }
         req.Content = JsonContent.Create(new { knownEpoch, operations = envelopes });
 
         using HttpResponseMessage resp = await _http.SendAsync(req, ct).ConfigureAwait(false);

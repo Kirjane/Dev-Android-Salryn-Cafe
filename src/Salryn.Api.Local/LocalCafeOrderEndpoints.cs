@@ -391,26 +391,40 @@ internal static class LocalCafeOrderEndpoints
                         payment.AmountCents));
             }
 
+            Guid completionOperationId = OperationId(request.CompletionOperationId);
+            Guid saleCommittedOperationId = OperationId(request.SaleCommittedOperationId);
+
             List<CafeSaleFeeMutation> fees = new();
-            foreach (CompleteOrderFeeRequest fee in
-                request.Fees ?? Array.Empty<CompleteOrderFeeRequest>())
+            IReadOnlyList<CompleteOrderFeeRequest> rawFees =
+                request.Fees ?? Array.Empty<CompleteOrderFeeRequest>();
+            for (int feeIndex = 0; feeIndex < rawFees.Count; feeIndex++)
             {
+                CompleteOrderFeeRequest fee = rawFees[feeIndex];
+                Guid feeId = fee.FeeId.GetValueOrDefault() == Guid.Empty
+                    ? DeriveDeterministicFeeId(completionOperationId, feeIndex, fee)
+                    : fee.FeeId!.Value;
                 fees.Add(
                     new CafeSaleFeeMutation(
-                        fee.FeeId.GetValueOrDefault() == Guid.Empty
-                            ? Guid.NewGuid()
-                            : fee.FeeId!.Value,
+                        feeId,
                         fee.FeeType,
                         fee.DisplayLabel,
                         fee.AmountCents,
                         fee.Reason));
             }
 
+            List<CafeOrderLineDiscountMutation> lineDiscounts = new();
+            foreach (CompleteOrderLineDiscountRequest discount in
+                request.LineDiscounts ?? Array.Empty<CompleteOrderLineDiscountRequest>())
+            {
+                lineDiscounts.Add(
+                    new CafeOrderLineDiscountMutation(
+                        discount.OrderLineId,
+                        discount.DiscountCents));
+            }
+
             CafeOrderCompletionMutation mutation = new(
-                OperationId(
-                    request.CompletionOperationId),
-                OperationId(
-                    request.SaleCommittedOperationId),
+                completionOperationId,
+                saleCommittedOperationId,
                 authority.Value.DeviceId,
                 orderId,
                 authority.Value.StoreId,
@@ -420,6 +434,15 @@ internal static class LocalCafeOrderEndpoints
                     DateTimeOffset.UtcNow,
                 payments)
             {
+                CustomerId = request.CustomerId,
+                ReceivableDueDate = request.ReceivableDueDate,
+                ReceivableNote = request.ReceivableNote,
+                LineDiscounts = lineDiscounts,
+                OrderDiscountCents = request.OrderDiscountCents,
+                DiscountReason = request.DiscountReason,
+                TaxCents = request.TaxCents,
+                FinancialDecisionOperationId = request.FinancialDecisionOperationId.GetValueOrDefault(),
+                FinancialDecisionId = request.FinancialDecisionId.GetValueOrDefault(),
                 Fees = fees
             };
 
@@ -450,6 +473,22 @@ internal static class LocalCafeOrderEndpoints
 
     private static Guid OperationId(Guid? value) =>
         value.GetValueOrDefault();
+
+    private static Guid DeriveDeterministicFeeId(
+        Guid completionOperationId,
+        int feeIndex,
+        CompleteOrderFeeRequest fee)
+    {
+        string canonical =
+            $"{completionOperationId:D}|{feeIndex}|{fee.FeeType.Trim()}|{fee.DisplayLabel.Trim()}|{fee.AmountCents}|{fee.Reason?.Trim() ?? string.Empty}";
+        byte[] hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(canonical));
+        Span<byte> guidBytes = stackalloc byte[16];
+        hash.AsSpan(0, 16).CopyTo(guidBytes);
+        guidBytes[6] = (byte)((guidBytes[6] & 0x0F) | 0x50);
+        guidBytes[8] = (byte)((guidBytes[8] & 0x3F) | 0x80);
+        return new Guid(guidBytes);
+    }
 
     private static IResult? Require(
         HttpContext httpContext,
@@ -587,7 +626,20 @@ internal static class LocalCafeOrderEndpoints
         int ExpectedVersion,
         DateTimeOffset? OccurredAtUtc,
         IReadOnlyList<CompleteOrderPaymentRequest>? Payments,
-        IReadOnlyList<CompleteOrderFeeRequest>? Fees);
+        IReadOnlyList<CompleteOrderFeeRequest>? Fees,
+        Guid? CustomerId = null,
+        DateOnly? ReceivableDueDate = null,
+        string? ReceivableNote = null,
+        IReadOnlyList<CompleteOrderLineDiscountRequest>? LineDiscounts = null,
+        long OrderDiscountCents = 0,
+        string? DiscountReason = null,
+        long TaxCents = 0,
+        Guid? FinancialDecisionOperationId = null,
+        Guid? FinancialDecisionId = null);
+
+    private sealed record CompleteOrderLineDiscountRequest(
+        Guid OrderLineId,
+        long DiscountCents);
 
     private sealed record CompleteOrderPaymentRequest(
         string Method,
