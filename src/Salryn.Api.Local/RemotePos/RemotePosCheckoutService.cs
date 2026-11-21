@@ -339,7 +339,8 @@ public sealed class RemotePosCheckoutService
         RemotePosCheckoutRequestRecord? record = await _requestStore
             .FindAsync(session.StoreId, session.TerminalId, clientRequestId, cancellationToken)
             .ConfigureAwait(false);
-        return record is null ? null : await ReconcileRecordAsync(record, cancellationToken).ConfigureAwait(false);
+        return record is null || !IsOriginalOperator(record, session)
+            ? null : await ReconcileRecordAsync(record, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<RemotePosCheckoutResultResponse> SubmitAsync(
@@ -377,6 +378,11 @@ public sealed class RemotePosCheckoutService
                 .ConfigureAwait(false);
             if (durable is not null)
             {
+                if (!IsOriginalOperator(durable, session))
+                {
+                    return OperatorBindingDenied(request.ClientRequestId);
+                }
+
                 RemotePosCheckoutResultResponse reconciled =
                     await ReconcileRecordAsync(durable, cancellationToken).ConfigureAwait(false);
                 if (reconciled.Status == RemotePosCheckoutStatus.Completed)
@@ -404,7 +410,9 @@ public sealed class RemotePosCheckoutService
                 .ConfigureAwait(false);
             if (durable is not null)
             {
-                return await ReconcileRecordAsync(durable, CancellationToken.None).ConfigureAwait(false);
+                return IsOriginalOperator(durable, session)
+                    ? await ReconcileRecordAsync(durable, CancellationToken.None).ConfigureAwait(false)
+                    : OperatorBindingDenied(request.ClientRequestId);
             }
 
             return Result(RemotePosCheckoutStatus.RetryableUnknown, request.ClientRequestId,
@@ -498,11 +506,19 @@ public sealed class RemotePosCheckoutService
             ?? await _requestStore.GetOrCreatePendingAsync(
                     session.StoreId,
                     session.TerminalId,
+                    session.UserId,
                     request.ClientRequestId,
                     requestHash,
                     _receiptAllocator.AllocateNext(),
                     cancellationToken)
                 .ConfigureAwait(false);
+
+        // The INSERT may have raced another operator/process. Recheck the persisted
+        // binding before using the winning receipt or posting any financial effect.
+        if (!IsOriginalOperator(ledger, session))
+        {
+            return OperatorBindingDenied(request.ClientRequestId);
+        }
 
         if (!string.Equals(ledger.RequestHash, requestHash, StringComparison.Ordinal))
         {
@@ -683,6 +699,13 @@ public sealed class RemotePosCheckoutService
 
     private static RemotePosShiftResponse BuildShiftResponse(CashierSessionReadModel session) =>
         new("Open", session.Id.ToString(), session.OpenedAt.ToString("O"), "Open cashier shift.");
+
+    private static bool IsOriginalOperator(RemotePosCheckoutRequestRecord record, RemotePosOperatorSession session) =>
+        record.OperatorUserId is { } actor && actor != Guid.Empty && actor == session.UserId;
+
+    private static RemotePosCheckoutResultResponse OperatorBindingDenied(string requestId) =>
+        Result(RemotePosCheckoutStatus.ValidationFailed, requestId,
+            "Checkout request is unavailable for this operator. Do not retry with a new request id.", duplicate: false);
 
     private static string BuildIdempotencyKey(RemotePosOperatorSession session, string clientRequestId) =>
         $"{session.StoreId:N}:{session.TerminalId:N}:{clientRequestId}";

@@ -232,11 +232,12 @@ public sealed class I3TransactionAuthorityTests
     public async Task RemoteCheckoutRequestStore_RejectsIncompleteAndMismatchedCompletionWithoutMutating()
     {
         using I3TestDatabaseFixture fx = new();
+        RemoteCheckoutOperatorBindingTests.EnsureOperatorColumn(fx);
         RemotePosCheckoutRequestStore store = new(fx.ConnectionFactory);
         Guid terminalId = Guid.NewGuid();
         string requestId = Guid.NewGuid().ToString("D");
         RemotePosCheckoutRequestRecord pending = await store.GetOrCreatePendingAsync(
-            fx.StoreId, terminalId, requestId, "SHA256-SYNTHETIC", "POS-I3-REMOTE-001");
+            fx.StoreId, terminalId, fx.AdminUserId, requestId, "SHA256-SYNTHETIC", "POS-I3-REMOTE-001");
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             store.MarkCompletedAsync(pending, null, 15000, 0, "Not authoritative"));
