@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Salryn.Api.Local.Services;
 using Salryn.Composition.Local;
@@ -70,6 +71,96 @@ public sealed class WindowsCohostPairingTests
         Assert.Equal(1L,target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed WHERE change_type=$type;",("$type",AppliedBusinessChangeContract.CafeShiftClosedAppliedV1)));
         Assert.Equal(1L,target.ScalarLong("SELECT COUNT(*) FROM cashier_sessions WHERE status=2 AND counted_cash_cents=500;"));
     }
+    [Fact]
+    public async Task CopiedCanonicalDatabase_SameStaticInstanceEpochAndScope_RejectsEnrollmentAndCleansProbe()
+    {
+        var target=C4ProofDatabase.Create(Path.Combine(Path.GetTempPath(),"windows-cohost-copy-origin-"+Guid.NewGuid().ToString("N")));
+        target.Execute("DELETE FROM cashier_sessions;");
+        using var actual=new CentralSyncTestHost(target.Paths.DatabasePath,true,C4ProofIds.StoreId);
+        using(var client=actual.CreateHttpsClient())
+        {
+            using var health=await client.GetAsync("/api/sync/v1/health");health.EnsureSuccessStatusCode();
+        }
+        string originalInstance=target.ScalarString("SELECT central_instance_id FROM sync_server_state;")!;
+        long originalEpoch=target.ScalarLong("SELECT server_epoch FROM sync_server_state;");
+        string originalTerminal=target.ScalarString("SELECT terminal_id FROM deployment_identity;")!;
+        string copiedPath=CopyCanonicalDatabase(target);
+        using var copied=new CentralSyncTestHost(copiedPath,true,C4ProofIds.StoreId,actual.TenantId);
+        using var copiedHttp=copied.CreateHttpsClient();
+        var copiedHealth=(await copiedHttp.GetFromJsonAsync<HealthResponseDto>("/api/sync/v1/health"))!;
+        Assert.Equal(originalInstance,copiedHealth.CentralInstanceId.ToString("D"));
+        Assert.Equal(originalEpoch,copiedHealth.ServerEpoch);
+        var secrets=new MemorySecrets();
+        var connector=new CafeCentralConnection(SalrynLocalComposition.Create(target.Paths),secrets,
+            ()=>copied.Factory.CreateClient(new WebApplicationFactoryClientOptions{BaseAddress=new Uri("https://localhost:5443")}));
+        string pin=target.ScalarString("SELECT lease_signing_public_key_spki FROM sync_server_state;")!;
+        var config=new CafeCentralConfiguration("https://localhost:5443",actual.TenantId,C4ProofIds.StoreId,pin);
+        var denied=await Assert.ThrowsAsync<InvalidOperationException>(()=>connector.EnrollAsync(config,"unused-invite","Copied DB QA"));
+        Assert.Contains("exact local canonical SQLite file",denied.Message);
+        Assert.Empty(secrets.Values);
+        Assert.Equal(originalTerminal,target.ScalarString("SELECT terminal_id FROM deployment_identity;"));
+        Assert.Equal(0L,target.ScalarLong("SELECT COUNT(*) FROM app_metadata WHERE key LIKE 'salryn.cafe.cohost.probe.%';"));
+    }
+
+    [Fact]
+    public async Task CopiedCanonicalDatabase_AfterValidPairing_RejectsReconnectBeforeFinancialSync()
+    {
+        var target=C4ProofDatabase.Create(Path.Combine(Path.GetTempPath(),"windows-cohost-copy-paired-"+Guid.NewGuid().ToString("N")));
+        target.Execute("DELETE FROM cashier_sessions;");
+        target.Execute("UPDATE users SET password_hash=$hash WHERE id=$id;",("$hash",SalrynPasswordHasher.HashPassword(CanonicalDomainTransactionTests.Password).Value),("$id",C4ProofIds.ActorUserId.ToString("D")));
+        using var actual=new CentralSyncTestHost(target.Paths.DatabasePath,true,C4ProofIds.StoreId);
+        using var admin=actual.CreateHttpsClient();string token=await actual.LoginAsAdminAsync(admin);
+        using var inviteRequest=new HttpRequestMessage(HttpMethod.Post,"/api/sync/v1/admin/devices/invites");
+        inviteRequest.Headers.Authorization=new AuthenticationHeaderValue("Bearer",token);
+        inviteRequest.Content=JsonContent.Create(new CreateInviteRequest("OwnerAdminClient"));
+        using var invited=await admin.SendAsync(inviteRequest);invited.EnsureSuccessStatusCode();
+        var invite=(await invited.Content.ReadFromJsonAsync<CreateInviteResponse>())!;
+        string pin=target.ScalarString("SELECT lease_signing_public_key_spki FROM sync_server_state;")!;
+        var secrets=new MemorySecrets();
+        var composition=SalrynLocalComposition.Create(target.Paths);
+        var paired=new CafeCentralConnection(composition,secrets,
+            ()=>actual.Factory.CreateClient(new WebApplicationFactoryClientOptions{BaseAddress=new Uri("https://localhost:5443")}));
+        Guid device=await paired.EnrollAsync(new("https://localhost:5443",actual.TenantId,actual.StoreId,pin),invite.JoinCode,"Windows Copied DB QA");
+        using var approval=new HttpRequestMessage(HttpMethod.Post,$"/api/sync/v1/admin/devices/{device:D}/approve");
+        approval.Headers.Authorization=new AuthenticationHeaderValue("Bearer",token);
+        using var approved=await admin.SendAsync(approval);approved.EnsureSuccessStatusCode();
+        var first=await paired.ConnectAsync(C4ProofIds.ActorUserId,"c4-proof",CanonicalDomainTransactionTests.Password);
+        Assert.Equal(0,first.Pending);
+        Assert.Equal(device.ToString("D"),target.ScalarString("SELECT terminal_id FROM deployment_identity;"));
+
+        string copiedPath=CopyCanonicalDatabase(target);
+        using var copied=new CentralSyncTestHost(copiedPath,true,C4ProofIds.StoreId,actual.TenantId);
+        using var copiedHttp=copied.CreateHttpsClient();
+        var copiedHealth=(await copiedHttp.GetFromJsonAsync<HealthResponseDto>("/api/sync/v1/health"))!;
+        Assert.Equal(target.ScalarString("SELECT central_instance_id FROM sync_server_state;"),copiedHealth.CentralInstanceId.ToString("D"));
+        Assert.Equal(target.ScalarLong("SELECT server_epoch FROM sync_server_state;"),copiedHealth.ServerEpoch);
+        var impersonated=new CafeCentralConnection(composition,secrets,
+            ()=>copied.Factory.CreateClient(new WebApplicationFactoryClientOptions{BaseAddress=new Uri("https://localhost:5443")}));
+        var denied=await Assert.ThrowsAsync<InvalidOperationException>(()=>
+            impersonated.ConnectAsync(C4ProofIds.ActorUserId,"c4-proof",CanonicalDomainTransactionTests.Password));
+        Assert.Contains("exact local canonical SQLite file",denied.Message);
+        Assert.Equal(0L,target.ScalarLong("SELECT COUNT(*) FROM app_metadata WHERE key LIKE 'salryn.cafe.cohost.probe.%';"));
+        Assert.Equal(device.ToString("D"),target.ScalarString("SELECT terminal_id FROM deployment_identity;"));
+        Assert.Equal(0L,target.ScalarLong("SELECT COUNT(*) FROM sync_change_feed;"));
+        var recovered=await paired.ConnectAsync(C4ProofIds.ActorUserId,"c4-proof",CanonicalDomainTransactionTests.Password);
+        Assert.Equal(0,recovered.Applied);
+        Assert.Equal(0,recovered.Pending);
+    }
+
+    private static string CopyCanonicalDatabase(C4ProofDatabase original)
+    {
+        string path=Path.Combine(Path.GetTempPath(),"windows-cohost-copied-"+Guid.NewGuid().ToString("N"),"copy.db");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        using var source=original.Factory.CreateConnection();source.Open();
+        using var destination=new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource=path,Mode=SqliteOpenMode.ReadWriteCreate,Pooling=false
+        }.ToString());
+        destination.Open();
+        source.BackupDatabase(destination);
+        return path;
+    }
+
     private sealed class MemorySecrets:IDeviceSecretStore
     {
         private readonly Dictionary<string,byte[]> values=[];
