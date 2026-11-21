@@ -94,12 +94,21 @@ export function appendRejectedIntentHistory(record: RejectedIntentRecord): void 
 
 export async function hostRequest<T>(path: string, body?: unknown, method?: "GET" | "POST" | "PUT" | "PATCH"): Promise<T> {
   const effectiveMethod = method ?? (body !== undefined ? "POST" : "GET");
-  const response = await fetch(path, {
-    method: effectiveMethod,
-    credentials: "same-origin",
-    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method: effectiveMethod,
+      credentials: "same-origin",
+      headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch (err) {
+    throw new HostApiError(
+      err instanceof Error ? err.message : "Network request failed; operation outcome is unknown.",
+      0,
+      "ERR_NETWORK_UNKNOWN",
+    );
+  }
 
   if (response.status === 204) {
     return undefined as T;
@@ -143,7 +152,7 @@ export function createLiveHostApi(): WorkstationApi {
     getOrders: () => hostRequest<CafeOrderSummary[]>("/api/cafe/orders"),
     getOrderDetail: (orderId) => hostRequest<CafeOrderDetail>(`/api/cafe/orders/${orderId}`),
     getCustomers: async () => {
-      const rows = await hostRequest<Array<{ customer: { id: string; fullName: string; isActive: boolean }; outstandingBalanceCents?: number }>>(
+      const rows = await hostRequest<Array<{ customer: { id: string; fullName: string; isActive: boolean }; balanceCents?: number; outstandingBalanceCents?: number }>>(
         "/api/customers",
       );
       return rows
@@ -151,7 +160,7 @@ export function createLiveHostApi(): WorkstationApi {
           id: r.customer.id,
           fullName: r.customer.fullName,
           isActive: r.customer.isActive,
-          outstandingBalanceCents: r.outstandingBalanceCents ?? 0,
+          outstandingBalanceCents: r.balanceCents ?? r.outstandingBalanceCents ?? 0,
         }))
         .filter((c) => c.isActive);
     },

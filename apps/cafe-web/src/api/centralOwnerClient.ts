@@ -80,11 +80,20 @@ async function centralRequest<T>(
     headers["Content-Type"] = "application/json";
   }
 
-  const response = await fetch(url, {
-    method: options.method ?? (options.body !== undefined ? "POST" : "GET"),
-    headers,
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: options.method ?? (options.body !== undefined ? "POST" : "GET"),
+      headers,
+      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    });
+  } catch (err) {
+    throw new HostApiError(
+      err instanceof Error ? err.message : "Central network request failed; operation outcome is unknown.",
+      0,
+      "ERR_NETWORK_UNKNOWN",
+    );
+  }
 
   const text = await response.text();
   let parsed: Record<string, unknown> | unknown = {};

@@ -282,7 +282,7 @@ export type CentralDeviceRow = {
   deviceName: string;
   deviceRole: string;
   publicKeyThumbprint: string;
-  status: "PendingApproval" | "Active" | "Revoked" | string;
+  status: "Pending" | "Active" | "Revoked" | string;
   enrolledAtUtc: string;
   approvedAtUtc: string | null;
   revokedAtUtc: string | null;
@@ -416,7 +416,7 @@ export interface CentralOwnerApi {
     baseUrl: string,
     accessToken: string,
     quarantineId: string,
-    reviewStatus: "Approved" | "Rejected",
+    reviewStatus: "ApprovedForManualAudit" | "Discarded",
     reviewNote?: string,
   ): Promise<CentralQuarantineRow>;
 }

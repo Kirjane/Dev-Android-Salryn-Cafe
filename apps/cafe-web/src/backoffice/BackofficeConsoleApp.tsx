@@ -152,10 +152,18 @@ function formatMovementType(type: string | number): string {
 
 function rethrowUnknownIfAmbiguous(operationId: string, err: unknown): never {
   if (
-    err instanceof HostApiError &&
-    (err.status === 0 || err.status >= 500 || err.code === "ERR_IDEMPOTENCY_OUTCOME_UNKNOWN")
+    (err instanceof HostApiError &&
+      (err.status === 0 ||
+        err.status >= 500 ||
+        err.code === "ERR_IDEMPOTENCY_OUTCOME_UNKNOWN" ||
+        err.code === "ERR_NETWORK_UNKNOWN")) ||
+    err instanceof TypeError ||
+    (err instanceof Error && err.name === "AbortError")
   ) {
-    throw new BackofficeUnknownOutcomeError(operationId, err.message);
+    throw new BackofficeUnknownOutcomeError(
+      operationId,
+      err instanceof Error ? err.message : "Network request outcome unknown.",
+    );
   }
   throw err;
 }
@@ -494,7 +502,7 @@ function BackofficeConsoleInner({
   );
 
   const pendingRefundCount = refunds.filter((r) => r.state === "Requested" || r.state === "Approved").length;
-  const pendingDeviceCount = centralDevices.filter((d) => d.status === "PendingApproval").length;
+  const pendingDeviceCount = centralDevices.filter((d) => d.status === "Pending").length;
 
   const navItems: CafeShellNavItem[] = [
     { id: "reports", label: "Owner Reports & COGS", group: "Overview", Icon: BarChart3 },

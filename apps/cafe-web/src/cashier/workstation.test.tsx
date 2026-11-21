@@ -153,7 +153,10 @@ function createTestHostApi(options: {
         shift: { shiftState: "Open", shiftId: "shift-1", openingCashCents },
       };
     },
-    getPrintStations: async () => [],
+    getPrintStations: async () => [
+      { stationId: "st-receipt", name: "Counter Epson", stationKind: 1, routeKey: "usb:tm20", isActive: true },
+      { stationId: "st-kitchen", name: "Espresso Bar", stationKind: 2, routeKey: "usb:kitchen", isActive: true },
+    ],
     printReceipt: async () => ({ job: { jobId: "j1", stationId: "s1", status: "Sent", copyKind: "Original" } }),
     printKitchenTicket: async () => ({ job: { jobId: "j2", stationId: "s2", status: "Sent", copyKind: "Original" } }),
     enrollCentral: async () => ({ deviceId: "d1", status: "PendingAdministratorApproval" }),
@@ -313,6 +316,9 @@ describe("Salryn Cafe R2 — Live Host Integrated Cashier, Orders & Kitchen", ()
 
     expect(screen.getAllByText("₱200.00").length).toBeGreaterThanOrEqual(1);
 
+    const modeSelect = screen.getByLabelText("Service mode") as HTMLSelectElement;
+    expect(Array.from(modeSelect.options).map((o) => o.value)).toEqual(["Takeout", "DineIn"]);
+
     await user.click(screen.getByRole("button", { name: "Save order" }));
     expect(await screen.findByText("Current order · Open")).toBeInTheDocument();
 
@@ -339,6 +345,7 @@ describe("Salryn Cafe R2 — Live Host Integrated Cashier, Orders & Kitchen", ()
     await user.click(screen.getByRole("button", { name: "Complete payment" }));
 
     expect(await screen.findByText(/Payment confirmed · Receipt CY-2001/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Print Receipt" })).toBeInTheDocument();
   });
 
   it("retains exact RFC-4122 completionOperationId in localStorage on unknown outcome and replays identical payload after reload", async () => {
@@ -348,6 +355,9 @@ describe("Salryn Cafe R2 — Live Host Integrated Cashier, Orders & Kitchen", ()
 
     await waitFor(() => expect(screen.getByRole("button", { name: /Ensaymada/i })).toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: /Ensaymada/i }));
+    const modeSelect = screen.getByLabelText("Service mode") as HTMLSelectElement;
+    expect(Array.from(modeSelect.options).map((o) => o.value)).toEqual(["Takeout", "DineIn"]);
+
     await user.click(screen.getByRole("button", { name: "Save order" }));
     await user.click(await screen.findByRole("button", { name: "Send to preparation" }));
     await user.click(await screen.findByRole("button", { name: "Mark preparing" }));
@@ -397,6 +407,9 @@ describe("Salryn Cafe R2 — Live Host Integrated Cashier, Orders & Kitchen", ()
 
     await waitFor(() => expect(screen.getByRole("button", { name: /Ensaymada/i })).toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: /Ensaymada/i }));
+    const modeSelect = screen.getByLabelText("Service mode") as HTMLSelectElement;
+    expect(Array.from(modeSelect.options).map((o) => o.value)).toEqual(["Takeout", "DineIn"]);
+
     await user.click(screen.getByRole("button", { name: "Save order" }));
     await user.click(await screen.findByRole("button", { name: "Send to preparation" }));
     await user.click(await screen.findByRole("button", { name: "Mark preparing" }));
@@ -424,6 +437,9 @@ describe("Salryn Cafe R2 — Live Host Integrated Cashier, Orders & Kitchen", ()
 
     await waitFor(() => expect(screen.getByRole("button", { name: /Ensaymada/i })).toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: /Ensaymada/i }));
+    const modeSelect = screen.getByLabelText("Service mode") as HTMLSelectElement;
+    expect(Array.from(modeSelect.options).map((o) => o.value)).toEqual(["Takeout", "DineIn"]);
+
     await user.click(screen.getByRole("button", { name: "Save order" }));
 
     const archiveBtn = await screen.findByRole("button", { name: "Archive rejected request" });
@@ -461,6 +477,9 @@ describe("Salryn Cafe R2 — Live Host Integrated Cashier, Orders & Kitchen", ()
     render(<WorkstationApp api={api} />);
     await waitFor(() => expect(screen.getByRole("button", { name: /Ensaymada/i })).toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: /Ensaymada/i }));
+    const modeSelect = screen.getByLabelText("Service mode") as HTMLSelectElement;
+    expect(Array.from(modeSelect.options).map((o) => o.value)).toEqual(["Takeout", "DineIn"]);
+
     await user.click(screen.getByRole("button", { name: "Save order" }));
 
     expect(await screen.findByRole("button", { name: "Retry retained request" })).toBeInTheDocument();

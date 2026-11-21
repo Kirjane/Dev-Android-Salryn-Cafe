@@ -218,14 +218,25 @@ function createFakeCentralHarness() {
       storeId: "s-1",
       productId: "Salryn.Cafe",
       deviceName: "Counter Tablet 01",
-      deviceRole: "Cashier",
+      deviceRole: "OfflineAndroidCashier",
       publicKeyThumbprint: "sha256:abcdef1234567890",
-      status: "PendingApproval",
+      status: "Pending",
       enrolledAtUtc: "2026-11-22T04:00:00Z",
       approvedAtUtc: null,
       revokedAtUtc: null,
       revokeReason: null,
       lastSeenAtUtc: null,
+    },
+  ];
+  const quarantine = [
+    {
+      quarantineId: "q-1",
+      deviceId: "11111111-1111-4111-8111-111111111111",
+      operationId: "op-1",
+      operationType: "SaleCommittedV3",
+      receivedAtUtc: "2026-11-22T05:00:00Z",
+      reviewStatus: "AdminReviewRequired",
+      reviewNote: null as string | null,
     },
   ];
 
@@ -272,16 +283,13 @@ function createFakeCentralHarness() {
       target.revokedAtUtc = "2026-11-22T05:10:00Z";
       return { ...target };
     },
-    listQuarantine: async () => [],
-    reviewQuarantine: async () => ({
-      quarantineId: "q-1",
-      deviceId: "d-1",
-      operationId: "op-1",
-      operationType: "Sale",
-      receivedAtUtc: "2026-11-22T05:00:00Z",
-      reviewStatus: "Approved",
-      reviewNote: null,
-    }),
+    listQuarantine: async () => quarantine.map((q) => ({ ...q })),
+    reviewQuarantine: async (_b, _t, quarantineId, reviewStatus, reviewNote) => {
+      const target = quarantine.find((q) => q.quarantineId === quarantineId)!;
+      target.reviewStatus = reviewStatus;
+      target.reviewNote = reviewNote ?? reviewStatus;
+      return { ...target };
+    },
   };
 
   return { centralApi, devices };
@@ -349,11 +357,16 @@ describe("Salryn Cafe Back-Office & Central Owner Console (Live Contracts)", () 
     await user.click(screen.getByRole("button", { name: /Sign In to Central/i }));
 
     expect(await screen.findByRole("button", { name: /Issue Join Code/i })).toBeInTheDocument();
+    const roleSelect = screen.getByLabelText(/Invite Device Role/i) as HTMLSelectElement;
+    expect(roleSelect.value).toBe("OfflineAndroidCashier");
     await user.click(screen.getByRole("button", { name: /Issue Join Code/i }));
     expect(await screen.findByText(/Active Join Code: 654321/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /^Approve$/i }));
     await waitFor(() => expect(screen.getByRole("button", { name: /^Revoke$/i })).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: /Approve for Audit/i }));
+    await waitFor(() => expect(screen.getByText(/Reviewed \(ApprovedForManualAudit\)/i)).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: /^Revoke$/i }));
     await user.click(screen.getByRole("button", { name: /Revoke device/i }));
@@ -373,13 +386,13 @@ describe("Salryn Cafe Back-Office & Central Owner Console (Live Contracts)", () 
     const commitSpy = vi.fn(async (req: Parameters<BackofficeApi["commitRefund"]>[0]) => {
       commitAttempts += 1;
       if (commitAttempts === 1) {
-        throw new HostApiError("Unknown commit outcome.", 504, "ERR_IDEMPOTENCY_OUTCOME_UNKNOWN");
+        throw new TypeError("Simulated fetch network disconnect");
       }
       return commitRefund(req);
     });
     api.commitRefund = commitSpy;
 
-    render(<BackofficeConsoleApp api={api} centralApi={centralApi} initialNav="inventory" />);
+    const view = render(<BackofficeConsoleApp api={api} centralApi={centralApi} initialNav="inventory" />);
     expect(await screen.findByRole("button", { name: /Record Waste/i })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Record Waste/i }));
     await waitFor(() => expect(recordWaste).toHaveBeenCalledWith(expect.objectContaining({
@@ -405,18 +418,25 @@ describe("Salryn Cafe Back-Office & Central Owner Console (Live Contracts)", () 
       lines: [expect.objectContaining({ stockDisposition: "DamagedNonRestockable" })],
     })));
 
-    // Approve & Commit -> simulated 504 UnknownOutcome preserves EXACT operationId on retry
+    // Approve & Commit -> simulated TypeError network disconnect -> reload retains EXACT operationId
     const refundsTable = screen.getByRole("table", { name: "Sale Refunds" });
     await user.click(within(refundsTable).getByRole("button", { name: /^Approve$/i }));
     await waitFor(() => expect(resolveRefund).toHaveBeenCalledWith(expect.objectContaining({ approve: true })));
 
     await user.click(within(refundsTable).getByRole("button", { name: /Commit Settlement/i }));
     const dialog = screen.getByRole("dialog");
-    const confirmBtn = within(dialog).getByRole("button", { name: /Confirm & Commit Refund/i });
-    await user.click(confirmBtn);
+    await user.click(within(dialog).getByRole("button", { name: /Confirm & Commit Refund/i }));
     await waitFor(() => expect(screen.getByText(/Refund Commit Outcome Unknown/i)).toBeInTheDocument());
 
-    await user.click(confirmBtn);
+    // Simulate page reload / WebView restart before retry
+    view.unmount();
+    render(<BackofficeConsoleApp api={api} centralApi={centralApi} initialNav="cash-ar" />);
+    expect(await screen.findByText(/Refund Commit Outcome Unknown/i)).toBeInTheDocument();
+
+    const reloadedRefundsTable = screen.getByRole("table", { name: "Sale Refunds" });
+    await user.click(within(reloadedRefundsTable).getByRole("button", { name: /Commit Settlement/i }));
+    const reloadedDialog = screen.getByRole("dialog");
+    await user.click(within(reloadedDialog).getByRole("button", { name: /Confirm & Commit Refund/i }));
     await waitFor(() => expect(commitSpy).toHaveBeenCalledTimes(2));
     expect(commitSpy.mock.calls[0][0].operationId).toBe(commitSpy.mock.calls[1][0].operationId);
     expect(commitSpy.mock.calls[1][0].settlements).toEqual([{ method: "Cash", amountCents: 18500 }]);

@@ -11,6 +11,7 @@ import {
   useToast,
   type StatusTone,
 } from "@salryn/cafe-ui";
+import { isKitchenStation } from "../cashier/types";
 import type { CafeOrderDetail, CafeOrderSummary, CafePrintStation, WorkstationApi } from "../cashier/types";
 
 const TICKET_TONE: Record<string, StatusTone> = {
@@ -46,7 +47,7 @@ export function KitchenDisplay({
 
   const permitted = (perm: string) => permissions.includes(perm);
   const kitchenStation = useMemo(
-    () => printStations.find((s) => s.isActive && s.stationKind === "Kitchen") ?? null,
+    () => printStations.find(isKitchenStation) ?? null,
     [printStations],
   );
 

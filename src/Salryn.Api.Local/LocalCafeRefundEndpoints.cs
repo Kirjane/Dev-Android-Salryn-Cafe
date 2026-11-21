@@ -45,7 +45,7 @@ internal static class LocalCafeRefundEndpoints
             if (authority.IsFailure)
                 return ToError(authority.ErrorDetail);
 
-            return Results.Ok(ReadRefundableSales(composition.ConnectionFactory, search));
+            return Results.Ok(ReadRefundableSales(composition.ConnectionFactory, authority.Value.StoreId, search));
         });
 
         app.MapGet("/api/cafe/refunds/{refundId:guid}", async (
@@ -243,7 +243,7 @@ internal static class LocalCafeRefundEndpoints
         return rows;
     }
 
-    private static IReadOnlyList<object> ReadRefundableSales(SqliteConnectionFactory factory, string? search)
+    private static IReadOnlyList<object> ReadRefundableSales(SqliteConnectionFactory factory, Guid storeId, string? search)
     {
         using SqliteConnection connection = factory.CreateConnection();
         connection.Open();
@@ -256,6 +256,13 @@ internal static class LocalCafeRefundEndpoints
                    s.change_cents
             FROM sales s
             WHERE s.status = $completed
+              AND EXISTS (SELECT 1 FROM deployment_identity di WHERE di.store_id = $store)
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM cafe_order_sale_links osl
+                  INNER JOIN cafe_orders co ON co.order_id = osl.order_id
+                  WHERE osl.sale_id = s.id AND co.store_id != $store
+              )
               AND ($search = '' OR LOWER(s.receipt_no) LIKE LOWER($like))
             ORDER BY s.created_at DESC
             LIMIT 40;
@@ -264,6 +271,7 @@ internal static class LocalCafeRefundEndpoints
         command.Parameters.AddWithValue("$cash", Convert.ToInt32(PaymentMethod.Cash));
         command.Parameters.AddWithValue("$ar", Convert.ToInt32(PaymentMethod.AccountsReceivable));
         command.Parameters.AddWithValue("$completed", Convert.ToInt32(SaleStatus.Completed));
+        command.Parameters.AddWithValue("$store", storeId.ToString("D"));
         command.Parameters.AddWithValue("$search", cleanSearch);
         command.Parameters.AddWithValue("$like", $"%{cleanSearch}%");
 
@@ -296,7 +304,7 @@ internal static class LocalCafeRefundEndpoints
                            SELECT SUM(rl.refund_quantity_x1000)
                            FROM cafe_sale_refund_lines rl
                            INNER JOIN cafe_sale_refunds cr ON cr.refund_id = rl.refund_id
-                           WHERE rl.sale_item_id = si.id AND cr.state = 'Committed'
+                           WHERE rl.sale_item_id = si.id AND cr.state != 'Rejected'
                        ), 0)
                 FROM sale_items si
                 INNER JOIN products p ON p.id = si.product_id

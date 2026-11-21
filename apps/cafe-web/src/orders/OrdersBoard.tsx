@@ -13,6 +13,7 @@ import {
   useToast,
   type StatusTone,
 } from "@salryn/cafe-ui";
+import { isReceiptStation } from "../cashier/types";
 import type { CafeOrderSummary, CafePrintStation, HostOrderState, ServiceMode, WorkstationApi } from "../cashier/types";
 
 const STATE_TONE: Record<string, StatusTone> = {
@@ -55,7 +56,7 @@ export function OrdersBoard({
 
   const permitted = (perm: string) => permissions.includes(perm);
   const receiptStation = useMemo(
-    () => printStations.find((s) => s.isActive && s.stationKind === "Receipt") ?? null,
+    () => printStations.find(isReceiptStation) ?? null,
     [printStations],
   );
 
@@ -104,7 +105,7 @@ export function OrdersBoard({
         <div style={{ display: "grid", gap: 14 }}>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "space-between" }}>
             <div role="group" aria-label="Filter orders by service mode" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {(["ALL", "DineIn", "Takeout", "Delivery"] as const).map((mode) => (
+              {(["ALL", "DineIn", "Takeout"] as const).map((mode) => (
                 <Button
                   key={mode}
                   size="sm"

@@ -25,6 +25,7 @@ import {
   useToast,
 } from "@salryn/cafe-ui";
 import { formatPhp, parsePhpToCents } from "../api/hostClient";
+import { isReceiptStation } from "./types";
 import type {
   CafeOrderDetail,
   CafePrintStation,
@@ -103,7 +104,7 @@ export function CashierWorkstation({
   const permitted = (perm: string) => permissions.includes(perm);
 
   const receiptStation = useMemo(
-    () => printStations.find((s) => s.isActive && s.stationKind === "Receipt") ?? null,
+    () => printStations.find(isReceiptStation) ?? null,
     [printStations],
   );
 
@@ -483,7 +484,6 @@ export function CashierWorkstation({
                       >
                         <option value="Takeout">Takeout</option>
                         <option value="DineIn">DineIn</option>
-                        <option value="Delivery">Delivery</option>
                       </SelectInput>
                     </FormField>
                     <FormField label="Table / reference">

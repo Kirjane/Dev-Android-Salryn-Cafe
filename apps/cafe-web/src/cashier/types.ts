@@ -1,4 +1,4 @@
-export type ServiceMode = "DineIn" | "Takeout" | "Delivery";
+export type ServiceMode = "DineIn" | "Takeout";
 export type TenderMode = "Cash" | "AccountsReceivable" | "Partial";
 export type HostOrderState = "Open" | "Parked" | "Submitted" | "Preparing" | "Ready" | "Completed" | "Cancelled" | string;
 
@@ -184,10 +184,27 @@ export type HostShiftOperationResult = {
 export type CafePrintStation = {
   stationId: string;
   name: string;
-  stationKind: "Receipt" | "Kitchen" | string;
+  stationKind: number | string;
   routeKey: string | null;
   isActive: boolean;
 };
+
+export function isReceiptStation(station: CafePrintStation): boolean {
+  return (
+    station.isActive &&
+    (station.stationKind === 1 || station.stationKind === "CustomerReceipt" || station.stationKind === "Receipt")
+  );
+}
+
+export function isKitchenStation(station: CafePrintStation): boolean {
+  return (
+    station.isActive &&
+    (station.stationKind === 2 ||
+      station.stationKind === 3 ||
+      station.stationKind === "Kitchen" ||
+      station.stationKind === "BarDrinks")
+  );
+}
 
 export type CafePrintJobResult = {
   job: {

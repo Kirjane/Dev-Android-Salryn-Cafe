@@ -31,7 +31,7 @@ import { BackofficeUnknownOutcomeError, useBackofficeOperation } from "../backof
 
 const STATUS_TONE: Record<string, StatusTone> = {
   Active: "success",
-  PendingApproval: "warning",
+  Pending: "warning",
   Revoked: "danger",
 };
 
@@ -71,7 +71,7 @@ export function DeviceManagementPanel({
   const { notify } = useToast();
   const [adminUser, setAdminUser] = useState("");
   const [adminPass, setAdminPass] = useState("");
-  const [inviteRole, setInviteRole] = useState("Cashier");
+  const [inviteRole, setInviteRole] = useState("OfflineAndroidCashier");
   const [joinTicket, setJoinTicket] = useState<CentralInviteTicket | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<CentralDeviceRow | null>(null);
   const [pendingRevokeDeviceId, setPendingRevokeDeviceId] = useState<string | null>(null);
@@ -125,8 +125,8 @@ export function DeviceManagementPanel({
         try {
           return await centralApi.revokeDevice(centralOrigin, centralAuth.accessToken, deviceId);
         } catch (err) {
-          if (err instanceof HostApiError && (err.status === 0 || err.status >= 500)) {
-            throw new BackofficeUnknownOutcomeError(operationId, err.message);
+          if ((err instanceof HostApiError && (err.status === 0 || err.status >= 500 || err.code === "ERR_NETWORK_UNKNOWN")) || err instanceof TypeError || (err instanceof Error && err.name === "AbortError")) {
+            throw new BackofficeUnknownOutcomeError(operationId, err instanceof Error ? err.message : "Network outcome unknown.");
           }
           throw err;
         }
@@ -140,7 +140,7 @@ export function DeviceManagementPanel({
     }
   }
 
-  async function handleReviewQuarantine(item: CentralQuarantineRow, status: "Approved" | "Rejected") {
+  async function handleReviewQuarantine(item: CentralQuarantineRow, status: "ApprovedForManualAudit" | "Discarded") {
     if (!centralAuth) return;
     const res = await reviewOp.execute(
       () =>
@@ -154,7 +154,7 @@ export function DeviceManagementPanel({
       `${item.quarantineId}:${status}`,
     );
     if (res) {
-      notify("info", `Quarantine ${status.toLowerCase()}`, item.operationType);
+      notify("info", `Quarantine ${status}`, item.operationType);
       await onRefreshCentral();
     }
   }
@@ -304,9 +304,10 @@ export function DeviceManagementPanel({
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
                   <StatusBadge tone="success">Central Live</StatusBadge>
                   <SelectInput aria-label="Invite Device Role" value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
-                    <option value="Cashier">Mobile Cashier</option>
-                    <option value="StoreHost">Windows Store Host</option>
-                    <option value="KitchenDisplay">Kitchen Display</option>
+                    <option value="OfflineAndroidCashier">Offline Android Cashier</option>
+                    <option value="LanThinTerminal">LAN Thin Terminal</option>
+                    <option value="OwnerAdminClient">Owner Admin Client</option>
+                    <option value="StandbyBackupNode">Standby Backup Node</option>
                   </SelectInput>
                   <Button
                     variant="primary"
@@ -362,7 +363,7 @@ export function DeviceManagementPanel({
                       header: "Actions",
                       render: (d) => (
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                          {d.status === "PendingApproval" ? (
+                          {d.status === "Pending" ? (
                             <Button
                               size="sm"
                               variant="accent"
@@ -416,13 +417,13 @@ export function DeviceManagementPanel({
                     key: "actions",
                     header: "Actions",
                     render: (q) =>
-                      q.reviewStatus === "Pending" ? (
+                      q.reviewStatus === "AdminReviewRequired" ? (
                         <div style={{ display: "flex", gap: 6 }}>
-                          <Button size="sm" variant="accent" onClick={() => void handleReviewQuarantine(q, "Approved")}>
-                            Approve
+                          <Button size="sm" variant="accent" onClick={() => void handleReviewQuarantine(q, "ApprovedForManualAudit")}>
+                            Approve for Audit
                           </Button>
-                          <Button size="sm" variant="danger" onClick={() => void handleReviewQuarantine(q, "Rejected")}>
-                            Reject
+                          <Button size="sm" variant="danger" onClick={() => void handleReviewQuarantine(q, "Discarded")}>
+                            Discard
                           </Button>
                         </div>
                       ) : (
