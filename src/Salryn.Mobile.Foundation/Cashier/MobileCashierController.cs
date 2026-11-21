@@ -18,6 +18,23 @@ public sealed record MobileCustomerOption(Guid CustomerId, string Name);
 public sealed record MobileCheckoutIntent(Guid OperationId, Guid OrderId, int ExpectedVersion,
     DateTimeOffset OccurredAtUtc, Guid ActorUserId, Guid DeviceId, Guid StoreId,
     long CashCents, long AccountsReceivableCents, Guid? CustomerId);
+public sealed record MobileShiftOpenIntent(Guid OperationId, long OpeningCashCents, DateTimeOffset OccurredAtUtc);
+public sealed record MobileShiftCloseIntent(Guid OperationId, Guid SessionId, long CountedCashCents, DateTimeOffset OccurredAtUtc);
+public sealed record MobileRefundRequestIntent(Guid OperationId, Guid RefundId, Guid SaleId, int ExpectedVersion,
+    DateTimeOffset OccurredAtUtc, string Reason, IReadOnlyList<CafeRefundLineMutation> Lines);
+public sealed record MobileRefundResolutionIntent(Guid OperationId, Guid RefundId, Guid SaleId, int ExpectedVersion,
+    DateTimeOffset OccurredAtUtc, bool Approve, string? Reason);
+public sealed record MobileRefundCommitIntent(Guid OperationId, Guid RefundId, Guid SaleId, int ExpectedVersion,
+    Guid CashierSessionId, DateTimeOffset OccurredAtUtc, IReadOnlyList<CafeRefundSettlementMutation> Settlements);
+public sealed record MobileReceiptPrintIntent(Guid OperationId, Guid JobId, Guid StationId, Guid SaleId,
+    CafePrintCopyKind CopyKind, Guid? ParentJobId, DateTimeOffset OccurredAtUtc);
+public sealed record MobileKitchenPrintIntent(Guid OperationId, Guid JobId, Guid StationId, Guid OrderId,
+    Guid OrderRevisionId, CafePrintCopyKind CopyKind, Guid? ParentJobId, DateTimeOffset OccurredAtUtc);
+public sealed record MobileDeliveryCreateIntent(Guid OperationId, Guid DeliveryId, Guid OrderId,
+    DateTimeOffset OccurredAtUtc, string RecipientName, string? ContactPhone, string DeliveryAddress,
+    string? Landmark, string? Instructions, long DeliveryFeeCents, string? CourierReference);
+public sealed record MobileDeliveryAdvanceIntent(Guid OperationId, Guid DeliveryId, int ExpectedVersion,
+    DateTimeOffset OccurredAtUtc, string TargetStatus, string? Reason);
 
 /// <summary>Native presentation boundary over the single canonical Cafe authority.
 /// No financial tables, prices, stock calculations, or operator substitutions live here.
@@ -75,26 +92,39 @@ public sealed class MobileCashierController(MobileProductionComposition runtime,
         }, ct);
 
     public Task<Result<CashierSessionReadModel>> OpenShiftAsync(long openingCashCents, CancellationToken ct = default) =>
+        OpenShiftAsync(new MobileShiftOpenIntent(Guid.NewGuid(), openingCashCents, DateTimeOffset.UtcNow), ct);
+
+    public Task<Result<CashierSessionReadModel>> OpenShiftAsync(MobileShiftOpenIntent intent, CancellationToken ct = default) =>
         ExecuteAsync(SalrynPermissions.ShiftOpenClose, async (_, actor, token) =>
         {
-            if (openingCashCents < 0) return Fail<CashierSessionReadModel>("Mobile.InvalidCash", "Opening cash cannot be negative.");
+            if (intent.OperationId == Guid.Empty) return Fail<CashierSessionReadModel>("Mobile.OperationIdRequired", "Retain a client operation ID before opening a shift.");
+            if (intent.OpeningCashCents < 0) return Fail<CashierSessionReadModel>("Mobile.InvalidCash", "Opening cash cannot be negative.");
             // A lost acknowledgement is recovered from the canonical open session,
             // never by creating a second drawer or exposing expected closing cash.
             var existing = await runtime.CashierSessions.FindOpenSessionByUserIdAsync(actor.UserId, token).ConfigureAwait(false);
             if (existing.IsFailure) return Result<CashierSessionReadModel>.Fail(existing.ErrorDetail);
             if (existing.Value is { } opened) return Result<CashierSessionReadModel>.Success(opened);
-            return await runtime.CashierSessions.OpenAsync(new(actor.UserId, Money.FromCents(openingCashCents), null), token).ConfigureAwait(false);
+            return await runtime.CashierSessions.OpenAsync(
+                new(actor.UserId, Money.FromCents(intent.OpeningCashCents), $"[op:{intent.OperationId:D}]"), token).ConfigureAwait(false);
         }, ct);
 
     public Task<Result<CashierSessionReadModel>> CloseShiftAsync(Guid sessionId, long countedCashCents, CancellationToken ct = default) =>
+        CloseShiftAsync(new MobileShiftCloseIntent(Guid.NewGuid(), sessionId, countedCashCents, DateTimeOffset.UtcNow), ct);
+
+    public Task<Result<CashierSessionReadModel>> CloseShiftAsync(MobileShiftCloseIntent intent, CancellationToken ct = default) =>
         ExecuteAsync(SalrynPermissions.ShiftOpenClose, async (_, actor, token) =>
         {
-            if (countedCashCents < 0) return Fail<CashierSessionReadModel>("Mobile.InvalidCash", "Counted cash cannot be negative.");
-            var session = await runtime.CashierSessions.FindByIdAsync(sessionId, token).ConfigureAwait(false);
+            if (intent.OperationId == Guid.Empty) return Fail<CashierSessionReadModel>("Mobile.OperationIdRequired", "Retain a client operation ID before closing a shift.");
+            if (intent.CountedCashCents < 0) return Fail<CashierSessionReadModel>("Mobile.InvalidCash", "Counted cash cannot be negative.");
+            var session = await runtime.CashierSessions.FindByIdAsync(intent.SessionId, token).ConfigureAwait(false);
             if (session.IsFailure) return Result<CashierSessionReadModel>.Fail(session.ErrorDetail);
             if (session.Value is not { } own || own.UserId != actor.UserId)
                 return Fail<CashierSessionReadModel>("Mobile.ShiftUnavailable", "This drawer is unavailable for the current operator.");
-            return await runtime.CashierSessions.CloseAsync(new(sessionId, actor.UserId, Money.FromCents(countedCashCents), null), token).ConfigureAwait(false);
+            string opMarker = $"[op:{intent.OperationId:D}]";
+            if (own.Status == CashierSessionStatus.Closed && own.Notes is not null && own.Notes.Contains(opMarker, StringComparison.Ordinal))
+                return Result<CashierSessionReadModel>.Success(own);
+            return await runtime.CashierSessions.CloseAsync(
+                new(intent.SessionId, actor.UserId, Money.FromCents(intent.CountedCashCents), opMarker), token).ConfigureAwait(false);
         }, ct);
 
     public Task<Result<CafeOrderMutationResult>> SaveOrderAsync(MobileOrderDraft draft, CancellationToken ct = default) =>
@@ -134,15 +164,118 @@ public sealed class MobileCashierController(MobileProductionComposition runtime,
             List<CafeOrderPaymentMutation> payments = [];
             if (intent.CashCents > 0) payments.Add(new(PaymentMethod.Cash, intent.CashCents));
             if (intent.AccountsReceivableCents > 0) payments.Add(new(PaymentMethod.AccountsReceivable, intent.AccountsReceivableCents));
+            IReadOnlyList<CafeSaleFeeMutation> fees = [];
+            var delivery = runtime.CafeDelivery.GetByOrder(binding.StoreId, actor.UserId, intent.OrderId);
+            if (delivery.IsSuccess && delivery.Value is { Delivery.Status: CafeDeliveryStatuses.Pending } pendingDelivery)
+            {
+                fees = [new(DeriveId(intent.OperationId, "delivery-fee"), CafeSaleFeeTypes.Delivery,
+                    "Delivery Fee", pendingDelivery.CurrentRevision.DeliveryFeeCents, null)];
+            }
             return Task.FromResult(runtime.CafeOrderCompletion.Complete(new(intent.OperationId,
                 DeriveId(intent.OperationId, "sale"), binding.DeviceId, intent.OrderId, binding.StoreId,
                 intent.ExpectedVersion, actor.UserId, intent.OccurredAtUtc, payments)
             {
                 CustomerId = intent.CustomerId,
                 FinancialDecisionOperationId = DeriveId(intent.OperationId, "financial-operation"),
-                FinancialDecisionId = DeriveId(intent.OperationId, "financial-decision")
+                FinancialDecisionId = DeriveId(intent.OperationId, "financial-decision"),
+                Fees = fees
             }));
         }, ct);
+
+    public Task<Result<CafeRefundMutationResult>> RequestRefundAsync(MobileRefundRequestIntent intent, CancellationToken ct = default) =>
+        ExecuteAsync(SalrynPermissions.SalesRefundRequest, (binding, actor, _) =>
+            intent.OperationId == Guid.Empty
+                ? Task.FromResult(Fail<CafeRefundMutationResult>("Mobile.OperationIdRequired", "Retain a client operation ID before requesting a refund."))
+                : Task.FromResult(runtime.CafeRefunds.Request(new(
+                    intent.OperationId, binding.DeviceId, intent.RefundId, intent.SaleId, binding.StoreId,
+                    intent.ExpectedVersion, actor.UserId, intent.OccurredAtUtc, intent.Reason, intent.Lines))), ct);
+
+    public Task<Result<CafeRefundMutationResult>> ResolveRefundAsync(MobileRefundResolutionIntent intent, CancellationToken ct = default) =>
+        ExecuteAsync(SalrynPermissions.SalesRefundApprove, (binding, actor, _) =>
+            intent.OperationId == Guid.Empty
+                ? Task.FromResult(Fail<CafeRefundMutationResult>("Mobile.OperationIdRequired", "Retain a client operation ID before resolving a refund."))
+                : Task.FromResult(runtime.CafeRefunds.Resolve(new(
+                    intent.OperationId, binding.DeviceId, intent.RefundId, intent.SaleId, binding.StoreId,
+                    intent.ExpectedVersion, actor.UserId, intent.OccurredAtUtc, intent.Approve, intent.Reason))), ct);
+
+    public Task<Result<CafeRefundCommitResult>> CommitRefundAsync(MobileRefundCommitIntent intent, CancellationToken ct = default) =>
+        ExecuteAsync(SalrynPermissions.SalesRefundApprove, (binding, actor, _) =>
+            intent.OperationId == Guid.Empty
+                ? Task.FromResult(Fail<CafeRefundCommitResult>("Mobile.OperationIdRequired", "Retain a client operation ID before committing a refund."))
+                : Task.FromResult(runtime.CafeRefunds.Commit(new(
+                    intent.OperationId, binding.DeviceId, intent.RefundId, intent.SaleId, binding.StoreId,
+                    intent.ExpectedVersion, actor.UserId, intent.CashierSessionId, intent.OccurredAtUtc, intent.Settlements))), ct);
+
+    public Task<Result<CafeRefundDetail>> FindRefundAsync(Guid refundId, CancellationToken ct = default) =>
+        ExecuteAsync(SalrynPermissions.SalesViewHistory, (binding, _, _) =>
+        {
+            var result = runtime.CafeRefunds.Get(refundId);
+            if (result.IsFailure) return Task.FromResult(result);
+            return Task.FromResult(result.Value.Refund.StoreId == binding.StoreId
+                ? result
+                : Fail<CafeRefundDetail>("Mobile.RefundUnavailable", "Refund was not found in this store."));
+        }, ct);
+
+    public Task<Result<IReadOnlyList<CafePrinterStation>>> ListPrinterStationsAsync(CancellationToken ct = default) =>
+        ExecuteAsync(SalrynPermissions.PrintingView, (binding, actor, _) =>
+            Task.FromResult(runtime.CafePrint.ListStations(binding.StoreId, actor.UserId)), ct);
+
+    public Task<Result<CafePrintJobMutationResult>> CreateReceiptPrintJobAsync(MobileReceiptPrintIntent intent, CancellationToken ct = default) =>
+        ExecuteAsync(intent.CopyKind == CafePrintCopyKind.Original ? SalrynPermissions.PrintingPrint : SalrynPermissions.PrintingReprint,
+            (binding, actor, token) =>
+                intent.OperationId == Guid.Empty
+                    ? Task.FromResult(Fail<CafePrintJobMutationResult>("Mobile.OperationIdRequired", "Retain a client operation ID before creating a receipt print job."))
+                    : runtime.CafePrint.CreateReceiptJobAsync(new(
+                        intent.OperationId, intent.JobId, binding.DeviceId, binding.StoreId, actor.UserId,
+                        intent.StationId, intent.SaleId, intent.CopyKind, intent.ParentJobId, intent.OccurredAtUtc), token), ct);
+
+    public Task<Result<CafePrintJobMutationResult>> CreateKitchenPrintJobAsync(MobileKitchenPrintIntent intent, CancellationToken ct = default) =>
+        ExecuteAsync(intent.CopyKind == CafePrintCopyKind.Original ? SalrynPermissions.PrintingPrint : SalrynPermissions.PrintingReprint,
+            (binding, actor, _) =>
+                intent.OperationId == Guid.Empty
+                    ? Task.FromResult(Fail<CafePrintJobMutationResult>("Mobile.OperationIdRequired", "Retain a client operation ID before creating a kitchen print job."))
+                    : Task.FromResult(runtime.CafePrint.CreateKitchenTicketJob(new(
+                        intent.OperationId, intent.JobId, binding.DeviceId, binding.StoreId, actor.UserId,
+                        intent.StationId, intent.OrderId, intent.OrderRevisionId, intent.CopyKind, intent.ParentJobId, intent.OccurredAtUtc))), ct);
+
+    public Task<Result<CafePrintAttemptResult>> ExecutePrintAttemptAsync(Guid jobId, IReceiptPrinterAdapter printerAdapter, CancellationToken ct = default) =>
+        ExecuteAsync(SalrynPermissions.PrintingPrint, (binding, actor, token) =>
+            runtime.CafePrint.ExecuteAttemptAsync(jobId, binding.DeviceId, actor.UserId, printerAdapter, token), ct);
+
+    public Task<Result<CafePrintJob?>> FindPrintJobAsync(Guid jobId, CancellationToken ct = default) =>
+        ExecuteAsync(SalrynPermissions.PrintingView, (binding, actor, _) =>
+        {
+            var result = runtime.CafePrint.FindJob(jobId, actor.UserId);
+            if (result.IsFailure || result.Value is null) return Task.FromResult(result);
+            return Task.FromResult(result.Value.StoreId == binding.StoreId
+                ? result
+                : Fail<CafePrintJob?>("Mobile.PrintJobUnavailable", "Print job was not found in this store."));
+        }, ct);
+
+    public Task<Result<IReadOnlyList<CafeDeliverySummary>>> ListDeliveriesAsync(string? status = null, CancellationToken ct = default) =>
+        ExecuteAsync(SalrynPermissions.DeliveryView, (binding, actor, _) =>
+            Task.FromResult(runtime.CafeDelivery.List(binding.StoreId, actor.UserId, status)), ct);
+
+    public Task<Result<CafeDeliveryDetail?>> FindDeliveryByOrderAsync(Guid orderId, CancellationToken ct = default) =>
+        ExecuteAsync(SalrynPermissions.DeliveryView, (binding, actor, _) =>
+            Task.FromResult(runtime.CafeDelivery.GetByOrder(binding.StoreId, actor.UserId, orderId)), ct);
+
+    public Task<Result<CafeDeliveryMutationResult>> CreateDeliveryAsync(MobileDeliveryCreateIntent intent, CancellationToken ct = default) =>
+        ExecuteAsync(SalrynPermissions.DeliveryManage, (binding, actor, _) =>
+            intent.OperationId == Guid.Empty
+                ? Task.FromResult(Fail<CafeDeliveryMutationResult>("Mobile.OperationIdRequired", "Retain a client operation ID before creating a delivery."))
+                : Task.FromResult(runtime.CafeDelivery.Create(new(
+                    intent.OperationId, binding.DeviceId, intent.DeliveryId, intent.OrderId, binding.StoreId,
+                    actor.UserId, intent.OccurredAtUtc, intent.RecipientName, intent.ContactPhone,
+                    intent.DeliveryAddress, intent.Landmark, intent.Instructions, intent.DeliveryFeeCents, intent.CourierReference))), ct);
+
+    public Task<Result<CafeDeliveryMutationResult>> AdvanceDeliveryAsync(MobileDeliveryAdvanceIntent intent, CancellationToken ct = default) =>
+        ExecuteAsync(SalrynPermissions.DeliveryAdvance, (binding, actor, _) =>
+            intent.OperationId == Guid.Empty
+                ? Task.FromResult(Fail<CafeDeliveryMutationResult>("Mobile.OperationIdRequired", "Retain a client operation ID before advancing delivery status."))
+                : Task.FromResult(runtime.CafeDelivery.Advance(new(
+                    intent.OperationId, binding.DeviceId, intent.DeliveryId, binding.StoreId,
+                    intent.ExpectedVersion, actor.UserId, intent.OccurredAtUtc, intent.TargetStatus, intent.Reason))), ct);
 
     private async Task<Result<T>> ExecuteAsync<T>(string permission,
         Func<MobileEnrollmentBinding, UserPermissionReadModel, CancellationToken, Task<Result<T>>> action, CancellationToken ct)

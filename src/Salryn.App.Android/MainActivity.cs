@@ -8,7 +8,9 @@ using Android.Views;
 using Android.Widget;
 using Salryn.App.Android.Platform;
 using Salryn.Core.Models;
+using Salryn.Core.Services;
 using Salryn.Mobile.Foundation.Cashier;
+using Salryn.Mobile.Foundation.Printing;
 using Salryn.Mobile.Runtime;
 
 namespace Salryn.App.Android;
@@ -28,6 +30,10 @@ public sealed class MainActivity : Activity
     private MenuPublicationSnapshot? _menu;
     private CafeOrderDetail? _order;
     private Guid _draftOrderId = Guid.NewGuid();
+    private Guid? _lastSaleId;
+    private string? _lastReceiptNumber;
+    private Guid? _lastPrintJobId;
+    private string? _lastPrintStatus;
     private bool _busy;
     private string _message = "Sign in with your synchronized operator account. Device approval is separate.";
     private const InputTypes MoneyInput = InputTypes.ClassNumber | InputTypes.NumberFlagDecimal;
@@ -76,8 +82,20 @@ public sealed class MainActivity : Activity
         var pending = await _intents!.ReadAsync();
         if (pending is not null)
         {
-            Label("An earlier action needs confirmation. Retry its saved request before creating another action.");
+            Label($"Pending action: {pending.Kind} · Op {pending.OperationId:D}", true);
+            if (!string.IsNullOrWhiteSpace(pending.LastErrorMessage))
+                Label($"Last rejection ({pending.AttemptCount} attempts): [{pending.LastErrorCode}] {pending.LastErrorMessage}");
+            else
+                Label("An earlier action needs confirmation. Retry its saved request before creating another action.");
             Button("Retry saved action", () => DispatchAsync(pending));
+            EditText dismissReason = Input("Reason to dismiss rejected action (audit logged)");
+            Button("Dismiss rejected action (audit logged)", async () =>
+            {
+                if (string.IsNullOrWhiteSpace(dismissReason.Text)) { Message("Enter a reason before dismissing a rejected action."); return; }
+                await _intents.ResolveRejectedAsync(pending.OperationId, _cashier.CurrentOperator!.UserId, dismissReason.Text!, DateTimeOffset.UtcNow);
+                Message($"Rejected action {pending.OperationId:D} dismissed and recorded in resolution history.");
+                await CashierPageAsync();
+            });
         }
         var menu = await _cashier.MenuAsync();
         if (menu.IsFailure)
@@ -89,15 +107,15 @@ public sealed class MainActivity : Activity
         _menu = menu.Value;
         Label("Drawer", true);
         EditText opening = Input("Opening cash (PHP)", MoneyInput);
-        Button("Open / recover my shift", async () =>
-        { var result = await _cashier.OpenShiftAsync(Cents(opening.Text)); Message(result.IsSuccess ? "Your cashier shift is open." : result.ErrorDetail.Message); });
+        Button("Open / recover my shift", () => DispatchAsync(Intent("ShiftOpen",
+            shiftOpen: new(Guid.NewGuid(), Cents(opening.Text), DateTimeOffset.UtcNow))));
         EditText counted = Input("Physical counted cash (PHP)", MoneyInput);
         Button("Close my shift with physical count", async () =>
         {
             var session = await _runtime!.CashierSessions.FindOpenSessionByUserIdAsync(_cashier.CurrentOperator!.UserId);
             if (session.IsFailure || session.Value is null) { Message("No open drawer was found for this operator."); return; }
-            var result = await _cashier.CloseShiftAsync(session.Value.Id, Cents(counted.Text));
-            Message(result.IsSuccess ? "Physical count recorded and shift closed." : result.ErrorDetail.Message);
+            await DispatchAsync(Intent("ShiftClose",
+                shiftClose: new(Guid.NewGuid(), session.Value.Id, Cents(counted.Text), DateTimeOffset.UtcNow)));
         });
         Label("Published menu", true);
         foreach (var item in _menu.Items.OrderBy(x => x.DisplayOrder))
@@ -114,13 +132,36 @@ public sealed class MainActivity : Activity
         if (_order?.Order.State == CafeOrderStates.Submitted) Button("Mark preparing", () => DispatchAsync(Intent("PreparationStatus", action: OrderAction(), target: CafeOrderStates.Preparing)));
         if (_order?.Order.State == CafeOrderStates.Preparing) Button("Mark ready", () => DispatchAsync(Intent("PreparationStatus", action: OrderAction(), target: CafeOrderStates.Ready)));
         if (_order?.Order.State == CafeOrderStates.Ready) Button("Checkout · Cash / Accounts Receivable", CheckoutDialogAsync);
+        if (_order is not null && (_order.Order.State == CafeOrderStates.Submitted || _order.Order.State == CafeOrderStates.Preparing))
+            Button("Print kitchen ticket", () => PrintKitchenTicketAsync(_order));
         Button("Start another takeout order", async () => { _order = null; _lines.Clear(); _draftOrderId = Guid.NewGuid(); await CashierPageAsync(); });
+        if (_lastSaleId is not null)
+        {
+            Label($"Last sale · receipt {_lastReceiptNumber}", true);
+            if (!string.IsNullOrWhiteSpace(_lastPrintStatus)) Label("Print status: " + _lastPrintStatus);
+            Button(_lastPrintJobId is null ? "Print customer receipt" : "Retry customer receipt print",
+                () => PrintReceiptAsync(_lastSaleId.Value));
+        }
         Label("Saved orders", true);
         var orders = await _cashier.OrdersAsync();
         if (orders.IsFailure) Label(orders.ErrorDetail.Message);
         else foreach (var order in orders.Value.Where(x => !CafeOrderStates.IsTerminal(x.State)).OrderBy(x => x.CreatedAtUtc))
             Button($"{order.ServiceReference ?? order.ServiceMode} · {order.State} · {order.CreatedAtUtc.ToLocalTime():g}", async () =>
             { var found = await _cashier.FindOrderAsync(order.OrderId); if (found.IsFailure) { Message(found.ErrorDetail.Message); return; } Load(found.Value); await CashierPageAsync(); });
+        Label("Active deliveries", true);
+        var deliveries = await _cashier.ListDeliveriesAsync();
+        if (deliveries.IsFailure) Label(deliveries.ErrorDetail.Message);
+        else foreach (var delivery in deliveries.Value.Where(x => !CafeDeliveryStatuses.IsTerminal(x.Status)).OrderBy(x => x.CreatedAtUtc))
+        {
+            string nextStatus = delivery.Status == CafeDeliveryStatuses.Pending ? CafeDeliveryStatuses.Dispatched : CafeDeliveryStatuses.Delivered;
+            Button($"Delivery {delivery.DeliveryId.ToString("N")[..6]} · {delivery.Status} → {nextStatus}", async () =>
+            {
+                var advanced = await _cashier.AdvanceDeliveryAsync(new(Guid.NewGuid(), delivery.DeliveryId, delivery.Version,
+                    DateTimeOffset.UtcNow, nextStatus, null));
+                Message(advanced.IsSuccess ? $"Delivery updated to {advanced.Value.Status}." : advanced.ErrorDetail.Message);
+                await CashierPageAsync();
+            });
+        }
         PrinterButton();
     }
 
@@ -193,32 +234,131 @@ public sealed class MainActivity : Activity
     }
 
     private MobilePendingCashierIntent Intent(string kind, MobileOrderDraft? draft = null, MobileOrderAction? action = null,
-        string? target = null, MobileCheckoutIntent? checkout = null) => new(kind, draft, action, target, checkout, _cashier!.CurrentOperator!.UserId);
+        string? target = null, MobileCheckoutIntent? checkout = null, MobileShiftOpenIntent? shiftOpen = null,
+        MobileShiftCloseIntent? shiftClose = null) =>
+        new(kind, draft, action, target, checkout, _cashier!.CurrentOperator!.UserId, shiftOpen, shiftClose);
+
     private async Task DispatchAsync(MobilePendingCashierIntent intent)
     {
         if (_cashier!.CurrentOperator?.UserId != intent.ActorUserId) { Message("Sign in as the original operator to reconcile the saved action."); return; }
         await _intents!.SaveBeforeDispatchAsync(intent);
-        Guid orderId;
+        Guid? orderId = null;
         switch (intent.Kind)
         {
+            case "ShiftOpen" when intent.ShiftOpen is not null:
+                var opened = await _cashier.OpenShiftAsync(intent.ShiftOpen);
+                if (opened.IsFailure)
+                {
+                    await _intents.RecordAttemptFailureAsync(intent.OperationId, opened.ErrorDetail.Code, opened.ErrorDetail.Message);
+                    Message(opened.ErrorDetail.Message + " Saved request retained."); return;
+                }
+                _message = "Your cashier shift is open."; break;
+            case "ShiftClose" when intent.ShiftClose is not null:
+                var closed = await _cashier.CloseShiftAsync(intent.ShiftClose);
+                if (closed.IsFailure)
+                {
+                    await _intents.RecordAttemptFailureAsync(intent.OperationId, closed.ErrorDetail.Code, closed.ErrorDetail.Message);
+                    Message(closed.ErrorDetail.Message + " Saved request retained."); return;
+                }
+                _message = "Physical count recorded and shift closed."; break;
             case "SaveOrder" when intent.Draft is not null:
                 var saved = await _cashier.SaveOrderAsync(intent.Draft);
-                if (saved.IsFailure) { Message(saved.ErrorDetail.Message + " Saved request retained."); return; } orderId = saved.Value.OrderId; break;
+                if (saved.IsFailure)
+                {
+                    await _intents.RecordAttemptFailureAsync(intent.OperationId, saved.ErrorDetail.Code, saved.ErrorDetail.Message);
+                    Message(saved.ErrorDetail.Message + " Saved request retained."); return;
+                }
+                orderId = saved.Value.OrderId; break;
             case "SubmitPreparation" when intent.Action is not null:
                 var submitted = await _cashier.SubmitPreparationAsync(intent.Action);
-                if (submitted.IsFailure) { Message(submitted.ErrorDetail.Message + " Saved request retained."); return; } orderId = submitted.Value.OrderId; break;
+                if (submitted.IsFailure)
+                {
+                    await _intents.RecordAttemptFailureAsync(intent.OperationId, submitted.ErrorDetail.Code, submitted.ErrorDetail.Message);
+                    Message(submitted.ErrorDetail.Message + " Saved request retained."); return;
+                }
+                orderId = submitted.Value.OrderId; break;
             case "PreparationStatus" when intent.Action is not null && intent.TargetState is not null:
                 var prepared = await _cashier.SetPreparationStatusAsync(intent.Action, intent.TargetState);
-                if (prepared.IsFailure) { Message(prepared.ErrorDetail.Message + " Saved request retained."); return; } orderId = prepared.Value.OrderId; break;
+                if (prepared.IsFailure)
+                {
+                    await _intents.RecordAttemptFailureAsync(intent.OperationId, prepared.ErrorDetail.Code, prepared.ErrorDetail.Message);
+                    Message(prepared.ErrorDetail.Message + " Saved request retained."); return;
+                }
+                orderId = prepared.Value.OrderId; break;
             case "Checkout" when intent.Checkout is not null:
                 var sale = await _cashier.CompleteAsync(intent.Checkout);
-                if (sale.IsFailure) { Message(sale.ErrorDetail.Message + " Saved checkout retained; do not create another sale."); return; }
-                orderId = sale.Value.OrderId; _message = "Sale committed · receipt " + sale.Value.ReceiptNumber + ". Printing and central application require separate confirmation."; break;
+                if (sale.IsFailure)
+                {
+                    await _intents.RecordAttemptFailureAsync(intent.OperationId, sale.ErrorDetail.Code, sale.ErrorDetail.Message);
+                    Message(sale.ErrorDetail.Message + " Saved checkout retained; do not create another sale."); return;
+                }
+                orderId = sale.Value.OrderId;
+                _lastSaleId = sale.Value.SaleId;
+                _lastReceiptNumber = sale.Value.ReceiptNumber;
+                _lastPrintJobId = null;
+                _lastPrintStatus = "Not yet printed";
+                _message = "Sale committed · receipt " + sale.Value.ReceiptNumber + ". Printing and central application require separate confirmation."; break;
             default: throw new InvalidOperationException("Unsupported saved action. Preserve it for recovery.");
         }
         await _intents.ClearConfirmedAsync(intent.OperationId);
-        var found = await _cashier.FindOrderAsync(orderId); if (found.IsSuccess) Load(found.Value);
+        if (orderId is { } id)
+        {
+            var found = await _cashier.FindOrderAsync(id);
+            if (found.IsSuccess) Load(found.Value);
+        }
         await CashierPageAsync();
+    }
+
+    private async Task PrintReceiptAsync(Guid saleId)
+    {
+        var stations = await _cashier!.ListPrinterStationsAsync();
+        if (stations.IsFailure) { Message(stations.ErrorDetail.Message); return; }
+        var station = stations.Value.FirstOrDefault(x => x.IsActive && x.StationKind == CafePrinterStationKind.CustomerReceipt);
+        if (station is null) { _lastPrintStatus = "No active receipt printer station configured."; Message(_lastPrintStatus); return; }
+
+        Guid jobId;
+        if (_lastPrintJobId is { } existingJobId)
+        {
+            jobId = existingJobId;
+        }
+        else
+        {
+            var created = await _cashier.CreateReceiptPrintJobAsync(new(Guid.NewGuid(), Guid.NewGuid(), station.StationId,
+                saleId, CafePrintCopyKind.Original, null, DateTimeOffset.UtcNow));
+            if (created.IsFailure) { Message(created.ErrorDetail.Message); return; }
+            jobId = created.Value.Job.JobId;
+            _lastPrintJobId = jobId;
+        }
+
+        IReceiptPrinterAdapter adapter = string.IsNullOrWhiteSpace(station.RouteKey)
+            ? new DisabledReceiptPrinterAdapter("Printer route key is not configured.")
+            : new MobilePrinterTransportAdapter(new AndroidBluetoothPrinterTransport(this), station.RouteKey, station.Name);
+        var attempt = await _cashier.ExecutePrintAttemptAsync(jobId, adapter);
+        if (attempt.IsFailure) { _lastPrintStatus = attempt.ErrorDetail.Message; Message(_lastPrintStatus); return; }
+        _lastPrintStatus = $"{attempt.Value.Attempt.Status} (attempt #{attempt.Value.Attempt.AttemptNumber}): {attempt.Value.Attempt.ResultMessage}";
+        if (attempt.Value.Attempt.Status == CafePrintAttemptStatus.Succeeded) _lastPrintJobId = null;
+        Message(_lastPrintStatus);
+        await CashierPageAsync();
+    }
+
+    private async Task PrintKitchenTicketAsync(CafeOrderDetail order)
+    {
+        var stations = await _cashier!.ListPrinterStationsAsync();
+        if (stations.IsFailure) { Message(stations.ErrorDetail.Message); return; }
+        var station = stations.Value.FirstOrDefault(x => x.IsActive && x.StationKind == CafePrinterStationKind.Kitchen);
+        if (station is null) { Message("No active kitchen printer station configured."); return; }
+
+        var created = await _cashier.CreateKitchenPrintJobAsync(new(Guid.NewGuid(), Guid.NewGuid(), station.StationId,
+            order.Order.OrderId, order.CurrentRevision.RevisionId, CafePrintCopyKind.Original, null, DateTimeOffset.UtcNow));
+        if (created.IsFailure) { Message(created.ErrorDetail.Message); return; }
+
+        IReceiptPrinterAdapter adapter = string.IsNullOrWhiteSpace(station.RouteKey)
+            ? new DisabledReceiptPrinterAdapter("Kitchen printer route key is not configured.")
+            : new MobilePrinterTransportAdapter(new AndroidBluetoothPrinterTransport(this), station.RouteKey, station.Name);
+        var attempt = await _cashier.ExecutePrintAttemptAsync(created.Value.Job.JobId, adapter);
+        Message(attempt.IsSuccess
+            ? $"Kitchen ticket {attempt.Value.Attempt.Status} (attempt #{attempt.Value.Attempt.AttemptNumber}): {attempt.Value.Attempt.ResultMessage}"
+            : attempt.ErrorDetail.Message);
     }
     private void Load(CafeOrderDetail order)
     {
