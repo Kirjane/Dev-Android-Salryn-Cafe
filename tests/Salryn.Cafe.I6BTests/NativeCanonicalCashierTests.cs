@@ -15,7 +15,7 @@ public sealed class NativeCanonicalCashierTests
         await fx.Secrets.WriteAsync(ProtectedMobileEnrollmentReader.SecretKey, []);
         await fx.LoginAsync();
         Assert.NotNull(fx.Controller.CurrentOperator);
-        var denied = await fx.Controller.OpenShiftAsync(0);
+        var denied = await fx.Controller.OpenShiftAsync(new MobileShiftOpenIntent(Guid.NewGuid(), 0, fx.Now));
         Assert.True(denied.IsFailure);
         Assert.Equal("Mobile.DeviceApprovalRequired", denied.ErrorDetail.Code);
         Assert.Equal(0L, Convert.ToInt64(fx.Scalar("SELECT COUNT(*) FROM cashier_sessions;")));
@@ -28,8 +28,9 @@ public sealed class NativeCanonicalCashierTests
         await fx.LoginAsync();
         var menu = CanonicalCashierFixture.Value(await fx.Controller.MenuAsync());
         Assert.Single(menu.Items);
-        var shift = CanonicalCashierFixture.Value(await fx.Controller.OpenShiftAsync(10000));
-        Assert.Equal(shift.Id, CanonicalCashierFixture.Value(await fx.Controller.OpenShiftAsync(10000)).Id);
+        Guid shiftOpId = Guid.NewGuid();
+        var shift = CanonicalCashierFixture.Value(await fx.Controller.OpenShiftAsync(new MobileShiftOpenIntent(shiftOpId, 10000, fx.Now)));
+        Assert.Equal(shift.Id, CanonicalCashierFixture.Value(await fx.Controller.OpenShiftAsync(new MobileShiftOpenIntent(shiftOpId, 10000, fx.Now))).Id);
         var order = await fx.ReadyOrderAsync();
         var intent = CanonicalCashierFixture.Value(await fx.Controller.CreateCheckoutIntentAsync(Guid.NewGuid(),
             order.Order.OrderId, order.Order.OrderVersion, fx.Now, 15000, 0, null));
@@ -53,7 +54,7 @@ public sealed class NativeCanonicalCashierTests
         using CanonicalCashierFixture fx = new();
         await fx.LoginAsync();
         fx.Now = fx.Now.AddHours(2);
-        var expired = await fx.Controller.OpenShiftAsync(1000);
+        var expired = await fx.Controller.OpenShiftAsync(new MobileShiftOpenIntent(Guid.NewGuid(), 1000, fx.Now));
         Assert.True(expired.IsFailure);
         Assert.Equal("LEASE_EXPIRED", expired.ErrorDetail.Code);
         Assert.Equal(0L, Convert.ToInt64(fx.Scalar("SELECT COUNT(*) FROM cashier_sessions;")));
@@ -65,7 +66,7 @@ public sealed class NativeCanonicalCashierTests
         using CanonicalCashierFixture fx = new();
         await fx.LoginAsync();
         fx.Execute("DELETE FROM role_permissions WHERE permission='Shift.OpenClose';");
-        var denied = await fx.Controller.OpenShiftAsync(10000);
+        var denied = await fx.Controller.OpenShiftAsync(new MobileShiftOpenIntent(Guid.NewGuid(), 10000, fx.Now));
         Assert.True(denied.IsFailure);
         Assert.Equal("Mobile.PermissionDenied", denied.ErrorDetail.Code);
         Assert.Equal(0L, Convert.ToInt64(fx.Scalar("SELECT COUNT(*) FROM cashier_sessions;")));
@@ -77,7 +78,7 @@ public sealed class NativeCanonicalCashierTests
         using CanonicalCashierFixture fx = new();
         await fx.LoginAsync();
         fx.Execute("UPDATE users SET status=0;");
-        var denied = await fx.Controller.OpenShiftAsync(10000);
+        var denied = await fx.Controller.OpenShiftAsync(new MobileShiftOpenIntent(Guid.NewGuid(), 10000, fx.Now));
         Assert.True(denied.IsFailure);
         Assert.Equal("Mobile.OperatorRevoked", denied.ErrorDetail.Code);
         Assert.Null(fx.Controller.CurrentOperator);
@@ -89,7 +90,7 @@ public sealed class NativeCanonicalCashierTests
     {
         using CanonicalCashierFixture fx = new();
         await fx.LoginAsync();
-        CanonicalCashierFixture.Value(await fx.Controller.OpenShiftAsync(0));
+        CanonicalCashierFixture.Value(await fx.Controller.OpenShiftAsync(new MobileShiftOpenIntent(Guid.NewGuid(), 0, fx.Now)));
         var order = await fx.ReadyOrderAsync();
         var intent = CanonicalCashierFixture.Value(await fx.Controller.CreateCheckoutIntentAsync(Guid.NewGuid(),
             order.Order.OrderId, order.Order.OrderVersion, fx.Now, 12500, 0, null));
@@ -152,7 +153,7 @@ public sealed class NativeCanonicalCashierTests
     {
         using CanonicalCashierFixture fx = new();
         await fx.LoginAsync();
-        CanonicalCashierFixture.Value(await fx.Controller.OpenShiftAsync(0));
+        CanonicalCashierFixture.Value(await fx.Controller.OpenShiftAsync(new MobileShiftOpenIntent(Guid.NewGuid(), 0, fx.Now)));
         var customer = CanonicalCashierFixture.Value(await fx.Runtime.AccountsReceivable.CreateCustomerAsync(
             new CreateReceivableCustomerRequest("Synthetic customer", null, null, null, null, fx.ActorId)));
         var order = await fx.ReadyOrderAsync();

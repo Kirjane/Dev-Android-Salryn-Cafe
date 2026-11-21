@@ -91,9 +91,6 @@ public sealed class MobileCashierController(MobileProductionComposition runtime,
                     .Where(x => x.Customer.IsActive).Select(x => new MobileCustomerOption(x.Customer.Id, x.Customer.FullName)).ToArray());
         }, ct);
 
-    public Task<Result<CashierSessionReadModel>> OpenShiftAsync(long openingCashCents, CancellationToken ct = default) =>
-        OpenShiftAsync(new MobileShiftOpenIntent(Guid.NewGuid(), openingCashCents, DateTimeOffset.UtcNow), ct);
-
     public Task<Result<CashierSessionReadModel>> OpenShiftAsync(MobileShiftOpenIntent intent, CancellationToken ct = default) =>
         ExecuteAsync(SalrynPermissions.ShiftOpenClose, async (_, actor, token) =>
         {
@@ -107,9 +104,6 @@ public sealed class MobileCashierController(MobileProductionComposition runtime,
             return await runtime.CashierSessions.OpenAsync(
                 new(actor.UserId, Money.FromCents(intent.OpeningCashCents), $"[op:{intent.OperationId:D}]"), token).ConfigureAwait(false);
         }, ct);
-
-    public Task<Result<CashierSessionReadModel>> CloseShiftAsync(Guid sessionId, long countedCashCents, CancellationToken ct = default) =>
-        CloseShiftAsync(new MobileShiftCloseIntent(Guid.NewGuid(), sessionId, countedCashCents, DateTimeOffset.UtcNow), ct);
 
     public Task<Result<CashierSessionReadModel>> CloseShiftAsync(MobileShiftCloseIntent intent, CancellationToken ct = default) =>
         ExecuteAsync(SalrynPermissions.ShiftOpenClose, async (_, actor, token) =>

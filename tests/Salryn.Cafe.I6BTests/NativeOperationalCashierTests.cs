@@ -154,7 +154,7 @@ public sealed class NativeOperationalCashierTests
     {
         using CanonicalCashierFixture fx = new();
         await fx.LoginAsync();
-        CanonicalCashierFixture.Value(await fx.Controller.OpenShiftAsync(10000));
+        CanonicalCashierFixture.Value(await fx.Controller.OpenShiftAsync(new MobileShiftOpenIntent(Guid.NewGuid(), 10000, fx.Now)));
         var order = await fx.ReadyOrderAsync();
         var checkoutIntent = CanonicalCashierFixture.Value(await fx.Controller.CreateCheckoutIntentAsync(
             Guid.NewGuid(), order.Order.OrderId, order.Order.OrderVersion, fx.Now, 12500, 0, null));
@@ -208,7 +208,7 @@ public sealed class NativeOperationalCashierTests
     {
         using CanonicalCashierFixture fx = new();
         await fx.LoginAsync();
-        var shift = CanonicalCashierFixture.Value(await fx.Controller.OpenShiftAsync(10000));
+        var shift = CanonicalCashierFixture.Value(await fx.Controller.OpenShiftAsync(new MobileShiftOpenIntent(Guid.NewGuid(), 10000, fx.Now)));
 
         // Prepare a Ready order, attach delivery before completion, complete sale, then advance delivery
         var order = await fx.ReadyOrderAsync();

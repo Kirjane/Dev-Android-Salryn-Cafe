@@ -80,11 +80,12 @@ internal static class LocalCafeOrderEndpoints
                     authority.ErrorDetail);
             }
 
+            Guid revisionOperationId = OperationId(request.OperationId);
             CafeOrderRevisionMutation mutation = new(
-                OperationId(request.OperationId),
+                revisionOperationId,
                 authority.Value.DeviceId,
                 request.OrderId.GetValueOrDefault() == Guid.Empty
-                    ? Guid.NewGuid()
+                    ? DeriveDeterministicGuid($"order|{revisionOperationId:D}")
                     : request.OrderId!.Value,
                 authority.Value.StoreId,
                 request.ExpectedVersion,
@@ -93,10 +94,10 @@ internal static class LocalCafeOrderEndpoints
                     DateTimeOffset.UtcNow,
                 request.ServiceMode,
                 request.ServiceReference,
-                request.Lines.Select(line =>
+                request.Lines.Select((line, lineIndex) =>
                     new CafeOrderLineMutation(
                         line.OrderLineId.GetValueOrDefault() == Guid.Empty
-                            ? Guid.NewGuid()
+                            ? DeriveDeterministicGuid($"order-line|{revisionOperationId:D}|{lineIndex}|{line.ProductId:D}|{line.DisplayOrder}")
                             : line.OrderLineId!.Value,
                         line.ProductId,
                         line.VariantId,
@@ -477,10 +478,12 @@ internal static class LocalCafeOrderEndpoints
     private static Guid DeriveDeterministicFeeId(
         Guid completionOperationId,
         int feeIndex,
-        CompleteOrderFeeRequest fee)
+        CompleteOrderFeeRequest fee) =>
+        DeriveDeterministicGuid(
+            $"{completionOperationId:D}|{feeIndex}|{fee.FeeType.Trim()}|{fee.DisplayLabel.Trim()}|{fee.AmountCents}|{fee.Reason?.Trim() ?? string.Empty}");
+
+    private static Guid DeriveDeterministicGuid(string canonical)
     {
-        string canonical =
-            $"{completionOperationId:D}|{feeIndex}|{fee.FeeType.Trim()}|{fee.DisplayLabel.Trim()}|{fee.AmountCents}|{fee.Reason?.Trim() ?? string.Empty}";
         byte[] hash = System.Security.Cryptography.SHA256.HashData(
             System.Text.Encoding.UTF8.GetBytes(canonical));
         Span<byte> guidBytes = stackalloc byte[16];
