@@ -124,6 +124,17 @@ public sealed class CafeMutationIdempotencyGuard
                 return BuildReplayOrConflictResult(httpContext, existing, endpointKey, requestHash);
             }
 
+            // Durable ownership must precede any callback that can commit independently.
+            // A process crash cannot authorize a second invocation. A fence without an
+            // outcome is UNKNOWN, never success, and requires domain-specific recovery.
+            if (!TryClaimExecution(operationId, endpointKey, actorUserId, requestHash))
+            {
+                existing = FindRecord(operationId);
+                if (existing is not null)
+                    return BuildReplayOrConflictResult(httpContext, existing, endpointKey, requestHash);
+                return BuildFencedResult(operationId, endpointKey, actorUserId, requestHash);
+            }
+
             IdempotentExecutionOutcome outcome = await executeAsync(operationId).ConfigureAwait(false);
             string responseJson = JsonSerializer.Serialize(outcome.Body, JsonOptions);
 
@@ -149,6 +160,11 @@ public sealed class CafeMutationIdempotencyGuard
                     }
                 }
             }
+
+            // Authorization denials are defined to have no business effect. Release only
+            // that invocation's coordination fence so a subsequent authorized retry works.
+            if (outcome.StatusCode is StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden)
+                ReleaseDeniedExecution(operationId, endpointKey, actorUserId, requestHash);
 
             return Results.Content(responseJson, "application/json", Encoding.UTF8, outcome.StatusCode);
         }
@@ -176,6 +192,54 @@ public sealed class CafeMutationIdempotencyGuard
             canonicalPayload,
             opId => Task.FromResult(execute(opId)),
             cancellationToken);
+    }
+
+    private bool TryClaimExecution(Guid operationId, string endpointKey, Guid actorUserId, string requestHash)
+    {
+        using var connection = OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT OR IGNORE INTO cafe_mutation_execution_fences
+                (operation_id, endpoint_key, actor_user_id, request_hash, created_at_utc)
+            VALUES ($op, $endpoint, $actor, $hash, $now);
+            """;
+        command.Parameters.AddWithValue("$op", operationId.ToString("D"));
+        command.Parameters.AddWithValue("$endpoint", endpointKey);
+        command.Parameters.AddWithValue("$actor", actorUserId.ToString("D"));
+        command.Parameters.AddWithValue("$hash", requestHash);
+        command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
+        return command.ExecuteNonQuery() == 1;
+    }
+
+    private IResult BuildFencedResult(Guid operationId, string endpointKey, Guid actorUserId, string requestHash)
+    {
+        using var connection = OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT endpoint_key, actor_user_id, request_hash FROM cafe_mutation_execution_fences WHERE operation_id=$op;";
+        command.Parameters.AddWithValue("$op", operationId.ToString("D"));
+        using var reader = command.ExecuteReader();
+        bool same = reader.Read() && reader.GetString(0) == endpointKey &&
+            reader.GetString(1) == actorUserId.ToString("D") && reader.GetString(2) == requestHash;
+        return Results.Json(new {
+            code = same ? "ERR_IDEMPOTENCY_OUTCOME_UNKNOWN" : "ERR_IDEMPOTENCY_CONFLICT",
+            error = same ? "Operation is executing or its committed outcome needs reconciliation. Retain this operationId; do not submit a replacement operation."
+                         : "OperationId was already claimed with a different actor, endpoint or payload."
+        }, statusCode: StatusCodes.Status409Conflict);
+    }
+
+    private void ReleaseDeniedExecution(Guid operationId, string endpointKey, Guid actorUserId, string requestHash)
+    {
+        using var connection = OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM cafe_mutation_execution_fences
+            WHERE operation_id=$op AND endpoint_key=$endpoint AND actor_user_id=$actor AND request_hash=$hash;
+            """;
+        command.Parameters.AddWithValue("$op", operationId.ToString("D"));
+        command.Parameters.AddWithValue("$endpoint", endpointKey);
+        command.Parameters.AddWithValue("$actor", actorUserId.ToString("D"));
+        command.Parameters.AddWithValue("$hash", requestHash);
+        command.ExecuteNonQuery();
     }
 
     private static IResult BuildReplayOrConflictResult(
