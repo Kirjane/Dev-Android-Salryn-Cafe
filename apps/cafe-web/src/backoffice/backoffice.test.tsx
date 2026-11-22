@@ -322,24 +322,25 @@ describe("Salryn Cafe Back-Office & Central Owner Console (Live Contracts)", () 
     window.localStorage.clear();
   });
 
-  it("renders live Owner Reports & COGS and strictly gates Host Backup/License on Central Owner Portal", async () => {
+  it("isolates Central Owner from local Host financial modules and cached reports", async () => {
     const user = userEvent.setup();
     const { api } = createFakeBackofficeHarness();
     const { centralApi } = createFakeCentralHarness();
 
     render(<BackofficeConsoleApp api={api} centralApi={centralApi} initialSurface="CENTRAL_OWNER" />);
+    expect(await screen.findByRole("button", { name: "Device Trust & Central" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Menu, Recipes & BOM" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cash, Expense, AR & Refunds" })).not.toBeInTheDocument();
+    expect(screen.queryByText("₱24,800.00")).not.toBeInTheDocument();
+    // Host-only controls are locked on Central.
 
-    expect(await screen.findByText("₱24,800.00")).toBeInTheDocument();
-    expect(screen.getByRole("table", { name: "Recipe Cost Coverage" })).toBeInTheDocument();
-
-    // Navigate to Windows Host Only tab in CENTRAL_OWNER -> MUST be disabled
     await user.click(screen.getByRole("button", { name: "Host Backup & License" }));
     expect(screen.getByRole("alert")).toHaveTextContent(/Local Windows Host Only/i);
 
-    // Switch to Windows Host View -> Host controls + numeric enum license badge unlock
+    // Host reports require switching to the local Host identity.
     await user.click(screen.getByRole("button", { name: "Windows Host Console" }));
-    expect(screen.getByText("Licensed")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Create Verified Backup/i })).toBeInTheDocument();
+    expect(await screen.findByText("₱24,800.00")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Menu, Recipes & BOM" })).toBeInTheDocument();
   });
 
   it("executes Central device enrollment invite, approval, and handles ambiguous revoke failure with UnknownOutcome retry", async () => {

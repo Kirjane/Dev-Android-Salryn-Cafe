@@ -199,7 +199,7 @@ function BackofficeConsoleInner({
 }) {
   const { notify } = useToast();
   const [surface, setSurface] = useState<DeploymentSurface>(initialSurface);
-  const [activeNav, setActiveNav] = useState(initialNav);
+  const [activeNav, setActiveNav] = useState(initialSurface === "CENTRAL_OWNER" ? "devices" : initialNav);
 
   // Host session (only checked when hostApi is active and WINDOWS_HOST surface is opened)
   const [hostSession, setHostSession] = useState<HostSession>({ isAuthenticated: hostApi === null });
@@ -546,7 +546,7 @@ function BackofficeConsoleInner({
   const pendingRefundCount = refunds.filter((r) => r.state === "Requested" || r.state === "Approved").length;
   const pendingDeviceCount = centralDevices.filter((d) => d.status === "Pending").length;
 
-  const navItems: CafeShellNavItem[] = [
+  const hostNavItems: CafeShellNavItem[] = [
     { id: "reports", label: "Owner Reports & COGS", group: "Overview", Icon: BarChart3 },
     { id: "devices", label: "Device Trust & Central", group: "Overview", Icon: Laptop, badge: pendingDeviceCount || undefined },
     { id: "recipes", label: "Menu, Recipes & BOM", group: "Cafe Operations", Icon: BookOpen },
@@ -556,6 +556,12 @@ function BackofficeConsoleInner({
     { id: "audit", label: "Audit, Users & Settings", group: "Admin", Icon: ShieldCheck },
     { id: "host-ops", label: "Host Backup & License", group: "Windows Host Only", Icon: HardDrive },
   ];
+  // Central has separate identity and must not expose any local financial controls.
+  const centralNavItems: CafeShellNavItem[] = [
+    { id: "devices", label: "Device Trust & Central", group: "Central Administration", Icon: Laptop, badge: pendingDeviceCount || undefined },
+    { id: "host-ops", label: "Host Backup & License", group: "Local Host Only", Icon: HardDrive },
+  ];
+  const navItems = surface === "CENTRAL_OWNER" ? centralNavItems : hostNavItems;
 
   // The license gate precedes any operator sign-in and never reveals account fields.
   if (surface === "WINDOWS_HOST" && hostApi && !hostLicenseVerified) {
@@ -643,12 +649,12 @@ function BackofficeConsoleInner({
             : { label: "Central Ready", tone: "info" }
           : { label: "Host Live SQLite", tone: "success" }
       }
-      operatorName={hostSession.user?.displayName ?? centralAuth?.session.displayName ?? "Cafe Manager"}
-      roleName={hostSession.user?.roleName ?? centralAuth?.session.role ?? "Back-Office"}
+      operatorName={surface === "CENTRAL_OWNER" ? centralAuth?.session.displayName ?? "Central Owner" : hostSession.user?.displayName ?? "Cafe Manager"}
+      roleName={surface === "CENTRAL_OWNER" ? centralAuth?.session.role ?? "Central" : hostSession.user?.roleName ?? "Back-Office"}
       navItems={navItems}
       activeNav={activeNav}
       onNavigate={setActiveNav}
-      onSignOut={() => void handleHostSignOut()}
+      onSignOut={() => void (surface === "CENTRAL_OWNER" ? handleCentralLogout() : handleHostSignOut())}
       banner={
         <div style={{ display: "grid", gap: 10 }}>
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
@@ -656,9 +662,9 @@ function BackofficeConsoleInner({
               <StatusBadge tone={surface === "CENTRAL_OWNER" ? "info" : "success"}>
                 Surface: {surface === "CENTRAL_OWNER" ? "Central Owner Portal" : "Windows Host Console"}
               </StatusBadge>
-              {reports ? (
-                <StatusBadge tone="neutral">{reports.officialBoundary}</StatusBadge>
-              ) : null}
+              {surface === "WINDOWS_HOST" && reports ? (
+                 <StatusBadge tone="neutral">{reports.officialBoundary}</StatusBadge>
+               ) : null}
             </div>
             <div role="group" aria-label="Deployment surface switcher" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {onOpenWorkstation ? (
@@ -671,7 +677,7 @@ function BackofficeConsoleInner({
                 variant="secondary"
                 leftIcon={<RefreshCw size={14} />}
                 loading={hostLoading}
-                onClick={() => void (surface === "CENTRAL_OWNER" && hostApi !== null ? refreshCentralData() : refreshHostData())}
+                onClick={() => void (surface === "CENTRAL_OWNER" ? refreshCentralData() : refreshHostData())}
               >
                 Refresh Live Data
               </Button>
@@ -679,7 +685,7 @@ function BackofficeConsoleInner({
                 size="sm"
                 variant={surface === "CENTRAL_OWNER" ? "primary" : "secondary"}
                 aria-pressed={surface === "CENTRAL_OWNER"}
-                onClick={() => setSurface("CENTRAL_OWNER")}
+                onClick={() => { setSurface("CENTRAL_OWNER"); setActiveNav("devices"); }}
               >
                 Central Owner Portal
               </Button>
@@ -687,17 +693,17 @@ function BackofficeConsoleInner({
                 size="sm"
                 variant={surface === "WINDOWS_HOST" ? "primary" : "secondary"}
                 aria-pressed={surface === "WINDOWS_HOST"}
-                onClick={() => setSurface("WINDOWS_HOST")}
+                onClick={() => { setSurface("WINDOWS_HOST"); setActiveNav("reports"); }}
               >
                 Windows Host Console
               </Button>
             </div>
           </div>
-          {hostLoadError ? <Alert tone="danger" title="Backoffice Data Incomplete" description={hostLoadError} /> : null}
+          {surface === "WINDOWS_HOST" && hostLoadError ? <Alert tone="danger" title="Backoffice Data Incomplete" description={hostLoadError} /> : null}
         </div>
       }
     >
-      {activeNav === "reports" ? (
+      {surface === "WINDOWS_HOST" && activeNav === "reports" ? (
         <div style={{ display: "grid", gap: 16 }}>
           {reports ? (
             <>
@@ -778,7 +784,7 @@ function BackofficeConsoleInner({
         />
       ) : null}
 
-      {activeNav === "recipes" ? (
+      {surface === "WINDOWS_HOST" && activeNav === "recipes" ? (
         <div style={{ display: "grid", gap: 16 }}>
           {surface === "WINDOWS_HOST" ? <CafeCatalogSetup api={api} onSaved={refreshHostData} /> : null}
           <OperationAlerts op={publishOp} title="Publish" />
@@ -846,7 +852,7 @@ function BackofficeConsoleInner({
         </div>
       ) : null}
 
-      {activeNav === "inventory" ? (
+      {surface === "WINDOWS_HOST" && activeNav === "inventory" ? (
         <div style={{ display: "grid", gap: 16 }}>
           {surface === "WINDOWS_HOST" ? <CafeSupplierSetup api={api} onSaved={refreshHostData} /> : null}
           <OperationAlerts op={purchaseOp} title="Purchase Receipt" />
@@ -982,7 +988,7 @@ function BackofficeConsoleInner({
         </div>
       ) : null}
 
-      {activeNav === "cash-ar" ? (
+      {surface === "WINDOWS_HOST" && activeNav === "cash-ar" ? (
         <div style={{ display: "grid", gap: 16 }}>
           {surface === "WINDOWS_HOST" ? <CafeCustomerSetup api={api} onSaved={refreshHostData} /> : null}
           <OperationAlerts op={arOp} title="AR Collection" />
@@ -1341,7 +1347,7 @@ function BackofficeConsoleInner({
         </div>
       ) : null}
 
-      {activeNav === "bookings" ? (
+      {surface === "WINDOWS_HOST" && activeNav === "bookings" ? (
         <div style={{ display: "grid", gap: 16 }}>
           <OperationAlerts op={bookingOp} title="Booking Update" />
           <OperationAlerts op={deliveryOp} title="Delivery Update" />
@@ -1600,7 +1606,7 @@ function BackofficeConsoleInner({
         </div>
       ) : null}
 
-      {activeNav === "audit" ? (
+      {surface === "WINDOWS_HOST" && activeNav === "audit" ? (
         <div style={{ display: "grid", gap: 16 }}>
           {surface === "WINDOWS_HOST" ? <CafePrinterSetup api={api} /> : null}
           <OperationAlerts op={adminOp} title="Admin Operation" />
