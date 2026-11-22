@@ -72,7 +72,7 @@ async function submitIdempotent(
   key: string,
   runner: (operationId: string) => Promise<void>,
   refresh: () => Promise<void>,
-): Promise<void> {
+): Promise<boolean> {
   const completed = await op.execute(async (operationId) => {
     try {
       await runner(operationId);
@@ -81,7 +81,11 @@ async function submitIdempotent(
       throwIfUncertain(operationId, err);
     }
   }, key);
-  if (completed) await refresh();
+  if (completed) {
+    await refresh();
+    return true;
+  }
+  return false;
 }
 
 const formGrid = {
@@ -175,8 +179,8 @@ export function CafeCatalogSetup({ api, onSaved }: SetupProps) {
               const name = categoryName.trim();
               if (!name) return;
               void submitIdempotent(categoryOp, "category:" + name, (operationId) =>
-                api.saveMenuCategory({ operationId, name }), completed).then(() => {
-                  if (!categoryOp.unknownOutcome && !categoryOp.error) setCategoryName("");
+                api.saveMenuCategory({ operationId, name }), completed).then((saved) => {
+                  if (saved) setCategoryName("");
                 });
             }}>
               <FormField label="New category name" required>
@@ -194,7 +198,7 @@ export function CafeCatalogSetup({ api, onSaved }: SetupProps) {
                 (operationId) => api.saveMenuItem({
                   operationId, name, unitId: unit, categoryId: categoryId || null,
                   sellingPriceCents: parsePhpToCents(itemPrice),
-                }), completed).then(() => { if (!itemOp.unknownOutcome && !itemOp.error) setItemName(""); });
+                }), completed).then((saved) => { if (saved) setItemName(""); });
             }}>
               <FormField label="Menu item name" required><TextInput required value={itemName} onChange={(e) => setItemName(e.target.value)} placeholder="Spanish Latte" /></FormField>
               <FormField label="Category">

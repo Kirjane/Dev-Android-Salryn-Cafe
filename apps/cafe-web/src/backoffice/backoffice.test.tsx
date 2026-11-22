@@ -95,6 +95,22 @@ function createFakeBackofficeHarness() {
       ],
       lines: [{ recipeId: "rec-1", ingredientId: "ing-beans", inputUnit: "Gram", declaredQuantityX1000: 18000, normalizedQuantityX1000: 18000, displayOrder: 1 }],
     }),
+    getMenuCatalog: async () => ({
+      categories: [],
+      items: [],
+      variants: [],
+      currentPublication: null,
+    }),
+    getMenuUnits: async () => [
+      { id: "b1111111-1111-4111-8111-111111111111", name: "Piece", isActive: true },
+    ],
+    saveMenuCategory: vi.fn(async () => undefined),
+    saveMenuItem: vi.fn(async () => undefined),
+    saveMenuVariant: vi.fn(async () => undefined),
+    saveIngredient: vi.fn(async () => undefined),
+    saveRecipe: vi.fn(async () => undefined),
+    saveRecipeLine: vi.fn(async () => undefined),
+    saveSupplier: vi.fn(async () => undefined),
     publishMenuAndRecipes,
     getLowStock: async () => [],
     getSuppliers: async () => [{ id: "sup-1", name: "Bukidnon Roasters", isActive: true }],
@@ -465,6 +481,57 @@ describe("Salryn Cafe Back-Office & Central Owner Console (Live Contracts)", () 
     await waitFor(() => expect(restoreBackup).toHaveBeenCalledWith("bkp-20261122-010000", "RESTORE"));
   });
 
+
+  it("allows a manager to create a draft category and item using the Backoffice contract", async () => {
+    const user = userEvent.setup();
+    const { api } = createFakeBackofficeHarness();
+    const { centralApi } = createFakeCentralHarness();
+    render(<BackofficeConsoleApp api={api} centralApi={centralApi} initialNav="recipes" />);
+
+    const categoryForm = await screen.findByRole("form", { name: "Create menu category" });
+    await user.type(within(categoryForm).getByLabelText(/New category name/i), "Coffee");
+    await user.click(within(categoryForm).getByRole("button", { name: "Add category" }));
+    await waitFor(() => expect(api.saveMenuCategory).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Coffee", operationId: expect.stringMatching(UUID_V4_REGEX) }),
+    ));
+
+    const itemForm = screen.getByRole("form", { name: "Create menu item" });
+    await user.type(within(itemForm).getByLabelText(/Menu item name/i), "Spanish Latte");
+    await user.click(within(itemForm).getByRole("button", { name: "Save menu item" }));
+    await waitFor(() => expect(api.saveMenuItem).toHaveBeenCalledWith(expect.objectContaining({
+      name: "Spanish Latte",
+      sellingPriceCents: 10000,
+      unitId: "b1111111-1111-4111-8111-111111111111",
+      operationId: expect.stringMatching(UUID_V4_REGEX),
+    })));
+  });
+
+  it("can register a supplier without direct database access", async () => {
+    const user = userEvent.setup();
+    const { api } = createFakeBackofficeHarness();
+    const { centralApi } = createFakeCentralHarness();
+    render(<BackofficeConsoleApp api={api} centralApi={centralApi} initialNav="inventory" />);
+
+    const form = screen.getByRole("form", { name: "Create supplier" });
+    await user.type(within(form).getByLabelText(/Supplier name/i), "Local Dairy");
+    await user.click(within(form).getByRole("button", { name: "Save supplier" }));
+    await waitFor(() => expect(api.saveSupplier).toHaveBeenCalledWith(expect.objectContaining({
+      name: "Local Dairy",
+      operationId: expect.stringMatching(UUID_V4_REGEX),
+    })));
+  });
+
+  it("makes a denied Reports API explicit and preserves independent inventory loading", async () => {
+    const { api } = createFakeBackofficeHarness();
+    const { centralApi } = createFakeCentralHarness();
+    api.getOwnerReports = vi.fn(async () => { throw new HostApiError("Reports permission denied", 403); });
+    render(<BackofficeConsoleApp api={api} centralApi={centralApi} initialNav="inventory" />);
+
+    expect(await screen.findByText(/Backoffice Data Incomplete/)).toBeInTheDocument();
+    expect(screen.getByText(/Owner reports: Reports permission denied/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save supplier" })).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "Low-Stock Inventory" })).toBeInTheDocument();
+  });
   it("has zero critical/serious axe-core accessibility violations across the Backoffice shell", async () => {
     const { api } = createFakeBackofficeHarness();
     const { centralApi } = createFakeCentralHarness();
