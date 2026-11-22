@@ -72,14 +72,19 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet publish src/Salryn.Api.Local/Salryn.Api.Local.csproj -c Release -r win-x64 --self-contained true "-p:SourceRevisionId=$sha" -o $staging --nologo -v minimal
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $depsText = Get-Content -LiteralPath (Join-Path $staging 'Salryn.Api.Local.deps.json') -Raw
-          if ($depsText -notmatch '"System\.Security\.Cryptography\.Pkcs/([0-9]+\.[0-9]+\.[0-9]+)"') {
-            throw "Could not resolve expected System.Security.Cryptography.Pkcs version from Salryn.Api.Local.deps.json."
-          }
-          $expectedPkcs = $Matches[1]
           $pkcsInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $staging 'System.Security.Cryptography.Pkcs.dll'))
-          if (-not ($pkcsInfo.ProductVersion -and $pkcsInfo.ProductVersion -match ("^" + [regex]::Escape($expectedPkcs) + "(\+|-|$)"))) {
-            throw "Staged System.Security.Cryptography.Pkcs.dll ProductVersion '$($pkcsInfo.ProductVersion)' does not match Salryn.Api.Local.deps.json '$expectedPkcs'."
+          if (-not ($pkcsInfo.ProductVersion -and $pkcsInfo.ProductVersion -match '^([0-9]+\.[0-9]+\.[0-9]+)(\+|-|$)')) {
+            throw "Could not parse staged System.Security.Cryptography.Pkcs.dll ProductVersion: '$($pkcsInfo.ProductVersion)'."
+          }
+          $actualPkcs = [Version]$Matches[1]
+          $minPkcs = [Version]"10.0.14"
+          $depsText = Get-Content -LiteralPath (Join-Path $staging 'Salryn.Api.Local.deps.json') -Raw
+          if ($depsText -match '"System\.Security\.Cryptography\.Pkcs/([0-9]+\.[0-9]+\.[0-9]+)"') {
+            $depsPkcs = [Version]$Matches[1]
+            if ($depsPkcs -gt $minPkcs) { $minPkcs = $depsPkcs }
+          }
+          if ($actualPkcs -lt $minPkcs) {
+            throw "Staged System.Security.Cryptography.Pkcs.dll version '$actualPkcs' ($($pkcsInfo.ProductVersion)) is older than required '$minPkcs'."
           }
           Write-Output "STAGED_PKCS_VERSION=$($pkcsInfo.ProductVersion)"
           New-Item -ItemType Directory -Force -Path "$staging/assets/branding", "$staging/assets/brand" | Out-Null

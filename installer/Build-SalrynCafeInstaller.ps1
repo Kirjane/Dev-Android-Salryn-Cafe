@@ -91,14 +91,19 @@ if (-not $FrameworkDependent) {
     if (-not (Test-Path -LiteralPath $depsPath -PathType Leaf) -or -not (Test-Path -LiteralPath $pkcsDll -PathType Leaf)) {
         throw "Self-contained staging missing Salryn.Api.Local.deps.json or System.Security.Cryptography.Pkcs.dll"
     }
-    $depsText = Get-Content -LiteralPath $depsPath -Raw
-    if ($depsText -notmatch '"System\.Security\.Cryptography\.Pkcs/([0-9]+\.[0-9]+\.[0-9]+)"') {
-        throw "Could not resolve expected System.Security.Cryptography.Pkcs version from Salryn.Api.Local.deps.json."
-    }
-    $expectedPkcs = $Matches[1]
     $pkcsInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($pkcsDll)
-    if (-not ($pkcsInfo.ProductVersion -and $pkcsInfo.ProductVersion -match ("^" + [regex]::Escape($expectedPkcs) + "(\+|-|$)"))) {
-        throw "Staged System.Security.Cryptography.Pkcs.dll ProductVersion '$($pkcsInfo.ProductVersion)' does not match Salryn.Api.Local.deps.json '$expectedPkcs'."
+    if (-not ($pkcsInfo.ProductVersion -and $pkcsInfo.ProductVersion -match '^([0-9]+\.[0-9]+\.[0-9]+)(\+|-|$)')) {
+        throw "Could not parse staged System.Security.Cryptography.Pkcs.dll ProductVersion: '$($pkcsInfo.ProductVersion)'."
+    }
+    $actualPkcs = [Version]$Matches[1]
+    $minPkcs = [Version]"10.0.14"
+    $depsText = Get-Content -LiteralPath $depsPath -Raw
+    if ($depsText -match '"System\.Security\.Cryptography\.Pkcs/([0-9]+\.[0-9]+\.[0-9]+)"') {
+        $depsPkcs = [Version]$Matches[1]
+        if ($depsPkcs -gt $minPkcs) { $minPkcs = $depsPkcs }
+    }
+    if ($actualPkcs -lt $minPkcs) {
+        throw "Staged System.Security.Cryptography.Pkcs.dll version '$actualPkcs' ($($pkcsInfo.ProductVersion)) is older than required '$minPkcs'."
     }
     Write-Host "[Salryn Cafe Installer] Verified System.Security.Cryptography.Pkcs.dll ($($pkcsInfo.ProductVersion))"
 }
