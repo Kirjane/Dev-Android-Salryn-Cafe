@@ -78,6 +78,7 @@ import type {
   WasteReason,
 } from "./types";
 import { BackofficeUnknownOutcomeError, useBackofficeOperation } from "./useBackofficeOperation";
+import { CafeCatalogSetup, CafeSupplierSetup } from "./CafeSetupPanel";
 
 export type BackofficeConsoleAppProps = {
   api?: BackofficeApi;
@@ -720,6 +721,7 @@ function BackofficeConsoleInner({
 
       {activeNav === "recipes" ? (
         <div style={{ display: "grid", gap: 16 }}>
+          {surface === "WINDOWS_HOST" ? <CafeCatalogSetup api={api} onSaved={refreshHostData} /> : null}
           <OperationAlerts op={publishOp} title="Publish" />
           <Card>
             <CardHeader
@@ -787,6 +789,7 @@ function BackofficeConsoleInner({
 
       {activeNav === "inventory" ? (
         <div style={{ display: "grid", gap: 16 }}>
+          {surface === "WINDOWS_HOST" ? <CafeSupplierSetup api={api} onSaved={refreshHostData} /> : null}
           <OperationAlerts op={purchaseOp} title="Purchase Receipt" />
           <OperationAlerts op={wasteOp} title="Waste Recording" />
 

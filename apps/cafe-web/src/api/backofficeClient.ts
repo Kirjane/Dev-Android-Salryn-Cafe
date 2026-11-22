@@ -11,6 +11,8 @@ import type {
   CashMovementRow,
   IncidentRow,
   IngredientRecipeDraft,
+  MenuCatalogDraft,
+  MenuUnitOption,
   LanControlStatusSnapshot,
   LanPairingSnapshot,
   LicenseStatusSnapshot,
@@ -27,6 +29,40 @@ export function createLiveBackofficeApi(): BackofficeApi {
   return {
     getOwnerReports: () => hostRequest<OwnerReportsSnapshot>("/api/owner-reports/summary"),
     getIngredientsAndRecipes: () => hostRequest<IngredientRecipeDraft>("/api/cafe/ingredients-recipes"),
+    getMenuCatalog: () => hostRequest<MenuCatalogDraft>("/api/menu/catalog"),
+    getMenuUnits: () => hostRequest<MenuUnitOption[]>("/api/products/catalog/units"),
+    saveMenuCategory: (req) =>
+      hostRequest<void>("/api/menu/categories", { id: null, name: req.name, isActive: true }, "POST", req.operationId),
+    saveMenuItem: (req) =>
+      hostRequest<void>("/api/menu/items", {
+        productId: null, categoryId: req.categoryId, name: req.name, description: null, unitId: req.unitId,
+        sku: null, barcode: null, sellingPriceCents: req.sellingPriceCents, costPriceCents: null,
+        isActive: true, isTemporarilyUnavailable: false,
+      }, "POST", req.operationId),
+    saveMenuVariant: (req) =>
+      hostRequest<void>("/api/menu/variants", {
+        id: null, productId: req.productId, name: req.name, sku: null, barcode: null,
+        sellingPriceCents: req.sellingPriceCents, costPriceCents: null, isActive: true,
+        isTemporarilyUnavailable: false, displayOrder: 1,
+      }, "POST", req.operationId),
+    saveIngredient: (req) =>
+      hostRequest<void>("/api/cafe/ingredients", {
+        id: null, name: req.name, stockUnit: req.stockUnit,
+        reorderLevelX1000: req.reorderLevelX1000, isActive: true, notes: null,
+      }, "POST", req.operationId),
+    saveRecipe: (req) =>
+      hostRequest<void>("/api/cafe/recipes", {
+        id: null, name: req.name, yieldX1000: req.yieldX1000, isActive: true,
+      }, "POST", req.operationId),
+    saveRecipeLine: (req) =>
+      hostRequest<void>("/api/cafe/recipes/lines", {
+        recipeId: req.recipeId, ingredientId: req.ingredientId, inputUnit: req.inputUnit,
+        declaredQuantityX1000: req.declaredQuantityX1000, displayOrder: 1,
+      }, "POST", req.operationId),
+    saveSupplier: (req) =>
+      hostRequest<void>("/api/cafe/suppliers", {
+        id: null, name: req.name, contactNumber: req.contactNumber ?? null, notes: null, isActive: true,
+      }, "POST", req.operationId),
     publishMenuAndRecipes: async (operationId) => {
       await hostRequest<unknown>("/api/menu/publish", {
         operationId: deriveScopedOperationId(operationId, "menu-publish"),

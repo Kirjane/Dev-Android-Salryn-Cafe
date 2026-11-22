@@ -155,14 +155,24 @@ export function appendRejectedIntentHistory(record: RejectedIntentRecord): void 
   }
 }
 
-export async function hostRequest<T>(path: string, body?: unknown, method?: "GET" | "POST" | "PUT" | "PATCH"): Promise<T> {
+export async function hostRequest<T>(
+  path: string,
+  body?: unknown,
+  method?: "GET" | "POST" | "PUT" | "PATCH",
+  operationId?: string,
+): Promise<T> {
   const effectiveMethod = method ?? (body !== undefined ? "POST" : "GET");
   let response: Response;
   try {
     response = await fetch(path, {
       method: effectiveMethod,
       credentials: "same-origin",
-      headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+      headers: body !== undefined || operationId
+        ? {
+            ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+            ...(operationId ? { "Idempotency-Key": operationId } : {}),
+          }
+        : undefined,
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch (err) {

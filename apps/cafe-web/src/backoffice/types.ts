@@ -30,6 +30,15 @@ export type OwnerReportsSnapshot = {
   } | null;
 };
 
+export type MenuCatalogDraft = {
+  categories: Array<{ id: string; name: string; isActive: boolean }>;
+  items: Array<{ productId: string; categoryId: string | null; name: string; unitId: string; sellingPriceCents: number; isActive: boolean }>;
+  variants: Array<{ id: string; productId: string; name: string; sellingPriceCents: number; isActive: boolean }>;
+  currentPublication?: { revisionNumber: number } | null;
+};
+
+export type MenuUnitOption = { id: string; name: string; isActive: boolean };
+
 export type IngredientRecipeDraft = {
   ingredients: Array<{
     id: string;
@@ -307,6 +316,15 @@ export type RefundStockDisposition = "Restock" | "DamagedNonRestockable" | "Serv
 export interface BackofficeApi {
   getOwnerReports(): Promise<OwnerReportsSnapshot>;
   getIngredientsAndRecipes(): Promise<IngredientRecipeDraft>;
+  getMenuCatalog(): Promise<MenuCatalogDraft>;
+  getMenuUnits(): Promise<MenuUnitOption[]>;
+  saveMenuCategory(req: { operationId: string; name: string }): Promise<void>;
+  saveMenuItem(req: { operationId: string; name: string; unitId: string; categoryId: string | null; sellingPriceCents: number }): Promise<void>;
+  saveMenuVariant(req: { operationId: string; productId: string; name: string; sellingPriceCents: number }): Promise<void>;
+  saveIngredient(req: { operationId: string; name: string; stockUnit: "Gram" | "Milliliter" | "Piece"; reorderLevelX1000: number }): Promise<void>;
+  saveRecipe(req: { operationId: string; name: string; yieldX1000: number }): Promise<void>;
+  saveRecipeLine(req: { operationId: string; recipeId: string; ingredientId: string; inputUnit: string; declaredQuantityX1000: number }): Promise<void>;
+  saveSupplier(req: { operationId: string; name: string; contactNumber?: string }): Promise<void>;
   publishMenuAndRecipes(operationId: string): Promise<void>;
   getLowStock(): Promise<LowStockItem[]>;
   getSuppliers(): Promise<SupplierSummary[]>;
