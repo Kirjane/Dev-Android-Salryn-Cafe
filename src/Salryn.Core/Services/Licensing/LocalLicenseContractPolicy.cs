@@ -12,8 +12,11 @@ public static class LocalLicenseContractPolicy
     public const bool LocalRuntimeMayDependOnRecurringBillingState = false;
     public const bool ExternalIssuerMayCreateSignedLicenseFiles = true;
 
-    /// <summary>Fixed application identity required on beta production licenses.</summary>
+    /// <summary>Fixed application identity required on inherited Retail POS beta licenses.</summary>
     public const string RequiredApplicationId = "Salryn.POS";
+
+    /// <summary>Fixed application identity required on Salryn Cafe licenses.</summary>
+    public const string CafeApplicationId = "Salryn.Cafe";
 
     /// <summary>Manual beta activation contact (no cloud activation server).</summary>
     public const string BetaActivationContactEmail = "salryn.info@gmail.com";

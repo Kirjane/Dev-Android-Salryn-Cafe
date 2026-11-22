@@ -36,7 +36,7 @@ import {
 import { KitchenDisplay } from "../kitchen/KitchenDisplay";
 import { OrdersBoard } from "../orders/OrdersBoard";
 import { CashierWorkstation } from "./CashierWorkstation";
-import { isLicenseActiveForBootstrap } from "./types";
+import { describeLicenseGateBadge, isLicenseActiveForBootstrap } from "./types";
 import type {
   CafeOrderDetail,
   CafeOrderSummary,
@@ -84,7 +84,9 @@ function WorkstationInner({
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [bootstrapStatus, setBootstrapStatus] = useState<HostBootstrapStatus | null>(null);
+  const [licenseGateState, setLicenseGateState] = useState<"loading" | "error" | "ready">("loading");
   const [licenseBootstrap, setLicenseBootstrap] = useState<HostLicenseBootstrapStatus | null>(null);
+  const [licenseErrorDetail, setLicenseErrorDetail] = useState<string | null>(null);
   const [licenseJsonInput, setLicenseJsonInput] = useState("");
   const [firstRunStoreName, setFirstRunStoreName] = useState("Salryn Cafe");
   const [firstRunUsername, setFirstRunUsername] = useState("admin");
@@ -118,6 +120,16 @@ function WorkstationInner({
   const refreshHostState = useCallback(
     async (currentSession: HostSession) => {
       if (!currentSession.isAuthenticated || !currentSession.user) return;
+      if (api.getLicenseStatus) {
+        const lic = await api.getLicenseStatus();
+        setLicenseBootstrap(lic);
+        setLicenseGateState("ready");
+        if (!isLicenseActiveForBootstrap(lic)) {
+          setSession({ isAuthenticated: false });
+          setStatusMessage("Host license is no longer valid. Activation is required.");
+          return;
+        }
+      }
       const perms = currentSession.user.permissions;
       const [publishedMenu, savedOrders] = await Promise.all([
         api.getPublishedMenu(),
@@ -186,33 +198,83 @@ function WorkstationInner({
     }
   }, []);
 
-  const refreshBootstrapState = useCallback(async () => {
-    if (!api.getBootstrapStatus) return;
+  const verifyHostLicenseAndBootstrap = useCallback(async (): Promise<{
+    licensed: boolean;
+    bootstrap: HostBootstrapStatus | null;
+  }> => {
+    if (!api.getLicenseStatus) {
+      setLicenseGateState("error");
+      setLicenseBootstrap(null);
+      setLicenseErrorDetail("Host license verification service is unavailable.");
+      return { licensed: false, bootstrap: null };
+    }
+
+    setLicenseGateState("loading");
+    setLicenseErrorDetail(null);
     try {
-      const status = await api.getBootstrapStatus();
-      setBootstrapStatus(status);
-      if (status.firstRunRequired && !status.hasUsers && api.getLicenseStatus) {
-        const lic = await api.getLicenseStatus().catch(() => null);
-        setLicenseBootstrap(lic);
+      const lic = await api.getLicenseStatus();
+      setLicenseBootstrap(lic);
+      setLicenseGateState("ready");
+      const licensed = isLicenseActiveForBootstrap(lic);
+      if (!licensed) {
+        setBootstrapStatus(null);
+        return { licensed: false, bootstrap: null };
       }
-    } catch {
-      // Ignore when running preview without local Host backend.
+
+      if (!api.getBootstrapStatus) {
+        setBootstrapStatus({
+          databaseInitialized: true,
+          databaseFileExists: true,
+          firstRunRequired: false,
+          hasUsers: true,
+          hasStoreSettings: true,
+        });
+        return { licensed: true, bootstrap: null };
+      }
+
+      try {
+        const status = await api.getBootstrapStatus();
+        setBootstrapStatus(status);
+        return { licensed: true, bootstrap: status };
+      } catch (err) {
+        setBootstrapStatus(null);
+        setLicenseErrorDetail(err instanceof Error ? err.message : "Could not verify workstation setup state.");
+        return { licensed: true, bootstrap: null };
+      }
+    } catch (err) {
+      setLicenseBootstrap(null);
+      setBootstrapStatus(null);
+      setLicenseGateState("error");
+      setLicenseErrorDetail(
+        err instanceof Error ? err.message : "Unable to verify Salryn Cafe Host license status.",
+      );
+      return { licensed: false, bootstrap: null };
     }
   }, [api]);
 
+  const initializeWorkstation = useCallback(async () => {
+    const { licensed, bootstrap } = await verifyHostLicenseAndBootstrap();
+    if (!licensed) {
+      setSession({ isAuthenticated: false });
+      setStatusMessage("Host license activation is required before accessing Salryn Cafe.");
+      return;
+    }
+
+    const current = await api.getSession();
+    setSession(current);
+    if (current.isAuthenticated) {
+      await refreshHostState(current);
+      setStatusMessage("Local Host connected.");
+    } else if (bootstrap?.firstRunRequired && !bootstrap.hasUsers) {
+      setStatusMessage("Host license verified. Create the first Administrator account to complete setup.");
+    } else {
+      setStatusMessage("Sign in to the Salryn Cafe Local Host to begin.");
+    }
+  }, [api, refreshHostState, verifyHostLicenseAndBootstrap]);
+
   useEffect(() => {
-    void runExclusive(async () => {
-      const current = await api.getSession();
-      setSession(current);
-      if (current.isAuthenticated) {
-        await refreshHostState(current);
-        setStatusMessage("Local Host connected.");
-      } else {
-        await refreshBootstrapState();
-        setStatusMessage("Sign in to the Salryn Cafe Local Host to begin.");
-      }
-    });
-  }, [api, refreshBootstrapState, refreshHostState, runExclusive]);
+    void runExclusive(initializeWorkstation);
+  }, [initializeWorkstation, runExclusive]);
 
   const sendIntent = useCallback(
     async (intent: PendingHostIntent, activeSession: HostSession, activeMenu: MenuPublication | null) => {
@@ -310,19 +372,26 @@ function WorkstationInner({
     await runExclusive(async () => {
       const trimmed = licenseJsonInput.trim();
       if (!trimmed) throw new Error("Paste a signed Salryn Cafe Host license JSON document.");
-      const res = await installLicense(trimmed);
-      setLicenseJsonInput("");
-      const refreshed = api.getLicenseStatus ? await api.getLicenseStatus() : null;
-      if (refreshed) {
-        setLicenseBootstrap(refreshed);
+      setLicenseErrorDetail(null);
+      try {
+        await installLicense(trimmed);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Signed license installation failed.";
+        setLicenseErrorDetail(msg);
+        throw err;
       }
-      if (refreshed && !isLicenseActiveForBootstrap(refreshed)) {
+      setLicenseJsonInput("");
+      const { licensed, bootstrap } = await verifyHostLicenseAndBootstrap();
+      if (!licensed) {
         setStatusMessage(
-          refreshed.message ||
-            "License installed, but a valid Host license bound to this workstation is required for first-run setup.",
+          "License was processed, but a valid Salryn.Cafe Host license bound to this workstation is required.",
         );
+        return;
+      }
+      if (bootstrap?.firstRunRequired && !bootstrap.hasUsers) {
+        setStatusMessage("Signed Host license verified. Create the first Administrator account.");
       } else {
-        setStatusMessage(res.message || "Signed Host license installed.");
+        setStatusMessage("Signed Host license verified. Sign in to begin.");
       }
     });
   }
@@ -413,7 +482,11 @@ function WorkstationInner({
     [orders],
   );
 
-  if (!session.isAuthenticated) {
+  const hostLicensed = licenseGateState === "ready" && isLicenseActiveForBootstrap(licenseBootstrap);
+  const licenseBadge = describeLicenseGateBadge(licenseBootstrap);
+  const machineCode = licenseBootstrap?.machineCode || licenseBootstrap?.machineFingerprint || null;
+
+  if (!hostLicensed || !session.isAuthenticated) {
     return (
       <div
         style={{
@@ -425,7 +498,7 @@ function WorkstationInner({
           color: "var(--salryn-espresso)",
         }}
       >
-        <div style={{ width: "100%", maxWidth: 440, display: "grid", gap: 16 }}>
+        <div style={{ width: "100%", maxWidth: 480, display: "grid", gap: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <BrandMark variant="logo" height={44} alt="Salryn Cafe logo" />
             <div>
@@ -440,108 +513,190 @@ function WorkstationInner({
             {statusMessage}
           </p>
 
-          {bootstrapStatus?.firstRunRequired && !bootstrapStatus.hasUsers ? (
-            <div style={{ display: "grid", gap: 16 }}>
-              <Card>
-                <CardHeader
-                  title="Step 1 · Host License Activation"
-                  subtitle="A valid signed Salryn Cafe Host license for this workstation is required before first-run setup."
-                  action={
-                    <StatusBadge tone={isLicenseActiveForBootstrap(licenseBootstrap) ? "success" : "warning"}>
-                      {isLicenseActiveForBootstrap(licenseBootstrap) ? "Host Licensed" : "License Required"}
-                    </StatusBadge>
-                  }
-                />
-                <CardBody>
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {licenseBootstrap?.machineCode || licenseBootstrap?.machineFingerprint ? (
-                      <div style={{ fontSize: "0.85rem" }}>
-                        <strong>Machine Code:</strong>{" "}
-                        <code style={{ wordBreak: "break-all" }}>
-                          {licenseBootstrap.machineCode || licenseBootstrap.machineFingerprint}
-                        </code>
+          {licenseGateState === "loading" ? (
+            <Card>
+              <CardHeader
+                title="Verifying Host License"
+                subtitle="Checking local offline Salryn.Cafe Host authorization before unlocking setup or sign-in."
+                action={<StatusBadge tone="neutral">Checking</StatusBadge>}
+              />
+              <CardBody>
+                <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--salryn-mocha)" }}>
+                  Contacting local Salryn Cafe Host authority…
+                </p>
+              </CardBody>
+            </Card>
+          ) : licenseGateState === "error" ? (
+            <Card>
+              <CardHeader
+                title="Host License Verification Unavailable"
+                subtitle="Salryn Cafe stays locked until local Host license verification succeeds."
+                action={<StatusBadge tone="danger">Locked</StatusBadge>}
+              />
+              <CardBody>
+                <div style={{ display: "grid", gap: 12 }}>
+                  <Alert
+                    tone="danger"
+                    title="Could not verify local Host license"
+                    description={licenseErrorDetail || "Ensure Salryn Cafe Local Host is running on 127.0.0.1:5399."}
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    loading={busy}
+                    onClick={() => void runExclusive(initializeWorkstation)}
+                  >
+                    Retry license check
+                  </Button>
+                </div>
+              </CardBody>
+            </Card>
+          ) : !hostLicensed ? (
+            <Card>
+              <CardHeader
+                title="Host License Activation Required"
+                subtitle="Install an authorized signed offline Salryn.Cafe Host license bound to this workstation to continue."
+                action={<StatusBadge tone={licenseBadge.tone}>{licenseBadge.label}</StatusBadge>}
+              />
+              <CardBody>
+                <div style={{ display: "grid", gap: 12 }}>
+                  {machineCode ? (
+                    <div
+                      style={{
+                        padding: 12,
+                        borderRadius: 8,
+                        background: "var(--salryn-latte)",
+                        border: "1px solid var(--salryn-border)",
+                        display: "grid",
+                        gap: 6,
+                      }}
+                    >
+                      <div style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                        Workstation Machine Code
                       </div>
-                    ) : null}
-                    {licenseBootstrap?.message ? (
-                      <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--salryn-mocha)" }}>
-                        {licenseBootstrap.message}
-                      </p>
-                    ) : null}
-                    {!isLicenseActiveForBootstrap(licenseBootstrap) && api.installLicense ? (
-                      <form onSubmit={(e) => void handleInstallBootstrapLicense(e)} style={{ display: "grid", gap: 10 }}>
-                        <FormField label="Signed Host License JSON" required>
-                          <textarea
-                            className="salryn-input salryn-focusable"
-                            rows={4}
-                            value={licenseJsonInput}
-                            onChange={(e) => setLicenseJsonInput(e.target.value)}
-                            placeholder="Paste signed Salryn Cafe Host license JSON..."
-                            required
-                          />
-                        </FormField>
-                        <Button type="submit" variant="secondary" loading={busy}>
+                      <code data-testid="workstation-machine-code" style={{ wordBreak: "break-all", fontSize: "0.9rem" }}>
+                        {machineCode}
+                      </code>
+                      <div style={{ fontSize: "0.8rem", color: "var(--salryn-mocha)" }}>
+                        Send this Machine Code to Kirjane Labs (salryn.info@gmail.com) to obtain a signed offline Salryn.Cafe Host license JSON file.
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {licenseErrorDetail ? (
+                    <Alert tone="danger" title="License activation rejected" description={licenseErrorDetail} />
+                  ) : licenseBootstrap?.message ? (
+                    <Alert tone="warning" title="Activation required" description={licenseBootstrap.message} />
+                  ) : null}
+
+                  {api.installLicense ? (
+                    <form onSubmit={(e) => void handleInstallBootstrapLicense(e)} style={{ display: "grid", gap: 10 }}>
+                      <FormField label="Signed Host License JSON" required>
+                        <textarea
+                          className="salryn-input salryn-focusable"
+                          rows={5}
+                          value={licenseJsonInput}
+                          onChange={(e) => setLicenseJsonInput(e.target.value)}
+                          placeholder="Paste signed Salryn.Cafe Host license JSON..."
+                          required
+                        />
+                      </FormField>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        <Button type="submit" variant="primary" loading={busy}>
                           Install Signed License
                         </Button>
-                      </form>
-                    ) : null}
-                  </div>
-                </CardBody>
-              </Card>
-
-              <Card>
-                <CardHeader
-                  title="Step 2 · Create First Administrator"
-                  subtitle="Initialize store profile and primary Admin account on this Host."
-                />
-                <CardBody>
-                  <form onSubmit={(e) => void handleCreateFirstAdmin(e)} style={{ display: "grid", gap: 12 }}>
-                    <FormField label="Store Name" required>
-                      <TextInput
-                        value={firstRunStoreName}
-                        onChange={(e) => setFirstRunStoreName(e.target.value)}
-                        required
-                      />
-                    </FormField>
-                    <FormField label="Admin Username" required>
-                      <TextInput
-                        autoComplete="username"
-                        value={firstRunUsername}
-                        onChange={(e) => setFirstRunUsername(e.target.value)}
-                        required
-                      />
-                    </FormField>
-                    <FormField label="Admin Display Name" required>
-                      <TextInput
-                        value={firstRunDisplayName}
-                        onChange={(e) => setFirstRunDisplayName(e.target.value)}
-                        required
-                      />
-                    </FormField>
-                    <FormField label="Admin Password" required>
-                      <TextInput
-                        type="password"
-                        autoComplete="new-password"
-                        value={firstRunPassword}
-                        onChange={(e) => setFirstRunPassword(e.target.value)}
-                        required
-                      />
-                    </FormField>
-                    <Button
-                      type="submit"
-                      variant="primary"
-                      size="lg"
-                      loading={busy}
-                      disabled={!isLicenseActiveForBootstrap(licenseBootstrap)}
-                    >
-                      Create First Administrator
-                    </Button>
-                  </form>
-                </CardBody>
-              </Card>
-            </div>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={busy}
+                          onClick={() => void runExclusive(initializeWorkstation)}
+                        >
+                          Re-check Host License
+                        </Button>
+                      </div>
+                    </form>
+                  ) : null}
+                </div>
+              </CardBody>
+            </Card>
+          ) : bootstrapStatus === null ? (
+            <Card>
+              <CardHeader
+                title="Workstation Setup Status Unavailable"
+                subtitle="Host license is active, but database initialization status could not be confirmed."
+                action={<StatusBadge tone="warning">Retry Required</StatusBadge>}
+              />
+              <CardBody>
+                <div style={{ display: "grid", gap: 12 }}>
+                  <Alert
+                    tone="danger"
+                    title="Setup check failed"
+                    description={licenseErrorDetail || "Retry checking Host bootstrap status."}
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    loading={busy}
+                    onClick={() => void runExclusive(initializeWorkstation)}
+                  >
+                    Retry setup check
+                  </Button>
+                </div>
+              </CardBody>
+            </Card>
+          ) : bootstrapStatus.firstRunRequired && !bootstrapStatus.hasUsers ? (
+            <Card>
+              <CardHeader
+                title="Create First Administrator"
+                subtitle="Host license verified. Initialize store profile and primary Admin account on this Host."
+                action={<StatusBadge tone="success">Host Licensed</StatusBadge>}
+              />
+              <CardBody>
+                <form onSubmit={(e) => void handleCreateFirstAdmin(e)} style={{ display: "grid", gap: 12 }}>
+                  <FormField label="Store Name" required>
+                    <TextInput
+                      value={firstRunStoreName}
+                      onChange={(e) => setFirstRunStoreName(e.target.value)}
+                      required
+                    />
+                  </FormField>
+                  <FormField label="Admin Username" required>
+                    <TextInput
+                      autoComplete="username"
+                      value={firstRunUsername}
+                      onChange={(e) => setFirstRunUsername(e.target.value)}
+                      required
+                    />
+                  </FormField>
+                  <FormField label="Admin Display Name" required>
+                    <TextInput
+                      value={firstRunDisplayName}
+                      onChange={(e) => setFirstRunDisplayName(e.target.value)}
+                      required
+                    />
+                  </FormField>
+                  <FormField label="Admin Password" required>
+                    <TextInput
+                      type="password"
+                      autoComplete="new-password"
+                      value={firstRunPassword}
+                      onChange={(e) => setFirstRunPassword(e.target.value)}
+                      required
+                    />
+                  </FormField>
+                  <Button type="submit" variant="primary" size="lg" loading={busy}>
+                    Create First Administrator
+                  </Button>
+                </form>
+              </CardBody>
+            </Card>
           ) : (
             <Card>
-              <CardHeader title="Operator sign in" subtitle="Sign in against local Salryn Cafe Host authority." />
+              <CardHeader
+                title="Operator sign in"
+                subtitle="Sign in against local Salryn Cafe Host authority."
+                action={<StatusBadge tone="success">Host Licensed</StatusBadge>}
+              />
               <CardBody>
                 <form onSubmit={(e) => void handleLogin(e)} style={{ display: "grid", gap: 12 }}>
                   <FormField label="Username" required>

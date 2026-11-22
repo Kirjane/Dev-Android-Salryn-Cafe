@@ -28,10 +28,13 @@ public static class LocalLicenseSignatureVerifier
         Converters = { new JsonStringEnumConverter() }
     };
 
-    public static bool Verify(LocalLicenseDocument document)
+    public static bool Verify(LocalLicenseDocument document) =>
+        VerifyWithPublicKeyPem(document, PublicKeyPem);
+
+    public static bool VerifyWithPublicKeyPem(LocalLicenseDocument document, string publicKeyPem)
     {
         ArgumentNullException.ThrowIfNull(document);
-        if (string.IsNullOrWhiteSpace(document.Signature))
+        if (string.IsNullOrWhiteSpace(document.Signature) || string.IsNullOrWhiteSpace(publicKeyPem))
         {
             return false;
         }
@@ -42,7 +45,7 @@ public static class LocalLicenseSignatureVerifier
             byte[] signature = Convert.FromBase64String(document.Signature.Trim());
 
             using RSA rsa = RSA.Create();
-            rsa.ImportFromPem(PublicKeyPem.AsSpan());
+            rsa.ImportFromPem(publicKeyPem.AsSpan());
             return rsa.VerifyData(payload, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
         }
         catch (Exception ex) when (ex is FormatException or CryptographicException or ArgumentException)

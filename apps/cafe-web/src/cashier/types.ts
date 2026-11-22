@@ -26,6 +26,8 @@ export type HostBootstrapStatus = {
 export type HostLicenseBootstrapStatus = {
   status: number | string;
   licenseType?: number | string | null;
+  applicationId?: string | null;
+  expiresAt?: string | null;
   machineMatched?: boolean;
   machineCode?: string | null;
   machineFingerprint?: string | null;
@@ -48,9 +50,32 @@ export function isLicenseActiveForBootstrap(status: HostLicenseBootstrapStatus |
   if (!status) return false;
   const s = status.status;
   const isDev = s === 5 || s === "Development";
+  if (isDev) return true;
   const isLicensed = s === 1 || s === "Licensed";
   const isHost = status.licenseType === 0 || status.licenseType === "Host";
-  return isDev || (isLicensed && isHost && status.machineMatched === true);
+  const productMatches = !status.applicationId || status.applicationId === "Salryn.Cafe";
+  return isLicensed && isHost && status.machineMatched === true && productMatches;
+}
+
+export function describeLicenseGateBadge(status: HostLicenseBootstrapStatus | null | undefined): {
+  label: string;
+  tone: "warning" | "danger";
+} {
+  if (!status) return { label: "Verification Required", tone: "danger" };
+  const s = status.status;
+  if (status.applicationId && status.applicationId !== "Salryn.Cafe") {
+    return { label: "Wrong Product License", tone: "danger" };
+  }
+  if (s === 2 || s === "Expired") return { label: "License Expired", tone: "danger" };
+  if (s === 4 || s === "Grace") return { label: "Renewal Required", tone: "warning" };
+  if (status.licenseType === 1 || status.licenseType === "Terminal") {
+    return { label: "Host License Required", tone: "danger" };
+  }
+  if ((s === 3 || s === "Invalid") && status.machineMatched === false) {
+    return { label: "Invalid / Unmatched License", tone: "danger" };
+  }
+  if (s === 3 || s === "Invalid") return { label: "License Invalid", tone: "danger" };
+  return { label: "License Required", tone: "warning" };
 }
 
 export type MenuCategory = {

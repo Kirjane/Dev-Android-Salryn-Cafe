@@ -131,6 +131,21 @@ function createTestHostApi(options: {
   const api: WorkstationApi & { rawCalls: Array<{ path: string; body: Record<string, unknown> }> } = {
     rawCalls,
     getSession: async () => session,
+    getLicenseStatus: async () => ({
+      status: 1,
+      licenseType: 0,
+      applicationId: "Salryn.Cafe",
+      machineMatched: true,
+      machineCode: "SALRYN-CAFE-TEST-HOST",
+      message: "Local Host license is valid.",
+    }),
+    getBootstrapStatus: async () => ({
+      databaseInitialized: true,
+      databaseFileExists: true,
+      firstRunRequired: false,
+      hasUsers: true,
+      hasStoreSettings: true,
+    }),
     login: async () => session,
     logout: async () => undefined,
     getPublishedMenu: async () => SAMPLE_MENU,
@@ -575,7 +590,7 @@ describe("Salryn Cafe R2 — Live Host Integrated Cashier, Orders & Kitchen", ()
     expect(seenOpIds[0]).not.toBe(seenOpIds[1]);
   });
 
-  it("guides first-run Host license activation before enabling first-admin creation and transitions to sign in", async () => {
+  it("hides first-admin and sign-in completely while unlicensed, then unlocks first-admin after valid Host license install", async () => {
     const user = userEvent.setup();
     const api = createTestHostApi();
     let licensed = false;
@@ -590,14 +605,15 @@ describe("Salryn Cafe R2 — Live Host Integrated Cashier, Orders & Kitchen", ()
     });
     api.getLicenseStatus = async () => ({
       status: licensed ? 1 : 0,
-      licenseType: 0,
-      machineMatched: true,
+      licenseType: licensed ? 0 : null,
+      applicationId: licensed ? "Salryn.Cafe" : null,
+      machineMatched: licensed,
       machineCode: "SALRYN-CAFE-TEST-MACHINE",
-      message: licensed ? "Valid Host license installed." : "No signed Host license installed.",
+      message: licensed ? "Local Host license is valid." : "No local license file was found. Manual activation is required.",
     });
     api.installLicense = async () => {
       licensed = true;
-      return { installStatus: "Installed", message: "Signed Host license installed." };
+      return { installStatus: "Installed" };
     };
     const createSpy = vi.fn(async () => {
       firstRunRequired = false;
@@ -615,15 +631,27 @@ describe("Salryn Cafe R2 — Live Host Integrated Cashier, Orders & Kitchen", ()
     api.createFirstAdmin = createSpy;
 
     render(<WorkstationApp api={api} />);
-    expect(await screen.findByText("SALRYN-CAFE-TEST-MACHINE")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Create First Administrator" })).toBeDisabled();
+    expect(await screen.findByText("Host License Activation Required")).toBeInTheDocument();
+    expect(screen.getByTestId("workstation-machine-code")).toHaveTextContent("SALRYN-CAFE-TEST-MACHINE");
+
+    // Issue #38 core invariant: NO admin form, NO sign-in form, NO operational nav before activation!
+    expect(screen.queryByText(/Create First Administrator/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Store Name/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Admin Username/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Admin Display Name/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Admin Password/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("Operator sign in")).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
 
     const licenseField = screen.getByLabelText(/Signed Host License JSON/i);
     await user.click(licenseField);
-    await user.paste('{"licenseId":"test"}');
+    await user.paste('{"applicationId":"Salryn.Cafe","licenseId":"test"}');
     await user.click(screen.getByRole("button", { name: "Install Signed License" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Create First Administrator" })).toBeEnabled());
+    // After valid Host license install: Create First Administrator appears cleanly
+    expect(await screen.findByRole("button", { name: "Create First Administrator" })).toBeEnabled();
+    expect(screen.queryByText("Host License Activation Required")).not.toBeInTheDocument();
+
     await user.type(screen.getByLabelText(/Admin Password/i), "Synthetic-FirstRun!2026");
     await user.click(screen.getByRole("button", { name: "Create First Administrator" }));
 
@@ -631,7 +659,54 @@ describe("Salryn Cafe R2 — Live Host Integrated Cashier, Orders & Kitchen", ()
     expect(await screen.findByText("Operator sign in")).toBeInTheDocument();
   });
 
-  it("shows Operator sign in (not first-admin setup) when users already exist but store_settings is empty", async () => {
+  it("fails closed to activation-only or error screen on expired, invalid, wrong-machine, wrong-product, Terminal, or unreachable Host", async () => {
+    const scenarios = [
+      {
+        name: "expired",
+        lic: { status: 2, licenseType: 0, applicationId: "Salryn.Cafe", machineMatched: true, machineCode: "MC-1", message: "Local license is expired." },
+        badge: "License Expired",
+      },
+      {
+        name: "wrong-machine",
+        lic: { status: 3, licenseType: 0, applicationId: "Salryn.Cafe", machineMatched: false, machineCode: "MC-2", message: "Machine mismatch." },
+        badge: "Invalid / Unmatched License",
+      },
+      {
+        name: "wrong-product",
+        lic: { status: 1, licenseType: 0, applicationId: "Salryn.POS", machineMatched: true, machineCode: "MC-3", message: "Wrong product." },
+        badge: "Wrong Product License",
+      },
+      {
+        name: "terminal-type",
+        lic: { status: 1, licenseType: 1, applicationId: "Salryn.Cafe", machineMatched: true, machineCode: "MC-4", message: "Terminal license does not unlock Host." },
+        badge: "Host License Required",
+      },
+    ];
+
+    for (const sc of scenarios) {
+      const api = createTestHostApi();
+      api.getSession = async () => ({ isAuthenticated: false });
+      api.getLicenseStatus = async () => sc.lic;
+      const { unmount } = render(<WorkstationApp api={api} />);
+      expect(await screen.findByText(sc.badge)).toBeInTheDocument();
+      expect(screen.queryByText(/Create First Administrator/i)).not.toBeInTheDocument();
+      expect(screen.queryByText("Operator sign in")).not.toBeInTheDocument();
+      expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
+      unmount();
+    }
+
+    // Host license API error must also fail closed with zero admin/sign-in forms
+    const errApi = createTestHostApi();
+    errApi.getLicenseStatus = async () => {
+      throw new Error("Host offline");
+    };
+    render(<WorkstationApp api={errApi} />);
+    expect(await screen.findByText("Host License Verification Unavailable")).toBeInTheDocument();
+    expect(screen.queryByText(/Create First Administrator/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("Operator sign in")).not.toBeInTheDocument();
+  });
+
+  it("shows Operator sign in (not first-admin setup) when licensed and users already exist with empty store_settings", async () => {
     const api = createTestHostApi();
     api.getSession = async () => ({ isAuthenticated: false });
     api.getBootstrapStatus = async () => ({

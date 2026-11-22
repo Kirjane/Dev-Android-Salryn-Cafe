@@ -1,3 +1,7 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Salryn.Core.Services.Licensing;
 using Salryn.Infrastructure.Licensing;
 using Salryn.Infrastructure.Paths;
@@ -124,5 +128,107 @@ public sealed class ProductGuardAndLicenseTests
             Path.Combine("SalrynCafe", "Licensing"),
             licenseRoot,
             StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task LocalLicenseService_ValidatesSignedSalrynCafeHostLicense_AndRejectsRetailWrongMachineExpiredAndUntrustedSigner()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "salryn-cafe-valid-lic-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            using RSA ephemeralSigner = RSA.Create(2048);
+            string ephemeralPubPem = ephemeralSigner.ExportSubjectPublicKeyInfoPem();
+            string machineCode = "CAFE-MACHINE-TEST-001";
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+
+            string SignDoc(LocalLicenseDocument unsignedDoc)
+            {
+                byte[] payload = Encoding.UTF8.GetBytes(LocalLicenseSignatureVerifier.BuildSigningPayload(unsignedDoc));
+                byte[] sig = ephemeralSigner.SignData(payload, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+                var signed = unsignedDoc with { Signature = Convert.ToBase64String(sig) };
+                return JsonSerializer.Serialize(signed, new JsonSerializerOptions
+                {
+                    Converters = { new JsonStringEnumConverter() }
+                });
+            }
+
+            var store = new LocalLicenseFileStore(new LocalLicenseFileStoreOptions(tempDir, "license.json"));
+            var validator = new LocalLicenseValidator(new LocalLicenseValidatorOptions
+            {
+                ExpectedApplicationId = SalrynProductIdentity.ProductId,
+                MachineFingerprint = machineCode,
+                SignatureVerifier = doc => LocalLicenseSignatureVerifier.VerifyWithPublicKeyPem(doc, ephemeralPubPem)
+            });
+            var service = new LocalLicenseService(store, validator);
+
+            // 1. Valid signed Salryn.Cafe schema-2 Host license validates and installs cleanly
+            var validCafeDoc = new LocalLicenseDocument(
+                LicenseId: "CAFE-LIC-001",
+                CustomerName: "Cafe Yza QA",
+                Edition: LicenseEdition.Professional,
+                IssuedAt: now.AddMinutes(-5),
+                ExpiresAt: now.AddDays(30),
+                MachineBinding: machineCode,
+                Features: LicenseFeatures.AllList,
+                Signature: null,
+                SchemaVersion: LocalLicenseContractPolicy.BetaLicenseSchemaVersion,
+                ApplicationId: SalrynProductIdentity.ProductId,
+                StoreId: "STORE-CAFE-01",
+                AllowedLanTerminals: 2,
+                SupportExpiresAt: now.AddDays(30),
+                UpdatesUntil: now.AddDays(30),
+                LicenseType: LicenseType.Host,
+                HostLicenseId: null,
+                TerminalId: null);
+
+            string validCafeJson = SignDoc(validCafeDoc);
+            LocalLicenseInstallResponse installed = await service.InstallAsync(new LocalLicenseInstallRequest(validCafeJson));
+            Assert.Equal("Installed", installed.InstallStatus);
+            Assert.Equal(LicenseStatus.Licensed, installed.ValidationStatus);
+
+            LocalLicenseValidationResult status = await service.GetStatusAsync();
+            Assert.Equal(LicenseStatus.Licensed, status.Status);
+            Assert.Equal(SalrynProductIdentity.ProductId, status.ApplicationId);
+            Assert.Equal(LicenseType.Host, status.LicenseType);
+            Assert.True(status.MachineMatched);
+            Assert.Equal(machineCode, status.MachineCode);
+
+            // 2. Default embedded-key verifier MUST reject ephemeral-key-signed Cafe license (no test key in prod!)
+            var prodDefaultService = new LocalLicenseService(store: new LocalLicenseFileStore(
+                new LocalLicenseFileStoreOptions(Path.Combine(tempDir, "prod"), "license.json")));
+            LocalLicenseInstallResponse untrusted = await prodDefaultService.InstallAsync(new LocalLicenseInstallRequest(validCafeJson));
+            Assert.Equal("Rejected", untrusted.InstallStatus);
+
+            // 3. Signed Salryn.POS Retail license MUST be rejected and preserve MachineCode on read
+            string retailSignedJson = SignDoc(validCafeDoc with { LicenseId = "RETAIL-001", ApplicationId = LocalLicenseContractPolicy.RequiredApplicationId });
+            LocalLicenseInstallResponse retailReject = await service.InstallAsync(new LocalLicenseInstallRequest(retailSignedJson));
+            Assert.Equal("Rejected", retailReject.InstallStatus);
+            Assert.Equal(SalrynProductGuard.ErrorWrongProductLicense, retailReject.ErrorCode);
+
+            var wrongProdStore = new LocalLicenseFileStore(new LocalLicenseFileStoreOptions(Path.Combine(tempDir, "wrong-prod"), "license.json"));
+            Directory.CreateDirectory(wrongProdStore.RootDirectory);
+            await File.WriteAllTextAsync(wrongProdStore.LicenseFilePath, retailSignedJson);
+            var wrongProdService = new LocalLicenseService(wrongProdStore, validator);
+            LocalLicenseValidationResult wrongProdStatus = await wrongProdService.GetStatusAsync();
+            Assert.Equal(LicenseStatus.Invalid, wrongProdStatus.Status);
+            Assert.Equal(machineCode, wrongProdStatus.MachineCode);
+
+            // 4. Wrong machine, expired, and Terminal-on-Host must fail closed
+            string wrongMachineJson = SignDoc(validCafeDoc with { LicenseId = "CAFE-WM-001", MachineBinding = "OTHER-MACHINE-999" });
+            Assert.Equal("Rejected", (await service.InstallAsync(new LocalLicenseInstallRequest(wrongMachineJson))).InstallStatus);
+
+            string expiredJson = SignDoc(validCafeDoc with { LicenseId = "CAFE-EXP-001", ExpiresAt = now.AddDays(-2) });
+            LocalLicenseInstallResponse expiredResp = await service.InstallAsync(new LocalLicenseInstallRequest(expiredJson));
+            Assert.Equal("Rejected", expiredResp.InstallStatus);
+            Assert.Equal(LicenseStatus.Expired, expiredResp.ValidationStatus);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
     }
 }

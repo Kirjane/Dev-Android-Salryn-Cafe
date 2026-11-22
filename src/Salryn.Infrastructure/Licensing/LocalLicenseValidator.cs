@@ -13,6 +13,12 @@ public sealed class LocalLicenseValidatorOptions
     public IReadOnlyList<string>? DevelopmentFeatures { get; init; }
 
     public Func<LocalLicenseDocument, bool>? SignatureVerifier { get; init; }
+
+    /// <summary>
+    /// Product-specific expected ApplicationId (e.g. "Salryn.Cafe" for Salryn Cafe).
+    /// Defaults to <see cref="LocalLicenseContractPolicy.RequiredApplicationId"/> when omitted.
+    /// </summary>
+    public string? ExpectedApplicationId { get; init; }
 }
 
 public sealed class LocalLicenseValidator
@@ -29,6 +35,11 @@ public sealed class LocalLicenseValidator
         _options = options ?? new LocalLicenseValidatorOptions();
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
     }
+
+    internal string? ConfiguredMachineFingerprint =>
+        string.IsNullOrWhiteSpace(_options.MachineFingerprint)
+            ? null
+            : _options.MachineFingerprint.Trim();
 
     public LocalLicenseValidationResult Validate(LocalLicenseFileReadResult read)
     {
@@ -106,17 +117,21 @@ public sealed class LocalLicenseValidator
             return Invalid(document, read.SourcePath, now, "Local license edition is not recognized.", machineCode);
         }
 
+        string requiredApplicationId = string.IsNullOrWhiteSpace(_options.ExpectedApplicationId)
+            ? LocalLicenseContractPolicy.RequiredApplicationId
+            : _options.ExpectedApplicationId.Trim();
+
         if (string.IsNullOrWhiteSpace(document.ApplicationId) ||
             !string.Equals(
                 document.ApplicationId.Trim(),
-                LocalLicenseContractPolicy.RequiredApplicationId,
+                requiredApplicationId,
                 StringComparison.Ordinal))
         {
             return Invalid(
                 document,
                 read.SourcePath,
                 now,
-                "Local license ApplicationId must be " + LocalLicenseContractPolicy.RequiredApplicationId + ".",
+                "Local license ApplicationId must be " + requiredApplicationId + ".",
                 machineCode);
         }
 

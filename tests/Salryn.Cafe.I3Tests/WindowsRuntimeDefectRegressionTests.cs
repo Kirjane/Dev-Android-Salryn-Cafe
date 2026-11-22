@@ -1,6 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Data.Sqlite;
 using Salryn.Api.Local;
 using Salryn.Composition.Local;
@@ -719,6 +722,126 @@ public sealed class WindowsRuntimeDefectRegressionTests
                 Assert.Equal(HttpStatusCode.OK, login.StatusCode);
                 await licensedHost.StopAsync();
             }
+        }
+        finally
+        {
+            Cleanup(root);
+        }
+    }
+
+    [Fact]
+    public async Task Issue38_RealSignedSalrynCafeHostInstallUnlocksFirstAdmin_WhileTerminalRetailAndUnlicensedStay403()
+    {
+        string root = NewTempRoot("win-iss38-signed");
+        try
+        {
+            var paths = DbPaths.CreateAtRoot(root);
+            var composition = SalrynLocalComposition.Create(paths);
+            await composition.InitializeDatabaseAsync();
+
+            using RSA ephemeralSigner = RSA.Create(2048);
+            string ephemeralPubPem = ephemeralSigner.ExportSubjectPublicKeyInfoPem();
+            string machineCode = "ISS38-HOST-MACHINE-01";
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+
+            string SignDoc(LocalLicenseDocument doc)
+            {
+                byte[] payload = Encoding.UTF8.GetBytes(LocalLicenseSignatureVerifier.BuildSigningPayload(doc));
+                byte[] sig = ephemeralSigner.SignData(payload, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+                return JsonSerializer.Serialize(doc with { Signature = Convert.ToBase64String(sig) }, new JsonSerializerOptions
+                {
+                    Converters = { new JsonStringEnumConverter() }
+                });
+            }
+
+            var licenseStore = new LocalLicenseFileStore(new LocalLicenseFileStoreOptions(Path.Combine(root, "licensing"), "license.json"));
+            var validator = new LocalLicenseValidator(new LocalLicenseValidatorOptions
+            {
+                ExpectedApplicationId = SalrynProductIdentity.ProductId,
+                MachineFingerprint = machineCode,
+                SignatureVerifier = doc => LocalLicenseSignatureVerifier.VerifyWithPublicKeyPem(doc, ephemeralPubPem)
+            });
+            var realLicenseService = new LocalLicenseService(licenseStore, validator);
+
+            await using var host = await LocalApiApplicationFactory.CreateAsync([], new()
+            {
+                Composition = SalrynLocalComposition.Create(paths),
+                LicenseService = realLicenseService,
+                Url = "http://127.0.0.1:0",
+                EnableStaticWebAssets = false,
+                WriteDevelopmentDatabasePath = false
+            });
+            await host.StartAsync();
+            using var client = new HttpClient(new HttpClientHandler { UseCookies = true })
+            {
+                BaseAddress = new Uri(host.Urls.Single())
+            };
+
+            // 1. Direct POST /api/bootstrap/first-admin while unlicensed -> 403 Bootstrap.HostLicenseRequired & 0 users
+            using var unlicensedAttempt = await client.PostAsJsonAsync("/api/bootstrap/first-admin", new
+            {
+                storeName = "Bypass Attempt Cafe",
+                receiptWidthMm = 58,
+                adminUsername = "admin",
+                adminDisplayName = "Admin",
+                adminPassword = AdminPassword
+            });
+            Assert.Equal(HttpStatusCode.Forbidden, unlicensedAttempt.StatusCode);
+            Assert.Contains("Bootstrap.HostLicenseRequired", await unlicensedAttempt.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+
+            // 2. Attempting to install a Retail Salryn.POS license -> 400 ERR_WRONG_PRODUCT_LICENSE
+            var baseDoc = new LocalLicenseDocument(
+                LicenseId: "CAFE-ISS38-001",
+                CustomerName: "Salryn Cafe QA",
+                Edition: LicenseEdition.Professional,
+                IssuedAt: now.AddMinutes(-5),
+                ExpiresAt: now.AddDays(30),
+                MachineBinding: machineCode,
+                Features: LicenseFeatures.AllList,
+                Signature: null,
+                SchemaVersion: LocalLicenseContractPolicy.BetaLicenseSchemaVersion,
+                ApplicationId: SalrynProductIdentity.ProductId,
+                StoreId: "STORE-ISS38-01",
+                AllowedLanTerminals: 2,
+                SupportExpiresAt: now.AddDays(30),
+                UpdatesUntil: now.AddDays(30),
+                LicenseType: LicenseType.Host,
+                HostLicenseId: null,
+                TerminalId: null);
+
+            using var retailInstall = await client.PostAsJsonAsync("/api/license/install", new
+            {
+                licenseJson = SignDoc(baseDoc with { ApplicationId = LocalLicenseContractPolicy.RequiredApplicationId })
+            });
+            Assert.Equal(HttpStatusCode.BadRequest, retailInstall.StatusCode);
+            Assert.Contains(SalrynProductGuard.ErrorWrongProductLicense, await retailInstall.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+
+            // 3. Install valid signed Salryn.Cafe Host license -> 200 OK Installed
+            using var cafeInstall = await client.PostAsJsonAsync("/api/license/install", new { licenseJson = SignDoc(baseDoc) });
+            Assert.Equal(HttpStatusCode.OK, cafeInstall.StatusCode);
+
+            using var statusResp = await client.GetAsync("/api/license/status");
+            Assert.Equal(HttpStatusCode.OK, statusResp.StatusCode);
+            using var statusDoc = JsonDocument.Parse(await statusResp.Content.ReadAsStringAsync());
+            Assert.Equal((int)LicenseStatus.Licensed, statusDoc.RootElement.GetProperty("status").GetInt32());
+            Assert.Equal(SalrynProductIdentity.ProductId, statusDoc.RootElement.GetProperty("applicationId").GetString());
+            Assert.True(statusDoc.RootElement.GetProperty("machineMatched").GetBoolean());
+
+            // 4. First-admin creation now succeeds (201) and operator login works (200)
+            using var created = await client.PostAsJsonAsync("/api/bootstrap/first-admin", new
+            {
+                storeName = "Salryn Cafe Licensed",
+                receiptWidthMm = 58,
+                adminUsername = "admin",
+                adminDisplayName = "Cafe Admin",
+                adminPassword = AdminPassword
+            });
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+
+            using var login = await client.PostAsJsonAsync("/api/auth/login", new { username = "admin", password = AdminPassword });
+            Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+
+            await host.StopAsync();
         }
         finally
         {

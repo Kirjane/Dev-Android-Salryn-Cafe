@@ -80,11 +80,11 @@ public sealed class LocalLicenseService : ILocalLicenseService
                     AllowedLanTerminals: null,
                     read.Document.SupportExpiresAt,
                     read.Document.UpdatesUntil,
-                    MachineFingerprint: null,
+                    MachineFingerprint: _validator.ConfiguredMachineFingerprint,
                     read.Document.LicenseType,
                     read.Document.HostLicenseId,
                     read.Document.TerminalId,
-                    MachineCode: null);
+                    MachineCode: _validator.ConfiguredMachineFingerprint);
             }
         }
 
@@ -173,6 +173,7 @@ public sealed class LocalLicenseService : ILocalLicenseService
 
     private static LocalLicenseValidator CreateDefaultValidator() => new(new LocalLicenseValidatorOptions
     {
+        ExpectedApplicationId = SalrynProductIdentity.ProductId,
         MachineFingerprint = LocalMachineFingerprint.Current(),
         SignatureVerifier = LocalLicenseSignatureVerifier.Verify,
         // Explicit opt-in only (CoreSmoke process or operator env). Not a silent production bypass.
