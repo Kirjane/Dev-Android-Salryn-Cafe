@@ -196,6 +196,7 @@ export async function hostRequest<T>(path: string, body?: unknown, method?: "GET
     const obj = (typeof parsed === "object" && parsed !== null ? parsed : {}) as Record<string, unknown>;
     const msg =
       (typeof obj.error === "string" && obj.error) ||
+      (typeof obj.errorMessage === "string" && obj.errorMessage) ||
       (typeof obj.detail === "string" && obj.detail) ||
       (typeof obj.message === "string" && obj.message) ||
       `Host returned HTTP ${response.status}`;

@@ -312,10 +312,18 @@ function WorkstationInner({
       if (!trimmed) throw new Error("Paste a signed Salryn Cafe Host license JSON document.");
       const res = await installLicense(trimmed);
       setLicenseJsonInput("");
-      if (api.getLicenseStatus) {
-        setLicenseBootstrap(await api.getLicenseStatus());
+      const refreshed = api.getLicenseStatus ? await api.getLicenseStatus() : null;
+      if (refreshed) {
+        setLicenseBootstrap(refreshed);
       }
-      setStatusMessage(res.message || "Signed Host license installed.");
+      if (refreshed && !isLicenseActiveForBootstrap(refreshed)) {
+        setStatusMessage(
+          refreshed.message ||
+            "License installed, but a valid Host license bound to this workstation is required for first-run setup.",
+        );
+      } else {
+        setStatusMessage(res.message || "Signed Host license installed.");
+      }
     });
   }
 

@@ -49,8 +49,8 @@ export function isLicenseActiveForBootstrap(status: HostLicenseBootstrapStatus |
   const s = status.status;
   const isDev = s === 5 || s === "Development";
   const isLicensed = s === 1 || s === "Licensed";
-  const isHost = status.licenseType === undefined || status.licenseType === null || status.licenseType === 0 || status.licenseType === "Host";
-  return isDev || (isLicensed && isHost && status.machineMatched !== false);
+  const isHost = status.licenseType === 0 || status.licenseType === "Host";
+  return isDev || (isLicensed && isHost && status.machineMatched === true);
 }
 
 export type MenuCategory = {
