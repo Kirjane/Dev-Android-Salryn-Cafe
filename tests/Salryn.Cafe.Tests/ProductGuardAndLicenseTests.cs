@@ -222,6 +222,27 @@ public sealed class ProductGuardAndLicenseTests
             LocalLicenseInstallResponse expiredResp = await service.InstallAsync(new LocalLicenseInstallRequest(expiredJson));
             Assert.Equal("Rejected", expiredResp.InstallStatus);
             Assert.Equal(LicenseStatus.Expired, expiredResp.ValidationStatus);
+
+            var terminalDoc = validCafeDoc with
+            {
+                LicenseId = "CAFE-TERM-001",
+                LicenseType = LicenseType.Terminal,
+                AllowedLanTerminals = null,
+                HostLicenseId = "CAFE-LIC-001",
+                TerminalId = "TERM-01",
+                Features = [LicenseFeatures.LanTerminals]
+            };
+            LocalLicenseValidationResult terminalVal = validator.Validate(new LocalLicenseFileReadResult(
+                "terminal.json",
+                Exists: true,
+                Malformed: false,
+                Document: JsonSerializer.Deserialize<LocalLicenseDocument>(
+                    SignDoc(terminalDoc),
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true, Converters = { new JsonStringEnumConverter() } }),
+                ErrorMessage: null));
+            Assert.Equal(LicenseStatus.Licensed, terminalVal.Status);
+            Assert.Equal(LicenseType.Terminal, terminalVal.LicenseType);
+            Assert.NotEqual(LicenseType.Host, terminalVal.LicenseType);
         }
         finally
         {

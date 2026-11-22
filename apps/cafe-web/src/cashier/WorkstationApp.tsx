@@ -118,8 +118,8 @@ function WorkstationInner({
   const blocked = busy || Boolean(pending);
 
   const refreshHostState = useCallback(
-    async (currentSession: HostSession) => {
-      if (!currentSession.isAuthenticated || !currentSession.user) return;
+    async (currentSession: HostSession): Promise<boolean> => {
+      if (!currentSession.isAuthenticated || !currentSession.user) return false;
       if (api.getLicenseStatus) {
         const lic = await api.getLicenseStatus();
         setLicenseBootstrap(lic);
@@ -127,7 +127,7 @@ function WorkstationInner({
         if (!isLicenseActiveForBootstrap(lic)) {
           setSession({ isAuthenticated: false });
           setStatusMessage("Host license is no longer valid. Activation is required.");
-          return;
+          return false;
         }
       }
       const perms = currentSession.user.permissions;
@@ -174,6 +174,7 @@ function WorkstationInner({
       if (warnings.length > 0) {
         notify("warning", "Partial station refresh", warnings.join(" · "));
       }
+      return true;
     },
     [api, notify],
   );
@@ -263,8 +264,10 @@ function WorkstationInner({
     const current = await api.getSession();
     setSession(current);
     if (current.isAuthenticated) {
-      await refreshHostState(current);
-      setStatusMessage("Local Host connected.");
+      const stillLicensed = await refreshHostState(current);
+      if (stillLicensed) {
+        setStatusMessage("Local Host connected.");
+      }
     } else if (bootstrap?.firstRunRequired && !bootstrap.hasUsers) {
       setStatusMessage("Host license verified. Create the first Administrator account to complete setup.");
     } else {
@@ -360,8 +363,10 @@ function WorkstationInner({
       const current = await api.login(username, password);
       setPassword("");
       setSession(current);
-      await refreshHostState(current);
-      setStatusMessage("Signed in to local Host.");
+      const stillLicensed = await refreshHostState(current);
+      if (stillLicensed) {
+        setStatusMessage("Signed in to local Host.");
+      }
     });
   }
 
@@ -763,7 +768,7 @@ function WorkstationInner({
                 variant="secondary"
                 leftIcon={<RefreshCw size={14} />}
                 disabled={busy}
-                onClick={() => void runExclusive(() => refreshHostState(session))}
+                onClick={() => void runExclusive(async () => { await refreshHostState(session); })}
               >
                 Refresh from Host
               </Button>

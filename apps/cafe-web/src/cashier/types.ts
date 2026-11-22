@@ -53,7 +53,7 @@ export function isLicenseActiveForBootstrap(status: HostLicenseBootstrapStatus |
   if (isDev) return true;
   const isLicensed = s === 1 || s === "Licensed";
   const isHost = status.licenseType === 0 || status.licenseType === "Host";
-  const productMatches = !status.applicationId || status.applicationId === "Salryn.Cafe";
+  const productMatches = status.applicationId === "Salryn.Cafe";
   return isLicensed && isHost && status.machineMatched === true && productMatches;
 }
 

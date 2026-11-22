@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Salryn.Core.Common;
 using Salryn.Core.Services.Licensing;
+using Salryn.Infrastructure.Paths;
 
 namespace Salryn.Infrastructure.Licensing;
 
@@ -160,6 +161,7 @@ public sealed class LocalLanTerminalEntitlementService
         string normalizedMachineCode = terminalMachineCode.Trim();
         LocalLicenseValidatorOptions options = new()
         {
+            ExpectedApplicationId = SalrynProductIdentity.ProductId,
             MachineFingerprint = normalizedMachineCode,
             SignatureVerifier = _signatureVerifier
         };

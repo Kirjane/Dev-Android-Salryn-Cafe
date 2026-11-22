@@ -681,6 +681,16 @@ describe("Salryn Cafe R2 — Live Host Integrated Cashier, Orders & Kitchen", ()
         lic: { status: 1, licenseType: 1, applicationId: "Salryn.Cafe", machineMatched: true, machineCode: "MC-4", message: "Terminal license does not unlock Host." },
         badge: "Host License Required",
       },
+      {
+        name: "grace-period",
+        lic: { status: 4, licenseType: 0, applicationId: "Salryn.Cafe", machineMatched: true, machineCode: "MC-5", message: "License is in grace period and requires renewal." },
+        badge: "Renewal Required",
+      },
+      {
+        name: "missing-application-id",
+        lic: { status: 1, licenseType: 0, applicationId: "", machineMatched: true, machineCode: "MC-6", message: "Missing product identifier." },
+        badge: "License Required",
+      },
     ];
 
     for (const sc of scenarios) {
@@ -704,6 +714,40 @@ describe("Salryn Cafe R2 — Live Host Integrated Cashier, Orders & Kitchen", ()
     expect(await screen.findByText("Host License Verification Unavailable")).toBeInTheDocument();
     expect(screen.queryByText(/Create First Administrator/i)).not.toBeInTheDocument();
     expect(screen.queryByText("Operator sign in")).not.toBeInTheDocument();
+  });
+
+  it("drops an active authenticated session back to activation-only when license expires on Refresh from Host", async () => {
+    const user = userEvent.setup();
+    let expired = false;
+    const api = createTestHostApi();
+    api.getLicenseStatus = async () =>
+      expired
+        ? {
+            status: 2,
+            licenseType: 0,
+            applicationId: "Salryn.Cafe",
+            machineMatched: true,
+            machineCode: "MC-RUNTIME-EXP",
+            message: "Local license is expired.",
+          }
+        : {
+            status: 1,
+            licenseType: 0,
+            applicationId: "Salryn.Cafe",
+            machineMatched: true,
+            machineCode: "MC-RUNTIME-EXP",
+            message: "Valid license.",
+          };
+
+    render(<WorkstationApp api={api} />);
+    expect(await screen.findByRole("button", { name: "Refresh from Host" })).toBeInTheDocument();
+
+    expired = true;
+    await user.click(screen.getByRole("button", { name: "Refresh from Host" }));
+
+    expect(await screen.findByText("License Expired")).toBeInTheDocument();
+    expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Create First Administrator/i)).not.toBeInTheDocument();
   });
 
   it("shows Operator sign in (not first-admin setup) when licensed and users already exist with empty store_settings", async () => {

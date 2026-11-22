@@ -92,9 +92,12 @@ public static class LocalLicenseEndpoints
                 .ConfigureAwait(false);
 
             // First install/recovery must remain possible before an operator account exists. Once a
-            // valid license state is present, installation is replacement/update and requires the
-            // same Settings.Manage boundary as other host licensing administration.
-            if (RequiresPrivilegedInstallAuthorization(before.Status) &&
+            // valid Host license state is present, installation is replacement/update and requires the
+            // same Settings.Manage boundary as other host licensing administration. A misplaced Terminal
+            // license on disk must not deadlock fresh-Host recovery.
+            bool requiresPrivilegedReplace = RequiresPrivilegedInstallAuthorization(before.Status) &&
+                before.LicenseType != LicenseType.Terminal;
+            if (requiresPrivilegedReplace &&
                 LocalApiPermissionGuards.RequireSettingsManage(
                     httpContext,
                     sessions) is IResult denied)
@@ -119,6 +122,17 @@ public static class LocalLicenseEndpoints
             if (read.Error is not null)
             {
                 return Results.Json(read.Error, statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            // Windows Host endpoints must reject Terminal licenses upfront so a Terminal license can
+            // never be installed onto a Host or deadlock fresh-Host setup.
+            if (IsTerminalLicenseJson(read.Request?.LicenseJson))
+            {
+                return Results.Json(
+                    RequestRejected(
+                        "License.Install.HostLicenseRequired",
+                        "This Salryn Cafe Windows Host requires a Host license. Terminal licenses are only valid for paired LAN terminals."),
+                    statusCode: StatusCodes.Status400BadRequest);
             }
 
             bool hadLicense = before.Status is LicenseStatus.Licensed or LicenseStatus.Grace or LicenseStatus.Development;
@@ -165,6 +179,50 @@ public static class LocalLicenseEndpoints
 
     public static bool RequiresPrivilegedInstallAuthorization(LicenseStatus status) =>
         status is LicenseStatus.Licensed or LicenseStatus.Grace or LicenseStatus.Development;
+
+    private static bool IsTerminalLicenseJson(string? licenseJson)
+    {
+        if (string.IsNullOrWhiteSpace(licenseJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            using JsonDocument parsed = JsonDocument.Parse(licenseJson);
+            if (parsed.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            foreach (JsonProperty prop in parsed.RootElement.EnumerateObject())
+            {
+                if (!string.Equals(prop.Name, nameof(LocalLicenseDocument.LicenseType), StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (prop.Value.ValueKind == JsonValueKind.String &&
+                    string.Equals(prop.Value.GetString(), nameof(LicenseType.Terminal), StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                if (prop.Value.ValueKind == JsonValueKind.Number &&
+                    prop.Value.TryGetInt32(out int numericType) &&
+                    numericType == (int)LicenseType.Terminal)
+                {
+                    return true;
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+
+        return false;
+    }
 
     private static async Task<LocalLicenseInstallEnvelopeReadResult> ReadInstallRequestAsync(
         HttpContext httpContext,

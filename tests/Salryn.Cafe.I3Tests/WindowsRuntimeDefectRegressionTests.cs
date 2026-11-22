@@ -789,6 +789,8 @@ public sealed class WindowsRuntimeDefectRegressionTests
             Assert.Equal(HttpStatusCode.Forbidden, unlicensedAttempt.StatusCode);
             Assert.Contains("Bootstrap.HostLicenseRequired", await unlicensedAttempt.Content.ReadAsStringAsync(), StringComparison.Ordinal);
 
+            Assert.Equal(0, ScalarLong(composition.ConnectionFactory, "SELECT COUNT(*) FROM users;"));
+
             // 2. Attempting to install a Retail Salryn.POS license -> 400 ERR_WRONG_PRODUCT_LICENSE
             var baseDoc = new LocalLicenseDocument(
                 LicenseId: "CAFE-ISS38-001",
@@ -816,7 +818,32 @@ public sealed class WindowsRuntimeDefectRegressionTests
             Assert.Equal(HttpStatusCode.BadRequest, retailInstall.StatusCode);
             Assert.Contains(SalrynProductGuard.ErrorWrongProductLicense, await retailInstall.Content.ReadAsStringAsync(), StringComparison.Ordinal);
 
-            // 3. Install valid signed Salryn.Cafe Host license -> 200 OK Installed
+            // 2b. Signed Salryn.Cafe Terminal license on Host MUST be rejected (400), keep first-admin 403, 0 users, and NOT deadlock recovery
+            var terminalDoc = baseDoc with
+            {
+                LicenseId = "CAFE-ISS38-TERM-001",
+                LicenseType = LicenseType.Terminal,
+                AllowedLanTerminals = null,
+                HostLicenseId = "CAFE-ISS38-001",
+                TerminalId = "TERM-01",
+                Features = [LicenseFeatures.LanTerminals]
+            };
+            using var terminalInstall = await client.PostAsJsonAsync("/api/license/install", new { licenseJson = SignDoc(terminalDoc) });
+            Assert.Equal(HttpStatusCode.BadRequest, terminalInstall.StatusCode);
+            Assert.Contains("License.Install.HostLicenseRequired", await terminalInstall.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+
+            using var afterTerminalAttempt = await client.PostAsJsonAsync("/api/bootstrap/first-admin", new
+            {
+                storeName = "Terminal Bypass Cafe",
+                receiptWidthMm = 58,
+                adminUsername = "admin",
+                adminDisplayName = "Admin",
+                adminPassword = AdminPassword
+            });
+            Assert.Equal(HttpStatusCode.Forbidden, afterTerminalAttempt.StatusCode);
+            Assert.Equal(0, ScalarLong(composition.ConnectionFactory, "SELECT COUNT(*) FROM users;"));
+
+            // 3. Install valid signed Salryn.Cafe Host license -> 200 OK Installed (recovery works cleanly!)
             using var cafeInstall = await client.PostAsJsonAsync("/api/license/install", new { licenseJson = SignDoc(baseDoc) });
             Assert.Equal(HttpStatusCode.OK, cafeInstall.StatusCode);
 
