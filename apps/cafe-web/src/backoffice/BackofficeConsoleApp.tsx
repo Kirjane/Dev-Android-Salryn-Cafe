@@ -43,7 +43,7 @@ import {
   saveCentralSession,
 } from "../api/centralOwnerClient";
 import { HostApiError, createLiveHostApi, formatPhp, parsePhpToCents } from "../api/hostClient";
-import type { HostSession, WorkstationApi } from "../cashier/types";
+import { isLicenseActiveForBootstrap, type HostSession, type WorkstationApi } from "../cashier/types";
 import { DeviceManagementPanel } from "../devices/DeviceManagementPanel";
 import type {
   ArCustomerRow,
@@ -208,6 +208,9 @@ function BackofficeConsoleInner({
   const [hostAuthError, setHostAuthError] = useState<string | null>(null);
   const [hostLoading, setHostLoading] = useState(false);
   const [hostLoadError, setHostLoadError] = useState<string | null>(null);
+  const [hostLicenseVerified, setHostLicenseVerified] = useState(hostApi === null);
+  const [hostLicenseLoading, setHostLicenseLoading] = useState(false);
+  const [hostLicenseError, setHostLicenseError] = useState<string | null>(null);
 
   // Live Host state (C1-C11)
   const [reports, setReports] = useState<OwnerReportsSnapshot | null>(null);
@@ -295,6 +298,18 @@ function BackofficeConsoleInner({
   const hostOpsOp = useBackofficeOperation("host-ops");
 
   const refreshHostData = useCallback(async () => {
+    // License gating is independent of operator authentication. A signed-out or
+    // revoked Host must never display management data as if it were authorized.
+    if (hostApi) {
+      const license = await hostApi.getLicenseStatus?.();
+      if (!isLicenseActiveForBootstrap(license)) {
+        setHostLicenseVerified(false);
+        setHostSession({ isAuthenticated: false });
+        setHostLicenseError("A valid Salryn Cafe Host license is required. Open Cafe workstation to activate the Host.");
+        return;
+      }
+      setHostLicenseVerified(true);
+    }
     const failedLoads: string[] = [];
     const safeFetch = async <T,>(label: string, fn: () => Promise<T>, fallback: T): Promise<T> => {
       try {
@@ -394,7 +409,7 @@ function BackofficeConsoleInner({
     } finally {
       setHostLoading(false);
     }
-  }, [api]);
+  }, [api, hostApi]);
 
   const refreshCentralData = useCallback(
     async (originOverride?: string, authOverride?: CentralAdminSession | null) => {
@@ -427,7 +442,18 @@ function BackofficeConsoleInner({
     async function initSurface() {
       if (surface === "WINDOWS_HOST" || hostApi === null) {
         if (hostApi) {
+          setHostLicenseLoading(true);
           try {
+            const license = await hostApi.getLicenseStatus?.();
+            if (!isLicenseActiveForBootstrap(license)) {
+              if (!active) return;
+              setHostLicenseVerified(false);
+              setHostSession({ isAuthenticated: false });
+              setHostLicenseError("A valid, machine-bound Salryn Cafe Host license is required before signing in.");
+              return;
+            }
+            setHostLicenseVerified(true);
+            setHostLicenseError(null);
             const s = await hostApi.getSession();
             if (!active) return;
             setHostSession(s);
@@ -436,7 +462,10 @@ function BackofficeConsoleInner({
             }
           } catch (err) {
             if (!active) return;
-            setHostAuthError(err instanceof Error ? err.message : "Unable to reach local Salryn Host.");
+            setHostLicenseVerified(false);
+            setHostLicenseError(err instanceof Error ? err.message : "Unable to verify the local Host license.");
+          } finally {
+            if (active) setHostLicenseLoading(false);
           }
         } else if (!reports) {
           await refreshHostData();
@@ -455,10 +484,16 @@ function BackofficeConsoleInner({
 
   async function handleHostSignIn(e: FormEvent) {
     e.preventDefault();
-    if (!hostApi) return;
+    if (!hostApi || !hostLicenseVerified) return;
     setHostAuthError(null);
     setHostLoading(true);
     try {
+      const license = await hostApi.getLicenseStatus?.();
+      if (!isLicenseActiveForBootstrap(license)) {
+        setHostLicenseVerified(false);
+        setHostLicenseError("Host license no longer valid. Activate the Host through Cafe workstation.");
+        return;
+      }
       const s = await hostApi.login(hostLoginUser, hostLoginPass);
       setHostSession(s);
       setHostLoginPass("");
@@ -522,7 +557,30 @@ function BackofficeConsoleInner({
     { id: "host-ops", label: "Host Backup & License", group: "Windows Host Only", Icon: HardDrive },
   ];
 
-  // Unauthenticated gate for Windows Host surface when hostApi is present
+  // The license gate precedes any operator sign-in and never reveals account fields.
+  if (surface === "WINDOWS_HOST" && hostApi && !hostLicenseVerified) {
+    return (
+      <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 20, background: "var(--salryn-cream)" }}>
+        <Card>
+          <CardHeader title="Host License Activation Required" subtitle="Activate the local Salryn Cafe Host before accessing Backoffice." />
+          <CardBody>
+            <div style={{ display: "grid", gap: 12, maxWidth: 520 }}>
+              {hostLicenseLoading ? <p>Checking Host license...</p> : (
+                <Alert tone="warning" title="Backoffice is locked" description={hostLicenseError ?? "Host license verification is required."} />
+              )}
+              <Button variant="primary" onClick={() => {
+                if (onOpenWorkstation) onOpenWorkstation();
+                else window.location.assign("/cafe/");
+              }}>Open License Activation</Button>
+              <Button variant="secondary" onClick={() => { setSurface("CENTRAL_OWNER"); setActiveNav("devices"); }}>Open Central Owner Portal</Button>
+            </div>
+          </CardBody>
+        </Card>
+      </div>
+    );
+  }
+
+  // Unauthenticated gate for Windows Host surface when Host licensing is verified.
   if (surface === "WINDOWS_HOST" && hostApi && !hostSession.isAuthenticated) {
     return (
       <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 20, background: "var(--salryn-cream)" }}>
