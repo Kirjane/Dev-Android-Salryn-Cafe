@@ -21,6 +21,8 @@
     <ProjectReference Include="..\..\services\licensing-issuer\Salryn.LicensingIssuer.Server.csproj" />
     <ProjectReference Include="..\..\src\Salryn.Core\Salryn.Core.csproj" />
     <ProjectReference Include="..\..\src\Salryn.Infrastructure\Salryn.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Salryn.Composition.Local\Salryn.Composition.Local.csproj" />
+    <ProjectReference Include="..\..\src\Salryn.Api.Local\Salryn.Api.Local.csproj" />
   </ItemGroup>
 
 </Project>
