@@ -630,4 +630,20 @@ describe("Salryn Cafe R2 — Live Host Integrated Cashier, Orders & Kitchen", ()
     expect(createSpy).toHaveBeenCalledTimes(1);
     expect(await screen.findByText("Operator sign in")).toBeInTheDocument();
   });
+
+  it("shows Operator sign in (not first-admin setup) when users already exist but store_settings is empty", async () => {
+    const api = createTestHostApi();
+    api.getSession = async () => ({ isAuthenticated: false });
+    api.getBootstrapStatus = async () => ({
+      databaseInitialized: true,
+      databaseFileExists: true,
+      firstRunRequired: true,
+      hasUsers: true,
+      hasStoreSettings: false,
+    });
+
+    render(<WorkstationApp api={api} />);
+    expect(await screen.findByText("Operator sign in")).toBeInTheDocument();
+    expect(screen.queryByText(/Create First Administrator/i)).not.toBeInTheDocument();
+  });
 });

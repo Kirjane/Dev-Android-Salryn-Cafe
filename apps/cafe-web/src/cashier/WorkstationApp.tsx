@@ -191,7 +191,7 @@ function WorkstationInner({
     try {
       const status = await api.getBootstrapStatus();
       setBootstrapStatus(status);
-      if (status.firstRunRequired && api.getLicenseStatus) {
+      if (status.firstRunRequired && !status.hasUsers && api.getLicenseStatus) {
         const lic = await api.getLicenseStatus().catch(() => null);
         setLicenseBootstrap(lic);
       }
@@ -432,7 +432,7 @@ function WorkstationInner({
             {statusMessage}
           </p>
 
-          {bootstrapStatus?.firstRunRequired ? (
+          {bootstrapStatus?.firstRunRequired && !bootstrapStatus.hasUsers ? (
             <div style={{ display: "grid", gap: 16 }}>
               <Card>
                 <CardHeader
