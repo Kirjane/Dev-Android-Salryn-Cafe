@@ -80,6 +80,7 @@ import type {
 import { BackofficeUnknownOutcomeError, useBackofficeOperation } from "./useBackofficeOperation";
 import { CafeCatalogSetup, CafeSupplierSetup } from "./CafeSetupPanel";
 import { CafeCustomerSetup, CafePrinterSetup } from "./CafeOperationalSetupPanel";
+import { CafeGettingStarted } from "./CafeGettingStarted";
 
 export type BackofficeConsoleAppProps = {
   api?: BackofficeApi;
@@ -199,7 +200,7 @@ function BackofficeConsoleInner({
 }) {
   const { notify } = useToast();
   const [surface, setSurface] = useState<DeploymentSurface>(initialSurface);
-  const [activeNav, setActiveNav] = useState(initialSurface === "CENTRAL_OWNER" ? "devices" : initialNav);
+  const [activeNav, setActiveNav] = useState(initialSurface === "CENTRAL_OWNER" ? "devices" : hostApi ? "getting-started" : initialNav);
 
   // Host session (only checked when hostApi is active and WINDOWS_HOST surface is opened)
   const [hostSession, setHostSession] = useState<HostSession>({ isAuthenticated: hostApi === null });
@@ -547,6 +548,7 @@ function BackofficeConsoleInner({
   const pendingDeviceCount = centralDevices.filter((d) => d.status === "Pending").length;
 
   const hostNavItems: CafeShellNavItem[] = [
+    { id: "getting-started", label: "Getting Started", group: "Start", Icon: Store },
     { id: "reports", label: "Owner Reports & COGS", group: "Overview", Icon: BarChart3 },
     { id: "devices", label: "Device Trust & Central", group: "Overview", Icon: Laptop, badge: pendingDeviceCount || undefined },
     { id: "recipes", label: "Menu, Recipes & BOM", group: "Cafe Operations", Icon: BookOpen },
@@ -703,6 +705,17 @@ function BackofficeConsoleInner({
         </div>
       }
     >
+      {surface === "WINDOWS_HOST" && activeNav === "getting-started" ? (
+        <CafeGettingStarted
+          api={api}
+          ingredientCount={draft.ingredients.length}
+          supplierCount={suppliers.length}
+          customerCount={arRows.length}
+          onNavigate={setActiveNav}
+          onOpenWorkstation={onOpenWorkstation}
+        />
+      ) : null}
+
       {surface === "WINDOWS_HOST" && activeNav === "reports" ? (
         <div style={{ display: "grid", gap: 16 }}>
           {reports ? (

@@ -597,6 +597,22 @@ describe("Salryn Cafe Back-Office & Central Owner Console (Live Contracts)", () 
     expect(saveSupplier).toHaveBeenCalledTimes(1);
   });
 
+
+  it("offers a first-store guide that navigates to the actual menu and supplier authoring forms", async () => {
+    const user = userEvent.setup();
+    const { api } = createFakeBackofficeHarness();
+    const { centralApi } = createFakeCentralHarness();
+    render(<BackofficeConsoleApp api={api} centralApi={centralApi} initialNav="getting-started" />);
+
+    expect(await screen.findByText("Getting Started — Operate Your Cafe")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Open Menu Setup" }));
+    expect(await screen.findByRole("form", { name: "Create menu item" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Getting Started" }));
+    await user.click(screen.getByRole("button", { name: "Open Inventory" }));
+    expect(await screen.findByRole("form", { name: "Create supplier" })).toBeInTheDocument();
+  });
+
   it("has zero critical/serious axe-core accessibility violations across the Backoffice shell", async () => {
     const { api } = createFakeBackofficeHarness();
     const { centralApi } = createFakeCentralHarness();
