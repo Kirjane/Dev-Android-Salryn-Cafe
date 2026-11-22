@@ -82,7 +82,7 @@ function Assert-SourceUnchanged {
 
 function Get-RequiredSuitePaths {
     param([string]$Mode)
-    $portable = @('Salryn.Cafe.I2Tests', 'Salryn.Cafe.I3Tests', 'Salryn.Cafe.I4Tests', 'Salryn.Cafe.I6ATests')
+    $portable = @('Salryn.Cafe.I2Tests', 'Salryn.Cafe.I3Tests', 'Salryn.Cafe.I4Tests', 'Salryn.Cafe.I6ATests', 'Salryn.LicensingIssuer.Tests')
     $names = switch ($Mode) {
         'Windows' { @('Salryn.Cafe.Tests') + $portable }
         'Portable' { $portable }
@@ -241,7 +241,7 @@ if ($Mode -eq 'Windows') {
 }
 
 if ($Mode -ne 'Android') {
-    foreach ($relative in @('packages/salryn-cafe-ui','apps/cafe-web')) {
+    foreach ($relative in @('packages/salryn-cafe-ui','apps/cafe-web','apps/licensing-web')) {
         $dir = Join-Path $repoRoot $relative
         $name = $relative.Replace('/', '-')
         Invoke-Gate "web:$name" 'TEST' {

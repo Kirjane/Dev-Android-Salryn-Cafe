@@ -359,4 +359,118 @@ public sealed class CombinedIssuerAndCafeHostEndToEndTests
             }
         }
     }
+
+    [Fact]
+    public void InstallerPackagingBoundary_ExcludesStandaloneLicensingIssuerFromCustomerSetup()
+    {
+        DirectoryInfo? dir = new(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Salryn.sln")))
+        {
+            dir = dir.Parent;
+        }
+        Assert.NotNull(dir);
+        string repoRoot = dir!.FullName;
+
+        string buildScript = File.ReadAllText(Path.Combine(repoRoot, "installer", "Build-SalrynCafeInstaller.ps1"));
+        string issScript = File.ReadAllText(Path.Combine(repoRoot, "installer", "SalrynCafeSetup.iss"));
+        string ciWorkflow = File.ReadAllText(Path.Combine(repoRoot, ".github", "workflows", "salryn-cafe-installer-qa.yml"));
+
+        foreach (string packagingFile in new[] { buildScript, issScript, ciWorkflow })
+        {
+            Assert.DoesNotContain("services/licensing-issuer", packagingFile, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("services\\licensing-issuer", packagingFile, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("Salryn.LicensingIssuer.Server", packagingFile, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("apps/licensing-web", packagingFile, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("apps\\licensing-web", packagingFile, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public async Task ProductionTrustedSigner_WhenCanonicalLicensingOpsKeyPresent_VerifiesWithUnmodifiedReleaseLocalLicenseService()
+    {
+        const string canonicalOpsKeyPath = @"C:\Salryn-LicensingOps-I3\.secrets\beta-signing-private.pem";
+        if (!File.Exists(canonicalOpsKeyPath))
+        {
+            // On GitHub CI runners without external LicensingOps secret custody, verify fail-closed SIGNER_NOT_CONFIGURED.
+            var unconfiguredSigner = new ExternalLicenseSignerService(new LicenseSignerOptions
+            {
+                SigningKeyPemPath = canonicalOpsKeyPath,
+                AllowUntrustedTestSigner = false,
+                IsProductionEnvironment = true
+            });
+            SignerStatusSnapshot ciStatus = unconfiguredSigner.GetStatus();
+            Assert.False(ciStatus.CanIssue);
+            return;
+        }
+
+        // On authorized Kirjane Labs workstation with external LicensingOps key custody:
+        // verify ProductionTrustedSigner (AllowUntrustedTestSigner = false, IsProductionEnvironment = true)
+        // issues an unchanged Salryn.Cafe Host license accepted by UNMODIFIED default LocalLicenseService!
+        string root = Path.Combine(Path.GetTempPath(), $"salryn-prod-trusted-e2e-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            var prodSigner = new ExternalLicenseSignerService(new LicenseSignerOptions
+            {
+                SigningKeyPemPath = canonicalOpsKeyPath,
+                AllowUntrustedTestSigner = false,
+                IsProductionEnvironment = true
+            });
+            SignerStatusSnapshot status = prodSigner.GetStatus();
+            Assert.True(status.IsConfigured);
+            Assert.True(status.CanIssue);
+            Assert.True(status.MatchesTrustedRuntimeKey);
+            Assert.Equal("ProductionTrustedSigner", status.SignerMode);
+            Assert.Equal(LocalLicenseSignatureVerifier.TrustedPublicKeySpkiSha256, status.PublicKeySpkiSha256);
+
+            // Unmodified default LocalLicenseService (uses real machine code + hardcoded production PublicKeyPem)
+            var cafeStore = new LocalLicenseFileStore(new LocalLicenseFileStoreOptions(Path.Combine(root, "cafe-licensing"), "license.json"));
+            var defaultReleaseLicenseService = new LocalLicenseService(cafeStore);
+            LocalLicenseValidationResult unlicensed = await defaultReleaseLicenseService.GetStatusAsync();
+            string actualMachineCode = unlicensed.MachineCode ?? unlicensed.MachineFingerprint!;
+            Assert.False(string.IsNullOrWhiteSpace(actualMachineCode));
+
+            DraftValidationResult draft = IssuerLicenseContractValidator.BuildAndValidateDraft(
+                "SLRN-CAFE-TRUSTED-001",
+                "Kirjane Labs Cafe QA",
+                "CAFE-YZA-TRUSTED-01",
+                IssuerConstants.ProductCafe,
+                LicenseType.Host,
+                LicenseEdition.Professional,
+                actualMachineCode,
+                LicenseFeatures.AllList,
+                allowedLanTerminals: 2,
+                hostLicenseId: null,
+                terminalId: null,
+                issuedAtUtc: DateTimeOffset.UtcNow.AddMinutes(-1),
+                expiresAtUtc: DateTimeOffset.UtcNow.AddDays(30),
+                supportExpiresAtUtc: null,
+                updatesUntilUtc: null);
+            Assert.True(draft.IsValid);
+
+            LicenseSigningOutcome signed = prodSigner.SignAndVerify(draft.Document!);
+            Assert.True(signed.IsSuccess);
+            Assert.True(signed.VerifierPassed);
+            Assert.True(signed.RuntimeTrustedVerifierPassed);
+            Assert.Equal("ProductionTrustedSigner", signed.SignerMode);
+
+            LocalLicenseInstallResponse installed = await defaultReleaseLicenseService.InstallAsync(
+                new LocalLicenseInstallRequest(signed.SignedLicenseJson));
+            Assert.Equal("Installed", installed.InstallStatus);
+            Assert.Equal(LicenseStatus.Licensed, installed.ValidationStatus);
+
+            LocalLicenseValidationResult verified = await defaultReleaseLicenseService.GetStatusAsync();
+            Assert.Equal(LicenseStatus.Licensed, verified.Status);
+            Assert.Equal(IssuerConstants.ProductCafe, verified.ApplicationId);
+            Assert.Equal(LicenseType.Host, verified.LicenseType);
+            Assert.True(verified.MachineMatched);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
 }

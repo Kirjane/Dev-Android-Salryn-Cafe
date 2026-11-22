@@ -31,8 +31,8 @@ Assert-NonzeroTests 0 4 4 0
 $windowsSuites = @(Get-RequiredSuitePaths 'Windows')
 $portableSuites = @(Get-RequiredSuitePaths 'Portable')
 $androidSuites = @(Get-RequiredSuitePaths 'Android')
-Assert ($windowsSuites.Count -eq 5) 'Windows inventory includes five known suites.'
-Assert ($portableSuites.Count -eq 4) 'Portable inventory includes four known suites.'
+Assert ($windowsSuites.Count -eq 6) 'Windows inventory includes six known suites.'
+Assert ($portableSuites.Count -eq 5) 'Portable inventory includes five known suites.'
 Assert ($portableSuites -notcontains 'tests/Salryn.Cafe.Tests/Salryn.Cafe.Tests.csproj') 'WindowsDesktop suite excluded on Linux.'
 Assert ($androidSuites.Count -gt 0 -and $androidSuites[0] -eq 'tests/Salryn.Cafe.I6BTests/Salryn.Cafe.I6BTests.csproj') 'Android cannot have empty inventory.'
 Assert-Throws { Get-RequiredSuitePaths 'Unknown' } 'Unknown mode rejected.'

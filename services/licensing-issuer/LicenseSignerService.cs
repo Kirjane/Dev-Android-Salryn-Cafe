@@ -263,9 +263,9 @@ public sealed class ExternalLicenseSignerService : ILicenseSignerService
         if (!string.IsNullOrWhiteSpace(_options.SigningKeyPemPath))
         {
             string fullPath = Path.GetFullPath(_options.SigningKeyPemPath);
-            if (_options.RejectRepositoryKeyPath && IsInsideGitWorktree(fullPath))
+            if (_options.RejectRepositoryKeyPath && IsInsideSalrynPosRepository(fullPath))
             {
-                return (null, "SIGNER_KEY_INSIDE_REPO_FORBIDDEN: Private signing key path must reside outside any Git repository worktree.");
+                return (null, "SIGNER_KEY_INSIDE_REPO_FORBIDDEN: Private signing key path must reside outside the Salryn POS repository worktree.");
             }
             if (!File.Exists(fullPath))
             {
@@ -277,12 +277,12 @@ public sealed class ExternalLicenseSignerService : ILicenseSignerService
         return (null, null);
     }
 
-    private static bool IsInsideGitWorktree(string fullPath)
+    private static bool IsInsideSalrynPosRepository(string fullPath)
     {
         string? dir = Path.GetDirectoryName(fullPath);
         while (!string.IsNullOrWhiteSpace(dir))
         {
-            if (Directory.Exists(Path.Combine(dir, ".git")) || File.Exists(Path.Combine(dir, ".git")))
+            if (File.Exists(Path.Combine(dir, "Salryn.sln")))
             {
                 return true;
             }
