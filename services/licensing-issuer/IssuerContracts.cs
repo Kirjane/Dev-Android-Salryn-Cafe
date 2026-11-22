@@ -11,6 +11,7 @@ public static class IssuerConstants
     public const string ProductRetail = "Salryn.POS";
     public const string RoleAdmin = "IssuerAdmin";
     public const string RoleReviewer = "IssuerReviewer";
+    public const string RoleOperator = "IssuerOperator";
     public const string StatusDraft = "Draft";
     public const string StatusAwaitingApproval = "AwaitingApproval";
     public const string StatusApproved = "Approved";
@@ -28,6 +29,58 @@ public static class IssuerConstants
     };
 }
 
+public static class IssuerPermissions
+{
+    public const string CustomersWrite = "customers:write";
+    public const string StoresWrite = "stores:write";
+    public const string RequestsDraft = "requests:draft";
+    public const string RequestsReview = "requests:review";
+    public const string RequestsIssue = "requests:issue";
+    public const string AuditRead = "audit:read";
+    public const string UsersManage = "users:manage";
+
+    private static readonly IReadOnlyDictionary<string, string[]> RolePermissions =
+        new Dictionary<string, string[]>(StringComparer.Ordinal)
+        {
+            [IssuerConstants.RoleAdmin] =
+            [
+                CustomersWrite,
+                StoresWrite,
+                RequestsDraft,
+                RequestsReview,
+                RequestsIssue,
+                AuditRead,
+                UsersManage
+            ],
+            [IssuerConstants.RoleReviewer] =
+            [
+                RequestsReview,
+                AuditRead
+            ],
+            [IssuerConstants.RoleOperator] =
+            [
+                CustomersWrite,
+                StoresWrite,
+                RequestsDraft
+            ]
+        };
+
+    public static IReadOnlyList<string> GetForRole(string? role) =>
+        role is not null && RolePermissions.TryGetValue(role, out string[]? perms)
+            ? perms
+            : Array.Empty<string>();
+
+    public static bool HasPermission(string? role, string permission) =>
+        GetForRole(role).Contains(permission, StringComparer.Ordinal);
+
+    public static bool IsValidRole(string? role) =>
+        role is not null && RolePermissions.ContainsKey(role);
+}
+
+public sealed class IdempotencyConflictException(string message) : InvalidOperationException(message);
+
+public sealed class SelfApprovalForbiddenException(string message) : InvalidOperationException(message);
+
 public sealed record IssuerAdminUser(
     Guid Id,
     string Username,
@@ -39,7 +92,8 @@ public sealed record IssuerAdminUser(
 public sealed record IssuerSessionInfo(
     bool IsAuthenticated,
     string? CsrfToken,
-    IssuerAdminUser? User);
+    IssuerAdminUser? User,
+    IReadOnlyList<string>? Permissions = null);
 
 public sealed record IssuerCustomerRecord(
     Guid Id,
@@ -103,7 +157,15 @@ public sealed record IssuerAuditEntry(
     string EntityType,
     string EntityId,
     string DetailJson,
-    DateTimeOffset CreatedAtUtc);
+    DateTimeOffset CreatedAtUtc,
+    string PrevHash = "",
+    string EntryHash = "");
+
+public sealed record IssuerAuditChainVerification(
+    bool IsValid,
+    int CheckedEntries,
+    long? FirstBrokenId,
+    string Message);
 
 public sealed record IssuerDashboardSummary(
     int DraftCount,
@@ -128,6 +190,12 @@ public sealed record SignerStatusSnapshot(
 
 public sealed record LoginRequestDto(string Username, string Password);
 
+public sealed record CreateIssuerUserRequestDto(
+    string Username,
+    string DisplayName,
+    string Password,
+    string Role);
+
 public sealed record CreateCustomerRequestDto(string CustomerName, string? ContactEmail, string? Notes);
 
 public sealed record CreateStoreRequestDto(Guid CustomerId, string StoreCode, string StoreName, string ProductId);
@@ -147,7 +215,8 @@ public sealed record CreateLicenseDraftRequestDto(
     DateTimeOffset? SupportExpiresAtUtc,
     DateTimeOffset? UpdatesUntilUtc,
     string? IdempotencyKey,
-    Guid? SupersedesRequestId);
+    Guid? SupersedesRequestId,
+    string? InitialNote = null);
 
 public sealed record ReviewDecisionRequestDto(string? Note);
 
@@ -295,6 +364,52 @@ public static class IssuerLicenseContractValidator
 
         string canonicalPayload = LocalLicenseSignatureVerifier.BuildSigningPayload(doc);
         return new DraftValidationResult(true, null, null, warnings, doc, canonicalPayload);
+    }
+
+    /// <summary>
+    /// Validates the exact, unchanged signed document without substituting ApplicationId.
+    /// </summary>
+    public static (bool IsValid, string? ErrorMessage) ValidateSignedDocument(LocalLicenseDocument signedDoc)
+    {
+        if (signedDoc.SchemaVersion != LocalLicenseContractPolicy.BetaLicenseSchemaVersion)
+        {
+            return (false, $"SchemaVersion must be {LocalLicenseContractPolicy.BetaLicenseSchemaVersion}.");
+        }
+        if (string.IsNullOrWhiteSpace(signedDoc.Signature))
+        {
+            return (false, "Signed document is missing Signature.");
+        }
+        if (string.IsNullOrWhiteSpace(signedDoc.LicenseId) ||
+            string.IsNullOrWhiteSpace(signedDoc.CustomerName) ||
+            string.IsNullOrWhiteSpace(signedDoc.StoreId) ||
+            string.IsNullOrWhiteSpace(signedDoc.MachineBinding) ||
+            string.IsNullOrWhiteSpace(signedDoc.ApplicationId))
+        {
+            return (false, "Signed document is missing required identity or binding fields.");
+        }
+        if (signedDoc.LicenseType is null)
+        {
+            return (false, "Signed document is missing LicenseType.");
+        }
+
+        DraftValidationResult check = BuildAndValidateDraft(
+            signedDoc.LicenseId,
+            signedDoc.CustomerName,
+            signedDoc.StoreId,
+            signedDoc.ApplicationId,
+            signedDoc.LicenseType.Value,
+            signedDoc.Edition,
+            signedDoc.MachineBinding,
+            signedDoc.Features,
+            signedDoc.AllowedLanTerminals,
+            signedDoc.HostLicenseId,
+            signedDoc.TerminalId,
+            signedDoc.IssuedAt,
+            signedDoc.ExpiresAt,
+            signedDoc.SupportExpiresAt,
+            signedDoc.UpdatesUntil);
+
+        return check.IsValid ? (true, null) : (false, $"{check.ErrorCode}: {check.ErrorMessage}");
     }
 
     private static DraftValidationResult Fail(string code, string msg) =>

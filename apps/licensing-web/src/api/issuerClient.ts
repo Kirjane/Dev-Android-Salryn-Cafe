@@ -2,6 +2,8 @@ import type {
   CreateLicenseDraftInput,
   DraftCreateResponse,
   IssueResponse,
+  IssuerAdminUser,
+  IssuerAuditChainVerification,
   IssuerAuditEntry,
   IssuerCustomerRecord,
   IssuerDashboardSummary,
@@ -41,6 +43,9 @@ export interface LicensingIssuerApi {
   reissueRequest(id: string, input: { machineBinding?: string; expiresAtUtc?: string | null; note?: string }): Promise<DraftCreateResponse>;
   downloadUrl(id: string): string;
   listAudit(limit?: number): Promise<IssuerAuditEntry[]>;
+  verifyAuditChain?(): Promise<IssuerAuditChainVerification>;
+  listUsers?(): Promise<IssuerAdminUser[]>;
+  createUser?(input: { username: string; displayName: string; password: string; role: string }): Promise<IssuerAdminUser>;
 }
 
 const CSRF_HEADER = "X-Salryn-Issuer-Csrf";
@@ -151,5 +156,13 @@ export function createBrowserIssuerApi(baseUrl = ""): LicensingIssuerApi {
       ),
     downloadUrl: (id) => `${baseUrl}/api/issuer/requests/${encodeURIComponent(id)}/download`,
     listAudit: (limit = 100) => request<IssuerAuditEntry[]>(`/api/issuer/audit?limit=${limit}`),
+    verifyAuditChain: () => request<IssuerAuditChainVerification>("/api/issuer/audit/verify"),
+    listUsers: () => request<IssuerAdminUser[]>("/api/issuer/users"),
+    createUser: (input) =>
+      request<IssuerAdminUser>(
+        "/api/issuer/users",
+        { method: "POST", body: JSON.stringify(input) },
+        true,
+      ),
   };
 }

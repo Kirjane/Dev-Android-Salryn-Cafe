@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -18,9 +19,17 @@ public sealed class LicensingIssuerHostOptions
     public string? BootstrapAdminUsername { get; init; }
     public string? BootstrapAdminDisplayName { get; init; }
     public string? BootstrapAdminPassword { get; init; }
+    public string? BootstrapReviewerUsername { get; init; }
+    public string? BootstrapReviewerDisplayName { get; init; }
+    public string? BootstrapReviewerPassword { get; init; }
+    public string? BootstrapOperatorUsername { get; init; }
+    public string? BootstrapOperatorDisplayName { get; init; }
+    public string? BootstrapOperatorPassword { get; init; }
     public string? StaticWebRootPath { get; init; }
     public LicenseSignerOptions SignerOptions { get; init; } = new();
     public int MaxLoginAttemptsPerWindow { get; init; } = 8;
+    public bool AllowSelfApprovalException { get; init; }
+    public bool RequireHttpsOrLoopback { get; init; } = true;
 }
 
 public static class LicensingIssuerAppFactory
@@ -51,6 +60,24 @@ public static class LicensingIssuerAppFactory
                 options.BootstrapAdminPassword,
                 IssuerConstants.RoleAdmin);
         }
+        if (!string.IsNullOrWhiteSpace(options.BootstrapReviewerUsername) &&
+            !string.IsNullOrWhiteSpace(options.BootstrapReviewerPassword))
+        {
+            store.EnsureBootstrapAdmin(
+                options.BootstrapReviewerUsername,
+                options.BootstrapReviewerDisplayName ?? "Kirjane Labs Reviewer",
+                options.BootstrapReviewerPassword,
+                IssuerConstants.RoleReviewer);
+        }
+        if (!string.IsNullOrWhiteSpace(options.BootstrapOperatorUsername) &&
+            !string.IsNullOrWhiteSpace(options.BootstrapOperatorPassword))
+        {
+            store.EnsureBootstrapAdmin(
+                options.BootstrapOperatorUsername,
+                options.BootstrapOperatorDisplayName ?? "Kirjane Labs Operator",
+                options.BootstrapOperatorPassword,
+                IssuerConstants.RoleOperator);
+        }
 
         var signer = new ExternalLicenseSignerService(options.SignerOptions);
         var sessions = new IssuerSessionManager();
@@ -63,7 +90,7 @@ public static class LicensingIssuerAppFactory
 
         WebApplication app = builder.Build();
 
-        // Security headers on all responses (no open CORS; same-origin SPA hosting)
+        // Security headers + optional HTTPS/loopback enforcement (no open CORS; same-origin SPA hosting)
         app.Use(async (ctx, next) =>
         {
             ctx.Response.Headers["X-Content-Type-Options"] = "nosniff";
@@ -72,11 +99,32 @@ public static class LicensingIssuerAppFactory
             ctx.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
             ctx.Response.Headers["Content-Security-Policy"] =
                 "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
+            if (ctx.Request.IsHttps)
+            {
+                ctx.Response.Headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+            }
             if (ctx.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase))
             {
                 ctx.Response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate";
                 ctx.Response.Headers["Pragma"] = "no-cache";
             }
+
+            if (options.RequireHttpsOrLoopback && !ctx.Request.IsHttps)
+            {
+                IPAddress? ip = ctx.Connection.RemoteIpAddress;
+                bool isLoopback = ip is null || IPAddress.IsLoopback(ip);
+                if (!isLoopback)
+                {
+                    ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    await ctx.Response.WriteAsJsonAsync(new
+                    {
+                        code = "Issuer.HttpsRequired",
+                        message = "Licensing Issuer requires HTTPS for non-loopback administration."
+                    });
+                    return;
+                }
+            }
+
             await next();
         });
 
@@ -86,7 +134,12 @@ public static class LicensingIssuerAppFactory
             return mgr.TryGet(token);
         }
 
-        static IResult? RequireAuth(HttpContext ctx, IssuerSessionManager mgr, bool requireCsrf, out IssuerActiveSession? session)
+        static IResult? RequireAuth(
+            HttpContext ctx,
+            IssuerSessionManager mgr,
+            bool requireCsrf,
+            string? requiredPermission,
+            out IssuerActiveSession? session)
         {
             session = ResolveSession(ctx, mgr);
             if (session is null)
@@ -96,6 +149,14 @@ public static class LicensingIssuerAppFactory
             if (requireCsrf && !IssuerSessionManager.ValidateCsrf(session, ctx.Request))
             {
                 return Results.Json(new { code = "Issuer.CsrfInvalid", message = $"Missing or invalid '{IssuerConstants.CsrfHeaderName}' header." }, statusCode: StatusCodes.Status403Forbidden);
+            }
+            if (requiredPermission is not null && !IssuerPermissions.HasPermission(session.User.Role, requiredPermission))
+            {
+                return Results.Json(new
+                {
+                    code = "Issuer.ForbiddenRole",
+                    message = $"Role '{session.User.Role}' is not authorized for permission '{requiredPermission}'."
+                }, statusCode: StatusCodes.Status403Forbidden);
             }
             return null;
         }
@@ -122,9 +183,13 @@ public static class LicensingIssuerAppFactory
             IssuerActiveSession? session = ResolveSession(ctx, mgr);
             if (session is null)
             {
-                return Results.Ok(new IssuerSessionInfo(false, null, null));
+                return Results.Ok(new IssuerSessionInfo(false, null, null, Array.Empty<string>()));
             }
-            return Results.Ok(new IssuerSessionInfo(true, session.CsrfToken, session.User));
+            return Results.Ok(new IssuerSessionInfo(
+                true,
+                session.CsrfToken,
+                session.User,
+                IssuerPermissions.GetForRole(session.User.Role)));
         });
 
         app.MapPost("/api/issuer/auth/login", (
@@ -171,31 +236,66 @@ public static class LicensingIssuerAppFactory
                 Expires = session.ExpiresAtUtc
             });
 
-            return Results.Ok(new IssuerSessionInfo(true, session.CsrfToken, session.User));
+            return Results.Ok(new IssuerSessionInfo(
+                true,
+                session.CsrfToken,
+                session.User,
+                IssuerPermissions.GetForRole(session.User.Role)));
         });
 
         app.MapPost("/api/issuer/auth/logout", (HttpContext ctx, IssuerSessionManager mgr, IssuerSqliteStore db) =>
         {
-            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: true, out IssuerActiveSession? session);
+            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: true, requiredPermission: null, out IssuerActiveSession? session);
             if (authError is not null) return authError;
 
             mgr.Revoke(session!.SessionToken);
             db.RecordAudit(session.User, "Auth.Logout", "Session", session.User.Id.ToString("D"), new { });
             ctx.Response.Cookies.Delete(IssuerConstants.SessionCookieName, new CookieOptions { Path = "/" });
-            return Results.Ok(new IssuerSessionInfo(false, null, null));
+            return Results.Ok(new IssuerSessionInfo(false, null, null, Array.Empty<string>()));
+        });
+
+        // Administrative User Management (IssuerAdmin only)
+        app.MapGet("/api/issuer/users", (HttpContext ctx, IssuerSessionManager mgr, IssuerSqliteStore db) =>
+        {
+            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: false, requiredPermission: IssuerPermissions.UsersManage, out _);
+            if (authError is not null) return authError;
+            return Results.Ok(db.ListUsers());
+        });
+
+        app.MapPost("/api/issuer/users", (HttpContext ctx, CreateIssuerUserRequestDto? body, IssuerSessionManager mgr, IssuerSqliteStore db) =>
+        {
+            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: true, requiredPermission: IssuerPermissions.UsersManage, out IssuerActiveSession? session);
+            if (authError is not null) return authError;
+            if (body is null)
+            {
+                return Results.BadRequest(new { code = "Issuer.BodyRequired", message = "Request body is required." });
+            }
+            try
+            {
+                IssuerAdminUser created = db.CreateUser(body, session!.User);
+                return Results.Created($"/api/issuer/users/{created.Id:D}", created);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { code = "Issuer.UserValidationFailed", message = ex.Message });
+            }
+            catch (SqliteException ex) when (ex.SqliteErrorCode == 19)
+            {
+                return Results.Conflict(new { code = "Issuer.UsernameDuplicate", message = $"Username '{body.Username?.Trim()}' already exists." });
+            }
         });
 
         // Dashboard + metadata
         app.MapGet("/api/issuer/dashboard", (HttpContext ctx, IssuerSessionManager mgr, IssuerSqliteStore db, ILicenseSignerService s) =>
         {
-            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: false, out _);
+            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: false, requiredPermission: null, out _);
             if (authError is not null) return authError;
             return Results.Ok(db.GetDashboard(s.GetStatus()));
         });
 
         app.MapGet("/api/issuer/metadata", (HttpContext ctx, IssuerSessionManager mgr, ILicenseSignerService s) =>
         {
-            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: false, out _);
+            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: false, requiredPermission: null, out _);
             if (authError is not null) return authError;
             return Results.Ok(new
             {
@@ -204,6 +304,8 @@ public static class LicensingIssuerAppFactory
                 editions = new[] { nameof(LicenseEdition.Trial), nameof(LicenseEdition.Local), nameof(LicenseEdition.Professional), nameof(LicenseEdition.Enterprise) },
                 allFeatures = LicenseFeatures.AllList,
                 terminalAllowedFeatures = LicenseFeatures.TerminalAllowed.OrderBy(x => x, StringComparer.Ordinal).ToArray(),
+                roles = new[] { IssuerConstants.RoleAdmin, IssuerConstants.RoleReviewer, IssuerConstants.RoleOperator },
+                independentApprovalEnforced = !options.AllowSelfApprovalException,
                 signer = s.GetStatus()
             });
         });
@@ -211,14 +313,14 @@ public static class LicensingIssuerAppFactory
         // Customers
         app.MapGet("/api/issuer/customers", (HttpContext ctx, IssuerSessionManager mgr, IssuerSqliteStore db) =>
         {
-            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: false, out _);
+            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: false, requiredPermission: null, out _);
             if (authError is not null) return authError;
             return Results.Ok(db.ListCustomers());
         });
 
         app.MapPost("/api/issuer/customers", (HttpContext ctx, CreateCustomerRequestDto? body, IssuerSessionManager mgr, IssuerSqliteStore db) =>
         {
-            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: true, out IssuerActiveSession? session);
+            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: true, requiredPermission: IssuerPermissions.CustomersWrite, out IssuerActiveSession? session);
             if (authError is not null) return authError;
             if (body is null || string.IsNullOrWhiteSpace(body.CustomerName) || body.CustomerName.Trim().Length > 160)
             {
@@ -231,14 +333,14 @@ public static class LicensingIssuerAppFactory
         // Stores
         app.MapGet("/api/issuer/stores", (HttpContext ctx, IssuerSessionManager mgr, IssuerSqliteStore db) =>
         {
-            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: false, out _);
+            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: false, requiredPermission: null, out _);
             if (authError is not null) return authError;
             return Results.Ok(db.ListStores());
         });
 
         app.MapPost("/api/issuer/stores", (HttpContext ctx, CreateStoreRequestDto? body, IssuerSessionManager mgr, IssuerSqliteStore db) =>
         {
-            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: true, out IssuerActiveSession? session);
+            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: true, requiredPermission: IssuerPermissions.StoresWrite, out IssuerActiveSession? session);
             if (authError is not null) return authError;
             if (body is null ||
                 body.CustomerId == Guid.Empty ||
@@ -270,14 +372,14 @@ public static class LicensingIssuerAppFactory
         // License requests (draft / review / approve / reject / issue / download / reissue)
         app.MapGet("/api/issuer/requests", (HttpContext ctx, IssuerSessionManager mgr, IssuerSqliteStore db) =>
         {
-            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: false, out _);
+            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: false, requiredPermission: null, out _);
             if (authError is not null) return authError;
             return Results.Ok(db.ListRequests());
         });
 
         app.MapGet("/api/issuer/requests/{id:guid}", (Guid id, HttpContext ctx, IssuerSessionManager mgr, IssuerSqliteStore db) =>
         {
-            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: false, out _);
+            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: false, requiredPermission: null, out _);
             if (authError is not null) return authError;
             IssuerLicenseRequestRecord? found = db.FindRequest(id);
             return found is null
@@ -287,7 +389,7 @@ public static class LicensingIssuerAppFactory
 
         app.MapPost("/api/issuer/requests", (HttpContext ctx, CreateLicenseDraftRequestDto? body, IssuerSessionManager mgr, IssuerSqliteStore db) =>
         {
-            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: true, out IssuerActiveSession? session);
+            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: true, requiredPermission: IssuerPermissions.RequestsDraft, out IssuerActiveSession? session);
             if (authError is not null) return authError;
             if (body is null)
             {
@@ -302,6 +404,10 @@ public static class LicensingIssuerAppFactory
             {
                 return Results.NotFound(new { code = "Issuer.NotFound", message = ex.Message });
             }
+            catch (IdempotencyConflictException ex)
+            {
+                return Results.Conflict(new { code = "Issuer.IdempotencyPayloadMismatch", message = ex.Message });
+            }
             catch (InvalidOperationException ex)
             {
                 return Results.BadRequest(new { code = "Issuer.DraftValidationFailed", message = ex.Message });
@@ -310,16 +416,20 @@ public static class LicensingIssuerAppFactory
 
         app.MapPost("/api/issuer/requests/{id:guid}/approve", (Guid id, HttpContext ctx, ReviewDecisionRequestDto? body, IssuerSessionManager mgr, IssuerSqliteStore db) =>
         {
-            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: true, out IssuerActiveSession? session);
+            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: true, requiredPermission: IssuerPermissions.RequestsReview, out IssuerActiveSession? session);
             if (authError is not null) return authError;
             try
             {
-                IssuerLicenseRequestRecord updated = db.ApproveRequest(id, body?.Note, session!.User);
+                IssuerLicenseRequestRecord updated = db.ApproveRequest(id, body?.Note, session!.User, options.AllowSelfApprovalException);
                 return Results.Ok(updated);
             }
             catch (KeyNotFoundException ex)
             {
                 return Results.NotFound(new { code = "Issuer.RequestNotFound", message = ex.Message });
+            }
+            catch (SelfApprovalForbiddenException ex)
+            {
+                return Results.Json(new { code = "Issuer.SelfApprovalForbidden", message = ex.Message }, statusCode: StatusCodes.Status403Forbidden);
             }
             catch (InvalidOperationException ex)
             {
@@ -329,7 +439,7 @@ public static class LicensingIssuerAppFactory
 
         app.MapPost("/api/issuer/requests/{id:guid}/reject", (Guid id, HttpContext ctx, ReviewDecisionRequestDto? body, IssuerSessionManager mgr, IssuerSqliteStore db) =>
         {
-            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: true, out IssuerActiveSession? session);
+            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: true, requiredPermission: IssuerPermissions.RequestsReview, out IssuerActiveSession? session);
             if (authError is not null) return authError;
             try
             {
@@ -348,14 +458,15 @@ public static class LicensingIssuerAppFactory
 
         app.MapPost("/api/issuer/requests/{id:guid}/issue", (Guid id, HttpContext ctx, IssuerSessionManager mgr, IssuerSqliteStore db, ILicenseSignerService s) =>
         {
-            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: true, out IssuerActiveSession? session);
+            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: true, requiredPermission: IssuerPermissions.RequestsIssue, out IssuerActiveSession? session);
             if (authError is not null) return authError;
             try
             {
-                (IssuerLicenseRequestRecord? issued, LicenseSigningOutcome outcome, bool alreadyIssued) = db.IssueRequest(id, s, session!.User);
+                (IssuerLicenseRequestRecord? issued, LicenseSigningOutcome outcome, bool alreadyIssued) =
+                    db.IssueRequest(id, s, session!.User, options.AllowSelfApprovalException);
                 if (!outcome.IsSuccess || issued is null)
                 {
-                    int statusCode = outcome.ErrorCode is "SIGNER_NOT_CONFIGURED" or "SIGNER_KEY_UNTRUSTED"
+                    int statusCode = outcome.ErrorCode is "SIGNER_NOT_CONFIGURED" or "SIGNER_KEY_UNTRUSTED" or "SIGNER_TEST_KEY_FORBIDDEN_IN_PRODUCTION"
                         ? StatusCodes.Status503ServiceUnavailable
                         : StatusCodes.Status422UnprocessableEntity;
                     return Results.Json(new
@@ -371,6 +482,10 @@ public static class LicensingIssuerAppFactory
             {
                 return Results.NotFound(new { code = "Issuer.RequestNotFound", message = ex.Message });
             }
+            catch (SelfApprovalForbiddenException ex)
+            {
+                return Results.Json(new { code = "Issuer.SelfApprovalForbidden", message = ex.Message }, statusCode: StatusCodes.Status403Forbidden);
+            }
             catch (InvalidOperationException ex)
             {
                 return Results.Conflict(new { code = "Issuer.InvalidState", message = ex.Message });
@@ -379,7 +494,7 @@ public static class LicensingIssuerAppFactory
 
         app.MapGet("/api/issuer/requests/{id:guid}/download", (Guid id, HttpContext ctx, IssuerSessionManager mgr, IssuerSqliteStore db) =>
         {
-            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: false, out IssuerActiveSession? session);
+            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: false, requiredPermission: null, out IssuerActiveSession? session);
             if (authError is not null) return authError;
 
             IssuerLicenseRequestRecord? req = db.FindRequest(id);
@@ -407,7 +522,7 @@ public static class LicensingIssuerAppFactory
 
         app.MapPost("/api/issuer/requests/{id:guid}/reissue", (Guid id, HttpContext ctx, ReissueRequestDto? body, IssuerSessionManager mgr, IssuerSqliteStore db) =>
         {
-            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: true, out IssuerActiveSession? session);
+            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: true, requiredPermission: IssuerPermissions.RequestsDraft, out IssuerActiveSession? session);
             if (authError is not null) return authError;
 
             IssuerLicenseRequestRecord? prior = db.FindRequest(id);
@@ -435,12 +550,17 @@ public static class LicensingIssuerAppFactory
                 SupportExpiresAtUtc: prior.SupportExpiresAtUtc,
                 UpdatesUntilUtc: prior.UpdatesUntilUtc,
                 IdempotencyKey: body?.IdempotencyKey,
-                SupersedesRequestId: prior.Id);
+                SupersedesRequestId: prior.Id,
+                InitialNote: body?.Note);
 
             try
             {
                 (IssuerLicenseRequestRecord rec, IReadOnlyList<string> warnings, bool isReplay) = db.CreateDraft(draftDto, session!.User);
                 return Results.Json(new { request = rec, warnings, isReplay }, statusCode: isReplay ? StatusCodes.Status200OK : StatusCodes.Status201Created);
+            }
+            catch (IdempotencyConflictException ex)
+            {
+                return Results.Conflict(new { code = "Issuer.IdempotencyPayloadMismatch", message = ex.Message });
             }
             catch (InvalidOperationException ex)
             {
@@ -450,9 +570,16 @@ public static class LicensingIssuerAppFactory
 
         app.MapGet("/api/issuer/audit", (HttpContext ctx, int? limit, IssuerSessionManager mgr, IssuerSqliteStore db) =>
         {
-            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: false, out _);
+            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: false, requiredPermission: IssuerPermissions.AuditRead, out _);
             if (authError is not null) return authError;
             return Results.Ok(db.ListAuditLog(limit ?? 100));
+        });
+
+        app.MapGet("/api/issuer/audit/verify", (HttpContext ctx, IssuerSessionManager mgr, IssuerSqliteStore db) =>
+        {
+            IResult? authError = RequireAuth(ctx, mgr, requireCsrf: false, requiredPermission: IssuerPermissions.AuditRead, out _);
+            if (authError is not null) return authError;
+            return Results.Ok(db.VerifyAuditChain());
         });
 
         // Optional same-origin static SPA hosting (apps/licensing-web/dist)

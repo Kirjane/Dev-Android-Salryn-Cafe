@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Salryn.Core.Security;
@@ -116,7 +118,9 @@ public sealed class IssuerSqliteStore
                 entity_type TEXT NOT NULL,
                 entity_id TEXT NOT NULL,
                 detail_json TEXT NOT NULL,
-                created_at_utc TEXT NOT NULL
+                created_at_utc TEXT NOT NULL,
+                prev_hash TEXT NOT NULL DEFAULT 'GENESIS',
+                entry_hash TEXT NOT NULL DEFAULT ''
             );
             """;
         cmd.ExecuteNonQuery();
@@ -127,6 +131,10 @@ public sealed class IssuerSqliteStore
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
         {
             return;
+        }
+        if (!IssuerPermissions.IsValidRole(role))
+        {
+            throw new InvalidOperationException($"Invalid issuer role '{role}'.");
         }
 
         using var conn = OpenConnection();
@@ -169,6 +177,80 @@ public sealed class IssuerSqliteStore
 
         AppendAuditInTx(conn, tx, "system", "System", "Admin.Bootstrapped", "IssuerAdmin", id.ToString("D"), new { username = username.Trim(), role });
         tx.Commit();
+    }
+
+    public IssuerAdminUser CreateUser(CreateIssuerUserRequestDto req, IssuerAdminUser actor)
+    {
+        if (string.IsNullOrWhiteSpace(req.Username) || req.Username.Trim().Length < 3 || req.Username.Trim().Length > 64)
+        {
+            throw new InvalidOperationException("Username must be between 3 and 64 characters.");
+        }
+        if (string.IsNullOrWhiteSpace(req.Password))
+        {
+            throw new InvalidOperationException("Password is required.");
+        }
+        string cleanRole = (req.Role ?? string.Empty).Trim();
+        if (!IssuerPermissions.IsValidRole(cleanRole))
+        {
+            throw new InvalidOperationException($"Role must be '{IssuerConstants.RoleAdmin}', '{IssuerConstants.RoleReviewer}', or '{IssuerConstants.RoleOperator}'.");
+        }
+
+        var hashRes = SalrynPasswordHasher.HashPassword(req.Password);
+        if (hashRes.IsFailure)
+        {
+            throw new InvalidOperationException(hashRes.ErrorDetail.Message);
+        }
+
+        using var conn = OpenConnection();
+        using var tx = conn.BeginTransaction(deferred: false);
+        Guid id = Guid.NewGuid();
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        string cleanUser = req.Username.Trim();
+        string cleanDisplay = string.IsNullOrWhiteSpace(req.DisplayName) ? cleanUser : req.DisplayName.Trim();
+
+        using (var ins = conn.CreateCommand())
+        {
+            ins.Transaction = tx;
+            ins.CommandText = """
+                INSERT INTO issuer_admins(id, username, display_name, role, password_hash, is_active, created_at_utc)
+                VALUES($id, $u, $d, $r, $h, 1, $at);
+                """;
+            ins.Parameters.AddWithValue("$id", id.ToString("D"));
+            ins.Parameters.AddWithValue("$u", cleanUser);
+            ins.Parameters.AddWithValue("$d", cleanDisplay);
+            ins.Parameters.AddWithValue("$r", cleanRole);
+            ins.Parameters.AddWithValue("$h", hashRes.Value);
+            ins.Parameters.AddWithValue("$at", now.ToString("O"));
+            ins.ExecuteNonQuery();
+        }
+
+        AppendAuditInTx(conn, tx, actor.Username, actor.Role, "IssuerUser.Created", "IssuerAdmin", id.ToString("D"), new
+        {
+            username = cleanUser,
+            role = cleanRole
+        });
+        tx.Commit();
+        return new IssuerAdminUser(id, cleanUser, cleanDisplay, cleanRole, true, now);
+    }
+
+    public IReadOnlyList<IssuerAdminUser> ListUsers()
+    {
+        using var conn = OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT id, username, display_name, role, is_active, created_at_utc FROM issuer_admins ORDER BY created_at_utc ASC;";
+        using var r = cmd.ExecuteReader();
+        List<IssuerAdminUser> rows = [];
+        while (r.Read())
+        {
+            rows.Add(new IssuerAdminUser(
+                Guid.Parse(r.GetString(0)),
+                r.GetString(1),
+                r.GetString(2),
+                r.GetString(3),
+                r.GetInt64(4) == 1,
+                DateTimeOffset.Parse(r.GetString(5))));
+        }
+        return rows;
     }
 
     public IssuerAdminUser? Authenticate(string username, string password)
@@ -325,6 +407,17 @@ public sealed class IssuerSqliteStore
             IssuerLicenseRequestRecord? existing = FindRequestByIdempotencyKeyInTx(conn, tx, idemKey);
             if (existing is not null)
             {
+                bool matches = existing.CustomerId == req.CustomerId &&
+                               existing.StoreId == req.StoreId &&
+                               string.Equals(existing.ApplicationId, (req.ApplicationId ?? string.Empty).Trim(), StringComparison.Ordinal) &&
+                               string.Equals(existing.LicenseType.ToString(), (req.LicenseType ?? string.Empty).Trim(), StringComparison.OrdinalIgnoreCase) &&
+                               string.Equals(existing.Edition.ToString(), (req.Edition ?? string.Empty).Trim(), StringComparison.OrdinalIgnoreCase) &&
+                               string.Equals(existing.MachineBinding, (req.MachineBinding ?? string.Empty).Trim(), StringComparison.Ordinal);
+                if (!matches)
+                {
+                    throw new IdempotencyConflictException(
+                        $"IdempotencyKey '{idemKey}' was already used with different license request parameters.");
+                }
                 tx.Commit();
                 return (existing, Array.Empty<string>(), true);
             }
@@ -356,9 +449,9 @@ public sealed class IssuerSqliteStore
             storeProductId = sr.GetString(1);
         }
 
-        if (!string.Equals(storeProductId, req.ApplicationId.Trim(), StringComparison.Ordinal))
+        if (!string.Equals(storeProductId, (req.ApplicationId ?? string.Empty).Trim(), StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"Store '{storeCode}' is registered for product '{storeProductId}', not '{req.ApplicationId.Trim()}'.");
+            throw new InvalidOperationException($"Store '{storeCode}' is registered for product '{storeProductId}', not '{(req.ApplicationId ?? string.Empty).Trim()}'.");
         }
 
         if (!Enum.TryParse<LicenseType>(req.LicenseType, ignoreCase: true, out LicenseType licenseType))
@@ -372,7 +465,7 @@ public sealed class IssuerSqliteStore
 
         Guid id = Guid.NewGuid();
         DateTimeOffset now = DateTimeOffset.UtcNow;
-        string productTag = string.Equals(req.ApplicationId.Trim(), IssuerConstants.ProductCafe, StringComparison.Ordinal) ? "CAFE" : "POS";
+        string productTag = string.Equals(req.ApplicationId!.Trim(), IssuerConstants.ProductCafe, StringComparison.Ordinal) ? "CAFE" : "POS";
         string licenseId = $"SLRN-{productTag}-{now:yyyyMMdd}-{id.ToString("N")[..8].ToUpperInvariant()}";
 
         DraftValidationResult validation = IssuerLicenseContractValidator.BuildAndValidateDraft(
@@ -398,6 +491,7 @@ public sealed class IssuerSqliteStore
         }
 
         LocalLicenseDocument doc = validation.Document;
+        string? cleanNote = Clean(req.InitialNote);
         using (var ins = conn.CreateCommand())
         {
             ins.Transaction = tx;
@@ -406,13 +500,13 @@ public sealed class IssuerSqliteStore
                     id, license_id, idempotency_key, status, customer_id, store_id, application_id,
                     license_type, edition, machine_binding, features_json, allowed_lan_terminals,
                     host_license_id, terminal_id, issued_at_utc, expires_at_utc, support_expires_at_utc,
-                    updates_until_utc, supersedes_request_id, canonical_signing_payload,
+                    updates_until_utc, supersedes_request_id, canonical_signing_payload, review_note,
                     created_by, created_at_utc)
                 VALUES(
                     $id, $licId, $idem, $status, $cid, $sid, $appId,
                     $licType, $edition, $machine, $features, $lanCount,
                     $hostLic, $termId, $issuedAt, $expAt, $supAt,
-                    $updAt, $supersedes, $canonical,
+                    $updAt, $supersedes, $canonical, $note,
                     $actor, $createdAt);
                 """;
             ins.Parameters.AddWithValue("$id", id.ToString("D"));
@@ -435,6 +529,7 @@ public sealed class IssuerSqliteStore
             ins.Parameters.AddWithValue("$updAt", (object?)doc.UpdatesUntil?.ToString("O") ?? DBNull.Value);
             ins.Parameters.AddWithValue("$supersedes", (object?)req.SupersedesRequestId?.ToString("D") ?? DBNull.Value);
             ins.Parameters.AddWithValue("$canonical", validation.CanonicalSigningPayload);
+            ins.Parameters.AddWithValue("$note", (object?)cleanNote ?? DBNull.Value);
             ins.Parameters.AddWithValue("$actor", actor.Username);
             ins.Parameters.AddWithValue("$createdAt", now.ToString("O"));
             ins.ExecuteNonQuery();
@@ -446,7 +541,8 @@ public sealed class IssuerSqliteStore
             applicationId = doc.ApplicationId,
             licenseType = doc.LicenseType.ToString(),
             machineBinding = doc.MachineBinding,
-            supersedesRequestId = req.SupersedesRequestId
+            supersedesRequestId = req.SupersedesRequestId,
+            note = cleanNote
         });
 
         IssuerLicenseRequestRecord created = FindRequestByIdInTx(conn, tx, id)!;
@@ -454,7 +550,11 @@ public sealed class IssuerSqliteStore
         return (created, validation.Warnings, false);
     }
 
-    public IssuerLicenseRequestRecord ApproveRequest(Guid id, string? note, IssuerAdminUser actor)
+    public IssuerLicenseRequestRecord ApproveRequest(
+        Guid id,
+        string? note,
+        IssuerAdminUser actor,
+        bool allowSelfApprovalException = false)
     {
         using var conn = OpenConnection();
         using var tx = conn.BeginTransaction(deferred: false);
@@ -471,6 +571,31 @@ public sealed class IssuerSqliteStore
             throw new InvalidOperationException($"Cannot approve license request in status '{current.Status}'.");
         }
 
+        string? cleanNote = Clean(note);
+        bool isSelfApproval = string.Equals(current.CreatedBy, actor.Username, StringComparison.OrdinalIgnoreCase);
+        if (isSelfApproval)
+        {
+            if (!allowSelfApprovalException)
+            {
+                AppendAuditInTx(conn, tx, actor.Username, actor.Role, "LicenseRequest.SelfApprovalDenied", "LicenseRequest", id.ToString("D"), new
+                {
+                    current.LicenseId,
+                    createdBy = current.CreatedBy,
+                    attemptedApprover = actor.Username
+                });
+                tx.Commit();
+                throw new SelfApprovalForbiddenException(
+                    "Independent review required: the operator who created a license draft cannot self-approve it.");
+            }
+
+            if (string.IsNullOrWhiteSpace(cleanNote) || cleanNote.Length < 10)
+            {
+                throw new InvalidOperationException(
+                    "Self-approval exception mode requires a documented authorization note of at least 10 characters.");
+            }
+        }
+
+        string? mergedNote = cleanNote ?? current.ReviewNote;
         DateTimeOffset now = DateTimeOffset.UtcNow;
         using (var cmd = conn.CreateCommand())
         {
@@ -483,12 +608,17 @@ public sealed class IssuerSqliteStore
             cmd.Parameters.AddWithValue("$status", IssuerConstants.StatusApproved);
             cmd.Parameters.AddWithValue("$actor", actor.Username);
             cmd.Parameters.AddWithValue("$at", now.ToString("O"));
-            cmd.Parameters.AddWithValue("$note", (object?)Clean(note) ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$note", (object?)mergedNote ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$id", id.ToString("D"));
             cmd.ExecuteNonQuery();
         }
 
-        AppendAuditInTx(conn, tx, actor.Username, actor.Role, "LicenseRequest.Approved", "LicenseRequest", id.ToString("D"), new { current.LicenseId, note = Clean(note) });
+        AppendAuditInTx(conn, tx, actor.Username, actor.Role, "LicenseRequest.Approved", "LicenseRequest", id.ToString("D"), new
+        {
+            current.LicenseId,
+            note = mergedNote,
+            selfApprovalException = isSelfApproval
+        });
         IssuerLicenseRequestRecord updated = FindRequestByIdInTx(conn, tx, id)!;
         tx.Commit();
         return updated;
@@ -525,7 +655,8 @@ public sealed class IssuerSqliteStore
     public (IssuerLicenseRequestRecord? Record, LicenseSigningOutcome Outcome, bool AlreadyIssued) IssueRequest(
         Guid id,
         ILicenseSignerService signer,
-        IssuerAdminUser actor)
+        IssuerAdminUser actor,
+        bool allowSelfApprovalException = false)
     {
         using var conn = OpenConnection();
         using var tx = conn.BeginTransaction(deferred: false);
@@ -539,9 +670,16 @@ public sealed class IssuerSqliteStore
             return (current, new LicenseSigningOutcome(true, null, null, current.SignedLicenseJson, current.SignedLicenseSha256, current.SignerKeySpkiSha256, current.SignerMode, current.VerifierPassed), true);
         }
 
-        if (current.Status != IssuerConstants.StatusApproved)
+        if (current.Status != IssuerConstants.StatusApproved || string.IsNullOrWhiteSpace(current.ApprovedBy))
         {
             throw new InvalidOperationException($"License request must be Approved before issuance (current status: '{current.Status}').");
+        }
+
+        if (!allowSelfApprovalException &&
+            string.Equals(current.CreatedBy, current.ApprovedBy, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new SelfApprovalForbiddenException(
+                "Cannot issue a self-approved license request when independent review policy is enforced.");
         }
 
         LocalLicenseDocument unsignedDoc = new(
@@ -585,7 +723,7 @@ public sealed class IssuerSqliteStore
                     verifier_passed = $ver,
                     issued_by = $actor,
                     issued_at_server_utc = $at
-                WHERE id = $id;
+                WHERE id = $id AND status = $expectedStatus;
                 """;
             upd.Parameters.AddWithValue("$status", IssuerConstants.StatusIssued);
             upd.Parameters.AddWithValue("$json", signed.SignedLicenseJson!);
@@ -596,6 +734,7 @@ public sealed class IssuerSqliteStore
             upd.Parameters.AddWithValue("$actor", actor.Username);
             upd.Parameters.AddWithValue("$at", now.ToString("O"));
             upd.Parameters.AddWithValue("$id", id.ToString("D"));
+            upd.Parameters.AddWithValue("$expectedStatus", IssuerConstants.StatusApproved);
             upd.ExecuteNonQuery();
         }
 
@@ -616,6 +755,7 @@ public sealed class IssuerSqliteStore
             signed.SignedLicenseSha256,
             signed.SignerKeySpkiSha256,
             signed.SignerMode,
+            signed.RuntimeTrustedVerifierPassed,
             supersedes = current.SupersedesRequestId
         });
 
@@ -654,7 +794,7 @@ public sealed class IssuerSqliteStore
     {
         using var conn = OpenConnection();
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT id, actor_username, actor_role, action, entity_type, entity_id, detail_json, created_at_utc FROM issuer_audit_log ORDER BY id DESC LIMIT $limit;";
+        cmd.CommandText = "SELECT id, actor_username, actor_role, action, entity_type, entity_id, detail_json, created_at_utc, prev_hash, entry_hash FROM issuer_audit_log ORDER BY id DESC LIMIT $limit;";
         cmd.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 500));
         using var r = cmd.ExecuteReader();
         List<IssuerAuditEntry> rows = [];
@@ -668,9 +808,54 @@ public sealed class IssuerSqliteStore
                 r.GetString(4),
                 r.GetString(5),
                 r.GetString(6),
-                DateTimeOffset.Parse(r.GetString(7))));
+                DateTimeOffset.Parse(r.GetString(7)),
+                r.GetString(8),
+                r.GetString(9)));
         }
         return rows;
+    }
+
+    public IssuerAuditChainVerification VerifyAuditChain()
+    {
+        using var conn = OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT id, actor_username, actor_role, action, entity_type, entity_id, detail_json, created_at_utc, prev_hash, entry_hash FROM issuer_audit_log ORDER BY id ASC;";
+        using var r = cmd.ExecuteReader();
+
+        string expectedPrev = "GENESIS";
+        int count = 0;
+        while (r.Read())
+        {
+            count++;
+            long id = r.GetInt64(0);
+            string actor = r.GetString(1);
+            string role = r.GetString(2);
+            string action = r.GetString(3);
+            string etype = r.GetString(4);
+            string eid = r.GetString(5);
+            string detail = r.GetString(6);
+            string createdAt = r.GetString(7);
+            string prevHash = r.GetString(8);
+            string entryHash = r.GetString(9);
+
+            string computed = ComputeAuditEntryHash(expectedPrev, actor, role, action, etype, eid, detail, createdAt);
+            if (!string.Equals(prevHash, expectedPrev, StringComparison.Ordinal) ||
+                !string.Equals(entryHash, computed, StringComparison.Ordinal))
+            {
+                return new IssuerAuditChainVerification(
+                    IsValid: false,
+                    CheckedEntries: count,
+                    FirstBrokenId: id,
+                    Message: $"Audit hash chain integrity failure detected at entry #{id}.");
+            }
+            expectedPrev = entryHash;
+        }
+
+        return new IssuerAuditChainVerification(
+            IsValid: true,
+            CheckedEntries: count,
+            FirstBrokenId: null,
+            Message: $"Verified {count} append-only audit log entries with intact SHA-256 hash chain.");
     }
 
     public IssuerDashboardSummary GetDashboard(SignerStatusSnapshot signer)
@@ -763,20 +948,51 @@ public sealed class IssuerSqliteStore
 
     private static void AppendAuditInTx(SqliteConnection conn, SqliteTransaction tx, string actor, string role, string action, string entityType, string entityId, object detail)
     {
+        string prevHash = "GENESIS";
+        using (var prevCmd = conn.CreateCommand())
+        {
+            prevCmd.Transaction = tx;
+            prevCmd.CommandText = "SELECT entry_hash FROM issuer_audit_log ORDER BY id DESC LIMIT 1;";
+            if (prevCmd.ExecuteScalar() is string lastHash && !string.IsNullOrWhiteSpace(lastHash))
+            {
+                prevHash = lastHash;
+            }
+        }
+
+        string detailJson = JsonSerializer.Serialize(detail);
+        string createdAt = DateTimeOffset.UtcNow.ToString("O");
+        string entryHash = ComputeAuditEntryHash(prevHash, actor, role, action, entityType, entityId, detailJson, createdAt);
+
         using var cmd = conn.CreateCommand();
         cmd.Transaction = tx;
         cmd.CommandText = """
-            INSERT INTO issuer_audit_log(actor_username, actor_role, action, entity_type, entity_id, detail_json, created_at_utc)
-            VALUES($actor, $role, $action, $etype, $eid, $detail, $at);
+            INSERT INTO issuer_audit_log(actor_username, actor_role, action, entity_type, entity_id, detail_json, created_at_utc, prev_hash, entry_hash)
+            VALUES($actor, $role, $action, $etype, $eid, $detail, $at, $prev, $hash);
             """;
         cmd.Parameters.AddWithValue("$actor", actor);
         cmd.Parameters.AddWithValue("$role", role);
         cmd.Parameters.AddWithValue("$action", action);
         cmd.Parameters.AddWithValue("$etype", entityType);
         cmd.Parameters.AddWithValue("$eid", entityId);
-        cmd.Parameters.AddWithValue("$detail", JsonSerializer.Serialize(detail));
-        cmd.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O"));
+        cmd.Parameters.AddWithValue("$detail", detailJson);
+        cmd.Parameters.AddWithValue("$at", createdAt);
+        cmd.Parameters.AddWithValue("$prev", prevHash);
+        cmd.Parameters.AddWithValue("$hash", entryHash);
         cmd.ExecuteNonQuery();
+    }
+
+    private static string ComputeAuditEntryHash(
+        string prevHash,
+        string actor,
+        string role,
+        string action,
+        string entityType,
+        string entityId,
+        string detailJson,
+        string createdAtUtc)
+    {
+        string canonical = $"{prevHash}|{actor}|{role}|{action}|{entityType}|{entityId}|{detailJson}|{createdAtUtc}";
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
     }
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

@@ -167,7 +167,7 @@ export function IssuerApp({ api: providedApi }: { api?: LicensingIssuerApi }) {
       api.listCustomers(),
       api.listStores(),
       api.listRequests(),
-      api.listAudit(100),
+      api.listAudit(100).catch(() => []),
     ]);
     setDashboard(dash);
     setMetadata(meta);
@@ -901,6 +901,14 @@ export function IssuerApp({ api: providedApi }: { api?: LicensingIssuerApi }) {
 
                     {selectedRequest.status === "AwaitingApproval" || selectedRequest.status === "Draft" ? (
                       <div className="issuer-grid">
+                        {selectedRequest.createdBy.toLowerCase() === session.user.username.toLowerCase() &&
+                        metadata?.independentApprovalEnforced !== false ? (
+                          <Alert
+                            tone="warning"
+                            title="Two-Person Rule Enforced"
+                            description={`This draft was created by ${selectedRequest.createdBy}. Independent approval by a separate IssuerReviewer or IssuerAdmin account is required before issuance.`}
+                          />
+                        ) : null}
                         <FormField id="review-note" label="Review / Authorization Note">
                           <TextInput
                             id="review-note"

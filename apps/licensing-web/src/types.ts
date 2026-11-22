@@ -11,6 +11,14 @@ export type IssuerSessionInfo = {
   isAuthenticated: boolean;
   csrfToken: string | null;
   user: IssuerAdminUser | null;
+  permissions?: string[];
+};
+
+export type IssuerAuditChainVerification = {
+  isValid: boolean;
+  checkedEntries: number;
+  firstBrokenId: number | null;
+  message: string;
 };
 
 export type SignerStatusSnapshot = {
@@ -42,6 +50,8 @@ export type IssuerMetadata = {
   editions: string[];
   allFeatures: string[];
   terminalAllowedFeatures: string[];
+  roles?: string[];
+  independentApprovalEnforced?: boolean;
   signer: SignerStatusSnapshot;
 };
 
@@ -111,6 +121,8 @@ export type IssuerAuditEntry = {
   entityId: string;
   detailJson: string;
   createdAtUtc: string;
+  prevHash?: string;
+  entryHash?: string;
 };
 
 export type CreateLicenseDraftInput = {

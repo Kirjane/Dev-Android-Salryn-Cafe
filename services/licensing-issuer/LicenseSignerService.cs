@@ -14,7 +14,8 @@ public sealed record LicenseSigningOutcome(
     string? SignedLicenseSha256,
     string? SignerKeySpkiSha256,
     string? SignerMode,
-    bool VerifierPassed);
+    bool VerifierPassed,
+    bool RuntimeTrustedVerifierPassed = false);
 
 public interface ILicenseSignerService
 {
@@ -27,13 +28,16 @@ public sealed class LicenseSignerOptions
     public string? SigningKeyPemPath { get; init; }
     public string? SigningKeyPemInline { get; init; }
     public bool AllowUntrustedTestSigner { get; init; }
+    public bool IsProductionEnvironment { get; init; }
+    public bool RejectRepositoryKeyPath { get; init; } = true;
 }
 
 /// <summary>
 /// Server-side offline RSA-SHA256 PKCS#1 v1.5 license signer.
 /// Private key material is loaded strictly from external server configuration (never Git, DB, logs, or browser).
-/// Fails closed when unconfigured or when the key does not match the trusted runtime verification key
-/// unless explicitly opted into untrusted test mode.
+/// Fails closed when unconfigured, when an untrusted key is supplied in Production, or when the key does not
+/// match the trusted runtime verification key unless explicitly opted into non-production test mode.
+/// Never substitutes Salryn.Cafe -> Salryn.POS during pre-release verification.
 /// </summary>
 public sealed class ExternalLicenseSignerService : ILicenseSignerService
 {
@@ -44,14 +48,16 @@ public sealed class ExternalLicenseSignerService : ILicenseSignerService
         _options = options ?? new LicenseSignerOptions();
     }
 
-    public static LicenseSignerOptions FromEnvironment() => new()
+    public static LicenseSignerOptions FromEnvironment(bool isProduction = false) => new()
     {
         SigningKeyPemPath = Environment.GetEnvironmentVariable("SALRYN_ISSUER_SIGNING_KEY_PEM_PATH")?.Trim(),
         SigningKeyPemInline = Environment.GetEnvironmentVariable("SALRYN_ISSUER_SIGNING_KEY_PEM")?.Trim(),
         AllowUntrustedTestSigner = string.Equals(
             Environment.GetEnvironmentVariable("SALRYN_ISSUER_ALLOW_UNTRUSTED_TEST_SIGNER")?.Trim(),
             "1",
-            StringComparison.Ordinal)
+            StringComparison.Ordinal),
+        IsProductionEnvironment = isProduction ||
+            string.Equals(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")?.Trim(), "Production", StringComparison.OrdinalIgnoreCase)
     };
 
     public SignerStatusSnapshot GetStatus()
@@ -102,6 +108,18 @@ public sealed class ExternalLicenseSignerService : ILicenseSignerService
                     Message: "Authorized external private signing key matches the trusted Salryn offline verification key.");
             }
 
+            if (_options.IsProductionEnvironment && _options.AllowUntrustedTestSigner)
+            {
+                return new SignerStatusSnapshot(
+                    IsConfigured: true,
+                    CanIssue: false,
+                    SignerMode: "ProductionTestSignerForbidden",
+                    PublicKeySpkiSha256: spki,
+                    TrustedRuntimeSpkiSha256: trustedSpki,
+                    MatchesTrustedRuntimeKey: false,
+                    Message: "SIGNER_TEST_KEY_FORBIDDEN_IN_PRODUCTION: Non-trusted test signing keys are strictly forbidden when running in Production mode.");
+            }
+
             if (_options.AllowUntrustedTestSigner)
             {
                 return new SignerStatusSnapshot(
@@ -147,7 +165,10 @@ public sealed class ExternalLicenseSignerService : ILicenseSignerService
 
         if (!status.CanIssue)
         {
-            return Fail("SIGNER_KEY_UNTRUSTED", status.Message);
+            string code = status.SignerMode == "ProductionTestSignerForbidden"
+                ? "SIGNER_TEST_KEY_FORBIDDEN_IN_PRODUCTION"
+                : "SIGNER_KEY_UNTRUSTED";
+            return Fail(code, status.Message);
         }
 
         (string? pem, string? loadError) = TryReadPrivateKeyPem();
@@ -160,6 +181,11 @@ public sealed class ExternalLicenseSignerService : ILicenseSignerService
         {
             using RSA rsa = RSA.Create();
             rsa.ImportFromPem(pem.AsSpan());
+            if (rsa.KeySize < 2048)
+            {
+                return Fail("SIGNER_KEY_TOO_WEAK", "RSA signing key must be at least 2048 bits.");
+            }
+
             string publicKeyPem = rsa.ExportSubjectPublicKeyInfoPem();
             string spki = Convert.ToHexString(SHA256.HashData(rsa.ExportSubjectPublicKeyInfo())).ToLowerInvariant();
 
@@ -170,37 +196,21 @@ public sealed class ExternalLicenseSignerService : ILicenseSignerService
 
             LocalLicenseDocument signedDoc = unsignedDocument with { Signature = signatureB64 };
 
-            // Pre-release verification against exact canonical signature payload + RSA PKCS#1 v1.5
-            bool verified = status.MatchesTrustedRuntimeKey
-                ? LocalLicenseSignatureVerifier.Verify(signedDoc)
-                : VerifyWithSpecificPublicKey(signedDoc, publicKeyPem);
-
-            if (!verified)
+            // 1. Validate the exact, unchanged signed document contract (no Salryn.Cafe -> Salryn.POS substitution).
+            (bool contractValid, string? contractError) = IssuerLicenseContractValidator.ValidateSignedDocument(signedDoc);
+            if (!contractValid)
             {
-                return Fail("SIGNER_SELF_VERIFY_FAILED", "Signed license failed pre-release cryptographic verification and was withheld.");
+                return Fail("ISSUER_RUNTIME_CONTRACT_REJECTED", "Pre-release contract validation rejected signed document: " + contractError);
             }
 
-            // Also run LocalLicenseValidator structural + type + feature + machine + expiry check
-            // (passing RequiredApplicationId for validation probe when Cafe validator reconciliation #38 is pending on this branch).
-            LocalLicenseDocument validatorProbeDoc = string.Equals(signedDoc.ApplicationId, IssuerConstants.ProductCafe, StringComparison.Ordinal)
-                ? signedDoc with { ApplicationId = LocalLicenseContractPolicy.RequiredApplicationId }
-                : signedDoc;
+            // 2. Cryptographic signature verification over the exact, unchanged signed document.
+            bool runtimeTrustedVerified = status.MatchesTrustedRuntimeKey && LocalLicenseSignatureVerifier.Verify(signedDoc);
+            bool keyPairVerified = runtimeTrustedVerified ||
+                (!status.MatchesTrustedRuntimeKey && VerifyWithSpecificPublicKey(signedDoc, publicKeyPem));
 
-            LocalLicenseValidator validator = new(new LocalLicenseValidatorOptions
+            if (!keyPairVerified)
             {
-                MachineFingerprint = signedDoc.MachineBinding,
-                SignatureVerifier = _ => verified
-            });
-            LocalLicenseValidationResult valResult = validator.Validate(new LocalLicenseFileReadResult(
-                SourcePath: "<issuer-pre-release-check>",
-                Exists: true,
-                Malformed: false,
-                Document: validatorProbeDoc,
-                ErrorMessage: null));
-
-            if (valResult.Status != LicenseStatus.Licensed)
-            {
-                return Fail("ISSUER_RUNTIME_CONTRACT_REJECTED", "Pre-release runtime validator rejected license: " + valResult.Message);
+                return Fail("SIGNER_SELF_VERIFY_FAILED", "Signed license failed pre-release cryptographic verification and was withheld.");
             }
 
             string signedJson = JsonSerializer.Serialize(signedDoc, IssuerConstants.CanonicalJsonOptions);
@@ -214,7 +224,8 @@ public sealed class ExternalLicenseSignerService : ILicenseSignerService
                 SignedLicenseSha256: sha256,
                 SignerKeySpkiSha256: spki,
                 SignerMode: status.SignerMode,
-                VerifierPassed: true);
+                VerifierPassed: keyPairVerified,
+                RuntimeTrustedVerifierPassed: runtimeTrustedVerified);
         }
         catch (Exception ex) when (ex is CryptographicException or IOException or UnauthorizedAccessException)
         {
@@ -252,6 +263,10 @@ public sealed class ExternalLicenseSignerService : ILicenseSignerService
         if (!string.IsNullOrWhiteSpace(_options.SigningKeyPemPath))
         {
             string fullPath = Path.GetFullPath(_options.SigningKeyPemPath);
+            if (_options.RejectRepositoryKeyPath && IsInsideGitWorktree(fullPath))
+            {
+                return (null, "SIGNER_KEY_INSIDE_REPO_FORBIDDEN: Private signing key path must reside outside any Git repository worktree.");
+            }
             if (!File.Exists(fullPath))
             {
                 return (null, "SIGNER_NOT_CONFIGURED: Configured signing key path does not exist on the server.");
@@ -262,6 +277,20 @@ public sealed class ExternalLicenseSignerService : ILicenseSignerService
         return (null, null);
     }
 
+    private static bool IsInsideGitWorktree(string fullPath)
+    {
+        string? dir = Path.GetDirectoryName(fullPath);
+        while (!string.IsNullOrWhiteSpace(dir))
+        {
+            if (Directory.Exists(Path.Combine(dir, ".git")) || File.Exists(Path.Combine(dir, ".git")))
+            {
+                return true;
+            }
+            dir = Path.GetDirectoryName(dir);
+        }
+        return false;
+    }
+
     private static LicenseSigningOutcome Fail(string code, string message) =>
-        new(false, code, message, null, null, null, null, false);
+        new(false, code, message, null, null, null, null, false, false);
 }
