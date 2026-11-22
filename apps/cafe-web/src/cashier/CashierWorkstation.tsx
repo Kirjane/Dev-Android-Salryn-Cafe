@@ -125,7 +125,7 @@ export function CashierWorkstation({
   );
 
   const filteredItems = useMemo(() => {
-    if (!menu) return [];
+    if (!menu || !Array.isArray(menu.items)) return [];
     const q = search.trim().toLowerCase();
     return [...menu.items]
       .sort((a, b) => a.displayOrder - b.displayOrder)

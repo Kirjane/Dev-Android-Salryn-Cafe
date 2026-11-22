@@ -221,7 +221,14 @@ export function createLiveHostApi(): WorkstationApi {
       hostRequest<{ adminUserId: string; status: HostBootstrapStatus }>("/api/bootstrap/first-admin", payload),
     login: (username, password) => hostRequest<HostSession>("/api/auth/login", { username, password }),
     logout: () => hostRequest<{ ok?: boolean }>("/api/auth/logout", {}).then(() => undefined),
-    getPublishedMenu: () => hostRequest<MenuPublication | null>("/api/menu/publication/current"),
+    getPublishedMenu: async () => {
+      const res = await hostRequest<MenuPublication | { publication?: MenuPublication | null } | null>(
+        "/api/menu/publication/current",
+      );
+      if (!res) return null;
+      const pub = "publication" in res && !("items" in res) ? res.publication : (res as MenuPublication);
+      return pub && Array.isArray(pub.items) ? pub : null;
+    },
     getOrders: () => hostRequest<CafeOrderSummary[]>("/api/cafe/orders"),
     getOrderDetail: (orderId) => hostRequest<CafeOrderDetail>(`/api/cafe/orders/${orderId}`),
     getCustomers: async () => {
