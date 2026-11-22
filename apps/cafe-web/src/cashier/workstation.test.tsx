@@ -574,4 +574,60 @@ describe("Salryn Cafe R2 — Live Host Integrated Cashier, Orders & Kitchen", ()
     expect(seenOpIds).toHaveLength(2);
     expect(seenOpIds[0]).not.toBe(seenOpIds[1]);
   });
+
+  it("guides first-run Host license activation before enabling first-admin creation and transitions to sign in", async () => {
+    const user = userEvent.setup();
+    const api = createTestHostApi();
+    let licensed = false;
+    let firstRunRequired = true;
+    api.getSession = async () => ({ isAuthenticated: false });
+    api.getBootstrapStatus = async () => ({
+      databaseInitialized: true,
+      databaseFileExists: true,
+      firstRunRequired,
+      hasUsers: !firstRunRequired,
+      hasStoreSettings: !firstRunRequired,
+    });
+    api.getLicenseStatus = async () => ({
+      status: licensed ? 1 : 0,
+      licenseType: 0,
+      machineMatched: true,
+      machineCode: "SALRYN-CAFE-TEST-MACHINE",
+      message: licensed ? "Valid Host license installed." : "No signed Host license installed.",
+    });
+    api.installLicense = async () => {
+      licensed = true;
+      return { installStatus: "Installed", message: "Signed Host license installed." };
+    };
+    const createSpy = vi.fn(async () => {
+      firstRunRequired = false;
+      return {
+        adminUserId: "admin-1",
+        status: {
+          databaseInitialized: true,
+          databaseFileExists: true,
+          firstRunRequired: false,
+          hasUsers: true,
+          hasStoreSettings: true,
+        },
+      };
+    });
+    api.createFirstAdmin = createSpy;
+
+    render(<WorkstationApp api={api} />);
+    expect(await screen.findByText("SALRYN-CAFE-TEST-MACHINE")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create First Administrator" })).toBeDisabled();
+
+    const licenseField = screen.getByLabelText(/Signed Host License JSON/i);
+    await user.click(licenseField);
+    await user.paste('{"licenseId":"test"}');
+    await user.click(screen.getByRole("button", { name: "Install Signed License" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Create First Administrator" })).toBeEnabled());
+    await user.type(screen.getByLabelText(/Admin Password/i), "Synthetic-FirstRun!2026");
+    await user.click(screen.getByRole("button", { name: "Create First Administrator" }));
+
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("Operator sign in")).toBeInTheDocument();
+  });
 });

@@ -72,6 +72,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet publish src/Salryn.Api.Local/Salryn.Api.Local.csproj -c Release -r win-x64 --self-contained true "-p:SourceRevisionId=$sha" -o $staging --nologo -v minimal
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $depsText = Get-Content -LiteralPath (Join-Path $staging 'Salryn.Api.Local.deps.json') -Raw
+          if ($depsText -match '"System\.Security\.Cryptography\.Pkcs/([0-9]+\.[0-9]+\.[0-9]+)"') {
+            $expectedPkcs = $Matches[1]
+            $pkcsInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $staging 'System.Security.Cryptography.Pkcs.dll'))
+            if (-not ($pkcsInfo.ProductVersion -and $pkcsInfo.ProductVersion.StartsWith($expectedPkcs, [StringComparison]::Ordinal))) {
+              throw "Staged System.Security.Cryptography.Pkcs.dll ProductVersion '$($pkcsInfo.ProductVersion)' does not match Salryn.Api.Local.deps.json '$expectedPkcs'."
+            }
+            Write-Output "STAGED_PKCS_VERSION=$($pkcsInfo.ProductVersion)"
+          }
           New-Item -ItemType Directory -Force -Path "$staging/assets/branding", "$staging/assets/brand" | Out-Null
           Copy-Item "assets/branding/*" "$staging/assets/branding/" -Recurse -Force
           if (Test-Path "assets/brand") { Copy-Item "assets/brand/*" "$staging/assets/brand/" -Recurse -Force }
@@ -121,7 +130,9 @@ jobs:
           if (-not (Test-Path "$cafeDir\wwwroot\index.html")) { throw "Missing wwwroot/index.html after fresh install" }
           if (-not (Test-Path "C:\ProgramData\SalrynCafe\data")) { throw "Missing C:\ProgramData\SalrynCafe\data after fresh install" }
 
-          # 2b. Boot installed Desktop + Local API and verify ProductId=Salryn.Cafe and real /cafe/ bundle response
+          # 2b. Boot installed Desktop WebView2 + Local API and verify WebView2 startup, ProductId=Salryn.Cafe, /cafe/, and fail-closed first-run behavior
+          $webViewDataDir = Join-Path $env:LOCALAPPDATA "SalrynCafe\WebView2"
+          if (Test-Path $webViewDataDir) { Remove-Item -Recurse -Force $webViewDataDir }
           $desktopProc = Start-Process -FilePath "$cafeDir\Salryn.Desktop.WebView.exe" -WorkingDirectory $cafeDir -PassThru
           try {
             $healthy = $false
@@ -136,6 +147,15 @@ jobs:
               } catch { }
             }
             if (-not $healthy) { throw "Installed Salryn.Api.Local did not respond healthy as Salryn.Cafe on 127.0.0.1:5399." }
+            $webViewReady = $false
+            for ($wvAttempt = 0; $wvAttempt -lt 30; $wvAttempt++) {
+              if ($desktopProc.HasExited) { throw "Salryn.Desktop.WebView.exe exited prematurely (code=$($desktopProc.ExitCode))." }
+              if (Test-Path $webViewDataDir) { $webViewReady = $true; break }
+              Start-Sleep -Milliseconds 500
+            }
+            if (-not $webViewReady) { throw "Salryn.Desktop.WebView.exe did not initialize isolated WebView2 profile at $webViewDataDir." }
+            if ($desktopProc.HasExited) { throw "Salryn.Desktop.WebView.exe exited unexpectedly after WebView2 initialization (code=$($desktopProc.ExitCode))." }
+            if (-not (Test-Path "C:\ProgramData\SalrynCafe\data\salryn-cafe.db")) { throw "Fresh install did not create C:\ProgramData\SalrynCafe\data\salryn-cafe.db." }
             $cafeDistDiag = Invoke-RestMethod -Uri "http://127.0.0.1:5399/api/system/cafe-dist" -TimeoutSec 5
             if (-not $cafeDistDiag.resolved -or -not $cafeDistDiag.indexHtmlExists) {
               throw "Installed host did not resolve cafe-dist/index.html: $($cafeDistDiag | ConvertTo-Json -Compress)"
@@ -144,6 +164,34 @@ jobs:
             if ($cafeResp.StatusCode -ne 200 -or $cafeResp.Content -notmatch "Salryn Cafe") {
               throw "Unexpected /cafe/ response from installed host (status=$($cafeResp.StatusCode))."
             }
+            $bootstrap = Invoke-RestMethod -Uri "http://127.0.0.1:5399/api/bootstrap/status" -TimeoutSec 5
+            if (-not $bootstrap.databaseInitialized -or -not $bootstrap.firstRunRequired -or $bootstrap.hasUsers -or $bootstrap.hasStoreSettings) {
+              throw "Unexpected fresh first-run bootstrap status: $($bootstrap | ConvertTo-Json -Compress)"
+            }
+            $licenseStatus = Invoke-RestMethod -Uri "http://127.0.0.1:5399/api/license/status" -TimeoutSec 5
+            $machineId = if ($licenseStatus.machineCode) { $licenseStatus.machineCode } else { $licenseStatus.machineFingerprint }
+            if ([string]::IsNullOrWhiteSpace($machineId) -or $licenseStatus.status -eq 1 -or $licenseStatus.status -eq "Licensed" -or $licenseStatus.status -eq 5 -or $licenseStatus.status -eq "Development") {
+              throw "Unexpected fresh Release license status: $($licenseStatus | ConvertTo-Json -Compress)"
+            }
+            $sessionResp = Invoke-RestMethod -Uri "http://127.0.0.1:5399/api/session" -TimeoutSec 5
+            if ($sessionResp.isAuthenticated) { throw "Fresh install /api/session unexpectedly authenticated." }
+            # Unlicensed Release first-admin creation MUST fail closed with 403 Bootstrap.HostLicenseRequired
+            $firstAdminStatus = 0
+            $firstAdminBody = ""
+            try {
+              $bodyJson = @{ storeName = "QA Cafe"; receiptWidthMm = 58; adminUsername = "admin"; adminDisplayName = "Admin"; adminPassword = "Synthetic-Unlicensed!2026" } | ConvertTo-Json
+              Invoke-WebRequest -Uri "http://127.0.0.1:5399/api/bootstrap/first-admin" -Method Post -ContentType "application/json" -Body $bodyJson -UseBasicParsing -TimeoutSec 5 | Out-Null
+            } catch {
+              $firstAdminStatus = [int]$_.Exception.Response.StatusCode
+              if ($_.ErrorDetails.Message) { $firstAdminBody = $_.ErrorDetails.Message }
+            }
+            if ($firstAdminStatus -ne 403 -or $firstAdminBody -notmatch "Bootstrap\.HostLicenseRequired") {
+              throw "Expected 403 Bootstrap.HostLicenseRequired on unlicensed Release first-admin; got HTTP $firstAdminStatus ($firstAdminBody)"
+            }
+            $bootstrapAfter = Invoke-RestMethod -Uri "http://127.0.0.1:5399/api/bootstrap/status" -TimeoutSec 5
+            if ($bootstrapAfter.hasUsers) { throw "Unlicensed first-admin created a user despite 403!" }
+            Write-Output "INSTALLED_WEBVIEW2_PROFILE_PASS=1"
+            Write-Output "INSTALLED_FIRST_RUN_FAIL_CLOSED_PASS=1"
             Write-Output "INSTALLED_STARTUP_PASS=1"
           } finally {
             Get-Process -Name "Salryn.Desktop.WebView", "Salryn.Api.Local" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue

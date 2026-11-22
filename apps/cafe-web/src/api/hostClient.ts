@@ -7,6 +7,9 @@ import type {
   CentralEnrollRequest,
   CentralSyncResult,
   CompleteOrderPayload,
+  FirstAdminBootstrapPayload,
+  HostBootstrapStatus,
+  HostLicenseBootstrapStatus,
   HostSession,
   HostShiftOperationResult,
   MenuPublication,
@@ -206,6 +209,15 @@ export async function hostRequest<T>(path: string, body?: unknown, method?: "GET
 export function createLiveHostApi(): WorkstationApi {
   return {
     getSession: () => hostRequest<HostSession>("/api/session"),
+    getBootstrapStatus: () => hostRequest<HostBootstrapStatus>("/api/bootstrap/status"),
+    getLicenseStatus: () => hostRequest<HostLicenseBootstrapStatus>("/api/license/status"),
+    installLicense: (licenseJson) =>
+      hostRequest<{ installStatus?: string; message?: string; status?: HostLicenseBootstrapStatus }>(
+        "/api/license/install",
+        { licenseJson },
+      ),
+    createFirstAdmin: (payload: FirstAdminBootstrapPayload) =>
+      hostRequest<{ adminUserId: string; status: HostBootstrapStatus }>("/api/bootstrap/first-admin", payload),
     login: (username, password) => hostRequest<HostSession>("/api/auth/login", { username, password }),
     logout: () => hostRequest<{ ok?: boolean }>("/api/auth/logout", {}).then(() => undefined),
     getPublishedMenu: () => hostRequest<MenuPublication | null>("/api/menu/publication/current"),

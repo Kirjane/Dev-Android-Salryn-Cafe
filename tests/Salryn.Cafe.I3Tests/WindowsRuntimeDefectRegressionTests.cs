@@ -608,6 +608,136 @@ public sealed class WindowsRuntimeDefectRegressionTests
         }
     }
 
+    [Fact]
+    public async Task FirstRun_UnlicensedBlocked403_AndAuthorizedBootstrapCreatesFirstAdminAndAllowsLogin()
+    {
+        string root = NewTempRoot("win-first-run");
+        try
+        {
+            var paths = DbPaths.CreateAtRoot(root);
+            var composition = SalrynLocalComposition.Create(paths);
+            await composition.InitializeDatabaseAsync();
+
+            // 1. Unlicensed Release-equivalent Host MUST report firstRunRequired=true and reject first-admin 403
+            var unlicensedService = new StubFirstRunLicenseService(new LocalLicenseValidationResult(
+                Status: LicenseStatus.Unlicensed,
+                Edition: null,
+                EnabledFeatures: Array.Empty<string>(),
+                ExpiresAt: null,
+                DaysRemaining: null,
+                MachineMatched: false,
+                Message: "No signed Host license installed.",
+                SourcePath: Path.Combine(root, "license.json"),
+                ValidationTimestamp: DateTimeOffset.UtcNow,
+                MachineCode: "MACHINE-UNLICENSED-TEST"));
+
+            await using (var unlicensedHost = await LocalApiApplicationFactory.CreateAsync([], new()
+            {
+                Composition = SalrynLocalComposition.Create(paths),
+                LicenseService = unlicensedService,
+                Url = "http://127.0.0.1:0",
+                EnableStaticWebAssets = false,
+                WriteDevelopmentDatabasePath = false
+            }))
+            {
+                await unlicensedHost.StartAsync();
+                using var client = new HttpClient { BaseAddress = new Uri(unlicensedHost.Urls.Single()) };
+
+                using var statusResp = await client.GetAsync("/api/bootstrap/status");
+                Assert.Equal(HttpStatusCode.OK, statusResp.StatusCode);
+                using var statusDoc = JsonDocument.Parse(await statusResp.Content.ReadAsStringAsync());
+                Assert.True(statusDoc.RootElement.GetProperty("firstRunRequired").GetBoolean());
+                Assert.False(statusDoc.RootElement.GetProperty("hasUsers").GetBoolean());
+                Assert.False(statusDoc.RootElement.GetProperty("hasStoreSettings").GetBoolean());
+
+                using var blocked = await client.PostAsJsonAsync("/api/bootstrap/first-admin", new
+                {
+                    storeName = "Salryn Cafe First Run",
+                    receiptWidthMm = 58,
+                    adminUsername = "admin",
+                    adminDisplayName = "First Admin",
+                    adminPassword = AdminPassword
+                });
+                Assert.Equal(HttpStatusCode.Forbidden, blocked.StatusCode);
+                string blockedBody = await blocked.Content.ReadAsStringAsync();
+                Assert.Contains("Bootstrap.HostLicenseRequired", blockedBody, StringComparison.Ordinal);
+                await unlicensedHost.StopAsync();
+            }
+
+            // 2. Licensed Host allows first-admin creation (201), flips firstRunRequired=false, and accepts login
+            var licensedService = new StubFirstRunLicenseService(new LocalLicenseValidationResult(
+                Status: LicenseStatus.Licensed,
+                Edition: LicenseEdition.Local,
+                EnabledFeatures: LicenseFeatures.AllList,
+                ExpiresAt: DateTimeOffset.UtcNow.AddDays(30),
+                DaysRemaining: 30,
+                MachineMatched: true,
+                Message: "Valid synthetic Host license.",
+                SourcePath: Path.Combine(root, "license.json"),
+                ValidationTimestamp: DateTimeOffset.UtcNow,
+                LicenseId: "lic-test-1",
+                CustomerName: "Synthetic Test Store",
+                StoreId: Guid.NewGuid().ToString("D"),
+                MachineFingerprint: "fp-test",
+                LicenseType: LicenseType.Host,
+                HostLicenseId: "host-lic-test-1",
+                MachineCode: "MACHINE-LICENSED-TEST"));
+
+            await using (var licensedHost = await LocalApiApplicationFactory.CreateAsync([], new()
+            {
+                Composition = SalrynLocalComposition.Create(paths),
+                LicenseService = licensedService,
+                Url = "http://127.0.0.1:0",
+                EnableStaticWebAssets = false,
+                WriteDevelopmentDatabasePath = false
+            }))
+            {
+                await licensedHost.StartAsync();
+                using var client = new HttpClient(new HttpClientHandler { UseCookies = true })
+                {
+                    BaseAddress = new Uri(licensedHost.Urls.Single())
+                };
+
+                using var created = await client.PostAsJsonAsync("/api/bootstrap/first-admin", new
+                {
+                    storeName = "Salryn Cafe First Run",
+                    receiptWidthMm = 58,
+                    adminUsername = "admin",
+                    adminDisplayName = "First Admin",
+                    adminPassword = AdminPassword
+                });
+                Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+
+                using var afterStatus = await client.GetAsync("/api/bootstrap/status");
+                Assert.Equal(HttpStatusCode.OK, afterStatus.StatusCode);
+                using var afterDoc = JsonDocument.Parse(await afterStatus.Content.ReadAsStringAsync());
+                Assert.False(afterDoc.RootElement.GetProperty("firstRunRequired").GetBoolean());
+                Assert.True(afterDoc.RootElement.GetProperty("hasUsers").GetBoolean());
+                Assert.True(afterDoc.RootElement.GetProperty("hasStoreSettings").GetBoolean());
+
+                using var login = await client.PostAsJsonAsync("/api/auth/login", new { username = "admin", password = AdminPassword });
+                Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+                await licensedHost.StopAsync();
+            }
+        }
+        finally
+        {
+            Cleanup(root);
+        }
+    }
+
+    private sealed class StubFirstRunLicenseService(LocalLicenseValidationResult status) : ILocalLicenseService
+    {
+        public Task<LocalLicenseValidationResult> GetStatusAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(status);
+
+        public Task<LocalLicenseInstallResponse> InstallAsync(LocalLicenseInstallRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new LocalLicenseInstallResponse("Rejected", status.Status, status.SourcePath, null, "NotUsed", "Not used in stub.", DateTimeOffset.UtcNow));
+
+        public Task<bool> HasFeatureAsync(string feature, CancellationToken cancellationToken = default) =>
+            Task.FromResult(status.Status == LicenseStatus.Licensed && status.EnabledFeatures.Contains(feature, StringComparer.OrdinalIgnoreCase));
+    }
+
     private static async Task AssertOriginEchoProjectsCleanlyAsync(
         SqliteConnectionFactory factory,
         Guid storeId,

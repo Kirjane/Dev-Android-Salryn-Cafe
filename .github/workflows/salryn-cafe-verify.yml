@@ -36,6 +36,19 @@ jobs:
       - name: Check runner regressions without application builds
         shell: pwsh
         run: ./scripts/test-verify-candidate.ps1
+      - name: Install Playwright runtime for cafe-web E2E
+        shell: pwsh
+        run: |
+          Push-Location src/Salryn.App.Web
+          npm ci --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx playwright install chromium
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($IsLinux) {
+            npx playwright install-deps chromium
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          Pop-Location
       - name: Run explicit platform suite (not full RC acceptance)
         shell: pwsh
         run: ./scripts/verify-candidate.ps1 -Configuration Release -Mode ${{ matrix.mode }}

@@ -15,6 +15,44 @@ export type HostSession = {
   user?: SessionUser;
 };
 
+export type HostBootstrapStatus = {
+  databaseInitialized: boolean;
+  databaseFileExists: boolean;
+  firstRunRequired: boolean;
+  hasUsers: boolean;
+  hasStoreSettings: boolean;
+};
+
+export type HostLicenseBootstrapStatus = {
+  status: number | string;
+  licenseType?: number | string | null;
+  machineMatched?: boolean;
+  machineCode?: string | null;
+  machineFingerprint?: string | null;
+  message?: string | null;
+};
+
+export type FirstAdminBootstrapPayload = {
+  storeName: string;
+  businessName?: string | null;
+  address?: string | null;
+  contactNumber?: string | null;
+  tin?: string | null;
+  receiptWidthMm: number;
+  adminUsername: string;
+  adminDisplayName: string;
+  adminPassword: string;
+};
+
+export function isLicenseActiveForBootstrap(status: HostLicenseBootstrapStatus | null | undefined): boolean {
+  if (!status) return false;
+  const s = status.status;
+  const isDev = s === 5 || s === "Development";
+  const isLicensed = s === 1 || s === "Licensed";
+  const isHost = status.licenseType === undefined || status.licenseType === null || status.licenseType === 0 || status.licenseType === "Host";
+  return isDev || (isLicensed && isHost && status.machineMatched !== false);
+}
+
 export type MenuCategory = {
   categoryId: string;
   name: string;
@@ -307,6 +345,10 @@ export type RejectedIntentRecord = {
 
 export interface WorkstationApi {
   getSession(): Promise<HostSession>;
+  getBootstrapStatus?(): Promise<HostBootstrapStatus>;
+  getLicenseStatus?(): Promise<HostLicenseBootstrapStatus>;
+  installLicense?(licenseJson: string): Promise<{ installStatus?: string; message?: string; status?: HostLicenseBootstrapStatus }>;
+  createFirstAdmin?(payload: FirstAdminBootstrapPayload): Promise<{ adminUserId: string; status: HostBootstrapStatus }>;
   login(username: string, password: string): Promise<HostSession>;
   logout(): Promise<void>;
   getPublishedMenu(): Promise<MenuPublication | null>;
