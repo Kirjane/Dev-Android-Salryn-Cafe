@@ -1,4 +1,5 @@
 using Salryn.Api.Local.Auth;
+using Salryn.Api.Local.Services;
 using Salryn.Composition.Local;
 using Salryn.Core.Common;
 using Salryn.Core.Deployment;
@@ -85,7 +86,7 @@ internal static class LocalCafePrintEndpoints
             return ToResult(
                 composition.CafePrint.PublishStation(
                     new CafePrinterStationMutation(
-                        request.OperationId.GetValueOrDefault(),
+                        ResolveOperationId(httpContext, request.OperationId),
                         stationId,
                         authority.Value.StoreId,
                         authority.Value.ActorUserId,
@@ -134,7 +135,7 @@ internal static class LocalCafePrintEndpoints
             if (authority.IsFailure)
                 return ToError(authority.ErrorDetail);
 
-            Guid operationId = request.OperationId.GetValueOrDefault();
+            Guid operationId = ResolveOperationId(httpContext, request.OperationId);
             Result<CafePrintJobMutationResult> result =
                 await composition.CafePrint.CreateReceiptJobAsync(
                     new CafeReceiptPrintJobMutation(
@@ -190,7 +191,7 @@ internal static class LocalCafePrintEndpoints
             if (authority.IsFailure)
                 return ToError(authority.ErrorDetail);
 
-            Guid operationId = request.OperationId.GetValueOrDefault();
+            Guid operationId = ResolveOperationId(httpContext, request.OperationId);
             return ToResult(
                 composition.CafePrint.CreateKitchenTicketJob(
                     new CafeKitchenPrintJobMutation(
@@ -394,6 +395,25 @@ internal static class LocalCafePrintEndpoints
                 error = "CopyKind must be Original, Reprint, or VoidedReprint."
             },
             statusCode: StatusCodes.Status400BadRequest);
+
+    private static Guid ResolveOperationId(HttpContext httpContext, Guid? requestOperationId)
+    {
+        if (requestOperationId.GetValueOrDefault() != Guid.Empty)
+        {
+            return requestOperationId!.Value;
+        }
+
+        if (httpContext.Items.TryGetValue(
+                CafeMutationIdempotencyEndpointFilter.ResolvedOperationIdItemKey,
+                out object? resolved) &&
+            resolved is Guid resolvedGuid &&
+            resolvedGuid != Guid.Empty)
+        {
+            return resolvedGuid;
+        }
+
+        return Guid.Empty;
+    }
 
     private static Guid ResolveJobId(Guid? value, Guid operationId, string kind)
     {

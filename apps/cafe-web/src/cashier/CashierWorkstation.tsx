@@ -24,8 +24,8 @@ import {
   TextInput,
   useToast,
 } from "@salryn/cafe-ui";
-import { clearPendingPrintOp, formatPhp, getOrCreatePendingPrintOp, parsePhpToCents } from "../api/hostClient";
-import { isReceiptStation } from "./types";
+import { clearPendingPrintOp, formatPhp, getOrCreatePendingPrintOp, HostApiError, parsePhpToCents } from "../api/hostClient";
+import { classifyPrintAttemptOutcome, isReceiptStation } from "./types";
 import type {
   CafeOrderDetail,
   CafePrintStation,
@@ -352,11 +352,11 @@ export function CashierWorkstation({
     if (!receiptStation || printLockRef.current) return;
     printLockRef.current = true;
     setPrintingReceipt(true);
-    const opKey = `receipt:${saleId}:Original`;
+    const opKey = `receipt:${receiptStation.stationId}:${saleId}:Original`;
     const operationId = pendingPrintOpsRef.current[opKey] ?? getOrCreatePendingPrintOp(opKey);
     pendingPrintOpsRef.current[opKey] = operationId;
     try {
-      await api.printReceipt({
+      const result = await api.printReceipt({
         operationId,
         stationId: receiptStation.stationId,
         saleId,
@@ -364,8 +364,19 @@ export function CashierWorkstation({
       });
       delete pendingPrintOpsRef.current[opKey];
       clearPendingPrintOp(opKey);
-      notify("info", `Receipt print sent · ${receiptStation.name}`);
+      const { outcome, detail } = classifyPrintAttemptOutcome(result);
+      if (outcome === "succeeded") {
+        notify("info", `Receipt print sent · ${receiptStation.name}`, detail ?? undefined);
+      } else if (outcome === "disabled") {
+        notify("warning", `Printer disabled · ${receiptStation.name}`, detail ?? "Receipt job recorded; enable printer in Store Settings.");
+      } else {
+        notify("danger", `Receipt print failed · ${receiptStation.name}`, detail ?? "Printer reported a failure.");
+      }
     } catch (error) {
+      if (error instanceof HostApiError && error.isDeterministicRejection) {
+        delete pendingPrintOpsRef.current[opKey];
+        clearPendingPrintOp(opKey);
+      }
       notify("danger", "Receipt print failed", error instanceof Error ? error.message : "Printer error.");
     } finally {
       printLockRef.current = false;

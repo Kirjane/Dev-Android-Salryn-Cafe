@@ -206,14 +206,45 @@ export function isKitchenStation(station: CafePrintStation): boolean {
   );
 }
 
+export type CafePrintAttempt = {
+  attemptId?: string;
+  status: number | string;
+  resultCode?: string | null;
+  resultMessage?: string | null;
+  errorMessage?: string | null;
+};
+
 export type CafePrintJobResult = {
   job: {
     jobId: string;
     stationId: string;
-    status: string;
-    copyKind: string;
+    status?: string;
+    copyKind?: number | string;
   };
+  attempt?: CafePrintAttempt | null;
 };
+
+export function classifyPrintAttemptOutcome(
+  result: CafePrintJobResult | null | undefined,
+): { outcome: "succeeded" | "disabled" | "failed"; detail: string | null } {
+  const attempt = result?.attempt;
+  if (!attempt) {
+    return { outcome: "succeeded", detail: null };
+  }
+  if (attempt.status === 1 || attempt.status === "Succeeded") {
+    return { outcome: "succeeded", detail: attempt.resultMessage ?? null };
+  }
+  if (attempt.status === 3 || attempt.status === "DisabledUnavailable") {
+    return {
+      outcome: "disabled",
+      detail: attempt.resultMessage ?? attempt.errorMessage ?? "Printer is disabled in store settings; print job recorded.",
+    };
+  }
+  return {
+    outcome: "failed",
+    detail: attempt.errorMessage ?? attempt.resultMessage ?? "Printer reported a failure; print job recorded.",
+  };
+}
 
 export type CentralEnrollRequest = {
   configuration: {

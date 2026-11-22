@@ -5,9 +5,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   HostApiError,
   PENDING_INTENT_STORAGE_KEY,
+  PENDING_PRINT_OPS_STORAGE_KEY,
   REJECTION_HISTORY_STORAGE_KEY,
   deriveScopedOperationId,
 } from "../api/hostClient";
+import { classifyPrintAttemptOutcome } from "./types";
 import type {
   CafeOrderDetail,
   CafeOrderSummary,
@@ -530,5 +532,46 @@ describe("Salryn Cafe R2 — Live Host Integrated Cashier, Orders & Kitchen", ()
     expect(kitchenAttempt1).toMatch(uuidRegex);
     expect(kitchenAttempt1).toBe(kitchenAttempt2);
     expect(new Set([base, kitchenAttempt1, receiptAttempt, menuPublish, recipePublish]).size).toBe(5);
+  });
+
+  it("classifies print attempt outcomes truthfully and clears pending print op on deterministic 4xx rejection", async () => {
+    expect(classifyPrintAttemptOutcome({ job: { jobId: "j1", stationId: "s1" }, attempt: { status: 1, resultMessage: "Printed" } }).outcome).toBe("succeeded");
+    expect(classifyPrintAttemptOutcome({ job: { jobId: "j1", stationId: "s1" }, attempt: { status: 3, resultMessage: "Printer disabled" } }).outcome).toBe("disabled");
+    expect(classifyPrintAttemptOutcome({ job: { jobId: "j1", stationId: "s1" }, attempt: { status: 2, errorMessage: "Paper out" } }).outcome).toBe("failed");
+
+    const user = userEvent.setup();
+    const api = createTestHostApi();
+    const seenOpIds: string[] = [];
+    let callCount = 0;
+    api.printKitchenTicket = async (req) => {
+      seenOpIds.push(req.operationId);
+      callCount++;
+      if (callCount === 1) {
+        throw new HostApiError("Station inactive", 409, "CafePrint.StationInactive");
+      }
+      return {
+        job: { jobId: "job-k2", stationId: req.stationId, status: "Recorded", copyKind: req.copyKind },
+        attempt: { status: 3, resultCode: "ReceiptPrinter.Disabled", resultMessage: "Printer mode is Disabled." },
+      };
+    };
+
+    render(<WorkstationApp api={api} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: /Ensaymada/i })).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: /Ensaymada/i }));
+    await user.click(screen.getByRole("button", { name: "Save order" }));
+    await user.click(await screen.findByRole("button", { name: "Send to preparation" }));
+    await user.click(screen.getByRole("button", { name: /Kitchen & Barista/i }));
+
+    const printBtn = await screen.findByRole("button", { name: "Print Kitchen Ticket" });
+    await user.click(printBtn);
+    expect(await screen.findByText(/Station inactive/i)).toBeInTheDocument();
+    // Deterministic 409 must clear the stored print op so retry uses a fresh operationId
+    expect(window.localStorage.getItem(PENDING_PRINT_OPS_STORAGE_KEY)).toBeNull();
+
+    await user.click(printBtn);
+    expect(await screen.findByText(/Printer disabled · Espresso Bar/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Kitchen ticket sent/i)).not.toBeInTheDocument();
+    expect(seenOpIds).toHaveLength(2);
+    expect(seenOpIds[0]).not.toBe(seenOpIds[1]);
   });
 });

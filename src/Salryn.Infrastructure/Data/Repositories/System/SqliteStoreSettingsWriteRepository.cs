@@ -31,7 +31,7 @@ public sealed class SqliteStoreSettingsWriteRepository :
         try
         {
             using var connection = CreateOpenConnection();
-            using var transaction = connection.BeginTransaction();
+            using var transaction = connection.BeginTransaction(deferred: false);
             using var command = connection.CreateCommand();
 
             command.Transaction = transaction;
@@ -109,7 +109,7 @@ public sealed class SqliteStoreSettingsWriteRepository :
         try
         {
             using var connection = CreateOpenConnection();
-            using var transaction = connection.BeginTransaction();
+            using var transaction = connection.BeginTransaction(deferred: false);
 
             Guid? existingId = null;
             using (var findCmd = connection.CreateCommand())
@@ -217,7 +217,7 @@ public sealed class SqliteStoreSettingsWriteRepository :
         try
         {
             using var connection = CreateOpenConnection();
-            using var transaction = connection.BeginTransaction();
+            using var transaction = connection.BeginTransaction(deferred: false);
             using var command = connection.CreateCommand();
             command.Transaction = transaction;
             command.CommandText = """
@@ -260,7 +260,7 @@ public sealed class SqliteStoreSettingsWriteRepository :
         try
         {
             using var connection = CreateOpenConnection();
-            using var transaction = connection.BeginTransaction();
+            using var transaction = connection.BeginTransaction(deferred: false);
             using var command = connection.CreateCommand();
             command.Transaction = transaction;
             command.CommandText = """

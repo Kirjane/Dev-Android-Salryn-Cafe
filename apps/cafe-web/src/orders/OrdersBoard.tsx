@@ -13,8 +13,8 @@ import {
   useToast,
   type StatusTone,
 } from "@salryn/cafe-ui";
-import { clearPendingPrintOp, getOrCreatePendingPrintOp } from "../api/hostClient";
-import { isReceiptStation } from "../cashier/types";
+import { clearPendingPrintOp, getOrCreatePendingPrintOp, HostApiError } from "../api/hostClient";
+import { classifyPrintAttemptOutcome, isReceiptStation } from "../cashier/types";
 import type { CafeOrderSummary, CafePrintStation, HostOrderState, ServiceMode, WorkstationApi } from "../cashier/types";
 
 const STATE_TONE: Record<string, StatusTone> = {
@@ -75,11 +75,11 @@ export function OrdersBoard({
     if (!order.completedSaleId || !receiptStation || printLockRef.current) return;
     printLockRef.current = true;
     setBusyPrintId(order.orderId);
-    const opKey = `receipt:${order.completedSaleId}:Reprint`;
+    const opKey = `receipt:${receiptStation.stationId}:${order.completedSaleId}:Reprint`;
     const operationId = pendingPrintOpsRef.current[opKey] ?? getOrCreatePendingPrintOp(opKey);
     pendingPrintOpsRef.current[opKey] = operationId;
     try {
-      await api.printReceipt({
+      const result = await api.printReceipt({
         operationId,
         stationId: receiptStation.stationId,
         saleId: order.completedSaleId,
@@ -87,8 +87,19 @@ export function OrdersBoard({
       });
       delete pendingPrintOpsRef.current[opKey];
       clearPendingPrintOp(opKey);
-      notify("info", "Receipt reprint sent", `Order ${order.serviceReference || order.orderId.slice(0, 8)} queued on ${receiptStation.name}.`);
+      const { outcome, detail } = classifyPrintAttemptOutcome(result);
+      if (outcome === "succeeded") {
+        notify("info", "Receipt reprint sent", detail ?? `Order ${order.serviceReference || order.orderId.slice(0, 8)} queued on ${receiptStation.name}.`);
+      } else if (outcome === "disabled") {
+        notify("warning", `Printer disabled · ${receiptStation.name}`, detail ?? "Reprint recorded; enable printer in Store Settings.");
+      } else {
+        notify("danger", `Reprint failed · ${receiptStation.name}`, detail ?? "Printer reported a failure.");
+      }
     } catch (error) {
+      if (error instanceof HostApiError && error.isDeterministicRejection) {
+        delete pendingPrintOpsRef.current[opKey];
+        clearPendingPrintOp(opKey);
+      }
       notify("danger", "Reprint failed", error instanceof Error ? error.message : "Could not send reprint.");
     } finally {
       printLockRef.current = false;

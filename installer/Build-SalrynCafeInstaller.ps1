@@ -75,15 +75,32 @@ New-Item -ItemType Directory -Force -Path $stagingDir, $outputDir | Out-Null
 
 $selfContainedArg = if ($FrameworkDependent) { "false" } else { "true" }
 
+Write-Host "[Salryn Cafe Installer] Publishing Salryn.Desktop.WebView ($Configuration / $Runtime / self-contained=$selfContainedArg)..."
+dotnet publish (Join-Path $repoRoot "src\Salryn.Desktop.WebView\Salryn.Desktop.WebView.csproj") `
+    -c $Configuration -r $Runtime --self-contained $selfContainedArg "-p:SourceRevisionId=$rev" -o $stagingDir --nologo
+if ($LASTEXITCODE -ne 0) { throw "dotnet publish Salryn.Desktop.WebView failed ($LASTEXITCODE)" }
+
 Write-Host "[Salryn Cafe Installer] Publishing Salryn.Api.Local ($Configuration / $Runtime / self-contained=$selfContainedArg)..."
 dotnet publish (Join-Path $repoRoot "src\Salryn.Api.Local\Salryn.Api.Local.csproj") `
     -c $Configuration -r $Runtime --self-contained $selfContainedArg "-p:SourceRevisionId=$rev" -o $stagingDir --nologo
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish Salryn.Api.Local failed ($LASTEXITCODE)" }
 
-Write-Host "[Salryn Cafe Installer] Publishing Salryn.Desktop.WebView ($Configuration / $Runtime / self-contained=$selfContainedArg)..."
-dotnet publish (Join-Path $repoRoot "src\Salryn.Desktop.WebView\Salryn.Desktop.WebView.csproj") `
-    -c $Configuration -r $Runtime --self-contained $selfContainedArg "-p:SourceRevisionId=$rev" -o $stagingDir --nologo
-if ($LASTEXITCODE -ne 0) { throw "dotnet publish Salryn.Desktop.WebView failed ($LASTEXITCODE)" }
+if (-not $FrameworkDependent) {
+    $depsPath = Join-Path $stagingDir "Salryn.Api.Local.deps.json"
+    $pkcsDll = Join-Path $stagingDir "System.Security.Cryptography.Pkcs.dll"
+    if (-not (Test-Path -LiteralPath $depsPath -PathType Leaf) -or -not (Test-Path -LiteralPath $pkcsDll -PathType Leaf)) {
+        throw "Self-contained staging missing Salryn.Api.Local.deps.json or System.Security.Cryptography.Pkcs.dll"
+    }
+    $depsText = Get-Content -LiteralPath $depsPath -Raw
+    if ($depsText -match '"System\.Security\.Cryptography\.Pkcs/([0-9]+\.[0-9]+\.[0-9]+)"') {
+        $expectedPkcs = $Matches[1]
+        $pkcsInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($pkcsDll)
+        if (-not ($pkcsInfo.ProductVersion -and $pkcsInfo.ProductVersion.StartsWith($expectedPkcs, [StringComparison]::Ordinal))) {
+            throw "Staged System.Security.Cryptography.Pkcs.dll ProductVersion '$($pkcsInfo.ProductVersion)' does not match Salryn.Api.Local.deps.json '$expectedPkcs'."
+        }
+        Write-Host "[Salryn Cafe Installer] Verified System.Security.Cryptography.Pkcs.dll ($($pkcsInfo.ProductVersion))"
+    }
+}
 
 $cafeDistDst = Join-Path $stagingDir "cafe-dist"
 New-Item -ItemType Directory -Force -Path $cafeDistDst | Out-Null

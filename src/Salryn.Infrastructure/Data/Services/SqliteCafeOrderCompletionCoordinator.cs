@@ -1228,7 +1228,9 @@ public sealed class SqliteCafeOrderCompletionCoordinator : SqliteRepositoryBase
             Money.FromCents(decision.CashTenderCents),
             Money.FromCents(decision.AccountsReceivableTenderCents),
             mutation.ReceivableDueDate,
-            NormalizeOptional(mutation.ReceivableNote));
+            NormalizeOptional(mutation.ReceivableNote),
+            Money.FromCents(decision.FeeTotalCents),
+            Money.FromCents(decision.BookingDepositAppliedCents));
 
         Sale sale = new()
         {
@@ -1634,7 +1636,9 @@ public sealed class SqliteCafeOrderCompletionCoordinator : SqliteRepositoryBase
         Money cashPaid,
         Money utangAmount,
         DateOnly? receivableDueDate,
-        string? receivableNote)
+        string? receivableNote,
+        Money? feeTotal = null,
+        Money? bookingDepositApplied = null)
     {
         string? storeName = null;
         string? businessName = null;
@@ -1707,7 +1711,9 @@ public sealed class SqliteCafeOrderCompletionCoordinator : SqliteRepositoryBase
             utangAmount.Cents > 0 ? utangAmount : null,
             utangAmount.Cents > 0 ? utangAmount : null,
             receivableDueDate,
-            receivableNote));
+            receivableNote,
+            feeTotal is { Cents: > 0 } ? feeTotal : null,
+            bookingDepositApplied is { Cents: > 0 } ? bookingDepositApplied : null)).Trim();
     }
 
     private static (string? FullName, string? Phone) ReadCustomerSnapshot(

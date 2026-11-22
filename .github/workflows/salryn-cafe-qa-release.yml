@@ -179,7 +179,7 @@ jobs:
           [IO.File]::WriteAllText($provPath, $provJson)
 
           foreach ($project in @('Salryn.Desktop.WebView', 'Salryn.Api.Local')) {
-            dotnet publish "src/$project/$project.csproj" -c $configuration -r win-x64 --self-contained false "-p:SourceRevisionId=$($env:EXPECTED_SHA)" -o $staging
+            dotnet publish "src/$project/$project.csproj" -c $configuration -r win-x64 --self-contained true "-p:SourceRevisionId=$($env:EXPECTED_SHA)" -o $staging
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
           New-Item -ItemType Directory -Force -Path "$staging/wwwroot", "$staging/cafe-dist", "$staging/assets/branding" | Out-Null

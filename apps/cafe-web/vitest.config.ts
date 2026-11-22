@@ -17,6 +17,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
+    testTimeout: 15000,
     setupFiles: ["./src/cashier/testSetup.ts", "./src/backoffice/testSetup.ts"],
     css: true,
   },

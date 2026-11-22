@@ -68,9 +68,9 @@ jobs:
           $sha = (git rev-parse HEAD).Trim()
           $staging = Join-Path $PWD "artifacts/installer/staging/SalrynCafe"
           New-Item -ItemType Directory -Force -Path $staging | Out-Null
-          dotnet publish src/Salryn.Api.Local/Salryn.Api.Local.csproj -c Release -r win-x64 --self-contained true "-p:SourceRevisionId=$sha" -o $staging --nologo -v minimal
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet publish src/Salryn.Desktop.WebView/Salryn.Desktop.WebView.csproj -c Release -r win-x64 --self-contained true "-p:SourceRevisionId=$sha" -o $staging --nologo -v minimal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet publish src/Salryn.Api.Local/Salryn.Api.Local.csproj -c Release -r win-x64 --self-contained true "-p:SourceRevisionId=$sha" -o $staging --nologo -v minimal
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           New-Item -ItemType Directory -Force -Path "$staging/assets/branding", "$staging/assets/brand" | Out-Null
           Copy-Item "assets/branding/*" "$staging/assets/branding/" -Recurse -Force

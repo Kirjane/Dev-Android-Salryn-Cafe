@@ -11,8 +11,10 @@ using Salryn.Core.Services.Licensing;
 using Salryn.Infrastructure.Data;
 using Salryn.Infrastructure.Data.Seeding;
 using Salryn.Infrastructure.Data.Services;
+using Salryn.Infrastructure.Data.Sync;
 using Salryn.Infrastructure.Licensing;
 using Salryn.Infrastructure.Paths;
+using Salryn.Sync.Contracts;
 using Xunit;
 
 namespace Salryn.Cafe.I3Tests;
@@ -428,6 +430,221 @@ public sealed class WindowsRuntimeDefectRegressionTests
         {
             Cleanup(root);
         }
+    }
+
+    [Fact]
+    public async Task B1_OriginEcho_V1AndV2_MatchPersistedTrimmedReceiptSnapshot_AndRenderFees()
+    {
+        // V1 cash-only sale origin-echo verification (exercises LocalSaleCommittedV1FactVerifier.VerifyOriginEcho)
+        string rootV1 = NewTempRoot("win-b1-echo-v1");
+        try
+        {
+            var (factory, baseCompletion) = CanonicalOrderCompletionFixture.Create(rootV1);
+            var v1Completion = new CafeOrderCompletionMutation(
+                baseCompletion.CompletionOperationId,
+                baseCompletion.SaleCommittedOperationId,
+                baseCompletion.DeviceId,
+                baseCompletion.OrderId,
+                baseCompletion.StoreId,
+                baseCompletion.ExpectedVersion,
+                baseCompletion.ActorUserId,
+                baseCompletion.OccurredAtUtc,
+                new[] { new CafeOrderPaymentMutation(PaymentMethod.Cash, 1000) });
+
+            var coordinator = new SqliteCafeOrderCompletionCoordinator(factory);
+            var completed = coordinator.Complete(v1Completion);
+            Assert.True(completed.IsSuccess, completed.IsFailure ? completed.ErrorDetail.Message : null);
+
+            string? persisted = ScalarString(factory, "SELECT receipt_snapshot FROM sales WHERE id = $id;", ("$id", completed.Value.SaleId.ToString("D")));
+            Assert.False(string.IsNullOrWhiteSpace(persisted));
+            Assert.Equal(persisted!.Trim(), persisted);
+
+            await AssertOriginEchoProjectsCleanlyAsync(
+                factory,
+                v1Completion.StoreId,
+                v1Completion.DeviceId,
+                v1Completion.SaleCommittedOperationId,
+                AppliedBusinessChangeContract.SaleCommittedV1AppliedV1,
+                AppliedBusinessChangeContract.SaleCommittedV1AppliedSchemaVersion);
+        }
+        finally
+        {
+            Cleanup(rootV1);
+        }
+
+        // V2 C5 sale with Service fee (exercises LocalSaleCommittedV2FactVerifier.VerifyOriginEcho + Fees line)
+        string rootV2 = NewTempRoot("win-b1-echo-v2");
+        try
+        {
+            var (factory, c5Completion) = CanonicalOrderCompletionFixture.Create(rootV2);
+            var coordinator = new SqliteCafeOrderCompletionCoordinator(factory);
+            var completed = coordinator.Complete(c5Completion);
+            Assert.True(completed.IsSuccess, completed.IsFailure ? completed.ErrorDetail.Message : null);
+
+            string? persisted = ScalarString(factory, "SELECT receipt_snapshot FROM sales WHERE id = $id;", ("$id", completed.Value.SaleId.ToString("D")));
+            Assert.False(string.IsNullOrWhiteSpace(persisted));
+            Assert.Equal(persisted!.Trim(), persisted);
+            Assert.Contains("Fees    : PHP 0.50", persisted, StringComparison.Ordinal);
+
+            await AssertOriginEchoProjectsCleanlyAsync(
+                factory,
+                c5Completion.StoreId,
+                c5Completion.DeviceId,
+                c5Completion.SaleCommittedOperationId,
+                AppliedBusinessChangeContract.SaleCommittedV2AppliedV1,
+                AppliedBusinessChangeContract.SaleCommittedV2AppliedSchemaVersion);
+        }
+        finally
+        {
+            Cleanup(rootV2);
+        }
+    }
+
+    [Fact]
+    public async Task B2_KitchenPrint_HeaderOnlyIdempotencyKey_ResolvesOperationIdAndReplays()
+    {
+        string root = NewTempRoot("win-b2-header-key");
+        try
+        {
+            var (factory, completion) = CanonicalOrderCompletionFixture.Create(root);
+            SetUserPassword(factory, completion.ActorUserId, AdminPassword);
+            string username = ReadUsername(factory, completion.ActorUserId);
+            Guid kitchenStationId = PublishStation(factory, completion.StoreId, completion.ActorUserId, "Barista Header Key", CafePrinterStationKind.Kitchen);
+            string revisionId = ScalarString(factory, "SELECT current_revision_id FROM cafe_orders WHERE order_id = $id;", ("$id", completion.OrderId.ToString("D")))!;
+
+            await using var host = await StartHostAsync(root);
+            using var client = await LoginClientAsync(host, username, AdminPassword);
+
+            Guid headerOpId = Guid.NewGuid();
+            using var req1 = new HttpRequestMessage(HttpMethod.Post, "/api/cafe/print/jobs/kitchen")
+            {
+                Content = JsonContent.Create(new
+                {
+                    stationId = kitchenStationId,
+                    orderId = completion.OrderId,
+                    orderRevisionId = Guid.Parse(revisionId),
+                    copyKind = "Original"
+                })
+            };
+            req1.Headers.Add("Idempotency-Key", headerOpId.ToString("D"));
+            using var res1 = await client.SendAsync(req1);
+            Assert.Equal(HttpStatusCode.OK, res1.StatusCode);
+            using var doc1 = JsonDocument.Parse(await res1.Content.ReadAsStringAsync());
+            string jobId1 = doc1.RootElement.GetProperty("job").GetProperty("jobId").GetString()!;
+
+            using var req2 = new HttpRequestMessage(HttpMethod.Post, "/api/cafe/print/jobs/kitchen")
+            {
+                Content = JsonContent.Create(new
+                {
+                    stationId = kitchenStationId,
+                    orderId = completion.OrderId,
+                    orderRevisionId = Guid.Parse(revisionId),
+                    copyKind = "Original"
+                })
+            };
+            req2.Headers.Add("Idempotency-Key", headerOpId.ToString("D"));
+            using var res2 = await client.SendAsync(req2);
+            Assert.Equal(HttpStatusCode.OK, res2.StatusCode);
+            using var doc2 = JsonDocument.Parse(await res2.Content.ReadAsStringAsync());
+            Assert.Equal(jobId1, doc2.RootElement.GetProperty("job").GetProperty("jobId").GetString());
+            Assert.Equal(1, ScalarLong(factory, "SELECT COUNT(*) FROM cafe_print_jobs WHERE operation_id = $op;", ("$op", headerOpId.ToString("D"))));
+
+            await host.StopAsync();
+        }
+        finally
+        {
+            Cleanup(root);
+        }
+    }
+
+    [Fact]
+    public async Task B4_StoreSettings_ConcurrentInitialPut_SerializesCleanlyWithoutBusyFailure()
+    {
+        string root = NewTempRoot("win-b4-concurrent");
+        try
+        {
+            var (factory, completion) = CanonicalOrderCompletionFixture.Create(root);
+            SetUserPassword(factory, completion.ActorUserId, AdminPassword);
+            string username = ReadUsername(factory, completion.ActorUserId);
+            ExecuteSql(factory, "DELETE FROM store_settings;");
+
+            await using var host = await StartHostAsync(root);
+            using var client1 = await LoginClientAsync(host, username, AdminPassword);
+            using var client2 = await LoginClientAsync(host, username, AdminPassword);
+
+            object MakePayload(string name) => new
+            {
+                storeName = name,
+                businessName = "Cafe Yza Inc.",
+                address = "123 Coffee Ave",
+                contactNumber = "09171234567",
+                tin = "000-111-222-000",
+                currencyLabel = "PHP",
+                receiptWidthMm = 58,
+                taxModeEnabled = false,
+                shiftModeEnabled = true,
+                receiptHeader = "Welcome",
+                receiptFooter = "Thank you",
+                printerMode = "Disabled",
+                windowsPrinterName = (string?)null
+            };
+
+            var responses = await Task.WhenAll(
+                client1.PutAsJsonAsync("/api/settings/store", MakePayload("Cafe Yza A")),
+                client2.PutAsJsonAsync("/api/settings/store", MakePayload("Cafe Yza B")));
+
+            foreach (var r in responses)
+            {
+                Assert.Equal(HttpStatusCode.NoContent, r.StatusCode);
+                r.Dispose();
+            }
+
+            Assert.Equal(1, ScalarLong(factory, "SELECT COUNT(*) FROM store_settings;"));
+            await host.StopAsync();
+        }
+        finally
+        {
+            Cleanup(root);
+        }
+    }
+
+    private static async Task AssertOriginEchoProjectsCleanlyAsync(
+        SqliteConnectionFactory factory,
+        Guid storeId,
+        Guid originDeviceId,
+        Guid saleCommittedOperationId,
+        string changeType,
+        int schemaVersion)
+    {
+        var outbox = new SqliteSyncOutboxStore(factory);
+        var item = outbox.Find(saleCommittedOperationId);
+        Assert.NotNull(item);
+
+        Guid centralInstanceId = Guid.NewGuid();
+        var pullStore = new SqliteSyncPullStore(factory);
+        Assert.True(pullStore.InitializeRemoteState(storeId, centralInstanceId).IsSuccess);
+
+        var env = item!.Envelope;
+        var change = AppliedBusinessChangeProtocolV1.Create(
+            centralInstanceId,
+            serverSequence: 1,
+            sourceOperationId: env.OperationId,
+            originDeviceId: env.DeviceId,
+            originLocalSequence: env.LocalSequence,
+            storeId: env.StoreId,
+            changeType: changeType,
+            schemaVersion: schemaVersion,
+            aggregateId: env.AggregateId,
+            payloadJson: env.PayloadJson,
+            createdAtUtc: env.OccurredAtLocal);
+
+        var page = new SyncChangeFeedPageV1(centralInstanceId, 0, 1, new[] { change }, HasMore: false);
+        Assert.True(pullStore.AcceptPage(storeId, page).IsSuccess);
+
+        var projector = new SqliteSyncProjectionService(factory);
+        var projected = await projector.ProjectNextAsync(storeId, originDeviceId);
+        Assert.True(projected.IsSuccess, $"Origin echo failed: {projected.Code} - {projected.Message}");
+        Assert.True(projected.IsOriginEcho);
     }
 
     private static string NewTempRoot(string prefix) =>

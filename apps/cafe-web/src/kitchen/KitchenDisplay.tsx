@@ -11,8 +11,8 @@ import {
   useToast,
   type StatusTone,
 } from "@salryn/cafe-ui";
-import { clearPendingPrintOp, getOrCreatePendingPrintOp } from "../api/hostClient";
-import { isKitchenStation } from "../cashier/types";
+import { clearPendingPrintOp, getOrCreatePendingPrintOp, HostApiError } from "../api/hostClient";
+import { classifyPrintAttemptOutcome, isKitchenStation } from "../cashier/types";
 import type { CafeOrderDetail, CafeOrderSummary, CafePrintStation, WorkstationApi } from "../cashier/types";
 
 const TICKET_TONE: Record<string, StatusTone> = {
@@ -98,11 +98,11 @@ export function KitchenDisplay({
     printLockRef.current = true;
     setPrintingOrderId(summary.orderId);
     const revisionId = detail?.currentRevision.revisionId ?? summary.currentRevisionId;
-    const opKey = `kitchen:${summary.orderId}:${revisionId}`;
+    const opKey = `kitchen:${kitchenStation.stationId}:${summary.orderId}:${revisionId}`;
     const operationId = pendingPrintOpsRef.current[opKey] ?? getOrCreatePendingPrintOp(opKey);
     pendingPrintOpsRef.current[opKey] = operationId;
     try {
-      await api.printKitchenTicket({
+      const result = await api.printKitchenTicket({
         operationId,
         stationId: kitchenStation.stationId,
         orderId: summary.orderId,
@@ -111,8 +111,19 @@ export function KitchenDisplay({
       });
       delete pendingPrintOpsRef.current[opKey];
       clearPendingPrintOp(opKey);
-      notify("info", `Kitchen ticket sent · ${kitchenStation.name}`, `${summary.serviceReference || summary.serviceMode} queued.`);
+      const { outcome, detail: attemptDetail } = classifyPrintAttemptOutcome(result);
+      if (outcome === "succeeded") {
+        notify("info", `Kitchen ticket sent · ${kitchenStation.name}`, attemptDetail ?? `${summary.serviceReference || summary.serviceMode} queued.`);
+      } else if (outcome === "disabled") {
+        notify("warning", `Printer disabled · ${kitchenStation.name}`, attemptDetail ?? "Kitchen ticket recorded; enable printer in Store Settings.");
+      } else {
+        notify("danger", `Kitchen ticket failed · ${kitchenStation.name}`, attemptDetail ?? "Printer reported a failure.");
+      }
     } catch (error) {
+      if (error instanceof HostApiError && error.isDeterministicRejection) {
+        delete pendingPrintOpsRef.current[opKey];
+        clearPendingPrintOp(opKey);
+      }
       notify("danger", "Kitchen ticket failed", error instanceof Error ? error.message : "Could not send kitchen ticket.");
     } finally {
       printLockRef.current = false;

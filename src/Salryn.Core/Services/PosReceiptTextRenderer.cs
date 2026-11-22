@@ -32,7 +32,9 @@ public sealed record PosReceiptSnapshotDraft(
     Money? UtangAmount = null,
     Money? BalanceDue = null,
     DateOnly? DueDate = null,
-    string? ReceivableNote = null);
+    string? ReceivableNote = null,
+    Money? FeeTotal = null,
+    Money? BookingDepositApplied = null);
 
 public static class PosReceiptTextRenderer
 {
@@ -116,12 +118,21 @@ public static class PosReceiptTextRenderer
             builder.AppendLine("Discount: " + FormatMoney(draft.Discount));
         }
 
+        if (draft.FeeTotal is Money feeTotal && feeTotal.Cents > 0)
+        {
+            builder.AppendLine("Fees    : " + FormatMoney(feeTotal));
+        }
+
         if (draft.Tax.Cents > 0)
         {
             builder.AppendLine("Tax     : " + FormatMoney(draft.Tax));
         }
 
         builder.AppendLine("TOTAL   : " + FormatMoney(draft.Total));
+        if (draft.BookingDepositApplied is Money bookingDeposit && bookingDeposit.Cents > 0)
+        {
+            builder.AppendLine("Deposit : " + FormatMoney(bookingDeposit));
+        }
         Money cashPaid = draft.CashPaid ?? Money.FromCents(
             draft.Payments.Where(payment => payment.Method == PaymentMethod.Cash).Sum(payment => payment.Amount.Cents));
         if (cashPaid.Cents > 0)

@@ -63,7 +63,7 @@ try {
       await page.getByRole("button",{name:/Kitchen & Barista/i}).click();
       await expect(page.getByRole("button",{name:"Print Kitchen Ticket",exact:true}).first()).toBeVisible();
       await page.getByRole("button",{name:"Print Kitchen Ticket",exact:true}).first().click();
-      await expect(page.getByText(/Kitchen ticket sent/i)).toBeVisible(); assertions++;
+      await expect(page.getByText(/Printer disabled · Barista Kitchen/i)).toBeVisible(); assertions++;
       await page.screenshot({path:`${process.env.CAFE_QA_ROOT}/live-b2-kitchen-print.png`,fullPage:true});
       await page.getByRole("button",{name:/Cafe Cashier/i}).click();
       await expect(page.getByRole("button",{name:"Mark preparing",exact:true})).toBeVisible();
@@ -89,7 +89,7 @@ try {
       // B1 Live Check: Cashier receipt printing from persisted receipt snapshot
       await expect(page.getByRole("button",{name:"Print Receipt",exact:true})).toBeVisible();
       await page.getByRole("button",{name:"Print Receipt",exact:true}).click();
-      await expect(page.getByText(/Receipt print sent/i)).toBeVisible(); assertions++;
+      await expect(page.getByText(/Printer disabled · Counter Receipt/i)).toBeVisible(); assertions++;
       await page.screenshot({path:`${process.env.CAFE_QA_ROOT}/live-b1-receipt-print.png`,fullPage:true});
     }
     await page.getByRole("button",{name:"Start another order",exact:true}).click();
