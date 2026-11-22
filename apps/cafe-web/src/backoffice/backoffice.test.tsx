@@ -574,6 +574,29 @@ describe("Salryn Cafe Back-Office & Central Owner Console (Live Contracts)", () 
     expect(onOpenWorkstation).toHaveBeenCalledOnce();
   });
 
+
+  it("blocks a changed supplier intent after a network-unknown result rather than generating a second operation ID", async () => {
+    const user = userEvent.setup();
+    const { api } = createFakeBackofficeHarness();
+    const { centralApi } = createFakeCentralHarness();
+    const saveSupplier = vi.fn(async () => { throw new TypeError("Transport closed after submission"); });
+    api.saveSupplier = saveSupplier;
+
+    render(<BackofficeConsoleApp api={api} centralApi={centralApi} initialNav="inventory" />);
+    const form = screen.getByRole("form", { name: "Create supplier" });
+    const supplierName = within(form).getByLabelText(/Supplier name/i);
+    await user.type(supplierName, "First Dairy");
+    await user.click(within(form).getByRole("button", { name: "Save supplier" }));
+    expect(await screen.findByText(/Supplier result uncertain/i)).toBeInTheDocument();
+    expect(saveSupplier).toHaveBeenCalledTimes(1);
+
+    await user.clear(supplierName);
+    await user.type(supplierName, "Different Supplier");
+    await user.click(within(form).getByRole("button", { name: "Save supplier" }));
+    expect(await screen.findByText(/Resolve the previous uncertain operation/i)).toBeInTheDocument();
+    expect(saveSupplier).toHaveBeenCalledTimes(1);
+  });
+
   it("has zero critical/serious axe-core accessibility violations across the Backoffice shell", async () => {
     const { api } = createFakeBackofficeHarness();
     const { centralApi } = createFakeCentralHarness();

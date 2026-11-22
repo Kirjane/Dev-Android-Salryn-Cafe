@@ -80,6 +80,14 @@ export function useBackofficeOperation(prefix: string) {
     async <T,>(runner: (operationId: string) => Promise<T>, intentKey?: string): Promise<T | null> => {
       if (inFlightRef.current) return null;
 
+      // A previous write may already have committed. Never silently replace its
+      // durable operation identity when the operator edits the submitted intent.
+      // Only an identical intent may retry the ambiguous operation.
+      if (unknownOutcome && intentKey !== undefined && intentKeyRef.current !== intentKey) {
+        setError("Resolve the previous uncertain operation before submitting changed details. Check the saved record first.");
+        return null;
+      }
+
       if (intentKey !== undefined && intentKeyRef.current !== intentKey) {
         intentIdRef.current = null;
         intentKeyRef.current = intentKey;
@@ -115,7 +123,7 @@ export function useBackofficeOperation(prefix: string) {
         setInFlight(false);
       }
     },
-    [storageKey],
+    [storageKey, unknownOutcome],
   );
 
   return { inFlight, unknownOutcome, error, execute, reset };
