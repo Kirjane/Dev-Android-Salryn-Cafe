@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HostApiError } from "../api/hostClient";
+import type { WorkstationApi } from "../cashier/types";
 import { BackofficeConsoleApp } from "./BackofficeConsoleApp";
 import type {
   BackofficeApi,
@@ -536,6 +537,42 @@ describe("Salryn Cafe Back-Office & Central Owner Console (Live Contracts)", () 
     expect(screen.getByRole("button", { name: "Save supplier" })).toBeInTheDocument();
     expect(screen.getByRole("table", { name: "Low-Stock Inventory" })).toBeInTheDocument();
   });
+
+  it("never reveals Backoffice account fields until the Host license is verified", async () => {
+    const user = userEvent.setup();
+    const { api } = createFakeBackofficeHarness();
+    const { centralApi } = createFakeCentralHarness();
+    const onOpenWorkstation = vi.fn();
+    const hostApi = {
+      getLicenseStatus: vi.fn(async () => ({
+        status: 0,
+        licenseType: null,
+        applicationId: "Salryn.Cafe",
+        machineMatched: false,
+      })),
+      getSession: vi.fn(async () => ({ isAuthenticated: false })),
+    } as unknown as WorkstationApi;
+
+    render(
+      <BackofficeConsoleApp
+        api={api}
+        centralApi={centralApi}
+        hostApi={hostApi}
+        initialSurface="WINDOWS_HOST"
+        onOpenWorkstation={onOpenWorkstation}
+      />,
+    );
+
+    expect(await screen.findByText("Host License Activation Required")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Backoffice is locked")).toBeInTheDocument());
+    expect(screen.queryByRole("heading", { name: "Back-Office Sign In" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Username")).not.toBeInTheDocument();
+    expect(hostApi.getSession).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Open License Activation" }));
+    expect(onOpenWorkstation).toHaveBeenCalledOnce();
+  });
+
   it("has zero critical/serious axe-core accessibility violations across the Backoffice shell", async () => {
     const { api } = createFakeBackofficeHarness();
     const { centralApi } = createFakeCentralHarness();
