@@ -167,6 +167,29 @@ export function CashierWorkstation({
     [activeOrder],
   );
 
+  // Display-only payment preview. The Host remains authoritative for final
+  // discounts, fees, exact receipt amount, change and AR ledger postings.
+  const paymentPreview = useMemo(() => {
+    try {
+      const discountCents = discountPhp.trim() ? parsePhpToCents(discountPhp) : 0;
+      if (discountCents > serverTotalCents) {
+        return { valid: false, dueCents: 0, cashCents: 0, changeCents: 0, arCents: 0, missingCents: 0 };
+      }
+      const dueCents = serverTotalCents - discountCents;
+      const cashCents = tenderMode === "AccountsReceivable" ? 0 : parsePhpToCents(cashPhp);
+      const arCents = tenderMode === "AccountsReceivable" ? dueCents :
+        tenderMode === "Partial" ? Math.max(0, dueCents - cashCents) : 0;
+      const changeCents = tenderMode === "Cash" ? Math.max(0, cashCents - dueCents) : 0;
+      const missingCents = tenderMode === "Cash" ? Math.max(0, dueCents - cashCents) : 0;
+      return {
+        valid: !(tenderMode === "Partial" && (cashCents <= 0 || cashCents >= dueCents)),
+        dueCents, cashCents, changeCents, arCents, missingCents,
+      };
+    } catch {
+      return { valid: false, dueCents: 0, cashCents: 0, changeCents: 0, arCents: 0, missingCents: 0 };
+    }
+  }, [serverTotalCents, discountPhp, cashPhp, tenderMode]);
+
   const draftEstimatedCents = useMemo(
     () => draftLines.reduce((sum, l) => sum + l.unitPriceCents * l.quantity, 0),
     [draftLines],
@@ -731,6 +754,35 @@ export function CashierWorkstation({
                         </FormField>
                       ) : null}
 
+                      <div aria-live="polite" style={{
+                        display: "grid", gap: 6, border: "1px solid var(--salryn-border-strong)",
+                        borderRadius: 10, padding: 14, background: "var(--salryn-surface-subtle)",
+                      }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: "1.2rem", fontWeight: 800 }}>
+                          <span>Amount due</span>
+                          <span className="salryn-tabular">{paymentPreview.valid ? formatPhp(paymentPreview.dueCents) : "Check amount"}</span>
+                        </div>
+                        {tenderMode !== "AccountsReceivable" ? (
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                            <span>Cash received</span>
+                            <strong className="salryn-tabular">{paymentPreview.valid ? formatPhp(paymentPreview.cashCents) : "—"}</strong>
+                          </div>
+                        ) : null}
+                        {tenderMode === "Cash" && paymentPreview.valid ? (
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontWeight: 800 }}>
+                            <span>{paymentPreview.missingCents ? "Still to collect" : "Change due"}</span>
+                            <span className="salryn-tabular">{formatPhp(paymentPreview.missingCents || paymentPreview.changeCents)}</span>
+                          </div>
+                        ) : null}
+                        {tenderMode !== "Cash" && paymentPreview.valid ? (
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontWeight: 800 }}>
+                            <span>Charge to customer account</span>
+                            <span className="salryn-tabular">{formatPhp(paymentPreview.arCents)}</span>
+                          </div>
+                        ) : null}
+                        {!paymentPreview.valid ? <Alert tone="warning" title="Check payment amounts" description="Enter a valid discount and tender amount before confirming." /> : null}
+                      </div>
+
                       {tenderMode !== "Cash" ? (
                         <FormField label="Customer" required>
                           <SelectInput value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
@@ -840,7 +892,9 @@ export function CashierWorkstation({
                       blocked ||
                       !permitted("Orders.Complete") ||
                       !permitted("Sales.Create") ||
-                      (tenderMode !== "Cash" && !customerId)
+                      (tenderMode !== "Cash" && !customerId) ||
+                      !paymentPreview.valid ||
+                      (tenderMode === "Cash" && paymentPreview.missingCents > 0)
                     }
                     onClick={() => void handleCompletePayment()}
                   >
