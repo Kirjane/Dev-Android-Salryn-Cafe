@@ -366,6 +366,31 @@ describe("Salryn Cafe R2 — Live Host Integrated Cashier, Orders & Kitchen", ()
     expect(screen.getByRole("button", { name: "Print Receipt" })).toBeInTheDocument();
   });
 
+
+  it("shows amount due, insufficient cash, and change before saving a Cash sale", async () => {
+    const user = userEvent.setup();
+    const api = createTestHostApi();
+    render(<WorkstationApp api={api} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: /Spanish Latte/i })).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: /Spanish Latte/i }));
+    const dialog = screen.getByRole("dialog", { name: "Configure Spanish Latte" });
+    await user.click(within(dialog).getByRole("button", { name: "Add to Ticket" }));
+    await user.click(screen.getByRole("button", { name: "Save order" }));
+    await user.click(await screen.findByRole("button", { name: "Send to preparation" }));
+    await user.click(await screen.findByRole("button", { name: "Mark preparing" }));
+    await user.click(await screen.findByRole("button", { name: "Mark ready" }));
+
+    const complete = screen.getByRole("button", { name: "Complete payment" });
+    expect(screen.getByText("Amount due")).toBeInTheDocument();
+    expect(screen.getByText("Still to collect")).toBeInTheDocument();
+    expect(complete).toBeDisabled();
+
+    await user.clear(screen.getByLabelText("Cash amount (PHP)"));
+    await user.type(screen.getByLabelText("Cash amount (PHP)"), "500");
+    expect(screen.getByText("Change due")).toBeInTheDocument();
+    expect(complete).toBeEnabled();
+  });
+
   it("retains exact RFC-4122 completionOperationId in localStorage on unknown outcome and replays identical payload after reload", async () => {
     const user = userEvent.setup();
     const api = createTestHostApi();
