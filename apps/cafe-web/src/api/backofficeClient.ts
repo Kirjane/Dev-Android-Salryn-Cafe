@@ -63,6 +63,21 @@ export function createLiveBackofficeApi(): BackofficeApi {
       hostRequest<void>("/api/cafe/suppliers", {
         id: null, name: req.name, contactNumber: req.contactNumber ?? null, notes: null, isActive: true,
       }, "POST", req.operationId),
+    bindMenuItemRecipe: (req) =>
+      hostRequest<void>("/api/cafe/recipes/items/" + encodeURIComponent(req.productId),
+        { recipeId: req.recipeId }, "PUT", req.operationId),
+    createArCustomer: (req) =>
+      hostRequest<void>("/api/customers", {
+        fullName: req.fullName, phone: req.phone ?? null, address: null,
+        note: null, creditLimitCents: req.creditLimitCents ?? null,
+      }),
+    getPrintStations: () =>
+      hostRequest<Awaited<ReturnType<BackofficeApi["getPrintStations"]>>>("/api/cafe/print/stations"),
+    createPrintStation: (req) =>
+      hostRequest<void>("/api/cafe/print/stations/" + deriveScopedOperationId(req.operationId, "station-identity"), {
+        operationId: req.operationId, name: req.name, stationKind: req.stationKind, routeKey: req.routeKey,
+        isActive: true, expectedVersion: 0, occurredAtUtc: null,
+      }, "PUT", req.operationId),
     publishMenuAndRecipes: async (operationId) => {
       await hostRequest<unknown>("/api/menu/publish", {
         operationId: deriveScopedOperationId(operationId, "menu-publish"),

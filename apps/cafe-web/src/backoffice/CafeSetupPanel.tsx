@@ -124,6 +124,9 @@ export function CafeCatalogSetup({ api, onSaved }: SetupProps) {
   const ingredientOp = useBackofficeOperation("setup-ingredient");
   const recipeOp = useBackofficeOperation("setup-recipe");
   const lineOp = useBackofficeOperation("setup-recipe-line");
+  const bindingOp = useBackofficeOperation("setup-recipe-item-binding");
+  const [bindingItemId, setBindingItemId] = useState("");
+  const [bindingRecipeId, setBindingRecipeId] = useState("");
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -301,6 +304,27 @@ export function CafeCatalogSetup({ api, onSaved }: SetupProps) {
                 <TextInput inputMode="decimal" value={lineQty} onChange={(e) => setLineQty(e.target.value)} required />
               </FormField>
               <Button type="submit" variant="secondary" loading={lineOp.inFlight} disabled={!recipes?.ingredients.length || !recipes?.recipes.length}>Add to recipe</Button>
+            </form>
+            <OperationFeedback op={bindingOp} title="Menu recipe binding" />
+            <form aria-label="Link recipe to menu item" style={formGrid} onSubmit={(e: FormEvent) => {
+              e.preventDefault();
+              const productId = bindingItemId || catalog?.items[0]?.productId || "";
+              const recipeId = bindingRecipeId || recipes?.recipes[0]?.id || "";
+              if (!productId || !recipeId) return;
+              void submitIdempotent(bindingOp, "bind-recipe:" + productId + ":" + recipeId,
+                (operationId) => api.bindMenuItemRecipe({ operationId, productId, recipeId }), completed);
+            }}>
+              <FormField label="Menu item for this recipe" required>
+                <SelectInput value={bindingItemId || catalog?.items[0]?.productId || ""} onChange={(e) => setBindingItemId(e.target.value)}>
+                  {(catalog?.items ?? []).filter((i) => i.isActive).map((i) => <option value={i.productId} key={i.productId}>{i.name}</option>)}
+                </SelectInput>
+              </FormField>
+              <FormField label="Recipe to use" required>
+                <SelectInput value={bindingRecipeId || recipes?.recipes[0]?.id || ""} onChange={(e) => setBindingRecipeId(e.target.value)}>
+                  {(recipes?.recipes ?? []).filter((x) => x.isActive).map((x) => <option value={x.id} key={x.id}>{x.name}</option>)}
+                </SelectInput>
+              </FormField>
+              <Button type="submit" variant="primary" loading={bindingOp.inFlight} disabled={!catalog?.items.length || !recipes?.recipes.length}>Link recipe to item</Button>
             </form>
           </div>
         </CardBody>

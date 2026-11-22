@@ -325,6 +325,10 @@ export interface BackofficeApi {
   saveRecipe(req: { operationId: string; name: string; yieldX1000: number }): Promise<void>;
   saveRecipeLine(req: { operationId: string; recipeId: string; ingredientId: string; inputUnit: string; declaredQuantityX1000: number }): Promise<void>;
   saveSupplier(req: { operationId: string; name: string; contactNumber?: string }): Promise<void>;
+  bindMenuItemRecipe(req: { operationId: string; productId: string; recipeId: string }): Promise<void>;
+  createArCustomer(req: { fullName: string; phone?: string | null; creditLimitCents?: number | null }): Promise<void>;
+  getPrintStations(): Promise<Array<{ stationId: string; name: string; stationKind: number | string; routeKey: string | null; isActive: boolean }>>;
+  createPrintStation(req: { operationId: string; name: string; stationKind: "CustomerReceipt" | "Kitchen" | "BarDrinks"; routeKey: string }): Promise<void>;
   publishMenuAndRecipes(operationId: string): Promise<void>;
   getLowStock(): Promise<LowStockItem[]>;
   getSuppliers(): Promise<SupplierSummary[]>;

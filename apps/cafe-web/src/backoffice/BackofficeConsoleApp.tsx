@@ -79,6 +79,7 @@ import type {
 } from "./types";
 import { BackofficeUnknownOutcomeError, useBackofficeOperation } from "./useBackofficeOperation";
 import { CafeCatalogSetup, CafeSupplierSetup } from "./CafeSetupPanel";
+import { CafeCustomerSetup, CafePrinterSetup } from "./CafeOperationalSetupPanel";
 
 export type BackofficeConsoleAppProps = {
   api?: BackofficeApi;
@@ -925,6 +926,7 @@ function BackofficeConsoleInner({
 
       {activeNav === "cash-ar" ? (
         <div style={{ display: "grid", gap: 16 }}>
+          {surface === "WINDOWS_HOST" ? <CafeCustomerSetup api={api} onSaved={refreshHostData} /> : null}
           <OperationAlerts op={arOp} title="AR Collection" />
           <OperationAlerts op={cashOp} title="Cash Movement" />
           <OperationAlerts op={refundReqOp} title="Refund Request" />
@@ -1542,6 +1544,7 @@ function BackofficeConsoleInner({
 
       {activeNav === "audit" ? (
         <div style={{ display: "grid", gap: 16 }}>
+          {surface === "WINDOWS_HOST" ? <CafePrinterSetup api={api} /> : null}
           <OperationAlerts op={adminOp} title="Admin Operation" />
 
           <Card>
@@ -1625,6 +1628,20 @@ function BackofficeConsoleInner({
                   <FormField label="Receipt Footer">
                     <TextInput value={settingsDraft.receiptFooter ?? ""} onChange={(e) => setSettingsDraft({ ...settingsDraft, receiptFooter: e.target.value })} />
                   </FormField>
+                   <FormField label="Receipt Header">
+                     <TextInput value={settingsDraft.receiptHeader ?? ""} onChange={(e) => setSettingsDraft({ ...settingsDraft, receiptHeader: e.target.value })} />
+                   </FormField>
+                   <FormField label="Windows Receipt Printer Mode">
+                     <SelectInput value={settingsDraft.printerMode} onChange={(e) => setSettingsDraft({ ...settingsDraft, printerMode: e.target.value })}>
+                       <option value="Disabled">Printing disabled</option>
+                       <option value="WindowsPrinter">Windows print queue</option>
+                     </SelectInput>
+                   </FormField>
+                   {settingsDraft.printerMode === "WindowsPrinter" ? (
+                     <FormField label="Exact Windows Printer Name" required>
+                       <TextInput value={settingsDraft.windowsPrinterName ?? ""} onChange={(e) => setSettingsDraft({ ...settingsDraft, windowsPrinterName: e.target.value })} placeholder="Installed Windows printer name" />
+                     </FormField>
+                   ) : null}
                   <Button
                     variant="secondary"
                     loading={adminOp.inFlight}
