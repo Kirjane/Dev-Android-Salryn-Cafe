@@ -44,7 +44,7 @@ export function createLiveBackofficeApi(): BackofficeApi {
         notes: req.notes ?? "Back-office purchase receipt",
         lines: [
           {
-            lineId: crypto.randomUUID(),
+            lineId: deriveScopedOperationId(req.operationId, "purchase-line-1"),
             stockTargetType: "Ingredient",
             stockTargetId: req.stockTargetId,
             quantityReceivedX1000: req.quantityX1000,
@@ -59,7 +59,7 @@ export function createLiveBackofficeApi(): BackofficeApi {
         notes: req.notes,
         lines: [
           {
-            lineId: crypto.randomUUID(),
+            lineId: deriveScopedOperationId(req.operationId, "waste-line-1"),
             stockTargetType: "Ingredient",
             stockTargetId: req.stockTargetId,
             quantityWastedX1000: req.quantityWastedX1000,

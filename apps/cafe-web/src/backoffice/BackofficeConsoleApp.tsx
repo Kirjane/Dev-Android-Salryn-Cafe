@@ -292,15 +292,17 @@ function BackofficeConsoleInner({
   const adminOp = useBackofficeOperation("admin");
   const hostOpsOp = useBackofficeOperation("host-ops");
 
-  const safeFetch = async <T,>(fn: () => Promise<T>, fallback: T): Promise<T> => {
-    try {
-      return await fn();
-    } catch {
-      return fallback;
-    }
-  };
-
   const refreshHostData = useCallback(async () => {
+    const failedLoads: string[] = [];
+    const safeFetch = async <T,>(label: string, fn: () => Promise<T>, fallback: T): Promise<T> => {
+      try {
+        return await fn();
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : "Host request failed";
+        failedLoads.push(`${label}: ${detail}`);
+        return fallback;
+      }
+    };
     setHostLoading(true);
     setHostLoadError(null);
     try {
@@ -326,28 +328,31 @@ function BackofficeConsoleInner({
         lan,
         pair,
       ] = await Promise.all([
-        api.getOwnerReports(),
-        safeFetch(() => api.getIngredientsAndRecipes(), { ingredients: [], recipes: [], lines: [] }),
-        safeFetch(() => api.getLowStock(), []),
-        safeFetch(() => api.getSuppliers(), []),
-        safeFetch(() => api.getReceivableCustomers(), []),
-        safeFetch(() => api.getCashMovements(), []),
-        safeFetch(() => api.getRefunds(), []),
-        safeFetch(() => api.getRefundableSales(), []),
-        safeFetch(() => api.getBookings(), []),
-        safeFetch(() => api.getDeliveries(), []),
-        safeFetch(() => api.getAttendance(), []),
-        safeFetch(() => api.getIncidents(), []),
-        safeFetch(() => api.getAuditLogs(), []),
-        safeFetch(() => api.getUsers(), []),
-        safeFetch(() => api.getUserRoles(), []),
-        safeFetch(() => api.getStoreSettings(), null),
-        safeFetch(() => api.getBackups(), []),
-        safeFetch(() => api.getLicenseStatus(), null),
-        safeFetch(() => api.getLanStatus(), null),
-        safeFetch(() => api.getLanPairing(), null),
+        safeFetch("Owner reports", () => api.getOwnerReports(), null),
+        safeFetch("Menu and recipes", () => api.getIngredientsAndRecipes(), { ingredients: [], recipes: [], lines: [] }),
+        safeFetch("Low stock", () => api.getLowStock(), []),
+        safeFetch("Suppliers", () => api.getSuppliers(), []),
+        safeFetch("Receivables", () => api.getReceivableCustomers(), []),
+        safeFetch("Cash movements", () => api.getCashMovements(), []),
+        safeFetch("Refunds", () => api.getRefunds(), []),
+        safeFetch("Refundable sales", () => api.getRefundableSales(), []),
+        safeFetch("Bookings", () => api.getBookings(), []),
+        safeFetch("Deliveries", () => api.getDeliveries(), []),
+        safeFetch("Attendance", () => api.getAttendance(), []),
+        safeFetch("Incidents", () => api.getIncidents(), []),
+        safeFetch("Audit log", () => api.getAuditLogs(), []),
+        safeFetch("Users", () => api.getUsers(), []),
+        safeFetch("User roles", () => api.getUserRoles(), []),
+        safeFetch("Store settings", () => api.getStoreSettings(), null),
+        safeFetch("Backups", () => api.getBackups(), []),
+        safeFetch("License", () => api.getLicenseStatus(), null),
+        safeFetch("LAN status", () => api.getLanStatus(), null),
+        safeFetch("Device pairing", () => api.getLanPairing(), null),
       ]);
 
+      if (failedLoads.length > 0) {
+        setHostLoadError(`Cannot load ${failedLoads.length} Backoffice module(s). Unavailable data below must not be treated as an empty business record. ${failedLoads.join(" · ")}`);
+      }
       setReports(rep);
       setDraft(ing);
       setLowStock(low);
@@ -628,7 +633,7 @@ function BackofficeConsoleInner({
               </Button>
             </div>
           </div>
-          {hostLoadError ? <Alert tone="danger" title="Host Sync Error" description={hostLoadError} /> : null}
+          {hostLoadError ? <Alert tone="danger" title="Backoffice Data Incomplete" description={hostLoadError} /> : null}
         </div>
       }
     >
