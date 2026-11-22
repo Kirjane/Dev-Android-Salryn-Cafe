@@ -92,6 +92,7 @@ internal static class LocalIngredientRecipeEndpoints
         });
 
         app.MapPost("/api/cafe/recipes/publish", (
+            RecipePublishRequest? request,
             HttpContext httpContext,
             LocalApiSessionService sessions,
             SalrynLocalComposition composition) =>
@@ -169,4 +170,5 @@ internal static class LocalIngredientRecipeEndpoints
     }
 
     private sealed record RecipeBindingRequest(string? RecipeId);
+    private sealed record RecipePublishRequest(Guid? OperationId);
 }

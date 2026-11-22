@@ -24,7 +24,7 @@ import {
   TextInput,
   useToast,
 } from "@salryn/cafe-ui";
-import { formatPhp, parsePhpToCents } from "../api/hostClient";
+import { clearPendingPrintOp, formatPhp, getOrCreatePendingPrintOp, parsePhpToCents } from "../api/hostClient";
 import { isReceiptStation } from "./types";
 import type {
   CafeOrderDetail,
@@ -352,8 +352,9 @@ export function CashierWorkstation({
     if (!receiptStation || printLockRef.current) return;
     printLockRef.current = true;
     setPrintingReceipt(true);
-    const operationId = pendingPrintOpsRef.current[saleId] ?? crypto.randomUUID();
-    pendingPrintOpsRef.current[saleId] = operationId;
+    const opKey = `receipt:${saleId}:Original`;
+    const operationId = pendingPrintOpsRef.current[opKey] ?? getOrCreatePendingPrintOp(opKey);
+    pendingPrintOpsRef.current[opKey] = operationId;
     try {
       await api.printReceipt({
         operationId,
@@ -361,7 +362,8 @@ export function CashierWorkstation({
         saleId,
         copyKind: "Original",
       });
-      delete pendingPrintOpsRef.current[saleId];
+      delete pendingPrintOpsRef.current[opKey];
+      clearPendingPrintOp(opKey);
       notify("info", `Receipt print sent · ${receiptStation.name}`);
     } catch (error) {
       notify("danger", "Receipt print failed", error instanceof Error ? error.message : "Printer error.");

@@ -134,11 +134,12 @@ internal static class LocalCafePrintEndpoints
             if (authority.IsFailure)
                 return ToError(authority.ErrorDetail);
 
+            Guid operationId = request.OperationId.GetValueOrDefault();
             Result<CafePrintJobMutationResult> result =
                 await composition.CafePrint.CreateReceiptJobAsync(
                     new CafeReceiptPrintJobMutation(
-                        request.OperationId.GetValueOrDefault(),
-                        Id(request.JobId),
+                        operationId,
+                        ResolveJobId(request.JobId, operationId, "receipt"),
                         authority.Value.DeviceId,
                         authority.Value.StoreId,
                         authority.Value.ActorUserId,
@@ -189,11 +190,12 @@ internal static class LocalCafePrintEndpoints
             if (authority.IsFailure)
                 return ToError(authority.ErrorDetail);
 
+            Guid operationId = request.OperationId.GetValueOrDefault();
             return ToResult(
                 composition.CafePrint.CreateKitchenTicketJob(
                     new CafeKitchenPrintJobMutation(
-                        request.OperationId.GetValueOrDefault(),
-                        Id(request.JobId),
+                        operationId,
+                        ResolveJobId(request.JobId, operationId, "kitchen"),
                         authority.Value.DeviceId,
                         authority.Value.StoreId,
                         authority.Value.ActorUserId,
@@ -207,6 +209,7 @@ internal static class LocalCafePrintEndpoints
 
         app.MapPost("/api/cafe/print/jobs/{jobId:guid}/attempt", async (
             Guid jobId,
+            PrintAttemptRequest? request,
             HttpContext httpContext,
             LocalApiSessionService sessions,
             SalrynLocalComposition composition,
@@ -392,10 +395,26 @@ internal static class LocalCafePrintEndpoints
             },
             statusCode: StatusCodes.Status400BadRequest);
 
-    private static Guid Id(Guid? value) =>
-        value.GetValueOrDefault() == Guid.Empty
-            ? Guid.NewGuid()
-            : value!.Value;
+    private static Guid ResolveJobId(Guid? value, Guid operationId, string kind)
+    {
+        if (value.GetValueOrDefault() != Guid.Empty)
+        {
+            return value!.Value;
+        }
+
+        if (operationId == Guid.Empty)
+        {
+            return Guid.NewGuid();
+        }
+
+        byte[] hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes($"print-job|{kind}|{operationId:D}"));
+        Span<byte> guidBytes = stackalloc byte[16];
+        hash.AsSpan(0, 16).CopyTo(guidBytes);
+        guidBytes[6] = (byte)((guidBytes[6] & 0x0F) | 0x50);
+        guidBytes[8] = (byte)((guidBytes[8] & 0x3F) | 0x80);
+        return new Guid(guidBytes);
+    }
 
     private static IResult? Require(
         HttpContext httpContext,
@@ -471,4 +490,6 @@ internal static class LocalCafePrintEndpoints
         string CopyKind,
         Guid? ParentJobId,
         DateTimeOffset? OccurredAtUtc);
+
+    private sealed record PrintAttemptRequest(Guid? OperationId);
 }

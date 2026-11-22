@@ -11,6 +11,7 @@ import {
   useToast,
   type StatusTone,
 } from "@salryn/cafe-ui";
+import { clearPendingPrintOp, getOrCreatePendingPrintOp } from "../api/hostClient";
 import { isKitchenStation } from "../cashier/types";
 import type { CafeOrderDetail, CafeOrderSummary, CafePrintStation, WorkstationApi } from "../cashier/types";
 
@@ -97,8 +98,8 @@ export function KitchenDisplay({
     printLockRef.current = true;
     setPrintingOrderId(summary.orderId);
     const revisionId = detail?.currentRevision.revisionId ?? summary.currentRevisionId;
-    const opKey = `${summary.orderId}:${revisionId}`;
-    const operationId = pendingPrintOpsRef.current[opKey] ?? crypto.randomUUID();
+    const opKey = `kitchen:${summary.orderId}:${revisionId}`;
+    const operationId = pendingPrintOpsRef.current[opKey] ?? getOrCreatePendingPrintOp(opKey);
     pendingPrintOpsRef.current[opKey] = operationId;
     try {
       await api.printKitchenTicket({
@@ -109,6 +110,7 @@ export function KitchenDisplay({
         copyKind: "Original",
       });
       delete pendingPrintOpsRef.current[opKey];
+      clearPendingPrintOp(opKey);
       notify("info", `Kitchen ticket sent · ${kitchenStation.name}`, `${summary.serviceReference || summary.serviceMode} queued.`);
     } catch (error) {
       notify("danger", "Kitchen ticket failed", error instanceof Error ? error.message : "Could not send kitchen ticket.");

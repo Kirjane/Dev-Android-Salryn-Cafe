@@ -116,6 +116,10 @@ public interface IStoreSettingsWriteRepository
         StoreSettingsUpdateRequest request,
         CancellationToken cancellationToken = default);
 
+    Task<Result<Guid>> CreateOrUpdateAsync(
+        StoreSettingsUpdateRequest request,
+        CancellationToken cancellationToken = default);
+
     Task<Result> SetLogoAsync(
         Guid storeSettingsId,
         string contentType,

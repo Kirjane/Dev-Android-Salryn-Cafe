@@ -2,6 +2,7 @@
 using Salryn.Core.Common;
 using Salryn.Core.Repositories;
 using Salryn.Core.Services;
+using Salryn.Infrastructure.Data.Seeding;
 
 namespace Salryn.Infrastructure.Data.Repositories.System;
 
@@ -88,6 +89,111 @@ public sealed class SqliteStoreSettingsWriteRepository :
         catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
         {
             return Task.FromResult(Unexpected("StoreSettings.UpdateFailed", ex));
+        }
+    }
+
+    public Task<Result<Guid>> CreateOrUpdateAsync(
+        StoreSettingsUpdateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        Guid targetId = request.StoreSettingsId == Guid.Empty ? Guid.NewGuid() : request.StoreSettingsId;
+        StoreSettingsUpdateRequest normalized = request with { StoreSettingsId = targetId };
+        Result validation = Validate(normalized);
+        if (validation.IsFailure)
+        {
+            return Task.FromResult(Result<Guid>.Fail(validation.ErrorDetail));
+        }
+
+        try
+        {
+            using var connection = CreateOpenConnection();
+            using var transaction = connection.BeginTransaction();
+
+            Guid? existingId = null;
+            using (var findCmd = connection.CreateCommand())
+            {
+                findCmd.Transaction = transaction;
+                findCmd.CommandText = "SELECT id FROM store_settings ORDER BY created_at DESC LIMIT 1;";
+                object? raw = findCmd.ExecuteScalar();
+                if (raw is string text && Guid.TryParse(text, out Guid parsed))
+                {
+                    existingId = parsed;
+                }
+            }
+
+            string now = DateTimeOffset.UtcNow.ToString("O");
+            Guid effectiveId = existingId ?? targetId;
+
+            using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                if (existingId.HasValue)
+                {
+                    command.CommandText = """
+                        UPDATE store_settings
+                        SET
+                            store_name = $storeName,
+                            business_name = $businessName,
+                            address = $address,
+                            contact_number = $contactNumber,
+                            tin = $tin,
+                            currency_label = $currencyLabel,
+                            receipt_width_mm = $receiptWidthMm,
+                            tax_mode_enabled = $taxModeEnabled,
+                            shift_mode_enabled = $shiftModeEnabled,
+                            receipt_header = $receiptHeader,
+                            receipt_footer = $receiptFooter,
+                            printer_mode = $printerMode,
+                            windows_printer_name = $windowsPrinterName,
+                            updated_at = $updatedAt
+                        WHERE id = $id;
+                        """;
+                }
+                else
+                {
+                    command.CommandText = """
+                        INSERT INTO store_settings (
+                            id, store_name, business_name, address, contact_number, tin, currency_label,
+                            receipt_width_mm, receipt_header, receipt_footer, tax_mode_enabled,
+                            shift_mode_enabled, allow_negative_stock, printer_mode, windows_printer_name,
+                            created_at, updated_at)
+                        VALUES (
+                            $id, $storeName, $businessName, $address, $contactNumber, $tin, $currencyLabel,
+                            $receiptWidthMm, $receiptHeader, $receiptFooter, $taxModeEnabled,
+                            $shiftModeEnabled, $allowNegativeStock, $printerMode, $windowsPrinterName,
+                            $updatedAt, $updatedAt);
+                        """;
+                    command.Parameters.AddWithValue(
+                        "$allowNegativeStock",
+                        DefaultSeedData.StoreDefaults.AllowNegativeStock ? 1 : 0);
+                }
+
+                command.Parameters.AddWithValue("$id", effectiveId.ToString("D"));
+                command.Parameters.AddWithValue("$storeName", normalized.StoreName.Trim());
+                command.Parameters.AddWithValue("$businessName", DbNullableText(normalized.BusinessName));
+                command.Parameters.AddWithValue("$address", DbNullableText(normalized.Address));
+                command.Parameters.AddWithValue("$contactNumber", DbNullableText(normalized.ContactNumber));
+                command.Parameters.AddWithValue("$tin", DbNullableText(normalized.Tin));
+                command.Parameters.AddWithValue("$currencyLabel", normalized.CurrencyLabel.Trim());
+                command.Parameters.AddWithValue("$receiptWidthMm", normalized.ReceiptWidthMm);
+                command.Parameters.AddWithValue("$taxModeEnabled", normalized.TaxModeEnabled ? 1 : 0);
+                command.Parameters.AddWithValue("$shiftModeEnabled", normalized.ShiftModeEnabled ? 1 : 0);
+                command.Parameters.AddWithValue("$receiptHeader", DbNullableText(normalized.ReceiptHeader));
+                command.Parameters.AddWithValue("$receiptFooter", DbNullableText(normalized.ReceiptFooter));
+                command.Parameters.AddWithValue("$printerMode", normalized.PrinterMode.Trim());
+                command.Parameters.AddWithValue("$windowsPrinterName", DbNullableText(normalized.WindowsPrinterName));
+                command.Parameters.AddWithValue("$updatedAt", now);
+                command.ExecuteNonQuery();
+            }
+
+            transaction.Commit();
+            return Task.FromResult(Result<Guid>.Success(effectiveId));
+        }
+        catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
+        {
+            return Task.FromResult(Unexpected<Guid>("StoreSettings.UpdateFailed", ex));
         }
     }
 

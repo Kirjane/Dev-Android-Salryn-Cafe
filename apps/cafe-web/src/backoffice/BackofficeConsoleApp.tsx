@@ -727,7 +727,7 @@ function BackofficeConsoleInner({
                   onClick={() =>
                     void publishOp.execute(async (operationId) => {
                       try {
-                        await api.publishMenuAndRecipes();
+                        await api.publishMenuAndRecipes(operationId);
                         await refreshHostData();
                         notify("success", "Menu & Recipes published", "New revision is live for Cashiers.");
                       } catch (err) {
@@ -1608,8 +1608,8 @@ function BackofficeConsoleInner({
                   <FormField label="Store Name" required>
                     <TextInput value={settingsDraft.storeName} onChange={(e) => setSettingsDraft({ ...settingsDraft, storeName: e.target.value })} />
                   </FormField>
-                  <FormField label="Business Name" required>
-                    <TextInput value={settingsDraft.businessName} onChange={(e) => setSettingsDraft({ ...settingsDraft, businessName: e.target.value })} />
+                  <FormField label="Business Name">
+                    <TextInput value={settingsDraft.businessName ?? ""} onChange={(e) => setSettingsDraft({ ...settingsDraft, businessName: e.target.value })} />
                   </FormField>
                   <FormField label="Address">
                     <TextInput value={settingsDraft.address ?? ""} onChange={(e) => setSettingsDraft({ ...settingsDraft, address: e.target.value })} />

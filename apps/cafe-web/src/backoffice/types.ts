@@ -194,7 +194,7 @@ export type UserRoleOption = {
 export type StoreSettingsSnapshot = {
   id: string;
   storeName: string;
-  businessName: string;
+  businessName: string | null;
   address: string | null;
   contactNumber: string | null;
   tin: string | null;
@@ -307,7 +307,7 @@ export type RefundStockDisposition = "Restock" | "DamagedNonRestockable" | "Serv
 export interface BackofficeApi {
   getOwnerReports(): Promise<OwnerReportsSnapshot>;
   getIngredientsAndRecipes(): Promise<IngredientRecipeDraft>;
-  publishMenuAndRecipes(): Promise<void>;
+  publishMenuAndRecipes(operationId: string): Promise<void>;
   getLowStock(): Promise<LowStockItem[]>;
   getSuppliers(): Promise<SupplierSummary[]>;
   receivePurchase(req: {
@@ -392,7 +392,7 @@ export interface BackofficeApi {
   getUserRoles(): Promise<UserRoleOption[]>;
   createUser(req: { username: string; displayName: string; password: string; roleId: string }): Promise<UserRow>;
   getStoreSettings(): Promise<StoreSettingsSnapshot>;
-  updateStoreSettings(req: Partial<StoreSettingsSnapshot> & { storeName: string; businessName: string; currencyLabel: string; receiptWidthMm: number; printerMode: string }): Promise<void>;
+  updateStoreSettings(req: Partial<StoreSettingsSnapshot> & { storeName: string; businessName?: string | null; currencyLabel: string; receiptWidthMm: number; printerMode: string }): Promise<void>;
   getBackups(): Promise<BackupPackageRow[]>;
   createBackup(): Promise<BackupPackageRow>;
   verifyBackup(backupId: string): Promise<{ valid: boolean; summary?: string }>;

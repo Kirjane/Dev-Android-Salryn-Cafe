@@ -37,7 +37,14 @@ try {
       if(!body.receiptNumber) throw new Error("Restart replay lost receipt identity");
       assertions++;
     }
-    console.log(`PASS HTTP restart replay: ${assertions} assertions`);
+    const persistedSettings = await context.request.get(`${url}/api/settings/store`);
+    if (persistedSettings.status() !== 200) throw new Error(`Post-restart GET /api/settings/store failed HTTP ${persistedSettings.status()}`);
+    const settingsJson = await persistedSettings.json();
+    if (settingsJson.storeName !== "Salryn Cafe Live QA" || settingsJson.receiptFooter !== "Verified Live QA!") {
+      throw new Error(`Post-restart store settings mismatch: ${JSON.stringify(settingsJson)}`);
+    }
+    assertions++;
+    console.log(`PASS HTTP restart replay + settings persistence: ${assertions} assertions`);
     await browser.close();
     process.exit(0);
   }
@@ -51,6 +58,16 @@ try {
     await expect(page.getByRole("heading",{name:"Current order · Open",exact:true})).toBeVisible(); assertions++;
     await page.getByRole("button",{name:"Send to preparation",exact:true}).click();
     await expect(page.getByRole("button",{name:"Mark preparing",exact:true})).toBeVisible();
+    if (tender === "Cash") {
+      // B2 Live Check: Kitchen display printing via real /api/cafe/print/jobs/kitchen + /attempt with durable operationId
+      await page.getByRole("button",{name:/Kitchen & Barista/i}).click();
+      await expect(page.getByRole("button",{name:"Print Kitchen Ticket",exact:true}).first()).toBeVisible();
+      await page.getByRole("button",{name:"Print Kitchen Ticket",exact:true}).first().click();
+      await expect(page.getByText(/Kitchen ticket sent/i)).toBeVisible(); assertions++;
+      await page.screenshot({path:`${process.env.CAFE_QA_ROOT}/live-b2-kitchen-print.png`,fullPage:true});
+      await page.getByRole("button",{name:/Cafe Cashier/i}).click();
+      await expect(page.getByRole("button",{name:"Mark preparing",exact:true})).toBeVisible();
+    }
     await page.getByRole("button",{name:"Mark preparing",exact:true}).click();
     await expect(page.getByRole("button",{name:"Mark ready",exact:true})).toBeVisible();
     await page.getByRole("button",{name:"Mark ready",exact:true}).click();
@@ -68,11 +85,33 @@ try {
     if (tender !== "Cash") await page.getByLabel(/Customer/i).selectOption({label:"Synthetic Cafe Account"});
     await page.getByRole("button",{name:"Complete payment",exact:true}).click();
     await expect(page.getByText(/Payment confirmed · Receipt/i)).toBeVisible(); assertions++;
+    if (tender === "Cash") {
+      // B1 Live Check: Cashier receipt printing from persisted receipt snapshot
+      await expect(page.getByRole("button",{name:"Print Receipt",exact:true})).toBeVisible();
+      await page.getByRole("button",{name:"Print Receipt",exact:true}).click();
+      await expect(page.getByText(/Receipt print sent/i)).toBeVisible(); assertions++;
+      await page.screenshot({path:`${process.env.CAFE_QA_ROOT}/live-b1-receipt-print.png`,fullPage:true});
+    }
     await page.getByRole("button",{name:"Start another order",exact:true}).click();
   }
   await page.getByRole("button",{name:"Back Office & Reports",exact:true}).click();
   await expect(page.getByText("Daily Sales",{exact:true})).toBeVisible(); assertions++;
   await expect(page.getByText("₱15.00").first()).toBeVisible(); assertions++;
+  // B3 Live Check: Backoffice Menu & Recipes publish with durable operationId
+  await page.getByRole("button",{name:"Menu, Recipes & BOM",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Publish Menu & Recipes",exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Publish Menu & Recipes",exact:true}).click();
+  await expect(page.getByText(/Menu & Recipes published/i)).toBeVisible(); assertions++;
+  await page.screenshot({path:`${process.env.CAFE_QA_ROOT}/live-b3-menu-publish.png`,fullPage:true});
+  // B4 Live Check: Backoffice Store Settings read + update
+  await page.getByRole("button",{name:"Audit, Users & Settings",exact:true}).click();
+  await expect(page.getByText("Cafe Store & Receipt Settings",{exact:true})).toBeVisible(); assertions++;
+  await page.getByLabel(/Store Name/i).fill("Salryn Cafe Live QA");
+  await page.getByLabel(/Receipt Footer/i).fill("Verified Live QA!");
+  await page.getByRole("button",{name:"Save Store Settings",exact:true}).click();
+  await expect(page.getByText("Store settings updated", { exact: true })).toBeVisible(); assertions++;
+  await expect(page.getByRole("cell", { name: "Store settings updated." }).first()).toBeVisible(); assertions++;
+  await page.screenshot({path:`${process.env.CAFE_QA_ROOT}/live-b4-store-settings.png`,fullPage:true});
   await page.getByRole("button",{name:"Cash, Expense, AR & Refunds",exact:true}).click();
   await expect(page.getByRole("table",{name:"Customer AR Balances"})).toContainText("₱7.50"); assertions++;
   await expect(page.getByRole("heading",{name:"C5 Audited Refunds & Reversals",exact:true})).toBeVisible(); assertions++;

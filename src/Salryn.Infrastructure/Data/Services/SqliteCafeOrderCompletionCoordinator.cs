@@ -1206,6 +1206,30 @@ public sealed class SqliteCafeOrderCompletionCoordinator : SqliteRepositoryBase
             });
         }
 
+        (string? customerFullName, string? customerPhone) =
+            ReadCustomerSnapshot(connection, transaction, mutation.CustomerId);
+
+        string receiptSnapshot = RenderReceiptSnapshot(
+            connection,
+            transaction,
+            receiptNumber,
+            mutation.OccurredAtUtc.ToUniversalTime(),
+            mutation.ActorUserId,
+            Money.FromCents(decision.GrossSubtotalCents),
+            Money.FromCents(checked(decision.LineDiscountTotalCents + decision.OrderDiscountTotalCents)),
+            Money.FromCents(decision.TaxCents),
+            Money.FromCents(decision.NetSaleTotalCents),
+            Money.FromCents(decision.AmountPaidCents),
+            Money.FromCents(decision.ChangeCents),
+            items,
+            payments,
+            customerFullName,
+            customerPhone,
+            Money.FromCents(decision.CashTenderCents),
+            Money.FromCents(decision.AccountsReceivableTenderCents),
+            mutation.ReceivableDueDate,
+            NormalizeOptional(mutation.ReceivableNote));
+
         Sale sale = new()
         {
             Id = saleId,
@@ -1247,13 +1271,13 @@ public sealed class SqliteCafeOrderCompletionCoordinator : SqliteRepositoryBase
             ReceivableNote =
                 NormalizeOptional(
                     mutation.ReceivableNote),
-            CustomerFullNameSnapshot = null,
-            CustomerPhoneSnapshot = null,
+            CustomerFullNameSnapshot = customerFullName,
+            CustomerPhoneSnapshot = customerPhone,
             Status = SaleStatus.Completed,
             VoidedByUserId = null,
             VoidReason = null,
             VoidedAt = null,
-            ReceiptSnapshot = null,
+            ReceiptSnapshot = receiptSnapshot,
             Items = items,
             Payments = payments,
             CreatedAt =
@@ -1533,6 +1557,27 @@ public sealed class SqliteCafeOrderCompletionCoordinator : SqliteRepositoryBase
                 "Cash tender is insufficient for this order completion.");
         }
 
+        string receiptSnapshot = RenderReceiptSnapshot(
+            connection,
+            transaction,
+            receiptNumber,
+            occurredAtUtc.ToUniversalTime(),
+            actorUserId,
+            Money.FromCents(subtotalCents),
+            Money.Zero,
+            Money.Zero,
+            Money.FromCents(subtotalCents),
+            Money.FromCents(amountPaid),
+            Money.FromCents(change),
+            items,
+            payments,
+            customerFullName: null,
+            customerPhone: null,
+            cashPaid: Money.FromCents(cashTender),
+            utangAmount: Money.Zero,
+            receivableDueDate: null,
+            receivableNote: null);
+
         Sale sale = new()
         {
             Id = saleId,
@@ -1557,7 +1602,7 @@ public sealed class SqliteCafeOrderCompletionCoordinator : SqliteRepositoryBase
             VoidedByUserId = null,
             VoidReason = null,
             VoidedAt = null,
-            ReceiptSnapshot = null,
+            ReceiptSnapshot = receiptSnapshot,
             Items = items,
             Payments = payments,
             CreatedAt = occurredAtUtc.ToUniversalTime()
@@ -1568,6 +1613,126 @@ public sealed class SqliteCafeOrderCompletionCoordinator : SqliteRepositoryBase
             items,
             payments,
             movements);
+    }
+
+    private static string RenderReceiptSnapshot(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string receiptNumber,
+        DateTimeOffset saleDateUtc,
+        Guid cashierUserId,
+        Money subtotal,
+        Money discount,
+        Money tax,
+        Money total,
+        Money amountPaid,
+        Money change,
+        IReadOnlyList<SaleItem> items,
+        IReadOnlyList<Payment> payments,
+        string? customerFullName,
+        string? customerPhone,
+        Money cashPaid,
+        Money utangAmount,
+        DateOnly? receivableDueDate,
+        string? receivableNote)
+    {
+        string? storeName = null;
+        string? businessName = null;
+        string? address = null;
+        string? contactNumber = null;
+        string? receiptHeader = null;
+        string? receiptFooter = null;
+
+        using (SqliteCommand storeCmd = connection.CreateCommand())
+        {
+            storeCmd.Transaction = transaction;
+            storeCmd.CommandText = """
+                SELECT store_name, business_name, address, contact_number, receipt_header, receipt_footer
+                FROM store_settings
+                ORDER BY created_at DESC
+                LIMIT 1;
+                """;
+            using SqliteDataReader reader = storeCmd.ExecuteReader();
+            if (reader.Read())
+            {
+                storeName = reader.IsDBNull(0) ? null : reader.GetString(0);
+                businessName = reader.IsDBNull(1) ? null : reader.GetString(1);
+                address = reader.IsDBNull(2) ? null : reader.GetString(2);
+                contactNumber = reader.IsDBNull(3) ? null : reader.GetString(3);
+                receiptHeader = reader.IsDBNull(4) ? null : reader.GetString(4);
+                receiptFooter = reader.IsDBNull(5) ? null : reader.GetString(5);
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(storeName))
+        {
+            using SqliteCommand deployCmd = connection.CreateCommand();
+            deployCmd.Transaction = transaction;
+            deployCmd.CommandText = "SELECT store_name FROM deployment_identity LIMIT 1;";
+            storeName = deployCmd.ExecuteScalar() as string;
+        }
+
+        string? cashierDisplayName = null;
+        using (SqliteCommand userCmd = connection.CreateCommand())
+        {
+            userCmd.Transaction = transaction;
+            userCmd.CommandText = "SELECT display_name FROM users WHERE id = $id LIMIT 1;";
+            userCmd.Parameters.AddWithValue("$id", cashierUserId.ToString("D"));
+            cashierDisplayName = userCmd.ExecuteScalar() as string;
+        }
+
+        return PosReceiptTextRenderer.Render(new PosReceiptSnapshotDraft(
+            receiptNumber,
+            saleDateUtc,
+            cashierUserId,
+            subtotal,
+            discount,
+            tax,
+            total,
+            amountPaid,
+            change,
+            SaleStatus.Completed,
+            items,
+            payments,
+            string.IsNullOrWhiteSpace(storeName) ? "Salryn Cafe" : storeName,
+            businessName,
+            address,
+            contactNumber,
+            receiptHeader,
+            receiptFooter,
+            cashierDisplayName,
+            customerFullName,
+            customerPhone,
+            cashPaid,
+            utangAmount.Cents > 0 ? utangAmount : null,
+            utangAmount.Cents > 0 ? utangAmount : null,
+            receivableDueDate,
+            receivableNote));
+    }
+
+    private static (string? FullName, string? Phone) ReadCustomerSnapshot(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        Guid? customerId)
+    {
+        if (!customerId.HasValue || customerId.Value == Guid.Empty)
+        {
+            return (null, null);
+        }
+
+        using SqliteCommand cmd = connection.CreateCommand();
+        cmd.Transaction = transaction;
+        cmd.CommandText = "SELECT full_name, phone FROM customers WHERE id = $id LIMIT 1;";
+        cmd.Parameters.AddWithValue("$id", customerId.Value.ToString("D"));
+        using SqliteDataReader reader = cmd.ExecuteReader();
+        if (!reader.Read())
+        {
+            return (null, null);
+        }
+
+        string? fullName = reader.IsDBNull(0) ? null : NormalizeOptional(reader.GetString(0));
+        string? phone = reader.IsDBNull(1) ? null : NormalizeOptional(reader.GetString(1));
+        return (fullName, phone);
     }
 
     private static void InsertCorrelation(

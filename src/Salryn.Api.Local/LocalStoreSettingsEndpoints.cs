@@ -5,6 +5,8 @@ using Salryn.Composition.Local;
 using Salryn.Core.Repositories;
 using Salryn.Core.Services;
 using Salryn.Infrastructure.Data.Repositories;
+using Salryn.Infrastructure.Data.Seeding;
+using Salryn.Infrastructure.Paths;
 
 namespace Salryn.Api.Local;
 
@@ -22,9 +24,9 @@ internal static class LocalStoreSettingsEndpoints
             var result = await reader.GetCurrentAsync(ct);
             if (result.IsFailure) return Results.BadRequest(new { code = result.ErrorDetail.Code, error = result.ErrorDetail.Message });
             var s = result.Value;
-            return s is null
-                ? Results.NotFound()
-                : Results.Ok(new StoreSettingsResponse(
+            if (s is not null)
+            {
+                return Results.Ok(new StoreSettingsResponse(
                     s.Id.ToString(),
                     s.StoreName,
                     s.BusinessName,
@@ -39,15 +41,55 @@ internal static class LocalStoreSettingsEndpoints
                     s.WindowsPrinterName,
                     s.HasLogo,
                     s.LogoContentType));
+            }
+
+            // Read-only fallback when an authenticated operator accesses a seeded/migrated DB
+            // that has no store_settings row yet; preserves FirstRunBootstrapper HasStoreSettings semantics.
+            var deployment = await composition.DeploymentIdentityRepository.GetCurrentAsync(ct).ConfigureAwait(false);
+            string defaultStoreName = deployment.IsSuccess && !string.IsNullOrWhiteSpace(deployment.Value?.Store.StoreName)
+                ? deployment.Value!.Store.StoreName
+                : SalrynProductIdentity.ProductDisplayName;
+
+            return Results.Ok(new StoreSettingsResponse(
+                Guid.Empty.ToString("D"),
+                defaultStoreName,
+                null,
+                null,
+                null,
+                null,
+                DefaultSeedData.StoreDefaults.CurrencyLabel,
+                DefaultSeedData.StoreDefaults.ReceiptWidthMm,
+                null,
+                null,
+                ReceiptPrinterModes.Disabled,
+                null,
+                HasLogo: false,
+                LogoContentType: null));
         });
 
         app.MapPut("/api/settings/store", async (HttpContext context, LocalApiSessionService sessions, StoreSettingsUpdateApiRequest request, CancellationToken ct) =>
         {
             if (LocalApiPermissionGuards.RequirePermission(context, sessions, LocalApiPermissions.SettingsManage) is IResult denied) return denied;
             var current = await reader.GetCurrentAsync(ct);
-            if (current.IsFailure || current.Value is null) return Results.NotFound();
+            if (current.IsFailure) return Results.BadRequest(new { code = current.ErrorDetail.Code, error = current.ErrorDetail.Message });
             var s = current.Value;
-            var result = await writer.UpdateAsync(new StoreSettingsUpdateRequest(s.Id, request.StoreName, request.BusinessName, request.Address, request.ContactNumber, request.Tin, request.CurrencyLabel, request.ReceiptWidthMm, s.TaxModeEnabled, s.ShiftModeEnabled, request.ReceiptHeader, request.ReceiptFooter, request.PrinterMode, request.WindowsPrinterName), ct);
+            var result = await writer.CreateOrUpdateAsync(
+                new StoreSettingsUpdateRequest(
+                    s?.Id ?? Guid.Empty,
+                    request.StoreName,
+                    request.BusinessName,
+                    request.Address,
+                    request.ContactNumber,
+                    request.Tin,
+                    request.CurrencyLabel,
+                    request.ReceiptWidthMm,
+                    s?.TaxModeEnabled ?? DefaultSeedData.StoreDefaults.TaxModeEnabled,
+                    s?.ShiftModeEnabled ?? DefaultSeedData.StoreDefaults.ShiftModeEnabled,
+                    request.ReceiptHeader,
+                    request.ReceiptFooter,
+                    request.PrinterMode,
+                    request.WindowsPrinterName),
+                ct);
             if (result.IsSuccess)
             {
                 string? sessionId = context.Request.Cookies[LocalApiSessionService.SessionCookieName];
@@ -57,7 +99,7 @@ internal static class LocalStoreSettingsEndpoints
                         userId,
                         OperatorAuditActions.StoreSettingsUpdated,
                         "StoreSettings",
-                        s.Id.ToString("D"),
+                        result.Value.ToString("D"),
                         new
                         {
                             storeName = request.StoreName,
@@ -66,7 +108,7 @@ internal static class LocalStoreSettingsEndpoints
                             receiptWidthMm = request.ReceiptWidthMm,
                             printerMode = request.PrinterMode
                         },
-                        oldValue: new
+                        oldValue: s is null ? null : new
                         {
                             storeName = s.StoreName,
                             businessName = s.BusinessName,

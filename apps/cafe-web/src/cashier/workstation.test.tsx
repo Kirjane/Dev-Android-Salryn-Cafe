@@ -6,6 +6,7 @@ import {
   HostApiError,
   PENDING_INTENT_STORAGE_KEY,
   REJECTION_HISTORY_STORAGE_KEY,
+  deriveScopedOperationId,
 } from "../api/hostClient";
 import type {
   CafeOrderDetail,
@@ -515,5 +516,19 @@ describe("Salryn Cafe R2 — Live Host Integrated Cashier, Orders & Kitchen", ()
 
     const audit = await axe.run(container, { rules: { "color-contrast": { enabled: false } } });
     expect(audit.violations).toEqual([]);
+  });
+
+  it("derives stable distinct RFC-4122 operationIds per scope for print attempts and publish retries", () => {
+    const base = "12345678-1234-4123-8123-123456789abc";
+    const kitchenAttempt1 = deriveScopedOperationId(base, "kitchen-attempt");
+    const kitchenAttempt2 = deriveScopedOperationId(base, "kitchen-attempt");
+    const receiptAttempt = deriveScopedOperationId(base, "receipt-attempt");
+    const menuPublish = deriveScopedOperationId(base, "menu-publish");
+    const recipePublish = deriveScopedOperationId(base, "recipes-publish");
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    expect(kitchenAttempt1).toMatch(uuidRegex);
+    expect(kitchenAttempt1).toBe(kitchenAttempt2);
+    expect(new Set([base, kitchenAttempt1, receiptAttempt, menuPublish, recipePublish]).size).toBe(5);
   });
 });

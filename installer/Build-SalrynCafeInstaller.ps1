@@ -4,7 +4,8 @@ param(
     [string]$AppVersion = "1.0.0-rc1",
     [string]$IsccPath = "",
     [switch]$SkipWebBuild,
-    [switch]$IncludeLegacyRootShell
+    [switch]$IncludeLegacyRootShell,
+    [switch]$FrameworkDependent
 )
 
 $ErrorActionPreference = "Stop"
@@ -72,14 +73,16 @@ if (Test-Path $stagingDir) {
 }
 New-Item -ItemType Directory -Force -Path $stagingDir, $outputDir | Out-Null
 
-Write-Host "[Salryn Cafe Installer] Publishing Salryn.Api.Local ($Configuration / $Runtime)..."
+$selfContainedArg = if ($FrameworkDependent) { "false" } else { "true" }
+
+Write-Host "[Salryn Cafe Installer] Publishing Salryn.Api.Local ($Configuration / $Runtime / self-contained=$selfContainedArg)..."
 dotnet publish (Join-Path $repoRoot "src\Salryn.Api.Local\Salryn.Api.Local.csproj") `
-    -c $Configuration -r $Runtime --self-contained false "-p:SourceRevisionId=$rev" -o $stagingDir --nologo
+    -c $Configuration -r $Runtime --self-contained $selfContainedArg "-p:SourceRevisionId=$rev" -o $stagingDir --nologo
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish Salryn.Api.Local failed ($LASTEXITCODE)" }
 
-Write-Host "[Salryn Cafe Installer] Publishing Salryn.Desktop.WebView ($Configuration / $Runtime)..."
+Write-Host "[Salryn Cafe Installer] Publishing Salryn.Desktop.WebView ($Configuration / $Runtime / self-contained=$selfContainedArg)..."
 dotnet publish (Join-Path $repoRoot "src\Salryn.Desktop.WebView\Salryn.Desktop.WebView.csproj") `
-    -c $Configuration -r $Runtime --self-contained false "-p:SourceRevisionId=$rev" -o $stagingDir --nologo
+    -c $Configuration -r $Runtime --self-contained $selfContainedArg "-p:SourceRevisionId=$rev" -o $stagingDir --nologo
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish Salryn.Desktop.WebView failed ($LASTEXITCODE)" }
 
 $cafeDistDst = Join-Path $stagingDir "cafe-dist"
@@ -115,6 +118,7 @@ $provenance = ([ordered]@{
     sourceSha = $rev
     configuration = $Configuration
     runtime = $Runtime
+    selfContained = (-not $FrameworkDependent)
     appVersion = $AppVersion
     builtAtUtc = [DateTimeOffset]::UtcNow.ToString("O")
 } | ConvertTo-Json -Depth 4)

@@ -13,6 +13,7 @@ import {
   useToast,
   type StatusTone,
 } from "@salryn/cafe-ui";
+import { clearPendingPrintOp, getOrCreatePendingPrintOp } from "../api/hostClient";
 import { isReceiptStation } from "../cashier/types";
 import type { CafeOrderSummary, CafePrintStation, HostOrderState, ServiceMode, WorkstationApi } from "../cashier/types";
 
@@ -74,8 +75,8 @@ export function OrdersBoard({
     if (!order.completedSaleId || !receiptStation || printLockRef.current) return;
     printLockRef.current = true;
     setBusyPrintId(order.orderId);
-    const opKey = `${order.completedSaleId}:Reprint`;
-    const operationId = pendingPrintOpsRef.current[opKey] ?? crypto.randomUUID();
+    const opKey = `receipt:${order.completedSaleId}:Reprint`;
+    const operationId = pendingPrintOpsRef.current[opKey] ?? getOrCreatePendingPrintOp(opKey);
     pendingPrintOpsRef.current[opKey] = operationId;
     try {
       await api.printReceipt({
@@ -85,6 +86,7 @@ export function OrdersBoard({
         copyKind: "Reprint",
       });
       delete pendingPrintOpsRef.current[opKey];
+      clearPendingPrintOp(opKey);
       notify("info", "Receipt reprint sent", `Order ${order.serviceReference || order.orderId.slice(0, 8)} queued on ${receiptStation.name}.`);
     } catch (error) {
       notify("danger", "Reprint failed", error instanceof Error ? error.message : "Could not send reprint.");

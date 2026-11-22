@@ -1,4 +1,4 @@
-import { hostRequest } from "./hostClient";
+import { deriveScopedOperationId, hostRequest } from "./hostClient";
 import type {
   ArCustomerRow,
   AttendanceRow,
@@ -27,9 +27,13 @@ export function createLiveBackofficeApi(): BackofficeApi {
   return {
     getOwnerReports: () => hostRequest<OwnerReportsSnapshot>("/api/owner-reports/summary"),
     getIngredientsAndRecipes: () => hostRequest<IngredientRecipeDraft>("/api/cafe/ingredients-recipes"),
-    publishMenuAndRecipes: async () => {
-      await hostRequest<unknown>("/api/menu/publish", {});
-      await hostRequest<unknown>("/api/cafe/recipes/publish", {});
+    publishMenuAndRecipes: async (operationId) => {
+      await hostRequest<unknown>("/api/menu/publish", {
+        operationId: deriveScopedOperationId(operationId, "menu-publish"),
+      });
+      await hostRequest<unknown>("/api/cafe/recipes/publish", {
+        operationId: deriveScopedOperationId(operationId, "recipes-publish"),
+      });
     },
     getLowStock: () => hostRequest<LowStockItem[]>("/api/cafe/inventory/low-stock"),
     getSuppliers: () => hostRequest<SupplierSummary[]>("/api/cafe/suppliers"),

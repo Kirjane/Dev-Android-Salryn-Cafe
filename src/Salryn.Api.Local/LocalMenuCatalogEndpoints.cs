@@ -140,6 +140,7 @@ internal static class LocalMenuCatalogEndpoints
         });
 
         app.MapPost("/api/menu/publish", (
+            MenuPublishRequest? request,
             HttpContext httpContext,
             LocalApiSessionService sessions,
             SalrynLocalComposition composition) =>
@@ -205,4 +206,6 @@ internal static class LocalMenuCatalogEndpoints
             new { code = error.Code, error = error.Message },
             statusCode: statusCode);
     }
+
+    private sealed record MenuPublishRequest(Guid? OperationId);
 }

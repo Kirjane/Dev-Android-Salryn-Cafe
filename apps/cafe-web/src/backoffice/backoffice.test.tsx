@@ -79,6 +79,7 @@ function createFakeBackofficeHarness() {
     target.state = "Committed";
     return { refundId: target.refundId, version: target.version, state: "Committed", totalRefundCents: 18500 };
   });
+  const publishMenuAndRecipes = vi.fn(async (_operationId: string) => undefined);
   const recordWaste = vi.fn(async () => undefined);
   const verifyBackup = vi.fn(async () => ({ valid: true, summary: "Manifest v40 verified" }));
   const restoreBackup = vi.fn(async () => undefined);
@@ -94,7 +95,7 @@ function createFakeBackofficeHarness() {
       ],
       lines: [{ recipeId: "rec-1", ingredientId: "ing-beans", inputUnit: "Gram", declaredQuantityX1000: 18000, normalizedQuantityX1000: 18000, displayOrder: 1 }],
     }),
-    publishMenuAndRecipes: async () => undefined,
+    publishMenuAndRecipes,
     getLowStock: async () => [],
     getSuppliers: async () => [{ id: "sup-1", name: "Bukidnon Roasters", isActive: true }],
     receivePurchase: async () => undefined,
@@ -207,7 +208,7 @@ function createFakeBackofficeHarness() {
     }),
   };
 
-  return { api, collectArCash, requestRefund, resolveRefund, commitRefund, recordWaste, verifyBackup, restoreBackup };
+  return { api, publishMenuAndRecipes, collectArCash, requestRefund, resolveRefund, commitRefund, recordWaste, verifyBackup, restoreBackup };
 }
 
 function createFakeCentralHarness() {
@@ -475,5 +476,34 @@ describe("Salryn Cafe Back-Office & Central Owner Console (Live Contracts)", () 
       results = await axe.run(container);
     });
     expect(results!.violations.filter((v) => v.impact === "critical" || v.impact === "serious")).toEqual([]);
+  });
+
+  it("passes durable RFC-4122 operationId to publishMenuAndRecipes and preserves it across reload on unknown outcome", async () => {
+    const user = userEvent.setup();
+    const { api } = createFakeBackofficeHarness();
+    const { centralApi } = createFakeCentralHarness();
+
+    let attempts = 0;
+    const publishSpy = vi.fn(async (_operationId: string) => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw new TypeError("Simulated network drop during publish");
+      }
+    });
+    api.publishMenuAndRecipes = publishSpy;
+
+    const view = render(<BackofficeConsoleApp api={api} centralApi={centralApi} initialNav="recipes" />);
+    const publishBtn = await screen.findByRole("button", { name: /Publish Menu & Recipes/i });
+    await user.click(publishBtn);
+    await waitFor(() => expect(screen.getByText(/Publish Outcome Unknown/i)).toBeInTheDocument());
+
+    view.unmount();
+    render(<BackofficeConsoleApp api={api} centralApi={centralApi} initialNav="recipes" />);
+    expect(await screen.findByText(/Publish Outcome Unknown/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Publish Menu & Recipes/i }));
+    await waitFor(() => expect(publishSpy).toHaveBeenCalledTimes(2));
+
+    expect(publishSpy.mock.calls[0][0]).toMatch(UUID_V4_REGEX);
+    expect(publishSpy.mock.calls[0][0]).toBe(publishSpy.mock.calls[1][0]);
   });
 });

@@ -18,6 +18,66 @@ import type {
 
 export const PENDING_INTENT_STORAGE_KEY = "salryn.cafe.host.pending.v1";
 export const REJECTION_HISTORY_STORAGE_KEY = "salryn.cafe.host.rejection-history.v1";
+export const PENDING_PRINT_OPS_STORAGE_KEY = "salryn.cafe.host.pending-print-ops.v1";
+
+/**
+ * Derives a deterministic RFC-4122 v5-formatted GUID from a durable client operationId
+ * and step scope so multi-step calls (e.g. create job -> attempt, menu -> recipes publish)
+ * retain stable, distinct operationIds across retries and reloads without collisions.
+ */
+export function deriveScopedOperationId(baseOperationId: string, scope: string): string {
+  const input = `${baseOperationId.trim().toLowerCase()}|${scope}`;
+  const seeds = [0x811c9dc5, 0x9e3779b9, 0x85ebca6b, 0xc2b2ae35];
+  const bytes = new Uint8Array(16);
+  for (let s = 0; s < 4; s++) {
+    let h = seeds[s] >>> 0;
+    for (let i = 0; i < input.length; i++) {
+      h ^= input.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    h ^= h >>> 16;
+    h = Math.imul(h, 0x7feb352d) >>> 0;
+    h ^= h >>> 15;
+    bytes[s * 4] = (h >>> 24) & 0xff;
+    bytes[s * 4 + 1] = (h >>> 16) & 0xff;
+    bytes[s * 4 + 2] = (h >>> 8) & 0xff;
+    bytes[s * 4 + 3] = h & 0xff;
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+export function getOrCreatePendingPrintOp(opKey: string): string {
+  try {
+    const raw = window.localStorage.getItem(PENDING_PRINT_OPS_STORAGE_KEY);
+    const map = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    if (map[opKey]) return map[opKey];
+    const id = crypto.randomUUID();
+    map[opKey] = id;
+    window.localStorage.setItem(PENDING_PRINT_OPS_STORAGE_KEY, JSON.stringify(map));
+    return id;
+  } catch {
+    return crypto.randomUUID();
+  }
+}
+
+export function clearPendingPrintOp(opKey: string): void {
+  try {
+    const raw = window.localStorage.getItem(PENDING_PRINT_OPS_STORAGE_KEY);
+    if (!raw) return;
+    const map = JSON.parse(raw) as Record<string, string>;
+    delete map[opKey];
+    if (Object.keys(map).length === 0) {
+      window.localStorage.removeItem(PENDING_PRINT_OPS_STORAGE_KEY);
+    } else {
+      window.localStorage.setItem(PENDING_PRINT_OPS_STORAGE_KEY, JSON.stringify(map));
+    }
+  } catch {
+    // Ignore storage failures cleanly.
+  }
+}
 
 const DETERMINISTIC_HTTP_STATUSES = new Set([400, 403, 404, 409, 422]);
 const NON_ARCHIVABLE_CONFLICT_CODES = new Set([
@@ -174,7 +234,9 @@ export function createLiveHostApi(): WorkstationApi {
         saleId,
         copyKind,
       });
-      return hostRequest<CafePrintJobResult>(`/api/cafe/print/jobs/${created.job.jobId}/attempt`, {});
+      return hostRequest<CafePrintJobResult>(`/api/cafe/print/jobs/${created.job.jobId}/attempt`, {
+        operationId: deriveScopedOperationId(operationId, "receipt-attempt"),
+      });
     },
     printKitchenTicket: async ({ operationId, stationId, orderId, orderRevisionId, copyKind }) => {
       const created = await hostRequest<CafePrintJobResult>("/api/cafe/print/jobs/kitchen", {
@@ -184,7 +246,9 @@ export function createLiveHostApi(): WorkstationApi {
         orderRevisionId,
         copyKind,
       });
-      return hostRequest<CafePrintJobResult>(`/api/cafe/print/jobs/${created.job.jobId}/attempt`, {});
+      return hostRequest<CafePrintJobResult>(`/api/cafe/print/jobs/${created.job.jobId}/attempt`, {
+        operationId: deriveScopedOperationId(operationId, "kitchen-attempt"),
+      });
     },
     enrollCentral: (req: CentralEnrollRequest) => hostRequest<{ deviceId: string; status: string }>("/api/cafe/central/enroll", req),
     synchronizeCentral: (password: string) => hostRequest<CentralSyncResult>("/api/cafe/central/synchronize", { password }),
