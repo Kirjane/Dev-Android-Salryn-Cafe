@@ -95,6 +95,9 @@ try {
     await page.getByRole("button",{name:"Start another order",exact:true}).click();
   }
   await page.getByRole("button",{name:"Back Office & Reports",exact:true}).click();
+  // Live Host intentionally lands on Getting Started. Reports require explicit navigation.
+  await expect(page.getByRole("heading",{name:/Getting Started/})).toBeVisible(); assertions++;
+  await page.getByRole("button",{name:"Owner Reports & COGS",exact:true}).click();
   await expect(page.getByText("Daily Sales",{exact:true})).toBeVisible(); assertions++;
   await expect(page.getByText("₱15.00").first()).toBeVisible(); assertions++;
   // B3 Live Check: Backoffice Menu & Recipes publish with durable operationId
