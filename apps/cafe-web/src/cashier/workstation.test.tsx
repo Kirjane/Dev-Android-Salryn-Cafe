@@ -386,7 +386,7 @@ describe("Salryn Cafe R2 — Live Host Integrated Cashier, Orders & Kitchen", ()
 
     const complete = screen.getByRole("button", { name: "Complete payment" });
     expect(screen.getByText("Estimated due (before fees)")).toBeInTheDocument();
-    expect(screen.getByText("Still to collect")).toBeInTheDocument();
+    expect(screen.getByText("Still to collect (estimated)")).toBeInTheDocument();
     expect(complete).toBeDisabled();
 
     await user.clear(screen.getByLabelText("Cash amount (PHP)"));
