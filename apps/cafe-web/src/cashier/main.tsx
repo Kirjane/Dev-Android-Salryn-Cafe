@@ -1,10 +1,28 @@
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BackofficeConsoleApp } from "../backoffice/BackofficeConsoleApp";
 import { WorkstationApp } from "./WorkstationApp";
 
-function resolveCafeRoute(pathname: string): {
+export const C1_RECOVERY_ROUTE_ENABLED =
+  import.meta.env.DEV || import.meta.env.VITE_ENABLE_C1_RECOVERY === "1";
+
+const CafeMenuManagerRecoveryPage = C1_RECOVERY_ROUTE_ENABLED
+  ? lazy(() =>
+      import("../recovery/CafeMenuManagerRecovery").then((m) => ({
+        default: m.CafeMenuManagerRecoveryPage,
+      })),
+    )
+  : null;
+
+export function isC1RecoveryRoute(
+  pathname: string,
+  recoveryEnabled = C1_RECOVERY_ROUTE_ENABLED,
+): boolean {
+  return Boolean(recoveryEnabled) && pathname.replace(/\/+$/, "") === "/cafe/recovery/c1";
+}
+
+export function resolveCafeRoute(pathname: string): {
   mode: "workstation" | "backoffice" | "central";
   initialNav?: string;
 } {
@@ -39,6 +57,14 @@ function CafeRootApp() {
       setPathname(nextPath);
     }
   }, []);
+
+  if (C1_RECOVERY_ROUTE_ENABLED && CafeMenuManagerRecoveryPage && pathname.replace(/\/+$/, "") === "/cafe/recovery/c1") {
+    return (
+      <Suspense fallback={<div style={{ padding: 24 }}>Loading C1 recovery workspace...</div>}>
+        <CafeMenuManagerRecoveryPage onOpenWorkstation={() => navigate("/cafe/")} />
+      </Suspense>
+    );
+  }
 
   const route = resolveCafeRoute(pathname);
   if (route.mode === "backoffice") {
