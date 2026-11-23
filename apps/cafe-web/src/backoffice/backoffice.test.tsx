@@ -95,6 +95,7 @@ function createFakeBackofficeHarness() {
         { id: "rec-1", name: "Spanish Latte", yieldX1000: 1000, isActive: true },
       ],
       lines: [{ recipeId: "rec-1", ingredientId: "ing-beans", inputUnit: "Gram", declaredQuantityX1000: 18000, normalizedQuantityX1000: 18000, displayOrder: 1 }],
+      itemBindings: [],
     }),
     getMenuCatalog: async () => ({
       categories: [],
