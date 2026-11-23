@@ -215,7 +215,7 @@ function BackofficeConsoleInner({
 
   // Live Host state (C1-C11)
   const [reports, setReports] = useState<OwnerReportsSnapshot | null>(null);
-  const [draft, setDraft] = useState<IngredientRecipeDraft>({ ingredients: [], recipes: [], lines: [] });
+  const [draft, setDraft] = useState<IngredientRecipeDraft>({ ingredients: [], recipes: [], lines: [], itemBindings: [] });
   const [lowStock, setLowStock] = useState<LowStockItem[]>([]);
   const [suppliers, setSuppliers] = useState<SupplierSummary[]>([]);
   const [arRows, setArRows] = useState<ArCustomerRow[]>([]);
@@ -347,7 +347,7 @@ function BackofficeConsoleInner({
         pair,
       ] = await Promise.all([
         safeFetch("Owner reports", () => api.getOwnerReports(), null),
-        safeFetch("Menu and recipes", () => api.getIngredientsAndRecipes(), { ingredients: [], recipes: [], lines: [] }),
+        safeFetch("Menu and recipes", () => api.getIngredientsAndRecipes(), { ingredients: [], recipes: [], lines: [], itemBindings: [] }),
         safeFetch("Low stock", () => api.getLowStock(), []),
         safeFetch("Suppliers", () => api.getSuppliers(), []),
         safeFetch("Receivables", () => api.getReceivableCustomers(), []),
