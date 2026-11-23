@@ -63,6 +63,7 @@ export type IngredientRecipeDraft = {
     normalizedQuantityX1000: number;
     displayOrder: number;
   }>;
+  itemBindings: Array<{ bindingType: string; bindingId: string; recipeId: string }>;
 };
 
 export type LowStockItem = {
