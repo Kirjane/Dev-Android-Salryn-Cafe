@@ -7,12 +7,14 @@ type Step = {
   description: string;
   action: string;
   onClick: () => void;
-  state: "done" | "needed" | "unknown";
+  state: "done" | "needed" | "review" | "unknown";
 };
 
 export function CafeGettingStarted({
   api,
   ingredientCount,
+  recipeCount,
+  linkedMenuItemCount,
   supplierCount,
   customerCount,
   onNavigate,
@@ -20,6 +22,8 @@ export function CafeGettingStarted({
 }: {
   api: BackofficeApi;
   ingredientCount: number;
+  recipeCount: number;
+  linkedMenuItemCount: number;
   supplierCount: number;
   customerCount: number;
   onNavigate: (page: string) => void;
@@ -55,24 +59,24 @@ export function CafeGettingStarted({
     },
     {
       title: "2. Add ingredients and recipes",
-      description: "Record ingredients, create recipes, and link each prepared item to the correct recipe before publishing.",
+      description: "Add ingredients and recipes, then link each prepared item to its recipe. Ingredient records alone do not establish recipe coverage.",
       action: "Open Recipes",
       onClick: () => onNavigate("recipes"),
-      state: ingredientCount > 0 ? "done" : "needed",
+      state: ingredientCount > 0 && recipeCount > 0 && linkedMenuItemCount > 0 ? "review" : "needed",
     },
     {
       title: "3. Prepare your stock",
       description: "Create suppliers and record purchase receipts. Stock movements must be recorded, not edited directly.",
       action: "Open Inventory",
       onClick: () => onNavigate("inventory"),
-      state: supplierCount > 0 ? "done" : "needed",
+      state: supplierCount > 0 ? "review" : "needed",
     },
     {
       title: "4. Set up customer credit, if used",
       description: "Add AR/Utang customers before using credit or Partial Cash + AR. Cash sales do not require a customer.",
       action: "Open Customer Accounts",
       onClick: () => onNavigate("cash-ar"),
-      state: customerCount > 0 ? "done" : "needed",
+      state: customerCount > 0 ? "review" : "unknown",
     },
     {
       title: "5. Set up your receipt and kitchen printers",
@@ -99,7 +103,7 @@ export function CafeGettingStarted({
             <p style={{ margin: 0, lineHeight: 1.6 }}>
               Start with your menu, ingredients and store settings. The cashier uses the
               <strong> published menu</strong>, not unsaved drafts. This page is a guide:
-              every operation is performed and verified by the real Windows Host.
+              all changes are written to the real Windows Host. A record count does not prove operational readiness.
             </p>
             {menuError ? <Alert tone="warning" title="Cannot confirm menu setup" description={menuError + ". Open Menu Setup to check the Host."} /> : null}
             <StatusBadge tone="info">{menuState === "done" ? "Published menu detected" : menuState === "needed" ? "Menu needs setup or publication" : "Checking menu publication"}</StatusBadge>
@@ -112,8 +116,8 @@ export function CafeGettingStarted({
             <CardHeader
               title={step.title}
               subtitle={step.description}
-              action={<StatusBadge tone={step.state === "done" ? "success" : step.state === "needed" ? "warning" : "neutral"}>
-                {step.state === "done" ? "Records found" : step.state === "needed" ? "Needs attention" : "Check in module"}
+              action={<StatusBadge tone={step.state === "done" ? "success" : step.state === "needed" ? "warning" : step.state === "review" ? "info" : "neutral"}>
+                {step.state === "done" ? "Publication detected" : step.state === "needed" ? "Needs attention" : step.state === "review" ? "Records found — verify" : "Check in module"}
               </StatusBadge>}
             />
             <CardBody>

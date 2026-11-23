@@ -607,6 +607,8 @@ describe("Salryn Cafe Back-Office & Central Owner Console (Live Contracts)", () 
     render(<BackofficeConsoleApp api={api} centralApi={centralApi} initialNav="getting-started" />);
 
     expect(await screen.findByText("Getting Started — Operate Your Cafe")).toBeInTheDocument();
+    // One ingredient or supplier record is not proof of a sellable, stocked recipe.
+    expect(screen.getByText(/Ingredient records alone do not establish recipe coverage/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Open Menu Setup" }));
     expect(await screen.findByRole("form", { name: "Create menu item" })).toBeInTheDocument();
 

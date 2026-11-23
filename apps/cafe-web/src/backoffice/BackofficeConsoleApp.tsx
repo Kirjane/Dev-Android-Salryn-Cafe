@@ -709,6 +709,8 @@ function BackofficeConsoleInner({
         <CafeGettingStarted
           api={api}
           ingredientCount={draft.ingredients.length}
+          recipeCount={draft.recipes.length}
+          linkedMenuItemCount={draft.itemBindings.length}
           supplierCount={suppliers.length}
           customerCount={arRows.length}
           onNavigate={setActiveNav}
