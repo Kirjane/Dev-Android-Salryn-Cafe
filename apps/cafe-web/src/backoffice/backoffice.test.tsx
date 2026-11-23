@@ -536,7 +536,9 @@ describe("Salryn Cafe Back-Office & Central Owner Console (Live Contracts)", () 
     expect(await screen.findByText(/Backoffice Data Incomplete/)).toBeInTheDocument();
     expect(screen.getByText(/Owner reports: Reports permission denied/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save supplier" })).toBeInTheDocument();
-    expect(screen.getByRole("table", { name: "Low-Stock Inventory" })).toBeInTheDocument();
+    // The empty low-stock fixture renders its empty state, not a table.
+    // Reports failure must not hide the inventory workflow.
+    expect(screen.getByRole("button", { name: "Receive Purchase" })).toBeInTheDocument();
   });
 
   it("never reveals Backoffice account fields until the Host license is verified", async () => {

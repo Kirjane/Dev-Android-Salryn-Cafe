@@ -156,11 +156,14 @@ try {
     }
     recordPass();
 
-    // 3. Verify /cafe/backoffice Host sign-in gate & "Back to Workstation" SPA transition
+    // 3. The zero-mock preview does not provide a trusted signed Host license.
+    // Verify that Backoffice FAILS CLOSED before sign-in rather than expecting a
+    // login UI in a genuinely unlicensed environment.
     await page.goto(`${baseUrl}/backoffice`);
-    await expect(page.getByRole("heading", { name: "Back-Office Sign In", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Host License Activation Required", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Back-Office Sign In", exact: true })).toHaveCount(0);
     recordPass();
-    await page.getByRole("button", { name: "Back to Workstation", exact: true }).click();
+    await page.getByRole("button", { name: "Open License Activation", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Cafe workstation", exact: true })).toBeVisible();
     recordPass();
 

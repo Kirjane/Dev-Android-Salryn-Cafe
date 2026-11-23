@@ -759,7 +759,7 @@ export function CashierWorkstation({
                         borderRadius: 10, padding: 14, background: "var(--salryn-surface-subtle)",
                       }}>
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: "1.2rem", fontWeight: 800 }}>
-                          <span>Amount due</span>
+                          <span>Estimated due (before fees)</span>
                           <span className="salryn-tabular">{paymentPreview.valid ? formatPhp(paymentPreview.dueCents) : "Check amount"}</span>
                         </div>
                         {tenderMode !== "AccountsReceivable" ? (
@@ -770,16 +770,20 @@ export function CashierWorkstation({
                         ) : null}
                         {tenderMode === "Cash" && paymentPreview.valid ? (
                           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontWeight: 800 }}>
-                            <span>{paymentPreview.missingCents ? "Still to collect" : "Change due"}</span>
+                            <span>{paymentPreview.missingCents ? "Still to collect (estimated)" : "Estimated change (before fees)"}</span>
                             <span className="salryn-tabular">{formatPhp(paymentPreview.missingCents || paymentPreview.changeCents)}</span>
                           </div>
                         ) : null}
                         {tenderMode !== "Cash" && paymentPreview.valid ? (
                           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontWeight: 800 }}>
-                            <span>Charge to customer account</span>
+                            <span>Estimated customer account charge</span>
                             <span className="salryn-tabular">{formatPhp(paymentPreview.arCents)}</span>
                           </div>
                         ) : null}
+                        <p style={{ margin: "2px 0 0", fontSize: 12 }}>
+                          Estimate from saved order lines and discount only. Host-calculated fees,
+                          official totals, and final change are determined by the backend receipt.
+                        </p>
                         {!paymentPreview.valid ? <Alert tone="warning" title="Check payment amounts" description="Enter a valid discount and tender amount before confirming." /> : null}
                       </div>
 

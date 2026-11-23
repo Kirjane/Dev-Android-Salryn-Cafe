@@ -376,18 +376,22 @@ describe("Salryn Cafe R2 — Live Host Integrated Cashier, Orders & Kitchen", ()
     const dialog = screen.getByRole("dialog", { name: "Configure Spanish Latte" });
     await user.click(within(dialog).getByRole("button", { name: "Add to Ticket" }));
     await user.click(screen.getByRole("button", { name: "Save order" }));
-    await user.click(await screen.findByRole("button", { name: "Send to preparation" }));
-    await user.click(await screen.findByRole("button", { name: "Mark preparing" }));
-    await user.click(await screen.findByRole("button", { name: "Mark ready" }));
+    expect(await screen.findByText("Current order · Open")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Send to preparation" }));
+    expect(await screen.findByText("Current order · Submitted")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Mark preparing" }));
+    expect(await screen.findByText("Current order · Preparing")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Mark ready" }));
+    expect(await screen.findByText("Current order · Ready")).toBeInTheDocument();
 
     const complete = screen.getByRole("button", { name: "Complete payment" });
-    expect(screen.getByText("Amount due")).toBeInTheDocument();
+    expect(screen.getByText("Estimated due (before fees)")).toBeInTheDocument();
     expect(screen.getByText("Still to collect")).toBeInTheDocument();
     expect(complete).toBeDisabled();
 
     await user.clear(screen.getByLabelText("Cash amount (PHP)"));
     await user.type(screen.getByLabelText("Cash amount (PHP)"), "500");
-    expect(screen.getByText("Change due")).toBeInTheDocument();
+    expect(screen.getByText("Estimated change (before fees)")).toBeInTheDocument();
     expect(complete).toBeEnabled();
   });
 
