@@ -142,7 +142,7 @@ export function CafePrinterSetup({ api }: SetupProps) {
       } catch (err) {
         if (uncertainNetwork(err)) {
           throw new BackofficeUnknownOutcomeError(operationId,
-            "Station creation may have succeeded. Keep the same name and route, refresh the list, and retry only with the original operation ID.");
+            "Station creation may have succeeded. Check the registered stations before trying again. An uncertain operation can remain fenced; request administrator reconciliation if needed.");
         }
         throw err;
       }
@@ -157,7 +157,7 @@ export function CafePrinterSetup({ api }: SetupProps) {
         <div style={{ display: "grid", gap: 12 }}>
           {loadError ? <Alert tone="danger" title="Printer station data unavailable" description={loadError} /> : null}
           {op.error ? <Alert tone="danger" title="Station could not be saved" description={op.error} /> : null}
-          {op.unknownOutcome ? <Alert tone="warning" title="Printer station result uncertain" description={"Review the station list before retrying this exact request. Operation: " + op.unknownOutcome.operationId} /> : null}
+          {op.unknownOutcome ? <Alert tone="warning" title="Printer station result uncertain" description={"Review the registered stations and reconcile this operation before submitting again. Operation: " + op.unknownOutcome.operationId} /> : null}
           {stations.length ? (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {stations.map((station) => (

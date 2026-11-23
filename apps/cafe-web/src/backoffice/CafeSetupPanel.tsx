@@ -46,7 +46,7 @@ function throwIfUncertain(operationId: string, err: unknown): never {
   ) {
     throw new BackofficeUnknownOutcomeError(
       operationId,
-      "The server may have saved this change. Do not change the fields. Check the draft, then retry the same request if necessary.",
+      "The server may have saved this change. Do not submit another request. Refresh and check the saved records. An unknown server outcome can remain fenced and require administrator reconciliation.",
     );
   }
   throw err;
@@ -60,7 +60,7 @@ function OperationFeedback({ op, title }: { op: SetupOp; title: string }) {
         <Alert
           tone="warning"
           title={title + " result uncertain"}
-          description={"Do not create a second record until the current draft is checked. Retry with unchanged values and the saved operation. Operation: " + op.unknownOutcome.operationId}
+          description={"Do not create a second record. Check the Host draft and reconcile this uncertain operation before continuing. The same request may remain fenced. Operation: " + op.unknownOutcome.operationId}
         />
       ) : null}
     </>
@@ -155,7 +155,8 @@ export function CafeCatalogSetup({ api, onSaved }: SetupProps) {
 
   const selectedIngredient = recipes?.ingredients.find((ingredient) =>
     ingredient.id === (lineIngredientId || recipes.ingredients[0]?.id));
-  const menuUnitsAvailable = units.length > 0;
+  const activeSellingUnits = units.filter((unit) => unit.isActive);
+  const menuUnitsAvailable = activeSellingUnits.length > 0;
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
@@ -195,7 +196,9 @@ export function CafeCatalogSetup({ api, onSaved }: SetupProps) {
             <form aria-label="Create menu item" style={formGrid} onSubmit={(e: FormEvent) => {
               e.preventDefault();
               const name = itemName.trim();
-              const unit = unitId || units[0]?.id || "";
+              const unit = activeSellingUnits.some((unit) => unit.id === unitId)
+                ? unitId
+                : activeSellingUnits[0]?.id || "";
               if (!name || !unit) return;
               void submitIdempotent(itemOp, "item:" + name + ":" + categoryId + ":" + unit + ":" + itemPrice,
                 (operationId) => api.saveMenuItem({
@@ -212,13 +215,13 @@ export function CafeCatalogSetup({ api, onSaved }: SetupProps) {
               </FormField>
               <FormField label="Selling price (PHP)" required><TextInput inputMode="decimal" required value={itemPrice} onChange={(e) => setItemPrice(e.target.value)} /></FormField>
               <FormField label="Selling unit" required>
-                <SelectInput value={unitId || units[0]?.id || ""} onChange={(e) => setUnitId(e.target.value)}>
-                  {units.filter((u) => u.isActive).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                <SelectInput value={activeSellingUnits.some((unit) => unit.id === unitId) ? unitId : activeSellingUnits[0]?.id || ""} onChange={(e) => setUnitId(e.target.value)}>
+                  {activeSellingUnits.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </SelectInput>
               </FormField>
               <Button type="submit" variant="primary" loading={itemOp.inFlight} disabled={!menuUnitsAvailable || !itemName.trim()}>Save menu item</Button>
             </form>
-            {!menuUnitsAvailable ? <Alert tone="warning" title="No selling units available" description="Create or restore a valid selling unit in store configuration before adding menu items. The UI will not fabricate a unit ID." /> : null}
+            {!menuUnitsAvailable ? <Alert tone="warning" title="No selling units available" description="No active selling units are available. Check the Host's default unit records before creating menu items. Inactive units cannot be used." /> : null}
             <OperationFeedback op={variantOp} title="Menu variant" />
             <form aria-label="Create menu variant" style={formGrid} onSubmit={(e: FormEvent) => {
               e.preventDefault();
