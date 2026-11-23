@@ -121,6 +121,9 @@ try {
   await page.getByRole("button",{name:"Host Backup & License",exact:true}).click();
   await expect(page.getByRole("button",{name:/Create Verified Backup/i})).toBeVisible(); assertions++;
   await page.getByRole("button",{name:"Central Owner Portal",exact:true}).click();
+  // Central lands on Device Trust; select the restricted Host-only module to
+  // prove the local backup/licensing controls cannot execute on Central.
+  await page.getByRole("button",{name:"Host Backup & License",exact:true}).click();
   await expect(page.getByText(/Local Windows Host Only/i)).toBeVisible(); assertions++;
   await page.getByRole("button",{name:"Windows Host Console",exact:true}).click();
   await page.getByRole("button",{name:"POS Workstation",exact:true}).click();
