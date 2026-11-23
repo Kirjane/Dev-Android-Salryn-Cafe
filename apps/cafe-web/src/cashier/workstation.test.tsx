@@ -374,6 +374,11 @@ describe("Salryn Cafe R2 — Live Host Integrated Cashier, Orders & Kitchen", ()
     await waitFor(() => expect(screen.getByRole("button", { name: /Spanish Latte/i })).toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: /Spanish Latte/i }));
     const dialog = screen.getByRole("dialog", { name: "Configure Spanish Latte" });
+    // Required milk choice cannot be silently skipped: no draft line until selected.
+    await user.click(within(dialog).getByRole("button", { name: "Add to Ticket" }));
+    expect(within(dialog).getByText(/Milk Choice requires at least 1 selection/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save order" })).toBeDisabled();
+    await user.click(within(dialog).getByLabelText(/Full Cream/i));
     await user.click(within(dialog).getByRole("button", { name: "Add to Ticket" }));
     await user.click(screen.getByRole("button", { name: "Save order" }));
     expect(await screen.findByText("Current order · Open")).toBeInTheDocument();
