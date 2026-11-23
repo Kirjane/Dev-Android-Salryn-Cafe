@@ -74,12 +74,12 @@ try {
     await expect(page.getByRole("heading",{name:"Current order · Ready",exact:true})).toBeVisible(); assertions++;
     await page.getByLabel("Tender",{exact:true}).selectOption(tender);
     if (tender === "Cash") {
+      // Insufficient cash is blocked in the cashier before any payment mutation.
+      // Do not click a disabled button or manufacture a rejected intent to archive.
       await page.getByLabel("Cash amount (PHP)",{exact:true}).fill("0.00");
-      await page.getByRole("button",{name:"Complete payment",exact:true}).click();
-      await expect(page.getByRole("button",{name:"Archive rejected request",exact:true})).toBeVisible(); assertions++;
-      await page.getByLabel(/Reason to archive rejected request/i).fill("Synthetic rejected zero cash; correcting tender");
-      await page.getByRole("button",{name:"Archive rejected request",exact:true}).click();
-      await expect(page.getByRole("heading",{name:"Action needs confirmation",exact:true})).toHaveCount(0); assertions++;
+      await expect(page.getByText("Still to collect (estimated)",{exact:true})).toBeVisible(); assertions++;
+      await expect(page.getByRole("button",{name:"Complete payment",exact:true})).toBeDisabled(); assertions++;
+      await expect(page.getByRole("button",{name:"Archive rejected request",exact:true})).toHaveCount(0); assertions++;
     }
     if (tender !== "AccountsReceivable") await page.getByLabel("Cash amount (PHP)",{exact:true}).fill(tender === "Cash" ? "5.00" : "2.50");
     if (tender !== "Cash") await page.getByLabel(/Customer/i).selectOption({label:"Synthetic Cafe Account"});
