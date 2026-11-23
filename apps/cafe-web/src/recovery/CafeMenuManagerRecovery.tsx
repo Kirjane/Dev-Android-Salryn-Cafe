@@ -12,8 +12,8 @@
  *   - Adds a bounded recovery extension control for variant-level modifier group
  *     linking (PUT /api/menu/variants/{variantId}/modifier-groups), which existed
  *     in canonical menuCatalog.ts/Host APIs but lacked UI in CafeMenuManager.tsx.
- *   - Fails closed unless mounted against a disposable test Host (/api/test/host-identity)
- *     or explicit Vite DEV mode.
+ *   - Fails closed in ALL build modes unless a disposable test Host
+ *     proves its identity via /api/test/host-identity.
  */
 
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type FormEvent } from "react";
@@ -73,6 +73,12 @@ function describeError(error: unknown): string {
 function isProtectedDatabasePath(path: string): boolean {
   const normalized = path.replace(/\//g, "\\").toLowerCase();
   return normalized.includes("\\programdata\\salryncafe") || normalized.includes("\\programdata\\salryn\\");
+}
+
+// Include the COMPLETE submitted payload, including array order, in the durable
+// unknown-outcome fence. The same request object is passed to the Host adapter.
+export function c1MutationIntent(action: string, payload: unknown): string {
+  return JSON.stringify([action, payload]);
 }
 
 const twoColumnGrid: CSSProperties = {
@@ -236,64 +242,18 @@ export function CafeMenuManagerRecovery({
   async function saveExistingItem(patch: Partial<MenuItem>, success: string) {
     if (!selectedItem) return;
     const next = { ...selectedItem, ...patch };
-    const intentKey = [
-      "item-patch",
-      next.productId,
-      next.categoryId ?? "",
-      next.name.trim(),
-      next.unitId,
-      next.sku ?? "",
-      next.barcode ?? "",
-      String(next.sellingPriceCents),
-      String(next.isActive),
-      String(next.isTemporarilyUnavailable),
-    ].join(":");
     await runMutation(
-      intentKey,
-      (operationId) =>
-        saveMenuItem(operationId, {
-          productId: next.productId,
-          categoryId: next.categoryId,
-          name: next.name,
-          description: next.description,
-          unitId: next.unitId,
-          sku: next.sku,
-          barcode: next.barcode,
-          sellingPriceCents: next.sellingPriceCents,
-          costPriceCents: next.costPriceCents,
-          isActive: next.isActive,
-          isTemporarilyUnavailable: next.isTemporarilyUnavailable,
-        }),
+      c1MutationIntent("item-patch", next),
+      (operationId) => saveMenuItem(operationId, next),
       success,
     );
   }
 
   async function updateVariant(variant: MenuVariant, patch: Partial<MenuVariant>, success: string) {
     const next = { ...variant, ...patch };
-    const intentKey = [
-      "variant-patch",
-      next.id,
-      next.name.trim(),
-      String(next.sellingPriceCents),
-      String(next.isActive),
-      String(next.isTemporarilyUnavailable),
-      String(next.displayOrder),
-    ].join(":");
     await runMutation(
-      intentKey,
-      (operationId) =>
-        saveMenuVariant(operationId, {
-          id: next.id,
-          productId: next.productId,
-          name: next.name,
-          sku: next.sku,
-          barcode: next.barcode,
-          sellingPriceCents: next.sellingPriceCents,
-          costPriceCents: next.costPriceCents,
-          isActive: next.isActive,
-          isTemporarilyUnavailable: next.isTemporarilyUnavailable,
-          displayOrder: next.displayOrder,
-        }),
+      c1MutationIntent("variant-patch", next),
+      (operationId) => saveMenuVariant(operationId, next),
       success,
     );
   }
@@ -319,7 +279,7 @@ export function CafeMenuManagerRecovery({
               loading={busy}
               onClick={() =>
                 void runMutation(
-                  `publish:${publication?.revisionNumber ?? 0}:${catalog.items.length}:${catalog.variants.length}:${catalog.modifierGroups.length}`,
+                  c1MutationIntent("publish", catalog),
                   (operationId) => publishMenu(operationId),
                   "Current menu content published as an immutable revision.",
                 )
@@ -347,11 +307,12 @@ export function CafeMenuManagerRecovery({
                   size="sm"
                   variant="secondary"
                   onClick={() => {
-                    op.reset();
+                    // Refresh is diagnostic only. A read does not prove whether a
+                    // possibly committed mutation completed; keep its ID fenced.
                     void onRefresh();
                   }}
                 >
-                  Refresh &amp; clear fence
+                  Refresh catalog (retain operation ID)
                 </Button>
               </div>
             </div>
@@ -425,9 +386,10 @@ export function CafeMenuManagerRecovery({
                   e.preventDefault();
                   const trimmed = categoryName.trim();
                   if (!trimmed) return;
+                  const request = { id: null, name: trimmed, isActive: true };
                   void runMutation(
-                    `category:add:${trimmed}`,
-                    (operationId) => saveMenuCategory(operationId, { id: null, name: trimmed, isActive: true }),
+                    c1MutationIntent("category:add", request),
+                    (operationId) => saveMenuCategory(operationId, request),
                     "Menu category saved.",
                     () => setCategoryName(""),
                   );
@@ -453,18 +415,14 @@ export function CafeMenuManagerRecovery({
                     size="sm"
                     variant={category.isActive ? "secondary" : "ghost"}
                     disabled={busy}
-                    onClick={() =>
+                    onClick={() => {
+                      const request = { id: category.id, name: category.name, isActive: !category.isActive };
                       void runMutation(
-                        `category:toggle:${category.id}:${!category.isActive}`,
-                        (operationId) =>
-                          saveMenuCategory(operationId, {
-                            id: category.id,
-                            name: category.name,
-                            isActive: !category.isActive,
-                          }),
+                        c1MutationIntent("category:toggle", request),
+                        (operationId) => saveMenuCategory(operationId, request),
                         category.isActive ? "Category deactivated." : "Category reactivated.",
-                      )
-                    }
+                      );
+                    }}
                   >
                     {category.name}
                     {category.isActive ? "" : " · inactive"}
@@ -514,32 +472,22 @@ export function CafeMenuManagerRecovery({
                     setLocalError(describeError(err));
                     return;
                   }
-                  const intentKey = [
-                    "item:save",
-                    selectedItem?.productId ?? "new",
-                    itemCategoryId || "none",
-                    itemName.trim(),
-                    itemUnitId,
-                    itemSku.trim(),
-                    itemBarcode.trim(),
-                    String(priceCents),
-                  ].join(":");
+                  const request = {
+                    productId: selectedItem?.productId ?? null,
+                    categoryId: itemCategoryId || null,
+                    name: itemName.trim(),
+                    description: selectedItem?.description ?? null,
+                    unitId: itemUnitId,
+                    sku: itemSku.trim() || null,
+                    barcode: itemBarcode.trim() || null,
+                    sellingPriceCents: priceCents,
+                    costPriceCents: selectedItem?.costPriceCents ?? null,
+                    isActive: selectedItem?.isActive ?? true,
+                    isTemporarilyUnavailable: selectedItem?.isTemporarilyUnavailable ?? false,
+                  };
                   void runMutation(
-                    intentKey,
-                    (operationId) =>
-                      saveMenuItem(operationId, {
-                        productId: selectedItem?.productId ?? null,
-                        categoryId: itemCategoryId || null,
-                        name: itemName.trim(),
-                        description: selectedItem?.description ?? null,
-                        unitId: itemUnitId,
-                        sku: itemSku.trim() || null,
-                        barcode: itemBarcode.trim() || null,
-                        sellingPriceCents: priceCents,
-                        costPriceCents: selectedItem?.costPriceCents ?? null,
-                        isActive: selectedItem?.isActive ?? true,
-                        isTemporarilyUnavailable: selectedItem?.isTemporarilyUnavailable ?? false,
-                      }),
+                    c1MutationIntent("item:save", request),
+                    (operationId) => saveMenuItem(operationId, request),
                     selectedItem ? "Menu item changes saved." : "Menu item and Standard variant created.",
                     (saved, refreshed) => chooseItem(saved, refreshed),
                   );
@@ -755,21 +703,21 @@ export function CafeMenuManagerRecovery({
                       setLocalError(describeError(err));
                       return;
                     }
+                    const request = {
+                      id: null,
+                      productId: selectedItem.productId,
+                      name: trimmed,
+                      sku: variantSku.trim() || null,
+                      barcode: variantBarcode.trim() || null,
+                      sellingPriceCents: priceCents,
+                      costPriceCents: null,
+                      isActive: true,
+                      isTemporarilyUnavailable: false,
+                      displayOrder: selectedItemVariants.length,
+                    };
                     void runMutation(
-                      `variant:add:${selectedItem.productId}:${trimmed}:${priceCents}:${variantSku.trim()}`,
-                      (operationId) =>
-                        saveMenuVariant(operationId, {
-                          id: null,
-                          productId: selectedItem.productId,
-                          name: trimmed,
-                          sku: variantSku.trim() || null,
-                          barcode: variantBarcode.trim() || null,
-                          sellingPriceCents: priceCents,
-                          costPriceCents: null,
-                          isActive: true,
-                          isTemporarilyUnavailable: false,
-                          displayOrder: selectedItemVariants.length,
-                        }),
+                      c1MutationIntent("variant:add", request),
+                      (operationId) => saveMenuVariant(operationId, request),
                       "Variant saved.",
                       () => {
                         setVariantName("");
@@ -904,18 +852,18 @@ export function CafeMenuManagerRecovery({
                     if (!trimmed) return;
                     const min = Math.max(0, Number(groupMin) || 0);
                     const max = Math.max(0, Number(groupMax) || 0);
+                    const request = {
+                      id: null,
+                      name: trimmed,
+                      isRequired: groupRequired,
+                      minSelections: min,
+                      maxSelections: max,
+                      isActive: true,
+                      displayOrder: catalog.modifierGroups.length,
+                    };
                     void runMutation(
-                      `modgroup:add:${trimmed}:${groupRequired}:${min}:${max}`,
-                      (operationId) =>
-                        saveMenuModifierGroup(operationId, {
-                          id: null,
-                          name: trimmed,
-                          isRequired: groupRequired,
-                          minSelections: min,
-                          maxSelections: max,
-                          isActive: true,
-                          displayOrder: catalog.modifierGroups.length,
-                        }),
+                      c1MutationIntent("modgroup:add", request),
+                      (operationId) => saveMenuModifierGroup(operationId, request),
                       "Modifier group saved.",
                       (saved) => {
                         setSelectedGroupId(saved.id);
@@ -991,17 +939,17 @@ export function CafeMenuManagerRecovery({
                       setLocalError(describeError(err));
                       return;
                     }
+                    const request = {
+                      id: null,
+                      groupId: selectedGroupId,
+                      name: trimmed,
+                      priceDeltaCents: deltaCents,
+                      isActive: true,
+                      displayOrder: catalog.modifierOptions.filter((o) => o.groupId === selectedGroupId).length,
+                    };
                     void runMutation(
-                      `modopt:add:${selectedGroupId}:${trimmed}:${deltaCents}`,
-                      (operationId) =>
-                        saveMenuModifierOption(operationId, {
-                          id: null,
-                          groupId: selectedGroupId,
-                          name: trimmed,
-                          priceDeltaCents: deltaCents,
-                          isActive: true,
-                          displayOrder: catalog.modifierOptions.filter((o) => o.groupId === selectedGroupId).length,
-                        }),
+                      c1MutationIntent("modopt:add", request),
+                      (operationId) => saveMenuModifierOption(operationId, request),
                       "Modifier option saved.",
                       () => {
                         setOptionName("");
@@ -1100,7 +1048,7 @@ export function CafeMenuManagerRecovery({
                       disabled={busy}
                       onClick={() =>
                         void runMutation(
-                          `item-links:${selectedItem.productId}:${[...linkedGroupIds].sort().join(",")}`,
+                          c1MutationIntent("item-links", { productId: selectedItem.productId, groupIds: linkedGroupIds }),
                           (operationId) =>
                             setMenuItemModifierGroups(operationId, selectedItem.productId, linkedGroupIds),
                           "Modifier links saved for menu item.",
@@ -1181,7 +1129,7 @@ export function CafeMenuManagerRecovery({
                       disabled={busy || !selectedVariantLinkId}
                       onClick={() =>
                         void runMutation(
-                          `variant-links:${selectedVariantLinkId}:${[...variantLinkedGroupIds].sort().join(",")}`,
+                          c1MutationIntent("variant-links", { variantId: selectedVariantLinkId, groupIds: variantLinkedGroupIds }),
                           (operationId) =>
                             setMenuVariantModifierGroups(
                               operationId,
@@ -1213,12 +1161,10 @@ export function CafeMenuManagerRecovery({
 
 export type CafeMenuManagerRecoveryPageProps = {
   onOpenWorkstation?: () => void;
-  bypassDisposableHostCheck?: boolean;
 };
 
 export function CafeMenuManagerRecoveryPage({
   onOpenWorkstation,
-  bypassDisposableHostCheck = false,
 }: CafeMenuManagerRecoveryPageProps) {
   const [hostGate, setHostGate] = useState<
     | { status: "checking" }
@@ -1258,16 +1204,12 @@ export function CafeMenuManagerRecoveryPage({
   useEffect(() => {
     let active = true;
     async function verifyEnvironment() {
-      if (bypassDisposableHostCheck) {
-        if (active) setHostGate({ status: "allowed", identity: null });
-        await loadAll();
-        return;
-      }
-
       try {
         const identity = await fetchTestHostIdentity();
         if (!active) return;
-        if (!identity.testHostNonce || isProtectedDatabasePath(identity.databasePath)) {
+        if (identity.status !== "ok" || typeof identity.testHostNonce !== "string" || !identity.testHostNonce.trim() ||
+            typeof identity.databasePath !== "string" || !identity.databasePath.trim() ||
+            isProtectedDatabasePath(identity.databasePath)) {
           setHostGate({
             status: "blocked",
             reason: "Refusing to mount C1 recovery editor against a protected or non-disposable database path.",
@@ -1278,11 +1220,6 @@ export function CafeMenuManagerRecoveryPage({
         await loadAll();
       } catch (err) {
         if (!active) return;
-        if (import.meta.env.DEV) {
-          setHostGate({ status: "allowed", identity: null });
-          await loadAll();
-          return;
-        }
         setHostGate({
           status: "blocked",
           reason:
@@ -1297,7 +1234,7 @@ export function CafeMenuManagerRecoveryPage({
     return () => {
       active = false;
     };
-  }, [bypassDisposableHostCheck, loadAll]);
+  }, [loadAll]);
 
   async function handleLogin(e: FormEvent) {
     e.preventDefault();

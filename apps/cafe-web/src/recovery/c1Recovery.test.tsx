@@ -2,7 +2,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isC1RecoveryRoute, resolveCafeRoute } from "../cashier/main";
-import { CafeMenuManagerRecovery, CafeMenuManagerRecoveryPage } from "./CafeMenuManagerRecovery";
+import { c1MutationIntent, CafeMenuManagerRecovery, CafeMenuManagerRecoveryPage } from "./CafeMenuManagerRecovery";
 import { publishMenu, saveMenuCategory, setMenuVariantModifierGroups, type MenuCatalogDraft } from "./menuCatalogAdapter";
 import { BackofficeUnknownOutcomeError } from "../backoffice/useBackofficeOperation";
 
@@ -153,6 +153,46 @@ describe("Canonical C1 recovery route and idempotent adapter", () => {
     });
     expect(seenKeys).toHaveLength(2);
     expect(seenKeys[1]).toBe(seenKeys[0]);
+  });
+
+  it("uses complete payload content and array order to distinguish durable mutation intents", () => {
+    const base = { id: null, productId: "item-1", name: "Large", barcode: "A", displayOrder: 0 };
+    const first = c1MutationIntent("variant:add", base);
+    expect(c1MutationIntent("variant:add", { ...base, barcode: "B" })).not.toBe(first);
+    expect(c1MutationIntent("variant:add", { ...base, displayOrder: 1 })).not.toBe(first);
+    expect(c1MutationIntent("item-links", { productId: "item-1", groupIds: ["a", "b"] })).not.toBe(
+      c1MutationIntent("item-links", { productId: "item-1", groupIds: ["b", "a"] }),
+    );
+  });
+
+  it("retains an unknown operation ID on diagnostic refresh instead of clearing its fence", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      new Response(JSON.stringify({ code: "ERR_IDEMPOTENCY_OUTCOME_UNKNOWN", error: "Outcome uncertain" }), {
+        status: 409, headers: { "Content-Type": "application/json" },
+      }),
+    ));
+    const onRefresh = vi.fn(async () => null);
+    const user = userEvent.setup();
+    render(<CafeMenuManagerRecovery catalog={makeEmptyCatalog()} units={[]} onRefresh={onRefresh} />);
+    await user.type(screen.getByLabelText(/Category name/i), "Coffee");
+    await user.click(screen.getByRole("button", { name: "Add category" }));
+    await waitFor(() => expect(screen.getByText("C1 mutation outcome uncertain")).toBeInTheDocument());
+    const storageKey = "salryn.cafe.backoffice.op.c1-menu-recovery.v1";
+    const before = window.localStorage.getItem(storageKey);
+    expect(before).toContain("operationId");
+    await user.click(screen.getByRole("button", { name: "Refresh catalog (retain operation ID)" }));
+    await waitFor(() => expect(onRefresh).toHaveBeenCalledOnce());
+    expect(window.localStorage.getItem(storageKey)).toBe(before);
+    expect(screen.getByText("C1 mutation outcome uncertain")).toBeInTheDocument();
+  });
+
+  it("fails closed on a missing test-host endpoint even in Vite development mode", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => new Response("Not found", { status: 404 }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CafeMenuManagerRecoveryPage />);
+    await waitFor(() => expect(screen.getByText("C1 recovery route blocked on non-disposable host")).toBeInTheDocument());
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/test/host-identity");
   });
 
   it("blocks protected production database paths on non-disposable hosts", async () => {

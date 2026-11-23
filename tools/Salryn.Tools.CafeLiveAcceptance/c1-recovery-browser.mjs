@@ -307,7 +307,7 @@ try {
     await page.evaluate((opId) => {
       window.localStorage.setItem(
         "salryn.cafe.backoffice.op.c1-menu-recovery.v1",
-        JSON.stringify({ operationId: opId, intentKey: "category:add:Fenced Category" }),
+        JSON.stringify({ operationId: opId, intentKey: JSON.stringify(["category:add", { id: null, name: "Fenced Category", isActive: true }]) }),
       );
     }, fencedOpId);
     await page.reload();
@@ -325,7 +325,18 @@ try {
     await expect(page.getByText(/Resolve the previous uncertain operation before submitting changed details/i)).toBeVisible();
     assert(httpLog.length === reqCountBefore, "Changed payload while fenced must not send a new HTTP request");
     await page.screenshot({ path: `${root}/c1-recovery-unknown-outcome-fence.png`, fullPage: true });
-    await page.getByRole("button", { name: "Refresh & clear fence", exact: true }).click();
+    await page.getByRole("button", { name: "Refresh catalog (retain operation ID)", exact: true }).click();
+    const durableFenceAfterRefresh = await page.evaluate(() => window.localStorage.getItem("salryn.cafe.backoffice.op.c1-menu-recovery.v1"));
+    assert(durableFenceAfterRefresh?.includes(fencedOpId), "Diagnostic refresh must preserve the uncertain operation ID");
+    await expect(page.getByText("C1 mutation outcome uncertain", { exact: true })).toBeVisible();
+    assertions += 2;
+
+    // This artificial server fence was inserted by the disposable test runner.
+    // Reset browser-local fixture state ONLY here to isolate the following RBAC
+    // test; the operator UI must never expose a bypass for unresolved writes.
+    await page.evaluate(() => window.localStorage.removeItem("salryn.cafe.backoffice.op.c1-menu-recovery.v1"));
+    await page.reload();
+    await expect(page.getByText("Published r1", { exact: true })).toBeVisible();
 
     // 5. Underprivileged actor (c1-cashier: Products.View only, no Products.Manage) -> 403 + visible UI error
     await page.getByRole("button", { name: /Sign out/i }).click();
