@@ -10,11 +10,13 @@ using Salryn.Composition.Local;
 using Salryn.Core.Common;
 using Salryn.Core.Models;
 using Salryn.Core.ReadModels;
+using Salryn.Core.Services.Licensing;
 using Salryn.Core.Repositories;
 using Salryn.Core.Security;
 using Salryn.Core.ValueObjects;
 using Salryn.Infrastructure.Data.Repositories;
 using Salryn.Infrastructure.Data.Seeding;
+using Salryn.Infrastructure.Licensing;
 
 namespace Salryn.Tests;
 
@@ -41,6 +43,20 @@ public static class V2HostOperatorCheckoutApiChecks
         throw new InvalidOperationException(
             "RunReleaseUnlicensedBoundaryAsync requires a Release build where #if DEBUG development license mode is compiled out.");
 #else
+        // This proof must not read a signed license installed on the operator's PC.
+        // ReleaseUnlicensed explicitly uses a fresh, nonexistent license-file root.
+        string unlicensedRoot = Path.Combine(
+            Path.GetTempPath(), "salryn-core-smoke-unlicensed-" + Guid.NewGuid().ToString("N"));
+        LocalLicenseService unlicensedLicense = new(new LocalLicenseFileStore(
+            new LocalLicenseFileStoreOptions(unlicensedRoot, LocalLicenseFileStore.DefaultFileName)));
+        LocalLicenseValidationResult unlicensedStatus = await unlicensedLicense.GetStatusAsync()
+            .ConfigureAwait(false);
+        if (unlicensedStatus.Status != LicenseStatus.Unlicensed)
+        {
+            throw new InvalidOperationException(
+                "ReleaseUnlicensed proof requires an empty isolated license store.");
+        }
+
         SalrynLocalComposition composition = SalrynLocalComposition.CreateDevelopment(projectRoot);
         await composition.InitializeDatabaseAsync().ConfigureAwait(false);
 
@@ -64,6 +80,7 @@ public static class V2HostOperatorCheckoutApiChecks
                     Composition = composition,
                     InitializeDatabase = false,
                     SessionStore = sessionStore,
+                    LicenseService = unlicensedLicense,
                     EnableStaticWebAssets = false,
                     WriteDevelopmentDatabasePath = false
                 })
