@@ -48,7 +48,7 @@ export const R3_ROUTES: readonly R3RouteDefinition[] = [
     label: "Today",
     group: "Overview",
     anyOfPermissions: [R3_HOST_PERMISSIONS.ReportsView],
-    domains: ["C8", "C11"],
+    domains: ["C11"],
   },
   {
     key: "pos",
@@ -56,7 +56,7 @@ export const R3_ROUTES: readonly R3RouteDefinition[] = [
     label: "POS Counter",
     group: "Sales & Service",
     anyOfPermissions: [R3_HOST_PERMISSIONS.OrdersCreate, R3_HOST_PERMISSIONS.OrdersView],
-    domains: ["C3", "C4", "C11"],
+    domains: ["C4", "C5", "C7"],
   },
   {
     key: "orders",
@@ -64,7 +64,7 @@ export const R3_ROUTES: readonly R3RouteDefinition[] = [
     label: "Orders",
     group: "Sales & Service",
     anyOfPermissions: [R3_HOST_PERMISSIONS.OrdersView],
-    domains: ["C3", "C4"],
+    domains: ["C4", "C7"],
   },
   {
     key: "kitchen",
@@ -72,7 +72,7 @@ export const R3_ROUTES: readonly R3RouteDefinition[] = [
     label: "Kitchen Display",
     group: "Sales & Service",
     anyOfPermissions: [R3_HOST_PERMISSIONS.PreparationManage, R3_HOST_PERMISSIONS.OrdersView],
-    domains: ["C3"],
+    domains: ["C4", "C7"],
   },
   {
     key: "cash",
@@ -83,7 +83,7 @@ export const R3_ROUTES: readonly R3RouteDefinition[] = [
       R3_HOST_PERMISSIONS.ShiftOpenClose,
       R3_HOST_PERMISSIONS.AuditView,
     ],
-    domains: ["C4", "C5"],
+    domains: ["C6"],
   },
   {
     key: "menu",
@@ -107,7 +107,7 @@ export const R3_ROUTES: readonly R3RouteDefinition[] = [
     label: "Inventory",
     group: "Menu & Stock",
     anyOfPermissions: [R3_HOST_PERMISSIONS.InventoryView, R3_HOST_PERMISSIONS.IngredientsView],
-    domains: ["C2", "C7"],
+    domains: ["C3"],
   },
   {
     key: "customers",
@@ -123,7 +123,7 @@ export const R3_ROUTES: readonly R3RouteDefinition[] = [
     label: "Bookings & Cart",
     group: "Operations",
     anyOfPermissions: [R3_HOST_PERMISSIONS.BookingView],
-    domains: ["C6"],
+    domains: ["C9"],
   },
   {
     key: "deliveries",
@@ -131,7 +131,7 @@ export const R3_ROUTES: readonly R3RouteDefinition[] = [
     label: "Deliveries",
     group: "Operations",
     anyOfPermissions: [R3_HOST_PERMISSIONS.DeliveryView],
-    domains: ["C6"],
+    domains: ["C8"],
   },
   {
     key: "staff",
@@ -151,7 +151,7 @@ export const R3_ROUTES: readonly R3RouteDefinition[] = [
     label: "Reports & COGS",
     group: "Insights",
     anyOfPermissions: [R3_HOST_PERMISSIONS.ReportsView],
-    domains: ["C8"],
+    domains: ["C11"],
   },
   {
     key: "users",
@@ -160,7 +160,7 @@ export const R3_ROUTES: readonly R3RouteDefinition[] = [
     group: "Administration",
     collapsibleGroup: true,
     anyOfPermissions: [R3_HOST_PERMISSIONS.UsersManage],
-    domains: ["C9"],
+    domains: ["Cross-Cutting"],
   },
   {
     key: "settings",
@@ -169,7 +169,7 @@ export const R3_ROUTES: readonly R3RouteDefinition[] = [
     group: "Administration",
     collapsibleGroup: true,
     anyOfPermissions: [R3_HOST_PERMISSIONS.SettingsManage],
-    domains: ["C9"],
+    domains: ["Cross-Cutting"],
   },
   {
     key: "printers",
@@ -178,7 +178,7 @@ export const R3_ROUTES: readonly R3RouteDefinition[] = [
     group: "Administration",
     collapsibleGroup: true,
     anyOfPermissions: [R3_HOST_PERMISSIONS.SettingsManage],
-    domains: ["C3", "C9"],
+    domains: ["C7"],
   },
   {
     key: "devices",
@@ -187,7 +187,7 @@ export const R3_ROUTES: readonly R3RouteDefinition[] = [
     group: "Administration",
     collapsibleGroup: true,
     anyOfPermissions: [R3_HOST_PERMISSIONS.SettingsManage],
-    domains: ["C9", "C11"],
+    domains: ["Cross-Cutting"],
   },
   {
     key: "backup",
@@ -196,7 +196,7 @@ export const R3_ROUTES: readonly R3RouteDefinition[] = [
     group: "Administration",
     collapsibleGroup: true,
     anyOfPermissions: [R3_HOST_PERMISSIONS.SettingsManage],
-    domains: ["C9", "C11"],
+    domains: ["Cross-Cutting"],
   },
   {
     key: "audit",
@@ -205,7 +205,7 @@ export const R3_ROUTES: readonly R3RouteDefinition[] = [
     group: "Administration",
     collapsibleGroup: true,
     anyOfPermissions: [R3_HOST_PERMISSIONS.AuditView],
-    domains: ["C9"],
+    domains: ["Cross-Cutting"],
   },
 ] as const;
 

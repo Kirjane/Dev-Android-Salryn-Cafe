@@ -16,16 +16,23 @@ import {
 import {
   closeCashShiftBlind,
   openCashShift,
+  postCafeCashMovement,
+  readCafeCashMovements,
   readCashDrawerHistory,
   readCurrentCashDrawer,
   recordCashDrawerMovement,
+  reverseCafeCashMovement,
   reviewCashDrawerVariance,
+  type CafeCashMovementLedgerRow,
+  type CafeCashMovementType,
   type CashDrawerEventType,
   type CashDrawerSnapshot,
   type CloseShiftBlindCommand,
   type DrawerMovementCommand,
   type DrawerReviewCommand,
   type OpenShiftCommand,
+  type PostCafeCashMovementCommand,
+  type ReverseCafeCashMovementCommand,
   type ShiftOperationEnvelope,
 } from "./cashDrawerContracts";
 
@@ -106,6 +113,22 @@ function R3LiveCashShiftsContent({ embedded = false }: Props) {
     authority,
   );
 
+  // C6 Canonical Cash / Expense Operations & Reversals (/api/cafe/cash/movements)
+  const [c6Movements, setC6Movements] = useState<CafeCashMovementLedgerRow[]>([]);
+  const [c6Type, setC6Type] = useState<CafeCashMovementType>("OperationalExpense");
+  const [c6AmountPhp, setC6AmountPhp] = useState("");
+  const [c6Reason, setC6Reason] = useState("");
+  const [c6ReferenceId, setC6ReferenceId] = useState("");
+  const [c6Message, setC6Message] = useState<string | null>(null);
+  const c6PostIntent = useDurableIntent<PostCafeCashMovementCommand, unknown>(
+    "cash-c6-post",
+    authority,
+  );
+  const c6ReverseIntent = useDurableIntent<
+    { originalMovementId: string; command: ReverseCafeCashMovementCommand },
+    unknown
+  >("cash-c6-reverse", authority);
+
   // Independent Variance Review form (INT-08)
   const [reviewSessionId, setReviewSessionId] = useState("");
   const [reviewReason, setReviewReason] = useState("");
@@ -152,6 +175,12 @@ function R3LiveCashShiftsContent({ embedded = false }: Props) {
       setHistory(histPage.items);
       setCurrentDrawer(openSnap);
 
+      if (openSnap && hasPerm(verified, "Cash.View")) {
+        readCafeCashMovements().then(setC6Movements).catch(() => setC6Movements([]));
+      } else {
+        setC6Movements([]);
+      }
+
       const pendingReview = histPage.items.find(
         (s) => s.reviewStatus === "PendingReview" && (s.varianceCents ?? 0) !== 0,
       );
@@ -176,6 +205,8 @@ function R3LiveCashShiftsContent({ embedded = false }: Props) {
 
   const canAudit = hasPerm(session, "Audit.View");
   const canShift = hasPerm(session, "Shift.OpenClose");
+  const canExpense = hasPerm(session, "Expenses.Record");
+  const canCashReverse = hasPerm(session, "Cash.Reverse");
 
   const tabs = useMemo(
     () =>
@@ -295,8 +326,76 @@ function R3LiveCashShiftsContent({ embedded = false }: Props) {
       const msg = `${moveType} movement recorded (${formatPhp(amountCents)}).`;
       setMoveMessage(msg);
       pushToast(msg);
+      await loadAll();
     } else {
       setMoveMessage(`${res.code ? `[${res.code}] ` : ""}${res.message}`);
+    }
+  };
+
+  const handleC6PostSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setC6Message(null);
+    let amountCents: number;
+    try {
+      amountCents = parsePhpToCents(c6AmountPhp);
+    } catch (err) {
+      setC6Message(err instanceof Error ? err.message : "Invalid amount.");
+      return;
+    }
+    if (amountCents <= 0 || !c6Reason.trim()) {
+      setC6Message("Positive amount and reason are required.");
+      return;
+    }
+    const refId = c6ReferenceId.trim() || null;
+    const res = await c6PostIntent.execute(
+      { movementType: c6Type, amountCents, reason: c6Reason.trim(), referenceId: refId },
+      () => ({
+        operationId: crypto.randomUUID(),
+        movementId: crypto.randomUUID(),
+        movementType: c6Type,
+        amountCents,
+        reason: c6Reason.trim(),
+        referenceId: refId,
+        occurredAtUtc: new Date().toISOString(),
+      }),
+      postCafeCashMovement,
+    );
+    if (res.ok) {
+      setC6AmountPhp("");
+      setC6Reason("");
+      setC6ReferenceId("");
+      const msg = `C6 ${c6Type} recorded (${formatPhp(amountCents)}).`;
+      setC6Message(msg);
+      pushToast(msg);
+      await loadAll();
+    } else {
+      setC6Message(`${res.code ? `[${res.code}] ` : ""}${res.message}`);
+    }
+  };
+
+  const handleC6Reverse = async (row: CafeCashMovementLedgerRow) => {
+    setC6Message(null);
+    const reason = `Reversal of ${row.movementType} ${row.movementId.slice(0, 8)}`;
+    const res = await c6ReverseIntent.execute(
+      { originalMovementId: row.movementId, reason },
+      () => ({
+        originalMovementId: row.movementId,
+        command: {
+          operationId: crypto.randomUUID(),
+          movementId: crypto.randomUUID(),
+          reason,
+          occurredAtUtc: new Date().toISOString(),
+        },
+      }),
+      (p) => reverseCafeCashMovement(p.originalMovementId, p.command),
+    );
+    if (res.ok) {
+      const msg = `Movement ${row.movementId.slice(0, 8)}… reversed.`;
+      setC6Message(msg);
+      pushToast(msg);
+      await loadAll();
+    } else {
+      setC6Message(`${res.code ? `[${res.code}] ` : ""}${res.message}`);
     }
   };
 
@@ -526,6 +625,136 @@ function R3LiveCashShiftsContent({ embedded = false }: Props) {
                         </div>
                       </form>
                       {moveMessage && <p role="status" style={{ marginTop: 12 }} className="r3-text-sm">{moveMessage}</p>}
+                    </div>
+
+                    <div className="r3-card">
+                      <div className="r3-card-header">
+                        <div>
+                          <div className="r3-card-title">C6 Operational Expenses &amp; Cash Reversals</div>
+                          <div className="r3-card-subtitle">
+                            Record OperationalExpense, CashIn/CashOut, or InventoryPurchase via /api/cafe/cash/movements and reverse eligible manual movements (expected drawer total stays hidden).
+                          </div>
+                        </div>
+                      </div>
+                      <DurableIntentBanner
+                        label="C6 Cash/Expense"
+                        operationId={c6PostIntent.pending?.payload.operationId ?? null}
+                        pending={c6PostIntent.pending}
+                        corruptReason={c6PostIntent.corruptReason}
+                        authorityMismatch={c6PostIntent.authorityMismatch}
+                        inFlight={c6PostIntent.inFlight}
+                        onRetry={() =>
+                          void c6PostIntent.retryPending(postCafeCashMovement).then((r) => {
+                            if (r.ok) { setC6Message("C6 cash/expense retry confirmed."); void loadAll(); }
+                            else setC6Message(r.message);
+                          })
+                        }
+                        onClearRejected={() => c6PostIntent.clearPending(false)}
+                        onClearCorrupt={() => c6PostIntent.clearPending(true)}
+                      />
+                      <DurableIntentBanner
+                        label="Cash Reversal"
+                        operationId={c6ReverseIntent.pending?.payload.command.operationId ?? null}
+                        pending={c6ReverseIntent.pending}
+                        corruptReason={c6ReverseIntent.corruptReason}
+                        authorityMismatch={c6ReverseIntent.authorityMismatch}
+                        inFlight={c6ReverseIntent.inFlight}
+                        onRetry={() =>
+                          void c6ReverseIntent
+                            .retryPending((p) => reverseCafeCashMovement(p.originalMovementId, p.command))
+                            .then((r) => {
+                              if (r.ok) { setC6Message("Cash reversal retry confirmed."); void loadAll(); }
+                              else setC6Message(r.message);
+                            })
+                        }
+                        onClearRejected={() => c6ReverseIntent.clearPending(false)}
+                        onClearCorrupt={() => c6ReverseIntent.clearPending(true)}
+                      />
+                      {(canExpense || hasPerm(session, "Cash.In") || hasPerm(session, "Cash.Out")) && (
+                        <form onSubmit={(e) => void handleC6PostSubmit(e)} style={{ display: "grid", gap: 12, maxWidth: 560, marginBottom: 16 }}>
+                          <label>
+                            <div className="r3-text-xs r3-text-muted">C6 Movement Type</div>
+                            <select className="r3-input" aria-label="C6 Movement Type" value={c6Type} onChange={(e) => setC6Type(e.target.value as CafeCashMovementType)}>
+                              {canExpense && <option value="OperationalExpense">OperationalExpense</option>}
+                              {hasPerm(session, "Cash.In") && <option value="CashIn">CashIn</option>}
+                              {hasPerm(session, "Cash.Out") && <option value="CashOut">CashOut</option>}
+                              {hasPerm(session, "Cash.Out") && <option value="InventoryPurchase">InventoryPurchase (requires purchase ID)</option>}
+                            </select>
+                          </label>
+                          <label>
+                            <div className="r3-text-xs r3-text-muted">Expense / Movement Amount (PHP)</div>
+                            <input className="r3-input" aria-label="C6 Amount" value={c6AmountPhp} onChange={(e) => setC6AmountPhp(e.target.value)} placeholder="120.00" />
+                          </label>
+                          <label>
+                            <div className="r3-text-xs r3-text-muted">Expense / Movement Reason</div>
+                            <input className="r3-input" aria-label="C6 Reason" value={c6Reason} onChange={(e) => setC6Reason(e.target.value)} placeholder="Ice delivery / store supplies" />
+                          </label>
+                          {c6Type === "InventoryPurchase" && (
+                            <label>
+                              <div className="r3-text-xs r3-text-muted">Purchase Receipt ID (GUID)</div>
+                              <input className="r3-input" aria-label="Purchase Receipt ID" value={c6ReferenceId} onChange={(e) => setC6ReferenceId(e.target.value)} placeholder="Accepted C3 purchase receipt GUID" />
+                            </label>
+                          )}
+                          <div>
+                            <button type="submit" className="r3-btn r3-btn--primary" disabled={c6PostIntent.inFlight}>
+                              Post C6 Cash / Expense
+                            </button>
+                          </div>
+                        </form>
+                      )}
+                      {c6Message && <p role="status" style={{ marginBottom: 12 }} className="r3-text-sm">{c6Message}</p>}
+                      <div className="r3-table-wrap" tabIndex={0} role="region" aria-label="Session C6 Cash Movements">
+                        <table className="r3-table">
+                          <caption className="r3-sr-only">Session C6 Cash Movements</caption>
+                          <thead>
+                            <tr>
+                              <th scope="col">Type</th>
+                              <th scope="col">Delta</th>
+                              <th scope="col">Reason</th>
+                              <th scope="col">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {c6Movements.length === 0 ? (
+                              <tr><td colSpan={4} className="r3-text-muted">No session cash movements yet.</td></tr>
+                            ) : (
+                              c6Movements.map((m) => {
+                                const reversible =
+                                  canCashReverse &&
+                                  !m.isReversed &&
+                                  !m.reversalOfMovementId &&
+                                  (m.movementType === "CashIn" ||
+                                    m.movementType === "CashOut" ||
+                                    m.movementType === "OperationalExpense" ||
+                                    m.movementType === "InventoryPurchase");
+                                return (
+                                  <tr key={m.movementId}>
+                                    <th scope="row">{m.movementType}</th>
+                                    <td className="r3-tabular">{formatPhp(m.deltaCents)}</td>
+                                    <td>{m.reason ?? "—"}</td>
+                                    <td>
+                                      {reversible ? (
+                                        <button
+                                          type="button"
+                                          className="r3-btn r3-btn--outline r3-btn--sm"
+                                          disabled={c6ReverseIntent.inFlight}
+                                          onClick={() => void handleC6Reverse(m)}
+                                        >
+                                          Reverse
+                                        </button>
+                                      ) : (
+                                        <span className="r3-text-xs r3-text-muted">
+                                          {m.reversalOfMovementId ? "Reversal" : m.isReversed ? "Reversed" : "Source-owned"}
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
 
                     <div className="r3-card">

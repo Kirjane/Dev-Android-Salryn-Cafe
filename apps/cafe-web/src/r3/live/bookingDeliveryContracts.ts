@@ -422,3 +422,151 @@ export async function resolveDelivery(
     command.operationId,
   );
 }
+
+export type ReviseBookingCommand = {
+  operationId: string;
+  revisionId: string;
+  expectedVersion: number;
+  occurredAtUtc: string;
+  configuration: BookingConfigurationCommand;
+};
+
+export type CancelBookingCommand = {
+  operationId: string;
+  expectedVersion: number;
+  reason: string;
+  occurredAtUtc: string;
+};
+
+export type StartBookingFulfillmentCommand = {
+  operationId: string;
+  orderId: string;
+  expectedVersion: number;
+  occurredAtUtc: string;
+};
+
+export type BookingFulfillmentResult = {
+  bookingId: string;
+  orderId: string;
+  bookingVersion: number;
+  status: string;
+  fulfillmentState: string;
+  isReplay?: boolean;
+};
+
+export type ReviseDeliveryCommand = {
+  operationId: string;
+  expectedVersion: number;
+  occurredAtUtc: string;
+  recipientName: string;
+  contactPhone?: string | null;
+  deliveryAddress: string;
+  landmark?: string | null;
+  instructions?: string | null;
+  deliveryFeeCents: number;
+  courierReference?: string | null;
+};
+
+export type CancelDeliveryCommand = {
+  operationId: string;
+  expectedVersion: number;
+  reason: string;
+  occurredAtUtc: string;
+};
+
+export async function reviseBooking(
+  bookingId: string,
+  command: ReviseBookingCommand,
+): Promise<CafeBookingMutationResult> {
+  requireGuid(bookingId, "bookingId");
+  requireGuid(command.operationId, "operationId");
+  requireGuid(command.revisionId, "revisionId");
+  requireInstant(command.occurredAtUtc, "occurredAtUtc");
+  return hostRequest<CafeBookingMutationResult>(
+    `/api/cafe/bookings/${bookingId}/revision`,
+    command,
+    "POST",
+    command.operationId,
+  );
+}
+
+export async function markBookingReadyForFulfillment(
+  bookingId: string,
+  command: AdvanceBookingCommand,
+): Promise<CafeBookingMutationResult> {
+  requireGuid(bookingId, "bookingId");
+  requireGuid(command.operationId, "operationId");
+  requireInstant(command.occurredAtUtc, "occurredAtUtc");
+  return hostRequest<CafeBookingMutationResult>(
+    `/api/cafe/bookings/${bookingId}/ready-for-fulfillment`,
+    command,
+    "POST",
+    command.operationId,
+  );
+}
+
+export async function startBookingFulfillment(
+  bookingId: string,
+  command: StartBookingFulfillmentCommand,
+): Promise<BookingFulfillmentResult> {
+  requireGuid(bookingId, "bookingId");
+  requireGuid(command.operationId, "operationId");
+  requireGuid(command.orderId, "orderId");
+  requireInstant(command.occurredAtUtc, "occurredAtUtc");
+  return hostRequest<BookingFulfillmentResult>(
+    `/api/cafe/bookings/${bookingId}/fulfillment/start`,
+    command,
+    "POST",
+    command.operationId,
+  );
+}
+
+export async function cancelBooking(
+  bookingId: string,
+  command: CancelBookingCommand,
+): Promise<CafeBookingMutationResult> {
+  requireGuid(bookingId, "bookingId");
+  requireGuid(command.operationId, "operationId");
+  requireInstant(command.occurredAtUtc, "occurredAtUtc");
+  if (!command.reason.trim()) throw new Error("Cancellation reason is required.");
+  return hostRequest<CafeBookingMutationResult>(
+    `/api/cafe/bookings/${bookingId}/cancel`,
+    command,
+    "POST",
+    command.operationId,
+  );
+}
+
+export async function reviseDelivery(
+  deliveryId: string,
+  command: ReviseDeliveryCommand,
+): Promise<CafeDeliveryMutationResult> {
+  requireGuid(deliveryId, "deliveryId");
+  requireGuid(command.operationId, "operationId");
+  requireInstant(command.occurredAtUtc, "occurredAtUtc");
+  if (!command.recipientName.trim() || !command.deliveryAddress.trim()) {
+    throw new Error("Recipient name and delivery address are required.");
+  }
+  return hostRequest<CafeDeliveryMutationResult>(
+    `/api/cafe/deliveries/${deliveryId}/revision`,
+    command,
+    "POST",
+    command.operationId,
+  );
+}
+
+export async function cancelDelivery(
+  deliveryId: string,
+  command: CancelDeliveryCommand,
+): Promise<CafeDeliveryMutationResult> {
+  requireGuid(deliveryId, "deliveryId");
+  requireGuid(command.operationId, "operationId");
+  requireInstant(command.occurredAtUtc, "occurredAtUtc");
+  if (!command.reason.trim()) throw new Error("Cancellation reason is required.");
+  return hostRequest<CafeDeliveryMutationResult>(
+    `/api/cafe/deliveries/${deliveryId}/cancel`,
+    command,
+    "POST",
+    command.operationId,
+  );
+}

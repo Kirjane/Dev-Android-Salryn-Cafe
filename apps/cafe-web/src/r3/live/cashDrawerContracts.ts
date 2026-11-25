@@ -170,3 +170,142 @@ export async function closeCashShiftBlind(
   }
   return hostRequest<ShiftOperationEnvelope>("/api/shift/close", command, "POST");
 }
+
+// --- C6 Canonical Cash / Expense Operations (/api/cafe/cash/movements) ---
+
+export type CafeCashMovementType = "CashIn" | "CashOut" | "OperationalExpense" | "InventoryPurchase";
+
+export type CafeCashMovementLedgerRow = {
+  movementId: string;
+  movementType: string;
+  deltaCents: number;
+  reason: string | null;
+  referenceType: string;
+  referenceId: string;
+  reversalOfMovementId: string | null;
+  createdAtUtc: string;
+  actorUserId: string;
+  isReversed: boolean;
+};
+
+const CASH_MOVEMENT_TYPE_LABELS: Record<number, string> = {
+  1: "SaleCashReceipt",
+  2: "ReceivableCashCollection",
+  3: "CashIn",
+  4: "InventoryPurchase",
+  5: "OperationalExpense",
+  6: "CashRefund",
+  7: "CashOut",
+  8: "Reversal",
+};
+
+function normalizeCashMovementType(raw: string | number | undefined): string {
+  if (typeof raw === "number") {
+    return CASH_MOVEMENT_TYPE_LABELS[raw] ?? `Unknown(${raw})`;
+  }
+  if (typeof raw === "string") {
+    const num = Number(raw);
+    if (Number.isInteger(num) && CASH_MOVEMENT_TYPE_LABELS[num]) {
+      return CASH_MOVEMENT_TYPE_LABELS[num];
+    }
+    return raw;
+  }
+  return "Unknown";
+}
+
+type RawCafeCashMovementRow = {
+  movementId?: string;
+  movementType?: string | number;
+  deltaCents?: number;
+  signedAmountCents?: number;
+  reason?: string | null;
+  referenceType?: string;
+  referenceId?: string;
+  reversalOfMovementId?: string | null;
+  createdAtUtc?: string;
+  occurredAtUtc?: string;
+  actorUserId?: string;
+  isReversed?: boolean;
+};
+
+export type PostCafeCashMovementCommand = {
+  operationId: string;
+  movementId: string;
+  movementType: CafeCashMovementType;
+  amountCents: number;
+  reason: string;
+  referenceId?: string | null;
+  occurredAtUtc: string;
+};
+
+export type ReverseCafeCashMovementCommand = {
+  operationId: string;
+  movementId: string;
+  reason: string;
+  occurredAtUtc: string;
+};
+
+export async function readCafeCashMovements(): Promise<CafeCashMovementLedgerRow[]> {
+  const res = await hostRequest<RawCafeCashMovementRow[] | { movements?: RawCafeCashMovementRow[] }>(
+    "/api/cafe/cash/movements",
+    undefined,
+    "GET",
+  );
+  const rawRows = Array.isArray(res) ? res : res && Array.isArray(res.movements) ? res.movements : [];
+  const reversedIds = new Set(
+    rawRows
+      .map((r) => r.reversalOfMovementId)
+      .filter((id): id is string => typeof id === "string" && id.length > 0),
+  );
+  return rawRows.map((r) => {
+    const id = r.movementId ?? "";
+    const delta =
+      typeof r.deltaCents === "number"
+        ? r.deltaCents
+        : typeof r.signedAmountCents === "number"
+          ? r.signedAmountCents
+          : 0;
+    return {
+      movementId: id,
+      movementType: normalizeCashMovementType(r.movementType),
+      deltaCents: delta,
+      reason: r.reason ?? null,
+      referenceType: r.referenceType ?? "",
+      referenceId: r.referenceId ?? "",
+      reversalOfMovementId: r.reversalOfMovementId ?? null,
+      createdAtUtc: r.createdAtUtc ?? r.occurredAtUtc ?? "",
+      actorUserId: r.actorUserId ?? "",
+      isReversed: Boolean(r.isReversed) || (id.length > 0 && reversedIds.has(id)),
+    };
+  });
+}
+
+export async function postCafeCashMovement(command: PostCafeCashMovementCommand): Promise<unknown> {
+  requireGuid(command.operationId, "operationId");
+  requireGuid(command.movementId, "movementId");
+  if (!Number.isSafeInteger(command.amountCents) || command.amountCents <= 0) {
+    throw new Error("Amount must be a positive integer.");
+  }
+  if (!command.reason.trim()) {
+    throw new Error("Reason is required.");
+  }
+  return hostRequest<unknown>("/api/cafe/cash/movements", command, "POST", command.operationId);
+}
+
+export async function reverseCafeCashMovement(
+  originalMovementId: string,
+  command: ReverseCafeCashMovementCommand,
+): Promise<unknown> {
+  requireGuid(originalMovementId, "originalMovementId");
+  requireGuid(command.operationId, "operationId");
+  requireGuid(command.movementId, "movementId");
+  if (!command.reason.trim()) {
+    throw new Error("Reversal reason is required.");
+  }
+  return hostRequest<unknown>(
+    `/api/cafe/cash/movements/${originalMovementId}/reverse`,
+    command,
+    "POST",
+    command.operationId,
+  );
+}

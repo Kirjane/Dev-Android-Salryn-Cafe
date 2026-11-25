@@ -86,6 +86,9 @@ const DETERMINISTIC_HTTP_STATUSES = new Set([400, 403, 404, 409, 422]);
 const NON_ARCHIVABLE_CONFLICT_CODES = new Set([
   "ERR_IDEMPOTENCY_OUTCOME_UNKNOWN",
   "ERR_IDEMPOTENCY_IN_FLIGHT",
+  "ERR_IDEMPOTENCY_CONFLICT",
+  "Idempotency.Conflict",
+  "Idempotency.PayloadMismatch",
 ]);
 
 export class HostApiError extends Error {

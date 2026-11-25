@@ -44,7 +44,12 @@ internal static class DevHostConfig
 
     public static string HealthUrl => ResolveApiBaseUrl() + "/health";
 
-    public static string DefaultInstalledWebUrl => ResolveApiBaseUrl() + "/cafe/";
+    /// <summary>
+    /// Installed Desktop WebView launches the unified production Salryn Cafe R3 shell by default.
+    /// Legacy workstation (/cafe/), backoffice (/cafe/backoffice), and isolated central (/cafe/central)
+    /// routes remain preserved on the same loopback origin for recovery and explicit navigation.
+    /// </summary>
+    public static string DefaultInstalledWebUrl => ResolveApiBaseUrl() + "/cafe/r3";
 
     public static string GetWebView2UserDataFolder()
     {
@@ -149,7 +154,7 @@ internal static class DevHostConfig
 
     /// <summary>
     /// Resolves the frontend URL to load.
-    /// Priority: validated SALRYN_CAFE_WEB_URL override; otherwise API origin /cafe/ for installed
+    /// Priority: validated SALRYN_CAFE_WEB_URL override; otherwise API origin /cafe/r3 for installed
     /// layout/package context, or the Vite dev server for repository/dev layout.
     /// </summary>
     public static string ResolveWebUrl(out string? configurationRejection, string? baseDirectory = null)

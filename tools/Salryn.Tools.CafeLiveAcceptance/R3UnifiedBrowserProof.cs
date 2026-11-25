@@ -18,6 +18,11 @@ internal static class R3UnifiedBrowserProof
             ? overrideRoot
             : Path.Combine(Path.GetTempPath(), "salryn-r3-unified-proof-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
+        static void CleanDir(string dir)
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+            Directory.CreateDirectory(dir);
+        }
 
         const string ownerPass = "Synthetic-Owner!2026";
         const string cashierPass = "Synthetic-Cashier!2026";
@@ -27,7 +32,8 @@ internal static class R3UnifiedBrowserProof
         // --- PHASE A: Unlicensed Host Fail-Closed Proof (serving production apps/cafe-web/dist directly from Salryn.Api.Local) ---
         string unlicensedRoot = Path.Combine(root, "unlicensed-db");
         string emptyLicenseDir = Path.Combine(root, "empty-license");
-        Directory.CreateDirectory(emptyLicenseDir);
+        CleanDir(unlicensedRoot);
+        CleanDir(emptyLicenseDir);
         var unlicensedDb = C4ProofDatabase.CreateEmpty(unlicensedRoot);
         Environment.SetEnvironmentVariable("SALRYN_LICENSE_DEVELOPMENT_MODE", "0");
         Environment.SetEnvironmentVariable("SALRYN_CORE_SMOKE_DEVELOPMENT_ROOT", null);
@@ -61,8 +67,37 @@ internal static class R3UnifiedBrowserProof
             await unlicensedHost.StopAsync();
         }
 
-        // --- PHASE B: Licensed Host (DEBUG_DEVELOPMENT_LICENSE) Unified R3 Journeys ---
+        // --- PHASE A2: Clean Empty Licensed DB First-Admin Setup via Real R3 UI ---
+        string firstAdminRoot = Path.Combine(root, "first-admin-db");
+        CleanDir(firstAdminRoot);
+        var firstAdminDb = C4ProofDatabase.CreateEmpty(firstAdminRoot);
+        Environment.SetEnvironmentVariable("SALRYN_LICENSE_DEVELOPMENT_MODE", "1");
+
+        await using (var firstAdminHost = await LocalApiApplicationFactory.CreateAsync([], new()
+        {
+            Composition = SalrynLocalComposition.Create(firstAdminDb.Paths),
+            Url = "http://127.0.0.1:0",
+            TestHostNonce = nonce,
+            EnableStaticWebAssets = true,
+            WriteDevelopmentDatabasePath = false
+        }))
+        {
+            await firstAdminHost.StartAsync();
+            await RunBrowserPhaseAsync(
+                playwrightPkg, axePath, firstAdminHost.Urls.Single(), nonce, root,
+                phase: "first-admin",
+                ownerPass, cashierPass, auditorPass);
+            await firstAdminHost.StopAsync();
+        }
+
+        if (firstAdminDb.ScalarLong("SELECT COUNT(*) FROM users WHERE username='gate-d-admin';") != 1)
+        {
+            throw new InvalidOperationException("First-admin UI bootstrap failed to persist gate-d-admin in SQLite.");
+        }
+
+        // --- PHASE B: Licensed Host (DEBUG_DEVELOPMENT_LICENSE) Full Real R3 Operator UI Journeys ---
         string licensedRoot = Path.Combine(root, "licensed-db");
+        CleanDir(licensedRoot);
         var db = C4ProofDatabase.Create(licensedRoot);
         string now = DateTimeOffset.UtcNow.ToString("O");
 
@@ -114,6 +149,10 @@ internal static class R3UnifiedBrowserProof
             "INSERT INTO suppliers(id, name, contact_number, notes, is_active) VALUES($id, 'Benguet Roasters', '0917-555-0200', NULL, 1);",
             ("$id", Guid.NewGuid().ToString("D")));
 
+        // Generous product & ingredient stock so multiple POS Cash/AR/Partial/Delivery sales commit cleanly without stock exhaustion.
+        db.Execute("UPDATE products SET stock_on_hand_x1000=200000 WHERE id=$id;", ("$id", C4ProofIds.ProductId.ToString("D")));
+        db.Execute("UPDATE ingredients SET stock_on_hand_x1000=500000 WHERE id=$id;", ("$id", C4ProofIds.ItemIngredientId.ToString("D")));
+
         db.Execute("DELETE FROM cash_drawer_events;");
         db.Execute("DELETE FROM cash_drawer_reviews;");
         db.Execute("DELETE FROM cashier_sessions;");
@@ -155,7 +194,7 @@ internal static class R3UnifiedBrowserProof
             await host2.StopAsync();
         }
 
-        // --- Authoritative SQLite Ledger Verification ---
+        // --- Authoritative SQLite Ledger Verification (15 checks across C1-C11!) ---
         int checks = 0;
         void Check(bool ok, string msg)
         {
@@ -167,8 +206,22 @@ internal static class R3UnifiedBrowserProof
             "Expected at least 1 closed blind shift.");
         Check(db.ScalarLong("SELECT COUNT(*) FROM cash_drawer_reviews WHERE decision='Acknowledged';") >= 1,
             "Expected independent non-self variance review acknowledgement.");
-        Check(db.ScalarLong("SELECT COUNT(*) FROM cafe_bookings WHERE status='Confirmed';") >= 1,
-            "Expected confirmed booking persisted in SQLite.");
+        Check(db.ScalarLong($"SELECT COUNT(*) FROM cash_movements WHERE movement_type={Convert.ToInt32(Salryn.Core.Models.CashMovementType.OperationalExpense)};") >= 1,
+            "Expected C6 OperationalExpense cash movement persisted.");
+        Check(db.ScalarLong($"SELECT COUNT(*) FROM sales WHERE status={Convert.ToInt32(Salryn.Core.Models.SaleStatus.Completed)};") >= 4,
+            "Expected >= 4 completed POS sales (Cash+Discount+ServiceFee, AR, Partial Cash+AR, Delivery-bound Takeout).");
+        Check(db.ScalarLong("SELECT COUNT(*) FROM cafe_sale_fees WHERE fee_type='Service';") >= 1,
+            "Expected C5 Service fee persisted via POS UI.");
+        Check(db.ScalarLong("SELECT COUNT(*) FROM cafe_sale_fees WHERE fee_type='Delivery';") >= 1,
+            "Expected C8 Delivery fee automatically bound & persisted via POS UI.");
+        Check(db.ScalarLong("SELECT COUNT(*) FROM cafe_sale_refunds WHERE state='Committed';") >= 1,
+            "Expected C5 Refund requested, approved, and committed via R3 UI.");
+        Check(db.ScalarLong("SELECT COUNT(*) FROM cafe_print_jobs;") >= 2,
+            "Expected C7 Original + Reprint receipt jobs persisted via R3 POS UI.");
+        Check(db.ScalarLong("SELECT COUNT(*) FROM cafe_bookings WHERE fulfillment_state IN ('OrderBound','InProgress','Fulfilled');") >= 1,
+            "Expected C9 booking confirmed, revised, deposited, marked ready, and fulfillment started.");
+        Check(db.ScalarLong("SELECT COUNT(*) FROM cafe_bookings WHERE status='Cancelled';") >= 1,
+            "Expected C9 cancelled booking persisted via R3 UI.");
         Check(db.ScalarLong("SELECT COUNT(*) FROM cafe_booking_deposit_facts WHERE fact_type='Received';") >= 2,
             "Expected 2 historical received deposit facts in SQLite.");
         Check(db.ScalarLong("SELECT COUNT(*) FROM cafe_booking_deposit_facts WHERE fact_type='Refunded';") >= 1,
@@ -176,10 +229,12 @@ internal static class R3UnifiedBrowserProof
         Check(db.ScalarLong("SELECT COUNT(*) FROM cafe_booking_deposit_allocations;") >= 2,
             "Expected 2 refund allocation rows across both historical deposits.");
         Check(db.ScalarLong("SELECT COUNT(*) FROM cafe_delivery_fulfillments WHERE status='Delivered';") >= 1,
-            "Expected order-bound delivery resolved as Delivered.");
+            "Expected order-bound delivery created, revised, dispatched, and resolved as Delivered via R3 UI.");
+        Check(db.ScalarLong("SELECT COUNT(*) FROM cafe_incidents WHERE status='Resolved';") >= 1,
+            "Expected C10 incident created and resolved via R3 UI.");
 
         Console.WriteLine(
-            $"PASS: Unified production R3 browser proof (Unlicensed gate + Cashier RBAC + Owner Shift/BlindClose/VarianceReview + Historical Multi-Deposit Booking Refund + Order-Bound Delivery + Host Restart + Desktop/Tablet/Mobile + axe-core + {checks} SQLite checks). Artifacts: {root}. DEBUG_DEVELOPMENT_LICENSE.");
+            $"PASS: Unified production R3 operator UI proof (Unlicensed gate + First-Admin UI setup + Cashier RBAC + Cash/Expense/Reversal/BlindClose/VarianceReview + POS Cash/AR/Partial/Discount/Fees/Print + Full R3 Refund + Bookings Revise/Deposit/Refund/Fulfill/Cancel + UI Order-Bound Delivery + Inventory Unknown-Outcome Reload Retry & Cross-Tab Lock + Staff/Incident Resolve + Host Restart + Desktop/Tablet/Mobile + axe-core + {checks} SQLite checks). Artifacts: {root}. DEBUG_DEVELOPMENT_LICENSE.");
     }
 
     private static async Task RunBrowserPhaseAsync(

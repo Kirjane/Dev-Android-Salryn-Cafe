@@ -40,12 +40,12 @@ public sealed class ProductTruthAndPackagingTests
             Assert.DoesNotContain("Salryn.Api.Local.exe", missingCafeDist, StringComparison.Ordinal);
             Assert.Contains("cafe-dist", missingCafeDist, StringComparison.Ordinal);
 
-            // Complete installed package succeeds and resolves to /cafe/.
+            // Complete installed package succeeds and resolves to unified R3 (/cafe/r3).
             Directory.CreateDirectory(Path.Combine(tempInstall, "cafe-dist"));
             File.WriteAllText(Path.Combine(tempInstall, "cafe-dist", "index.html"), "<html><title>Salryn Cafe</title></html>");
             Assert.True(DevHostConfig.TryValidateInstalledBundle(tempInstall, out string? okReason));
             Assert.Null(okReason);
-            Assert.EndsWith("/cafe/", DevHostConfig.ResolveWebUrl(out _, tempInstall), StringComparison.Ordinal);
+            Assert.EndsWith("/cafe/r3", DevHostConfig.ResolveWebUrl(out _, tempInstall), StringComparison.Ordinal);
         }
         finally
         {
@@ -107,6 +107,15 @@ public sealed class ProductTruthAndPackagingTests
             string subrouteBody = await cafeSubrouteResp.Content.ReadAsStringAsync();
             Assert.True(cafeSubrouteResp.StatusCode == HttpStatusCode.OK, $"Expected 200 for /cafe/orders, got {(int)cafeSubrouteResp.StatusCode}: {subrouteBody}");
             Assert.Contains("Salryn Cafe", subrouteBody, StringComparison.Ordinal);
+
+            // Unified installed R3 default entry point and deep routes must resolve to the same Cafe SPA shell.
+            foreach (string r3Route in new[] { "/cafe/r3", "/cafe/r3/today", "/cafe/r3/pos", "/cafe/backoffice", "/cafe/central" })
+            {
+                using HttpResponseMessage r3Resp = await client.GetAsync(r3Route);
+                string r3Body = await r3Resp.Content.ReadAsStringAsync();
+                Assert.True(r3Resp.StatusCode == HttpStatusCode.OK, $"Expected 200 for {r3Route}, got {(int)r3Resp.StatusCode}: {r3Body}");
+                Assert.Contains("Salryn Cafe", r3Body, StringComparison.Ordinal);
+            }
 
             using HttpResponseMessage missingAssetResp = await client.GetAsync("/cafe/assets/nonexistent-bundle.js");
             Assert.Equal(HttpStatusCode.NotFound, missingAssetResp.StatusCode);

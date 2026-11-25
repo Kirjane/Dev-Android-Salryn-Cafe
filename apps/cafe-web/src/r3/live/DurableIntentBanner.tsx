@@ -27,7 +27,7 @@ export function DurableIntentBanner<TPayload>({
     return (
       <div className="r3-alert r3-alert--danger" role="alert" style={{ marginBottom: 12 }}>
         <div className="r3-alert-body">
-          <div className="r3-alert-title">{label}: pending-intent storage corrupted (fail-closed)</div>
+          <div className="r3-alert-title">{label}: pending-intent storage fenced (fail-closed)</div>
           <div>{corruptReason} Verify Host state before clearing.</div>
         </div>
         <button
@@ -36,7 +36,7 @@ export function DurableIntentBanner<TPayload>({
           onClick={onClearCorrupt}
           disabled={inFlight}
         >
-          Clear Corrupt Storage
+          I Verified Host Ledger — Clear Fence
         </button>
       </div>
     );
@@ -59,10 +59,19 @@ export function DurableIntentBanner<TPayload>({
     );
   }
 
-  const isRejected = pending.status === "rejected";
+  const isRejected = pending.status === "rejected" && !pending.hadUncertainOutcome;
+  const isRetryConflictBlocked = Boolean(pending.retryConflictBlocked);
+  const safeClearRejected = () => {
+    try {
+      onClearRejected();
+    } catch {
+      // Fail-closed guard when authority is temporarily unavailable; keep banner visible.
+    }
+  };
+
   return (
     <div
-      className={`r3-alert ${isRejected ? "r3-alert--danger" : "r3-alert--warn"}`}
+      className={`r3-alert ${isRejected || isRetryConflictBlocked ? "r3-alert--danger" : "r3-alert--warn"}`}
       role="alert"
       style={{ marginBottom: 12 }}
     >
@@ -72,7 +81,9 @@ export function DurableIntentBanner<TPayload>({
             ? `${label} rejected (${pending.lastErrorCode ?? "HTTP " + (pending.lastHttpStatus ?? "4xx")})`
             : pending.retryAuthBlocked
               ? `${label}: authorization blocked while outcome is still unresolved`
-              : `${label}: pending request has an unresolved outcome`}
+              : isRetryConflictBlocked
+                ? `${label}: retry conflict after uncertain outcome — verify Host ledger`
+                : `${label}: pending request has an unresolved outcome`}
         </div>
         <div>
           {operationId ? (
@@ -86,19 +97,31 @@ export function DurableIntentBanner<TPayload>({
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {!isRejected ? (
-          <button
-            type="button"
-            className="r3-btn r3-btn--primary r3-btn--sm"
-            onClick={onRetry}
-            disabled={inFlight}
-          >
-            {inFlight ? "Retrying…" : `Retry Exact ${label}`}
-          </button>
+          <>
+            <button
+              type="button"
+              className="r3-btn r3-btn--primary r3-btn--sm"
+              onClick={onRetry}
+              disabled={inFlight}
+            >
+              {inFlight ? "Retrying…" : `Retry Exact ${label}`}
+            </button>
+            {isRetryConflictBlocked ? (
+              <button
+                type="button"
+                className="r3-btn r3-btn--outline r3-btn--sm"
+                onClick={onClearCorrupt}
+                disabled={inFlight}
+              >
+                I Verified Host Ledger — Clear Fence
+              </button>
+            ) : null}
+          </>
         ) : (
           <button
             type="button"
             className="r3-btn r3-btn--outline r3-btn--sm"
-            onClick={onClearRejected}
+            onClick={safeClearRejected}
             disabled={inFlight}
           >
             Clear Rejected {label}

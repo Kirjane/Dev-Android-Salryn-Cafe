@@ -23,6 +23,20 @@ describe("r3RouteMap (Unified R3 RBAC & C1-C11 coverage)", () => {
     for (let i = 1; i <= 11; i++) {
       expect(coveredDomains.has(`C${i}`)).toBe(true);
     }
+    // Verify exact donor 4241ea1e milestone mapping (not renumbered!)
+    const byKey = Object.fromEntries(R3_ROUTES.map((r) => [r.key, r.domains]));
+    expect(byKey.menu).toContain("C1");
+    expect(byKey.recipes).toContain("C2");
+    expect(byKey.inventory).toContain("C3");
+    expect(byKey.pos).toEqual(["C4", "C5", "C7"]);
+    expect(byKey.cash).toContain("C6");
+    expect(byKey.printers).toContain("C7");
+    expect(byKey.deliveries).toContain("C8");
+    expect(byKey.bookings).toContain("C9");
+    expect(byKey.staff).toContain("C10");
+    expect(byKey.reports).toContain("C11");
+    expect(byKey.users).toEqual(["Cross-Cutting"]);
+    expect(byKey.backup).toEqual(["Cross-Cutting"]);
   });
 
   it("hides owner/admin routes from Cashiers and defaults Cashiers to POS Counter", () => {

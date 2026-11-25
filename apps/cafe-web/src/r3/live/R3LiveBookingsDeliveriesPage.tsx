@@ -16,10 +16,13 @@ import {
   type DurableIntentAuthority,
 } from "./durableIntent";
 import {
+  cancelBooking,
+  cancelDelivery,
   confirmBooking,
   createBooking,
   createDelivery,
   dispatchDelivery,
+  markBookingReadyForFulfillment,
   readBookingCustomers,
   readLiveBookingDetail,
   readLiveBookings,
@@ -27,9 +30,13 @@ import {
   receiveBookingDeposit,
   refundBookingDeposit,
   resolveDelivery,
+  reviseBooking,
+  reviseDelivery,
+  startBookingFulfillment,
   type AdvanceBookingCommand,
   type AdvanceDeliveryCommand,
   type BookingCustomerOption,
+  type BookingFulfillmentResult,
   type BookingMode,
   type CafeBookingDepositMutationResult,
   type CafeBookingDetail,
@@ -37,12 +44,17 @@ import {
   type CafeBookingSummary,
   type CafeDeliveryMutationResult,
   type CafeDeliverySummary,
+  type CancelBookingCommand,
+  type CancelDeliveryCommand,
   type CreateBookingCommand,
   type CreateDeliveryCommand,
   type ReceiveBookingDepositCommand,
   type RefundAllocationCommand,
   type RefundBookingDepositCommand,
   type ResolveDeliveryCommand,
+  type ReviseBookingCommand,
+  type ReviseDeliveryCommand,
+  type StartBookingFulfillmentCommand,
 } from "./bookingDeliveryContracts";
 
 type TabId = "bookings" | "deliveries";
@@ -134,6 +146,26 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings", embedded = f
     "booking-confirm",
     authority,
   );
+  const readyBookingIntent = useDurableIntent<ConfirmBookingPayload, CafeBookingMutationResult>(
+    "booking-ready",
+    authority,
+  );
+  const fulfillBookingIntent = useDurableIntent<
+    { bookingId: string; command: StartBookingFulfillmentCommand },
+    BookingFulfillmentResult
+  >("booking-fulfill", authority);
+  const cancelBookingIntent = useDurableIntent<
+    { bookingId: string; command: CancelBookingCommand },
+    CafeBookingMutationResult
+  >("booking-cancel", authority);
+  const reviseBookingIntent = useDurableIntent<
+    { bookingId: string; command: ReviseBookingCommand },
+    CafeBookingMutationResult
+  >("booking-revise", authority);
+
+  const [reviseEventName, setReviseEventName] = useState("");
+  const [reviseDepositReqPhp, setReviseDepositReqPhp] = useState("");
+  const [cancelBookingReason, setCancelBookingReason] = useState("Client requested cancellation");
 
   // Historical Booking Detail & Deposit Ledger (INT-04)
   const [depositBookingId, setDepositBookingId] = useState("");
@@ -172,6 +204,20 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings", embedded = f
     "delivery-resolve",
     authority,
   );
+  const cancelDeliveryIntent = useDurableIntent<
+    { deliveryId: string; command: CancelDeliveryCommand },
+    CafeDeliveryMutationResult
+  >("delivery-cancel", authority);
+  const reviseDeliveryIntent = useDurableIntent<
+    { deliveryId: string; command: ReviseDeliveryCommand },
+    CafeDeliveryMutationResult
+  >("delivery-revise", authority);
+
+  const [reviseDeliveryId, setReviseDeliveryId] = useState("");
+  const [reviseRecipient, setReviseRecipient] = useState("");
+  const [reviseAddress, setReviseAddress] = useState("");
+  const [reviseFeePhp, setReviseFeePhp] = useState("60.00");
+  const [cancelDeliveryReason, setCancelDeliveryReason] = useState("Customer cancelled delivery");
 
   const tabRefs = useRef<Partial<Record<TabId, HTMLButtonElement | null>>>({});
   const depositBookingIdRef = useRef(depositBookingId);
@@ -264,6 +310,8 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings", embedded = f
   }, [depositBookingId, session, loadBookingDetail]);
 
   const canManageBookings = hasPerm(session, "Booking.Manage");
+  const canCancelBookings = hasPerm(session, "Booking.Cancel");
+  const canFulfillBookings = hasPerm(session, "Booking.Fulfill") && hasPerm(session, "Orders.Create");
   const canDepositReceive = hasPerm(session, "Booking.DepositReceive") && hasPerm(session, "Cash.In");
   const canDepositRefund = hasPerm(session, "Booking.DepositRefund") && hasPerm(session, "Cash.Out");
   const canManageDeliveries = hasPerm(session, "Delivery.Manage");
@@ -362,6 +410,217 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings", embedded = f
       pushToast(msg);
     } else {
       setBookingMessage(`${res.code ? `[${res.code}] ` : ""}${res.message}`);
+    }
+  };
+
+  const handleMarkBookingReady = async (bk: CafeBookingSummary) => {
+    setBookingMessage(null);
+    const res = await readyBookingIntent.execute(
+      { bookingId: bk.bookingId, expectedVersion: bk.bookingVersion, action: "ready" },
+      () => ({
+        bookingId: bk.bookingId,
+        command: {
+          operationId: crypto.randomUUID(),
+          expectedVersion: bk.bookingVersion,
+          occurredAtUtc: new Date().toISOString(),
+        },
+      }),
+      (p) => markBookingReadyForFulfillment(p.bookingId, p.command),
+    );
+    if (res.ok) {
+      await loadAll();
+      const msg = `Booking ${res.value.bookingId.slice(0, 8)}… marked ${res.value.status} (v${res.value.bookingVersion}).`;
+      setBookingMessage(msg);
+      pushToast(msg);
+    } else {
+      setBookingMessage(`${res.code ? `[${res.code}] ` : ""}${res.message}`);
+    }
+  };
+
+  const handleStartBookingFulfillment = async (bk: CafeBookingSummary) => {
+    setBookingMessage(null);
+    const res = await fulfillBookingIntent.execute(
+      { bookingId: bk.bookingId, expectedVersion: bk.bookingVersion, action: "fulfill" },
+      () => ({
+        bookingId: bk.bookingId,
+        command: {
+          operationId: crypto.randomUUID(),
+          orderId: crypto.randomUUID(),
+          expectedVersion: bk.bookingVersion,
+          occurredAtUtc: new Date().toISOString(),
+        },
+      }),
+      (p) => startBookingFulfillment(p.bookingId, p.command),
+    );
+    if (res.ok) {
+      await loadAll();
+      const msg = `Booking fulfillment started — linked Order ${res.value.orderId.slice(0, 8)}… (${res.value.fulfillmentState}).`;
+      setBookingMessage(msg);
+      pushToast(msg);
+    } else {
+      setBookingMessage(`${res.code ? `[${res.code}] ` : ""}${res.message}`);
+    }
+  };
+
+  const handleCancelBooking = async (bk: CafeBookingSummary) => {
+    setBookingMessage(null);
+    const reason = cancelBookingReason.trim() || "Cancelled by operator";
+    const res = await cancelBookingIntent.execute(
+      { bookingId: bk.bookingId, expectedVersion: bk.bookingVersion, reason },
+      () => ({
+        bookingId: bk.bookingId,
+        command: {
+          operationId: crypto.randomUUID(),
+          expectedVersion: bk.bookingVersion,
+          reason,
+          occurredAtUtc: new Date().toISOString(),
+        },
+      }),
+      (p) => cancelBooking(p.bookingId, p.command),
+    );
+    if (res.ok) {
+      await loadAll();
+      const msg = `Booking ${res.value.bookingId.slice(0, 8)}… cancelled.`;
+      setBookingMessage(msg);
+      pushToast(msg);
+    } else {
+      setBookingMessage(`${res.code ? `[${res.code}] ` : ""}${res.message}`);
+    }
+  };
+
+  const handleReviseSelectedBooking = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBookingMessage(null);
+    if (!selectedBooking || !menuPub?.revisionId || !productId) {
+      setBookingMessage("Select a non-terminal booking with an active published menu.");
+      return;
+    }
+    const nextName = reviseEventName.trim();
+    if (!nextName) {
+      setBookingMessage("Enter the revised event name.");
+      return;
+    }
+    let nextDepCents = selectedBooking.depositRequirementCents ?? 0;
+    if (reviseDepositReqPhp.trim()) {
+      try {
+        nextDepCents = parsePhpToCents(reviseDepositReqPhp);
+      } catch (err) {
+        setBookingMessage(err instanceof Error ? err.message : "Invalid revised deposit requirement.");
+        return;
+      }
+    }
+    const res = await reviseBookingIntent.execute(
+      {
+        bookingId: selectedBooking.bookingId,
+        expectedVersion: selectedBooking.bookingVersion,
+        eventName: nextName,
+        depositRequirementCents: nextDepCents,
+      },
+      () => ({
+        bookingId: selectedBooking.bookingId,
+        command: {
+          operationId: crypto.randomUUID(),
+          revisionId: crypto.randomUUID(),
+          expectedVersion: selectedBooking.bookingVersion,
+          occurredAtUtc: new Date().toISOString(),
+          configuration: {
+            customerId: selectedBooking.customerId,
+            bookingMode: selectedBooking.bookingMode,
+            eventName: nextName,
+            eventStartUtc: selectedBooking.eventStartUtc,
+            menuPublicationRevisionId: menuPub.revisionId,
+            depositRequirementCents: nextDepCents,
+            intendedServiceMode: "Takeout",
+            lines: [{ bookingLineId: crypto.randomUUID(), productId, quantityX1000: 2000, displayOrder: 0 }],
+          },
+        },
+      }),
+      (p) => reviseBooking(p.bookingId, p.command),
+    );
+    if (res.ok) {
+      setReviseEventName("");
+      setReviseDepositReqPhp("");
+      await loadAll();
+      const msg = `Booking ${res.value.bookingId.slice(0, 8)}… revised to v${res.value.bookingVersion}.`;
+      setBookingMessage(msg);
+      pushToast(msg);
+    } else {
+      setBookingMessage(`${res.code ? `[${res.code}] ` : ""}${res.message}`);
+    }
+  };
+
+  const handleCancelDelivery = async (del: CafeDeliverySummary) => {
+    setDeliveryMessage(null);
+    const reason = cancelDeliveryReason.trim() || "Cancelled by operator";
+    const res = await cancelDeliveryIntent.execute(
+      { deliveryId: del.deliveryId, expectedVersion: del.version, reason },
+      () => ({
+        deliveryId: del.deliveryId,
+        command: {
+          operationId: crypto.randomUUID(),
+          expectedVersion: del.version,
+          reason,
+          occurredAtUtc: new Date().toISOString(),
+        },
+      }),
+      (p) => cancelDelivery(p.deliveryId, p.command),
+    );
+    if (res.ok) {
+      await loadAll();
+      const msg = `Delivery ${res.value.deliveryId.slice(0, 8)}… cancelled.`;
+      setDeliveryMessage(msg);
+      pushToast(msg);
+    } else {
+      setDeliveryMessage(`${res.code ? `[${res.code}] ` : ""}${res.message}`);
+    }
+  };
+
+  const handleReviseDelivery = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setDeliveryMessage(null);
+    const target = deliveries.find((d) => d.deliveryId === reviseDeliveryId && d.status === "Pending");
+    if (!target || !reviseRecipient.trim() || !reviseAddress.trim()) {
+      setDeliveryMessage("Select a Pending delivery and enter recipient name and address.");
+      return;
+    }
+    let deliveryFeeCents: number;
+    try {
+      deliveryFeeCents = parsePhpToCents(reviseFeePhp);
+    } catch (err) {
+      setDeliveryMessage(err instanceof Error ? err.message : "Invalid revised delivery fee.");
+      return;
+    }
+    const res = await reviseDeliveryIntent.execute(
+      {
+        deliveryId: target.deliveryId,
+        expectedVersion: target.version,
+        recipientName: reviseRecipient.trim(),
+        deliveryAddress: reviseAddress.trim(),
+        deliveryFeeCents,
+      },
+      () => ({
+        deliveryId: target.deliveryId,
+        command: {
+          operationId: crypto.randomUUID(),
+          expectedVersion: target.version,
+          occurredAtUtc: new Date().toISOString(),
+          recipientName: reviseRecipient.trim(),
+          deliveryAddress: reviseAddress.trim(),
+          deliveryFeeCents,
+        },
+      }),
+      (p) => reviseDelivery(p.deliveryId, p.command),
+    );
+    if (res.ok) {
+      setReviseDeliveryId("");
+      setReviseRecipient("");
+      setReviseAddress("");
+      await loadAll();
+      const msg = `Delivery ${res.value.deliveryId.slice(0, 8)}… revised to v${res.value.version}.`;
+      setDeliveryMessage(msg);
+      pushToast(msg);
+    } else {
+      setDeliveryMessage(`${res.code ? `[${res.code}] ` : ""}${res.message}`);
     }
   };
 
@@ -683,6 +942,73 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings", embedded = f
                     onClearRejected={() => confirmBookingIntent.clearPending(false)}
                     onClearCorrupt={() => confirmBookingIntent.clearPending(true)}
                   />
+                  <DurableIntentBanner
+                    label="Booking Ready"
+                    operationId={readyBookingIntent.pending?.payload.command.operationId ?? null}
+                    pending={readyBookingIntent.pending}
+                    corruptReason={readyBookingIntent.corruptReason}
+                    authorityMismatch={readyBookingIntent.authorityMismatch}
+                    inFlight={readyBookingIntent.inFlight}
+                    onRetry={() =>
+                      void readyBookingIntent
+                        .retryPending((p) => markBookingReadyForFulfillment(p.bookingId, p.command))
+                        .then((r) => {
+                          if (r.ok) { setBookingMessage("Booking ready retry confirmed."); void loadAll(); }
+                          else setBookingMessage(r.message);
+                        })
+                    }
+                    onClearRejected={() => readyBookingIntent.clearPending(false)}
+                    onClearCorrupt={() => readyBookingIntent.clearPending(true)}
+                  />
+                  <DurableIntentBanner
+                    label="Booking Fulfillment"
+                    operationId={fulfillBookingIntent.pending?.payload.command.operationId ?? null}
+                    pending={fulfillBookingIntent.pending}
+                    corruptReason={fulfillBookingIntent.corruptReason}
+                    authorityMismatch={fulfillBookingIntent.authorityMismatch}
+                    inFlight={fulfillBookingIntent.inFlight}
+                    onRetry={() =>
+                      void fulfillBookingIntent
+                        .retryPending((p) => startBookingFulfillment(p.bookingId, p.command))
+                        .then((r) => {
+                          if (r.ok) { setBookingMessage(`Booking fulfillment retry confirmed (Order ${r.value.orderId.slice(0, 8)}…).`); void loadAll(); }
+                          else setBookingMessage(r.message);
+                        })
+                    }
+                    onClearRejected={() => fulfillBookingIntent.clearPending(false)}
+                    onClearCorrupt={() => fulfillBookingIntent.clearPending(true)}
+                  />
+                  <DurableIntentBanner
+                    label="Booking Cancel"
+                    operationId={cancelBookingIntent.pending?.payload.command.operationId ?? null}
+                    pending={cancelBookingIntent.pending}
+                    corruptReason={cancelBookingIntent.corruptReason}
+                    authorityMismatch={cancelBookingIntent.authorityMismatch}
+                    inFlight={cancelBookingIntent.inFlight}
+                    onRetry={() =>
+                      void cancelBookingIntent
+                        .retryPending((p) => cancelBooking(p.bookingId, p.command))
+                        .then((r) => {
+                          if (r.ok) { setBookingMessage("Booking cancel retry confirmed."); void loadAll(); }
+                          else setBookingMessage(r.message);
+                        })
+                    }
+                    onClearRejected={() => cancelBookingIntent.clearPending(false)}
+                    onClearCorrupt={() => cancelBookingIntent.clearPending(true)}
+                  />
+                  {canCancelBookings && (
+                    <div className="r3-card-body" style={{ paddingBottom: 0, maxWidth: 420 }}>
+                      <label>
+                        <div className="r3-text-xs r3-text-muted">Cancellation Reason (used when cancelling a booking)</div>
+                        <input
+                          className="r3-input"
+                          aria-label="Booking Cancellation Reason"
+                          value={cancelBookingReason}
+                          onChange={(e) => setCancelBookingReason(e.target.value)}
+                        />
+                      </label>
+                    </div>
+                  )}
                   <div className="r3-table-wrap" tabIndex={0} role="region" aria-label="Live Bookings">
                     <table className="r3-table">
                       <caption className="r3-sr-only">Live Bookings</caption>
@@ -728,6 +1054,36 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings", embedded = f
                                     onClick={() => void handleConfirmBooking(bk)}
                                   >
                                     Confirm
+                                  </button>
+                                )}
+                                {canManageBookings && bk.status === "Confirmed" && (
+                                  <button
+                                    type="button"
+                                    className="r3-btn r3-btn--outline r3-btn--sm"
+                                    disabled={readyBookingIntent.inFlight}
+                                    onClick={() => void handleMarkBookingReady(bk)}
+                                  >
+                                    Ready for Fulfillment
+                                  </button>
+                                )}
+                                {canFulfillBookings && bk.status === "ReadyForFulfillment" && bk.fulfillmentState !== "InProgress" && bk.fulfillmentState !== "Fulfilled" && (
+                                  <button
+                                    type="button"
+                                    className="r3-btn r3-btn--primary r3-btn--sm"
+                                    disabled={fulfillBookingIntent.inFlight}
+                                    onClick={() => void handleStartBookingFulfillment(bk)}
+                                  >
+                                    Start Fulfillment
+                                  </button>
+                                )}
+                                {canCancelBookings && bk.status !== "Cancelled" && bk.status !== "Completed" && bk.fulfillmentState !== "Fulfilled" && (
+                                  <button
+                                    type="button"
+                                    className="r3-btn r3-btn--outline r3-btn--sm"
+                                    disabled={cancelBookingIntent.inFlight}
+                                    onClick={() => void handleCancelBooking(bk)}
+                                  >
+                                    Cancel Booking
                                   </button>
                                 )}
                               </td>
@@ -793,8 +1149,66 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings", embedded = f
                         <input className="r3-input" aria-label="Deposit Requirement" value={depositReqPhp} onChange={(e) => setDepositReqPhp(e.target.value)} />
                       </label>
                       <div>
-                        <button type="submit" className="r3-btn r3-btn--primary" disabled={createBookingIntent.inFlight}>
+                        <button type="submit" className="r3-btn r3-btn--primary" disabled={loading || createBookingIntent.inFlight || !menuPub?.revisionId || !productId || !customerId}>
                           {createBookingIntent.inFlight ? "Creating…" : "Create Booking"}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                {canManageBookings && selectedBooking && selectedBooking.status !== "Cancelled" && selectedBooking.status !== "Completed" && (
+                  <div className="r3-card">
+                    <div className="r3-card-header">
+                      <div>
+                        <div className="r3-card-title">Revise Selected Booking (C9)</div>
+                        <div className="r3-card-subtitle">
+                          Append an immutable revision to booking <code>{selectedBooking.bookingId.slice(0, 8)}…</code> (v{selectedBooking.bookingVersion}).
+                        </div>
+                      </div>
+                    </div>
+                    <DurableIntentBanner
+                      label="Booking Revise"
+                      operationId={reviseBookingIntent.pending?.payload.command.operationId ?? null}
+                      pending={reviseBookingIntent.pending}
+                      corruptReason={reviseBookingIntent.corruptReason}
+                      authorityMismatch={reviseBookingIntent.authorityMismatch}
+                      inFlight={reviseBookingIntent.inFlight}
+                      onRetry={() =>
+                        void reviseBookingIntent
+                          .retryPending((p) => reviseBooking(p.bookingId, p.command))
+                          .then((r) => {
+                            if (r.ok) { setBookingMessage(`Booking revise retry confirmed (v${r.value.bookingVersion}).`); void loadAll(); }
+                            else setBookingMessage(r.message);
+                          })
+                      }
+                      onClearRejected={() => reviseBookingIntent.clearPending(false)}
+                      onClearCorrupt={() => reviseBookingIntent.clearPending(true)}
+                    />
+                    <form onSubmit={(e) => void handleReviseSelectedBooking(e)} style={{ display: "grid", gap: 12, maxWidth: 560 }}>
+                      <label>
+                        <div className="r3-text-xs r3-text-muted">Revised Event Name</div>
+                        <input
+                          className="r3-input"
+                          aria-label="Revised Event Name"
+                          value={reviseEventName}
+                          onChange={(e) => setReviseEventName(e.target.value)}
+                          placeholder={bookingDetail?.currentRevision?.eventName ?? "Updated Event Name"}
+                        />
+                      </label>
+                      <label>
+                        <div className="r3-text-xs r3-text-muted">Revised Deposit Requirement (PHP, optional)</div>
+                        <input
+                          className="r3-input"
+                          aria-label="Revised Deposit Requirement"
+                          value={reviseDepositReqPhp}
+                          onChange={(e) => setReviseDepositReqPhp(e.target.value)}
+                          placeholder={((selectedBooking.depositRequirementCents ?? 0) / 100).toFixed(2)}
+                        />
+                      </label>
+                      <div>
+                        <button type="submit" className="r3-btn r3-btn--outline" disabled={reviseBookingIntent.inFlight}>
+                          Save Booking Revision
                         </button>
                       </div>
                     </form>
@@ -1025,6 +1439,37 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings", embedded = f
                     onClearRejected={() => resolveDeliveryIntent.clearPending(false)}
                     onClearCorrupt={() => resolveDeliveryIntent.clearPending(true)}
                   />
+                  <DurableIntentBanner
+                    label="Delivery Cancel"
+                    operationId={cancelDeliveryIntent.pending?.payload.command.operationId ?? null}
+                    pending={cancelDeliveryIntent.pending}
+                    corruptReason={cancelDeliveryIntent.corruptReason}
+                    authorityMismatch={cancelDeliveryIntent.authorityMismatch}
+                    inFlight={cancelDeliveryIntent.inFlight}
+                    onRetry={() =>
+                      void cancelDeliveryIntent
+                        .retryPending((p) => cancelDelivery(p.deliveryId, p.command))
+                        .then((r) => {
+                          if (r.ok) { setDeliveryMessage("Delivery cancel retry confirmed."); void loadAll(); }
+                          else setDeliveryMessage(r.message);
+                        })
+                    }
+                    onClearRejected={() => cancelDeliveryIntent.clearPending(false)}
+                    onClearCorrupt={() => cancelDeliveryIntent.clearPending(true)}
+                  />
+                  {canManageDeliveries && (
+                    <div className="r3-card-body" style={{ paddingBottom: 0, maxWidth: 420 }}>
+                      <label>
+                        <div className="r3-text-xs r3-text-muted">Delivery Cancellation Reason</div>
+                        <input
+                          className="r3-input"
+                          aria-label="Delivery Cancellation Reason"
+                          value={cancelDeliveryReason}
+                          onChange={(e) => setCancelDeliveryReason(e.target.value)}
+                        />
+                      </label>
+                    </div>
+                  )}
                   <div className="r3-table-wrap" tabIndex={0} role="region" aria-label="Order-Bound Deliveries">
                     <table className="r3-table">
                       <caption className="r3-sr-only">Order-Bound Deliveries</caption>
@@ -1056,6 +1501,16 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings", embedded = f
                                     onClick={() => void handleDispatchDelivery(del)}
                                   >
                                     Dispatch
+                                  </button>
+                                )}
+                                {canManageDeliveries && del.status === "Pending" && (
+                                  <button
+                                    type="button"
+                                    className="r3-btn r3-btn--outline r3-btn--sm"
+                                    disabled={cancelDeliveryIntent.inFlight}
+                                    onClick={() => void handleCancelDelivery(del)}
+                                  >
+                                    Cancel Delivery
                                   </button>
                                 )}
                                 {canAdvanceDeliveries && del.status === "Dispatched" && (
@@ -1141,6 +1596,65 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings", embedded = f
                       <div>
                         <button type="submit" className="r3-btn r3-btn--primary" disabled={createDeliveryIntent.inFlight}>
                           Create Delivery
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                {canManageDeliveries && deliveries.some((d) => d.status === "Pending") && (
+                  <div className="r3-card">
+                    <div className="r3-card-header">
+                      <div>
+                        <div className="r3-card-title">Revise Pending Delivery (C8-DAT-02)</div>
+                        <div className="r3-card-subtitle">Append an immutable revision to recipient, address, or fee while Pending</div>
+                      </div>
+                    </div>
+                    <DurableIntentBanner
+                      label="Delivery Revise"
+                      operationId={reviseDeliveryIntent.pending?.payload.command.operationId ?? null}
+                      pending={reviseDeliveryIntent.pending}
+                      corruptReason={reviseDeliveryIntent.corruptReason}
+                      authorityMismatch={reviseDeliveryIntent.authorityMismatch}
+                      inFlight={reviseDeliveryIntent.inFlight}
+                      onRetry={() =>
+                        void reviseDeliveryIntent
+                          .retryPending((p) => reviseDelivery(p.deliveryId, p.command))
+                          .then((r) => {
+                            if (r.ok) { setDeliveryMessage(`Delivery revise retry confirmed (v${r.value.version}).`); void loadAll(); }
+                            else setDeliveryMessage(r.message);
+                          })
+                      }
+                      onClearRejected={() => reviseDeliveryIntent.clearPending(false)}
+                      onClearCorrupt={() => reviseDeliveryIntent.clearPending(true)}
+                    />
+                    <form onSubmit={(e) => void handleReviseDelivery(e)} style={{ display: "grid", gap: 12, maxWidth: 560 }}>
+                      <label>
+                        <div className="r3-text-xs r3-text-muted">Pending Delivery</div>
+                        <select className="r3-input" aria-label="Pending Delivery to Revise" value={reviseDeliveryId} onChange={(e) => setReviseDeliveryId(e.target.value)}>
+                          <option value="">Select Pending delivery…</option>
+                          {deliveries.filter((d) => d.status === "Pending").map((d) => (
+                            <option key={d.deliveryId} value={d.deliveryId}>
+                              {d.deliveryId.slice(0, 8)}… (Order {d.orderId.slice(0, 8)}…, v{d.version})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        <div className="r3-text-xs r3-text-muted">Revised Recipient Name</div>
+                        <input className="r3-input" aria-label="Revised Recipient Name" value={reviseRecipient} onChange={(e) => setReviseRecipient(e.target.value)} placeholder="Updated Recipient" />
+                      </label>
+                      <label>
+                        <div className="r3-text-xs r3-text-muted">Revised Delivery Address</div>
+                        <input className="r3-input" aria-label="Revised Delivery Address" value={reviseAddress} onChange={(e) => setReviseAddress(e.target.value)} placeholder="456 Ayala Ave, Makati" />
+                      </label>
+                      <label>
+                        <div className="r3-text-xs r3-text-muted">Revised Delivery Fee (PHP)</div>
+                        <input className="r3-input" aria-label="Revised Delivery Fee" value={reviseFeePhp} onChange={(e) => setReviseFeePhp(e.target.value)} />
+                      </label>
+                      <div>
+                        <button type="submit" className="r3-btn r3-btn--outline" disabled={reviseDeliveryIntent.inFlight}>
+                          Save Delivery Revision
                         </button>
                       </div>
                     </form>

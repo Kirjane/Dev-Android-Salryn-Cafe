@@ -164,6 +164,19 @@ function R3LiveInventoryContent({ embedded = false }: { embedded?: boolean }) {
     authority,
   );
 
+  // C3 Supplier Create & Directory Publish state
+  const [newSupplierName, setNewSupplierName] = useState("");
+  const [newSupplierContact, setNewSupplierContact] = useState("");
+  const [supplierMessage, setSupplierMessage] = useState<string | null>(null);
+  const saveSupplierIntent = useDurableIntent<
+    { operationId: string; name: string; contactNumber: string | null },
+    unknown
+  >("inventory-supplier-save", authority);
+  const publishSuppliersIntent = useDurableIntent<{ operationId: string }, unknown>(
+    "inventory-supplier-publish",
+    authority,
+  );
+
   // Record Waste state
   const [wasteIngredientId, setWasteIngredientId] = useState("");
   const [wasteQtyInput, setWasteQtyInput] = useState("");
@@ -1118,6 +1131,136 @@ function R3LiveInventoryContent({ embedded = false }: { embedded?: boolean }) {
                   </div>
                 </form>
                 {recMessage && <p role="status" style={{ marginTop: 12 }} className="r3-text-sm">{recMessage}</p>}
+
+                {hasPerm(session, "Suppliers.Manage") && (
+                  <div style={{ marginTop: 24, paddingTop: 16, borderTop: "1px solid var(--r3-border)" }}>
+                    <div className="r3-card-title" style={{ marginBottom: 4 }}>C3 Supplier Directory &amp; Publication</div>
+                    <p className="r3-text-xs r3-text-muted" style={{ marginBottom: 12 }}>
+                      Create suppliers via POST /api/cafe/suppliers and publish immutable directory revisions via POST /api/cafe/suppliers/publish.
+                    </p>
+                    <DurableIntentBanner
+                      label="Save Supplier"
+                      operationId={saveSupplierIntent.pending?.payload.operationId ?? null}
+                      pending={saveSupplierIntent.pending}
+                      corruptReason={saveSupplierIntent.corruptReason}
+                      authorityMismatch={saveSupplierIntent.authorityMismatch}
+                      inFlight={saveSupplierIntent.inFlight}
+                      onRetry={() =>
+                        void saveSupplierIntent
+                          .retryPending((p) =>
+                            hostRequest(
+                              "/api/cafe/suppliers",
+                              { id: null, name: p.name, contactNumber: p.contactNumber, notes: null, isActive: true },
+                              "POST",
+                              p.operationId,
+                            ),
+                          )
+                          .then((r) => {
+                            if (r.ok) { setSupplierMessage("Supplier retry confirmed."); void loadAll(); }
+                            else setSupplierMessage(r.message);
+                          })
+                      }
+                      onClearRejected={() => saveSupplierIntent.clearPending(false)}
+                      onClearCorrupt={() => saveSupplierIntent.clearPending(true)}
+                    />
+                    <DurableIntentBanner
+                      label="Publish Suppliers"
+                      operationId={publishSuppliersIntent.pending?.payload.operationId ?? null}
+                      pending={publishSuppliersIntent.pending}
+                      corruptReason={publishSuppliersIntent.corruptReason}
+                      authorityMismatch={publishSuppliersIntent.authorityMismatch}
+                      inFlight={publishSuppliersIntent.inFlight}
+                      onRetry={() =>
+                        void publishSuppliersIntent
+                          .retryPending((p) => hostRequest("/api/cafe/suppliers/publish", p, "POST", p.operationId))
+                          .then((r) => {
+                            if (r.ok) { setSupplierMessage("Supplier directory publish retry confirmed."); void loadAll(); }
+                            else setSupplierMessage(r.message);
+                          })
+                      }
+                      onClearRejected={() => publishSuppliersIntent.clearPending(false)}
+                      onClearCorrupt={() => publishSuppliersIntent.clearPending(true)}
+                    />
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        setSupplierMessage(null);
+                        if (!newSupplierName.trim()) {
+                          setSupplierMessage("Supplier name is required.");
+                          return;
+                        }
+                        void saveSupplierIntent
+                          .execute(
+                            { name: newSupplierName.trim(), contactNumber: newSupplierContact.trim() || null },
+                            () => ({
+                              operationId: crypto.randomUUID(),
+                              name: newSupplierName.trim(),
+                              contactNumber: newSupplierContact.trim() || null,
+                            }),
+                            (p) =>
+                              hostRequest(
+                                "/api/cafe/suppliers",
+                                { id: null, name: p.name, contactNumber: p.contactNumber, notes: null, isActive: true },
+                                "POST",
+                                p.operationId,
+                              ),
+                          )
+                          .then((r) => {
+                            if (r.ok) {
+                              setNewSupplierName("");
+                              setNewSupplierContact("");
+                              setSupplierMessage("Supplier saved to live Host.");
+                              void loadAll();
+                            } else {
+                              setSupplierMessage(r.message);
+                            }
+                          });
+                      }}
+                      style={{ display: "grid", gap: 10, maxWidth: 520 }}
+                    >
+                      <input
+                        className="r3-input"
+                        aria-label="New Supplier Name"
+                        value={newSupplierName}
+                        onChange={(e) => setNewSupplierName(e.target.value)}
+                        placeholder="Highland Coffee Roasters"
+                      />
+                      <input
+                        className="r3-input"
+                        aria-label="New Supplier Contact"
+                        value={newSupplierContact}
+                        onChange={(e) => setNewSupplierContact(e.target.value)}
+                        placeholder="0917-555-0100"
+                      />
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button type="submit" className="r3-btn r3-btn--outline r3-btn--sm" disabled={saveSupplierIntent.inFlight}>
+                          Add Supplier
+                        </button>
+                        <button
+                          type="button"
+                          className="r3-btn r3-btn--primary r3-btn--sm"
+                          disabled={publishSuppliersIntent.inFlight}
+                          onClick={() => {
+                            setSupplierMessage(null);
+                            void publishSuppliersIntent
+                              .execute(
+                                { action: "suppliers-publish" },
+                                () => ({ operationId: crypto.randomUUID() }),
+                                (p) => hostRequest("/api/cafe/suppliers/publish", p, "POST", p.operationId),
+                              )
+                              .then((r) => {
+                                if (r.ok) { setSupplierMessage("Supplier directory published."); void loadAll(); }
+                                else setSupplierMessage(r.message);
+                              });
+                          }}
+                        >
+                          Publish Supplier Directory
+                        </button>
+                      </div>
+                    </form>
+                    {supplierMessage && <p role="status" style={{ marginTop: 10 }} className="r3-text-sm">{supplierMessage}</p>}
+                  </div>
+                )}
               </div>
             )}
 

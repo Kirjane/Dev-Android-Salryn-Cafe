@@ -132,22 +132,23 @@ public sealed class HostOperatorShiftApiService
             BuildShiftResponse(openResult.Value));
     }
 
-    public async Task<HostOperatorShiftOperationResult> CloseShiftAsync(
+    public Task<HostOperatorShiftOperationResult> CloseShiftAsync(
         Guid userId,
         HostOperatorShiftCloseRequest request,
         CancellationToken cancellationToken = default)
     {
         if (userId == Guid.Empty)
         {
-            return new HostOperatorShiftOperationResult(
+            return Task.FromResult(new HostOperatorShiftOperationResult(
                 false,
                 "HostOperator.Shift.InvalidUser",
                 "Operator user id is required.",
-                null);
+                null));
         }
 
         // Delegate directly to CashDrawerReconciliationService.Close so idempotent
         // post-commit retries by close_request_id return 200 even after status becomes Closed.
+        _ = cancellationToken;
         Result<CashDrawerSnapshot> closed = _drawer.Close(
             userId,
             new(request.CountedCashCents, request.PhysicalCountConfirmed, request.ClientRequestId, request.Note));
@@ -157,14 +158,14 @@ public sealed class HostOperatorShiftApiService
             string code = string.Equals(closed.ErrorDetail.Code, "CashDrawer.NoOpenShift", StringComparison.Ordinal)
                 ? "HostOperator.Shift.NoneToClose"
                 : closed.ErrorDetail.Code;
-            return new HostOperatorShiftOperationResult(
+            return Task.FromResult(new HostOperatorShiftOperationResult(
                 false,
                 code,
                 closed.ErrorDetail.Message,
-                null);
+                null));
         }
 
-        return new HostOperatorShiftOperationResult(
+        return Task.FromResult(new HostOperatorShiftOperationResult(
             true,
             "HostOperator.Shift.Closed",
             "Cashier shift closed.",
@@ -178,7 +179,7 @@ public sealed class HostOperatorShiftApiService
                 closed.Value.CountedCashCents,
                 closed.Value.VarianceCents,
                 closed.Value.CoverageStatus,
-                closed.Value.ReviewStatus));
+                closed.Value.ReviewStatus)));
     }
 
     private static HostOperatorShiftResponse BuildShiftResponse(CashierSessionReadModel session) =>

@@ -24,7 +24,7 @@ import {
   TextInput,
   useToast,
 } from "@salryn/cafe-ui";
-import { clearPendingPrintOp, formatPhp, getOrCreatePendingPrintOp, HostApiError, parsePhpToCents } from "../api/hostClient";
+import { clearPendingPrintOp, formatPhp, getOrCreatePendingPrintOp, HostApiError, hostRequest, parsePhpToCents } from "../api/hostClient";
 import { classifyPrintAttemptOutcome, isReceiptStation } from "./types";
 import type {
   CafeOrderDetail,
@@ -84,6 +84,14 @@ export function CashierWorkstation({
   const [customerId, setCustomerId] = useState("");
   const [discountPhp, setDiscountPhp] = useState("");
   const [discountReason, setDiscountReason] = useState("");
+  const [serviceFeePhp, setServiceFeePhp] = useState("");
+  const [serviceFeeLabel, setServiceFeeLabel] = useState("Service Fee");
+  const [attachedDelivery, setAttachedDelivery] = useState<{
+    deliveryId: string;
+    status: string;
+    deliveryFeeCents: number;
+    recipientName: string;
+  } | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -98,8 +106,48 @@ export function CashierWorkstation({
     setCustomerId("");
     setDiscountPhp("");
     setDiscountReason("");
+    setServiceFeePhp("");
+    setServiceFeeLabel("Service Fee");
+    setAttachedDelivery(null);
     setCheckoutError(null);
   }, [activeOrder?.order.orderId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (
+      !activeOrder ||
+      activeOrder.order.serviceMode !== "Takeout" ||
+      activeOrder.order.state === "Completed" ||
+      activeOrder.order.state === "Cancelled" ||
+      !permissions.includes("Delivery.View")
+    ) {
+      setAttachedDelivery(null);
+      return;
+    }
+    hostRequest<{
+      delivery?: { deliveryId: string; status: string };
+      currentRevision?: { deliveryFeeCents: number; recipientName: string };
+    } | null>(`/api/cafe/orders/${activeOrder.order.orderId}/delivery`, undefined, "GET")
+      .then((detail) => {
+        if (cancelled) return;
+        if (detail?.delivery?.status === "Pending" && detail.currentRevision) {
+          setAttachedDelivery({
+            deliveryId: detail.delivery.deliveryId,
+            status: detail.delivery.status,
+            deliveryFeeCents: detail.currentRevision.deliveryFeeCents,
+            recipientName: detail.currentRevision.recipientName,
+          });
+        } else {
+          setAttachedDelivery(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setAttachedDelivery(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeOrder?.order.orderId, activeOrder?.order.serviceMode, activeOrder?.order.state, permissions]);
 
   const permitted = (perm: string) => permissions.includes(perm);
 
@@ -172,10 +220,13 @@ export function CashierWorkstation({
   const paymentPreview = useMemo(() => {
     try {
       const discountCents = discountPhp.trim() ? parsePhpToCents(discountPhp) : 0;
+      const serviceFeeCents = serviceFeePhp.trim() ? parsePhpToCents(serviceFeePhp) : 0;
+      const deliveryFeeCents = attachedDelivery?.deliveryFeeCents ?? 0;
       if (discountCents > serverTotalCents) {
-        return { valid: false, dueCents: 0, cashCents: 0, changeCents: 0, arCents: 0, missingCents: 0 };
+        return { valid: false, dueCents: 0, cashCents: 0, changeCents: 0, arCents: 0, missingCents: 0, feesCents: 0 };
       }
-      const dueCents = serverTotalCents - discountCents;
+      const feesCents = serviceFeeCents + deliveryFeeCents;
+      const dueCents = serverTotalCents - discountCents + feesCents;
       const cashCents = tenderMode === "AccountsReceivable" ? 0 : parsePhpToCents(cashPhp);
       const arCents = tenderMode === "AccountsReceivable" ? dueCents :
         tenderMode === "Partial" ? Math.max(0, dueCents - cashCents) : 0;
@@ -183,12 +234,12 @@ export function CashierWorkstation({
       const missingCents = tenderMode === "Cash" ? Math.max(0, dueCents - cashCents) : 0;
       return {
         valid: !(tenderMode === "Partial" && (cashCents <= 0 || cashCents >= dueCents)),
-        dueCents, cashCents, changeCents, arCents, missingCents,
+        dueCents, cashCents, changeCents, arCents, missingCents, feesCents,
       };
     } catch {
-      return { valid: false, dueCents: 0, cashCents: 0, changeCents: 0, arCents: 0, missingCents: 0 };
+      return { valid: false, dueCents: 0, cashCents: 0, changeCents: 0, arCents: 0, missingCents: 0, feesCents: 0 };
     }
-  }, [serverTotalCents, discountPhp, cashPhp, tenderMode]);
+  }, [serverTotalCents, discountPhp, serviceFeePhp, attachedDelivery, cashPhp, tenderMode]);
 
   const draftEstimatedCents = useMemo(
     () => draftLines.reduce((sum, l) => sum + l.unitPriceCents * l.quantity, 0),
@@ -333,7 +384,31 @@ export function CashierWorkstation({
       if (orderDiscountCents > serverTotalCents) {
         throw new Error("Order discount cannot exceed order subtotal.");
       }
-      const netDueCents = serverTotalCents - orderDiscountCents;
+      const serviceFeeCents = serviceFeePhp.trim() ? parsePhpToCents(serviceFeePhp) : 0;
+      const fees: Array<{
+        feeType: "Service" | "Delivery";
+        displayLabel: string;
+        amountCents: number;
+        reason?: string | null;
+      }> = [];
+      if (serviceFeeCents > 0) {
+        fees.push({
+          feeType: "Service",
+          displayLabel: serviceFeeLabel.trim() || "Service Fee",
+          amountCents: serviceFeeCents,
+          reason: "Counter service fee",
+        });
+      }
+      if (attachedDelivery && attachedDelivery.deliveryFeeCents > 0) {
+        fees.push({
+          feeType: "Delivery",
+          displayLabel: "Delivery Fee",
+          amountCents: attachedDelivery.deliveryFeeCents,
+          reason: `Delivery for ${attachedDelivery.recipientName}`,
+        });
+      }
+      const totalFeesCents = fees.reduce((s, f) => s + f.amountCents, 0);
+      const netDueCents = serverTotalCents - orderDiscountCents + totalFeesCents;
 
       let cashCents = 0;
       if (tenderMode !== "AccountsReceivable") {
@@ -364,6 +439,7 @@ export function CashierWorkstation({
         customerId: tenderMode === "Cash" ? null : customerId,
         orderDiscountCents,
         discountReason: orderDiscountCents > 0 ? discountReason.trim() || "Cashier discount" : null,
+        fees,
         payments,
       });
     } catch (error) {
@@ -371,11 +447,11 @@ export function CashierWorkstation({
     }
   }
 
-  async function handlePrintReceipt(saleId: string) {
+  async function handlePrintReceipt(saleId: string, copyKind: "Original" | "Reprint" = "Original") {
     if (!receiptStation || printLockRef.current) return;
     printLockRef.current = true;
     setPrintingReceipt(true);
-    const opKey = `receipt:${receiptStation.stationId}:${saleId}:Original`;
+    const opKey = `receipt:${receiptStation.stationId}:${saleId}:${copyKind}`;
     const operationId = pendingPrintOpsRef.current[opKey] ?? getOrCreatePendingPrintOp(opKey);
     pendingPrintOpsRef.current[opKey] = operationId;
     try {
@@ -383,17 +459,18 @@ export function CashierWorkstation({
         operationId,
         stationId: receiptStation.stationId,
         saleId,
-        copyKind: "Original",
+        copyKind,
       });
       delete pendingPrintOpsRef.current[opKey];
       clearPendingPrintOp(opKey);
       const { outcome, detail } = classifyPrintAttemptOutcome(result);
+      const label = copyKind === "Reprint" ? "Receipt reprint" : "Receipt print";
       if (outcome === "succeeded") {
-        notify("info", `Receipt print sent · ${receiptStation.name}`, detail ?? undefined);
+        notify("info", `${label} sent · ${receiptStation.name}`, detail ?? undefined);
       } else if (outcome === "disabled") {
         notify("warning", `Printer disabled · ${receiptStation.name}`, detail ?? "Receipt job recorded; enable printer in Store Settings.");
       } else {
-        notify("danger", `Receipt print failed · ${receiptStation.name}`, detail ?? "Printer reported a failure.");
+        notify("danger", `${label} failed · ${receiptStation.name}`, detail ?? "Printer reported a failure.");
       }
     } catch (error) {
       if (error instanceof HostApiError && error.isDeterministicRejection) {
@@ -744,6 +821,36 @@ export function CashierWorkstation({
                         ) : null}
                       </div>
 
+                      {permitted("Sales.FeeApply") ? (
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
+                          <FormField label="Service fee (PHP)">
+                            <TextInput
+                              inputMode="decimal"
+                              placeholder="0.00"
+                              value={serviceFeePhp}
+                              onChange={(e) => setServiceFeePhp(e.target.value)}
+                            />
+                          </FormField>
+                          {serviceFeePhp.trim() ? (
+                            <FormField label="Fee label">
+                              <TextInput
+                                placeholder="Service Fee"
+                                value={serviceFeeLabel}
+                                onChange={(e) => setServiceFeeLabel(e.target.value)}
+                              />
+                            </FormField>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {attachedDelivery ? (
+                        <Alert
+                          tone="info"
+                          title={`Attached Pending Delivery · ${attachedDelivery.recipientName}`}
+                          description={`Delivery fee ${formatPhp(attachedDelivery.deliveryFeeCents)} will be bound automatically on order completion (C8-DAT-04).`}
+                        />
+                      ) : null}
+
                       {tenderMode !== "AccountsReceivable" ? (
                         <FormField label="Cash amount (PHP)">
                           <TextInput
@@ -911,9 +1018,19 @@ export function CashierWorkstation({
                     variant="secondary"
                     leftIcon={<Printer size={15} />}
                     loading={printingReceipt}
-                    onClick={() => void handlePrintReceipt(activeOrder.order.completedSaleId!)}
+                    onClick={() => void handlePrintReceipt(activeOrder.order.completedSaleId!, "Original")}
                   >
                     Print Receipt
+                  </Button>
+                ) : null}
+                {activeOrder.order.state === "Completed" && activeOrder.order.completedSaleId && receiptStation && permitted("Printing.Reprint") ? (
+                  <Button
+                    variant="ghost"
+                    leftIcon={<Printer size={15} />}
+                    loading={printingReceipt}
+                    onClick={() => void handlePrintReceipt(activeOrder.order.completedSaleId!, "Reprint")}
+                  >
+                    Reprint Receipt
                   </Button>
                 ) : null}
 

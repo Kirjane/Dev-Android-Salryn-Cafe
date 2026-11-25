@@ -34,6 +34,7 @@ export type MenuCatalogDraft = {
   categories: Array<{ id: string; name: string; isActive: boolean }>;
   items: Array<{ productId: string; categoryId: string | null; name: string; unitId: string; sellingPriceCents: number; isActive: boolean }>;
   variants: Array<{ id: string; productId: string; name: string; sellingPriceCents: number; isActive: boolean }>;
+  modifierOptions?: Array<{ id: string; groupId: string; name: string; priceDeltaCents?: number; isActive?: boolean }>;
   currentPublication?: { revisionNumber: number } | null;
 };
 

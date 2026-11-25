@@ -86,15 +86,25 @@ function SalesServiceInner({
 
   const applySuccessResult = useCallback(
     async (path: string, res: Record<string, unknown>) => {
+      const orderIdMatch = path.match(/\/api\/cafe\/orders\/([0-9a-f-]{36})\//i);
+      const mutatedOrderId =
+        (typeof res.orderId === "string" && res.orderId) ||
+        (orderIdMatch ? orderIdMatch[1] : null);
+
       if (path.endsWith("/complete") && typeof res.saleId === "string") {
         setLastCompletion({
-          orderId: String(res.orderId ?? ""),
+          orderId: String(res.orderId ?? mutatedOrderId ?? ""),
           saleId: res.saleId,
           receiptNumber: String(res.receiptNumber ?? ""),
         });
-        setActiveOrder(null);
-      } else if (typeof res.orderId === "string" && path.includes("/orders/revision")) {
-        const detail = await api.getOrderDetail(res.orderId).catch(() => null);
+        if (mutatedOrderId) {
+          const detail = await api.getOrderDetail(mutatedOrderId).catch(() => null);
+          setActiveOrder(detail);
+        } else {
+          setActiveOrder(null);
+        }
+      } else if (mutatedOrderId) {
+        const detail = await api.getOrderDetail(mutatedOrderId).catch(() => null);
         setActiveOrder(detail);
       }
       await refresh();
