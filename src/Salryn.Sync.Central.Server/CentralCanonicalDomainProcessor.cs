@@ -213,7 +213,17 @@ internal static partial class CentralCanonicalDomainProcessor
     {
         CentralDomainResult Review(string code) => new(SaleCommittedV1Contract.NeedsReview, code);
         CentralDomainResult Reject(string code) => new(SaleCommittedV1Contract.Rejected, code);
-        if (!HasOperatorPermission(connection, transaction, envelope.ActorUserId, "Inventory.Manage"))
+        string? requiredPermission = envelope.OperationType switch
+        {
+            CafeInventoryOperationContract.PurchaseReceiptCommittedV1 => "Purchasing.Receive",
+            CafeInventoryOperationContract.InventoryWasteCommittedV1 => "Inventory.Waste",
+            CafeInventoryOperationContract.InventoryAdjustmentCommittedV1 => "Inventory.Adjust",
+            CafeInventoryOperationContract.InventoryCountFinalizedV1 => "Inventory.Count",
+            _ => null
+        };
+        if (requiredPermission is null)
+            return Reject("CafeInventory.UnsupportedOperation");
+        if (!HasOperatorPermission(connection, transaction, envelope.ActorUserId, requiredPermission))
             return Reject("ERR_CANONICAL_OPERATOR_AUTHORITY");
         using var savepoint = connection.CreateCommand();
         savepoint.Transaction = transaction;
