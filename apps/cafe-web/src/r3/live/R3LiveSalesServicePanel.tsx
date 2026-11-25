@@ -73,13 +73,12 @@ function SalesServiceInner({
       if (permissions.includes("Orders.View") || permissions.includes("Settings.Manage")) {
         api.getPrintStations().then(setPrintStations).catch(() => setPrintStations([]));
       }
-      onDataChanged?.();
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Failed to load live POS/Order state.");
     } finally {
       setRefreshing(false);
     }
-  }, [api, permissions, onDataChanged]);
+  }, [api, permissions]);
 
   useEffect(() => {
     void refresh();
@@ -99,8 +98,9 @@ function SalesServiceInner({
         setActiveOrder(detail);
       }
       await refresh();
+      onDataChanged?.();
     },
-    [api, refresh],
+    [api, refresh, onDataChanged],
   );
 
   const dispatchIntent = useCallback(
@@ -139,9 +139,14 @@ function SalesServiceInner({
   };
 
   const handleSelectOrder = async (orderId: string) => {
-    const detail = await api.getOrderDetail(orderId);
-    setActiveOrder(detail);
-    onNavigateView("pos");
+    try {
+      setErrorMsg(null);
+      const detail = await api.getOrderDetail(orderId);
+      setActiveOrder(detail);
+      onNavigateView("pos");
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Failed to load selected order detail.");
+    }
   };
 
   const blocked =

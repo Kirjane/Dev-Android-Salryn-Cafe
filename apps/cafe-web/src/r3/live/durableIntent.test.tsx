@@ -166,4 +166,27 @@ describe("useDurableIntent P1 authority, corruption, 403-retry & multi-tab harde
 
     expect(result.current.pending?.payload.opId).toBe("tab-2-op");
   });
+
+  it("refuses clearPending(false) when authority is null (fail-closed before Host identity is verified)", async () => {
+    const scope = "test-null-auth-clear";
+    const { result: userAResult } = renderHook(() =>
+      useDurableIntent<{ opId: string }, string>(scope, AUTH_A),
+    );
+    await act(async () => {
+      await userAResult.current.execute(
+        { amt: 1 },
+        () => ({ opId: "rejected-op" }),
+        async () => {
+          throw new HostApiError("Validation failed", 400, "Validation.Invalid");
+        },
+      );
+    });
+    expect(userAResult.current.pending?.status).toBe("rejected");
+
+    // Before authority is verified (authority === null), even clearing a rejected intent must fail closed!
+    const { result: unverifiedResult } = renderHook(() =>
+      useDurableIntent<{ opId: string }, string>(scope, null),
+    );
+    expect(() => unverifiedResult.current.clearPending(false)).toThrow(DurableIntentFenceError);
+  });
 });

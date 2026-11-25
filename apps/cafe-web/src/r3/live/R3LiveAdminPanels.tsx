@@ -41,13 +41,13 @@ export function R3LiveUsersPanel() {
       const [u, r] = await Promise.all([api.getUsers(), api.getUserRoles()]);
       setUsers(u);
       setRoles(r.filter((x) => x.isActive));
-      if (!roleId && r.length > 0) setRoleId(r[0].roleId);
+      if (r.length > 0) setRoleId((prev) => prev || r[0].roleId);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load users.");
     } finally {
       setLoading(false);
     }
-  }, [api, roleId]);
+  }, [api]);
 
   useEffect(() => {
     void load();

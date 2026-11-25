@@ -197,7 +197,7 @@ export function createLiveBackofficeApi(): BackofficeApi {
     createIncident: (req) =>
       hostRequest<void>("/api/cafe/incidents", {
         operationId: req.operationId,
-        incidentOccurredAtUtc: new Date().toISOString(),
+        incidentOccurredAtUtc: req.incidentOccurredAtUtc ?? new Date().toISOString(),
         title: req.title,
         description: req.description,
         classification: req.classification,

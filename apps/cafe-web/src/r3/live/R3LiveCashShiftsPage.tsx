@@ -62,7 +62,7 @@ async function verifyHostCashAccess(): Promise<HostSession> {
 function R3LiveCashShiftsContent({ embedded = false }: Props) {
   const { pushToast } = useR3Toast();
   const [session, setSession] = useState<HostSession | null>(null);
-  const [hostIdentityKey, setHostIdentityKey] = useState<string>("");
+  const [hostIdentityKey, setHostIdentityKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [accessError, setAccessError] = useState<string | null>(null);
   const [drawerError, setDrawerError] = useState<string | null>(null);
@@ -401,6 +401,68 @@ function R3LiveCashShiftsContent({ embedded = false }: Props) {
 
             {tab === "drawer" && canShift && (
               <div role="tabpanel" aria-labelledby="r3-cash-tab-drawer" style={{ display: "grid", gap: 16 }}>
+                {/* Always render pending/corrupt shift banners outside the open/closed branch so reloads never hide unresolved intents */}
+                <DurableIntentBanner
+                  label="Open Shift"
+                  operationId={openShiftIntent.pending?.payload.clientRequestId ?? null}
+                  pending={openShiftIntent.pending}
+                  corruptReason={openShiftIntent.corruptReason}
+                  authorityMismatch={openShiftIntent.authorityMismatch}
+                  inFlight={openShiftIntent.inFlight}
+                  onRetry={() =>
+                    void openShiftIntent.retryPending(openCashShift).then((r) => {
+                      if (r.ok) {
+                        setShiftMessage("Shift open retry confirmed.");
+                        void loadAll();
+                      } else {
+                        setShiftMessage(r.message);
+                      }
+                    })
+                  }
+                  onClearRejected={() => openShiftIntent.clearPending(false)}
+                  onClearCorrupt={() => openShiftIntent.clearPending(true)}
+                />
+                <DurableIntentBanner
+                  label="Cash Movement"
+                  operationId={moveIntent.pending?.payload.clientRequestId ?? null}
+                  pending={moveIntent.pending}
+                  corruptReason={moveIntent.corruptReason}
+                  authorityMismatch={moveIntent.authorityMismatch}
+                  inFlight={moveIntent.inFlight}
+                  onRetry={() =>
+                    void moveIntent.retryPending(recordCashDrawerMovement).then((r) => {
+                      if (r.ok) {
+                        setCurrentDrawer(r.value);
+                        setMoveMessage("Cash movement retry confirmed.");
+                      } else {
+                        setMoveMessage(r.message);
+                      }
+                    })
+                  }
+                  onClearRejected={() => moveIntent.clearPending(false)}
+                  onClearCorrupt={() => moveIntent.clearPending(true)}
+                />
+                <DurableIntentBanner
+                  label="Blind Shift Close"
+                  operationId={closeShiftIntent.pending?.payload.clientRequestId ?? null}
+                  pending={closeShiftIntent.pending}
+                  corruptReason={closeShiftIntent.corruptReason}
+                  authorityMismatch={closeShiftIntent.authorityMismatch}
+                  inFlight={closeShiftIntent.inFlight}
+                  onRetry={() =>
+                    void closeShiftIntent.retryPending(closeCashShiftBlind).then((r) => {
+                      if (r.ok) {
+                        setShiftMessage("Blind shift close retry confirmed.");
+                        void loadAll();
+                      } else {
+                        setShiftMessage(r.message);
+                      }
+                    })
+                  }
+                  onClearRejected={() => closeShiftIntent.clearPending(false)}
+                  onClearCorrupt={() => closeShiftIntent.clearPending(true)}
+                />
+
                 {!currentDrawer ? (
                   <div className="r3-card">
                     <div className="r3-card-header">
@@ -409,26 +471,6 @@ function R3LiveCashShiftsContent({ embedded = false }: Props) {
                         <div className="r3-card-subtitle">Declare opening cash float to begin taking Cash sales and deposits.</div>
                       </div>
                     </div>
-                    <DurableIntentBanner
-                      label="Open Shift"
-                      operationId={openShiftIntent.pending?.payload.clientRequestId ?? null}
-                      pending={openShiftIntent.pending}
-                      corruptReason={openShiftIntent.corruptReason}
-                      authorityMismatch={openShiftIntent.authorityMismatch}
-                      inFlight={openShiftIntent.inFlight}
-                      onRetry={() =>
-                        void openShiftIntent.retryPending(openCashShift).then((r) => {
-                          if (r.ok) {
-                            setShiftMessage("Shift open retry confirmed.");
-                            void loadAll();
-                          } else {
-                            setShiftMessage(r.message);
-                          }
-                        })
-                      }
-                      onClearRejected={() => openShiftIntent.clearPending(false)}
-                      onClearCorrupt={() => openShiftIntent.clearPending(true)}
-                    />
                     <form onSubmit={(e) => void handleOpenShift(e)} style={{ display: "grid", gap: 12, maxWidth: 460 }}>
                       <label>
                         <div className="r3-text-xs r3-text-muted">Opening Cash Float (PHP)</div>
@@ -460,26 +502,6 @@ function R3LiveCashShiftsContent({ embedded = false }: Props) {
                           </div>
                         </div>
                       </div>
-                      <DurableIntentBanner
-                        label="Cash Movement"
-                        operationId={moveIntent.pending?.payload.clientRequestId ?? null}
-                        pending={moveIntent.pending}
-                        corruptReason={moveIntent.corruptReason}
-                        authorityMismatch={moveIntent.authorityMismatch}
-                        inFlight={moveIntent.inFlight}
-                        onRetry={() =>
-                          void moveIntent.retryPending(recordCashDrawerMovement).then((r) => {
-                            if (r.ok) {
-                              setCurrentDrawer(r.value);
-                              setMoveMessage("Cash movement retry confirmed.");
-                            } else {
-                              setMoveMessage(r.message);
-                            }
-                          })
-                        }
-                        onClearRejected={() => moveIntent.clearPending(false)}
-                        onClearCorrupt={() => moveIntent.clearPending(true)}
-                      />
                       <form onSubmit={(e) => void handleMovementSubmit(e)} style={{ display: "grid", gap: 12, maxWidth: 560 }}>
                         <label>
                           <div className="r3-text-xs r3-text-muted">Movement Type</div>
@@ -515,26 +537,6 @@ function R3LiveCashShiftsContent({ embedded = false }: Props) {
                           </div>
                         </div>
                       </div>
-                      <DurableIntentBanner
-                        label="Blind Shift Close"
-                        operationId={closeShiftIntent.pending?.payload.clientRequestId ?? null}
-                        pending={closeShiftIntent.pending}
-                        corruptReason={closeShiftIntent.corruptReason}
-                        authorityMismatch={closeShiftIntent.authorityMismatch}
-                        inFlight={closeShiftIntent.inFlight}
-                        onRetry={() =>
-                          void closeShiftIntent.retryPending(closeCashShiftBlind).then((r) => {
-                            if (r.ok) {
-                              setShiftMessage("Blind shift close retry confirmed.");
-                              void loadAll();
-                            } else {
-                              setShiftMessage(r.message);
-                            }
-                          })
-                        }
-                        onClearRejected={() => closeShiftIntent.clearPending(false)}
-                        onClearCorrupt={() => closeShiftIntent.clearPending(true)}
-                      />
                       <form onSubmit={(e) => void handleBlindCloseShift(e)} style={{ display: "grid", gap: 12, maxWidth: 560 }}>
                         <label>
                           <div className="r3-text-xs r3-text-muted">Physical Counted Cash (PHP)</div>

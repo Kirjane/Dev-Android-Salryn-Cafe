@@ -272,6 +272,22 @@ try {
       await expect(page.getByText("Delivered").first()).toBeVisible();
       assertions += 3;
 
+      // --- POS Counter Stability Check (guards against P0 infinite fetch/render loop) ---
+      let posOrderFetchCount = 0;
+      const countOrdersReq = (req) => {
+        if (req.url().endsWith("/api/cafe/orders")) posOrderFetchCount += 1;
+      };
+      page.on("request", countOrdersReq);
+      await nav.getByRole("button", { name: "POS Counter" }).click();
+      await expect(page.getByRole("heading", { name: "POS Counter" })).toBeVisible();
+      await page.waitForTimeout(1200);
+      page.off("request", countOrdersReq);
+      assert(
+        posOrderFetchCount <= 4,
+        `Expected bounded /api/cafe/orders fetches on POS Counter, observed ${posOrderFetchCount} (possible render loop)`,
+      );
+      assertions += 1;
+
       // --- Inventory & Reports Inside Unified Shell ---
       await nav.getByRole("button", { name: "Inventory" }).click();
       await expect(page.getByRole("heading", { name: /Inventory & Stock Control/i })).toBeVisible();

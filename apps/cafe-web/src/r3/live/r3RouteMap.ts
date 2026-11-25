@@ -81,8 +81,6 @@ export const R3_ROUTES: readonly R3RouteDefinition[] = [
     group: "Sales & Service",
     anyOfPermissions: [
       R3_HOST_PERMISSIONS.ShiftOpenClose,
-      R3_HOST_PERMISSIONS.CashIn,
-      R3_HOST_PERMISSIONS.CashOut,
       R3_HOST_PERMISSIONS.AuditView,
     ],
     domains: ["C4", "C5"],

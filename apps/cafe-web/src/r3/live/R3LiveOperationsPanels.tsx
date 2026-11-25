@@ -387,7 +387,18 @@ export function R3LiveRecipesPanel({ authority }: { authority: DurableIntentAuth
         corruptReason={publishIntent.corruptReason}
         authorityMismatch={publishIntent.authorityMismatch}
         inFlight={publishIntent.inFlight}
-        onRetry={() => void publishIntent.retryPending((p) => hostRequest("/api/cafe/recipes/publish", p, "POST", p.operationId))}
+        onRetry={() =>
+          void publishIntent
+            .retryPending((p) => hostRequest("/api/cafe/recipes/publish", p, "POST", p.operationId))
+            .then((r) => {
+              if (r.ok) {
+                setMsg("Recipes publish retry confirmed.");
+                void load();
+              } else {
+                setError(r.message);
+              }
+            })
+        }
         onClearRejected={() => publishIntent.clearPending(false)}
         onClearCorrupt={() => publishIntent.clearPending(true)}
       />
@@ -424,6 +435,21 @@ export function R3LiveRecipesPanel({ authority }: { authority: DurableIntentAuth
       <div className="r3-two-col">
         <div className="r3-card">
           <div className="r3-card-header"><div className="r3-card-title">Add Ingredient</div></div>
+          <DurableIntentBanner
+            label="Save Ingredient"
+            operationId={ingIntent.pending?.payload.operationId ?? null}
+            pending={ingIntent.pending}
+            corruptReason={ingIntent.corruptReason}
+            authorityMismatch={ingIntent.authorityMismatch}
+            inFlight={ingIntent.inFlight}
+            onRetry={() =>
+              void ingIntent.retryPending((p) => api.saveIngredient(p)).then((r) => {
+                if (r.ok) { setIngName(""); setMsg("Ingredient retry confirmed."); void load(); } else setError(r.message);
+              })
+            }
+            onClearRejected={() => ingIntent.clearPending(false)}
+            onClearCorrupt={() => ingIntent.clearPending(true)}
+          />
           <form onSubmit={(e) => void handleSaveIngredient(e)} style={{ display: "grid", gap: 10 }}>
             <input className="r3-input" aria-label="Ingredient Name" value={ingName} onChange={(e) => setIngName(e.target.value)} placeholder="Whole Milk" />
             <select className="r3-input" aria-label="Ingredient Stock Unit" value={ingUnit} onChange={(e) => setIngUnit(e.target.value as "Gram" | "Milliliter" | "Piece")}>
@@ -438,6 +464,21 @@ export function R3LiveRecipesPanel({ authority }: { authority: DurableIntentAuth
 
         <div className="r3-card">
           <div className="r3-card-header"><div className="r3-card-title">Create Recipe</div></div>
+          <DurableIntentBanner
+            label="Save Recipe"
+            operationId={recipeIntent.pending?.payload.operationId ?? null}
+            pending={recipeIntent.pending}
+            corruptReason={recipeIntent.corruptReason}
+            authorityMismatch={recipeIntent.authorityMismatch}
+            inFlight={recipeIntent.inFlight}
+            onRetry={() =>
+              void recipeIntent.retryPending((p) => api.saveRecipe(p)).then((r) => {
+                if (r.ok) { setRecName(""); setMsg("Recipe retry confirmed."); void load(); } else setError(r.message);
+              })
+            }
+            onClearRejected={() => recipeIntent.clearPending(false)}
+            onClearCorrupt={() => recipeIntent.clearPending(true)}
+          />
           <form onSubmit={(e) => void handleSaveRecipe(e)} style={{ display: "grid", gap: 10 }}>
             <input className="r3-input" aria-label="Recipe Name" value={recName} onChange={(e) => setRecName(e.target.value)} placeholder="Iced Latte 16oz" />
             <input className="r3-input" aria-label="Recipe Yield" value={recYield} onChange={(e) => setRecYield(e.target.value)} placeholder="1" />
@@ -449,6 +490,21 @@ export function R3LiveRecipesPanel({ authority }: { authority: DurableIntentAuth
       <div className="r3-two-col">
         <div className="r3-card">
           <div className="r3-card-header"><div className="r3-card-title">Add BOM Ingredient Line</div></div>
+          <DurableIntentBanner
+            label="Recipe Line"
+            operationId={lineIntent.pending?.payload.operationId ?? null}
+            pending={lineIntent.pending}
+            corruptReason={lineIntent.corruptReason}
+            authorityMismatch={lineIntent.authorityMismatch}
+            inFlight={lineIntent.inFlight}
+            onRetry={() =>
+              void lineIntent.retryPending((p) => api.saveRecipeLine(p)).then((r) => {
+                if (r.ok) { setMsg("Recipe line retry confirmed."); void load(); } else setError(r.message);
+              })
+            }
+            onClearRejected={() => lineIntent.clearPending(false)}
+            onClearCorrupt={() => lineIntent.clearPending(true)}
+          />
           <form onSubmit={(e) => void handleAddLine(e)} style={{ display: "grid", gap: 10 }}>
             <select className="r3-input" aria-label="Line Recipe" value={lineRecipeId} onChange={(e) => setLineRecipeId(e.target.value)}>
               {(draft?.recipes ?? []).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
@@ -463,6 +519,21 @@ export function R3LiveRecipesPanel({ authority }: { authority: DurableIntentAuth
 
         <div className="r3-card">
           <div className="r3-card-header"><div className="r3-card-title">Bind Menu Item to Recipe</div></div>
+          <DurableIntentBanner
+            label="Bind Item Recipe"
+            operationId={bindIntent.pending?.payload.operationId ?? null}
+            pending={bindIntent.pending}
+            corruptReason={bindIntent.corruptReason}
+            authorityMismatch={bindIntent.authorityMismatch}
+            inFlight={bindIntent.inFlight}
+            onRetry={() =>
+              void bindIntent.retryPending((p) => api.bindMenuItemRecipe(p)).then((r) => {
+                if (r.ok) { setMsg("Menu item recipe binding retry confirmed."); void load(); } else setError(r.message);
+              })
+            }
+            onClearRejected={() => bindIntent.clearPending(false)}
+            onClearCorrupt={() => bindIntent.clearPending(true)}
+          />
           <form onSubmit={(e) => void handleBind(e)} style={{ display: "grid", gap: 10 }}>
             <select className="r3-input" aria-label="Menu Item" value={bindProductId} onChange={(e) => setBindProductId(e.target.value)}>
               {(catalog?.items ?? []).map((it) => <option key={it.productId} value={it.productId}>{it.name}</option>)}
@@ -725,7 +796,14 @@ export function R3LiveStaffIncidentsPanel({
     authority,
   );
   const incIntent = useDurableIntent<
-    { operationId: string; title: string; description: string; classification: IncidentClassification; severity: "Low" | "Medium" | "High" | "Critical" },
+    {
+      operationId: string;
+      incidentOccurredAtUtc: string;
+      title: string;
+      description: string;
+      classification: IncidentClassification;
+      severity: "Low" | "Medium" | "High" | "Critical";
+    },
     void
   >("staff-incident-create", authority);
 
@@ -751,7 +829,7 @@ export function R3LiveStaffIncidentsPanel({
     setMsg(null);
     setError(null);
     const res = await attIntent.execute(
-      { eventType, tsBucket: Math.floor(Date.now() / 5000) },
+      { eventType },
       () => ({ operationId: crypto.randomUUID(), eventType }),
       (p) => api.recordAttendance(p),
     );
@@ -773,6 +851,7 @@ export function R3LiveStaffIncidentsPanel({
       { title: title.trim(), description: description.trim(), classification, severity },
       () => ({
         operationId: crypto.randomUUID(),
+        incidentOccurredAtUtc: new Date().toISOString(),
         title: title.trim(),
         description: description.trim(),
         classification,
@@ -809,6 +888,22 @@ export function R3LiveStaffIncidentsPanel({
 
       {error && <div className="r3-alert r3-alert--danger" role="alert"><div className="r3-alert-body">{error}</div></div>}
       {msg && <div className="r3-alert r3-alert--success" role="status"><div className="r3-alert-body">{msg}</div></div>}
+
+      <DurableIntentBanner
+        label="Staff Attendance"
+        operationId={attIntent.pending?.payload.operationId ?? null}
+        pending={attIntent.pending}
+        corruptReason={attIntent.corruptReason}
+        authorityMismatch={attIntent.authorityMismatch}
+        inFlight={attIntent.inFlight}
+        onRetry={() =>
+          void attIntent.retryPending((p) => api.recordAttendance(p)).then((r) => {
+            if (r.ok) { setMsg("Attendance retry confirmed."); void load(); } else setError(r.message);
+          })
+        }
+        onClearRejected={() => attIntent.clearPending(false)}
+        onClearCorrupt={() => attIntent.clearPending(true)}
+      />
 
       <div className="r3-two-col">
         <div className="r3-card">

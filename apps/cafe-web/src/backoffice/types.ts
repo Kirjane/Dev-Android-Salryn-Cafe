@@ -409,6 +409,7 @@ export interface BackofficeApi {
     severity: string;
     title: string;
     description: string;
+    incidentOccurredAtUtc?: string;
   }): Promise<void>;
   getAuditLogs(): Promise<AuditLogRow[]>;
   getUsers(): Promise<UserRow[]>;

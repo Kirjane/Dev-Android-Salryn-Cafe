@@ -141,7 +141,7 @@ function R3UnifiedInner({
   const [licenseStatus, setLicenseStatus] = useState<HostLicenseBootstrapStatus | null>(null);
   const [bootstrapStatus, setBootstrapStatus] = useState<HostBootstrapStatus | null>(null);
   const [session, setSession] = useState<HostSession>({ isAuthenticated: false });
-  const [hostIdentityKey, setHostIdentityKey] = useState<string>("");
+  const [hostIdentityKey, setHostIdentityKey] = useState<string | null>(null);
 
   // License activation form
   const [licenseJson, setLicenseJson] = useState("");
@@ -237,6 +237,10 @@ function R3UnifiedInner({
     requestedRoute && canAccessR3Route(permissions, requestedRoute)
       ? requestedRoute
       : defaultRoute;
+
+  const handleSalesDataChanged = useCallback(() => {
+    setDataVersion((v) => v + 1);
+  }, []);
 
   const navigateRoute = useCallback(
     (nextKey: R3RouteKey) => {
@@ -694,7 +698,7 @@ function R3UnifiedInner({
                 session={session}
                 authority={authority}
                 onNavigateView={(next) => navigateRoute(next)}
-                onDataChanged={() => setDataVersion((v) => v + 1)}
+                onDataChanged={handleSalesDataChanged}
               />
             )}
             {activeRoute === "cash" && <R3LiveCashShiftsPage embedded />}

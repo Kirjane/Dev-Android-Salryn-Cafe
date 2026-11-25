@@ -43,15 +43,18 @@ type HostSystemIdentityDto = {
   databasePath?: string | null;
 };
 
-export async function fetchHostIdentityKey(): Promise<string> {
+export async function fetchHostIdentityKey(): Promise<string | null> {
   const origin = typeof window !== "undefined" && window.location ? window.location.origin : "local";
   try {
     const id = await hostRequest<HostSystemIdentityDto>("/api/system/identity", undefined, "GET");
-    const product = id?.productId ?? "Salryn.Cafe";
-    const dbPart = id?.databasePath ?? id?.dataRoot ?? id?.service ?? "host";
+    const product = id?.productId?.trim();
+    const dbPart = id?.databasePath?.trim() || id?.dataRoot?.trim() || id?.service?.trim();
+    if (!product || !dbPart) {
+      return null;
+    }
     return `${origin}|${product}|${dbPart}`;
   } catch {
-    return `${origin}|Salryn.Cafe|unknown-host`;
+    return null;
   }
 }
 
@@ -211,9 +214,9 @@ export function useDurableIntent<TPayload, TResult>(
         return;
       }
       if (current.kind === "ok") {
-        if (authority && !isAuthorityMatch(current.intent, authority) && !allowUnsafeClear) {
+        if ((!authority || !isAuthorityMatch(current.intent, authority)) && !allowUnsafeClear) {
           throw new DurableIntentFenceError(
-            "Cannot discard a pending request belonging to a different operator or Host instance.",
+            "Verified matching operator and Host identity are required before discarding a pending request.",
           );
         }
         if (

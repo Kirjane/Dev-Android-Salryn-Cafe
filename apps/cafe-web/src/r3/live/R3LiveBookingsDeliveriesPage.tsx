@@ -99,7 +99,7 @@ async function verifyHostBookingDeliveryAccess(): Promise<HostSession> {
 function R3LiveBookingsDeliveriesContent({ initialTab = "bookings", embedded = false }: Props) {
   const { pushToast } = useR3Toast();
   const [session, setSession] = useState<HostSession | null>(null);
-  const [hostIdentityKey, setHostIdentityKey] = useState<string>("");
+  const [hostIdentityKey, setHostIdentityKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [accessError, setAccessError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>(initialTab);
@@ -174,6 +174,8 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings", embedded = f
   );
 
   const tabRefs = useRef<Partial<Record<TabId, HTMLButtonElement | null>>>({});
+  const depositBookingIdRef = useRef(depositBookingId);
+  depositBookingIdRef.current = depositBookingId;
 
   const loadBookingDetail = useCallback(async (id: string) => {
     if (!id) {
@@ -183,8 +185,9 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings", embedded = f
     try {
       const detail = await readLiveBookingDetail(id);
       setBookingDetail(detail);
-    } catch {
+    } catch (err) {
       setBookingDetail(null);
+      setBookingMessage(err instanceof Error ? err.message : "Failed to load historical booking deposits.");
     }
   }, []);
 
@@ -229,8 +232,8 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings", embedded = f
       const firstItem = pubRes?.items?.[0];
       if (firstItem) setProductId((prev) => prev || firstItem.productId);
 
-      const nextSelectedBooking = depositBookingId || bkList[0]?.bookingId || "";
-      if (nextSelectedBooking && nextSelectedBooking !== depositBookingId) {
+      const nextSelectedBooking = depositBookingIdRef.current || bkList[0]?.bookingId || "";
+      if (nextSelectedBooking && nextSelectedBooking !== depositBookingIdRef.current) {
         setDepositBookingId(nextSelectedBooking);
       }
       if (canViewBookings && nextSelectedBooking) {
@@ -244,7 +247,7 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings", embedded = f
     } finally {
       setLoading(false);
     }
-  }, [depositBookingId, loadBookingDetail]);
+  }, [loadBookingDetail]);
 
   useEffect(() => {
     void loadAll();
