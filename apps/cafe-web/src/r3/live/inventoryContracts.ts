@@ -172,3 +172,129 @@ export async function readCount(countSessionId: string) {
     "GET",
   );
 }
+
+export type LiveIngredient = {
+  id: string;
+  name: string;
+  stockUnit: string;
+  stockOnHandX1000: number;
+  reorderLevelX1000: number;
+  isActive: boolean;
+  notes: string | null;
+};
+
+export type LiveSupplier = {
+  id: string;
+  name: string;
+  contactNumber: string | null;
+  notes: string | null;
+  isActive: boolean;
+};
+
+export type LiveLowStockItem = {
+  stockTargetType: "Ingredient" | "Product";
+  stockTargetId: string;
+  name: string;
+  stockUnit: string;
+  stockOnHandX1000: number;
+  reorderLevelX1000: number;
+};
+
+export type PurchaseReceiveLineCommand = StockTarget & {
+  lineId: string;
+  quantityReceivedX1000: number;
+  lineAcquisitionCostCents: number;
+};
+
+export type PurchaseReceiveCommand = {
+  operationId: string;
+  purchaseReceiptId: string;
+  supplierId: string;
+  receivedAtUtc: string;
+  externalReference: string | null;
+  notes: string | null;
+  lines: PurchaseReceiveLineCommand[];
+};
+
+export type WasteReason = "Waste" | "Spoilage" | "Damage" | "Expired";
+
+export type WasteLineCommand = StockTarget & {
+  lineId: string;
+  quantityWastedX1000: number;
+};
+
+export type WasteCommitCommand = {
+  operationId: string;
+  wasteEventId: string;
+  occurredAtUtc: string;
+  reason: WasteReason;
+  notes: string | null;
+  lines: WasteLineCommand[];
+};
+
+export async function readLiveIngredients(): Promise<LiveIngredient[]> {
+  const res = await hostRequest<{ ingredients: LiveIngredient[] }>(
+    "/api/cafe/ingredients-recipes",
+    undefined,
+    "GET",
+  );
+  return Array.isArray(res?.ingredients) ? res.ingredients : [];
+}
+
+export async function readLiveSuppliers(): Promise<LiveSupplier[]> {
+  const res = await hostRequest<LiveSupplier[]>("/api/cafe/suppliers", undefined, "GET");
+  return Array.isArray(res) ? res : [];
+}
+
+export async function readLiveLowStock(): Promise<LiveLowStockItem[]> {
+  const res = await hostRequest<LiveLowStockItem[]>(
+    "/api/cafe/inventory/low-stock",
+    undefined,
+    "GET",
+  );
+  return Array.isArray(res) ? res : [];
+}
+
+export async function commitPurchase(command: PurchaseReceiveCommand) {
+  id(command.operationId);
+  id(command.purchaseReceiptId);
+  id(command.supplierId);
+  instant(command.receivedAtUtc);
+  if (!command.lines.length) throw new Error("At least one purchase line required.");
+  for (const line of command.lines) {
+    target(line);
+    id(line.lineId);
+    if (!Number.isSafeInteger(line.quantityReceivedX1000) || line.quantityReceivedX1000 <= 0) {
+      throw new Error("Positive integer purchase quantity required.");
+    }
+    if (!Number.isSafeInteger(line.lineAcquisitionCostCents) || line.lineAcquisitionCostCents < 0) {
+      throw new Error("Nonnegative integer line acquisition cost required.");
+    }
+  }
+  return hostRequest<InventoryCommitResult<unknown>>(
+    "/api/cafe/purchases/receive",
+    command,
+    "POST",
+    command.operationId,
+  );
+}
+
+export async function commitWaste(command: WasteCommitCommand) {
+  id(command.operationId);
+  id(command.wasteEventId);
+  instant(command.occurredAtUtc);
+  if (!command.lines.length) throw new Error("At least one waste line required.");
+  for (const line of command.lines) {
+    target(line);
+    id(line.lineId);
+    if (!Number.isSafeInteger(line.quantityWastedX1000) || line.quantityWastedX1000 <= 0) {
+      throw new Error("Positive integer waste quantity required.");
+    }
+  }
+  return hostRequest<InventoryCommitResult<unknown>>(
+    "/api/cafe/inventory/waste",
+    command,
+    "POST",
+    command.operationId,
+  );
+}

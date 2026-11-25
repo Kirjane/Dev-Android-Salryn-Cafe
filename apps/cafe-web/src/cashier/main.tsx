@@ -7,10 +7,19 @@ import { WorkstationApp } from "./WorkstationApp";
 export const C1_RECOVERY_ROUTE_ENABLED =
   import.meta.env.DEV || import.meta.env.VITE_ENABLE_C1_RECOVERY === "1";
 
-// Explicit development-only integration route; existing default routes are unchanged.
-const R3_LIVE_REPORTS_ENABLED = import.meta.env.DEV && import.meta.env.VITE_ENABLE_R3_LIVE_REPORTS === "1";
+// Explicit development-only integration routes; existing default routes are unchanged.
+const R3_LIVE_REPORTS_ENABLED =
+  import.meta.env.DEV &&
+  (import.meta.env.VITE_ENABLE_R3_LIVE_REPORTS === "1" || import.meta.env.VITE_ENABLE_R3_LIVE_MODULES === "1");
 const R3LiveReportsPage = R3_LIVE_REPORTS_ENABLED
   ? lazy(() => import("../r3/live/R3LiveReportsPage").then(m => ({default:m.R3LiveReportsPage})))
+  : null;
+
+const R3_LIVE_INVENTORY_ENABLED =
+  import.meta.env.DEV &&
+  (import.meta.env.VITE_ENABLE_R3_LIVE_INVENTORY === "1" || import.meta.env.VITE_ENABLE_R3_LIVE_MODULES === "1");
+const R3LiveInventoryPage = R3_LIVE_INVENTORY_ENABLED
+  ? lazy(() => import("../r3/live/R3LiveInventoryPage").then(m => ({default:m.R3LiveInventoryPage})))
   : null;
 
 const CafeMenuManagerRecoveryPage = C1_RECOVERY_ROUTE_ENABLED
@@ -74,6 +83,10 @@ function CafeRootApp() {
 
   if (R3_LIVE_REPORTS_ENABLED && R3LiveReportsPage && pathname.replace(/\/+$/, "") === "/cafe/integration/r3/reports") {
     return <Suspense fallback={<div style={{padding:24}}>Loading live R3 reports...</div>}><R3LiveReportsPage /></Suspense>;
+  }
+
+  if (R3_LIVE_INVENTORY_ENABLED && R3LiveInventoryPage && pathname.replace(/\/+$/, "") === "/cafe/integration/r3/inventory") {
+    return <Suspense fallback={<div style={{padding:24}}>Loading live R3 inventory...</div>}><R3LiveInventoryPage /></Suspense>;
   }
 
   const route = resolveCafeRoute(pathname);
