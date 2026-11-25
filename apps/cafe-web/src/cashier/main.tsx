@@ -29,6 +29,13 @@ const R3LiveBookingsDeliveriesPage = R3_LIVE_BOOKINGS_ENABLED
   ? lazy(() => import("../r3/live/R3LiveBookingsDeliveriesPage").then(m => ({default:m.R3LiveBookingsDeliveriesPage})))
   : null;
 
+const R3_LIVE_CASH_ENABLED =
+  import.meta.env.DEV &&
+  (import.meta.env.VITE_ENABLE_R3_LIVE_CASH === "1" || import.meta.env.VITE_ENABLE_R3_LIVE_MODULES === "1");
+const R3LiveCashShiftsPage = R3_LIVE_CASH_ENABLED
+  ? lazy(() => import("../r3/live/R3LiveCashShiftsPage").then(m => ({default:m.R3LiveCashShiftsPage})))
+  : null;
+
 const CafeMenuManagerRecoveryPage = C1_RECOVERY_ROUTE_ENABLED
   ? lazy(() =>
       import("../recovery/CafeMenuManagerRecovery").then((m) => ({
@@ -102,6 +109,10 @@ function CafeRootApp() {
 
   if (R3_LIVE_BOOKINGS_ENABLED && R3LiveBookingsDeliveriesPage && pathname.replace(/\/+$/, "") === "/cafe/integration/r3/deliveries") {
     return <Suspense fallback={<div style={{padding:24}}>Loading live R3 deliveries...</div>}><R3LiveBookingsDeliveriesPage initialTab="deliveries" /></Suspense>;
+  }
+
+  if (R3_LIVE_CASH_ENABLED && R3LiveCashShiftsPage && pathname.replace(/\/+$/, "") === "/cafe/integration/r3/cash-shifts") {
+    return <Suspense fallback={<div style={{padding:24}}>Loading live R3 cash & shifts...</div>}><R3LiveCashShiftsPage /></Suspense>;
   }
 
   const route = resolveCafeRoute(pathname);

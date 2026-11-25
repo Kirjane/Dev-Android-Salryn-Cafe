@@ -41,6 +41,11 @@ if (args.Any(a => string.Equals(a, "--r3-bookings-deliveries-proof", StringCompa
     await R3BookingsDeliveriesProof.RunAsync().ConfigureAwait(false);
     return;
 }
+if (args.Any(a => string.Equals(a, "--r3-cash-order-proof", StringComparison.OrdinalIgnoreCase)))
+{
+    await R3CashOrderHardeningProof.RunAsync().ConfigureAwait(false);
+    return;
+}
 if (args.Any(a => string.Equals(a, "--c1-recovery-proof", StringComparison.OrdinalIgnoreCase)))
 {
     await RunC1RecoveryProofAsync().ConfigureAwait(false);
