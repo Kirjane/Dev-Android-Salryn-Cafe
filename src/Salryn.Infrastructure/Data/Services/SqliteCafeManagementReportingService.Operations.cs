@@ -556,11 +556,10 @@ public sealed partial class SqliteCafeManagementReportingService
                 """,
                 ("$store", storeId.ToString("D")));
 
-        if (!Guid.TryParse(
-                revision,
-                out Guid revisionId))
+        if (string.IsNullOrWhiteSpace(revision))
             return Array.Empty<CafeReportRecipeCostRow>();
 
+        string revisionId = revision.Trim();
         List<RecipeHeader> recipes = new();
 
         using (SqliteCommand command = connection.CreateCommand())
@@ -574,7 +573,7 @@ public sealed partial class SqliteCafeManagementReportingService
                 """;
             command.Parameters.AddWithValue(
                 "$revision",
-                revisionId.ToString("D"));
+                revisionId);
 
             using SqliteDataReader reader =
                 command.ExecuteReader();
@@ -583,7 +582,7 @@ public sealed partial class SqliteCafeManagementReportingService
             {
                 recipes.Add(
                     new(
-                        Guid.Parse(reader.GetString(0)),
+                        reader.GetString(0),
                         reader.GetString(1),
                         reader.GetInt64(2)));
             }
@@ -607,10 +606,10 @@ public sealed partial class SqliteCafeManagementReportingService
                     """;
                 command.Parameters.AddWithValue(
                     "$revision",
-                    revisionId.ToString("D"));
+                    revisionId);
                 command.Parameters.AddWithValue(
                     "$recipe",
-                    recipe.RecipeId.ToString("D"));
+                    recipe.RecipeId);
 
                 using SqliteDataReader reader =
                     command.ExecuteReader();
@@ -957,7 +956,7 @@ public sealed partial class SqliteCafeManagementReportingService
         long QuantityX1000);
 
     private sealed record RecipeHeader(
-        Guid RecipeId,
+        string RecipeId,
         string Name,
         long YieldX1000);
 

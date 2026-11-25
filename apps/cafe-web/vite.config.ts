@@ -2,6 +2,8 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
 
+const hostProxyTarget = process.env.VITE_HOST_PROXY_TARGET ?? "http://127.0.0.1:5399";
+
 export default defineConfig({
   base: "/cafe/",
   plugins: [react()],
@@ -19,8 +21,8 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 5173,
     proxy: {
-      "/api": "http://127.0.0.1:5399",
-      "/health": "http://127.0.0.1:5399",
+      "/api": hostProxyTarget,
+      "/health": hostProxyTarget,
     },
     fs: {
       allow: [path.resolve(__dirname, "../..")],

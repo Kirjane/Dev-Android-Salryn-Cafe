@@ -217,4 +217,58 @@ describe("Canonical C1 recovery route and idempotent adapter", () => {
       expect(screen.getByText("C1 recovery route blocked on non-disposable host")).toBeInTheDocument();
     });
   });
+
+  it("completes catalog refresh and resets inputs before announcing success so rapid consecutive writes never lose input", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ id: "cat-1", name: "Coffee", isActive: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    let resolveRefresh!: (value: MenuCatalogDraft) => void;
+    const onRefresh = vi.fn(
+      () =>
+        new Promise<MenuCatalogDraft>((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    );
+
+    const user = userEvent.setup();
+    render(
+      <CafeMenuManagerRecovery
+        catalog={makeEmptyCatalog()}
+        units={[{ id: "u-1", name: "Piece", isActive: true }]}
+        onRefresh={onRefresh}
+      />,
+    );
+
+    const categoryInput = screen.getByLabelText(/Category name/i);
+    await user.type(categoryInput, "Coffee");
+    await user.click(screen.getByRole("button", { name: "Add category" }));
+
+    await waitFor(() => expect(onRefresh).toHaveBeenCalledOnce());
+    // While refresh is still pending, success banner must NOT appear and submit stays locked
+    expect(screen.queryByText("Menu category saved.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add category" })).toBeDisabled();
+
+    await act(async () => {
+      resolveRefresh({
+        ...makeEmptyCatalog(),
+        categories: [
+          { id: "cat-seed-1", name: "Uncategorized", isActive: true },
+          { id: "cat-1", name: "Coffee", isActive: true },
+        ],
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Menu category saved.")).toBeInTheDocument();
+    });
+    // Input was cleared before/when success appeared, so immediate next entry will not be wiped
+    expect(categoryInput).toHaveValue("");
+  });
 });

@@ -872,8 +872,7 @@ body {
   left: 0;
   right: 0;
   bottom: -1px;
-  height: 2.5px;
-  background: var(--r3-accent);
+  border-block-end: 3px solid var(--r3-accent);
   border-radius: 2px 2px 0 0;
 }
 
@@ -1369,6 +1368,29 @@ dialog.r3-drawer[open] {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+}
+
+.r3-waterfall-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(120px, 1fr) 132px;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 10px;
+  border-radius: 8px;
+}
+.r3-waterfall-row--bold {
+  padding: 9px 10px;
+  background: var(--r3-surface-subtle);
+}
+@media (max-width: 640px) {
+  .r3-waterfall-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 10px;
+  }
+  .r3-waterfall-row .r3-stock-bar {
+    grid-column: 1 / -1;
+    order: 3;
+  }
 }
 
 /* ---------- Toast ---------- */

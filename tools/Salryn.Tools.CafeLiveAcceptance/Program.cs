@@ -18,6 +18,15 @@ if (args.Any(a => string.Equals(a, "--r3-host-contract-proof", StringComparison.
     await R3HostContractProof.RunAsync().ConfigureAwait(false);
     return;
 }
+if (args.Any(a => string.Equals(a, "--r3-reports-browser-proof", StringComparison.OrdinalIgnoreCase)))
+{
+    var repoDir = ResolveRepositoryRoot();
+    string pwPkg = ResolvePlaywrightPackageJson(repoDir);
+    string axeFile = Path.Combine(repoDir.FullName, "apps", "cafe-web", "node_modules", "axe-core", "axe.min.js");
+    if (!File.Exists(axeFile)) throw new InvalidOperationException("axe-core script not found at: " + axeFile);
+    await R3ReportsBrowserProof.RunAsync(repoDir, pwPkg, axeFile).ConfigureAwait(false);
+    return;
+}
 if (args.Any(a => string.Equals(a, "--c1-recovery-proof", StringComparison.OrdinalIgnoreCase)))
 {
     await RunC1RecoveryProofAsync().ConfigureAwait(false);

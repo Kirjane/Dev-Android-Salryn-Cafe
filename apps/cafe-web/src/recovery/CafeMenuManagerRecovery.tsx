@@ -105,7 +105,8 @@ export function CafeMenuManagerRecovery({
   onRefresh,
 }: CafeMenuManagerRecoveryProps) {
   const op = useBackofficeOperation("c1-menu-recovery");
-  const busy = op.inFlight;
+  const [refreshing, setRefreshing] = useState(false);
+  const busy = op.inFlight || refreshing;
 
   const [message, setMessage] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -188,10 +189,15 @@ export function CafeMenuManagerRecovery({
       return value;
     }, intentKey);
     if (succeeded) {
-      setMessage(success);
-      const refreshed = await onRefresh();
-      if (onSuccess) {
-        onSuccess(result as T, refreshed);
+      setRefreshing(true);
+      try {
+        const refreshed = await onRefresh();
+        if (onSuccess) {
+          onSuccess(result as T, refreshed);
+        }
+        setMessage(success);
+      } finally {
+        setRefreshing(false);
       }
     }
   }

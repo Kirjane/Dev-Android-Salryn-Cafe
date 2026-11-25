@@ -108,9 +108,9 @@ public sealed record CafeReportInventorySummary(
     CafeReportValuationCoverage Valuation);
 
 public sealed record CafeReportRecipeCostRow(
-    Guid RecipeId,
+    string RecipeId,
     string RecipeName,
-    Guid RecipeBookRevisionId,
+    string RecipeBookRevisionId,
     long YieldX1000,
     long KnownCostCents,
     string CostCoverage,

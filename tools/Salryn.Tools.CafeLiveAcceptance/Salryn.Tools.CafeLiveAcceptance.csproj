@@ -3,4 +3,4 @@
   <ItemGroup><ProjectReference Include="../../src/Salryn.Api.Local/Salryn.Api.Local.csproj" />
     <Compile Include="../../tests/Salryn.Cafe.I6ATests/CanonicalFixtures/C4ProofDatabase.cs" Link="Fixtures/C4ProofDatabase.cs" />
     <Compile Include="../../tests/Salryn.Cafe.I6ATests/CanonicalFixtures/C4ProofIds.cs" Link="Fixtures/C4ProofIds.cs" /></ItemGroup>
-<ItemGroup><None Include="browser.mjs" CopyToOutputDirectory="PreserveNewest" /><None Include="c1-recovery-browser.mjs" CopyToOutputDirectory="PreserveNewest" /></ItemGroup></Project>
+<ItemGroup><None Include="browser.mjs" CopyToOutputDirectory="PreserveNewest" /><None Include="c1-recovery-browser.mjs" CopyToOutputDirectory="PreserveNewest" /><None Include="r3-reports-browser.mjs" CopyToOutputDirectory="PreserveNewest" /></ItemGroup></Project>
