@@ -3,6 +3,7 @@ import { hostRequest } from "../../api/hostClient";
 import {
   createBooking,
   createDelivery,
+  readBookingCustomers,
   refundBookingDeposit,
 } from "./bookingDeliveryContracts";
 
@@ -103,18 +104,28 @@ describe("bookingDeliveryContracts (INT-03 / INT-04 / INT-05)", () => {
     expect(mockedHostRequest).not.toHaveBeenCalled();
   });
 
+  it("maps nested ReceivableCustomerBalance objects from GET /api/cafe/bookings/customers", async () => {
+    mockedHostRequest.mockResolvedValue([
+      {
+        customer: { id: G4, fullName: "Ana Reyes", phone: "09171234567" },
+        balanceCents: 2500,
+      },
+    ]);
+
+    const customers = await readBookingCustomers();
+    expect(customers).toEqual([
+      { customerId: G4, fullName: "Ana Reyes", phoneNumber: "09171234567" },
+    ]);
+  });
+
   it("dispatches order-bound delivery with canonical orderId and Idempotency-Key", async () => {
     mockedHostRequest.mockResolvedValue({
       deliveryId: G2,
       orderId: G3,
-      storeId: G4,
       version: 1,
       currentRevisionId: G5,
       status: "Pending",
-      createdByUserId: G1,
-      createdAtUtc: NOW,
-      updatedAtUtc: NOW,
-      terminalReason: null,
+      idempotent: false,
     });
 
     const res = await createDelivery({

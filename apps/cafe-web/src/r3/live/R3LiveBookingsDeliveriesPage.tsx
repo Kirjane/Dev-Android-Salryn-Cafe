@@ -26,6 +26,7 @@ import {
   type CafeBookingDepositMutationResult,
   type CafeBookingMutationResult,
   type CafeBookingSummary,
+  type CafeDeliveryMutationResult,
   type CafeDeliverySummary,
   type CreateBookingCommand,
   type CreateDeliveryCommand,
@@ -109,7 +110,7 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings" }: Props) {
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [deliveryFeePhp, setDeliveryFeePhp] = useState("50.00");
   const [deliveryMessage, setDeliveryMessage] = useState<string | null>(null);
-  const createDeliveryIntent = useDurableIntent<CreateDeliveryCommand, CafeDeliverySummary>("delivery-create");
+  const createDeliveryIntent = useDurableIntent<CreateDeliveryCommand, CafeDeliveryMutationResult>("delivery-create");
 
   const tabRefs = useRef<Partial<Record<TabId, HTMLButtonElement | null>>>({});
 
@@ -151,6 +152,8 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings" }: Props) {
       if (firstItem) setProductId((prev) => prev || firstItem.productId);
       if (bkList.length > 0) setDepositBookingId((prev) => prev || bkList[0].bookingId);
       if (eligibleOrders.length > 0) setDeliveryOrderId((prev) => prev || eligibleOrders[0].orderId);
+      if (!canViewBookings && canViewDeliveries) setTab("deliveries");
+      else if (canViewBookings && !canViewDeliveries) setTab("bookings");
     } catch (err) {
       setAccessError(err instanceof Error ? err.message : "Live Bookings & Deliveries unavailable.");
     } finally {
@@ -303,7 +306,7 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings" }: Props) {
 
   const handleRefundLastDeposit = async () => {
     setBookingMessage(null);
-    if (!lastReceivedDeposit || !selectedBooking) {
+    if (!lastReceivedDeposit) {
       setBookingMessage("No received deposit fact available to allocate for refund.");
       return;
     }
@@ -320,7 +323,7 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings" }: Props) {
           operationId: crypto.randomUUID(),
           depositFactId: crypto.randomUUID(),
           cashMovementId: crypto.randomUUID(),
-          bookingRevisionId: selectedBooking.currentRevisionId,
+          bookingRevisionId: lastReceivedDeposit.bookingRevisionId,
           amountCents: lastReceivedDeposit.amountCents,
           reason: refundReason.trim(),
           reference: `REF-${lastReceivedDeposit.depositFactId.slice(0, 8)}`,
@@ -548,7 +551,7 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings" }: Props) {
                             Clear Rejected
                           </button>
                         ) : (
-                          <button type="button" className="r3-btn r3-btn--primary r3-btn--sm" onClick={() => void createBookingIntent.retryPending(createBooking).then(() => loadAll())}>
+                          <button type="button" className="r3-btn r3-btn--primary r3-btn--sm" onClick={() => void createBookingIntent.retryPending(createBooking).then((r) => { if (r.ok) void loadAll(); })}>
                             Retry Exact Create
                           </button>
                         )}
@@ -606,7 +609,7 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings" }: Props) {
                             Clear Rejected Deposit
                           </button>
                         ) : (
-                          <button type="button" className="r3-btn r3-btn--primary r3-btn--sm" onClick={() => void depositReceiveIntent.retryPending((p) => receiveBookingDeposit(p.bookingId, p.command)).then(() => loadAll())}>
+                          <button type="button" className="r3-btn r3-btn--primary r3-btn--sm" onClick={() => void depositReceiveIntent.retryPending((p) => receiveBookingDeposit(p.bookingId, p.command)).then((r) => { if (r.ok) { setLastReceivedDeposit(r.value); void loadAll(); } })}>
                             Retry Exact Deposit
                           </button>
                         )}
@@ -623,7 +626,7 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings" }: Props) {
                             Clear Rejected Refund
                           </button>
                         ) : (
-                          <button type="button" className="r3-btn r3-btn--primary r3-btn--sm" onClick={() => void depositRefundIntent.retryPending((p) => refundBookingDeposit(p.bookingId, p.command)).then(() => loadAll())}>
+                          <button type="button" className="r3-btn r3-btn--primary r3-btn--sm" onClick={() => void depositRefundIntent.retryPending((p) => refundBookingDeposit(p.bookingId, p.command)).then((r) => { if (r.ok) { setLastReceivedDeposit(null); void loadAll(); } })}>
                             Retry Exact Refund
                           </button>
                         )}
@@ -749,7 +752,7 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings" }: Props) {
                             Clear Rejected Delivery
                           </button>
                         ) : (
-                          <button type="button" className="r3-btn r3-btn--primary r3-btn--sm" onClick={() => void createDeliveryIntent.retryPending(createDelivery).then(() => loadAll())}>
+                          <button type="button" className="r3-btn r3-btn--primary r3-btn--sm" onClick={() => void createDeliveryIntent.retryPending(createDelivery).then((r) => { if (r.ok) void loadAll(); })}>
                             Retry Exact Delivery
                           </button>
                         )}

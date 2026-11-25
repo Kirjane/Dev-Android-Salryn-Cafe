@@ -93,10 +93,9 @@ export type CafeBookingSummary = {
   bookingMode: BookingMode;
   eventStartUtc: string;
   eventEndUtc: string | null;
-  eventName?: string;
   depositRequirementCents?: number;
-  depositReceivedCents?: number;
-  depositRefundedCents?: number;
+  depositReceivedTotalCents?: number;
+  depositRefundedTotalCents?: number;
 };
 
 export type CafeBookingMutationResult = {
@@ -128,6 +127,15 @@ export type CafeDeliverySummary = {
   createdAtUtc: string;
   updatedAtUtc: string;
   terminalReason: string | null;
+};
+
+export type CafeDeliveryMutationResult = {
+  deliveryId: string;
+  orderId: string;
+  version: number;
+  currentRevisionId: string;
+  status: DeliveryStatus;
+  idempotent: boolean;
 };
 
 export type CreateDeliveryCommand = {
@@ -178,9 +186,33 @@ export async function readLiveBookings(): Promise<CafeBookingSummary[]> {
   return Array.isArray(res) ? res : [];
 }
 
+type ReceivableCustomerBalanceDto = {
+  customer?: {
+    id?: string;
+    fullName?: string;
+    phone?: string | null;
+  };
+  customerId?: string;
+  fullName?: string;
+  phoneNumber?: string | null;
+};
+
 export async function readBookingCustomers(): Promise<BookingCustomerOption[]> {
-  const res = await hostRequest<BookingCustomerOption[]>("/api/cafe/bookings/customers", undefined, "GET");
-  return Array.isArray(res) ? res : [];
+  const res = await hostRequest<ReceivableCustomerBalanceDto[]>("/api/cafe/bookings/customers", undefined, "GET");
+  if (!Array.isArray(res)) return [];
+  const options: BookingCustomerOption[] = [];
+  for (const row of res) {
+    const id = row?.customer?.id ?? row?.customerId;
+    const name = row?.customer?.fullName ?? row?.fullName;
+    if (typeof id === "string" && id && typeof name === "string" && name) {
+      options.push({
+        customerId: id,
+        fullName: name,
+        phoneNumber: row?.customer?.phone ?? row?.phoneNumber ?? null,
+      });
+    }
+  }
+  return options;
 }
 
 export async function createBooking(command: CreateBookingCommand): Promise<CafeBookingMutationResult> {
@@ -299,7 +331,7 @@ export async function readLiveDeliveries(): Promise<CafeDeliverySummary[]> {
   return Array.isArray(res) ? res : [];
 }
 
-export async function createDelivery(command: CreateDeliveryCommand): Promise<CafeDeliverySummary> {
+export async function createDelivery(command: CreateDeliveryCommand): Promise<CafeDeliveryMutationResult> {
   requireGuid(command.operationId, "operationId");
   requireGuid(command.deliveryId, "deliveryId");
   requireGuid(command.orderId, "orderId");
@@ -310,7 +342,7 @@ export async function createDelivery(command: CreateDeliveryCommand): Promise<Ca
   if (!Number.isSafeInteger(command.deliveryFeeCents) || command.deliveryFeeCents < 0) {
     throw new Error("deliveryFeeCents must be a nonnegative integer.");
   }
-  return hostRequest<CafeDeliverySummary>(
+  return hostRequest<CafeDeliveryMutationResult>(
     "/api/cafe/deliveries",
     command,
     "POST",
@@ -321,14 +353,14 @@ export async function createDelivery(command: CreateDeliveryCommand): Promise<Ca
 export async function dispatchDelivery(
   deliveryId: string,
   command: AdvanceDeliveryCommand,
-): Promise<CafeDeliverySummary> {
+): Promise<CafeDeliveryMutationResult> {
   requireGuid(deliveryId, "deliveryId");
   requireGuid(command.operationId, "operationId");
   requireInstant(command.occurredAtUtc, "occurredAtUtc");
   if (!Number.isSafeInteger(command.expectedVersion) || command.expectedVersion <= 0) {
     throw new Error("expectedVersion must be a positive integer.");
   }
-  return hostRequest<CafeDeliverySummary>(
+  return hostRequest<CafeDeliveryMutationResult>(
     `/api/cafe/deliveries/${deliveryId}/dispatch`,
     command,
     "POST",
@@ -339,7 +371,7 @@ export async function dispatchDelivery(
 export async function resolveDelivery(
   deliveryId: string,
   command: ResolveDeliveryCommand,
-): Promise<CafeDeliverySummary> {
+): Promise<CafeDeliveryMutationResult> {
   requireGuid(deliveryId, "deliveryId");
   requireGuid(command.operationId, "operationId");
   requireInstant(command.occurredAtUtc, "occurredAtUtc");
@@ -349,7 +381,7 @@ export async function resolveDelivery(
   if (!Number.isSafeInteger(command.expectedVersion) || command.expectedVersion <= 0) {
     throw new Error("expectedVersion must be a positive integer.");
   }
-  return hostRequest<CafeDeliverySummary>(
+  return hostRequest<CafeDeliveryMutationResult>(
     `/api/cafe/deliveries/${deliveryId}/resolve`,
     command,
     "POST",
