@@ -563,8 +563,8 @@ export function R3LiveBackupLicensePanel() {
 
   const handleRestore = async (e: FormEvent) => {
     e.preventDefault();
-    if (!restoreTargetId || restoreConfirm.trim() !== "RESTORE") {
-      setError("Type exact RESTORE confirmation to restore a Host backup.");
+    if (!restoreTargetId || restoreConfirm.trim() !== "RESTORE SALRYN BACKUP") {
+      setError("Type exact confirmation phrase RESTORE SALRYN BACKUP to restore a Host backup.");
       return;
     }
     setBusy(true);
@@ -647,8 +647,8 @@ export function R3LiveBackupLicensePanel() {
           <form onSubmit={(e) => void handleRestore(e)} style={{ display: "grid", gap: 10, maxWidth: 460, marginTop: 14 }}>
             <div className="r3-text-sm">Selected backup: <code>{restoreTargetId}</code></div>
             <label>
-              <div className="r3-text-xs r3-text-muted">Type RESTORE to confirm destructive overwrite</div>
-              <input className="r3-input" value={restoreConfirm} onChange={(e) => setRestoreConfirm(e.target.value)} placeholder="RESTORE" />
+              <div className="r3-text-xs r3-text-muted">Type RESTORE SALRYN BACKUP to confirm destructive overwrite</div>
+              <input className="r3-input" value={restoreConfirm} onChange={(e) => setRestoreConfirm(e.target.value)} placeholder="RESTORE SALRYN BACKUP" />
             </label>
             <div>
               <button type="submit" className="r3-btn r3-btn--primary" disabled={busy}>Confirm Restore</button>

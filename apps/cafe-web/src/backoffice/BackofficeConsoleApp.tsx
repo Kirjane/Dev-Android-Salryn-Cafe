@@ -1882,7 +1882,7 @@ function BackofficeConsoleInner({
             <Dialog
               open={restoreTarget !== null}
               title={`Restore Backup · ${restoreTarget?.backupId ?? ""}`}
-              description="Type RESTORE in uppercase to replace the active local database with this verified package."
+              description="Type RESTORE SALRYN BACKUP in uppercase to replace the active local database with this verified package."
               onClose={() => setRestoreTarget(null)}
               footer={
                 <>
@@ -1891,7 +1891,7 @@ function BackofficeConsoleInner({
                   </Button>
                   <Button
                     variant="danger"
-                    disabled={restoreConfirmText.trim() !== "RESTORE" || hostOpsOp.inFlight}
+                    disabled={restoreConfirmText.trim() !== "RESTORE SALRYN BACKUP" || hostOpsOp.inFlight}
                     loading={hostOpsOp.inFlight}
                     onClick={() => {
                       if (!restoreTarget) return;
@@ -1912,8 +1912,8 @@ function BackofficeConsoleInner({
                 </>
               }
             >
-              <FormField label='Confirmation ("RESTORE")' required>
-                <TextInput value={restoreConfirmText} onChange={(e) => setRestoreConfirmText(e.target.value)} placeholder="RESTORE" />
+              <FormField label='Confirmation ("RESTORE SALRYN BACKUP")' required>
+                <TextInput value={restoreConfirmText} onChange={(e) => setRestoreConfirmText(e.target.value)} placeholder="RESTORE SALRYN BACKUP" />
               </FormField>
             </Dialog>
           </div>

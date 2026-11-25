@@ -482,10 +482,10 @@ describe("Salryn Cafe Back-Office & Central Owner Console (Live Contracts)", () 
     const restoreBtn = within(dialog).getByRole("button", { name: /Restore Database/i });
     expect(restoreBtn).toBeDisabled();
 
-    await user.type(within(dialog).getByLabelText(/Confirmation/i), "RESTORE");
+    await user.type(within(dialog).getByLabelText(/Confirmation/i), "RESTORE SALRYN BACKUP");
     expect(restoreBtn).toBeEnabled();
     await user.click(restoreBtn);
-    await waitFor(() => expect(restoreBackup).toHaveBeenCalledWith("bkp-20261122-010000", "RESTORE"));
+    await waitFor(() => expect(restoreBackup).toHaveBeenCalledWith("bkp-20261122-010000", "RESTORE SALRYN BACKUP"));
   });
 
 
