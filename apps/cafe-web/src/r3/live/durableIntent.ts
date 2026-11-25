@@ -104,9 +104,9 @@ export function useDurableIntent<TPayload, TResult>(scope: string) {
   const clearPending = useCallback(
     (allowUnknownClear = false) => {
       const current = readStoredIntent<TPayload>(scope);
-      if (current && current.status === "unknown" && !allowUnknownClear) {
+      if (current && (current.status === "unknown" || current.status === "prepared") && !allowUnknownClear) {
         throw new DurableIntentFenceError(
-          "Cannot discard an unknown-outcome request without explicit verification. Retry the exact prepared request first.",
+          "Cannot discard an unresolved request without explicit verification. Retry the exact prepared request first.",
         );
       }
       clearStoredIntent(scope);

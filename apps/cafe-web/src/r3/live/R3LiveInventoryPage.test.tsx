@@ -30,6 +30,7 @@ const ADMIN_SESSION = {
     permissions: [
       "Inventory.View",
       "Ingredients.View",
+      "Recipes.View",
       "Inventory.Adjust",
       "Inventory.Count",
       "Purchasing.Receive",

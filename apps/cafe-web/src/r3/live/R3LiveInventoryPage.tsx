@@ -171,7 +171,9 @@ function R3LiveInventoryContent() {
       setSession(verified);
 
       const [ingList, lowList, supList] = await Promise.all([
-        hasPerm(verified, "Ingredients.View") ? readLiveIngredients() : Promise.resolve([]),
+        hasPerm(verified, "Ingredients.View") && hasPerm(verified, "Recipes.View")
+          ? readLiveIngredients()
+          : Promise.resolve([]),
         hasPerm(verified, "Inventory.View") ? readLiveLowStock() : Promise.resolve([]),
         hasPerm(verified, "Suppliers.View") ? readLiveSuppliers() : Promise.resolve([]),
       ]);
@@ -509,6 +511,22 @@ function R3LiveInventoryContent() {
     }
   };
 
+  const handleReceiveRetry = async () => {
+    setRecMessage(null);
+    const res = await purchaseIntent.retryPending(commitPurchase);
+    if (res.ok) {
+      setRecQtyInput("");
+      setRecCostInput("");
+      setRecRef("");
+      await loadAll();
+      const msg = "Purchase receipt retry confirmed on Host inventory ledger.";
+      setRecMessage(msg);
+      pushToast(msg);
+    } else {
+      setRecMessage(`${res.code ? `[${res.code}] ` : ""}${res.message}`);
+    }
+  };
+
   // --- Record Waste ---
   const handleWasteSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -551,6 +569,21 @@ function R3LiveInventoryContent() {
       setWasteNotes("");
       await loadAll();
       const msg = "Waste event committed to Host inventory ledger.";
+      setWasteMessage(msg);
+      pushToast(msg);
+    } else {
+      setWasteMessage(`${res.code ? `[${res.code}] ` : ""}${res.message}`);
+    }
+  };
+
+  const handleWasteRetry = async () => {
+    setWasteMessage(null);
+    const res = await wasteIntent.retryPending(commitWaste);
+    if (res.ok) {
+      setWasteQtyInput("");
+      setWasteNotes("");
+      await loadAll();
+      const msg = "Waste event retry confirmed on Host inventory ledger.";
       setWasteMessage(msg);
       pushToast(msg);
     } else {
@@ -1094,6 +1127,48 @@ function R3LiveInventoryContent() {
                     <div className="r3-card-subtitle">Commits directly to POST /api/cafe/purchases/receive</div>
                   </div>
                 </div>
+                {purchaseIntent.pending && (
+                  <div
+                    className={`r3-alert ${purchaseIntent.pending.status === "rejected" ? "r3-alert--danger" : "r3-alert--warn"}`}
+                    role="alert"
+                    style={{ marginBottom: 16 }}
+                  >
+                    <div className="r3-alert-body">
+                      <div className="r3-alert-title">
+                        {purchaseIntent.pending.status === "rejected"
+                          ? `Purchase receipt rejected (${purchaseIntent.pending.lastErrorCode ?? "HTTP " + purchaseIntent.pending.lastHttpStatus})`
+                          : "Pending purchase receipt has an unresolved outcome"}
+                      </div>
+                      <div>
+                        Operation ID: <code>{purchaseIntent.pending.payload.operationId}</code>
+                      </div>
+                      {purchaseIntent.pending.lastErrorMessage && <div>{purchaseIntent.pending.lastErrorMessage}</div>}
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      {purchaseIntent.pending.status !== "rejected" ? (
+                        <button
+                          type="button"
+                          className="r3-btn r3-btn--primary r3-btn--sm"
+                          onClick={() => void handleReceiveRetry()}
+                          disabled={purchaseIntent.inFlight}
+                        >
+                          Retry Exact Purchase
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="r3-btn r3-btn--outline r3-btn--sm"
+                          onClick={() => {
+                            purchaseIntent.clearPending(false);
+                            setRecMessage("Cleared rejected purchase intent.");
+                          }}
+                        >
+                          Clear Rejected Purchase
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
                 <form onSubmit={(e) => void handleReceiveSubmit(e)} style={{ display: "grid", gap: 12, maxWidth: 560 }}>
                   <label>
                     <div className="r3-text-xs r3-text-muted" style={{ marginBottom: 4 }}>Supplier</div>
@@ -1141,6 +1216,48 @@ function R3LiveInventoryContent() {
                     <div className="r3-card-subtitle">Commits directly to POST /api/cafe/inventory/waste</div>
                   </div>
                 </div>
+                {wasteIntent.pending && (
+                  <div
+                    className={`r3-alert ${wasteIntent.pending.status === "rejected" ? "r3-alert--danger" : "r3-alert--warn"}`}
+                    role="alert"
+                    style={{ marginBottom: 16 }}
+                  >
+                    <div className="r3-alert-body">
+                      <div className="r3-alert-title">
+                        {wasteIntent.pending.status === "rejected"
+                          ? `Waste event rejected (${wasteIntent.pending.lastErrorCode ?? "HTTP " + wasteIntent.pending.lastHttpStatus})`
+                          : "Pending waste event has an unresolved outcome"}
+                      </div>
+                      <div>
+                        Operation ID: <code>{wasteIntent.pending.payload.operationId}</code>
+                      </div>
+                      {wasteIntent.pending.lastErrorMessage && <div>{wasteIntent.pending.lastErrorMessage}</div>}
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      {wasteIntent.pending.status !== "rejected" ? (
+                        <button
+                          type="button"
+                          className="r3-btn r3-btn--primary r3-btn--sm"
+                          onClick={() => void handleWasteRetry()}
+                          disabled={wasteIntent.inFlight}
+                        >
+                          Retry Exact Waste
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="r3-btn r3-btn--outline r3-btn--sm"
+                          onClick={() => {
+                            wasteIntent.clearPending(false);
+                            setWasteMessage("Cleared rejected waste intent.");
+                          }}
+                        >
+                          Clear Rejected Waste
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
                 <form onSubmit={(e) => void handleWasteSubmit(e)} style={{ display: "grid", gap: 12, maxWidth: 560 }}>
                   <label>
                     <div className="r3-text-xs r3-text-muted" style={{ marginBottom: 4 }}>Ingredient</div>
