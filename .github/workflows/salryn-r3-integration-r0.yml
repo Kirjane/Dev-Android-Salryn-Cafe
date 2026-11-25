@@ -1,0 +1,41 @@
+name: R3 bounded integration verification
+on:
+  push:
+    branches: ['workstreams/salryn-r3-live-host-integration-r0']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/cafe-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Default production bundle excludes proof route and standalone transport
+        shell: bash
+        run: |
+          test -d dist/assets
+          if grep -R -l -E '/cafe/integration/r3/reports|standalone-no-backend-sandbox' dist/assets; then
+            echo "Unexpected proof or standalone code in default bundle"
+            exit 1
+          fi
+  host-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Disposable Debug Host and SQLite contract proof
+        run: dotnet run --project tools/Salryn.Tools.CafeLiveAcceptance/Salryn.Tools.CafeLiveAcceptance.csproj -c Debug -- --r3-host-contract-proof

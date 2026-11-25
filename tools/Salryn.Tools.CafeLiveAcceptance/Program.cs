@@ -13,6 +13,11 @@ using Salryn.Infrastructure.Data.Services;
 #if !DEBUG
 throw new InvalidOperationException("This disposable acceptance runner requires Debug. Release licensing is a separate authorized-fixture gate.");
 #else
+if (args.Any(a => string.Equals(a, "--r3-host-contract-proof", StringComparison.OrdinalIgnoreCase)))
+{
+    await R3HostContractProof.RunAsync().ConfigureAwait(false);
+    return;
+}
 if (args.Any(a => string.Equals(a, "--c1-recovery-proof", StringComparison.OrdinalIgnoreCase)))
 {
     await RunC1RecoveryProofAsync().ConfigureAwait(false);
