@@ -22,6 +22,13 @@ const R3LiveInventoryPage = R3_LIVE_INVENTORY_ENABLED
   ? lazy(() => import("../r3/live/R3LiveInventoryPage").then(m => ({default:m.R3LiveInventoryPage})))
   : null;
 
+const R3_LIVE_BOOKINGS_ENABLED =
+  import.meta.env.DEV &&
+  (import.meta.env.VITE_ENABLE_R3_LIVE_BOOKINGS === "1" || import.meta.env.VITE_ENABLE_R3_LIVE_MODULES === "1");
+const R3LiveBookingsDeliveriesPage = R3_LIVE_BOOKINGS_ENABLED
+  ? lazy(() => import("../r3/live/R3LiveBookingsDeliveriesPage").then(m => ({default:m.R3LiveBookingsDeliveriesPage})))
+  : null;
+
 const CafeMenuManagerRecoveryPage = C1_RECOVERY_ROUTE_ENABLED
   ? lazy(() =>
       import("../recovery/CafeMenuManagerRecovery").then((m) => ({
@@ -87,6 +94,14 @@ function CafeRootApp() {
 
   if (R3_LIVE_INVENTORY_ENABLED && R3LiveInventoryPage && pathname.replace(/\/+$/, "") === "/cafe/integration/r3/inventory") {
     return <Suspense fallback={<div style={{padding:24}}>Loading live R3 inventory...</div>}><R3LiveInventoryPage /></Suspense>;
+  }
+
+  if (R3_LIVE_BOOKINGS_ENABLED && R3LiveBookingsDeliveriesPage && pathname.replace(/\/+$/, "") === "/cafe/integration/r3/bookings") {
+    return <Suspense fallback={<div style={{padding:24}}>Loading live R3 bookings...</div>}><R3LiveBookingsDeliveriesPage initialTab="bookings" /></Suspense>;
+  }
+
+  if (R3_LIVE_BOOKINGS_ENABLED && R3LiveBookingsDeliveriesPage && pathname.replace(/\/+$/, "") === "/cafe/integration/r3/deliveries") {
+    return <Suspense fallback={<div style={{padding:24}}>Loading live R3 deliveries...</div>}><R3LiveBookingsDeliveriesPage initialTab="deliveries" /></Suspense>;
   }
 
   const route = resolveCafeRoute(pathname);

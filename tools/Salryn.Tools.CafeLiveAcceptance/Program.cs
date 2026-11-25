@@ -36,6 +36,11 @@ if (args.Any(a => string.Equals(a, "--r3-inventory-browser-proof", StringCompari
     await R3InventoryBrowserProof.RunAsync(repoDir, pwPkg, axeFile).ConfigureAwait(false);
     return;
 }
+if (args.Any(a => string.Equals(a, "--r3-bookings-deliveries-proof", StringComparison.OrdinalIgnoreCase)))
+{
+    await R3BookingsDeliveriesProof.RunAsync().ConfigureAwait(false);
+    return;
+}
 if (args.Any(a => string.Equals(a, "--c1-recovery-proof", StringComparison.OrdinalIgnoreCase)))
 {
     await RunC1RecoveryProofAsync().ConfigureAwait(false);
