@@ -491,8 +491,16 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings", embedded = f
   const handleReviseSelectedBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     setBookingMessage(null);
-    if (!selectedBooking || !menuPub?.revisionId || !productId) {
-      setBookingMessage("Select a non-terminal booking with an active published menu.");
+    const rev =
+      bookingDetail && bookingDetail.booking.bookingId === selectedBooking?.bookingId
+        ? bookingDetail.currentRevision
+        : null;
+    const existingLines = rev?.lines ?? [];
+    const revMenuId = rev?.menuPublicationRevisionId || menuPub?.revisionId || "";
+    if (!selectedBooking || !rev || !revMenuId || existingLines.length === 0) {
+      setBookingMessage(
+        "Current booking revision details and lines must finish loading from Host before revising.",
+      );
       return;
     }
     const nextName = reviseEventName.trim();
@@ -500,7 +508,7 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings", embedded = f
       setBookingMessage("Enter the revised event name.");
       return;
     }
-    let nextDepCents = selectedBooking.depositRequirementCents ?? 0;
+    let nextDepCents = rev.depositRequirementCents ?? selectedBooking.depositRequirementCents ?? 0;
     if (reviseDepositReqPhp.trim()) {
       try {
         nextDepCents = parsePhpToCents(reviseDepositReqPhp);
@@ -509,6 +517,15 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings", embedded = f
         return;
       }
     }
+    const preservedLines = existingLines.map((line, idx) => ({
+      bookingLineId: line.bookingLineId || crypto.randomUUID(),
+      productId: line.productId,
+      variantId: line.variantId ?? null,
+      modifierOptionIds: (line.modifierSelections ?? []).map((m) => m.optionId),
+      quantityX1000: line.quantityX1000,
+      lineNote: line.lineNote ?? null,
+      displayOrder: typeof line.displayOrder === "number" ? line.displayOrder : idx,
+    }));
     const res = await reviseBookingIntent.execute(
       {
         bookingId: selectedBooking.bookingId,
@@ -524,14 +541,24 @@ function R3LiveBookingsDeliveriesContent({ initialTab = "bookings", embedded = f
           expectedVersion: selectedBooking.bookingVersion,
           occurredAtUtc: new Date().toISOString(),
           configuration: {
-            customerId: selectedBooking.customerId,
-            bookingMode: selectedBooking.bookingMode,
+            customerId: rev.customerId || selectedBooking.customerId,
+            bookingMode: rev.bookingMode || selectedBooking.bookingMode,
             eventName: nextName,
-            eventStartUtc: selectedBooking.eventStartUtc,
-            menuPublicationRevisionId: menuPub.revisionId,
+            eventReference: rev.eventReference ?? null,
+            eventStartUtc: rev.eventStartUtc || selectedBooking.eventStartUtc,
+            eventEndUtc: rev.eventEndUtc ?? selectedBooking.eventEndUtc ?? null,
+            location: rev.location ?? null,
+            setupAtUtc: rev.setupAtUtc ?? null,
+            serviceWindowStartUtc: rev.serviceWindowStartUtc ?? null,
+            serviceWindowEndUtc: rev.serviceWindowEndUtc ?? null,
+            headcount: rev.headcount ?? null,
+            packageLabel: rev.packageLabel ?? null,
+            menuPublicationRevisionId: revMenuId,
             depositRequirementCents: nextDepCents,
-            intendedServiceMode: "Takeout",
-            lines: [{ bookingLineId: crypto.randomUUID(), productId, quantityX1000: 2000, displayOrder: 0 }],
+            specialInstructions: rev.specialInstructions ?? null,
+            notes: rev.notes ?? null,
+            intendedServiceMode: rev.intendedServiceMode || "Takeout",
+            lines: preservedLines,
           },
         },
       }),

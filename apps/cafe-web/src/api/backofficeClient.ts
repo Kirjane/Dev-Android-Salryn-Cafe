@@ -145,6 +145,7 @@ export function createLiveBackofficeApi(): BackofficeApi {
         saleId: req.saleId,
         expectedVersion: 0,
         reason: req.reason,
+        occurredAtUtc: req.occurredAtUtc,
         lines: req.lines,
       }),
     resolveRefund: (req) =>
@@ -156,6 +157,7 @@ export function createLiveBackofficeApi(): BackofficeApi {
           expectedVersion: req.expectedVersion,
           approve: req.approve,
           reason: req.reason ?? (req.approve ? "Approved by back-office manager" : "Rejected by back-office manager"),
+          occurredAtUtc: req.occurredAtUtc,
         },
       ),
     commitRefund: (req) =>
@@ -165,6 +167,7 @@ export function createLiveBackofficeApi(): BackofficeApi {
           operationId: req.operationId,
           saleId: req.saleId,
           expectedVersion: req.expectedVersion,
+          occurredAtUtc: req.occurredAtUtc,
           settlements: req.settlements,
         },
       ),
@@ -191,13 +194,18 @@ export function createLiveBackofficeApi(): BackofficeApi {
     recordAttendance: (req) =>
       hostRequest<void>("/api/cafe/attendance", {
         operationId: req.operationId,
+        attendanceEventId: req.attendanceEventId,
         eventType: req.eventType,
+        occurredAtUtc: req.occurredAtUtc,
       }),
     getIncidents: () => hostRequest<IncidentRow[]>("/api/cafe/incidents"),
     createIncident: (req) =>
       hostRequest<void>("/api/cafe/incidents", {
         operationId: req.operationId,
+        incidentId: req.incidentId,
+        revisionId: req.revisionId,
         incidentOccurredAtUtc: req.incidentOccurredAtUtc ?? new Date().toISOString(),
+        occurredAtUtc: req.occurredAtUtc,
         title: req.title,
         description: req.description,
         classification: req.classification,

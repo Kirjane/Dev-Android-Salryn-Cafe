@@ -114,15 +114,57 @@ export type CafeBookingDepositFactSummary = {
   reference: string;
 };
 
+export type CafeBookingModifierSelectionSnapshot = {
+  groupId: string;
+  groupNameSnapshot: string;
+  optionId: string;
+  optionNameSnapshot: string;
+  priceDeltaCents: number;
+  displayOrder: number;
+};
+
+export type CafeBookingLineSnapshot = {
+  bookingLineId: string;
+  productId: string;
+  productNameSnapshot: string;
+  unitNameSnapshot: string;
+  quantityX1000: number;
+  baseUnitPriceCents: number;
+  variantId?: string | null;
+  variantNameSnapshot?: string | null;
+  variantUnitPriceCents?: number | null;
+  quotedUnitPriceCents: number;
+  lineTotalCents: number;
+  displayOrder: number;
+  lineNote?: string | null;
+  modifierSelections?: CafeBookingModifierSelectionSnapshot[] | null;
+};
+
 export type CafeBookingDetail = {
   booking: CafeBookingSummary;
   currentRevision: {
     revisionId: string;
     bookingId: string;
     revisionNumber: number;
+    customerId?: string;
+    bookingMode?: BookingMode;
     eventName: string;
+    eventReference?: string | null;
+    eventStartUtc?: string;
+    eventEndUtc?: string | null;
+    location?: string | null;
+    setupAtUtc?: string | null;
+    serviceWindowStartUtc?: string | null;
+    serviceWindowEndUtc?: string | null;
+    headcount?: number | null;
+    packageLabel?: string | null;
+    menuPublicationRevisionId?: string;
     quotedTotalCents: number;
     depositRequirementCents: number;
+    specialInstructions?: string | null;
+    notes?: string | null;
+    intendedServiceMode?: "DineIn" | "Takeout";
+    lines?: CafeBookingLineSnapshot[] | null;
   };
   depositFacts?: CafeBookingDepositFactSummary[] | null;
 };

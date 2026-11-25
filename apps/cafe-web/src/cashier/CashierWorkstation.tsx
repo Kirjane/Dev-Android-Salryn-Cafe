@@ -865,32 +865,46 @@ export function CashierWorkstation({
                         display: "grid", gap: 6, border: "1px solid var(--salryn-border-strong)",
                         borderRadius: 10, padding: 14, background: "var(--salryn-surface-subtle)",
                       }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: "1.2rem", fontWeight: 800 }}>
-                          <span>Estimated due (before fees)</span>
-                          <span className="salryn-tabular">{paymentPreview.valid ? formatPhp(paymentPreview.dueCents) : "Check amount"}</span>
-                        </div>
-                        {tenderMode !== "AccountsReceivable" ? (
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                            <span>Cash received</span>
-                            <strong className="salryn-tabular">{paymentPreview.valid ? formatPhp(paymentPreview.cashCents) : "—"}</strong>
-                          </div>
-                        ) : null}
-                        {tenderMode === "Cash" && paymentPreview.valid ? (
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontWeight: 800 }}>
-                            <span>{paymentPreview.missingCents ? "Still to collect (estimated)" : "Estimated change (before fees)"}</span>
-                            <span className="salryn-tabular">{formatPhp(paymentPreview.missingCents || paymentPreview.changeCents)}</span>
-                          </div>
-                        ) : null}
-                        {tenderMode !== "Cash" && paymentPreview.valid ? (
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontWeight: 800 }}>
-                            <span>Estimated customer account charge</span>
-                            <span className="salryn-tabular">{formatPhp(paymentPreview.arCents)}</span>
-                          </div>
-                        ) : null}
-                        <p style={{ margin: "2px 0 0", fontSize: 12 }}>
-                          Estimate from saved order lines and discount only. Host-calculated fees,
-                          official totals, and final change are determined by the backend receipt.
-                        </p>
+                        {(() => {
+                          const hasAppliedFees = paymentPreview.feesCents > 0;
+                          return (
+                            <>
+                              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: "1.2rem", fontWeight: 800 }}>
+                                <span>{hasAppliedFees ? "Estimated due (incl. fees)" : "Estimated due (before fees)"}</span>
+                                <span className="salryn-tabular">{paymentPreview.valid ? formatPhp(paymentPreview.dueCents) : "Check amount"}</span>
+                              </div>
+                              {tenderMode !== "AccountsReceivable" ? (
+                                <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                                  <span>Cash received</span>
+                                  <strong className="salryn-tabular">{paymentPreview.valid ? formatPhp(paymentPreview.cashCents) : "—"}</strong>
+                                </div>
+                              ) : null}
+                              {tenderMode === "Cash" && paymentPreview.valid ? (
+                                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontWeight: 800 }}>
+                                  <span>
+                                    {paymentPreview.missingCents
+                                      ? "Still to collect (estimated)"
+                                      : hasAppliedFees
+                                        ? "Estimated change (incl. fees)"
+                                        : "Estimated change (before fees)"}
+                                  </span>
+                                  <span className="salryn-tabular">{formatPhp(paymentPreview.missingCents || paymentPreview.changeCents)}</span>
+                                </div>
+                              ) : null}
+                              {tenderMode !== "Cash" && paymentPreview.valid ? (
+                                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontWeight: 800 }}>
+                                  <span>Estimated customer account charge</span>
+                                  <span className="salryn-tabular">{formatPhp(paymentPreview.arCents)}</span>
+                                </div>
+                              ) : null}
+                              <p style={{ margin: "2px 0 0", fontSize: 12 }}>
+                                {hasAppliedFees
+                                  ? "Estimate includes saved order lines, discount, and entered/attached fees. Official totals and final change are determined by the backend receipt."
+                                  : "Estimate from saved order lines and discount only. Host-calculated fees, official totals, and final change are determined by the backend receipt."}
+                              </p>
+                            </>
+                          );
+                        })()}
                         {!paymentPreview.valid ? <Alert tone="warning" title="Check payment amounts" description="Enter a valid discount and tender amount before confirming." /> : null}
                       </div>
 

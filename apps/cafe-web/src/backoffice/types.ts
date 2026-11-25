@@ -369,6 +369,7 @@ export interface BackofficeApi {
     operationId: string;
     saleId: string;
     reason: string;
+    occurredAtUtc?: string;
     lines: Array<{ saleItemId: string; quantityX1000: number; stockDisposition: RefundStockDisposition }>;
   }): Promise<{ refundId: string; version: number; state: string }>;
   resolveRefund(req: {
@@ -378,12 +379,14 @@ export interface BackofficeApi {
     expectedVersion: number;
     approve: boolean;
     reason?: string;
+    occurredAtUtc?: string;
   }): Promise<{ refundId: string; version: number; state: string }>;
   commitRefund(req: {
     operationId: string;
     refundId: string;
     saleId: string;
     expectedVersion: number;
+    occurredAtUtc?: string;
     settlements: Array<{ method: "Cash" | "AccountsReceivable"; amountCents: number }>;
   }): Promise<{ refundId: string; version: number; state: string; totalRefundCents: number }>;
   getBookings(): Promise<CafeBookingRow[]>;
@@ -402,15 +405,23 @@ export interface BackofficeApi {
     action: "dispatch" | "deliver" | "fail";
   }): Promise<void>;
   getAttendance(): Promise<AttendanceRow[]>;
-  recordAttendance(req: { operationId: string; eventType: "ClockIn" | "ClockOut" }): Promise<void>;
+  recordAttendance(req: {
+    operationId: string;
+    attendanceEventId?: string;
+    eventType: "ClockIn" | "ClockOut";
+    occurredAtUtc?: string;
+  }): Promise<void>;
   getIncidents(): Promise<IncidentRow[]>;
   createIncident(req: {
     operationId: string;
+    incidentId?: string;
+    revisionId?: string;
     classification: IncidentClassification;
     severity: string;
     title: string;
     description: string;
     incidentOccurredAtUtc?: string;
+    occurredAtUtc?: string;
   }): Promise<void>;
   getAuditLogs(): Promise<AuditLogRow[]>;
   getUsers(): Promise<UserRow[]>;

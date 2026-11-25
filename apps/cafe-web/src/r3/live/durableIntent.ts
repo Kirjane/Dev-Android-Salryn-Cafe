@@ -499,6 +499,13 @@ export function useDurableIntent<TPayload, TResult>(
 
       const persistIfOwned = (next: StoredDurableIntent<TPayload>) => {
         const current = readStoredIntentChecked<TPayload>(intent.scope);
+        // If another tab already resolved/cleared this intent (e.g. after TTL expiry in a
+        // non-Web-Locks environment) or replaced it with a different intentId, do NOT resurrect
+        // or overwrite storage from this stale attempt.
+        if (current.kind === "empty") {
+          setReadState(current);
+          return;
+        }
         if (
           current.kind === "ok" &&
           intent.intentId &&

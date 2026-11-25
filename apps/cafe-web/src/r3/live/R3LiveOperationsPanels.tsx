@@ -709,16 +709,17 @@ export function R3LiveCustomersArPanel({
       operationId: string;
       saleId: string;
       reason: string;
+      occurredAtUtc: string;
       lines: Array<{ saleItemId: string; quantityX1000: number; stockDisposition: "ServiceNoStock" | "Restock" | "DamagedNonRestockable" }>;
     },
     { refundId: string; version: number; state: string }
   >("c5-refund-request", authority);
   const resolveRefundIntent = useDurableIntent<
-    { operationId: string; refundId: string; saleId: string; expectedVersion: number; approve: boolean; reason: string },
+    { operationId: string; refundId: string; saleId: string; expectedVersion: number; approve: boolean; reason: string; occurredAtUtc: string },
     { refundId: string; version: number; state: string }
   >("c5-refund-resolve", authority);
   const commitRefundIntent = useDurableIntent<
-    { operationId: string; refundId: string; saleId: string; expectedVersion: number; settlements: Array<{ method: "Cash" | "AccountsReceivable"; amountCents: number }> },
+    { operationId: string; refundId: string; saleId: string; expectedVersion: number; occurredAtUtc: string; settlements: Array<{ method: "Cash" | "AccountsReceivable"; amountCents: number }> },
     { refundId: string; version: number; state: string; totalRefundCents: number }
   >("c5-refund-commit", authority);
 
@@ -822,6 +823,7 @@ export function R3LiveCustomersArPanel({
         operationId: crypto.randomUUID(),
         saleId: refundSaleId,
         reason: refundReason.trim(),
+        occurredAtUtc: new Date().toISOString(),
         lines: [{ saleItemId: refundSaleItemId, quantityX1000: qtyX1000, stockDisposition: refundDisposition }],
       }),
       (p) => api.requestRefund(p),
@@ -846,6 +848,7 @@ export function R3LiveCustomersArPanel({
         expectedVersion: row.version,
         approve,
         reason,
+        occurredAtUtc: new Date().toISOString(),
       }),
       (p) => api.resolveRefund(p),
     );
@@ -894,6 +897,7 @@ export function R3LiveCustomersArPanel({
         refundId: row.refundId,
         saleId: row.saleId,
         expectedVersion: row.version,
+        occurredAtUtc: new Date().toISOString(),
         settlements,
       }),
       (p) => api.commitRefund(p),
@@ -1159,14 +1163,17 @@ export function R3LiveStaffIncidentsPanel({
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const attIntent = useDurableIntent<{ operationId: string; eventType: "ClockIn" | "ClockOut" }, void>(
-    "staff-attendance",
-    authority,
-  );
+  const attIntent = useDurableIntent<
+    { operationId: string; attendanceEventId: string; eventType: "ClockIn" | "ClockOut"; occurredAtUtc: string },
+    void
+  >("staff-attendance", authority);
   const incIntent = useDurableIntent<
     {
       operationId: string;
+      incidentId: string;
+      revisionId: string;
       incidentOccurredAtUtc: string;
+      occurredAtUtc: string;
       title: string;
       description: string;
       classification: IncidentClassification;
@@ -1175,11 +1182,25 @@ export function R3LiveStaffIncidentsPanel({
     void
   >("staff-incident-create", authority);
   const attCorrectIntent = useDurableIntent<
-    { attendanceEventId: string; operationId: string; correctionKind: string; reason: string; occurredAtUtc: string },
+    {
+      attendanceEventId: string;
+      attendanceCorrectionId: string;
+      operationId: string;
+      correctionKind: string;
+      reason: string;
+      occurredAtUtc: string;
+    },
     unknown
   >("staff-attendance-correct", authority);
   const incResolveIntent = useDurableIntent<
-    { incidentId: string; operationId: string; expectedVersion: number; resolutionNote: string; occurredAtUtc: string },
+    {
+      incidentId: string;
+      resolutionId: string;
+      operationId: string;
+      expectedVersion: number;
+      resolutionNote: string;
+      occurredAtUtc: string;
+    },
     unknown
   >("staff-incident-resolve", authority);
 
@@ -1209,7 +1230,12 @@ export function R3LiveStaffIncidentsPanel({
     setError(null);
     const res = await attIntent.execute(
       { eventType },
-      () => ({ operationId: crypto.randomUUID(), eventType }),
+      () => ({
+        operationId: crypto.randomUUID(),
+        attendanceEventId: crypto.randomUUID(),
+        eventType,
+        occurredAtUtc: new Date().toISOString(),
+      }),
       (p) => api.recordAttendance(p),
     );
     if (res.ok) {
@@ -1228,14 +1254,20 @@ export function R3LiveStaffIncidentsPanel({
     }
     const res = await incIntent.execute(
       { title: title.trim(), description: description.trim(), classification, severity },
-      () => ({
-        operationId: crypto.randomUUID(),
-        incidentOccurredAtUtc: new Date().toISOString(),
-        title: title.trim(),
-        description: description.trim(),
-        classification,
-        severity,
-      }),
+      () => {
+        const nowIso = new Date().toISOString();
+        return {
+          operationId: crypto.randomUUID(),
+          incidentId: crypto.randomUUID(),
+          revisionId: crypto.randomUUID(),
+          incidentOccurredAtUtc: nowIso,
+          occurredAtUtc: nowIso,
+          title: title.trim(),
+          description: description.trim(),
+          classification,
+          severity,
+        };
+      },
       (p) => api.createIncident(p),
     );
     if (res.ok) {
@@ -1254,6 +1286,7 @@ export function R3LiveStaffIncidentsPanel({
       { attendanceEventId: row.attendanceEventId, correctionKind: "MarkInvalid", reason },
       () => ({
         attendanceEventId: row.attendanceEventId,
+        attendanceCorrectionId: crypto.randomUUID(),
         operationId: crypto.randomUUID(),
         correctionKind: "MarkInvalid",
         reason,
@@ -1264,6 +1297,7 @@ export function R3LiveStaffIncidentsPanel({
           `/api/cafe/attendance/${p.attendanceEventId}/corrections`,
           {
             operationId: p.operationId,
+            attendanceCorrectionId: p.attendanceCorrectionId,
             correctionKind: p.correctionKind,
             reason: p.reason,
             occurredAtUtc: p.occurredAtUtc,
@@ -1286,6 +1320,7 @@ export function R3LiveStaffIncidentsPanel({
       { incidentId: inc.incidentId, expectedVersion: inc.version, resolutionNote: note },
       () => ({
         incidentId: inc.incidentId,
+        resolutionId: crypto.randomUUID(),
         operationId: crypto.randomUUID(),
         expectedVersion: inc.version,
         resolutionNote: note,
@@ -1296,6 +1331,7 @@ export function R3LiveStaffIncidentsPanel({
           `/api/cafe/incidents/${p.incidentId}/resolve`,
           {
             operationId: p.operationId,
+            resolutionId: p.resolutionId,
             expectedVersion: p.expectedVersion,
             resolutionNote: p.resolutionNote,
             occurredAtUtc: p.occurredAtUtc,
@@ -1363,7 +1399,13 @@ export function R3LiveStaffIncidentsPanel({
                 .retryPending((p) =>
                   hostRequest(
                     `/api/cafe/attendance/${p.attendanceEventId}/corrections`,
-                    { operationId: p.operationId, correctionKind: p.correctionKind, reason: p.reason, occurredAtUtc: p.occurredAtUtc },
+                    {
+                      operationId: p.operationId,
+                      attendanceCorrectionId: p.attendanceCorrectionId,
+                      correctionKind: p.correctionKind,
+                      reason: p.reason,
+                      occurredAtUtc: p.occurredAtUtc,
+                    },
                     "POST",
                     p.operationId,
                   ),
@@ -1475,7 +1517,13 @@ export function R3LiveStaffIncidentsPanel({
                 .retryPending((p) =>
                   hostRequest(
                     `/api/cafe/incidents/${p.incidentId}/resolve`,
-                    { operationId: p.operationId, expectedVersion: p.expectedVersion, resolutionNote: p.resolutionNote, occurredAtUtc: p.occurredAtUtc },
+                    {
+                      operationId: p.operationId,
+                      resolutionId: p.resolutionId,
+                      expectedVersion: p.expectedVersion,
+                      resolutionNote: p.resolutionNote,
+                      occurredAtUtc: p.occurredAtUtc,
+                    },
                     "POST",
                     p.operationId,
                   ),

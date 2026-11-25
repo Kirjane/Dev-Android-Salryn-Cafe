@@ -206,7 +206,23 @@ function R3LiveCashShiftsContent({ embedded = false }: Props) {
   const canAudit = hasPerm(session, "Audit.View");
   const canShift = hasPerm(session, "Shift.OpenClose");
   const canExpense = hasPerm(session, "Expenses.Record");
+  const canCashIn = hasPerm(session, "Cash.In");
+  const canCashOut = hasPerm(session, "Cash.Out");
   const canCashReverse = hasPerm(session, "Cash.Reverse");
+
+  // Keep C6 movement type selection aligned with the active operator's permissions (P2).
+  useEffect(() => {
+    const allowed: CafeCashMovementType[] = [];
+    if (canExpense) allowed.push("OperationalExpense");
+    if (canCashIn) allowed.push("CashIn");
+    if (canCashOut) {
+      allowed.push("CashOut");
+      allowed.push("InventoryPurchase");
+    }
+    if (allowed.length > 0 && !allowed.includes(c6Type)) {
+      setC6Type(allowed[0]);
+    }
+  }, [canExpense, canCashIn, canCashOut, c6Type]);
 
   const tabs = useMemo(
     () =>
@@ -347,6 +363,10 @@ function R3LiveCashShiftsContent({ embedded = false }: Props) {
       return;
     }
     const refId = c6ReferenceId.trim() || null;
+    if (c6Type === "InventoryPurchase" && !refId) {
+      setC6Message("Accepted C3 Purchase Receipt ID (GUID) is required for InventoryPurchase cash movements.");
+      return;
+    }
     const res = await c6PostIntent.execute(
       { movementType: c6Type, amountCents, reason: c6Reason.trim(), referenceId: refId },
       () => ({
@@ -355,7 +375,9 @@ function R3LiveCashShiftsContent({ embedded = false }: Props) {
         movementType: c6Type,
         amountCents,
         reason: c6Reason.trim(),
-        referenceId: refId,
+        // Persist a stable client-generated referenceId for non-InventoryPurchase movements so
+        // unknown-outcome retries produce an identical canonical payloadHash on the Host (P1).
+        referenceId: c6Type === "InventoryPurchase" ? refId : (refId ?? crypto.randomUUID()),
         occurredAtUtc: new Date().toISOString(),
       }),
       postCafeCashMovement,

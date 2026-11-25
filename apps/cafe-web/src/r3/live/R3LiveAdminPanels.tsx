@@ -86,7 +86,7 @@ export function R3LiveUsersPanel() {
       <div className="r3-page-header">
         <div>
           <h1 className="r3-page-title">Users &amp; Roles</h1>
-          <p className="r3-page-subtitle">Manage canonical Host operators and role assignments (C9).</p>
+          <p className="r3-page-subtitle">Manage canonical Host operators and role assignments (Cross-Cutting).</p>
         </div>
         <button type="button" className="r3-btn r3-btn--outline r3-btn--sm" onClick={() => void load()} disabled={loading}>
           Refresh Users
@@ -226,7 +226,7 @@ export function R3LiveSettingsPanel() {
       <div className="r3-page-header">
         <div>
           <h1 className="r3-page-title">Store Settings</h1>
-          <p className="r3-page-subtitle">Authoritative store profile and receipt configuration (C9).</p>
+          <p className="r3-page-subtitle">Authoritative store profile and receipt configuration (Cross-Cutting).</p>
         </div>
       </div>
       {error && <div className="r3-alert r3-alert--danger" role="alert"><div className="r3-alert-body">{error}</div></div>}
@@ -334,7 +334,7 @@ export function R3LivePrintStationsPanel({ authority }: { authority: DurableInte
       <div className="r3-page-header">
         <div>
           <h1 className="r3-page-title">Print Stations</h1>
-          <p className="r3-page-subtitle">Receipt and Kitchen ticket routing stations (C3 / C9).</p>
+          <p className="r3-page-subtitle">Receipt and Kitchen ticket routing stations (C7).</p>
         </div>
       </div>
       {error && <div className="r3-alert r3-alert--danger" role="alert"><div className="r3-alert-body">{error}</div></div>}
@@ -464,7 +464,7 @@ export function R3LiveDevicesPanel() {
       <div className="r3-page-header">
         <div>
           <h1 className="r3-page-title">Devices, LAN Pairing &amp; Central Sync</h1>
-          <p className="r3-page-subtitle">Local Host LAN terminal control + isolated link to Central Owner Console (C9 / C11).</p>
+          <p className="r3-page-subtitle">Local Host LAN terminal control + isolated link to Central Owner Console (Cross-Cutting).</p>
         </div>
         <a href="/cafe/central" className="r3-btn r3-btn--primary r3-btn--sm">
           Open Isolated Central Console
@@ -586,7 +586,7 @@ export function R3LiveBackupLicensePanel() {
       <div className="r3-page-header">
         <div>
           <h1 className="r3-page-title">Backup &amp; License</h1>
-          <p className="r3-page-subtitle">Host license status and verified SQLite backup packages (C9 / C11).</p>
+          <p className="r3-page-subtitle">Host license status and verified SQLite backup packages (Cross-Cutting).</p>
         </div>
         <button type="button" className="r3-btn r3-btn--primary r3-btn--sm" onClick={() => void handleCreateBackup()} disabled={busy}>
           Create Backup Now
@@ -687,7 +687,7 @@ export function R3LiveAuditLogPanel() {
       <div className="r3-page-header">
         <div>
           <h1 className="r3-page-title">Audit Log</h1>
-          <p className="r3-page-subtitle">Immutable Host security and operational audit trail (C9).</p>
+          <p className="r3-page-subtitle">Immutable Host security and operational audit trail (Cross-Cutting).</p>
         </div>
         <button type="button" className="r3-btn r3-btn--outline r3-btn--sm" onClick={() => void load()} disabled={loading}>
           Refresh Audit Log
