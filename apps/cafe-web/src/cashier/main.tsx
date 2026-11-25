@@ -7,6 +7,12 @@ import { WorkstationApp } from "./WorkstationApp";
 export const C1_RECOVERY_ROUTE_ENABLED =
   import.meta.env.DEV || import.meta.env.VITE_ENABLE_C1_RECOVERY === "1";
 
+// Explicit development-only integration route; existing default routes are unchanged.
+const R3_LIVE_REPORTS_ENABLED = import.meta.env.DEV && import.meta.env.VITE_ENABLE_R3_LIVE_REPORTS === "1";
+const R3LiveReportsPage = R3_LIVE_REPORTS_ENABLED
+  ? lazy(() => import("../r3/live/R3LiveReportsPage").then(m => ({default:m.R3LiveReportsPage})))
+  : null;
+
 const CafeMenuManagerRecoveryPage = C1_RECOVERY_ROUTE_ENABLED
   ? lazy(() =>
       import("../recovery/CafeMenuManagerRecovery").then((m) => ({
@@ -64,6 +70,10 @@ function CafeRootApp() {
         <CafeMenuManagerRecoveryPage onOpenWorkstation={() => navigate("/cafe/")} />
       </Suspense>
     );
+  }
+
+  if (R3_LIVE_REPORTS_ENABLED && R3LiveReportsPage && pathname.replace(/\/+$/, "") === "/cafe/integration/r3/reports") {
+    return <Suspense fallback={<div style={{padding:24}}>Loading live R3 reports...</div>}><R3LiveReportsPage /></Suspense>;
   }
 
   const route = resolveCafeRoute(pathname);

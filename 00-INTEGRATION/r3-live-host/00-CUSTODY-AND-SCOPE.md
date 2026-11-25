@@ -1,0 +1,12 @@
+# R3 live Host integration R0 — custody and scope
+- Dev base: 26a301dc4e244f39e8639ba684c8e4f6c4fb142e (PR #45)
+- ISO visual reference: 331399ab3ca9668b803388d16603ab27f2e074c5 (PR #10)
+- Donor: 4241ea1ec0a8cebf552d93f25a7ac134d7d4d6f3
+- State: SOURCE_CANDIDATE / NOT_RUN / not merge authorized.
+- Existing production routes and C1 recovery preserved. First read-only slice, no standalone backend copied.
+- Exact ISO R3 primitives and stylesheet copied for visual continuity. Reports route is a bounded adaptation, not the full R3 shell or a pixel-identical port. No permission-redacted values rendered as zero.
+- Opt in only with VITE_ENABLE_R3_LIVE_REPORTS=1 in Vite development mode, using the existing proxy to a disposable actual Host. Visit /cafe/integration/r3/reports after login at /cafe/. Default builds do not activate it.
+- Host API: GET /api/owner-reports/summary?fromUtc=&toUtc=; uses CafeManagement.RangeStartUtc/RangeEndUtc and authoritative net revenue/profit amounts. Reject range mismatch. Provisional cost/sync explicitly disclosed. Legacy top-level calendar aggregates are not used for profitability. Cash/AR redactions remain unavailable. No writes.
+- Verification required: typecheck/build/Vitest, existing workstation and recovery regression, default production bundle exclusion, real Host license/session 401/403 behavior, all three Manila date ranges with seeded sales/refunds/cost/AR, wrong-range rejection, incomplete sync and cost, export and no stale period after switching, operator screenshot comparison. No tests were executed by this commit author.
+- Remaining: INT-01/02 inventory adjustment and count; INT-03/04 booking create/deposits/refunds; INT-05 order-bound delivery; INT-07 drawer history; INT-08/09 order and replay; INT-10 Central parity; INT-11 all remaining route/DTO/permission mapping. INT-06 is a source-only first slice.
+- Known hazards in ISO: default mock transport; preview metadata can be written in live mode; initial null license/session does not gate render; booking/delivery/count payloads incompatible; zero fallback for redactions. Do not copy the whole app over existing Dev entrypoint. Later stages must explicitly address them.
