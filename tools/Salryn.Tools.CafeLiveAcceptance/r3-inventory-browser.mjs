@@ -79,18 +79,21 @@ try {
     await page.getByLabel("Signed Quantity Delta").fill("+2.5");
     await page.getByLabel("Adjustment Reason").fill("Browser proof shelf audit");
     await page.getByRole("button", { name: "Commit Adjustment" }).click();
-    await expect(page.getByText(/Pending adjustment has an unresolved outcome/i)).toBeVisible();
+    await expect(page.getByText(/Adjustment: pending request has an unresolved outcome/i)).toBeVisible();
     const pendingBeforeReload = await page.evaluate(() =>
-      window.localStorage.getItem("salryn.cafe.r3.pending.inventory-adjust.v1"),
+      window.localStorage.getItem("salryn.cafe.r3.pending.inventory-adjust.v2"),
     );
-    assert(Boolean(pendingBeforeReload), "Pending adjustment must be persisted in localStorage");
-    const opIdBeforeReload = JSON.parse(pendingBeforeReload).payload.operationId;
-    assertions += 2;
+    assert(Boolean(pendingBeforeReload), "Pending adjustment v2 record must be persisted in localStorage");
+    const parsedPending = JSON.parse(pendingBeforeReload);
+    assert(Boolean(parsedPending.hostIdentityKey), "Pending intent must bind hostIdentityKey");
+    assert(Boolean(parsedPending.actorUserId), "Pending intent must bind actorUserId");
+    const opIdBeforeReload = parsedPending.payload.operationId;
+    assertions += 4;
 
     // Reload browser and verify exact operationId survived.
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.getByRole("tab", { name: "Manual Adjustment" }).click();
-    await expect(page.getByText(/Pending adjustment has an unresolved outcome/i)).toBeVisible();
+    await expect(page.getByText(/Adjustment: pending request has an unresolved outcome/i)).toBeVisible();
     await expect(page.getByText(opIdBeforeReload)).toBeVisible();
     assertions += 2;
 
@@ -98,7 +101,7 @@ try {
     await page.getByRole("button", { name: "Retry Exact Adjustment" }).click();
     await expect(page.getByText(/Adjustment retry confirmed/i).first()).toBeVisible();
     const pendingAfterRetry = await page.evaluate(() =>
-      window.localStorage.getItem("salryn.cafe.r3.pending.inventory-adjust.v1"),
+      window.localStorage.getItem("salryn.cafe.r3.pending.inventory-adjust.v2"),
     );
     assert(pendingAfterRetry === null, "Pending adjustment must clear after Host confirmation");
     assertions += 2;

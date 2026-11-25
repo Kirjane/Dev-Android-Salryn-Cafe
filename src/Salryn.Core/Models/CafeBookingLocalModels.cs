@@ -202,9 +202,21 @@ public sealed record CafeBookingSummary(
     Guid? FinalOrderId,
     Guid? FinalSaleId);
 
+public sealed record CafeBookingDepositFactSummary(
+    Guid DepositFactId,
+    Guid BookingRevisionId,
+    string FactType,
+    Guid ActorUserId,
+    long AmountCents,
+    long AllocatedAmountCents,
+    long RemainingRefundableCents,
+    DateTimeOffset OccurredAtUtc,
+    string Reference);
+
 public sealed record CafeBookingDetail(
     CafeBookingSummary Booking,
-    CafeBookingRevisionSnapshot CurrentRevision);
+    CafeBookingRevisionSnapshot CurrentRevision,
+    IReadOnlyList<CafeBookingDepositFactSummary>? DepositFacts = null);
 
 public sealed record CafeBookingMutationResult(
     Guid BookingId,

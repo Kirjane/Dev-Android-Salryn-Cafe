@@ -1123,9 +1123,11 @@ public sealed partial class SqliteCafeBookingService :
                 ReadRevision(connection, transaction, booking.CurrentRevisionId);
             CafeBookingSummary summary =
                 BuildSummary(connection, transaction, booking, revision);
+            IReadOnlyList<CafeBookingDepositFactSummary> depositFacts =
+                ReadDepositFacts(connection, transaction, bookingId);
             transaction.Commit();
             return Result<CafeBookingDetail?>.Success(
-                new CafeBookingDetail(summary, revision));
+                new CafeBookingDetail(summary, revision, depositFacts));
         }
         catch (Exception ex) when (ExpectedException(ex))
         {
@@ -2604,6 +2606,52 @@ public sealed partial class SqliteCafeBookingService :
             """;
         command.Parameters.AddWithValue("$received", receivedFactId.ToString("D"));
         return Convert.ToInt64(command.ExecuteScalar() ?? 0L);
+    }
+
+    private static IReadOnlyList<CafeBookingDepositFactSummary> ReadDepositFacts(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        Guid bookingId)
+    {
+        List<CafeBookingDepositFactSummary> rows = [];
+        using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT
+                f.deposit_fact_id,
+                f.booking_revision_id,
+                f.fact_type,
+                f.actor_user_id,
+                f.amount_cents,
+                COALESCE((SELECT SUM(a.amount_cents) FROM cafe_booking_deposit_allocations a WHERE a.received_fact_id = f.deposit_fact_id), 0) AS allocated_cents,
+                f.occurred_at_utc,
+                f.reference
+            FROM cafe_booking_deposit_facts f
+            WHERE f.booking_id=$booking
+            ORDER BY f.occurred_at_utc ASC, f.deposit_fact_id ASC;
+            """;
+        command.Parameters.AddWithValue("$booking", bookingId.ToString("D"));
+        using SqliteDataReader reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            string factType = reader.GetString(2);
+            long amount = reader.GetInt64(4);
+            long allocated = reader.GetInt64(5);
+            long remaining = string.Equals(factType, "Received", StringComparison.Ordinal)
+                ? Math.Max(0L, amount - allocated)
+                : 0L;
+            rows.Add(new CafeBookingDepositFactSummary(
+                Guid.Parse(reader.GetString(0)),
+                Guid.Parse(reader.GetString(1)),
+                factType,
+                Guid.Parse(reader.GetString(3)),
+                amount,
+                allocated,
+                remaining,
+                DateTimeOffset.Parse(reader.GetString(6), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+                reader.GetString(7)));
+        }
+        return rows;
     }
 
     private static OperationRow? ReadOperation(

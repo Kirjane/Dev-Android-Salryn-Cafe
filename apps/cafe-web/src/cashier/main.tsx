@@ -2,7 +2,13 @@ import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BackofficeConsoleApp } from "../backoffice/BackofficeConsoleApp";
+import { isUnifiedR3Path } from "../r3/live/r3RouteMap";
 import { WorkstationApp } from "./WorkstationApp";
+
+// Unified Production R3 Application route (/cafe/r3 and /cafe/r3/*) — live Host backed, zero mocks.
+const R3UnifiedApp = lazy(() =>
+  import("../r3/R3UnifiedApp").then((m) => ({ default: m.R3UnifiedApp })),
+);
 
 export const C1_RECOVERY_ROUTE_ENABLED =
   import.meta.env.DEV || import.meta.env.VITE_ENABLE_C1_RECOVERY === "1";
@@ -86,6 +92,14 @@ function CafeRootApp() {
       setPathname(nextPath);
     }
   }, []);
+
+  if (isUnifiedR3Path(pathname)) {
+    return (
+      <Suspense fallback={<div style={{ padding: 24 }}>Loading Salryn Cafe R3 workspace…</div>}>
+        <R3UnifiedApp pathname={pathname} onNavigatePath={navigate} />
+      </Suspense>
+    );
+  }
 
   if (C1_RECOVERY_ROUTE_ENABLED && CafeMenuManagerRecoveryPage && pathname.replace(/\/+$/, "") === "/cafe/recovery/c1") {
     return (

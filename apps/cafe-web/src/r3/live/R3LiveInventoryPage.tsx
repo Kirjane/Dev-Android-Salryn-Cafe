@@ -7,7 +7,8 @@ import {
 } from "../../cashier/types";
 import "../styles/r3-design-system.css";
 import { R3ToastProvider, useR3Toast } from "../components/R3Primitives";
-import { useDurableIntent } from "./durableIntent";
+import { DurableIntentBanner } from "./DurableIntentBanner";
+import { fetchHostIdentityKey, useDurableIntent, type DurableIntentAuthority } from "./durableIntent";
 import {
   commitAdjustment,
   commitPurchase,
@@ -106,9 +107,10 @@ async function verifyHostInventoryAccess(): Promise<HostSession> {
   return session;
 }
 
-function R3LiveInventoryContent() {
+function R3LiveInventoryContent({ embedded = false }: { embedded?: boolean }) {
   const { pushToast } = useR3Toast();
   const [session, setSession] = useState<HostSession | null>(null);
+  const [hostIdentityKey, setHostIdentityKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [accessError, setAccessError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>("stock");
@@ -118,6 +120,14 @@ function R3LiveInventoryContent() {
   const [suppliers, setSuppliers] = useState<LiveSupplier[]>([]);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null);
 
+  const authority: DurableIntentAuthority | null = useMemo(
+    () =>
+      hostIdentityKey && session?.user?.userId
+        ? { hostIdentityKey, actorUserId: session.user.userId }
+        : null,
+    [hostIdentityKey, session?.user?.userId],
+  );
+
   // Manual Adjustment state (INT-01)
   const [adjIngredientId, setAdjIngredientId] = useState("");
   const [adjDeltaInput, setAdjDeltaInput] = useState("");
@@ -126,6 +136,7 @@ function R3LiveInventoryContent() {
   const [lastAdjEvidence, setLastAdjEvidence] = useState<InventoryAdjustmentEvidence | null>(null);
   const adjIntent = useDurableIntent<AdjustmentCommand, InventoryCommitResult<InventoryAdjustmentEvidence>>(
     "inventory-adjust",
+    authority,
   );
 
   // Physical Count state (INT-02)
@@ -135,9 +146,10 @@ function R3LiveInventoryContent() {
   const [activeCount, setActiveCount] = useState<CountSession | null>(null);
   const [lookupCountId, setLookupCountId] = useState("");
   const [countMessage, setCountMessage] = useState<string | null>(null);
-  const draftIntent = useDurableIntent<DraftIntentPayload, CountSession>("inventory-count-draft");
+  const draftIntent = useDurableIntent<DraftIntentPayload, CountSession>("inventory-count-draft", authority);
   const finalizeIntent = useDurableIntent<FinalizeIntentPayload, InventoryCommitResult<CountSession>>(
     "inventory-count-finalize",
+    authority,
   );
 
   // Receive Stock state
@@ -149,6 +161,7 @@ function R3LiveInventoryContent() {
   const [recMessage, setRecMessage] = useState<string | null>(null);
   const purchaseIntent = useDurableIntent<PurchaseReceiveCommand, InventoryCommitResult<unknown>>(
     "inventory-purchase",
+    authority,
   );
 
   // Record Waste state
@@ -159,6 +172,7 @@ function R3LiveInventoryContent() {
   const [wasteMessage, setWasteMessage] = useState<string | null>(null);
   const wasteIntent = useDurableIntent<WasteCommitCommand, InventoryCommitResult<unknown>>(
     "inventory-waste",
+    authority,
   );
 
   const tabRefs = useRef<Partial<Record<TabId, HTMLButtonElement | null>>>({});
@@ -168,7 +182,9 @@ function R3LiveInventoryContent() {
     setAccessError(null);
     try {
       const verified = await verifyHostInventoryAccess();
+      const hostKey = await fetchHostIdentityKey();
       setSession(verified);
+      setHostIdentityKey(hostKey);
 
       const [ingList, lowList, supList] = await Promise.all([
         hasPerm(verified, "Ingredients.View") && hasPerm(verified, "Recipes.View")
@@ -591,16 +607,17 @@ function R3LiveInventoryContent() {
     }
   };
 
-  return (
-    <div className="r3-root">
-      <div className="r3-content" style={{ maxWidth: 1200, margin: "0 auto" }}>
+  const inner = (
+      <div className={embedded ? undefined : "r3-content"} style={embedded ? undefined : { maxWidth: 1200, margin: "0 auto" }}>
         <div className="r3-page-header">
           <div>
-            <p className="r3-text-xs r3-text-muted" style={{ marginBottom: 4 }}>
-              <a href="/cafe/">Return to existing workstation</a>
-              {" · "}
-              <a href="/cafe/integration/r3/reports">Live Reports</a>
-            </p>
+            {!embedded && (
+              <p className="r3-text-xs r3-text-muted" style={{ marginBottom: 4 }}>
+                <a href="/cafe/">Return to existing workstation</a>
+                {" · "}
+                <a href="/cafe/r3/reports">Live Reports</a>
+              </p>
+            )}
             <h1 className="r3-page-title">Inventory &amp; Stock Control</h1>
             <p className="r3-page-subtitle">
               Live Host inventory ledger with durable pending-intent idempotency (zero mock fallback).
@@ -620,8 +637,8 @@ function R3LiveInventoryContent() {
 
         <div className="r3-alert r3-alert--info" role="status">
           <div className="r3-alert-body">
-            Development integration route. All reads and writes execute directly against the live Host SQLite ledger.
-            Prepared requests retain identical operation IDs across reloads and retries.
+            All reads and writes execute directly against the live Host SQLite ledger.
+            Prepared requests are bound to operator and Host identity and retain identical operation IDs across reloads and retries.
             {lastRefreshedAt ? ` Last synced: ${new Date(lastRefreshedAt).toLocaleTimeString()}.` : ""}
           </div>
         </div>
@@ -748,51 +765,23 @@ function R3LiveInventoryContent() {
                   </div>
                 </div>
 
-                {adjIntent.pending && (
-                  <div
-                    className={`r3-alert ${adjIntent.pending.status === "rejected" ? "r3-alert--danger" : "r3-alert--warn"}`}
-                    role="alert"
-                    style={{ marginBottom: 16 }}
-                  >
-                    <div className="r3-alert-body">
-                      <div className="r3-alert-title">
-                        {adjIntent.pending.status === "rejected"
-                          ? `Adjustment rejected (${adjIntent.pending.lastErrorCode ?? "HTTP " + adjIntent.pending.lastHttpStatus})`
-                          : "Pending adjustment has an unresolved outcome"}
-                      </div>
-                      <div>
-                        Operation ID: <code>{adjIntent.pending.payload.operationId}</code> · Delta:{" "}
-                        <strong>{formatQty(adjIntent.pending.payload.quantityDeltaX1000)}</strong> · Reason:{" "}
-                        {adjIntent.pending.payload.reason}
-                      </div>
-                      {adjIntent.pending.lastErrorMessage && <div>{adjIntent.pending.lastErrorMessage}</div>}
-                    </div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      {adjIntent.pending.status !== "rejected" && (
-                        <button
-                          type="button"
-                          className="r3-btn r3-btn--primary r3-btn--sm"
-                          onClick={() => void handleAdjustmentRetry()}
-                          disabled={adjIntent.inFlight}
-                        >
-                          Retry Exact Adjustment
-                        </button>
-                      )}
-                      {adjIntent.pending.status === "rejected" && (
-                        <button
-                          type="button"
-                          className="r3-btn r3-btn--outline r3-btn--sm"
-                          onClick={() => {
-                            adjIntent.clearPending(false);
-                            setAdjMessage("Cleared rejected adjustment intent.");
-                          }}
-                        >
-                          Clear Rejected Request
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
+                <DurableIntentBanner
+                  label="Adjustment"
+                  operationId={adjIntent.pending?.payload.operationId ?? null}
+                  pending={adjIntent.pending}
+                  corruptReason={adjIntent.corruptReason}
+                  authorityMismatch={adjIntent.authorityMismatch}
+                  inFlight={adjIntent.inFlight}
+                  onRetry={() => void handleAdjustmentRetry()}
+                  onClearRejected={() => {
+                    adjIntent.clearPending(false);
+                    setAdjMessage("Cleared rejected adjustment intent.");
+                  }}
+                  onClearCorrupt={() => {
+                    adjIntent.clearPending(true);
+                    setAdjMessage("Cleared corrupt adjustment storage after verification.");
+                  }}
+                />
 
                 <form onSubmit={(e) => void handleAdjustmentSubmit(e)} style={{ display: "grid", gap: 12, maxWidth: 560 }}>
                   <label>
@@ -883,49 +872,23 @@ function R3LiveInventoryContent() {
                     </div>
                   </div>
 
-                  {draftIntent.pending && (
-                    <div
-                      className={`r3-alert ${draftIntent.pending.status === "rejected" ? "r3-alert--danger" : "r3-alert--warn"}`}
-                      role="alert"
-                      style={{ marginBottom: 16 }}
-                    >
-                      <div className="r3-alert-body">
-                        <div className="r3-alert-title">
-                          {draftIntent.pending.status === "rejected"
-                            ? `Count draft rejected (${draftIntent.pending.lastErrorCode ?? "HTTP " + draftIntent.pending.lastHttpStatus})`
-                            : "Pending count draft has an unresolved outcome"}
-                        </div>
-                        <div>
-                          Operation ID: <code>{draftIntent.pending.payload.operationId}</code> · Session:{" "}
-                          <code>{draftIntent.pending.payload.draft.countSessionId}</code>
-                        </div>
-                        {draftIntent.pending.lastErrorMessage && <div>{draftIntent.pending.lastErrorMessage}</div>}
-                      </div>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        {draftIntent.pending.status !== "rejected" ? (
-                          <button
-                            type="button"
-                            className="r3-btn r3-btn--primary r3-btn--sm"
-                            onClick={() => void handleCountDraftRetry()}
-                            disabled={draftIntent.inFlight}
-                          >
-                            Retry Exact Draft
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            className="r3-btn r3-btn--outline r3-btn--sm"
-                            onClick={() => {
-                              draftIntent.clearPending(false);
-                              setCountMessage("Cleared rejected draft intent. Refresh live stock if balances changed.");
-                            }}
-                          >
-                            Clear Rejected Draft
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )}
+                  <DurableIntentBanner
+                    label="Draft"
+                    operationId={draftIntent.pending?.payload.operationId ?? null}
+                    pending={draftIntent.pending}
+                    corruptReason={draftIntent.corruptReason}
+                    authorityMismatch={draftIntent.authorityMismatch}
+                    inFlight={draftIntent.inFlight}
+                    onRetry={() => void handleCountDraftRetry()}
+                    onClearRejected={() => {
+                      draftIntent.clearPending(false);
+                      setCountMessage("Cleared rejected draft intent. Refresh live stock if balances changed.");
+                    }}
+                    onClearCorrupt={() => {
+                      draftIntent.clearPending(true);
+                      setCountMessage("Cleared corrupt count-draft storage after verification.");
+                    }}
+                  />
 
                   <form onSubmit={(e) => void handleCountDraftSubmit(e)} style={{ display: "grid", gap: 12, maxWidth: 560 }}>
                     <label>
@@ -1011,48 +974,23 @@ function R3LiveInventoryContent() {
                     </form>
                   </div>
 
-                  {finalizeIntent.pending && (
-                    <div
-                      className={`r3-alert ${finalizeIntent.pending.status === "rejected" ? "r3-alert--danger" : "r3-alert--warn"}`}
-                      role="alert"
-                      style={{ marginBottom: 16 }}
-                    >
-                      <div className="r3-alert-body">
-                        <div className="r3-alert-title">
-                          {finalizeIntent.pending.status === "rejected"
-                            ? `Finalize rejected (${finalizeIntent.pending.lastErrorCode ?? "HTTP " + finalizeIntent.pending.lastHttpStatus})`
-                            : "Pending finalize has an unresolved outcome"}
-                        </div>
-                        <div>
-                          Operation ID: <code>{finalizeIntent.pending.payload.command.operationId}</code>
-                        </div>
-                        {finalizeIntent.pending.lastErrorMessage && <div>{finalizeIntent.pending.lastErrorMessage}</div>}
-                      </div>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        {finalizeIntent.pending.status !== "rejected" ? (
-                          <button
-                            type="button"
-                            className="r3-btn r3-btn--primary r3-btn--sm"
-                            onClick={() => void handleFinalizeRetry()}
-                            disabled={finalizeIntent.inFlight}
-                          >
-                            Retry Exact Finalize
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            className="r3-btn r3-btn--outline r3-btn--sm"
-                            onClick={() => {
-                              finalizeIntent.clearPending(false);
-                              setCountMessage("Cleared rejected finalize intent.");
-                            }}
-                          >
-                            Clear Rejected Finalize
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )}
+                  <DurableIntentBanner
+                    label="Finalize"
+                    operationId={finalizeIntent.pending?.payload.command.operationId ?? null}
+                    pending={finalizeIntent.pending}
+                    corruptReason={finalizeIntent.corruptReason}
+                    authorityMismatch={finalizeIntent.authorityMismatch}
+                    inFlight={finalizeIntent.inFlight}
+                    onRetry={() => void handleFinalizeRetry()}
+                    onClearRejected={() => {
+                      finalizeIntent.clearPending(false);
+                      setCountMessage("Cleared rejected finalize intent.");
+                    }}
+                    onClearCorrupt={() => {
+                      finalizeIntent.clearPending(true);
+                      setCountMessage("Cleared corrupt finalize storage after verification.");
+                    }}
+                  />
 
                   {!activeCount ? (
                     <p className="r3-text-muted r3-text-sm">
@@ -1127,48 +1065,23 @@ function R3LiveInventoryContent() {
                     <div className="r3-card-subtitle">Commits directly to POST /api/cafe/purchases/receive</div>
                   </div>
                 </div>
-                {purchaseIntent.pending && (
-                  <div
-                    className={`r3-alert ${purchaseIntent.pending.status === "rejected" ? "r3-alert--danger" : "r3-alert--warn"}`}
-                    role="alert"
-                    style={{ marginBottom: 16 }}
-                  >
-                    <div className="r3-alert-body">
-                      <div className="r3-alert-title">
-                        {purchaseIntent.pending.status === "rejected"
-                          ? `Purchase receipt rejected (${purchaseIntent.pending.lastErrorCode ?? "HTTP " + purchaseIntent.pending.lastHttpStatus})`
-                          : "Pending purchase receipt has an unresolved outcome"}
-                      </div>
-                      <div>
-                        Operation ID: <code>{purchaseIntent.pending.payload.operationId}</code>
-                      </div>
-                      {purchaseIntent.pending.lastErrorMessage && <div>{purchaseIntent.pending.lastErrorMessage}</div>}
-                    </div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      {purchaseIntent.pending.status !== "rejected" ? (
-                        <button
-                          type="button"
-                          className="r3-btn r3-btn--primary r3-btn--sm"
-                          onClick={() => void handleReceiveRetry()}
-                          disabled={purchaseIntent.inFlight}
-                        >
-                          Retry Exact Purchase
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="r3-btn r3-btn--outline r3-btn--sm"
-                          onClick={() => {
-                            purchaseIntent.clearPending(false);
-                            setRecMessage("Cleared rejected purchase intent.");
-                          }}
-                        >
-                          Clear Rejected Purchase
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
+                <DurableIntentBanner
+                  label="Purchase"
+                  operationId={purchaseIntent.pending?.payload.operationId ?? null}
+                  pending={purchaseIntent.pending}
+                  corruptReason={purchaseIntent.corruptReason}
+                  authorityMismatch={purchaseIntent.authorityMismatch}
+                  inFlight={purchaseIntent.inFlight}
+                  onRetry={() => void handleReceiveRetry()}
+                  onClearRejected={() => {
+                    purchaseIntent.clearPending(false);
+                    setRecMessage("Cleared rejected purchase intent.");
+                  }}
+                  onClearCorrupt={() => {
+                    purchaseIntent.clearPending(true);
+                    setRecMessage("Cleared corrupt purchase storage after verification.");
+                  }}
+                />
                 <form onSubmit={(e) => void handleReceiveSubmit(e)} style={{ display: "grid", gap: 12, maxWidth: 560 }}>
                   <label>
                     <div className="r3-text-xs r3-text-muted" style={{ marginBottom: 4 }}>Supplier</div>
@@ -1216,48 +1129,23 @@ function R3LiveInventoryContent() {
                     <div className="r3-card-subtitle">Commits directly to POST /api/cafe/inventory/waste</div>
                   </div>
                 </div>
-                {wasteIntent.pending && (
-                  <div
-                    className={`r3-alert ${wasteIntent.pending.status === "rejected" ? "r3-alert--danger" : "r3-alert--warn"}`}
-                    role="alert"
-                    style={{ marginBottom: 16 }}
-                  >
-                    <div className="r3-alert-body">
-                      <div className="r3-alert-title">
-                        {wasteIntent.pending.status === "rejected"
-                          ? `Waste event rejected (${wasteIntent.pending.lastErrorCode ?? "HTTP " + wasteIntent.pending.lastHttpStatus})`
-                          : "Pending waste event has an unresolved outcome"}
-                      </div>
-                      <div>
-                        Operation ID: <code>{wasteIntent.pending.payload.operationId}</code>
-                      </div>
-                      {wasteIntent.pending.lastErrorMessage && <div>{wasteIntent.pending.lastErrorMessage}</div>}
-                    </div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      {wasteIntent.pending.status !== "rejected" ? (
-                        <button
-                          type="button"
-                          className="r3-btn r3-btn--primary r3-btn--sm"
-                          onClick={() => void handleWasteRetry()}
-                          disabled={wasteIntent.inFlight}
-                        >
-                          Retry Exact Waste
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="r3-btn r3-btn--outline r3-btn--sm"
-                          onClick={() => {
-                            wasteIntent.clearPending(false);
-                            setWasteMessage("Cleared rejected waste intent.");
-                          }}
-                        >
-                          Clear Rejected Waste
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
+                <DurableIntentBanner
+                  label="Waste"
+                  operationId={wasteIntent.pending?.payload.operationId ?? null}
+                  pending={wasteIntent.pending}
+                  corruptReason={wasteIntent.corruptReason}
+                  authorityMismatch={wasteIntent.authorityMismatch}
+                  inFlight={wasteIntent.inFlight}
+                  onRetry={() => void handleWasteRetry()}
+                  onClearRejected={() => {
+                    wasteIntent.clearPending(false);
+                    setWasteMessage("Cleared rejected waste intent.");
+                  }}
+                  onClearCorrupt={() => {
+                    wasteIntent.clearPending(true);
+                    setWasteMessage("Cleared corrupt waste storage after verification.");
+                  }}
+                />
                 <form onSubmit={(e) => void handleWasteSubmit(e)} style={{ display: "grid", gap: 12, maxWidth: 560 }}>
                   <label>
                     <div className="r3-text-xs r3-text-muted" style={{ marginBottom: 4 }}>Ingredient</div>
@@ -1296,11 +1184,16 @@ function R3LiveInventoryContent() {
           </>
         )}
       </div>
-    </div>
   );
+
+  if (embedded) return inner;
+  return <div className="r3-root">{inner}</div>;
 }
 
-export function R3LiveInventoryPage() {
+export function R3LiveInventoryPage({ embedded = false }: { embedded?: boolean } = {}) {
+  if (embedded) {
+    return <R3LiveInventoryContent embedded />;
+  }
   return (
     <R3ToastProvider>
       <R3LiveInventoryContent />

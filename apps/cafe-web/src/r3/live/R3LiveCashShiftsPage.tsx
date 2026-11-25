@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { formatPhp, hostRequest, parsePhpToCents } from "../../api/hostClient";
+import { formatPhp, HostApiError, hostRequest, parsePhpToCents } from "../../api/hostClient";
 import {
   isLicenseActiveForBootstrap,
   type HostLicenseBootstrapStatus,
@@ -7,19 +7,33 @@ import {
 } from "../../cashier/types";
 import "../styles/r3-design-system.css";
 import { R3ToastProvider, useR3Toast } from "../components/R3Primitives";
-import { useDurableIntent } from "./durableIntent";
+import { DurableIntentBanner } from "./DurableIntentBanner";
 import {
+  fetchHostIdentityKey,
+  useDurableIntent,
+  type DurableIntentAuthority,
+} from "./durableIntent";
+import {
+  closeCashShiftBlind,
+  openCashShift,
   readCashDrawerHistory,
   readCurrentCashDrawer,
   recordCashDrawerMovement,
   reviewCashDrawerVariance,
   type CashDrawerEventType,
   type CashDrawerSnapshot,
+  type CloseShiftBlindCommand,
   type DrawerMovementCommand,
   type DrawerReviewCommand,
+  type OpenShiftCommand,
+  type ShiftOperationEnvelope,
 } from "./cashDrawerContracts";
 
-type TabId = "history" | "drawer";
+type TabId = "drawer" | "history";
+
+type Props = {
+  embedded?: boolean;
+};
 
 type ReviewPayload = {
   sessionId: string;
@@ -45,45 +59,95 @@ async function verifyHostCashAccess(): Promise<HostSession> {
   return session;
 }
 
-function R3LiveCashShiftsContent() {
+function R3LiveCashShiftsContent({ embedded = false }: Props) {
   const { pushToast } = useR3Toast();
   const [session, setSession] = useState<HostSession | null>(null);
+  const [hostIdentityKey, setHostIdentityKey] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [accessError, setAccessError] = useState<string | null>(null);
-  const [tab, setTab] = useState<TabId>("history");
+  const [drawerError, setDrawerError] = useState<string | null>(null);
+  const [tab, setTab] = useState<TabId>("drawer");
 
   const [currentDrawer, setCurrentDrawer] = useState<CashDrawerSnapshot | null>(null);
   const [history, setHistory] = useState<CashDrawerSnapshot[]>([]);
+
+  const authority: DurableIntentAuthority | null = useMemo(
+    () =>
+      session?.user?.userId && hostIdentityKey
+        ? { hostIdentityKey, actorUserId: session.user.userId }
+        : null,
+    [session?.user?.userId, hostIdentityKey],
+  );
+
+  // Shift Open form
+  const [openingFloatPhp, setOpeningFloatPhp] = useState("1000.00");
+  const [shiftMessage, setShiftMessage] = useState<string | null>(null);
+  const openShiftIntent = useDurableIntent<OpenShiftCommand, ShiftOperationEnvelope>(
+    "cash-shift-open",
+    authority,
+  );
+
+  // Blind Shift Close form (expected cash NEVER displayed prior to close!)
+  const [countedCashPhp, setCountedCashPhp] = useState("");
+  const [physicalConfirmed, setPhysicalConfirmed] = useState(false);
+  const [closeNote, setCloseNote] = useState("");
+  const closeShiftIntent = useDurableIntent<CloseShiftBlindCommand, ShiftOperationEnvelope>(
+    "cash-shift-close",
+    authority,
+  );
 
   // Cash Drawer Movement form
   const [moveType, setMoveType] = useState<CashDrawerEventType>("CashIn");
   const [moveAmountPhp, setMoveAmountPhp] = useState("");
   const [moveReason, setMoveReason] = useState("");
   const [moveMessage, setMoveMessage] = useState<string | null>(null);
-  const moveIntent = useDurableIntent<DrawerMovementCommand, CashDrawerSnapshot>("cash-drawer-movement");
+  const moveIntent = useDurableIntent<DrawerMovementCommand, CashDrawerSnapshot>(
+    "cash-drawer-movement",
+    authority,
+  );
 
   // Independent Variance Review form (INT-08)
   const [reviewSessionId, setReviewSessionId] = useState("");
   const [reviewReason, setReviewReason] = useState("");
   const [reviewMessage, setReviewMessage] = useState<string | null>(null);
-  const reviewIntent = useDurableIntent<ReviewPayload, CashDrawerSnapshot>("cash-drawer-review");
+  const reviewIntent = useDurableIntent<ReviewPayload, CashDrawerSnapshot>(
+    "cash-drawer-review",
+    authority,
+  );
 
   const tabRefs = useRef<Partial<Record<TabId, HTMLButtonElement | null>>>({});
 
   const loadAll = useCallback(async () => {
     setLoading(true);
     setAccessError(null);
+    setDrawerError(null);
     try {
-      const verified = await verifyHostCashAccess();
+      const [verified, idKey] = await Promise.all([
+        verifyHostCashAccess(),
+        fetchHostIdentityKey(),
+      ]);
       setSession(verified);
+      setHostIdentityKey(idKey);
 
       const canAudit = hasPerm(verified, "Audit.View");
       const canShift = hasPerm(verified, "Shift.OpenClose");
 
-      const [histPage, openSnap] = await Promise.all([
-        canAudit ? readCashDrawerHistory(50, 0) : Promise.resolve({ items: [], limit: 50, offset: 0 }),
-        canShift ? readCurrentCashDrawer().catch(() => null) : Promise.resolve(null),
-      ]);
+      const histPage = canAudit
+        ? await readCashDrawerHistory(50, 0)
+        : { items: [], limit: 50, offset: 0 };
+
+      let openSnap: CashDrawerSnapshot | null = null;
+      if (canShift) {
+        try {
+          openSnap = await readCurrentCashDrawer();
+        } catch (err) {
+          if (err instanceof HostApiError && err.status === 404) {
+            openSnap = null;
+          } else {
+            setDrawerError(err instanceof Error ? err.message : "Failed to read current cash drawer.");
+          }
+        }
+      }
 
       setHistory(histPage.items);
       setCurrentDrawer(openSnap);
@@ -91,12 +155,14 @@ function R3LiveCashShiftsContent() {
       const pendingReview = histPage.items.find(
         (s) => s.reviewStatus === "PendingReview" && (s.varianceCents ?? 0) !== 0,
       );
-      if (pendingReview) {
-        setReviewSessionId((prev) => prev || pendingReview.sessionId);
-      }
+      setReviewSessionId((prev) => {
+        if (prev && histPage.items.some((s) => s.sessionId === prev && s.reviewStatus === "PendingReview")) {
+          return prev;
+        }
+        return pendingReview?.sessionId ?? "";
+      });
 
-      if (!canAudit && canShift) setTab("drawer");
-      else if (canAudit && !canShift) setTab("history");
+      if (!canShift && canAudit) setTab("history");
     } catch (err) {
       setAccessError(err instanceof Error ? err.message : "Cash Drawer & Shifts unavailable.");
     } finally {
@@ -114,10 +180,10 @@ function R3LiveCashShiftsContent() {
   const tabs = useMemo(
     () =>
       [
-        { id: "history" as TabId, label: `Closed Shift History & Variance Review (${history.length})`, enabled: canAudit },
-        { id: "drawer" as TabId, label: "Open Drawer Movements", enabled: canShift },
+        { id: "drawer" as TabId, label: currentDrawer ? "Active Shift & Blind Close" : "Open Shift", enabled: canShift },
+        { id: "history" as TabId, label: `Closed History & Variance Review (${history.length})`, enabled: canAudit },
       ].filter((t) => t.enabled),
-    [history.length, canAudit, canShift],
+    [currentDrawer, history.length, canAudit, canShift],
   );
 
   const handleTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, idx: number) => {
@@ -130,6 +196,69 @@ function R3LiveCashShiftsContent() {
       e.preventDefault();
       setTab(tabs[nextIdx].id);
       tabRefs.current[tabs[nextIdx].id]?.focus();
+    }
+  };
+
+  const handleOpenShift = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setShiftMessage(null);
+    let openingCashCents: number;
+    try {
+      openingCashCents = parsePhpToCents(openingFloatPhp);
+    } catch (err) {
+      setShiftMessage(err instanceof Error ? err.message : "Invalid opening float.");
+      return;
+    }
+    const res = await openShiftIntent.execute(
+      { openingCashCents },
+      () => ({ openingCashCents, clientRequestId: crypto.randomUUID() }),
+      openCashShift,
+    );
+    if (res.ok) {
+      await loadAll();
+      const msg = `Cashier shift opened with ${formatPhp(openingCashCents)} float.`;
+      setShiftMessage(msg);
+      pushToast(msg);
+    } else {
+      setShiftMessage(`${res.code ? `[${res.code}] ` : ""}${res.message}`);
+    }
+  };
+
+  const handleBlindCloseShift = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setShiftMessage(null);
+    let countedCashCents: number;
+    try {
+      countedCashCents = parsePhpToCents(countedCashPhp);
+    } catch (err) {
+      setShiftMessage(err instanceof Error ? err.message : "Invalid counted cash amount.");
+      return;
+    }
+    if (!physicalConfirmed) {
+      setShiftMessage("Confirm that you physically counted the cash drawer before closing blind.");
+      return;
+    }
+    const note = closeNote.trim() || null;
+    const res = await closeShiftIntent.execute(
+      { countedCashCents, physicalCountConfirmed: true, note },
+      () => ({
+        countedCashCents,
+        physicalCountConfirmed: true,
+        clientRequestId: crypto.randomUUID(),
+        note,
+      }),
+      closeCashShiftBlind,
+    );
+    if (res.ok) {
+      setCountedCashPhp("");
+      setPhysicalConfirmed(false);
+      setCloseNote("");
+      await loadAll();
+      const msg = `Shift closed blind (counted ${formatPhp(countedCashCents)}).`;
+      setShiftMessage(msg);
+      pushToast(msg);
+    } else {
+      setShiftMessage(`${res.code ? `[${res.code}] ` : ""}${res.message}`);
     }
   };
 
@@ -193,6 +322,7 @@ function R3LiveCashShiftsContent() {
     );
 
     if (res.ok) {
+      setReviewSessionId("");
       setReviewReason("");
       await loadAll();
       const msg = `Variance acknowledged for shift ${res.value.sessionId.slice(0, 8)}… (${res.value.reviewStatus}).`;
@@ -208,22 +338,20 @@ function R3LiveCashShiftsContent() {
   );
 
   return (
-    <div className="r3-root">
-      <div className="r3-content" style={{ maxWidth: 1200, margin: "0 auto" }}>
+    <div className={embedded ? "" : "r3-root"}>
+      <div className={embedded ? "" : "r3-content"} style={embedded ? undefined : { maxWidth: 1200, margin: "0 auto" }}>
         <div className="r3-page-header">
           <div>
-            <p className="r3-text-xs r3-text-muted" style={{ marginBottom: 4 }}>
-              <a href="/cafe/">Return to existing workstation</a>
-              {" · "}
-              <a href="/cafe/integration/r3/reports">Live Reports</a>
-              {" · "}
-              <a href="/cafe/integration/r3/inventory">Live Inventory</a>
-              {" · "}
-              <a href="/cafe/integration/r3/bookings">Bookings &amp; Deliveries</a>
-            </p>
-            <h1 className="r3-page-title">Cash Drawer &amp; Independent Variance Review</h1>
+            {!embedded && (
+              <p className="r3-text-xs r3-text-muted" style={{ marginBottom: 4 }}>
+                <a href="/cafe/">Return to existing workstation</a>
+                {" · "}
+                <a href="/cafe/r3">Unified R3 App</a>
+              </p>
+            )}
+            <h1 className="r3-page-title">Cash Drawer &amp; Shift Reconciliation</h1>
             <p className="r3-page-subtitle">
-              Live Host drawer reconciliation history and non-self variance acknowledgement (Audit.View enforced).
+              Full shift lifecycle: Open Shift, Cash Movements, Blind Shift Close, and Independent Non-Self Variance Review.
             </p>
           </div>
           <div className="r3-page-actions">
@@ -239,6 +367,12 @@ function R3LiveCashShiftsContent() {
               <div className="r3-alert-title">Cash Drawer unavailable</div>
               <div>{accessError}</div>
             </div>
+          </div>
+        )}
+
+        {drawerError && (
+          <div className="r3-alert r3-alert--danger" role="alert">
+            <div className="r3-alert-body">{drawerError}</div>
           </div>
         )}
 
@@ -264,6 +398,187 @@ function R3LiveCashShiftsContent() {
                 </button>
               ))}
             </div>
+
+            {tab === "drawer" && canShift && (
+              <div role="tabpanel" aria-labelledby="r3-cash-tab-drawer" style={{ display: "grid", gap: 16 }}>
+                {!currentDrawer ? (
+                  <div className="r3-card">
+                    <div className="r3-card-header">
+                      <div>
+                        <div className="r3-card-title">Open Cashier Shift</div>
+                        <div className="r3-card-subtitle">Declare opening cash float to begin taking Cash sales and deposits.</div>
+                      </div>
+                    </div>
+                    <DurableIntentBanner
+                      label="Open Shift"
+                      operationId={openShiftIntent.pending?.payload.clientRequestId ?? null}
+                      pending={openShiftIntent.pending}
+                      corruptReason={openShiftIntent.corruptReason}
+                      authorityMismatch={openShiftIntent.authorityMismatch}
+                      inFlight={openShiftIntent.inFlight}
+                      onRetry={() =>
+                        void openShiftIntent.retryPending(openCashShift).then((r) => {
+                          if (r.ok) {
+                            setShiftMessage("Shift open retry confirmed.");
+                            void loadAll();
+                          } else {
+                            setShiftMessage(r.message);
+                          }
+                        })
+                      }
+                      onClearRejected={() => openShiftIntent.clearPending(false)}
+                      onClearCorrupt={() => openShiftIntent.clearPending(true)}
+                    />
+                    <form onSubmit={(e) => void handleOpenShift(e)} style={{ display: "grid", gap: 12, maxWidth: 460 }}>
+                      <label>
+                        <div className="r3-text-xs r3-text-muted">Opening Cash Float (PHP)</div>
+                        <input
+                          className="r3-input"
+                          aria-label="Opening Cash Float"
+                          value={openingFloatPhp}
+                          onChange={(e) => setOpeningFloatPhp(e.target.value)}
+                          disabled={openShiftIntent.inFlight}
+                        />
+                      </label>
+                      <div>
+                        <button type="submit" className="r3-btn r3-btn--primary" disabled={openShiftIntent.inFlight}>
+                          {openShiftIntent.inFlight ? "Opening…" : "Open Shift"}
+                        </button>
+                      </div>
+                    </form>
+                    {shiftMessage && <p role="status" style={{ marginTop: 12 }} className="r3-text-sm">{shiftMessage}</p>}
+                  </div>
+                ) : (
+                  <>
+                    <div className="r3-card">
+                      <div className="r3-card-header">
+                        <div>
+                          <div className="r3-card-title">Open Shift Cash Movements</div>
+                          <div className="r3-card-subtitle">
+                            Active shift <code>{currentDrawer.sessionId.slice(0, 8)}…</code> · Opening float:{" "}
+                            <strong>{formatPhp(currentDrawer.openingCashCents)}</strong> (Expected cash stays hidden until blind close.)
+                          </div>
+                        </div>
+                      </div>
+                      <DurableIntentBanner
+                        label="Cash Movement"
+                        operationId={moveIntent.pending?.payload.clientRequestId ?? null}
+                        pending={moveIntent.pending}
+                        corruptReason={moveIntent.corruptReason}
+                        authorityMismatch={moveIntent.authorityMismatch}
+                        inFlight={moveIntent.inFlight}
+                        onRetry={() =>
+                          void moveIntent.retryPending(recordCashDrawerMovement).then((r) => {
+                            if (r.ok) {
+                              setCurrentDrawer(r.value);
+                              setMoveMessage("Cash movement retry confirmed.");
+                            } else {
+                              setMoveMessage(r.message);
+                            }
+                          })
+                        }
+                        onClearRejected={() => moveIntent.clearPending(false)}
+                        onClearCorrupt={() => moveIntent.clearPending(true)}
+                      />
+                      <form onSubmit={(e) => void handleMovementSubmit(e)} style={{ display: "grid", gap: 12, maxWidth: 560 }}>
+                        <label>
+                          <div className="r3-text-xs r3-text-muted">Movement Type</div>
+                          <select className="r3-input" aria-label="Movement Type" value={moveType} onChange={(e) => setMoveType(e.target.value as CashDrawerEventType)}>
+                            <option value="CashIn">CashIn</option>
+                            <option value="CashOut">CashOut</option>
+                            <option value="CashRefund">CashRefund</option>
+                          </select>
+                        </label>
+                        <label>
+                          <div className="r3-text-xs r3-text-muted">Amount (PHP)</div>
+                          <input className="r3-input" aria-label="Movement Amount" value={moveAmountPhp} onChange={(e) => setMoveAmountPhp(e.target.value)} placeholder="50.00" />
+                        </label>
+                        <label>
+                          <div className="r3-text-xs r3-text-muted">Reason</div>
+                          <input className="r3-input" aria-label="Movement Reason" value={moveReason} onChange={(e) => setMoveReason(e.target.value)} placeholder="Change fund top-up" />
+                        </label>
+                        <div>
+                          <button type="submit" className="r3-btn r3-btn--primary" disabled={moveIntent.inFlight}>
+                            Record Cash Movement
+                          </button>
+                        </div>
+                      </form>
+                      {moveMessage && <p role="status" style={{ marginTop: 12 }} className="r3-text-sm">{moveMessage}</p>}
+                    </div>
+
+                    <div className="r3-card">
+                      <div className="r3-card-header">
+                        <div>
+                          <div className="r3-card-title">Blind Shift Close</div>
+                          <div className="r3-card-subtitle">
+                            Enter your physical drawer count without viewing expected cash. Any nonzero variance enters PendingReview for independent review.
+                          </div>
+                        </div>
+                      </div>
+                      <DurableIntentBanner
+                        label="Blind Shift Close"
+                        operationId={closeShiftIntent.pending?.payload.clientRequestId ?? null}
+                        pending={closeShiftIntent.pending}
+                        corruptReason={closeShiftIntent.corruptReason}
+                        authorityMismatch={closeShiftIntent.authorityMismatch}
+                        inFlight={closeShiftIntent.inFlight}
+                        onRetry={() =>
+                          void closeShiftIntent.retryPending(closeCashShiftBlind).then((r) => {
+                            if (r.ok) {
+                              setShiftMessage("Blind shift close retry confirmed.");
+                              void loadAll();
+                            } else {
+                              setShiftMessage(r.message);
+                            }
+                          })
+                        }
+                        onClearRejected={() => closeShiftIntent.clearPending(false)}
+                        onClearCorrupt={() => closeShiftIntent.clearPending(true)}
+                      />
+                      <form onSubmit={(e) => void handleBlindCloseShift(e)} style={{ display: "grid", gap: 12, maxWidth: 560 }}>
+                        <label>
+                          <div className="r3-text-xs r3-text-muted">Physical Counted Cash (PHP)</div>
+                          <input
+                            className="r3-input"
+                            aria-label="Physical Counted Cash"
+                            value={countedCashPhp}
+                            onChange={(e) => setCountedCashPhp(e.target.value)}
+                            placeholder="1020.00"
+                            disabled={closeShiftIntent.inFlight}
+                          />
+                        </label>
+                        <label>
+                          <div className="r3-text-xs r3-text-muted">Close Note (optional)</div>
+                          <input
+                            className="r3-input"
+                            aria-label="Shift Close Note"
+                            value={closeNote}
+                            onChange={(e) => setCloseNote(e.target.value)}
+                            placeholder="End of day blind count"
+                            disabled={closeShiftIntent.inFlight}
+                          />
+                        </label>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <input
+                            type="checkbox"
+                            checked={physicalConfirmed}
+                            onChange={(e) => setPhysicalConfirmed(e.target.checked)}
+                            disabled={closeShiftIntent.inFlight}
+                          />
+                          <span className="r3-text-sm">I physically counted the cash drawer and confirm this amount.</span>
+                        </label>
+                        <div>
+                          <button type="submit" className="r3-btn r3-btn--primary" disabled={closeShiftIntent.inFlight}>
+                            {closeShiftIntent.inFlight ? "Closing…" : "Close Shift Blind"}
+                          </button>
+                        </div>
+                      </form>
+                      {shiftMessage && <p role="status" style={{ marginTop: 12 }} className="r3-text-sm">{shiftMessage}</p>}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
 
             {tab === "history" && canAudit && (
               <div role="tabpanel" aria-labelledby="r3-cash-tab-history" style={{ display: "grid", gap: 16 }}>
@@ -320,28 +635,30 @@ function R3LiveCashShiftsContent() {
                       </div>
                     </div>
                   </div>
-                  {reviewIntent.pending && (
-                    <div className={`r3-alert ${reviewIntent.pending.status === "rejected" ? "r3-alert--danger" : "r3-alert--warn"}`} role="alert" style={{ marginBottom: 12 }}>
-                      <div className="r3-alert-body">
-                        Review request <code>{reviewIntent.pending.payload.command.clientRequestId}</code> ({reviewIntent.pending.status})
-                        {reviewIntent.pending.lastErrorCode ? ` [${reviewIntent.pending.lastErrorCode}]` : ""}
-                        {reviewIntent.pending.lastErrorMessage ? ` — ${reviewIntent.pending.lastErrorMessage}` : ""}
-                      </div>
-                      {reviewIntent.pending.status === "rejected" ? (
-                        <button type="button" className="r3-btn r3-btn--outline r3-btn--sm" onClick={() => reviewIntent.clearPending(false)}>
-                          Clear Rejected Review
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="r3-btn r3-btn--primary r3-btn--sm"
-                          onClick={() => void reviewIntent.retryPending((p) => reviewCashDrawerVariance(p.sessionId, p.command)).then((r) => { if (r.ok) void loadAll(); })}
-                        >
-                          Retry Exact Review
-                        </button>
-                      )}
-                    </div>
-                  )}
+                  <DurableIntentBanner
+                    label="Variance Review"
+                    operationId={reviewIntent.pending?.payload.command.clientRequestId ?? null}
+                    pending={reviewIntent.pending}
+                    corruptReason={reviewIntent.corruptReason}
+                    authorityMismatch={reviewIntent.authorityMismatch}
+                    inFlight={reviewIntent.inFlight}
+                    onRetry={() =>
+                      void reviewIntent
+                        .retryPending((p) => reviewCashDrawerVariance(p.sessionId, p.command))
+                        .then((r) => {
+                          if (r.ok) {
+                            setReviewSessionId("");
+                            setReviewReason("");
+                            setReviewMessage(`Variance retry confirmed (${r.value.reviewStatus}).`);
+                            void loadAll();
+                          } else {
+                            setReviewMessage(r.message);
+                          }
+                        })
+                    }
+                    onClearRejected={() => reviewIntent.clearPending(false)}
+                    onClearCorrupt={() => reviewIntent.clearPending(true)}
+                  />
                   <form onSubmit={(e) => void handleReviewSubmit(e)} style={{ display: "grid", gap: 12, maxWidth: 560 }}>
                     <label>
                       <div className="r3-text-xs r3-text-muted">Shift Pending Review</div>
@@ -368,66 +685,6 @@ function R3LiveCashShiftsContent() {
                 </div>
               </div>
             )}
-
-            {tab === "drawer" && canShift && (
-              <div role="tabpanel" aria-labelledby="r3-cash-tab-drawer" className="r3-card">
-                <div className="r3-card-header">
-                  <div>
-                    <div className="r3-card-title">Open Shift Cash Movements</div>
-                    <div className="r3-card-subtitle">
-                      {currentDrawer
-                        ? `Open shift ${currentDrawer.sessionId.slice(0, 8)}… (Opening float: ${formatPhp(currentDrawer.openingCashCents)}; blind close hides expected balance until close)`
-                        : "No open shift for current operator."}
-                    </div>
-                  </div>
-                </div>
-                {moveIntent.pending && (
-                  <div className={`r3-alert ${moveIntent.pending.status === "rejected" ? "r3-alert--danger" : "r3-alert--warn"}`} role="alert" style={{ marginBottom: 12 }}>
-                    <div className="r3-alert-body">
-                      Movement request <code>{moveIntent.pending.payload.clientRequestId}</code> ({moveIntent.pending.status})
-                      {moveIntent.pending.lastErrorMessage ? ` — ${moveIntent.pending.lastErrorMessage}` : ""}
-                    </div>
-                    {moveIntent.pending.status === "rejected" ? (
-                      <button type="button" className="r3-btn r3-btn--outline r3-btn--sm" onClick={() => moveIntent.clearPending(false)}>
-                        Clear Rejected Movement
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="r3-btn r3-btn--primary r3-btn--sm"
-                        onClick={() => void moveIntent.retryPending(recordCashDrawerMovement).then((r) => { if (r.ok) setCurrentDrawer(r.value); })}
-                      >
-                        Retry Exact Movement
-                      </button>
-                    )}
-                  </div>
-                )}
-                <form onSubmit={(e) => void handleMovementSubmit(e)} style={{ display: "grid", gap: 12, maxWidth: 560 }}>
-                  <label>
-                    <div className="r3-text-xs r3-text-muted">Movement Type</div>
-                    <select className="r3-input" aria-label="Movement Type" value={moveType} onChange={(e) => setMoveType(e.target.value as CashDrawerEventType)}>
-                      <option value="CashIn">CashIn</option>
-                      <option value="CashOut">CashOut</option>
-                      <option value="CashRefund">CashRefund</option>
-                    </select>
-                  </label>
-                  <label>
-                    <div className="r3-text-xs r3-text-muted">Amount (PHP)</div>
-                    <input className="r3-input" aria-label="Movement Amount" value={moveAmountPhp} onChange={(e) => setMoveAmountPhp(e.target.value)} placeholder="50.00" />
-                  </label>
-                  <label>
-                    <div className="r3-text-xs r3-text-muted">Reason</div>
-                    <input className="r3-input" aria-label="Movement Reason" value={moveReason} onChange={(e) => setMoveReason(e.target.value)} placeholder="Change fund top-up" />
-                  </label>
-                  <div>
-                    <button type="submit" className="r3-btn r3-btn--primary" disabled={moveIntent.inFlight}>
-                      Record Cash Movement
-                    </button>
-                  </div>
-                </form>
-                {moveMessage && <p role="status" style={{ marginTop: 12 }} className="r3-text-sm">{moveMessage}</p>}
-              </div>
-            )}
           </>
         )}
       </div>
@@ -435,10 +692,10 @@ function R3LiveCashShiftsContent() {
   );
 }
 
-export function R3LiveCashShiftsPage() {
+export function R3LiveCashShiftsPage(props: Props = {}) {
   return (
     <R3ToastProvider>
-      <R3LiveCashShiftsContent />
+      <R3LiveCashShiftsContent {...props} />
     </R3ToastProvider>
   );
 }

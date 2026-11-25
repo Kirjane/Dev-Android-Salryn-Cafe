@@ -93,9 +93,38 @@ export type CafeBookingSummary = {
   bookingMode: BookingMode;
   eventStartUtc: string;
   eventEndUtc: string | null;
+  quotedTotalCents?: number;
   depositRequirementCents?: number;
   depositReceivedTotalCents?: number;
   depositRefundedTotalCents?: number;
+  depositAppliedTotalCents?: number;
+  preFulfillmentDepositCreditCents?: number;
+  preFulfillmentOutstandingBalanceCents?: number;
+};
+
+export type CafeBookingDepositFactSummary = {
+  depositFactId: string;
+  bookingRevisionId: string;
+  factType: "Received" | "Refunded" | "Applied" | string;
+  actorUserId: string;
+  amountCents: number;
+  allocatedAmountCents: number;
+  remainingRefundableCents: number;
+  occurredAtUtc: string;
+  reference: string;
+};
+
+export type CafeBookingDetail = {
+  booking: CafeBookingSummary;
+  currentRevision: {
+    revisionId: string;
+    bookingId: string;
+    revisionNumber: number;
+    eventName: string;
+    quotedTotalCents: number;
+    depositRequirementCents: number;
+  };
+  depositFacts?: CafeBookingDepositFactSummary[] | null;
 };
 
 export type CafeBookingMutationResult = {
@@ -184,6 +213,11 @@ function requireInstant(value: string, label: string): void {
 export async function readLiveBookings(): Promise<CafeBookingSummary[]> {
   const res = await hostRequest<CafeBookingSummary[]>("/api/cafe/bookings", undefined, "GET");
   return Array.isArray(res) ? res : [];
+}
+
+export async function readLiveBookingDetail(bookingId: string): Promise<CafeBookingDetail | null> {
+  requireGuid(bookingId, "bookingId");
+  return hostRequest<CafeBookingDetail | null>(`/api/cafe/bookings/${bookingId}`, undefined, "GET");
 }
 
 type ReceivableCustomerBalanceDto = {

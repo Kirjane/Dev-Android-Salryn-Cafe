@@ -57,7 +57,7 @@ function formatMarginPct(numerator: number, denominator: number): string | null 
   return `${(Math.round((numerator / denominator) * 1000) / 10).toFixed(1)}%`;
 }
 
-function R3LiveReportsContent() {
+function R3LiveReportsContent({ embedded = false }: { embedded?: boolean }) {
   const { pushToast } = useR3Toast();
   const [period, setPeriod] = useState<ReportPeriod>("monthly");
   const [tab, setTab] = useState<Tab>("overview");
@@ -211,13 +211,12 @@ function R3LiveReportsContent() {
 
   const syncIssues = report?.syncCompleteness.issues ?? [];
 
-  return (
-    <main className="r3-app">
-      <div className="r3-content">
+  const inner = (
+      <div className={embedded ? undefined : "r3-content"}>
         <PageHeader
           title="Reports, COGS & Profitability"
           subtitle="Calendar-period sales and historical costs directly from the live Host (Asia/Manila)."
-          breadcrumb={<a href="/cafe/">Return to existing workstation</a>}
+          breadcrumb={embedded ? undefined : <a href="/cafe/">Return to existing workstation</a>}
           actions={
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {periods.map((x) => (
@@ -244,7 +243,7 @@ function R3LiveReportsContent() {
         />
 
         <AlertBanner tone="info">
-          Development integration route. Reads the live Host with no sample fallback.{" "}
+          Live Host reporting with zero sample fallback.{" "}
           {report ? report.officialBoundary : "Not an official/BIR/RMO report."}
         </AlertBanner>
 
@@ -709,11 +708,16 @@ function R3LiveReportsContent() {
           </>
         )}
       </div>
-    </main>
   );
+
+  if (embedded) return inner;
+  return <main className="r3-app">{inner}</main>;
 }
 
-export function R3LiveReportsPage() {
+export function R3LiveReportsPage({ embedded = false }: { embedded?: boolean } = {}) {
+  if (embedded) {
+    return <R3LiveReportsContent embedded />;
+  }
   return (
     <R3ToastProvider>
       <R3LiveReportsContent />

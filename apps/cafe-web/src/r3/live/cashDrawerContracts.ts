@@ -51,6 +51,32 @@ export type DrawerReviewCommand = {
   clientRequestId: string;
 };
 
+export type OpenShiftCommand = {
+  openingCashCents: number;
+  clientRequestId: string;
+};
+
+export type CloseShiftBlindCommand = {
+  countedCashCents: number;
+  physicalCountConfirmed: true;
+  clientRequestId: string;
+  note: string | null;
+};
+
+export type ShiftOperationEnvelope = {
+  ok: boolean;
+  code?: string;
+  message?: string;
+  shift?: {
+    shiftId?: string;
+    shiftState?: string;
+    openingCashCents?: number;
+    expectedCashCents?: number | null;
+    countedCashCents?: number | null;
+    varianceCents?: number | null;
+  } | null;
+};
+
 const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMPTY_GUID = "00000000-0000-0000-0000-000000000000";
 
@@ -116,4 +142,31 @@ export async function reviewCashDrawerVariance(
     command,
     "POST",
   );
+}
+
+export async function openCashShift(
+  command: OpenShiftCommand,
+): Promise<ShiftOperationEnvelope> {
+  if (!Number.isSafeInteger(command.openingCashCents) || command.openingCashCents < 0) {
+    throw new Error("Opening cash float must be a nonnegative integer.");
+  }
+  if (!command.clientRequestId.trim()) {
+    throw new Error("clientRequestId is required to open a shift.");
+  }
+  return hostRequest<ShiftOperationEnvelope>("/api/shift/open", command, "POST");
+}
+
+export async function closeCashShiftBlind(
+  command: CloseShiftBlindCommand,
+): Promise<ShiftOperationEnvelope> {
+  if (!Number.isSafeInteger(command.countedCashCents) || command.countedCashCents < 0) {
+    throw new Error("Counted cash must be a nonnegative integer.");
+  }
+  if (command.physicalCountConfirmed !== true) {
+    throw new Error("Explicit physical cash count confirmation is required for blind shift close.");
+  }
+  if (!command.clientRequestId.trim()) {
+    throw new Error("clientRequestId is required to close a shift.");
+  }
+  return hostRequest<ShiftOperationEnvelope>("/api/shift/close", command, "POST");
 }

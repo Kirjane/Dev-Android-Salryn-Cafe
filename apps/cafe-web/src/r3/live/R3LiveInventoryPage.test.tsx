@@ -23,7 +23,7 @@ const VALID_LICENSE = {
 const ADMIN_SESSION = {
   isAuthenticated: true,
   user: {
-    id: "11111111-1111-1111-1111-111111111111",
+    userId: "11111111-1111-1111-1111-111111111111",
     username: "owner",
     displayName: "Owner",
     roleName: "Admin",
@@ -86,6 +86,7 @@ describe("R3LiveInventoryPage (INT-01 / INT-02)", () => {
     mockedHostRequest.mockImplementation(async (path, body, method, idempotencyKey) => {
       if (path === "/api/license/status") return VALID_LICENSE;
       if (path === "/api/session") return ADMIN_SESSION;
+      if (path === "/api/system/identity") return { productId: "Salryn.Cafe", databasePath: "C:\\tmp\\cafe.db" };
       if (path === "/api/cafe/ingredients-recipes") return SAMPLE_INGREDIENTS;
       if (path === "/api/cafe/inventory/low-stock") return [];
       if (path === "/api/cafe/suppliers") return [];
@@ -109,7 +110,7 @@ describe("R3LiveInventoryPage (INT-01 / INT-02)", () => {
             referenceType: null,
             referenceId: null,
             correctionOfReferenceId: null,
-            actorUserId: ADMIN_SESSION.user.id,
+            actorUserId: ADMIN_SESSION.user.userId,
             occurredAtUtc: (body as any).occurredAtUtc,
             contentHash: "hash-1",
           },
@@ -130,7 +131,7 @@ describe("R3LiveInventoryPage (INT-01 / INT-02)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Commit Adjustment" }));
 
     await waitFor(() => {
-      expect(screen.getByText(/Pending adjustment has an unresolved outcome/i)).toBeTruthy();
+      expect(screen.getByText(/Adjustment: pending request has an unresolved outcome/i)).toBeTruthy();
     });
     expect(adjustAttempts).toBe(1);
 
@@ -149,7 +150,7 @@ describe("R3LiveInventoryPage (INT-01 / INT-02)", () => {
       expect(screen.getByRole("tab", { name: "Manual Adjustment" })).toBeTruthy();
     });
     fireEvent.click(screen.getByRole("tab", { name: "Manual Adjustment" }));
-    expect(screen.getByText(/Pending adjustment has an unresolved outcome/i)).toBeTruthy();
+    expect(screen.getByText(/Adjustment: pending request has an unresolved outcome/i)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Retry Exact Adjustment" }));
     await waitFor(() => {
@@ -159,7 +160,7 @@ describe("R3LiveInventoryPage (INT-01 / INT-02)", () => {
     expect(adjustAttempts).toBe(2);
     expect(adjustPayloads[1].key).toBe(adjustPayloads[0].key);
     expect(adjustPayloads[1].body).toEqual(adjustPayloads[0].body);
-    expect(window.localStorage.getItem("salryn.cafe.r3.pending.inventory-adjust.v1")).toBeNull();
+    expect(window.localStorage.getItem("salryn.cafe.r3.pending.inventory-adjust.v2")).toBeNull();
   });
 
   it("executes Physical Count draft -> stale 409 handling -> finalize -> immutable finalized state", async () => {
@@ -169,6 +170,7 @@ describe("R3LiveInventoryPage (INT-01 / INT-02)", () => {
     mockedHostRequest.mockImplementation(async (path, body, method) => {
       if (path === "/api/license/status") return VALID_LICENSE;
       if (path === "/api/session") return ADMIN_SESSION;
+      if (path === "/api/system/identity") return { productId: "Salryn.Cafe", databasePath: "C:\\tmp\\cafe.db" };
       if (path === "/api/cafe/ingredients-recipes") return SAMPLE_INGREDIENTS;
       if (path === "/api/cafe/inventory/low-stock") return [];
       if (path === "/api/cafe/suppliers") return [];
@@ -178,7 +180,7 @@ describe("R3LiveInventoryPage (INT-01 / INT-02)", () => {
           countSessionId: draft.countSessionId,
           storeId: "33333333-3333-3333-3333-333333333333",
           state: "Draft",
-          startedByUserId: ADMIN_SESSION.user.id,
+          startedByUserId: ADMIN_SESSION.user.userId,
           startedAtUtc: draft.startedAtUtc,
           finalizedByUserId: null,
           finalizedAtUtc: null,
@@ -205,7 +207,7 @@ describe("R3LiveInventoryPage (INT-01 / INT-02)", () => {
         savedSession = {
           ...savedSession,
           state: "Finalized",
-          finalizedByUserId: ADMIN_SESSION.user.id,
+          finalizedByUserId: ADMIN_SESSION.user.userId,
           finalizedAtUtc: (body as any).finalizedAtUtc,
           finalizeOperationId: (body as any).operationId,
         };
