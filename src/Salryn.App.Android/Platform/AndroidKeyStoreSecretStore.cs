@@ -71,12 +71,18 @@ public sealed class AndroidKeyStoreSecretStore : IDeviceSecretStore
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(secret);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        string targetPath = GetCiphertextPath(key);
         if (secret.Length == 0)
         {
-            throw new ArgumentException("Device secret cannot be empty.", nameof(secret));
+            if (File.Exists(targetPath))
+            {
+                File.Delete(targetPath);
+            }
+            return;
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
         Directory.CreateDirectory(_ciphertextRoot);
 
         using KeyStore keyStore = OpenKeyStore();
@@ -100,10 +106,22 @@ public sealed class AndroidKeyStoreSecretStore : IDeviceSecretStore
             writer.Flush();
         }
 
-        await File.WriteAllBytesAsync(
-            GetCiphertextPath(key),
-            stream.ToArray(),
-            cancellationToken).ConfigureAwait(false);
+        string tempPath = targetPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            await File.WriteAllBytesAsync(
+                tempPath,
+                stream.ToArray(),
+                cancellationToken).ConfigureAwait(false);
+            File.Move(tempPath, targetPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                try { File.Delete(tempPath); } catch { }
+            }
+        }
     }
 
     private static KeyStore OpenKeyStore()

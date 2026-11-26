@@ -15,6 +15,9 @@ namespace Salryn.App.Android.Platform;
 public sealed record AndroidCentralConfiguration(string HttpsUrl, Guid TenantId, Guid StoreId,
     string PinnedServerKey, Guid? DeviceId = null);
 
+public sealed record AndroidDeviceStatusSummary(Guid? DeviceId, DateTimeOffset? LeaseExpiresAtUtc,
+    bool IsRevokedFenced, int PendingOutboxCount);
+
 /// <summary>Device setup is independent of operator authentication. TLS validation is never disabled.
 /// Keys and approved configuration persist in Android Keystore protected storage; access tokens stay in memory.</summary>
 public sealed class AndroidCentralConnection(IDeviceSecretStore secrets, Func<MobileClockSnapshot> clock)
@@ -26,6 +29,27 @@ public sealed class AndroidCentralConnection(IDeviceSecretStore secrets, Func<Mo
     {
         byte[]? bytes = await secrets.ReadAsync(ConfigurationKey);
         return bytes is null ? null : JsonSerializer.Deserialize<AndroidCentralConfiguration>(bytes);
+    }
+
+    public async Task<AndroidDeviceStatusSummary> ReadDeviceStatusAsync(MobileProductionComposition runtime)
+    {
+        AndroidCentralConfiguration? config = await ReadConfigurationAsync();
+        MobileEnrollmentBinding? binding = await new ProtectedMobileEnrollmentReader(secrets).ReadAsync();
+        bool revokedFenced = false;
+        try
+        {
+            byte[]? wmBytes = await secrets.ReadAsync("salryn.cafe.offline_lease_watermark.v1");
+            if (wmBytes is { Length: > 0 })
+            {
+                AntiRollbackWatermark? wm = JsonSerializer.Deserialize<AntiRollbackWatermark>(wmBytes);
+                revokedFenced = wm?.IsRevokedFenced == true;
+            }
+        }
+        catch { }
+        int pendingCount = config?.DeviceId is { } deviceId && deviceId != Guid.Empty
+            ? runtime.SyncOutbox.ReadPending(deviceId).Count
+            : 0;
+        return new AndroidDeviceStatusSummary(config?.DeviceId, binding?.Lease?.ExpiresAtUtc, revokedFenced, pendingCount);
     }
 
     public async Task<Guid> EnrollAsync(AndroidCentralConfiguration requested, string joinCode, string deviceName)
@@ -138,7 +162,7 @@ public sealed class AndroidCentralConnection(IDeviceSecretStore secrets, Func<Mo
             using HttpResponseMessage logoutResponse = await http.SendAsync(logout);
             if (!logoutResponse.IsSuccessStatusCode)
             {
-                ErrorResponse? error = await logoutResponse.Content.ReadFromJsonAsync<ErrorResponse>();
+                ErrorResponse? error = await TryReadErrorAsync(logoutResponse);
                 if (IsRevoked(error?.ErrorCode)) await FenceAsync(config);
             }
         }
@@ -223,7 +247,7 @@ public sealed class AndroidCentralConnection(IDeviceSecretStore secrets, Func<Mo
             using HttpResponseMessage logoutResponse = await http.SendAsync(logout);
             if (!logoutResponse.IsSuccessStatusCode)
             {
-                ErrorResponse? error = await logoutResponse.Content.ReadFromJsonAsync<ErrorResponse>();
+                ErrorResponse? error = await TryReadErrorAsync(logoutResponse);
                 if (IsRevoked(error?.ErrorCode)) await FenceAsync(config);
             }
         }
@@ -315,9 +339,14 @@ public sealed class AndroidCentralConnection(IDeviceSecretStore secrets, Func<Mo
     private async Task RequireSuccessAsync(HttpResponseMessage response, AndroidCentralConfiguration? config = null)
     {
         if (response.IsSuccessStatusCode) return;
-        ErrorResponse? error = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        ErrorResponse? error = await TryReadErrorAsync(response);
         if (config is not null && IsRevoked(error?.ErrorCode)) await FenceAsync(config);
         throw new InvalidOperationException(error?.ErrorMessage ?? $"Central request failed (HTTP {(int)response.StatusCode}).");
+    }
+    private static async Task<ErrorResponse?> TryReadErrorAsync(HttpResponseMessage response)
+    {
+        try { return await response.Content.ReadFromJsonAsync<ErrorResponse>(); }
+        catch { return null; }
     }
     private static bool IsRevoked(string? code) => code is "DEVICE_REVOKED" or "DEVICE_REVOKED_FENCED";
     private sealed record BootstrapBundle(Guid DeviceId,long ServerEpoch,SyncBootstrapSnapshotV1 Base,

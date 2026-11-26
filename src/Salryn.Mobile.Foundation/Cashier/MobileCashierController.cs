@@ -14,6 +14,7 @@ public sealed record MobileOrderDraft(Guid OperationId, Guid OrderId, int Expect
     DateTimeOffset OccurredAtUtc, string ServiceMode, string? ServiceReference,
     IReadOnlyList<CafeOrderLineMutation> Lines);
 public sealed record MobileOrderAction(Guid OperationId, Guid OrderId, int ExpectedVersion, DateTimeOffset OccurredAtUtc);
+public sealed record MobileOrderCancelAction(Guid OperationId, Guid OrderId, int ExpectedVersion, DateTimeOffset OccurredAtUtc, string Reason);
 public sealed record MobileCustomerOption(Guid CustomerId, string Name);
 public sealed record MobileCheckoutIntent(Guid OperationId, Guid OrderId, int ExpectedVersion,
     DateTimeOffset OccurredAtUtc, Guid ActorUserId, Guid DeviceId, Guid StoreId,
@@ -130,6 +131,30 @@ public sealed class MobileCashierController(MobileProductionComposition runtime,
             (binding, actor, _) => Task.FromResult(runtime.CafeOrders.SaveRevision(new(
                 draft.OperationId, binding.DeviceId, draft.OrderId, binding.StoreId, draft.ExpectedVersion,
                 actor.UserId, draft.OccurredAtUtc, draft.ServiceMode, draft.ServiceReference, draft.Lines))), ct);
+
+    public Task<Result<CafeOrderMutationResult>> ParkOrderAsync(MobileOrderAction intent, CancellationToken ct = default) =>
+        ExecuteAsync(SalrynPermissions.OrdersManage, (binding, actor, _) =>
+            intent.OperationId == Guid.Empty
+                ? Task.FromResult(Fail<CafeOrderMutationResult>("Mobile.OperationIdRequired", "Retain a client operation ID before parking an order."))
+                : Task.FromResult(runtime.CafeOrders.Park(new(
+                    intent.OperationId, binding.DeviceId, intent.OrderId, binding.StoreId, intent.ExpectedVersion,
+                    actor.UserId, intent.OccurredAtUtc))), ct);
+
+    public Task<Result<CafeOrderMutationResult>> ResumeOrderAsync(MobileOrderAction intent, CancellationToken ct = default) =>
+        ExecuteAsync(SalrynPermissions.OrdersManage, (binding, actor, _) =>
+            intent.OperationId == Guid.Empty
+                ? Task.FromResult(Fail<CafeOrderMutationResult>("Mobile.OperationIdRequired", "Retain a client operation ID before resuming a parked order."))
+                : Task.FromResult(runtime.CafeOrders.Resume(new(
+                    intent.OperationId, binding.DeviceId, intent.OrderId, binding.StoreId, intent.ExpectedVersion,
+                    actor.UserId, intent.OccurredAtUtc))), ct);
+
+    public Task<Result<CafeOrderMutationResult>> CancelOrderAsync(MobileOrderCancelAction intent, CancellationToken ct = default) =>
+        ExecuteAsync(SalrynPermissions.OrdersCancel, (binding, actor, _) =>
+            intent.OperationId == Guid.Empty
+                ? Task.FromResult(Fail<CafeOrderMutationResult>("Mobile.OperationIdRequired", "Retain a client operation ID before cancelling an order."))
+                : Task.FromResult(runtime.CafeOrders.Cancel(new(
+                    intent.OperationId, binding.DeviceId, intent.OrderId, binding.StoreId, intent.ExpectedVersion,
+                    actor.UserId, intent.OccurredAtUtc, intent.Reason))), ct);
 
     public Task<Result<CafeOrderPreparationSubmissionResult>> SubmitPreparationAsync(MobileOrderAction intent, CancellationToken ct = default) =>
         ExecuteAsync(SalrynPermissions.OrdersManage, (binding, actor, _) =>
