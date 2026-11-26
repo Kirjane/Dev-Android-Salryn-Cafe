@@ -1,9 +1,9 @@
 name: Salryn Cafe Android Build and Mobile Tests
 on:
   pull_request:
-    branches: [main, 'forge/**']
+    branches: [main, 'forge/**', 'workstreams/**']
   push:
-    branches: ['forge/**']
+    branches: ['forge/**', 'workstreams/**']
   workflow_dispatch:
 permissions:
   contents: read

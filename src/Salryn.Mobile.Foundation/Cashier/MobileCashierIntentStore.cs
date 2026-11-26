@@ -8,11 +8,13 @@ public sealed record MobilePendingCashierIntent(string Kind, MobileOrderDraft? D
     Guid ActorUserId = default, MobileShiftOpenIntent? ShiftOpen = null, MobileShiftCloseIntent? ShiftClose = null,
     MobileRefundRequestIntent? RefundRequest = null, MobileRefundResolutionIntent? RefundResolution = null,
     MobileRefundCommitIntent? RefundCommit = null,
-    string? LastErrorCode = null, string? LastErrorMessage = null, int AttemptCount = 0)
+    string? LastErrorCode = null, string? LastErrorMessage = null, int AttemptCount = 0,
+    MobileOrderCancelAction? CancelOrder = null, MobileDeliveryAdvanceIntent? DeliveryAdvance = null)
 {
     public Guid OperationId => Draft?.OperationId ?? Action?.OperationId ?? Checkout?.OperationId
         ?? ShiftOpen?.OperationId ?? ShiftClose?.OperationId ?? RefundRequest?.OperationId
-        ?? RefundResolution?.OperationId ?? RefundCommit?.OperationId ?? Guid.Empty;
+        ?? RefundResolution?.OperationId ?? RefundCommit?.OperationId
+        ?? CancelOrder?.OperationId ?? DeliveryAdvance?.OperationId ?? Guid.Empty;
 
     internal MobilePendingCashierIntent WithoutDiagnostics() =>
         this with { LastErrorCode = null, LastErrorMessage = null, AttemptCount = 0 };
