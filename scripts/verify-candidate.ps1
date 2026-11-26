@@ -313,9 +313,16 @@ if ($Mode -eq 'Android') {
 
 Invoke-Gate 'source-identity-final' 'SOURCE' { param($r) Assert-SourceUnchanged $initial (Get-SourceIdentity $repoRoot) }
 $status = Get-OverallStatus $results.ToArray()
+$repoSlug = 'Kirjane/Dev-Android-Salryn-Cafe'
+try {
+    $originUrl = (& git -C $repoRoot remote get-url origin 2>&1) | Out-String
+    if ($LASTEXITCODE -eq 0 -and $originUrl.Trim() -match 'github\.com[:/]([^/]+/[^/.]+?)(?:\.git)?$') {
+        $repoSlug = $Matches[1]
+    }
+} catch { }
 $summary = [ordered]@{
     runId = $runId; generatedAtUtc = (Get-Date).ToUniversalTime().ToString('O')
-    repository = 'Kirjane/Dev-Salryn-Cafe'; commitSha = $initial.head; prHeadSha = (Get-PrHeadSha $initial.head); treeSha = $initial.tree
+    repository = $repoSlug; commitSha = $initial.head; prHeadSha = (Get-PrHeadSha $initial.head); treeSha = $initial.tree
     mode = $Mode; configuration = $Configuration; coreSmokeProfile = $script:resolvedCoreSmokeProfile; releaseEntitledVerdict = $script:releaseEntitledVerdict
     os = [Runtime.InteropServices.RuntimeInformation]::OSDescription
     overallStatus = $status; releaseReadiness = 'NOT EVALUATED: scoped checks are not full C1-C11/live E2E/installer/hardware acceptance'
